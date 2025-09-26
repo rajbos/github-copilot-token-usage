@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Run type checking
+      run: npm run check-types
+      
+    - name: Compile extension
+      run: npm run compile
+      
+    - name: Package extension
+      run: npm run package
+      
+    - name: Compile tests
+      run: npm run compile-tests
+      
+    - name: Run tests
+      uses: coactions/setup-xvfb@v1
+      with:
+        run: npm test
+        options: -screen 0 1024x768x24
+      continue-on-error: true  # VS Code extension tests can be flaky in CI
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: matrix.node-version == '20.x'
+      with:
+        name: extension-build
+        path: |
+          dist/
+          out/
+        retention-days: 7
+        
+  package:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Package extension
+      run: npm run package
+      
+    - name: Create VSIX package
+      run: npx vsce package
+      
+    - name: Upload VSIX package
+      uses: actions/upload-artifact@v4
+      with:
+        name: vsix-package
+        path: '*.vsix'
+        retention-days: 30

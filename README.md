@@ -33,3 +33,47 @@ Clicking the status bar item opens a detailed view with comprehensive statistics
 >
 > This extension has only been tested on **Windows**. Other operating systems may not be supported or may require adjustments. PR's or test results for that are most welcome!
 
+## Development
+
+[![Build](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml)
+
+### Building the Extension
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Build the extension:
+   ```bash
+   npm run compile    # Development build
+   npm run package    # Production build
+   ```
+
+3. Run tests:
+   ```bash
+   npm test
+   ```
+
+4. Create VSIX package:
+   ```bash
+   npx vsce package
+   ```
+
+### Available Scripts
+
+- `npm run lint` - Run ESLint
+- `npm run check-types` - Run TypeScript type checking
+- `npm run compile` - Build development version
+- `npm run package` - Build production version
+- `npm run watch` - Watch mode for development
+- `npm test` - Run tests (requires VS Code)
+
+### CI/CD
+
+The project includes comprehensive GitHub Actions workflows:
+
+- **Build Pipeline**: Tests the extension on Ubuntu, Windows, and macOS with Node.js 18.x and 20.x
+- **CI Pipeline**: Includes VS Code extension testing and VSIX package creation
+- All builds must pass linting, type checking, compilation, and packaging steps
+
