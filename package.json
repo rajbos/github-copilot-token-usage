@@ -8,7 +8,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "todo"},
+    "url": "https://github.com/rajbos/github-copilot-token-usage"
+  },
   "author": {
     "name": "Rob Bos",
     "email": "rob@example.com"
