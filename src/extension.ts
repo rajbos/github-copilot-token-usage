@@ -22,6 +22,7 @@ interface DetailedStats {
 		modelUsage: ModelUsage;
 		co2: number;
 		treesEquivalent: number;
+		waterUsage: number;
 	};
 	month: {
 		tokens: number;
@@ -31,6 +32,7 @@ interface DetailedStats {
 		modelUsage: ModelUsage;
 		co2: number;
 		treesEquivalent: number;
+		waterUsage: number;
 	};
 	lastUpdated: Date;
 }
@@ -56,6 +58,7 @@ class CopilotTokenTracker {
 	};
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
+	private waterUsagePer1kTokens = 0.3; // liters of water per 1000 tokens, based on data center usage estimates
 
 	constructor() {
 		console.log('CopilotTokenTracker: Constructor called');
@@ -95,12 +98,14 @@ class CopilotTokenTracker {
 			tooltip.appendMarkdown('### 📅 Today\n');
 			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.today.tokens.toLocaleString()}\n\n`);
 			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.today.co2.toFixed(2)}g\n\n`);
+			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.today.waterUsage.toFixed(3)}L\n\n`);
 			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.today.sessions}\n\n`);
 			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.today.avgInteractionsPerSession}\n\n`);
 			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.today.avgTokensPerSession.toLocaleString()}\n\n`);
 			tooltip.appendMarkdown('### 📊 This Month\n');
 			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.month.tokens.toLocaleString()}\n\n`);
 			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.month.co2.toFixed(2)}g\n\n`);
+			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.month.waterUsage.toFixed(3)}L\n\n`);
 			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.month.sessions}\n\n`);
 			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.month.avgInteractionsPerSession}\n\n`);
 			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.month.avgTokensPerSession.toLocaleString()}\n\n`);
@@ -215,6 +220,9 @@ class CopilotTokenTracker {
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
+		
+		const todayWater = (todayStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const monthWater = (monthStats.tokens / 1000) * this.waterUsagePer1kTokens;
 
 		const result: DetailedStats = {
 			today: {
@@ -224,7 +232,8 @@ class CopilotTokenTracker {
 				avgTokensPerSession: todayStats.sessions > 0 ? Math.round(todayStats.tokens / todayStats.sessions) : 0,
 				modelUsage: todayStats.modelUsage,
 				co2: todayCo2,
-				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear
+				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: todayWater
 			},
 			month: {
 				tokens: monthStats.tokens,
@@ -233,7 +242,8 @@ class CopilotTokenTracker {
 				avgTokensPerSession: monthStats.sessions > 0 ? Math.round(monthStats.tokens / monthStats.sessions) : 0,
 				modelUsage: monthStats.modelUsage,
 				co2: monthCo2,
-				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear
+				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: monthWater
 			},
 			lastUpdated: now
 		};
@@ -460,6 +470,7 @@ class CopilotTokenTracker {
 		const projectedSessions = calculateProjection(stats.month.sessions);
 		const projectedCo2 = calculateProjection(stats.month.co2);
 		const projectedTrees = calculateProjection(stats.month.treesEquivalent);
+		const projectedWater = calculateProjection(stats.month.waterUsage);
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -643,6 +654,12 @@ class CopilotTokenTracker {
 							<td class="month-value">${projectedCo2.toFixed(2)} g</td>
 						</tr>
 						<tr>
+							<td class="metric-label">💧 Est. Water (${this.waterUsagePer1kTokens}L/1k&nbsp;tk)</td>
+							<td class="today-value">${stats.today.waterUsage.toFixed(3)} L</td>
+							<td class="month-value">${stats.month.waterUsage.toFixed(3)} L</td>
+							<td class="month-value">${projectedWater.toFixed(3)} L</td>
+						</tr>
+						<tr>
 							<td class="metric-label">🌳 Tree Equivalent (yr)</td>
 							<td class="today-value">${stats.today.treesEquivalent.toFixed(6)}</td>
 							<td class="month-value">${stats.month.treesEquivalent.toFixed(6)}</td>
@@ -659,11 +676,12 @@ class CopilotTokenTracker {
 						<span>Calculation & Estimates</span>
 					</h3>
 					<p style="font-size: 12px; color: #b3b3b3; margin-bottom: 8px;">
-						Token counts are estimated based on character count. CO₂ and tree equivalents are derived from these token estimates.
+						Token counts are estimated based on character count. CO₂, tree equivalents, and water usage are derived from these token estimates.
 					</p>
 					<ul style="font-size: 12px; color: #b3b3b3; padding-left: 20px; list-style-position: inside; margin-top: 8px;">
 						<li><b>CO₂ Estimate:</b> Based on ~${this.co2Per1kTokens}g of CO₂e per 1,000 tokens.</li>
 						<li><b>Tree Equivalent:</b> Represents the fraction of a single mature tree's annual CO₂ absorption (~${(this.co2AbsorptionPerTreePerYear / 1000).toFixed(1)} kg/year).</li>
+						<li><b>Water Estimate:</b> Based on ~${this.waterUsagePer1kTokens}L of water per 1,000 tokens for data center cooling and operations.</li>
 					</ul>
 				</div>
 
