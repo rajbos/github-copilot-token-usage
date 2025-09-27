@@ -298,10 +298,26 @@ class CopilotTokenTracker {
 		}
 
 		return modelUsage;
-	} private async getCopilotSessionFiles(): Promise<string[]> {
+	}
+
+	private async getCopilotSessionFiles(): Promise<string[]> {
 		const sessionFiles: string[] = [];
-		const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-		const codeUserPath = path.join(appDataPath, 'Code', 'User');
+
+		// Cross-platform path resolution for VS Code user data
+		let codeUserPath: string;
+		const platform = os.platform();
+
+		if (platform === 'win32') {
+			// Windows: %APPDATA%/Code/User
+			const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+			codeUserPath = path.join(appDataPath, 'Code', 'User');
+		} else if (platform === 'darwin') {
+			// macOS: ~/Library/Application Support/Code/User
+			codeUserPath = path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User');
+		} else {
+			// Linux and other Unix-like systems: ~/.config/Code/User
+			codeUserPath = path.join(os.homedir(), '.config', 'Code', 'User');
+		}
 
 		try {
 			// Workspace storage sessions
