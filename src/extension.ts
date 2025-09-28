@@ -37,12 +37,20 @@ interface DetailedStats {
 	lastUpdated: Date;
 }
 
+interface SessionFileCache {
+	tokens: number;
+	interactions: number;
+	modelUsage: ModelUsage;
+	mtime: number; // file modification time as timestamp
+}
+
 class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
+	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private tokenEstimators: { [key: string]: number } = {
 		'gpt-4': 0.25,
 		'gpt-4.1': 0.25,
@@ -78,6 +86,45 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
 		if (error) {
 			this.outputChannel.appendLine(`[${timestamp}] ${error}`);
+		}
+	}
+
+	// Cache management methods
+	private isCacheValid(filePath: string, currentMtime: number): boolean {
+		const cached = this.sessionFileCache.get(filePath);
+		return cached !== undefined && cached.mtime === currentMtime;
+	}
+
+	private getCachedSessionData(filePath: string): SessionFileCache | undefined {
+		return this.sessionFileCache.get(filePath);
+	}
+
+	private setCachedSessionData(filePath: string, data: SessionFileCache): void {
+		this.sessionFileCache.set(filePath, data);
+		
+		// Limit cache size to prevent memory issues (keep last 1000 files)
+		if (this.sessionFileCache.size > 1000) {
+			const entries = Array.from(this.sessionFileCache.entries());
+			// Remove oldest entries (simple FIFO approach)
+			const toRemove = entries.slice(0, this.sessionFileCache.size - 1000);
+			for (const [key] of toRemove) {
+				this.sessionFileCache.delete(key);
+			}
+		}
+	}
+
+	private clearExpiredCache(): void {
+		// Remove cache entries for files that no longer exist
+		const filesToCheck = Array.from(this.sessionFileCache.keys());
+		for (const filePath of filesToCheck) {
+			try {
+				if (!fs.existsSync(filePath)) {
+					this.sessionFileCache.delete(filePath);
+				}
+			} catch (error) {
+				// File access error, remove from cache
+				this.sessionFileCache.delete(filePath);
+			}
 		}
 	}
 
@@ -234,7 +281,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Only process files modified in the current month
 					if (fileStats.mtime >= monthStart) {
-						const tokens = await this.estimateTokensFromSession(sessionFile);
+						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 
 						monthTokens += tokens;
 
@@ -266,6 +313,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage };
 
 		try {
+			// Clean expired cache entries
+			this.clearExpiredCache();
+			
 			const sessionFiles = await this.getCopilotSessionFiles();
 			this.log(`Processing ${sessionFiles.length} session files for detailed stats`);
 
@@ -273,14 +323,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.warn('No session files found - this might indicate an issue in GitHub Codespaces or different VS Code configuration');
 			}
 
+			let cacheHits = 0;
+			let cacheMisses = 0;
+
 			for (const sessionFile of sessionFiles) {
 				try {
 					const fileStats = fs.statSync(sessionFile);
 
 					if (fileStats.mtime >= monthStart) {
-						const tokens = await this.estimateTokensFromSession(sessionFile);
-						const interactions = await this.countInteractionsInSession(sessionFile);
-						const modelUsage = await this.getModelUsageFromSession(sessionFile);
+						// Check if data is cached before making calls
+						const wasCached = this.isCacheValid(sessionFile, fileStats.mtime.getTime());
+						
+						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
+						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
+
+						// Update cache statistics
+						if (wasCached) {
+							cacheHits++;
+						} else {
+							cacheMisses++;
+						}
 
 						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions`);
 
@@ -308,6 +371,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
+
+			this.log(`Cache performance - Hits: ${cacheHits}, Misses: ${cacheMisses}, Hit Rate: ${sessionFiles.length > 0 ? ((cacheHits / sessionFiles.length) * 100).toFixed(1) : 0}%`);
 		} catch (error) {
 			this.error('Error calculating detailed stats:', error);
 		}
@@ -402,6 +467,45 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		return modelUsage;
+	}
+
+	// Cached versions of session file reading methods
+	private async getSessionFileDataCached(sessionFilePath: string, mtime: number): Promise<SessionFileCache> {
+		// Check if we have valid cached data
+		const cached = this.getCachedSessionData(sessionFilePath);
+		if (cached && cached.mtime === mtime) {
+			return cached;
+		}
+
+		// Cache miss - read and process the file once to get all data
+		const tokens = await this.estimateTokensFromSession(sessionFilePath);
+		const interactions = await this.countInteractionsInSession(sessionFilePath);
+		const modelUsage = await this.getModelUsageFromSession(sessionFilePath);
+		
+		const sessionData: SessionFileCache = {
+			tokens,
+			interactions,
+			modelUsage,
+			mtime
+		};
+
+		this.setCachedSessionData(sessionFilePath, sessionData);
+		return sessionData;
+	}
+
+	private async estimateTokensFromSessionCached(sessionFilePath: string, mtime: number): Promise<number> {
+		const sessionData = await this.getSessionFileDataCached(sessionFilePath, mtime);
+		return sessionData.tokens;
+	}
+
+	private async countInteractionsInSessionCached(sessionFile: string, mtime: number): Promise<number> {
+		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
+		return sessionData.interactions;
+	}
+
+	private async getModelUsageFromSessionCached(sessionFile: string, mtime: number): Promise<ModelUsage> {
+		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
+		return sessionData.modelUsage;
 	}
 
 	private checkCopilotExtension(): void {
@@ -1155,6 +1259,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		this.statusBarItem.dispose();
 		this.outputChannel.dispose();
+		// Clear cache on disposal
+		this.sessionFileCache.clear();
 	}
 }
 
