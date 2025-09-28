@@ -1,0 +1,59 @@
+version: 2
+updates:
+  # Enable version updates for npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "npm"
+      include: "scope"
+    reviewers:
+      - "rajbos"
+    assignees:
+      - "rajbos"
+    labels:
+      - "dependencies"
+      - "npm"
+    # Group minor and patch updates to reduce PR noise
+    groups:
+      minor-and-patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Allow both devDependencies and dependencies updates
+    ignore:
+      # Ignore major version updates for stable dependencies
+      # These should be handled manually to avoid breaking changes
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/vscode"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vscode"
+        update-types: ["version-update:semver-major"]
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "github-actions"
+      include: "scope"
+    reviewers:
+      - "rajbos"
+    assignees:
+      - "rajbos"
+    labels:
+      - "dependencies"
+      - "github-actions"
