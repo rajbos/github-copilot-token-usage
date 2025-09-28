@@ -424,7 +424,7 @@ class CopilotTokenTracker {
 				preserveFocus: true
 			},
 			{
-				enableScripts: false,
+				enableScripts: true,
 				retainContextWhenHidden: false
 			}
 		);
@@ -432,10 +432,30 @@ class CopilotTokenTracker {
 		// Set the HTML content
 		this.detailsPanel.webview.html = this.getDetailsHtml(stats);
 
+		// Handle messages from the webview
+		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshDetailsPanel();
+					break;
+			}
+		});
+
 		// Handle panel disposal
 		this.detailsPanel.onDidDispose(() => {
 			this.detailsPanel = undefined;
 		});
+	}
+
+	private async refreshDetailsPanel(): Promise<void> {
+		if (!this.detailsPanel) {
+			return;
+		}
+
+		// Update token stats and refresh the webview content
+		await this.updateTokenStats();
+		const stats = await this.calculateDetailedStats();
+		this.detailsPanel.webview.html = this.getDetailsHtml(stats);
 	}
 
 	private getDetailsHtml(stats: DetailedStats): string {
@@ -572,6 +592,27 @@ class CopilotTokenTracker {
 					color: #999999;
 					font-style: italic;
 				}
+				.refresh-button {
+					background: #0e639c;
+					border: 1px solid #1177bb;
+					color: #ffffff;
+					padding: 8px 16px;
+					border-radius: 4px;
+					cursor: pointer;
+					font-size: 12px;
+					font-weight: 500;
+					margin-top: 12px;
+					transition: background-color 0.2s;
+					display: inline-flex;
+					align-items: center;
+					gap: 6px;
+				}
+				.refresh-button:hover {
+					background: #1177bb;
+				}
+				.refresh-button:active {
+					background: #0a5a8a;
+				}
 			</style>
 		</head>
 		<body>
@@ -670,8 +711,22 @@ class CopilotTokenTracker {
 				<div class="footer">
 					Last updated: ${stats.lastUpdated.toLocaleString()}<br>
 					Updates automatically every 5 minutes
+					<br>
+					<button class="refresh-button" onclick="refreshData()">
+						<span>🔄</span>
+						<span>Refresh Now</span>
+					</button>
 				</div>
 			</div>
+
+			<script>
+				const vscode = acquireVsCodeApi();
+
+				function refreshData() {
+					// Send message to extension to refresh data
+					vscode.postMessage({ command: 'refresh' });
+				}
+			</script>
 		</body>
 		</html>`;
 	}
