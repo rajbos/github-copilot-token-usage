@@ -35,7 +35,7 @@ interface DetailedStats {
 	lastUpdated: Date;
 }
 
-class CopilotTokenTracker {
+class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
@@ -266,7 +266,9 @@ class CopilotTokenTracker {
 
 			if (sessionFiles.length === 0) {
 				this.warn('No session files found - this might indicate an issue in GitHub Codespaces or different VS Code configuration');
-			} for (const sessionFile of sessionFiles) {
+			}
+
+			for (const sessionFile of sessionFiles) {
 				try {
 					const fileStats = fs.statSync(sessionFile);
 
