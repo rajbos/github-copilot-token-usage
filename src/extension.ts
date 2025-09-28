@@ -107,7 +107,7 @@ class CopilotTokenTracker {
 		// Update every 5 minutes
 		this.updateInterval = setInterval(() => {
 			this.updateTokenStats();
-		}, 1 * 60 * 1000);
+		}, 5 * 60 * 1000);
 	}
 
 	private scheduleInitialUpdate(): void {
