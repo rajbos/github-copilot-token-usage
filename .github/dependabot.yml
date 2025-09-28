@@ -43,3 +43,23 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "vscode"
         update-types: ["version-update:semver-major"]
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "github-actions"
+      include: "scope"
+    reviewers:
+      - "rajbos"
+    assignees:
+      - "rajbos"
+    labels:
+      - "dependencies"
+      - "github-actions"
