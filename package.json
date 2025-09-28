@@ -2,7 +2,7 @@
   "name": "copilot-token-tracker",
   "displayName": "Copilot Token Tracker",
   "description": "Shows daily and monthly (estimated) GitHub Copilot token usage stats in VS Code status bar",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "RobBos",
   "engines": {
     "vscode": "^1.104.0"
