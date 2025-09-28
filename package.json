@@ -3,12 +3,14 @@
   "displayName": "Copilot Token Tracker",
   "description": "Shows daily and monthly (estimated) GitHub Copilot token usage stats in VS Code status bar",
   "version": "0.0.1",
+  "publisher": "RobBos",
   "engines": {
     "vscode": "^1.104.0"
   },
   "repository": {
     "type": "git",
-    "url": "todo"},
+    "url": "https://github.com/rajbos/github-copilot-token-usage.git"
+  },
   "author": {
     "name": "Rob Bos",
     "email": "rob@example.com"
