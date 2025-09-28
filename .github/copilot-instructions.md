@@ -28,6 +28,12 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **Watch Mode**: For active development, use `npm run watch`. This will automatically recompile the extension on file changes.
 - **Testing/Debugging**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools).
 
+## Development Guidelines
+
+- **Minimal Changes**: Only modify files that are directly needed for the actual changes being implemented. Avoid touching unrelated files, configuration files, or dependencies unless absolutely necessary for the feature or fix.
+- **Focused Modifications**: Make surgical, precise changes that address the specific requirements without affecting other functionality.
+- **Preserve Existing Structure**: Maintain the existing code organization and file structure. Don't refactor or reorganize code unless it's essential for the task.
+
 ## Key Files & Conventions
 
 - **`src/extension.ts`**: The single source file containing all logic.
