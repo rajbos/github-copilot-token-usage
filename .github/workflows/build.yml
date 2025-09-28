@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Run type checking
+      run: npm run check-types
+      
+    - name: Compile extension
+      run: npm run compile
+      
+    - name: Build production package
+      run: npm run package
+      
+    - name: Compile tests
+      run: npm run compile-tests
+      
+    - name: Verify build outputs exist
+      shell: bash
+      run: |
+        if [ ! -f "dist/extension.js" ]; then
+          echo "❌ dist/extension.js not found"
+          exit 1
+        fi
+        if [ ! -d "out" ]; then
+          echo "❌ out directory not found"
+          exit 1
+        fi
+        echo "✅ Build outputs verified"
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20.x'
+      with:
+        name: build-artifacts
+        path: |
+          dist/extension.js
+          dist/extension.js.map
+          out/
+        retention-days: 7
