@@ -99,29 +99,17 @@ jobs:
         fi
         
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ steps.extract_version.outputs.tag_version }}
-        body: ${{ steps.release_notes.outputs.notes }}
-        draft: false
-        prerelease: false
-        
-    - name: Upload VSIX to Release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./${{ steps.vsix_filename.outputs.vsix_file }}
-        asset_name: ${{ steps.vsix_filename.outputs.vsix_file }}
-        asset_content_type: application/zip
+      run: |
+        # Create release with notes and upload VSIX file
+        gh release create ${{ github.ref_name }} \
+          --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
+          --notes "${{ steps.release_notes.outputs.notes }}" \
+          ./${{ steps.vsix_filename.outputs.vsix_file }}
         
     - name: Release Summary
       run: |
         echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!"
         echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}"
-        echo "🔗 Release URL: ${{ steps.create_release.outputs.html_url }}"
+        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

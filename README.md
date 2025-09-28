@@ -75,5 +75,27 @@ The project includes comprehensive GitHub Actions workflows:
 
 - **Build Pipeline**: Tests the extension on Ubuntu, Windows, and macOS with Node.js 18.x and 20.x
 - **CI Pipeline**: Includes VS Code extension testing and VSIX package creation
+- **Release Pipeline**: Automated release creation when version tags are pushed
 - All builds must pass linting, type checking, compilation, and packaging steps
+
+### Automated Releases
+
+The project supports automated VSIX builds and releases when version tags are pushed:
+
+1. Update the version in `package.json`
+2. Commit your changes
+3. Create and push a version tag:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+The release workflow will:
+- Verify the tag version matches `package.json` version
+- Run the full build pipeline (lint, type-check, compile, test)
+- Create a VSIX package
+- Create a GitHub release with auto-generated release notes
+- Attach the VSIX file as a release asset
+
+**Note**: The workflow will fail if the tag version doesn't match the version in `package.json`.
 
