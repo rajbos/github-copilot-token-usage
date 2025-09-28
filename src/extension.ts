@@ -38,7 +38,9 @@ interface DetailedStats {
 class CopilotTokenTracker {
 	private statusBarItem: vscode.StatusBarItem;
 	private updateInterval: NodeJS.Timeout | undefined;
+	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
+	private outputChannel: vscode.OutputChannel;
 	private tokenEstimators: { [key: string]: number } = {
 		'gpt-4': 0.25,
 		'gpt-4.1': 0.25,
@@ -57,8 +59,34 @@ class CopilotTokenTracker {
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
 
+	// Logging methods
+	public log(message: string): void {
+		const timestamp = new Date().toLocaleTimeString();
+		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+	}
+
+	private warn(message: string): void {
+		const timestamp = new Date().toLocaleTimeString();
+		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
+	}
+
+	private error(message: string, error?: any): void {
+		const timestamp = new Date().toLocaleTimeString();
+		this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
+		if (error) {
+			this.outputChannel.appendLine(`[${timestamp}] ${error}`);
+		}
+	}
+
+
+
 	constructor() {
-		console.log('CopilotTokenTracker: Constructor called');
+		// Create output channel for extension logs
+		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
+		this.log('Constructor called');
+
+		// Check GitHub Copilot extension status
+		this.checkCopilotExtension();
 
 		// Create status bar item
 		this.statusBarItem = vscode.window.createStatusBarItem(
@@ -71,20 +99,81 @@ class CopilotTokenTracker {
 		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
 		this.statusBarItem.show();
 
-		console.log('CopilotTokenTracker: Status bar item created and shown');
+		this.log('Status bar item created and shown');
 
-		// Initial update
-		this.updateTokenStats();
+		// Smart initial update with delay for extension loading
+		this.scheduleInitialUpdate();
 
 		// Update every 5 minutes
 		this.updateInterval = setInterval(() => {
 			this.updateTokenStats();
-		}, 5 * 60 * 1000);
+		}, 1 * 60 * 1000);
+	}
+
+	private scheduleInitialUpdate(): void {
+		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
+		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+
+		// Check if Copilot extensions exist but are not active (likely still loading)
+		const extensionsExistButInactive =
+			(copilotExtension && !copilotExtension.isActive) ||
+			(copilotChatExtension && !copilotChatExtension.isActive);
+
+		if (extensionsExistButInactive) {
+			// Use shorter delay for testing in Codespaces
+			const delaySeconds = process.env.CODESPACES === 'true' ? 10 : 60;
+			this.log(`Copilot extensions found but not active yet - delaying initial update by ${delaySeconds} seconds to allow extensions to load`);
+			this.log(`Setting timeout for ${new Date(Date.now() + (delaySeconds * 1000)).toLocaleTimeString()}`);
+
+			this.initialDelayTimeout = setTimeout(() => {
+				try {
+					this.log('🚀 Delayed initial update starting now...');
+					this.recheckCopilotExtensionsAfterDelay();
+					this.updateTokenStats();
+				} catch (error) {
+					this.error('Error in delayed initial update:', error);
+				}
+			}, delaySeconds * 1000);
+
+			this.log(`Timeout ID: ${this.initialDelayTimeout} set successfully`);
+
+			// Add a heartbeat to prove the timeout mechanism is working
+			setTimeout(() => {
+				this.log('💓 Heartbeat: 5 seconds elapsed, timeout still pending...');
+			}, 5 * 1000);
+		} else if (!copilotExtension && !copilotChatExtension) {
+			this.log('No Copilot extensions found - starting immediate update');
+			this.updateTokenStats();
+		} else {
+			this.log('Copilot extensions are active - starting immediate update');
+			this.updateTokenStats();
+		}
+	}
+
+	private recheckCopilotExtensionsAfterDelay(): void {
+		this.log('Re-checking Copilot extensions after delay...');
+
+		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
+		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+
+		if (copilotExtension) {
+			this.log(`GitHub Copilot extension: ${copilotExtension.isActive ? 'NOW ACTIVE' : 'STILL INACTIVE'}`);
+		}
+
+		if (copilotChatExtension) {
+			this.log(`GitHub Copilot Chat extension: ${copilotChatExtension.isActive ? 'NOW ACTIVE' : 'STILL INACTIVE'}`);
+		}
+
+		// If still not active, provide guidance
+		if ((copilotExtension && !copilotExtension.isActive) || (copilotChatExtension && !copilotChatExtension.isActive)) {
+			this.warn('Some Copilot extensions are still not active after 60-second delay');
+			this.log('This may be normal in Codespaces - extensions might need manual activation or authentication');
+		}
 	}
 
 	public async updateTokenStats(): Promise<void> {
 		try {
-			console.log('CopilotTokenTracker: Updating token stats...');
+			this.log('Updating token stats...');
 			const detailedStats = await this.calculateDetailedStats();
 
 			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.month.tokens.toLocaleString()}`;
@@ -114,9 +203,9 @@ class CopilotTokenTracker {
 				this.detailsPanel.webview.html = this.getDetailsHtml(detailedStats);
 			}
 
-			console.log(`CopilotTokenTracker: Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
+			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
 		} catch (error) {
-			console.error('Error updating token stats:', error);
+			this.error('Error updating token stats:', error);
 			this.statusBarItem.text = '$(error) Token Error';
 			this.statusBarItem.tooltip = 'Error calculating token usage';
 		}
@@ -150,11 +239,11 @@ class CopilotTokenTracker {
 						}
 					}
 				} catch (fileError) {
-					console.warn(`Error processing session file ${sessionFile}:`, fileError);
+					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
 		} catch (error) {
-			console.error('Error calculating token usage:', error);
+			this.error('Error calculating token usage:', error);
 		}
 
 		return {
@@ -173,8 +262,11 @@ class CopilotTokenTracker {
 
 		try {
 			const sessionFiles = await this.getCopilotSessionFiles();
+			this.log(`Processing ${sessionFiles.length} session files for detailed stats`);
 
-			for (const sessionFile of sessionFiles) {
+			if (sessionFiles.length === 0) {
+				this.warn('No session files found - this might indicate an issue in GitHub Codespaces or different VS Code configuration');
+			} for (const sessionFile of sessionFiles) {
 				try {
 					const fileStats = fs.statSync(sessionFile);
 
@@ -183,7 +275,7 @@ class CopilotTokenTracker {
 						const interactions = await this.countInteractionsInSession(sessionFile);
 						const modelUsage = await this.getModelUsageFromSession(sessionFile);
 
-						console.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions`);
+						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions`);
 
 						monthStats.tokens += tokens;
 						monthStats.sessions += 1;
@@ -206,11 +298,11 @@ class CopilotTokenTracker {
 						}
 					}
 				} catch (fileError) {
-					console.warn(`Error processing session file ${sessionFile}:`, fileError);
+					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
 		} catch (error) {
-			console.error('Error calculating detailed stats:', error);
+			this.error('Error calculating detailed stats:', error);
 		}
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
@@ -238,8 +330,8 @@ class CopilotTokenTracker {
 			lastUpdated: now
 		};
 
-		console.log(`Today: ${todayStats.interactions} total interactions / ${todayStats.sessions} sessions = ${result.today.avgInteractionsPerSession} avg`);
-		console.log(`Month: ${monthStats.interactions} total interactions / ${monthStats.sessions} sessions = ${result.month.avgInteractionsPerSession} avg`);
+		this.log(`Today: ${todayStats.interactions} total interactions / ${todayStats.sessions} sessions = ${result.today.avgInteractionsPerSession} avg`);
+		this.log(`Month: ${monthStats.interactions} total interactions / ${monthStats.sessions} sessions = ${result.month.avgInteractionsPerSession} avg`);
 
 		return result;
 	}
@@ -256,7 +348,7 @@ class CopilotTokenTracker {
 
 			return 0;
 		} catch (error) {
-			console.warn(`Error counting interactions in ${sessionFile}:`, error);
+			this.warn(`Error counting interactions in ${sessionFile}: ${error}`);
 			return 0;
 		}
 	}
@@ -294,10 +386,62 @@ class CopilotTokenTracker {
 				}
 			}
 		} catch (error) {
-			console.warn(`Error getting model usage from ${sessionFile}:`, error);
+			this.warn(`Error getting model usage from ${sessionFile}: ${error}`);
 		}
 
 		return modelUsage;
+	}
+
+	private checkCopilotExtension(): void {
+		this.log('Checking GitHub Copilot extension status');
+
+		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
+		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+
+		this.log(`GitHub Copilot extension: ${copilotExtension ? 'FOUND' : 'NOT FOUND'}`);
+		if (copilotExtension) {
+			this.log(`  - Active: ${copilotExtension.isActive}`);
+			this.log(`  - Version: ${copilotExtension.packageJSON.version}`);
+			if (!copilotExtension.isActive) {
+				this.log(`  - Status: Extension found but not yet activated (likely still loading)`);
+			}
+		}
+
+		this.log(`GitHub Copilot Chat extension: ${copilotChatExtension ? 'FOUND' : 'NOT FOUND'}`);
+		if (copilotChatExtension) {
+			this.log(`  - Active: ${copilotChatExtension.isActive}`);
+			this.log(`  - Version: ${copilotChatExtension.packageJSON.version}`);
+			if (!copilotChatExtension.isActive) {
+				this.log(`  - Status: Extension found but not yet activated (likely still loading)`);
+			}
+		}
+
+		// Check if we're in GitHub Codespaces
+		const isCodespaces = process.env.CODESPACES === 'true';
+		const isVSCodeServer = process.env.VSCODE_IPC_HOOK_CLI || process.env.VSCODE_SERVER;
+
+		this.log(`Environment detection:`);
+		this.log(`  - GitHub Codespaces: ${isCodespaces}`);
+		this.log(`  - VS Code Server: ${!!isVSCodeServer}`);
+		this.log(`  - Remote Name: ${vscode.env.remoteName || 'local'}`);
+		this.log(`  - VS Code Machine ID: ${vscode.env.machineId}`);
+		this.log(`  - VS Code Session ID: ${vscode.env.sessionId}`);
+
+		// Enhanced analysis for Codespaces
+		if (isCodespaces) {
+			if (!copilotExtension || !copilotChatExtension) {
+				this.warn('Running in GitHub Codespaces but Copilot extension(s) not found - this may explain why no session files are located');
+			} else if (!copilotExtension.isActive || !copilotChatExtension.isActive) {
+				this.warn('Copilot extensions found but NOT ACTIVE in Codespaces - this is likely why no chat sessions exist');
+				this.log('Possible reasons:');
+				this.log('  1. Extensions may not be pre-activated in Codespaces');
+				this.log('  2. User may need to manually activate Copilot');
+				this.log('  3. Copilot may not be configured for this workspace');
+				this.log('  4. Authentication issues with GitHub Copilot in Codespaces');
+			} else {
+				this.log('Copilot extensions are active in Codespaces - investigating session storage...');
+			}
+		}
 	}
 
 	private async getCopilotSessionFiles(): Promise<string[]> {
@@ -306,45 +450,171 @@ class CopilotTokenTracker {
 		// Cross-platform path resolution for VS Code user data
 		let codeUserPath: string;
 		const platform = os.platform();
+		const homedir = os.homedir();
+
+		// Debug environment information
+		this.log('Debugging getCopilotSessionFiles');
+		this.log(`Platform: ${platform}`);
+		this.log(`Home directory: ${homedir}`);
+		this.log(`Environment variables:`);
+		this.log(`  APPDATA: ${process.env.APPDATA}`);
+		this.log(`  HOME: ${process.env.HOME}`);
+		this.log(`  XDG_CONFIG_HOME: ${process.env.XDG_CONFIG_HOME}`);
+		this.log(`  VSCODE_PORTABLE: ${process.env.VSCODE_PORTABLE}`);
+		this.log(`  CODESPACES: ${process.env.CODESPACES}`);
+		this.log(`  GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
 
 		if (platform === 'win32') {
 			// Windows: %APPDATA%/Code/User
-			const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
 			codeUserPath = path.join(appDataPath, 'Code', 'User');
+			this.log(`Windows path - APPDATA: ${appDataPath}`);
 		} else if (platform === 'darwin') {
 			// macOS: ~/Library/Application Support/Code/User
-			codeUserPath = path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User');
+			codeUserPath = path.join(homedir, 'Library', 'Application Support', 'Code', 'User');
+			this.log(`macOS path calculated`);
 		} else {
 			// Linux and other Unix-like systems: ~/.config/Code/User
-			codeUserPath = path.join(os.homedir(), '.config', 'Code', 'User');
+			// In GitHub Codespaces, also check for alternative VS Code paths
+			const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+			if (xdgConfigHome) {
+				codeUserPath = path.join(xdgConfigHome, 'Code', 'User');
+				this.log(`Linux path using XDG_CONFIG_HOME: ${xdgConfigHome}`);
+			} else {
+				codeUserPath = path.join(homedir, '.config', 'Code', 'User');
+				this.log(`Linux path using default .config`);
+			}
+		}
+
+		this.log(`Calculated VS Code user path: ${codeUserPath}`);
+		this.log(`Path exists: ${fs.existsSync(codeUserPath)}`);
+
+		// Check alternative VS Code paths that might be used in Codespaces
+		const alternativePaths = [
+			path.join(homedir, '.vscode-server', 'data', 'User'),
+			path.join(homedir, '.vscode-remote', 'data', 'User'),
+			path.join('/tmp', '.vscode-server', 'data', 'User'),
+			path.join('/workspace', '.vscode-server', 'data', 'User')
+		];
+
+		this.log('Checking alternative VS Code paths:');
+		for (const altPath of alternativePaths) {
+			const exists = fs.existsSync(altPath);
+			this.log(`  ${altPath}: ${exists ? 'EXISTS' : 'not found'}`);
+			if (exists && !fs.existsSync(codeUserPath)) {
+				this.log(`  Using alternative path: ${altPath}`);
+				codeUserPath = altPath;
+				break;
+			}
 		}
 
 		try {
 			// Workspace storage sessions
 			const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
+			this.log(`Checking workspace storage path: ${workspaceStoragePath}`);
+			this.log(`Workspace storage exists: ${fs.existsSync(workspaceStoragePath)}`);
+
 			if (fs.existsSync(workspaceStoragePath)) {
 				const workspaceDirs = fs.readdirSync(workspaceStoragePath);
+				this.log(`Found ${workspaceDirs.length} workspace directories`);
+
 				for (const workspaceDir of workspaceDirs) {
 					const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
+					this.log(`Checking chat sessions path: ${chatSessionsPath}`);
+
 					if (fs.existsSync(chatSessionsPath)) {
 						const sessionFiles2 = fs.readdirSync(chatSessionsPath)
 							.filter(file => file.endsWith('.json'))
 							.map(file => path.join(chatSessionsPath, file));
+						this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
 						sessionFiles.push(...sessionFiles2);
+					} else {
+						this.log(`Chat sessions path does not exist: ${chatSessionsPath}`);
+						// Investigate what's actually in this workspace directory
+						try {
+							const workspaceDirPath = path.join(workspaceStoragePath, workspaceDir);
+							const dirContents = fs.readdirSync(workspaceDirPath);
+							this.log(`  Workspace ${workspaceDir} contains: ${dirContents.join(', ')}`);
+
+							// Check for GitHub Copilot specific directories
+							const copilotDirs = dirContents.filter(dir =>
+								dir.toLowerCase().includes('copilot') ||
+								dir.toLowerCase().includes('chat') ||
+								dir.toLowerCase().includes('github')
+							);
+							if (copilotDirs.length > 0) {
+								this.log(`  Found potential Copilot-related directories: ${copilotDirs.join(', ')}`);
+							}
+						} catch (error) {
+							this.warn(`  Could not read workspace directory ${workspaceDir}: ${error}`);
+						}
 					}
 				}
-			}
-
-			// Global storage sessions
+			} else {
+				this.log(`Workspace storage path does not exist: ${workspaceStoragePath}`);
+			}			// Global storage sessions
 			const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
+			this.log(`Checking global storage path: ${globalStoragePath}`);
+			this.log(`Global storage exists: ${fs.existsSync(globalStoragePath)}`);
+
 			if (fs.existsSync(globalStoragePath)) {
 				const globalSessionFiles = fs.readdirSync(globalStoragePath)
 					.filter(file => file.endsWith('.json'))
 					.map(file => path.join(globalStoragePath, file));
+				this.log(`Found ${globalSessionFiles.length} global session files`);
 				sessionFiles.push(...globalSessionFiles);
+			} else {
+				this.log(`Global storage path does not exist: ${globalStoragePath}`);
+			}
+
+			// If no session files found, check for alternative GitHub Copilot storage locations
+			if (sessionFiles.length === 0) {
+				this.log('No session files found in standard locations. Checking alternative GitHub Copilot storage...');
+
+				// Check for GitHub Copilot extension specific storage
+				const alternativeStorageLocations = [
+					path.join(codeUserPath, 'globalStorage', 'github.copilot'),
+					path.join(codeUserPath, 'globalStorage', 'github.copilot-chat'),
+					path.join(codeUserPath, 'globalStorage', 'github.copilot-labs'),
+					path.join(codeUserPath, 'User', 'globalStorage', 'github.copilot-chat'),
+					path.join(os.homedir(), '.copilot'),
+					path.join(os.homedir(), '.github-copilot')
+				];
+
+				for (const altLocation of alternativeStorageLocations) {
+					if (fs.existsSync(altLocation)) {
+						this.log(`Found alternative Copilot storage: ${altLocation}`);
+						try {
+							const contents = fs.readdirSync(altLocation);
+							this.log(`  Contains: ${contents.join(', ')}`);
+
+							// Look for any JSON files that might be session files
+							const jsonFiles = contents.filter(file => file.endsWith('.json'));
+							if (jsonFiles.length > 0) {
+								this.log(`  Found ${jsonFiles.length} JSON files that might be sessions: ${jsonFiles.join(', ')}`);
+							}
+						} catch (error) {
+							this.warn(`  Could not read alternative storage ${altLocation}: ${error}`);
+						}
+					}
+				}
+			}
+
+			this.log(`Total session files found: ${sessionFiles.length}`);
+			if (sessionFiles.length > 0) {
+				this.log('Session file paths:');
+				sessionFiles.forEach((file, index) => {
+					this.log(`  ${index + 1}: ${file}`);
+				});
+			} else {
+				this.warn('No GitHub Copilot session files found. This could be because:');
+				this.log('  1. Copilot extensions are not active (most likely in Codespaces)');
+				this.log('  2. No Copilot Chat conversations have been initiated yet');
+				this.log('  3. Sessions are stored in a different location not yet supported');
+				this.log('  4. User needs to authenticate with GitHub Copilot first');
 			}
 		} catch (error) {
-			console.error('Error getting session files:', error);
+			this.error('Error getting session files:', error);
 		}
 
 		return sessionFiles;
@@ -379,7 +649,7 @@ class CopilotTokenTracker {
 
 			return totalTokens;
 		} catch (error) {
-			console.warn(`Error parsing session file ${sessionFilePath}:`, error);
+			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
 			return 0;
 		}
 	}
@@ -801,38 +1071,41 @@ class CopilotTokenTracker {
 		if (this.updateInterval) {
 			clearInterval(this.updateInterval);
 		}
+		if (this.initialDelayTimeout) {
+			clearTimeout(this.initialDelayTimeout);
+			this.log('Cleared initial delay timeout during disposal');
+		}
 		if (this.detailsPanel) {
 			this.detailsPanel.dispose();
 		}
 		this.statusBarItem.dispose();
+		this.outputChannel.dispose();
 	}
 }
 
 export function activate(context: vscode.ExtensionContext) {
-	console.log('CopilotTokenTracker: Extension activate() called');
-
 	// Create the token tracker
 	const tokenTracker = new CopilotTokenTracker();
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
-		console.log('CopilotTokenTracker: Refresh command called');
+		tokenTracker.log('Refresh command called');
 		await tokenTracker.updateTokenStats();
 		vscode.window.showInformationMessage('Copilot token usage refreshed');
 	});
 
 	// Register the show details command
 	const showDetailsCommand = vscode.commands.registerCommand('copilot-token-tracker.showDetails', async () => {
-		console.log('CopilotTokenTracker: Show details command called');
+		tokenTracker.log('Show details command called');
 		await tokenTracker.showDetails();
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, tokenTracker);
 
-	console.log('CopilotTokenTracker: Extension activation complete');
+	tokenTracker.log('Extension activation complete');
 }
 
 export function deactivate() {
-	console.log('Copilot Token Tracker extension is now deactivated!');
+	// Extension cleanup is handled in the CopilotTokenTracker class
 }
