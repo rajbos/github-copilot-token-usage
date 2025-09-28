@@ -8,6 +8,7 @@ A VS Code extension that shows your daily and monthly GitHub Copilot estimated t
 - **Automatic Updates**: Refreshes every 5 minutes to show the latest usage
 - **Click to Refresh**: Click the status bar item to manually refresh the token count
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
+- **Intelligent Caching**: Caches processed session files to speed up subsequent updates when files haven't changed
 
 ## Status Bar Display
 
@@ -21,6 +22,16 @@ Hovering on the status bar item shows a detailed breakdown of token usage:
 Clicking the status bar item opens a detailed view with comprehensive statistics:
 ![Detailed View](docs/images/03%20Detail%20panel.png)
 
+## Performance Optimization
+
+The extension uses intelligent caching to improve performance:
+
+- **File Modification Tracking**: Only re-processes session files when they have been modified since the last read
+- **Efficient Cache Management**: Stores calculated token counts, interaction counts, and model usage data for each file
+- **Memory Management**: Automatically limits cache size to prevent memory issues (maximum 1000 cached files)
+- **Cache Statistics**: Logs cache hit/miss rates to help monitor performance improvements
+
+This caching significantly reduces the time needed for periodic updates, especially when you have many chat session files.
 
 ## Known Issues
 
