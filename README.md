@@ -99,3 +99,25 @@ The release workflow will:
 
 **Note**: The workflow will fail if the tag version doesn't match the version in `package.json`.
 
+### Syncing Release Notes
+
+To keep the local `CHANGELOG.md` file synchronized with GitHub release notes:
+
+**Manual Sync:**
+```bash
+npm run sync-changelog
+```
+
+**Automatic Sync:**
+The project includes a GitHub workflow that automatically updates `CHANGELOG.md` whenever:
+- A new release is published
+- An existing release is edited
+- The workflow is manually triggered
+
+**Test the Sync:**
+```bash
+npm run sync-changelog:test
+```
+
+This ensures that the local changelog always reflects the latest release information from GitHub, preventing the documentation from becoming outdated.
+
