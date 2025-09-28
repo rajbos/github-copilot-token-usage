@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v1.2.3, etc.
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: Extract version from tag
+      id: extract_version
+      run: |
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+        echo "Tag version: $TAG_VERSION"
+        
+    - name: Extract version from package.json
+      id: package_version
+      run: |
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        echo "Package version: $PACKAGE_VERSION"
+        
+    - name: Compare versions
+      run: |
+        if [ "${{ steps.extract_version.outputs.tag_version }}" != "${{ steps.package_version.outputs.package_version }}" ]; then
+          echo "❌ Version mismatch!"
+          echo "Tag version: ${{ steps.extract_version.outputs.tag_version }}"
+          echo "Package.json version: ${{ steps.package_version.outputs.package_version }}"
+          echo "Please ensure the tag version matches the version in package.json"
+          exit 1
+        fi
+        echo "✅ Version check passed: ${{ steps.extract_version.outputs.tag_version }}"
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Run type checking
+      run: npm run check-types
+      
+    - name: Compile extension
+      run: npm run compile
+      
+    - name: Build production package
+      run: npm run package
+      
+    - name: Compile tests
+      run: npm run compile-tests
+      
+    - name: Run tests
+      uses: coactions/setup-xvfb@v1
+      with:
+        run: npm test
+        options: -screen 0 1024x768x24
+      continue-on-error: false  # Fail the release if tests fail
+      
+    - name: Create VSIX package
+      run: npx vsce package
+      
+    - name: Get VSIX filename
+      id: vsix_filename
+      run: |
+        VSIX_FILE=$(ls *.vsix | head -n 1)
+        echo "vsix_file=$VSIX_FILE" >> $GITHUB_OUTPUT
+        echo "VSIX file: $VSIX_FILE"
+        
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        # Extract the latest changes from CHANGELOG.md if it has been updated
+        # If not, create basic release notes
+        if grep -q "## \[.*\]" CHANGELOG.md; then
+          # Try to extract the latest version section from changelog
+          NOTES=$(sed -n '/## \[.*\]/,/## \[.*\]/p' CHANGELOG.md | head -n -1 | tail -n +2)
+          if [ -n "$NOTES" ]; then
+            echo "notes<<EOF" >> $GITHUB_OUTPUT
+            echo "$NOTES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "notes=Release ${{ steps.extract_version.outputs.tag_version }}" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "notes=Release ${{ steps.extract_version.outputs.tag_version }}" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ steps.extract_version.outputs.tag_version }}
+        body: ${{ steps.release_notes.outputs.notes }}
+        draft: false
+        prerelease: false
+        
+    - name: Upload VSIX to Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./${{ steps.vsix_filename.outputs.vsix_file }}
+        asset_name: ${{ steps.vsix_filename.outputs.vsix_file }}
+        asset_content_type: application/zip
+        
+    - name: Release Summary
+      run: |
+        echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!"
+        echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}"
+        echo "🔗 Release URL: ${{ steps.create_release.outputs.html_url }}"
