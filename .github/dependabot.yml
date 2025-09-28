@@ -19,14 +19,8 @@ updates:
     labels:
       - "dependencies"
       - "npm"
-    # Group security updates together
+    # Group minor and patch updates to reduce PR noise
     groups:
-      security-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "security"
-      # Group minor and patch updates to reduce PR noise
       minor-and-patch-updates:
         patterns:
           - "*"
