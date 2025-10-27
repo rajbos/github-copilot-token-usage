@@ -55,7 +55,7 @@ jobs:
       continue-on-error: true  # VS Code extension tests can be flaky in CI
       
     - name: Upload build artifacts
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       if: matrix.node-version == '20.x'
       with:
         name: extension-build
@@ -94,7 +94,7 @@ jobs:
       run: npx vsce package
       
     - name: Upload VSIX package
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: vsix-package
         path: '*.vsix'
