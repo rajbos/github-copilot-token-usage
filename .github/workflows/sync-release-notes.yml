@@ -1,0 +1,179 @@
+name: Sync Release Notes
+
+on:
+  workflow_dispatch:  # Manual trigger
+  release:
+    types: [published, edited]  # Automatic trigger when releases are published or edited
+
+jobs:
+  sync-release-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Need write permission to update CHANGELOG.md
+      
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      with:
+        fetch-depth: 0  # Fetch all history so we can work with all releases
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: '20.x'
+        
+    - name: Sync GitHub release notes to CHANGELOG.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Create a script to fetch GitHub releases and update CHANGELOG.md
+        cat > sync_changelog.js << 'EOF'
+        const { execSync } = require('child_process');
+        const fs = require('fs');
+        
+        async function syncReleaseNotes() {
+          try {
+            console.log('Fetching GitHub releases...');
+            
+            // Fetch all releases using GitHub CLI
+            const releasesJson = execSync('gh release list --json tagName,name,body,createdAt,isPrerelease --limit 50', { encoding: 'utf8' });
+            const releases = JSON.parse(releasesJson);
+            
+            console.log(`Found ${releases.length} releases`);
+            
+            // Sort releases by creation date (newest first)
+            releases.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            // Read current CHANGELOG.md
+            let changelog = '';
+            if (fs.existsSync('CHANGELOG.md')) {
+              changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+            }
+            
+            // Extract the header and unreleased section
+            const lines = changelog.split('\n');
+            const headerEndIndex = lines.findIndex(line => line.startsWith('## [Unreleased]'));
+            const unreleasedEndIndex = lines.findIndex((line, index) => 
+              index > headerEndIndex && line.startsWith('## [') && !line.includes('Unreleased')
+            );
+            
+            let header = '';
+            let unreleasedSection = '';
+            
+            if (headerEndIndex >= 0) {
+              header = lines.slice(0, headerEndIndex + 1).join('\n');
+              if (unreleasedEndIndex >= 0) {
+                unreleasedSection = lines.slice(headerEndIndex + 1, unreleasedEndIndex).join('\n');
+              } else {
+                // Take everything after unreleased header until we find a release or end
+                const restOfFile = lines.slice(headerEndIndex + 1);
+                const nextReleaseIndex = restOfFile.findIndex(line => line.startsWith('## [') && !line.includes('Unreleased'));
+                if (nextReleaseIndex >= 0) {
+                  unreleasedSection = restOfFile.slice(0, nextReleaseIndex).join('\n');
+                } else {
+                  unreleasedSection = restOfFile.join('\n');
+                }
+              }
+            } else {
+              // Create basic header if none exists
+              header = '# Change Log\n\nAll notable changes to the "copilot-token-tracker" extension will be documented in this file.\n\nCheck [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.\n\n## [Unreleased]';
+              unreleasedSection = '\n';
+            }
+            
+            // Build new changelog content
+            let newChangelog = header + unreleasedSection + '\n';
+            
+            // Add releases
+            for (const release of releases) {
+              const version = release.tagName.startsWith('v') ? release.tagName.substring(1) : release.tagName;
+              const releaseType = release.isPrerelease ? ' - Pre-release' : '';
+              
+              newChangelog += `## [${version}]${releaseType}\n\n`;
+              
+              if (release.body && release.body.trim()) {
+                // Clean up the release body
+                let body = release.body.trim();
+                
+                // Remove any "Full Changelog" links at the end
+                body = body.replace(/\*\*Full Changelog\*\*:.*$/gm, '').trim();
+                
+                // Ensure bullet points are properly formatted
+                const bodyLines = body.split('\n').map(line => {
+                  line = line.trim();
+                  if (line && !line.startsWith('-') && !line.startsWith('*') && !line.startsWith('#')) {
+                    return `- ${line}`;
+                  }
+                  return line;
+                }).filter(line => line.length > 0);
+                
+                newChangelog += bodyLines.join('\n') + '\n\n';
+              } else {
+                newChangelog += `- Release ${version}\n\n`;
+              }
+            }
+            
+            // Write the new changelog
+            fs.writeFileSync('CHANGELOG.md', newChangelog.trim() + '\n');
+            console.log('CHANGELOG.md updated successfully!');
+            
+            // Show what changed
+            try {
+              const diff = execSync('git diff CHANGELOG.md', { encoding: 'utf8' });
+              if (diff.trim()) {
+                console.log('\nChanges made to CHANGELOG.md:');
+                console.log(diff);
+              } else {
+                console.log('No changes needed - CHANGELOG.md is already up to date');
+              }
+            } catch (error) {
+              console.log('Could not show diff, but file was updated');
+            }
+            
+          } catch (error) {
+            console.error('Error syncing release notes:', error);
+            process.exit(1);
+          }
+        }
+        
+        syncReleaseNotes();
+        EOF
+        
+        # Run the sync script
+        node sync_changelog.js
+        
+    - name: Check for changes
+      id: changes
+      run: |
+        if git diff --quiet CHANGELOG.md; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "No changes detected in CHANGELOG.md"
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Changes detected in CHANGELOG.md"
+        fi
+        
+    - name: Commit and push changes
+      if: steps.changes.outputs.changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add CHANGELOG.md
+        git commit -m "docs: sync CHANGELOG.md with GitHub release notes
+
+        This commit automatically updates the CHANGELOG.md file to match
+        the release notes from GitHub releases, ensuring consistency
+        between local documentation and published releases."
+        git push
+        
+    - name: Summary
+      run: |
+        if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
+          echo "✅ CHANGELOG.md has been successfully updated with GitHub release notes"
+        else
+          echo "ℹ️ CHANGELOG.md was already up to date with GitHub release notes"
+        fi
