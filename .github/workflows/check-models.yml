@@ -51,13 +51,26 @@ jobs:
         run: |
           set -eo pipefail
           
-          # Read the documentation content
-          DOCS_CONTENT=$(cat docs_page.html)
+          # Read the documentation content and extract just the table section
+          DOCS_CONTENT=$(cat docs_page.html | grep -A 500 '<table' | grep -B 500 '</table>' | head -n 100)
           
           if [ -z "$DOCS_CONTENT" ]; then
             echo "Error: Documentation content is empty"
             exit 1
           fi
+          
+          # Create a temporary JSON file for the request payload using jq for proper escaping
+          jq -n \
+            --arg content "$DOCS_CONTENT" \
+            '{
+              model: "openai/gpt-4o-mini",
+              messages: [{
+                role: "user",
+                content: ("Extract all supported GitHub Copilot model names from this HTML table and return ONLY a JSON array of strings with the model names. Only include the model names (e.g., \"gpt-4o\", \"claude-3.5-sonnet\"). Return format: [\"model1\", \"model2\"]. HTML content: " + $content)
+              }],
+              temperature: 0.1,
+              max_tokens: 1000
+            }' > request.json
           
           # Use GitHub Models API to extract the supported models
           MODELS_JSON=$(curl -L -s -X POST \
@@ -66,17 +79,7 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             -H "Content-Type: application/json" \
             https://models.github.ai/inference/chat/completions \
-            -d "{
-              \"model\": \"openai/gpt-4o-mini\",
-              \"messages\": [
-                {
-                  \"role\": \"user\",
-                  \"content\": \"Extract all supported GitHub Copilot model names from this HTML page and return them as a JSON array of strings. Only include the model names (e.g., 'gpt-4o', 'claude-3.5-sonnet'). HTML content: ${DOCS_CONTENT}\"
-                }
-              ],
-              \"temperature\": 0.1,
-              \"max_tokens\": 1000
-            }")
+            --data-binary @request.json)
           
           echo "API Response:"
           echo "$MODELS_JSON"
