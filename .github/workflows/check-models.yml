@@ -51,19 +51,20 @@ jobs:
         run: |
           set -eo pipefail
           
-          # Read the documentation content and extract just the table section
-          DOCS_CONTENT=$(cat docs_page.html | grep -A 500 '<table' 2>/dev/null | grep -B 500 '</table>' 2>/dev/null | head -n 100)
+          # The page is a React app, so let's extract the JSON data from the script tag instead
+          # Look for the __NEXT_DATA__ script tag that contains the page data
+          DOCS_CONTENT=$(cat docs_page.html | grep -o '__NEXT_DATA__.*' | head -c 50000 || cat docs_page.html | head -c 50000)
           
           echo "Length of DOCS_CONTENT: ${#DOCS_CONTENT}"
-          echo "First 200 characters:"
-          echo "$DOCS_CONTENT" | head -c 200
+          echo "First 500 characters:"
+          echo "$DOCS_CONTENT" | head -c 500
           
           if [ -z "$DOCS_CONTENT" ]; then
             echo "Error: Documentation content is empty"
             exit 1
           fi
           
-          # Create a temporary JSON file for the request payload using jq for proper escaping
+          # Create a simpler prompt asking the model to extract from the page data
           echo "Creating request.json..."
           jq -n \
             --arg content "$DOCS_CONTENT" \
@@ -71,10 +72,10 @@ jobs:
               model: "openai/gpt-4o-mini",
               messages: [{
                 role: "user",
-                content: ("Extract all supported GitHub Copilot model names from this HTML table and return ONLY a JSON array of strings with the model names. Only include the model names (e.g., \"gpt-4o\", \"claude-3.5-sonnet\"). Return format: [\"model1\", \"model2\"]. HTML content: " + $content)
+                content: ("Extract all GitHub Copilot model names from this page data. Look for model identifiers like gpt-4o, gpt-4o-mini, claude-3.5-sonnet, o1, o1-mini, o3-mini, gemini-2.0-flash-exp, etc. Return ONLY a JSON array of model name strings in this exact format: [\"model1\", \"model2\", \"model3\"]. Do not include any explanation or markdown, just the JSON array. Content: " + $content)
               }],
               temperature: 0.1,
-              max_tokens: 1000
+              max_tokens: 500
             }' > request.json
           
           echo "request.json created successfully"
