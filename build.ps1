@@ -2,6 +2,9 @@
 
 # Ensure the script stops on errors
 $ErrorActionPreference = "Stop"
+#0 Install dependencies
+Write-Host "Installing dependencies..."
+npm install
 
 # 1. Run the compile script to build the JavaScript output
 Write-Host "Compiling extension..."
