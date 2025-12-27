@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'  # Triggers on version tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+    inputs:
+      create_tag:
+        description: 'Create tag from package.json version'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   release:
@@ -26,12 +33,16 @@ jobs:
         node-version: '20.x'
         cache: 'npm'
         
-    - name: Extract version from tag
-      id: extract_version
+    - name: Determine trigger type
+      id: trigger_type
       run: |
-        TAG_VERSION=${GITHUB_REF#refs/tags/v}
-        echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
-        echo "Tag version: $TAG_VERSION"
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "is_manual=true" >> $GITHUB_OUTPUT
+          echo "Triggered manually via workflow_dispatch"
+        else
+          echo "is_manual=false" >> $GITHUB_OUTPUT
+          echo "Triggered by tag push"
+        fi
         
     - name: Extract version from package.json
       id: package_version
@@ -40,7 +51,55 @@ jobs:
         echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
         echo "Package version: $PACKAGE_VERSION"
         
-    - name: Compare versions
+    - name: Create tag for manual trigger
+      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        VERSION="v${{ steps.package_version.outputs.package_version }}"
+        echo "Creating tag: $VERSION"
+        
+        # Check if tag already exists on remote using exit code
+        if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+          echo "❌ Tag $VERSION already exists on remote!"
+          echo "Please update the version in package.json or delete the existing tag."
+          exit 1
+        fi
+        
+        # Create and push the tag
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "$VERSION" -m "Release $VERSION"
+        git push origin "$VERSION"
+        
+        # Verify tag was created successfully on remote
+        echo "Verifying tag was created on remote..."
+        for i in {1..5}; do
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "✅ Tag $VERSION created and verified on remote"
+            exit 0
+          fi
+          echo "Waiting for tag to propagate (attempt $i/5)..."
+          sleep 2
+        done
+        
+        echo "❌ Failed to verify tag creation on remote"
+        exit 1
+        
+    - name: Extract version from tag
+      id: extract_version
+      run: |
+        if [ "${{ steps.trigger_type.outputs.is_manual }}" == "true" ]; then
+          # For manual triggers, use package.json version
+          TAG_VERSION="${{ steps.package_version.outputs.package_version }}"
+        else
+          # For tag triggers, extract from the tag
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        fi
+        echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+        echo "Release version: $TAG_VERSION"
+        
+    - name: Verify version consistency
       run: |
         if [ "${{ steps.extract_version.outputs.tag_version }}" != "${{ steps.package_version.outputs.package_version }}" ]; then
           echo "❌ Version mismatch!"
@@ -50,6 +109,17 @@ jobs:
           exit 1
         fi
         echo "✅ Version check passed: ${{ steps.extract_version.outputs.tag_version }}"
+        
+    - name: Determine tag name
+      id: tag_name
+      run: |
+        if [ "${{ steps.trigger_type.outputs.is_manual }}" == "true" ]; then
+          TAG_NAME="v${{ steps.extract_version.outputs.tag_version }}"
+        else
+          TAG_NAME="${{ github.ref_name }}"
+        fi
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "Tag name: $TAG_NAME"
         
     - name: Install dependencies
       run: npm ci
@@ -109,8 +179,10 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
+        
         # Create release with notes and upload VSIX file
-        gh release create ${{ github.ref_name }} \
+        gh release create "${{ steps.tag_name.outputs.tag_name }}" \
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes "${{ steps.release_notes.outputs.notes }}" \
           ./${{ steps.vsix_filename.outputs.vsix_file }}
@@ -119,4 +191,4 @@ jobs:
       run: |
         echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!"
         echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}"
-        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag_name.outputs.tag_name }}"

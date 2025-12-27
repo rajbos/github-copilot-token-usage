@@ -91,7 +91,23 @@ The project includes comprehensive GitHub Actions workflows:
 
 ### Automated Releases
 
-The project supports automated VSIX builds and releases when version tags are pushed:
+The project supports automated VSIX builds and releases through two methods:
+
+#### Method 1: Manual Trigger via GitHub UI (Recommended)
+
+1. Update the version in `package.json`
+2. Commit and push your changes to the main branch
+3. Go to GitHub Actions → Release workflow
+4. Click "Run workflow" and confirm
+
+The workflow will automatically:
+- Create a tag based on the version in `package.json`
+- Run the full build pipeline (lint, type-check, compile, test)
+- Create a VSIX package
+- Create a GitHub release with auto-generated release notes
+- Attach the VSIX file as a release asset
+
+#### Method 2: Tag-Based Release (Traditional)
 
 1. Update the version in `package.json`
 2. Commit your changes
