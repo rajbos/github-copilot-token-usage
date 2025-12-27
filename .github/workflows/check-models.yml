@@ -31,8 +31,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -eo pipefail
+          
           # Read the documentation content
           DOCS_CONTENT=$(cat docs_page.html)
+          
+          if [ -z "$DOCS_CONTENT" ]; then
+            echo "Error: Documentation content is empty"
+            exit 1
+          fi
           
           # Use GitHub Models API to extract the supported models
           MODELS_JSON=$(curl -L -s -X POST \
@@ -42,7 +49,7 @@ jobs:
             -H "Content-Type: application/json" \
             https://models.github.ai/inference/chat/completions \
             -d "{
-              \"model\": \"openai/gpt-4o\",
+              \"model\": \"gpt-4o\",
               \"messages\": [
                 {
                   \"role\": \"user\",
@@ -56,11 +63,21 @@ jobs:
           echo "API Response:"
           echo "$MODELS_JSON"
           
+          if [ -z "$MODELS_JSON" ]; then
+            echo "Error: API returned empty response"
+            exit 1
+          fi
+          
           # Extract the model names from the response
           MODELS=$(echo "$MODELS_JSON" | jq -r '.choices[0].message.content' | jq -r '.[]' | sort -u)
 
           echo "Fetched Models:"
           echo "$MODELS"
+
+          if [ -z "$MODELS" ]; then
+            echo "Error: No models extracted from API response"
+            exit 1
+          fi
 
           # Store models as a multiline output
           {
