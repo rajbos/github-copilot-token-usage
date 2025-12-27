@@ -12,7 +12,10 @@ interface TokenUsageStats {
 }
 
 interface ModelUsage {
-	[modelName: string]: number;
+	[modelName: string]: {
+		inputTokens: number;
+		outputTokens: number;
+	};
 }
 
 interface ModelPricing {
@@ -56,6 +59,11 @@ interface SessionFileCache {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
+
+	// Helper method to get total tokens from ModelUsage
+	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
+		return Object.values(modelUsage).reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0);
+	}
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
@@ -174,7 +182,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		if (extensionsExistButInactive) {
 			// Use shorter delay for testing in Codespaces
-			const delaySeconds = process.env.CODESPACES === 'true' ? 10 : 60;
+			const delaySeconds = process.env.CODESPACES === 'true' ? 10 : 15;
 			this.log(`Copilot extensions found but not active yet - delaying initial update by ${delaySeconds} seconds to allow extensions to load`);
 			this.log(`Setting timeout for ${new Date(Date.now() + (delaySeconds * 1000)).toLocaleTimeString()}`);
 
@@ -251,7 +259,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.month.avgInteractionsPerSession}\n\n`);
 			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.month.avgTokensPerSession.toLocaleString()}\n\n`);
 			tooltip.appendMarkdown('---\n\n');
-			tooltip.appendMarkdown('*Cost estimates based on OpenAI/Anthropic API pricing*\n\n');
+			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios*\n\n');
 			tooltip.appendMarkdown('*Updates automatically every 5 minutes*');
 
 			this.statusBarItem.tooltip = tooltip;
@@ -358,8 +366,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 						monthStats.interactions += interactions;
 
 						// Add model usage to month stats
-						for (const [model, modelTokens] of Object.entries(modelUsage)) {
-							monthStats.modelUsage[model] = (monthStats.modelUsage[model] || 0) + (modelTokens as number);
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!monthStats.modelUsage[model]) {
+								monthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							monthStats.modelUsage[model].inputTokens += usage.inputTokens;
+							monthStats.modelUsage[model].outputTokens += usage.outputTokens;
 						}
 
 						if (fileStats.mtime >= todayStart) {
@@ -368,8 +380,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 							todayStats.interactions += interactions;
 
 							// Add model usage to today stats
-							for (const [model, modelTokens] of Object.entries(modelUsage)) {
-								todayStats.modelUsage[model] = (todayStats.modelUsage[model] || 0) + (modelTokens as number);
+							for (const [model, usage] of Object.entries(modelUsage)) {
+								if (!todayStats.modelUsage[model]) {
+									todayStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+								}
+								todayStats.modelUsage[model].inputTokens += usage.inputTokens;
+								todayStats.modelUsage[model].outputTokens += usage.outputTokens;
 							}
 						}
 					}
@@ -452,22 +468,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Get model for this request
 					const model = this.getModelFromRequest(request);
 
-					// Estimate tokens from user message
+					// Initialize model if not exists
+					if (!modelUsage[model]) {
+						modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+					}
+
+					// Estimate tokens from user message (input)
 					if (request.message && request.message.parts) {
 						for (const part of request.message.parts) {
 							if (part.text) {
 								const tokens = this.estimateTokensFromText(part.text, model);
-								modelUsage[model] = (modelUsage[model] || 0) + tokens;
+								modelUsage[model].inputTokens += tokens;
 							}
 						}
 					}
 
-					// Estimate tokens from assistant response
+					// Estimate tokens from assistant response (output)
 					if (request.response && Array.isArray(request.response)) {
 						for (const responseItem of request.response) {
 							if (responseItem.value) {
 								const tokens = this.estimateTokensFromText(responseItem.value, model);
-								modelUsage[model] = (modelUsage[model] || 0) + tokens;
+								modelUsage[model].outputTokens += tokens;
 							}
 						}
 					}
@@ -528,27 +549,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private calculateEstimatedCost(modelUsage: ModelUsage): number {
 		let totalCost = 0;
 
-		for (const [model, tokens] of Object.entries(modelUsage)) {
+		for (const [model, usage] of Object.entries(modelUsage)) {
 			const pricing = this.modelPricing[model];
 			
 			if (pricing) {
-				// Assume 50/50 split between input and output tokens
-				// This is a simplification since we don't track them separately
-				const inputTokens = tokens * 0.5;
-				const outputTokens = tokens * 0.5;
-				
-				const inputCost = (inputTokens / 1_000_000) * pricing.inputCostPerMillion;
-				const outputCost = (outputTokens / 1_000_000) * pricing.outputCostPerMillion;
+				// Use actual input and output token counts
+				const inputCost = (usage.inputTokens / 1_000_000) * pricing.inputCostPerMillion;
+				const outputCost = (usage.outputTokens / 1_000_000) * pricing.outputCostPerMillion;
 				
 				totalCost += inputCost + outputCost;
 			} else {
 				// Fallback for models without pricing data - use GPT-4o-mini as default
 				const fallbackPricing = this.modelPricing['gpt-4o-mini'];
-				const inputTokens = tokens * 0.5;
-				const outputTokens = tokens * 0.5;
 				
-				const inputCost = (inputTokens / 1_000_000) * fallbackPricing.inputCostPerMillion;
-				const outputCost = (outputTokens / 1_000_000) * fallbackPricing.outputCostPerMillion;
+				const inputCost = (usage.inputTokens / 1_000_000) * fallbackPricing.inputCostPerMillion;
+				const outputCost = (usage.outputTokens / 1_000_000) * fallbackPricing.outputCostPerMillion;
 				
 				totalCost += inputCost + outputCost;
 				
@@ -790,31 +805,32 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
 		try {
 			const sessionContent = JSON.parse(fs.readFileSync(sessionFilePath, 'utf8'));
-			let totalTokens = 0;
+			let totalInputTokens = 0;
+			let totalOutputTokens = 0;
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				for (const request of sessionContent.requests) {
-					// Estimate tokens from user message
+					// Estimate tokens from user message (input)
 					if (request.message && request.message.parts) {
 						for (const part of request.message.parts) {
 							if (part.text) {
-								totalTokens += this.estimateTokensFromText(part.text);
+								totalInputTokens += this.estimateTokensFromText(part.text);
 							}
 						}
 					}
 
-					// Estimate tokens from assistant response
+					// Estimate tokens from assistant response (output)
 					if (request.response && Array.isArray(request.response)) {
 						for (const responseItem of request.response) {
 							if (responseItem.value) {
-								totalTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
+								totalOutputTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
 							}
 						}
 					}
 				}
 			}
 
-			return totalTokens;
+			return totalInputTokens + totalOutputTokens;
 		} catch (error) {
 			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
 			return 0;
@@ -1170,7 +1186,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						Token counts are estimated based on character count. CO₂, tree equivalents, water usage, and costs are derived from these token estimates.
 					</p>
 					<ul style="font-size: 12px; color: #b3b3b3; padding-left: 20px; list-style-position: inside; margin-top: 8px;">
-						<li><b>Cost Estimate:</b> Based on OpenAI API pricing (as of Dec 2025, <a href="https://openai.com/api/pricing/" style="color: #3794ff;">openai.com/api/pricing</a>) and standard Anthropic rates. Assumes 50/50 split between input and output tokens. <b>Note:</b> GitHub Copilot pricing may differ from direct API usage. These are reference estimates only.</li>
+						<li><b>Cost Estimate:</b> Based on public API pricing (see <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/src/modelPricing.json" style="color: #3794ff;">modelPricing.json</a> for sources and rates). Uses actual input/output token counts for accurate cost calculation. <b>Note:</b> GitHub Copilot pricing may differ from direct API usage. These are reference estimates only.</li>
 						<li><b>CO₂ Estimate:</b> Based on ~${this.co2Per1kTokens}g of CO₂e per 1,000 tokens.</li>
 						<li><b>Tree Equivalent:</b> Represents the fraction of a single mature tree's annual CO₂ absorption (~${(this.co2AbsorptionPerTreePerYear / 1000).toFixed(1)} kg/year).</li>
 						<li><b>Water Estimate:</b> Based on ~${this.waterUsagePer1kTokens}L of water per 1,000 tokens for data center cooling and operations.</li>
@@ -1226,8 +1242,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const modelRows = Array.from(allModels).map(model => {
 			const ratio = this.tokenEstimators[model] || 0.25;
 			const charsPerToken = (1 / ratio).toFixed(1);
-			const monthlyTokens = stats.month.modelUsage[model] || 0;
-			const projectedTokens = calculateProjection(monthlyTokens);
+			
+			const todayUsage = stats.today.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
+			const monthUsage = stats.month.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
+			
+			const todayTotal = todayUsage.inputTokens + todayUsage.outputTokens;
+			const monthTotal = monthUsage.inputTokens + monthUsage.outputTokens;
+			const projectedTokens = calculateProjection(monthTotal);
+			
+			const todayInputPercent = todayTotal > 0 ? ((todayUsage.inputTokens / todayTotal) * 100).toFixed(0) : 0;
+			const todayOutputPercent = todayTotal > 0 ? ((todayUsage.outputTokens / todayTotal) * 100).toFixed(0) : 0;
+			const monthInputPercent = monthTotal > 0 ? ((monthUsage.inputTokens / monthTotal) * 100).toFixed(0) : 0;
+			const monthOutputPercent = monthTotal > 0 ? ((monthUsage.outputTokens / monthTotal) * 100).toFixed(0) : 0;
 
 			return `
 			<tr>
@@ -1235,8 +1261,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 					${this.getModelDisplayName(model)}
 					<span style="font-size: 11px; color: #a0a0a0; font-weight: normal;">(~${charsPerToken} chars/tk)</span>
 				</td>
-				<td class="today-value">${(stats.today.modelUsage[model] || 0).toLocaleString()}</td>
-				<td class="month-value">${monthlyTokens.toLocaleString()}</td>
+				<td class="today-value">
+					${todayTotal.toLocaleString()}
+					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">↑${todayInputPercent}% ↓${todayOutputPercent}%</div>
+				</td>
+				<td class="month-value">
+					${monthTotal.toLocaleString()}
+					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">↑${monthInputPercent}% ↓${monthOutputPercent}%</div>
+				</td>
 				<td class="month-value">${Math.round(projectedTokens).toLocaleString()}</td>
 			</tr>
 		`;
