@@ -54,12 +54,17 @@ jobs:
           # Read the documentation content and extract just the table section
           DOCS_CONTENT=$(cat docs_page.html | grep -A 500 '<table' 2>/dev/null | grep -B 500 '</table>' 2>/dev/null | head -n 100)
           
+          echo "Length of DOCS_CONTENT: ${#DOCS_CONTENT}"
+          echo "First 200 characters:"
+          echo "$DOCS_CONTENT" | head -c 200
+          
           if [ -z "$DOCS_CONTENT" ]; then
             echo "Error: Documentation content is empty"
             exit 1
           fi
           
           # Create a temporary JSON file for the request payload using jq for proper escaping
+          echo "Creating request.json..."
           jq -n \
             --arg content "$DOCS_CONTENT" \
             '{
@@ -71,6 +76,9 @@ jobs:
               temperature: 0.1,
               max_tokens: 1000
             }' > request.json
+          
+          echo "request.json created successfully"
+          echo "Request size: $(wc -c < request.json) bytes"
           
           # Use GitHub Models API to extract the supported models
           MODELS_JSON=$(curl -L -s -X POST \
