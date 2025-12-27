@@ -19,23 +19,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch supported models from GitHub Docs
-        id: fetch_models
+      - name: Fetch documentation page
+        id: fetch_docs
         run: |
-          URL="https://docs.github.com/en/copilot/reference/ai-models/supported-models"
-          # Fetch HTML, find the table, extract model names from the first column of each row.
-          # This is brittle and may break if the page structure changes significantly.
-          # It looks for the first table, skips the header, and grabs the first `<td>` content.
-          MODELS=$(curl -s "$URL" | \
-            grep -A 1000 '<table' | \
-            grep -B 1000 '</table>' | \
-            sed -n '/<tbody>/,/<\/tbody>/p' | \
-            grep '<tr>' | \
-            sed -e 's/<\/td>.*//' -e 's/.*<td>//' | \
-            tr -d '[:space:]' | \
-            grep -vE '^$' | \
-            sort -u)
+          # Fetch the documentation page and store it
+          curl -s "https://docs.github.com/en/copilot/reference/ai-models/supported-models?versionId=free-pro-team%40latest&productId=copilot&restPage=reference%2Cai-models%2Csupported-models" > docs_page.html
+          echo "Documentation page saved to docs_page.html"
+
+      - name: Extract models using GitHub Models API
+        id: fetch_models
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read the documentation content
+          DOCS_CONTENT=$(cat docs_page.html)
           
+          # Use GitHub Models API to extract the supported models
+          MODELS_JSON=$(curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            "https://api.githubcopilot.com/chat/completions" \
+            -d "{
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": \"Extract all supported GitHub Copilot model names from this HTML page and return them as a JSON array of strings. Only include the model names (e.g., 'gpt-4o', 'claude-3.5-sonnet'). HTML content: ${DOCS_CONTENT}\"
+                }
+              ],
+              \"model\": \"gpt-4o\",
+              \"temperature\": 0.1,
+              \"max_tokens\": 1000
+            }")
+          
+          echo "API Response:"
+          echo "$MODELS_JSON"
+          
+          # Extract the model names from the response
+          MODELS=$(echo "$MODELS_JSON" | jq -r '.choices[0].message.content' | jq -r '.[]' | sort -u)
+
           echo "Fetched Models:"
           echo "$MODELS"
 
