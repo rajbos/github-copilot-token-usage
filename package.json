@@ -65,5 +65,8 @@
     "eslint": "^9.39.2",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "jsdom": "^27.4.0"
   }
 }

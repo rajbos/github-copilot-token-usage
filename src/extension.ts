@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import tokenEstimatorsData from './tokenEstimators.json';
+import modelPricingData from './modelPricing.json';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -11,6 +13,12 @@ interface TokenUsageStats {
 
 interface ModelUsage {
 	[modelName: string]: number;
+}
+
+interface ModelPricing {
+	inputCostPerMillion: number;
+	outputCostPerMillion: number;
+	category?: string;
 }
 
 interface DetailedStats {
@@ -23,6 +31,7 @@ interface DetailedStats {
 		co2: number;
 		treesEquivalent: number;
 		waterUsage: number;
+		estimatedCost: number;
 	};
 	month: {
 		tokens: number;
@@ -33,6 +42,7 @@ interface DetailedStats {
 		co2: number;
 		treesEquivalent: number;
 		waterUsage: number;
+		estimatedCost: number;
 	};
 	lastUpdated: Date;
 }
@@ -51,24 +61,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
-	private tokenEstimators: { [key: string]: number } = {
-		'gpt-4': 0.25,
-		'gpt-4.1': 0.25,
-		'gpt-4o': 0.25,
-		'gpt-4o-mini': 0.25,
-		'gpt-3.5-turbo': 0.25,
-		'gpt-5': 0.25,
-		'claude-sonnet-3.5': 0.24,
-		'claude-sonnet-3.7': 0.24,
-		'claude-sonnet-4': 0.24,
-		'claude-haiku': 0.24,
-		'gemini-2.5-pro': 0.25,
-		'o3-mini': 0.25,
-		'o4-mini': 0.25
-	};
+	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
 	private waterUsagePer1kTokens = 0.3; // liters of water per 1000 tokens, based on data center usage estimates
+
+	// Model pricing data - loaded from modelPricing.json
+	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
+	// Reference: Anthropic Claude Pricing (https://www.anthropic.com/pricing) - Standard rates
+	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
+	// These are reference prices for cost estimation purposes only
+	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing;
 
 	// Logging methods
 	public log(message: string): void {
@@ -233,6 +236,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown('## 🤖 GitHub Copilot Token Usage\n\n');
 			tooltip.appendMarkdown('### 📅 Today\n');
 			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.today.tokens.toLocaleString()}\n\n`);
+			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.today.estimatedCost.toFixed(4)}\n\n`);
 			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.today.co2.toFixed(2)}g\n\n`);
 			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.today.waterUsage.toFixed(3)}L\n\n`);
 			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.today.sessions}\n\n`);
@@ -240,12 +244,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.today.avgTokensPerSession.toLocaleString()}\n\n`);
 			tooltip.appendMarkdown('### 📊 This Month\n');
 			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.month.tokens.toLocaleString()}\n\n`);
+			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.month.estimatedCost.toFixed(4)}\n\n`);
 			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.month.co2.toFixed(2)}g\n\n`);
 			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.month.waterUsage.toFixed(3)}L\n\n`);
 			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.month.sessions}\n\n`);
 			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.month.avgInteractionsPerSession}\n\n`);
 			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.month.avgTokensPerSession.toLocaleString()}\n\n`);
 			tooltip.appendMarkdown('---\n\n');
+			tooltip.appendMarkdown('*Cost estimates based on OpenAI/Anthropic API pricing*\n\n');
 			tooltip.appendMarkdown('*Updates automatically every 5 minutes*');
 
 			this.statusBarItem.tooltip = tooltip;
@@ -383,6 +389,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayWater = (todayStats.tokens / 1000) * this.waterUsagePer1kTokens;
 		const monthWater = (monthStats.tokens / 1000) * this.waterUsagePer1kTokens;
 
+		const todayCost = this.calculateEstimatedCost(todayStats.modelUsage);
+		const monthCost = this.calculateEstimatedCost(monthStats.modelUsage);
+
 		const result: DetailedStats = {
 			today: {
 				tokens: todayStats.tokens,
@@ -392,7 +401,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelUsage: todayStats.modelUsage,
 				co2: todayCo2,
 				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
-				waterUsage: todayWater
+				waterUsage: todayWater,
+				estimatedCost: todayCost
 			},
 			month: {
 				tokens: monthStats.tokens,
@@ -402,7 +412,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelUsage: monthStats.modelUsage,
 				co2: monthCo2,
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
-				waterUsage: monthWater
+				waterUsage: monthWater,
+				estimatedCost: monthCost
 			},
 			lastUpdated: now
 		};
@@ -506,6 +517,46 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async getModelUsageFromSessionCached(sessionFile: string, mtime: number): Promise<ModelUsage> {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
 		return sessionData.modelUsage;
+	}
+
+	/**
+	 * Calculate estimated cost in USD based on model usage
+	 * Assumes 50/50 split between input and output tokens for estimation
+	 * @param modelUsage Object with model names as keys and token counts as values
+	 * @returns Estimated cost in USD
+	 */
+	private calculateEstimatedCost(modelUsage: ModelUsage): number {
+		let totalCost = 0;
+
+		for (const [model, tokens] of Object.entries(modelUsage)) {
+			const pricing = this.modelPricing[model];
+			
+			if (pricing) {
+				// Assume 50/50 split between input and output tokens
+				// This is a simplification since we don't track them separately
+				const inputTokens = tokens * 0.5;
+				const outputTokens = tokens * 0.5;
+				
+				const inputCost = (inputTokens / 1_000_000) * pricing.inputCostPerMillion;
+				const outputCost = (outputTokens / 1_000_000) * pricing.outputCostPerMillion;
+				
+				totalCost += inputCost + outputCost;
+			} else {
+				// Fallback for models without pricing data - use GPT-4o-mini as default
+				const fallbackPricing = this.modelPricing['gpt-4o-mini'];
+				const inputTokens = tokens * 0.5;
+				const outputTokens = tokens * 0.5;
+				
+				const inputCost = (inputTokens / 1_000_000) * fallbackPricing.inputCostPerMillion;
+				const outputCost = (outputTokens / 1_000_000) * fallbackPricing.outputCostPerMillion;
+				
+				totalCost += inputCost + outputCost;
+				
+				this.log(`No pricing data for model '${model}', using fallback pricing (gpt-4o-mini)`);
+			}
+		}
+
+		return totalCost;
 	}
 
 	private checkCopilotExtension(): void {
@@ -883,6 +934,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const projectedCo2 = calculateProjection(stats.month.co2);
 		const projectedTrees = calculateProjection(stats.month.treesEquivalent);
 		const projectedWater = calculateProjection(stats.month.waterUsage);
+		const projectedCost = calculateProjection(stats.month.estimatedCost);
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -1063,6 +1115,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 							<td class="month-value">${Math.round(projectedTokens).toLocaleString()}</td>
 						</tr>
 						<tr>
+							<td class="metric-label">💵 Est. Cost (USD)</td>
+							<td class="today-value">$${stats.today.estimatedCost.toFixed(4)}</td>
+							<td class="month-value">$${stats.month.estimatedCost.toFixed(4)}</td>
+							<td class="month-value">$${projectedCost.toFixed(2)}</td>
+						</tr>
+						<tr>
 							<td class="metric-label">Sessions</td>
 							<td class="today-value">${stats.today.sessions}</td>
 							<td class="month-value">${stats.month.sessions}</td>
@@ -1109,9 +1167,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						<span>Calculation & Estimates</span>
 					</h3>
 					<p style="font-size: 12px; color: #b3b3b3; margin-bottom: 8px;">
-						Token counts are estimated based on character count. CO₂, tree equivalents, and water usage are derived from these token estimates.
+						Token counts are estimated based on character count. CO₂, tree equivalents, water usage, and costs are derived from these token estimates.
 					</p>
 					<ul style="font-size: 12px; color: #b3b3b3; padding-left: 20px; list-style-position: inside; margin-top: 8px;">
+						<li><b>Cost Estimate:</b> Based on OpenAI API pricing (as of Dec 2025, <a href="https://openai.com/api/pricing/" style="color: #3794ff;">openai.com/api/pricing</a>) and standard Anthropic rates. Assumes 50/50 split between input and output tokens. <b>Note:</b> GitHub Copilot pricing may differ from direct API usage. These are reference estimates only.</li>
 						<li><b>CO₂ Estimate:</b> Based on ~${this.co2Per1kTokens}g of CO₂e per 1,000 tokens.</li>
 						<li><b>Tree Equivalent:</b> Represents the fraction of a single mature tree's annual CO₂ absorption (~${(this.co2AbsorptionPerTreePerYear / 1000).toFixed(1)} kg/year).</li>
 						<li><b>Water Estimate:</b> Based on ~${this.waterUsagePer1kTokens}L of water per 1,000 tokens for data center cooling and operations.</li>

@@ -1,0 +1,182 @@
+name: Check for Copilot Model Updates
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+        - .github/workflows/check-models.yml
+        - .github/scripts/scrape-models.sh
+        
+  schedule:
+    - cron: '11 17 * * 1' # Run every Monday at 5:11 PM UTC
+
+jobs:
+  check-models:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch documentation page
+        id: fetch_docs
+        run: |
+          # Run the scraping script
+          chmod +x .github/scripts/scrape-models.sh
+          .github/scripts/scrape-models.sh
+
+      - name: Upload scraped data as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraped-data
+          path: |
+            scraped-models.json
+            models.txt
+            page-content.html
+            scraper.log
+
+      - name: Extract models from scraped data
+        id: fetch_models
+        run: |
+          # Read the models from the file created by the scraping step
+          if [ ! -f models.txt ]; then
+            echo "Error: models.txt not found"
+            exit 1
+          fi
+          
+          MODELS=$(cat models.txt | sort -u)
+          
+          echo "=== Scraped Models from Documentation ==="
+          echo "$MODELS"
+          echo ""
+          echo "Count: $(echo "$MODELS" | wc -l) models"
+          echo ""
+          
+          if [ -z "$MODELS" ]; then
+            echo "Error: No models extracted"
+            exit 1
+          fi
+          
+          # Store models as a multiline output
+          {
+            echo "models_list<<EOF"
+            echo "$MODELS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check for missing models
+        id: check_missing
+        env:
+          FETCHED_MODELS: ${{ steps.fetch_models.outputs.models_list }}
+        run: |
+          # Load models from local JSON files
+          ESTIMATOR_MODELS=$(jq -r '.estimators | keys[]' src/tokenEstimators.json | sort -u)
+          PRICING_MODELS=$(jq -r '.pricing | keys[]' src/modelPricing.json | sort -u)
+
+          echo "Models in tokenEstimators.json:"
+          echo "$ESTIMATOR_MODELS"
+          echo "Models in modelPricing.json:"
+          echo "$PRICING_MODELS"
+
+          MISSING_ESTIMATORS=""
+          for model in $FETCHED_MODELS; do
+            if ! echo "$ESTIMATOR_MODELS" | grep -q "^${model}$"; then
+              MISSING_ESTIMATORS="$MISSING_ESTIMATORS\n- $model"
+            fi
+          done
+
+          MISSING_PRICING=""
+          for model in $FETCHED_MODELS; do
+            if ! echo "$PRICING_MODELS" | grep -q "^${model}$"; then
+              MISSING_PRICING="$MISSING_PRICING\n- $model"
+            fi
+          done
+
+          ISSUE_BODY=""
+          NEEDS_UPDATE="false"
+
+          if [ -n "$MISSING_ESTIMATORS" ]; then
+            NEEDS_UPDATE="true"
+            ISSUE_BODY="$ISSUE_BODY### 🚨 Missing Models in \`tokenEstimators.json\`\nThe following models are listed in the GitHub Copilot documentation but are missing from \`src/tokenEstimators.json\`:\n$MISSING_ESTIMATORS\n\n"
+          fi
+
+          if [ -n "$MISSING_PRICING" ]; then
+            NEEDS_UPDATE="true"
+            ISSUE_BODY="$ISSUE_BODY### 💰 Missing Models in \`modelPricing.json\`\nThe following models are listed in the GitHub Copilot documentation but are missing from \`src/modelPricing.json\`:\n$MISSING_PRICING\n\n"
+          fi
+
+          if [ "$NEEDS_UPDATE" = "true" ]; then
+            ISSUE_BODY="$ISSUE_BODY**Action Required:**\nPlease update the JSON configuration files with the latest models.\n\n**Source:** [GitHub Copilot Supported Models](https://docs.github.com/en/copilot/reference/ai-models/supported-models)"
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            # Use a heredoc to handle multiline body
+            echo "issue_body<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$ISSUE_BODY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            
+            # Create step summary
+            echo "## ⚠️ Missing Models Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$MISSING_ESTIMATORS" ]; then
+              echo "### 🚨 Missing in \`tokenEstimators.json\`" >> $GITHUB_STEP_SUMMARY
+              echo -e "$MISSING_ESTIMATORS" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "$MISSING_PRICING" ]; then
+              echo "### 💰 Missing in \`modelPricing.json\`" >> $GITHUB_STEP_SUMMARY
+              echo -e "$MISSING_PRICING" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "**Action Required:** Update the JSON configuration files with the latest models." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "[View Documentation](https://docs.github.com/en/copilot/reference/ai-models/supported-models)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "✅ All models are up-to-date."
+            
+            # Create step summary
+            echo "## ✅ All Models Up-to-Date" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All models from the documentation are present in both:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`tokenEstimators.json\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`modelPricing.json\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create GitHub Issue if models are missing
+        if: steps.check_missing.outputs.needs_update == 'true'
+        uses: actions/github-script@v7
+        env:
+          ISSUE_BODY: ${{ steps.check_missing.outputs.issue_body }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueBody = process.env.ISSUE_BODY;
+            const { owner, repo } = context.repo;
+
+            // Check if a similar open issue already exists
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'maintenance',
+              creator: 'github-actions[bot]'
+            });
+
+            const title = '🤖 Action Required: Update Copilot Supported Models';
+            const existingIssue = issues.find(issue => issue.title === title);
+
+            if (existingIssue) {
+              console.log(`An open issue with the title "${title}" already exists. Skipping creation.`);
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title: title,
+                body: issueBody,
+                labels: ['maintenance', 'autogenerated']
+              });
+              console.log('Created a new GitHub issue for missing models.');
+            }
