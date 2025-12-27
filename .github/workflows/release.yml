@@ -59,8 +59,8 @@ jobs:
         VERSION="v${{ steps.package_version.outputs.package_version }}"
         echo "Creating tag: $VERSION"
         
-        # Check if tag already exists on remote
-        if git ls-remote --tags origin | grep -q "refs/tags/$VERSION$"; then
+        # Check if tag already exists on remote using exit code
+        if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
           echo "❌ Tag $VERSION already exists on remote!"
           echo "Please update the version in package.json or delete the existing tag."
           exit 1
@@ -71,7 +71,20 @@ jobs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git tag -a "$VERSION" -m "Release $VERSION"
         git push origin "$VERSION"
-        echo "✅ Tag $VERSION created and pushed"
+        
+        # Verify tag was created successfully on remote
+        echo "Verifying tag was created on remote..."
+        for i in {1..5}; do
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "✅ Tag $VERSION created and verified on remote"
+            exit 0
+          fi
+          echo "Waiting for tag to propagate (attempt $i/5)..."
+          sleep 2
+        done
+        
+        echo "❌ Failed to verify tag creation on remote"
+        exit 1
         
     - name: Extract version from tag
       id: extract_version
