@@ -28,18 +28,47 @@ const fs = require('fs');
     
     console.error('Content loaded, extracting models...');
     
-    // Save the page HTML for debugging
-    const pageContent = await page.content();
-    fs.writeFileSync('page-content.html', pageContent);
-    console.error('Saved page HTML to page-content.html');
-    
-    // Extract model names from the tables
+    // Extract model names from the specific section
     const models = await page.evaluate(() => {
       const modelNames = [];
       
-      // Find all tables on the page
-      const tables = document.querySelectorAll('table');
-      console.error(`Found ${tables.length} tables`);
+      // Find the "Supported AI models in Copilot" section
+      const headings = Array.from(document.querySelectorAll('h2, h3'));
+      const targetHeading = headings.find(h => h.textContent.includes('Supported AI models in Copilot'));
+      
+      if (!targetHeading) {
+        console.error('ERROR: Could not find "Supported AI models in Copilot" heading');
+        return [];
+      }
+      
+      console.error('Found target heading:', targetHeading.textContent);
+      
+      // Get the content section that contains this heading
+      let contentSection = targetHeading.closest('div[class*="content"]') || targetHeading.parentElement;
+      console.error('Content section found:', contentSection ? 'yes' : 'no');
+      
+      // Find all tables within this section (or after the heading)
+      let tables = [];
+      let currentElement = targetHeading.nextElementSibling;
+      
+      // Traverse siblings until we hit another h2 or run out of elements
+      while (currentElement) {
+        if (currentElement.tagName === 'H2') {
+          break; // Stop at the next major section
+        }
+        
+        if (currentElement.tagName === 'TABLE') {
+          tables.push(currentElement);
+        } else if (currentElement.querySelectorAll) {
+          // Check for tables within this element
+          const nestedTables = currentElement.querySelectorAll('table');
+          tables.push(...nestedTables);
+        }
+        
+        currentElement = currentElement.nextElementSibling;
+      }
+      
+      console.error(`Found ${tables.length} tables in the target section`);
       
       tables.forEach((table, tableIndex) => {
         const rows = table.querySelectorAll('tbody tr');
@@ -62,6 +91,29 @@ const fs = require('fs');
       // Remove duplicates
       return [...new Set(modelNames)];
     });
+    
+    // Save only the relevant section HTML for debugging
+    const relevantHTML = await page.evaluate(() => {
+      const headings = Array.from(document.querySelectorAll('h2, h3'));
+      const targetHeading = headings.find(h => h.textContent.includes('Supported AI models in Copilot'));
+      
+      if (!targetHeading) {
+        return '<p>Could not find target section</p>';
+      }
+      
+      let html = '<h2>' + targetHeading.textContent + '</h2>\n';
+      let currentElement = targetHeading.nextElementSibling;
+      
+      while (currentElement && currentElement.tagName !== 'H2') {
+        html += currentElement.outerHTML + '\n';
+        currentElement = currentElement.nextElementSibling;
+      }
+      
+      return html;
+    });
+    
+    fs.writeFileSync('page-content.html', relevantHTML);
+    console.error('Saved relevant section HTML to page-content.html');
     
     console.error(`Extracted ${models.length} unique models`);
     

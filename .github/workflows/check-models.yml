@@ -144,9 +144,33 @@ jobs:
             echo "issue_body<<EOF" >> $GITHUB_OUTPUT
             echo -e "$ISSUE_BODY" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
+            
+            # Create step summary
+            echo "## ⚠️ Missing Models Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$MISSING_ESTIMATORS" ]; then
+              echo "### 🚨 Missing in \`tokenEstimators.json\`" >> $GITHUB_STEP_SUMMARY
+              echo -e "$MISSING_ESTIMATORS" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "$MISSING_PRICING" ]; then
+              echo "### 💰 Missing in \`modelPricing.json\`" >> $GITHUB_STEP_SUMMARY
+              echo -e "$MISSING_PRICING" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "**Action Required:** Update the JSON configuration files with the latest models." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "[View Documentation](https://docs.github.com/en/copilot/reference/ai-models/supported-models)" >> $GITHUB_STEP_SUMMARY
           else
             echo "needs_update=false" >> $GITHUB_OUTPUT
             echo "✅ All models are up-to-date."
+            
+            # Create step summary
+            echo "## ✅ All Models Up-to-Date" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All models from the documentation are present in both:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`tokenEstimators.json\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`modelPricing.json\`" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Create GitHub Issue if models are missing
