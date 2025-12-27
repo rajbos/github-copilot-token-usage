@@ -33,6 +33,17 @@ jobs:
         node-version: '20.x'
         cache: 'npm'
         
+    - name: Determine trigger type
+      id: trigger_type
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "is_manual=true" >> $GITHUB_OUTPUT
+          echo "Triggered manually via workflow_dispatch"
+        else
+          echo "is_manual=false" >> $GITHUB_OUTPUT
+          echo "Triggered by tag push"
+        fi
+        
     - name: Extract version from package.json
       id: package_version
       run: |
@@ -41,7 +52,7 @@ jobs:
         echo "Package version: $PACKAGE_VERSION"
         
     - name: Create tag for manual trigger
-      if: github.event_name == 'workflow_dispatch' && inputs.create_tag == true
+      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -65,7 +76,7 @@ jobs:
     - name: Extract version from tag
       id: extract_version
       run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+        if [ "${{ steps.trigger_type.outputs.is_manual }}" == "true" ]; then
           # For manual triggers, use package.json version
           TAG_VERSION="${{ steps.package_version.outputs.package_version }}"
         else
@@ -89,7 +100,7 @@ jobs:
     - name: Determine tag name
       id: tag_name
       run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+        if [ "${{ steps.trigger_type.outputs.is_manual }}" == "true" ]; then
           TAG_NAME="v${{ steps.extract_version.outputs.tag_version }}"
         else
           TAG_NAME="${{ github.ref_name }}"
