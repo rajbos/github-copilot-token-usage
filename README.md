@@ -71,6 +71,33 @@ This caching significantly reduces the time needed for periodic updates, especia
    npx vsce package
    ```
 
+### Running the Extension Locally
+
+To test and debug the extension in a local VS Code environment:
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start watch mode (automatically recompiles on file changes):
+   ```bash
+   npm run watch
+   ```
+
+3. In VS Code, press **F5** to launch the Extension Development Host
+   - This opens a new VS Code window with the extension running
+   - The original window shows debug output and allows you to set breakpoints
+
+4. In the Extension Development Host window:
+   - The extension will be active and you'll see the token tracker in the status bar
+   - Any changes you make to the code will be automatically compiled (thanks to watch mode)
+   - Reload the Extension Development Host window (Ctrl+R or Cmd+R) to see your changes
+
+5. To view console logs and debug information:
+   - In the Extension Development Host window, open Developer Tools: **Help > Toggle Developer Tools**
+   - Check the Console tab for any `console.log` output from the extension
+
 ### Available Scripts
 
 - `npm run lint` - Run ESLint
