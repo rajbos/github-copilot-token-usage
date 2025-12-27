@@ -26,6 +26,21 @@ jobs:
           curl -s "https://docs.github.com/en/copilot/reference/ai-models/supported-models?versionId=free-pro-team%40latest&productId=copilot&restPage=reference%2Cai-models%2Csupported-models" > docs_page.html
           echo "Documentation page saved to docs_page.html"
 
+      - name: List available models from GitHub Models API
+        id: list_models
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get list of available models from GitHub Models API
+          MODELS_CATALOG=$(curl -L -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://models.github.ai/catalog/models)
+          
+          echo "Available models in GitHub Models API:"
+          echo "$MODELS_CATALOG" | jq -r '.[].id'
+
       - name: Extract models using GitHub Models API
         id: fetch_models
         env:
