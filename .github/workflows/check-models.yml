@@ -49,7 +49,7 @@ jobs:
             -H "Content-Type: application/json" \
             https://models.github.ai/inference/chat/completions \
             -d "{
-              \"model\": \"gpt-4o\",
+              \"model\": \"openai/gpt-4o-mini\",
               \"messages\": [
                 {
                   \"role\": \"user\",
