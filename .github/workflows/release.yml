@@ -41,16 +41,16 @@ jobs:
         echo "Package version: $PACKAGE_VERSION"
         
     - name: Create tag for manual trigger
-      if: github.event_name == 'workflow_dispatch' && inputs.create_tag == 'true'
+      if: github.event_name == 'workflow_dispatch' && inputs.create_tag == true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         VERSION="v${{ steps.package_version.outputs.package_version }}"
         echo "Creating tag: $VERSION"
         
-        # Check if tag already exists
-        if git rev-parse "$VERSION" >/dev/null 2>&1; then
-          echo "❌ Tag $VERSION already exists!"
+        # Check if tag already exists on remote
+        if git ls-remote --tags origin | grep -q "refs/tags/$VERSION$"; then
+          echo "❌ Tag $VERSION already exists on remote!"
           echo "Please update the version in package.json or delete the existing tag."
           exit 1
         fi
@@ -85,6 +85,17 @@ jobs:
           exit 1
         fi
         echo "✅ Version check passed: ${{ steps.extract_version.outputs.tag_version }}"
+        
+    - name: Determine tag name
+      id: tag_name
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          TAG_NAME="v${{ steps.extract_version.outputs.tag_version }}"
+        else
+          TAG_NAME="${{ github.ref_name }}"
+        fi
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "Tag name: $TAG_NAME"
         
     - name: Install dependencies
       run: npm ci
@@ -144,29 +155,16 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Determine the tag name based on trigger type
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          TAG_NAME="v${{ steps.extract_version.outputs.tag_version }}"
-        else
-          TAG_NAME="${{ github.ref_name }}"
-        fi
-        
-        echo "Creating release for tag: $TAG_NAME"
+        echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
         
         # Create release with notes and upload VSIX file
-        gh release create "$TAG_NAME" \
+        gh release create "${{ steps.tag_name.outputs.tag_name }}" \
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes "${{ steps.release_notes.outputs.notes }}" \
           ./${{ steps.vsix_filename.outputs.vsix_file }}
         
     - name: Release Summary
       run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          TAG_NAME="v${{ steps.extract_version.outputs.tag_version }}"
-        else
-          TAG_NAME="${{ github.ref_name }}"
-        fi
-        
         echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!"
         echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}"
-        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/$TAG_NAME"
+        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag_name.outputs.tag_name }}"
