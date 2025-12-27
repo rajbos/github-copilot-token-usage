@@ -75,14 +75,25 @@ const fs = require('fs');
         console.error(`Table ${tableIndex}: Found ${rows.length} rows`);
         
         rows.forEach((row, rowIndex) => {
-          const cells = row.querySelectorAll('td');
-          if (cells.length > 0) {
-            // Get text from first cell and clean it
-            let text = cells[0].textContent.trim();
+          // Look for the row header (th with scope="row") which contains the model name
+          const rowHeader = row.querySelector('th[scope="row"]');
+          if (rowHeader) {
+            let text = rowHeader.textContent.trim();
             console.error(`Table ${tableIndex}, Row ${rowIndex}: "${text}"`);
             
             if (text && text.length > 0) {
               modelNames.push(text);
+            }
+          } else {
+            // Fallback to first td if no row header exists
+            const cells = row.querySelectorAll('td');
+            if (cells.length > 0) {
+              let text = cells[0].textContent.trim();
+              console.error(`Table ${tableIndex}, Row ${rowIndex} (fallback): "${text}"`);
+              
+              if (text && text.length > 0) {
+                modelNames.push(text);
+              }
             }
           }
         });
