@@ -40,6 +40,7 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
   - `CopilotTokenTracker`: The main class.
   - `calculateDetailedStats()`: The primary data aggregation method.
   - `getDetailsHtml()`: The method responsible for rendering the webview's HTML content. All styling is inlined within this method's template string.
-  - `tokenEstimators`: A critical class property. To add or modify token calculation for a model, this object must be updated.
+- **`src/tokenEstimators.json`**: Character-to-token ratio estimators for different AI models. To add or modify token estimation for a model, update this file.
+- **`src/modelPricing.json`**: Model pricing data with input/output costs per million tokens. Includes metadata about pricing sources and last update date. To update pricing, modify this file.
 - **`package.json`**: Defines activation events, commands, and build scripts.
-- **`esbuild.js`**: The build script that bundles the TypeScript source.
+- **`esbuild.js`**: The build script that bundles the TypeScript source and JSON data files.

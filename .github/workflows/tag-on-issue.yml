@@ -1,0 +1,23 @@
+name: Tag on New Issue
+
+on:
+  issues:
+    types: [opened]
+
+permissions: 
+    contents: read
+
+jobs:
+  tag-user:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Tag user on new issue
+        uses: devops-actions/issue-comment-tag@ec5e2b8d5f031330ff19bf4ee5b5252b1176995a # v0.1.8
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          team: ${{ vars.TAG_USER }}
+          issue: ${{ github.event.issue.number }}
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.repository }}
