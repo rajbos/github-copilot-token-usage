@@ -30,7 +30,7 @@ jobs:
       - name: List available models from GitHub Models API
         id: list_models
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           # Get list of available models from GitHub Models API
           MODELS_CATALOG=$(curl -L -s \
@@ -45,7 +45,7 @@ jobs:
       - name: Extract models using GitHub Models API
         id: fetch_models
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -eo pipefail
           
