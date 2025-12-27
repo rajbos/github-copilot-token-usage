@@ -23,11 +23,51 @@ jobs:
       - name: Fetch documentation page
         id: fetch_docs
         run: |
-          # Fetch the documentation page and store it (follow redirects)
-          curl -L -s "https://docs.github.com/en/copilot/reference/ai-models/supported-models?versionId=free-pro-team%40latest&productId=copilot&restPage=reference%2Cai-models%2Csupported-models" > docs_page.html
-          echo "Documentation page saved to docs_page.html"
-          echo "First 500 characters of HTML:"
-          head -c 500 docs_page.html
+          # Install puppeteer for browser-based scraping
+          npm install puppeteer
+          
+          # Create a Node.js script to scrape the page with JavaScript rendering
+          cat > scrape.js << 'SCRAPE_EOF'
+          const puppeteer = require('puppeteer');
+          
+          (async () => {
+            const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            
+            await page.goto('https://docs.github.com/en/copilot/reference/ai-models/supported-models', {
+              waitUntil: 'networkidle2',
+              timeout: 30000
+            });
+            
+            // Wait for the table to load
+            await page.waitForSelector('table', { timeout: 10000 });
+            
+            // Extract model names from the first column of the table
+            const models = await page.evaluate(() => {
+              const rows = document.querySelectorAll('table tbody tr');
+              const modelNames = [];
+              rows.forEach(row => {
+                const firstCell = row.querySelector('td:first-child');
+                if (firstCell) {
+                  const text = firstCell.textContent.trim();
+                  if (text) modelNames.push(text);
+                }
+              });
+              return modelNames;
+            });
+            
+            console.log(JSON.stringify(models));
+            await browser.close();
+          })();
+          SCRAPE_EOF
+          
+          # Run the script and capture output
+          MODELS_JSON=$(node scrape.js)
+          echo "Scraped models: $MODELS_JSON"
+          
+          # Store the models
+          echo "$MODELS_JSON" | jq -r '.[]' > models.txt
+          echo "Models extracted and saved to models.txt"
 
       - name: List available models from GitHub Models API
         id: list_models
@@ -44,76 +84,25 @@ jobs:
           echo "Available models in GitHub Models API:"
           echo "$MODELS_CATALOG" | jq -r '.[].id'
 
-      - name: Extract models using GitHub Models API
+      - name: Extract models from scraped data
         id: fetch_models
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          set -eo pipefail
-          
-          # The page is a React app, so let's extract the JSON data from the script tag instead
-          # Look for the __NEXT_DATA__ script tag that contains the page data
-          DOCS_CONTENT=$(cat docs_page.html | grep -o '__NEXT_DATA__.*' | head -c 50000 || cat docs_page.html | head -c 50000)
-          
-          echo "Length of DOCS_CONTENT: ${#DOCS_CONTENT}"
-          echo "First 500 characters:"
-          echo "$DOCS_CONTENT" | head -c 500
-          
-          if [ -z "$DOCS_CONTENT" ]; then
-            echo "Error: Documentation content is empty"
+          # Read the models from the file created by the scraping step
+          if [ ! -f models.txt ]; then
+            echo "Error: models.txt not found"
             exit 1
           fi
           
-          # Create a simpler prompt asking the model to extract from the page data
-          echo "Creating request.json..."
-          jq -n \
-            --arg content "$DOCS_CONTENT" \
-            '{
-              model: "openai/gpt-4o-mini",
-              messages: [{
-                role: "user",
-                content: ("Extract all GitHub Copilot model names from this page data. Look for model identifiers like gpt-4o, gpt-4o-mini, claude-3.5-sonnet, o1, o1-mini, o3-mini, gemini-2.0-flash-exp, etc. Return ONLY a JSON array of model name strings in this exact format: [\"model1\", \"model2\", \"model3\"]. Do not include any explanation or markdown, just the JSON array. Content: " + $content)
-              }],
-              temperature: 0.1,
-              max_tokens: 500
-            }' > request.json
+          MODELS=$(cat models.txt | sort -u)
           
-          echo "request.json created successfully"
-          echo "Request size: $(wc -c < request.json) bytes"
-          
-          # Use GitHub Models API to extract the supported models
-          MODELS_JSON=$(curl -L -s -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -H "Content-Type: application/json" \
-            https://models.github.ai/inference/chat/completions \
-            --data-binary @request.json)
-          
-          echo "API Response:"
-          echo "$MODELS_JSON"
-          
-          if [ -z "$MODELS_JSON" ]; then
-            echo "Error: API returned empty response"
-            exit 1
-          fi
-          
-          # Extract the message content from the response
-          MESSAGE_CONTENT=$(echo "$MODELS_JSON" | jq -r '.choices[0].message.content')
-          echo "Message from model:"
-          echo "$MESSAGE_CONTENT"
-          
-          # Try to parse the message content as JSON array
-          MODELS=$(echo "$MESSAGE_CONTENT" | jq -r '.[]' 2>/dev/null | sort -u || echo "")
-
           echo "Fetched Models:"
           echo "$MODELS"
-
+          
           if [ -z "$MODELS" ]; then
-            echo "Error: No models extracted from API response"
+            echo "Error: No models extracted"
             exit 1
           fi
-
+          
           # Store models as a multiline output
           {
             echo "models_list<<EOF"
