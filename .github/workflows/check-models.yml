@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
   push:
     paths:
-        - .github/workflows/check-models.yml       
+        - .github/workflows/check-models.yml
+        - .github/scripts/scrape-models.sh
+        
   schedule:
     - cron: '11 17 * * 1' # Run every Monday at 5:11 PM UTC
 
