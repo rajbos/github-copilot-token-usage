@@ -58,3 +58,41 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "`n❌ Publishing failed. Please check the error messages above." -ForegroundColor Red
     exit 1
 }
+
+# 4. Validate that a GitHub release was created
+Write-Host "`nValidating GitHub release..." -ForegroundColor Cyan
+
+# Get the version from package.json
+$packageJson = Get-Content -Path "package.json" -Raw | ConvertFrom-Json
+$version = $packageJson.version
+$expectedTag = "v$version"
+
+Write-Host "Checking for release with tag: $expectedTag" -ForegroundColor Gray
+
+# Query GitHub API for the release
+$owner = "rajbos"
+$repo = "github-copilot-token-usage"
+$apiUrl = "https://api.github.com/repos/$owner/$repo/releases/tags/$expectedTag"
+
+try {
+    $release = Invoke-RestMethod -Uri $apiUrl -Method Get -Headers @{
+        "Accept" = "application/vnd.github+json"
+        "User-Agent" = "PowerShell-Script"
+    }
+    
+    if ($release.tag_name -eq $expectedTag) {
+        Write-Host "✅ GitHub release validated successfully!" -ForegroundColor Green
+        Write-Host "Release URL: $($release.html_url)" -ForegroundColor Gray
+    } else {
+        Write-Host "❌ Release tag mismatch. Expected: $expectedTag, Found: $($release.tag_name)" -ForegroundColor Red
+        exit 1
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode -eq 404) {
+        Write-Host "❌ GitHub release with tag '$expectedTag' not found!" -ForegroundColor Red
+        Write-Host "Please create a release at: https://github.com/$owner/$repo/releases/new" -ForegroundColor Yellow
+    } else {
+        Write-Host "❌ Failed to validate GitHub release: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    exit 1
+}
