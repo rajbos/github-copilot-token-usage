@@ -1,0 +1,67 @@
+name: Sync Release Notes
+
+on:
+  workflow_dispatch:  # Manual trigger
+  release:
+    types: [published, edited]  # Automatic trigger when releases are published or edited
+
+jobs:
+  sync-release-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Need write permission to update CHANGELOG.md
+      
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      with:
+        fetch-depth: 0  # Fetch all history so we can work with all releases
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: '20.x'
+        
+    - name: Sync GitHub release notes to CHANGELOG.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Run the sync script from the scripts directory
+        node scripts/sync-changelog.js
+        
+    - name: Check for changes
+      id: changes
+      run: |
+        if git diff --quiet CHANGELOG.md; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "No changes detected in CHANGELOG.md"
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Changes detected in CHANGELOG.md"
+        fi
+        
+    - name: Commit and push changes
+      if: steps.changes.outputs.changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add CHANGELOG.md
+        git commit -m "docs: sync CHANGELOG.md with GitHub release notes
+
+        This commit automatically updates the CHANGELOG.md file to match
+        the release notes from GitHub releases, ensuring consistency
+        between local documentation and published releases."
+        git push
+        
+    - name: Summary
+      run: |
+        if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
+          echo "✅ CHANGELOG.md has been successfully updated with GitHub release notes"
+        else
+          echo "ℹ️ CHANGELOG.md was already up to date with GitHub release notes"
+        fi
