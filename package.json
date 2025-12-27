@@ -5,7 +5,7 @@
   "version": "0.0.3",
   "publisher": "RobBos",
   "engines": {
-    "vscode": "^1.106.0"
+    "vscode": "^1.107.0"
   },
   "repository": {
     "type": "git",
