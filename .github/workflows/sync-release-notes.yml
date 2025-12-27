@@ -5,6 +5,9 @@ on:
   release:
     types: [published, edited]  # Automatic trigger when releases are published or edited
 
+permissions:
+  contents: read
+
 jobs:
   sync-release-notes:
     runs-on: ubuntu-latest
