@@ -52,7 +52,7 @@ jobs:
           set -eo pipefail
           
           # Read the documentation content and extract just the table section
-          DOCS_CONTENT=$(cat docs_page.html | grep -A 500 '<table' | grep -B 500 '</table>' | head -n 100)
+          DOCS_CONTENT=$(cat docs_page.html | grep -A 500 '<table' 2>/dev/null | grep -B 500 '</table>' 2>/dev/null | head -n 100)
           
           if [ -z "$DOCS_CONTENT" ]; then
             echo "Error: Documentation content is empty"
