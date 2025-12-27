@@ -82,7 +82,10 @@ const fs = require('fs');
             console.error(`Table ${tableIndex}, Row ${rowIndex}: "${text}"`);
             
             if (text && text.length > 0) {
-              modelNames.push(text);
+              // Normalize model name: lowercase and replace spaces with dashes
+              const normalizedName = text.toLowerCase().replace(/\s+/g, '-');
+              console.error(`  Normalized: "${normalizedName}"`);
+              modelNames.push(normalizedName);
             }
           } else {
             // Fallback to first td if no row header exists
@@ -92,7 +95,10 @@ const fs = require('fs');
               console.error(`Table ${tableIndex}, Row ${rowIndex} (fallback): "${text}"`);
               
               if (text && text.length > 0) {
-                modelNames.push(text);
+                // Normalize model name: lowercase and replace spaces with dashes
+                const normalizedName = text.toLowerCase().replace(/\s+/g, '-');
+                console.error(`  Normalized: "${normalizedName}"`);
+                modelNames.push(normalizedName);
               }
             }
           }
