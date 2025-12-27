@@ -44,8 +44,7 @@ jobs:
                 timeout: 60000
               });
               
-              console.error('Waiting for content to load...');
-              await page.waitForTimeout(5000);
+              console.error('Content loaded, extracting models...');
               
               // Extract model names from the tables
               const models = await page.evaluate(() => {
