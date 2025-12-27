@@ -25,93 +25,19 @@ jobs:
       - name: Fetch documentation page
         id: fetch_docs
         run: |
-          # Install puppeteer for browser-based scraping
-          npm install puppeteer
-          
-          # Create a Node.js script to scrape the page with JavaScript rendering
-          cat > scrape.js << 'SCRAPE_EOF'
-          const puppeteer = require('puppeteer');
-          
-          (async () => {
-            try {
-              const browser = await puppeteer.launch({ 
-                headless: 'new', 
-                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-              });
-              const page = await browser.newPage();
-              
-              console.error('Navigating to page...');
-              await page.goto('https://docs.github.com/en/copilot/reference/ai-models/supported-models', {
-                waitUntil: 'networkidle0',
-                timeout: 60000
-              });
-              
-              console.error('Waiting for content to load...');
-              await page.waitForTimeout(5000);
-              
-              // Extract model names from the tables
-              const models = await page.evaluate(() => {
-                const modelNames = [];
-                
-                // Find all tables on the page
-                const tables = document.querySelectorAll('table');
-                console.error(`Found ${tables.length} tables`);
-                
-                tables.forEach((table, tableIndex) => {
-                  const rows = table.querySelectorAll('tbody tr');
-                  console.error(`Table ${tableIndex}: Found ${rows.length} rows`);
-                  
-                  rows.forEach((row, rowIndex) => {
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length > 0) {
-                      // Get text from first cell and clean it
-                      let text = cells[0].textContent.trim();
-                      console.error(`Table ${tableIndex}, Row ${rowIndex}: "${text}"`);
-                      
-                      if (text && text.length > 0) {
-                        modelNames.push(text);
-                      }
-                    }
-                  });
-                });
-                
-                // Remove duplicates
-                return [...new Set(modelNames)];
-              });
-              
-              console.error(`Extracted ${models.length} unique models`);
-              console.log(JSON.stringify(models));
-              await browser.close();
-            } catch (error) {
-              console.error('Error:', error.message);
-              process.exit(1);
-            }
-          })();
-          SCRAPE_EOF
-          
-          # Run the script and capture output
-          MODELS_JSON=$(node scrape.js 2>&1 | tee /dev/stderr | tail -n 1)
-          echo "Scraped models JSON: $MODELS_JSON"
-          
-          # Store the models, one per line
-          echo "$MODELS_JSON" | jq -r '.[]' > models.txt
-          echo "Models extracted:"
-          cat models.txt
+          # Run the scraping script
+          chmod +x .github/scripts/scrape-models.sh
+          .github/scripts/scrape-models.sh
 
-      - name: List available models from GitHub Models API
-        id: list_models
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          # Get list of available models from GitHub Models API
-          MODELS_CATALOG=$(curl -L -s \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://models.github.ai/catalog/models)
-          
-          echo "Available models in GitHub Models API:"
-          echo "$MODELS_CATALOG" | jq -r '.[].id'
+      - name: Upload scraped data as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraped-data
+          path: |
+            scraped-models.json
+            models.txt
+            page-content.html
+            scraper.log
 
       - name: Extract models from scraped data
         id: fetch_models
@@ -124,8 +50,11 @@ jobs:
           
           MODELS=$(cat models.txt | sort -u)
           
-          echo "Fetched Models:"
+          echo "=== Scraped Models from Documentation ==="
           echo "$MODELS"
+          echo ""
+          echo "Count: $(echo "$MODELS" | wc -l) models"
+          echo ""
           
           if [ -z "$MODELS" ]; then
             echo "Error: No models extracted"
@@ -187,9 +116,33 @@ jobs:
             echo "issue_body<<EOF" >> $GITHUB_OUTPUT
             echo -e "$ISSUE_BODY" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
+            
+            # Create step summary
+            echo "## ⚠️ Missing Models Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$MISSING_ESTIMATORS" ]; then
+              echo "### 🚨 Missing in \`tokenEstimators.json\`" >> $GITHUB_STEP_SUMMARY
+              echo -e "$MISSING_ESTIMATORS" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "$MISSING_PRICING" ]; then
+              echo "### 💰 Missing in \`modelPricing.json\`" >> $GITHUB_STEP_SUMMARY
+              echo -e "$MISSING_PRICING" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "**Action Required:** Update the JSON configuration files with the latest models." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "[View Documentation](https://docs.github.com/en/copilot/reference/ai-models/supported-models)" >> $GITHUB_STEP_SUMMARY
           else
             echo "needs_update=false" >> $GITHUB_OUTPUT
             echo "✅ All models are up-to-date."
+            
+            # Create step summary
+            echo "## ✅ All Models Up-to-Date" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All models from the documentation are present in both:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`tokenEstimators.json\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`modelPricing.json\`" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Create GitHub Issue if models are missing
