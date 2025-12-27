@@ -31,43 +31,70 @@ jobs:
           const puppeteer = require('puppeteer');
           
           (async () => {
-            const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
-            const page = await browser.newPage();
-            
-            await page.goto('https://docs.github.com/en/copilot/reference/ai-models/supported-models', {
-              waitUntil: 'networkidle2',
-              timeout: 30000
-            });
-            
-            // Wait for the table to load
-            await page.waitForSelector('table', { timeout: 10000 });
-            
-            // Extract model names from the first column of the table
-            const models = await page.evaluate(() => {
-              const rows = document.querySelectorAll('table tbody tr');
-              const modelNames = [];
-              rows.forEach(row => {
-                const firstCell = row.querySelector('td:first-child');
-                if (firstCell) {
-                  const text = firstCell.textContent.trim();
-                  if (text) modelNames.push(text);
-                }
+            try {
+              const browser = await puppeteer.launch({ 
+                headless: 'new', 
+                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
               });
-              return modelNames;
-            });
-            
-            console.log(JSON.stringify(models));
-            await browser.close();
+              const page = await browser.newPage();
+              
+              console.error('Navigating to page...');
+              await page.goto('https://docs.github.com/en/copilot/reference/ai-models/supported-models', {
+                waitUntil: 'networkidle0',
+                timeout: 60000
+              });
+              
+              console.error('Waiting for content to load...');
+              await page.waitForTimeout(5000);
+              
+              // Extract model names from the tables
+              const models = await page.evaluate(() => {
+                const modelNames = [];
+                
+                // Find all tables on the page
+                const tables = document.querySelectorAll('table');
+                console.error(`Found ${tables.length} tables`);
+                
+                tables.forEach((table, tableIndex) => {
+                  const rows = table.querySelectorAll('tbody tr');
+                  console.error(`Table ${tableIndex}: Found ${rows.length} rows`);
+                  
+                  rows.forEach((row, rowIndex) => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length > 0) {
+                      // Get text from first cell and clean it
+                      let text = cells[0].textContent.trim();
+                      console.error(`Table ${tableIndex}, Row ${rowIndex}: "${text}"`);
+                      
+                      if (text && text.length > 0) {
+                        modelNames.push(text);
+                      }
+                    }
+                  });
+                });
+                
+                // Remove duplicates
+                return [...new Set(modelNames)];
+              });
+              
+              console.error(`Extracted ${models.length} unique models`);
+              console.log(JSON.stringify(models));
+              await browser.close();
+            } catch (error) {
+              console.error('Error:', error.message);
+              process.exit(1);
+            }
           })();
           SCRAPE_EOF
           
           # Run the script and capture output
-          MODELS_JSON=$(node scrape.js)
-          echo "Scraped models: $MODELS_JSON"
+          MODELS_JSON=$(node scrape.js 2>&1 | tee /dev/stderr | tail -n 1)
+          echo "Scraped models JSON: $MODELS_JSON"
           
-          # Store the models
+          # Store the models, one per line
           echo "$MODELS_JSON" | jq -r '.[]' > models.txt
-          echo "Models extracted and saved to models.txt"
+          echo "Models extracted:"
+          cat models.txt
 
       - name: List available models from GitHub Models API
         id: list_models
