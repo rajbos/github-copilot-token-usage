@@ -23,9 +23,11 @@ jobs:
       - name: Fetch documentation page
         id: fetch_docs
         run: |
-          # Fetch the documentation page and store it
-          curl -s "https://docs.github.com/en/copilot/reference/ai-models/supported-models?versionId=free-pro-team%40latest&productId=copilot&restPage=reference%2Cai-models%2Csupported-models" > docs_page.html
+          # Fetch the documentation page and store it (follow redirects)
+          curl -L -s "https://docs.github.com/en/copilot/reference/ai-models/supported-models?versionId=free-pro-team%40latest&productId=copilot&restPage=reference%2Cai-models%2Csupported-models" > docs_page.html
           echo "Documentation page saved to docs_page.html"
+          echo "First 500 characters of HTML:"
+          head -c 500 docs_page.html
 
       - name: List available models from GitHub Models API
         id: list_models
@@ -84,8 +86,13 @@ jobs:
             exit 1
           fi
           
-          # Extract the model names from the response
-          MODELS=$(echo "$MODELS_JSON" | jq -r '.choices[0].message.content' | jq -r '.[]' | sort -u)
+          # Extract the message content from the response
+          MESSAGE_CONTENT=$(echo "$MODELS_JSON" | jq -r '.choices[0].message.content')
+          echo "Message from model:"
+          echo "$MESSAGE_CONTENT"
+          
+          # Try to parse the message content as JSON array
+          MODELS=$(echo "$MESSAGE_CONTENT" | jq -r '.[]' 2>/dev/null | sort -u || echo "")
 
           echo "Fetched Models:"
           echo "$MODELS"
