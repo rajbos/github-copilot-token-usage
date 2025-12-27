@@ -193,7 +193,7 @@ jobs:
 
       - name: Close GitHub Issue if all models are up-to-date
         if: steps.check_missing.outputs.needs_update == 'false'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
