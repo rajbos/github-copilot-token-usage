@@ -157,7 +157,7 @@ jobs:
 
       - name: Create GitHub Issue if models are missing
         if: steps.check_missing.outputs.needs_update == 'true'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           ISSUE_BODY: ${{ steps.check_missing.outputs.issue_body }}
         with:
@@ -193,7 +193,7 @@ jobs:
 
       - name: Close GitHub Issue if all models are up-to-date
         if: steps.check_missing.outputs.needs_update == 'false'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
