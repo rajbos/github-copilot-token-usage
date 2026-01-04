@@ -277,6 +277,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.detailsPanel.webview.html = this.getDetailsHtml(detailedStats);
 			}
 
+			// If the chart panel is open, update its content
+			if (this.chartPanel) {
+				const dailyStats = await this.calculateDailyStats();
+				this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+			}
+
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
 		} catch (error) {
 			this.error('Error updating token stats:', error);
@@ -953,7 +959,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			'copilotTokenDetails',
 			'GitHub Copilot Token Usage',
 			{
-				viewColumn: vscode.ViewColumn.Beside,
+				viewColumn: vscode.ViewColumn.One,
 				preserveFocus: true
 			},
 			{
@@ -998,7 +1004,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			'copilotTokenChart',
 			'Token Usage Over Time',
 			{
-				viewColumn: vscode.ViewColumn.Beside,
+				viewColumn: vscode.ViewColumn.One,
 				preserveFocus: true
 			},
 			{
@@ -1612,6 +1618,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				<div class="footer">
 					Day-by-day token usage for the current month
+					<br>
+					Last updated: ${new Date().toLocaleString()}
+					<br>
+					<em>Updates automatically every 5 minutes</em>
 					<br>
 					<button class="refresh-button" onclick="refreshChart()">
 						<span>🔄</span>
