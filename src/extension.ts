@@ -242,10 +242,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	public async updateTokenStats(): Promise<void> {
+	public async updateTokenStats(): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const detailedStats = await this.calculateDetailedStats();
+			const detailedStats = await this.calculateDetailedStats((completed, total) => {
+				const percentage = Math.round((completed / total) * 100);
+				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
+			});
 
 			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.month.tokens.toLocaleString()}`;
 
@@ -286,10 +289,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
+			return detailedStats;
 		} catch (error) {
 			this.error('Error updating token stats:', error);
 			this.statusBarItem.text = '$(error) Token Error';
 			this.statusBarItem.tooltip = 'Error calculating token usage';
+			return undefined;
 		}
 	}
 
@@ -334,7 +339,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 	}
 
-	private async calculateDetailedStats(): Promise<DetailedStats> {
+	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<DetailedStats> {
 		const now = new Date();
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -356,7 +361,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let cacheHits = 0;
 			let cacheMisses = 0;
 
-			for (const sessionFile of sessionFiles) {
+			for (let i = 0; i < sessionFiles.length; i++) {
+				const sessionFile = sessionFiles[i];
+				
+				if (progressCallback) {
+					progressCallback(i + 1, sessionFiles.length);
+				}
+
 				try {
 					const fileStats = fs.statSync(sessionFile);
 
@@ -967,8 +978,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Get detailed stats
-		const stats = await this.calculateDetailedStats();
+		// Get detailed stats (with progress in status bar)
+		const stats = await this.updateTokenStats();
+		if (!stats) {
+			return;
+		}
 
 		// Create a small webview panel
 		this.detailsPanel = vscode.window.createWebviewPanel(
@@ -1053,9 +1067,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		// Update token stats and refresh the webview content
-		await this.updateTokenStats();
-		const stats = await this.calculateDetailedStats();
-		this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+		const stats = await this.updateTokenStats();
+		if (stats) {
+			this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+		}
 	}
 
 	private async refreshChartPanel(): Promise<void> {
