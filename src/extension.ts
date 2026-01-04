@@ -50,6 +50,13 @@ interface DetailedStats {
 	lastUpdated: Date;
 }
 
+interface DailyTokenStats {
+	date: string; // YYYY-MM-DD format
+	tokens: number;
+	sessions: number;
+	interactions: number;
+}
+
 interface SessionFileCache {
 	tokens: number;
 	interactions: number;
@@ -67,6 +74,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
+	private chartPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -438,6 +446,59 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log(`Month: ${monthStats.interactions} total interactions / ${monthStats.sessions} sessions = ${result.month.avgInteractionsPerSession} avg`);
 
 		return result;
+	}
+
+	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
+		const now = new Date();
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		
+		// Map to store daily stats by date string (YYYY-MM-DD)
+		const dailyStatsMap = new Map<string, DailyTokenStats>();
+		
+		try {
+			const sessionFiles = await this.getCopilotSessionFiles();
+			this.log(`Processing ${sessionFiles.length} session files for daily chart stats`);
+			
+			for (const sessionFile of sessionFiles) {
+				try {
+					const fileStats = fs.statSync(sessionFile);
+					
+					// Only process files modified in the current month
+					if (fileStats.mtime >= monthStart) {
+						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
+						
+						// Get the date in YYYY-MM-DD format
+						const fileDate = new Date(fileStats.mtime);
+						const dateKey = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}-${String(fileDate.getDate()).padStart(2, '0')}`;
+						
+						// Initialize or update the daily stats
+						if (!dailyStatsMap.has(dateKey)) {
+							dailyStatsMap.set(dateKey, {
+								date: dateKey,
+								tokens: 0,
+								sessions: 0,
+								interactions: 0
+							});
+						}
+						
+						const dailyStats = dailyStatsMap.get(dateKey)!;
+						dailyStats.tokens += tokens;
+						dailyStats.sessions += 1;
+						dailyStats.interactions += interactions;
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
+				}
+			}
+		} catch (error) {
+			this.error('Error calculating daily stats:', error);
+		}
+		
+		// Convert map to array and sort by date
+		const dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		
+		return dailyStatsArray;
 	}
 
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
@@ -907,12 +968,57 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'refresh':
 					await this.refreshDetailsPanel();
 					break;
+				case 'showChart':
+					await this.showChart();
+					break;
 			}
 		});
 
 		// Handle panel disposal
 		this.detailsPanel.onDidDispose(() => {
 			this.detailsPanel = undefined;
+		});
+	}
+
+	public async showChart(): Promise<void> {
+		// If panel already exists, just reveal it
+		if (this.chartPanel) {
+			this.chartPanel.reveal();
+			return;
+		}
+
+		// Get daily stats
+		const dailyStats = await this.calculateDailyStats();
+
+		// Create webview panel
+		this.chartPanel = vscode.window.createWebviewPanel(
+			'copilotTokenChart',
+			'Token Usage Over Time',
+			{
+				viewColumn: vscode.ViewColumn.Beside,
+				preserveFocus: true
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false
+			}
+		);
+
+		// Set the HTML content
+		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+
+		// Handle messages from the webview
+		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshChartPanel();
+					break;
+			}
+		});
+
+		// Handle panel disposal
+		this.chartPanel.onDidDispose(() => {
+			this.chartPanel = undefined;
 		});
 	}
 
@@ -925,6 +1031,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		await this.updateTokenStats();
 		const stats = await this.calculateDetailedStats();
 		this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+	}
+
+	private async refreshChartPanel(): Promise<void> {
+		if (!this.chartPanel) {
+			return;
+		}
+
+		// Refresh the chart webview content
+		const dailyStats = await this.calculateDailyStats();
+		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
 	}
 
 	private getDetailsHtml(stats: DetailedStats): string {
@@ -1201,6 +1317,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						<span>🔄</span>
 						<span>Refresh Now</span>
 					</button>
+					<button class="refresh-button" onclick="showChart()" style="margin-left: 8px; background: #0e639c;">
+						<span>📈</span>
+						<span>Show Chart</span>
+					</button>
 				</div>
 			</div>
 
@@ -1210,6 +1330,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				function refreshData() {
 					// Send message to extension to refresh data
 					vscode.postMessage({ command: 'refresh' });
+				}
+
+				function showChart() {
+					// Send message to extension to show chart
+					vscode.postMessage({ command: 'showChart' });
 				}
 			</script>
 		</body>
@@ -1337,6 +1462,288 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return modelNames[model] || model;
 	}
 
+	private getChartHtml(dailyStats: DailyTokenStats[]): string {
+		// Prepare data for Chart.js
+		const labels = dailyStats.map(stat => stat.date);
+		const tokensData = dailyStats.map(stat => stat.tokens);
+		const sessionsData = dailyStats.map(stat => stat.sessions);
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<title>Token Usage Over Time</title>
+			<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+			<style>
+				* {
+					margin: 0;
+					padding: 0;
+					box-sizing: border-box;
+				}
+				body {
+					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+					background: #2d2d2d;
+					color: #cccccc;
+					padding: 16px;
+					line-height: 1.5;
+					min-width: 320px;
+				}
+				.container {
+					background: #3c3c3c;
+					border: 1px solid #5a5a5a;
+					border-radius: 8px;
+					padding: 16px;
+					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+				}
+				.header {
+					display: flex;
+					align-items: center;
+					gap: 8px;
+					margin-bottom: 16px;
+					padding-bottom: 12px;
+					border-bottom: 1px solid #5a5a5a;
+				}
+				.header-icon {
+					font-size: 20px;
+				}
+				.header-title {
+					font-size: 16px;
+					font-weight: 600;
+					color: #ffffff;
+				}
+				.chart-container {
+					position: relative;
+					height: 400px;
+					margin-bottom: 16px;
+				}
+				.footer {
+					margin-top: 12px;
+					padding-top: 12px;
+					border-top: 1px solid #5a5a5a;
+					text-align: center;
+					font-size: 11px;
+					color: #999999;
+					font-style: italic;
+				}
+				.refresh-button {
+					background: #0e639c;
+					border: 1px solid #1177bb;
+					color: #ffffff;
+					padding: 8px 16px;
+					border-radius: 4px;
+					cursor: pointer;
+					font-size: 12px;
+					font-weight: 500;
+					margin-top: 12px;
+					transition: background-color 0.2s;
+					display: inline-flex;
+					align-items: center;
+					gap: 6px;
+				}
+				.refresh-button:hover {
+					background: #1177bb;
+				}
+				.refresh-button:active {
+					background: #0a5a8a;
+				}
+				.stats-summary {
+					display: grid;
+					grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+					gap: 12px;
+					margin-bottom: 16px;
+				}
+				.stat-card {
+					background: #353535;
+					border: 1px solid #5a5a5a;
+					border-radius: 4px;
+					padding: 12px;
+					text-align: center;
+				}
+				.stat-label {
+					font-size: 11px;
+					color: #b3b3b3;
+					margin-bottom: 4px;
+				}
+				.stat-value {
+					font-size: 18px;
+					font-weight: 600;
+					color: #ffffff;
+				}
+			</style>
+		</head>
+		<body>
+			<div class="container">
+				<div class="header">
+					<span class="header-icon">📈</span>
+					<span class="header-title">Token Usage Over Time</span>
+				</div>
+				
+				<div class="stats-summary">
+					<div class="stat-card">
+						<div class="stat-label">Total Days</div>
+						<div class="stat-value">${dailyStats.length}</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">Total Tokens</div>
+						<div class="stat-value">${dailyStats.reduce((sum, stat) => sum + stat.tokens, 0).toLocaleString()}</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">Avg Tokens/Day</div>
+						<div class="stat-value">${dailyStats.length > 0 ? Math.round(dailyStats.reduce((sum, stat) => sum + stat.tokens, 0) / dailyStats.length).toLocaleString() : 0}</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">Total Sessions</div>
+						<div class="stat-value">${dailyStats.reduce((sum, stat) => sum + stat.sessions, 0)}</div>
+					</div>
+				</div>
+
+				<div class="chart-container">
+					<canvas id="tokenChart"></canvas>
+				</div>
+
+				<div class="footer">
+					Day-by-day token usage for the current month
+					<br>
+					<button class="refresh-button" onclick="refreshChart()">
+						<span>🔄</span>
+						<span>Refresh Chart</span>
+					</button>
+				</div>
+			</div>
+
+			<script>
+				const vscode = acquireVsCodeApi();
+
+				function refreshChart() {
+					vscode.postMessage({ command: 'refresh' });
+				}
+
+				// Chart.js configuration
+				const ctx = document.getElementById('tokenChart').getContext('2d');
+				const chart = new Chart(ctx, {
+					type: 'bar',
+					data: {
+						labels: ${JSON.stringify(labels)},
+						datasets: [
+							{
+								label: 'Tokens',
+								data: ${JSON.stringify(tokensData)},
+								backgroundColor: 'rgba(54, 162, 235, 0.6)',
+								borderColor: 'rgba(54, 162, 235, 1)',
+								borderWidth: 1,
+								yAxisID: 'y'
+							},
+							{
+								label: 'Sessions',
+								data: ${JSON.stringify(sessionsData)},
+								backgroundColor: 'rgba(255, 99, 132, 0.6)',
+								borderColor: 'rgba(255, 99, 132, 1)',
+								borderWidth: 1,
+								type: 'line',
+								yAxisID: 'y1'
+							}
+						]
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						interaction: {
+							mode: 'index',
+							intersect: false,
+						},
+						plugins: {
+							legend: {
+								position: 'top',
+								labels: {
+									color: '#cccccc',
+									font: {
+										size: 12
+									}
+								}
+							},
+							title: {
+								display: false
+							},
+							tooltip: {
+								backgroundColor: 'rgba(0, 0, 0, 0.8)',
+								titleColor: '#ffffff',
+								bodyColor: '#cccccc',
+								borderColor: '#5a5a5a',
+								borderWidth: 1,
+								padding: 10,
+								displayColors: true
+							}
+						},
+						scales: {
+							x: {
+								grid: {
+									color: '#5a5a5a'
+								},
+								ticks: {
+									color: '#cccccc',
+									font: {
+										size: 11
+									}
+								}
+							},
+							y: {
+								type: 'linear',
+								display: true,
+								position: 'left',
+								grid: {
+									color: '#5a5a5a'
+								},
+								ticks: {
+									color: '#cccccc',
+									font: {
+										size: 11
+									},
+									callback: function(value) {
+										return value.toLocaleString();
+									}
+								},
+								title: {
+									display: true,
+									text: 'Tokens',
+									color: '#cccccc',
+									font: {
+										size: 12,
+										weight: 'bold'
+									}
+								}
+							},
+							y1: {
+								type: 'linear',
+								display: true,
+								position: 'right',
+								grid: {
+									drawOnChartArea: false,
+								},
+								ticks: {
+									color: '#cccccc',
+									font: {
+										size: 11
+									}
+								},
+								title: {
+									display: true,
+									text: 'Sessions',
+									color: '#cccccc',
+									font: {
+										size: 12,
+										weight: 'bold'
+									}
+								}
+							}
+						}
+					}
+				});
+			</script>
+		</body>
+		</html>`;
+	}
+
 	public dispose(): void {
 		if (this.updateInterval) {
 			clearInterval(this.updateInterval);
@@ -1347,6 +1754,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		if (this.detailsPanel) {
 			this.detailsPanel.dispose();
+		}
+		if (this.chartPanel) {
+			this.chartPanel.dispose();
 		}
 		this.statusBarItem.dispose();
 		this.outputChannel.dispose();
@@ -1372,8 +1782,14 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showDetails();
 	});
 
+	// Register the show chart command
+	const showChartCommand = vscode.commands.registerCommand('copilot-token-tracker.showChart', async () => {
+		tokenTracker.log('Show chart command called');
+		await tokenTracker.showChart();
+	});
+
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
