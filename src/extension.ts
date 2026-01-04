@@ -165,6 +165,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			100
 		);
 		this.statusBarItem.name = "GitHub Copilot Token Usage";
+		this.statusBarItem.text = "$(loading~spin) Copilot Tokens: Loading...";
 		this.statusBarItem.tooltip = "Daily and monthly GitHub Copilot token usage - Click to open details";
 		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
 		this.statusBarItem.show();
@@ -213,10 +214,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}, 5 * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
 			this.log('No Copilot extensions found - starting immediate update');
-			this.updateTokenStats();
+			setTimeout(() => this.updateTokenStats(), 100);
 		} else {
 			this.log('Copilot extensions are active - starting immediate update');
-			this.updateTokenStats();
+			setTimeout(() => this.updateTokenStats(), 100);
 		}
 	}
 
@@ -524,7 +525,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
-			const sessionContent = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const sessionContent = JSON.parse(fileContent);
 
 			// Count the number of requests as interactions
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
@@ -543,7 +545,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const modelUsage: ModelUsage = {};
 
 		try {
-			const sessionContent = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const sessionContent = JSON.parse(fileContent);
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				for (const request of sessionContent.requests) {
@@ -886,7 +889,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
 		try {
-			const sessionContent = JSON.parse(fs.readFileSync(sessionFilePath, 'utf8'));
+			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+			const sessionContent = JSON.parse(fileContent);
 			let totalInputTokens = 0;
 			let totalOutputTokens = 0;
 
