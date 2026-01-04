@@ -26,6 +26,7 @@
     "gemini-2.5-pro": 0.25,
     "gemini-3-flash": 0.25,
     "gemini-3-pro": 0.25,
+    "gemini-3-pro-preview": 0.25,
     "grok-code-fast-1": 0.25,
     "raptor-mini": 0.25,
     "o3-mini": 0.25,
