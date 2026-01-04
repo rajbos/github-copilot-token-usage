@@ -22,6 +22,9 @@ Hovering on the status bar item shows a detailed breakdown of token usage:
 Clicking the status bar item opens a detailed view with comprehensive statistics:
 ![Detailed View](docs/images/03%20Detail%20panel.png)
 
+Chart overview per day, with option to view per model as well:  
+![Chart View](docs/images/04%20Chart.png)
+
 ## Performance Optimization
 
 The extension uses intelligent caching to improve performance:
