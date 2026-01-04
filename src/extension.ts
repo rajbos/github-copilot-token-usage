@@ -448,6 +448,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return result;
 	}
 
+	private formatDateKey(date: Date): string {
+		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+	}
+
 	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
 		const now = new Date();
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -469,8 +473,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						
 						// Get the date in YYYY-MM-DD format
-						const fileDate = new Date(fileStats.mtime);
-						const dateKey = `${fileDate.getFullYear()}-${String(fileDate.getMonth() + 1).padStart(2, '0')}-${String(fileDate.getDate()).padStart(2, '0')}`;
+						const dateKey = this.formatDateKey(new Date(fileStats.mtime));
 						
 						// Initialize or update the daily stats
 						if (!dailyStatsMap.has(dateKey)) {
@@ -1468,6 +1471,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const tokensData = dailyStats.map(stat => stat.tokens);
 		const sessionsData = dailyStats.map(stat => stat.sessions);
 
+		// Pre-calculate summary statistics
+		const totalTokens = dailyStats.reduce((sum, stat) => sum + stat.tokens, 0);
+		const totalSessions = dailyStats.reduce((sum, stat) => sum + stat.sessions, 0);
+		const avgTokensPerDay = dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0;
+
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
@@ -1586,15 +1594,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</div>
 					<div class="stat-card">
 						<div class="stat-label">Total Tokens</div>
-						<div class="stat-value">${dailyStats.reduce((sum, stat) => sum + stat.tokens, 0).toLocaleString()}</div>
+						<div class="stat-value">${totalTokens.toLocaleString()}</div>
 					</div>
 					<div class="stat-card">
 						<div class="stat-label">Avg Tokens/Day</div>
-						<div class="stat-value">${dailyStats.length > 0 ? Math.round(dailyStats.reduce((sum, stat) => sum + stat.tokens, 0) / dailyStats.length).toLocaleString() : 0}</div>
+						<div class="stat-value">${avgTokensPerDay.toLocaleString()}</div>
 					</div>
 					<div class="stat-card">
 						<div class="stat-label">Total Sessions</div>
-						<div class="stat-value">${dailyStats.reduce((sum, stat) => sum + stat.sessions, 0)}</div>
+						<div class="stat-value">${totalSessions}</div>
 					</div>
 				</div>
 
@@ -1619,7 +1627,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					vscode.postMessage({ command: 'refresh' });
 				}
 
-				// Chart.js configuration
+				// Chart.js configuration with mixed chart types (bar + line)
+				// Note: Using type property at dataset level for Chart.js v4 mixed charts
 				const ctx = document.getElementById('tokenChart').getContext('2d');
 				const chart = new Chart(ctx, {
 					type: 'bar',
