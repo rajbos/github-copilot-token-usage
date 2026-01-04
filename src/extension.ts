@@ -55,6 +55,7 @@ interface DailyTokenStats {
 	tokens: number;
 	sessions: number;
 	interactions: number;
+	modelUsage: ModelUsage;
 }
 
 interface SessionFileCache {
@@ -477,6 +478,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (fileStats.mtime >= monthStart) {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
+						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						
 						// Get the date in YYYY-MM-DD format
 						const dateKey = this.formatDateKey(new Date(fileStats.mtime));
@@ -487,7 +489,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 								date: dateKey,
 								tokens: 0,
 								sessions: 0,
-								interactions: 0
+								interactions: 0,
+								modelUsage: {}
 							});
 						}
 						
@@ -495,6 +498,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 						dailyStats.tokens += tokens;
 						dailyStats.sessions += 1;
 						dailyStats.interactions += interactions;
+						
+						// Merge model usage
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!dailyStats.modelUsage[model]) {
+								dailyStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							dailyStats.modelUsage[model].inputTokens += usage.inputTokens;
+							dailyStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
@@ -1477,6 +1489,40 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const tokensData = dailyStats.map(stat => stat.tokens);
 		const sessionsData = dailyStats.map(stat => stat.sessions);
 
+		// Prepare model-specific data for stacked bars
+		const allModels = new Set<string>();
+		dailyStats.forEach(stat => {
+			Object.keys(stat.modelUsage).forEach(model => allModels.add(model));
+		});
+		const modelList = Array.from(allModels).sort();
+		
+		// Create model-specific datasets for stacked view
+		const modelColors = [
+			'rgba(54, 162, 235, 0.8)',
+			'rgba(255, 99, 132, 0.8)',
+			'rgba(255, 206, 86, 0.8)',
+			'rgba(75, 192, 192, 0.8)',
+			'rgba(153, 102, 255, 0.8)',
+			'rgba(255, 159, 64, 0.8)',
+			'rgba(199, 199, 199, 0.8)',
+			'rgba(83, 102, 255, 0.8)'
+		];
+		
+		const modelDatasets = modelList.map((model, index) => {
+			const data = dailyStats.map(stat => {
+				const usage = stat.modelUsage[model];
+				return usage ? usage.inputTokens + usage.outputTokens : 0;
+			});
+			
+			return {
+				label: this.getModelDisplayName(model),
+				data: data,
+				backgroundColor: modelColors[index % modelColors.length],
+				borderColor: modelColors[index % modelColors.length].replace('0.8', '1'),
+				borderWidth: 1
+			};
+		});
+
 		// Pre-calculate summary statistics
 		const totalTokens = dailyStats.reduce((sum, stat) => sum + stat.tokens, 0);
 		const totalSessions = dailyStats.reduce((sum, stat) => sum + stat.sessions, 0);
@@ -1584,6 +1630,33 @@ class CopilotTokenTracker implements vscode.Disposable {
 					font-weight: 600;
 					color: #ffffff;
 				}
+				.chart-controls {
+					display: flex;
+					justify-content: center;
+					gap: 8px;
+					margin-bottom: 16px;
+				}
+				.toggle-button {
+					background: #353535;
+					border: 1px solid #5a5a5a;
+					color: #cccccc;
+					padding: 6px 12px;
+					border-radius: 4px;
+					cursor: pointer;
+					font-size: 12px;
+					transition: all 0.2s;
+				}
+				.toggle-button.active {
+					background: #0e639c;
+					border-color: #1177bb;
+					color: #ffffff;
+				}
+				.toggle-button:hover {
+					background: #4a4a4a;
+				}
+				.toggle-button.active:hover {
+					background: #1177bb;
+				}
 			</style>
 		</head>
 		<body>
@@ -1612,6 +1685,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</div>
 				</div>
 
+				<div class="chart-controls">
+					<button class="toggle-button active" id="totalViewBtn" onclick="switchView('total')">Total Tokens</button>
+					<button class="toggle-button" id="modelViewBtn" onclick="switchView('model')">By Model</button>
+				</div>
+
 				<div class="chart-container">
 					<canvas id="tokenChart"></canvas>
 				</div>
@@ -1637,127 +1715,180 @@ class CopilotTokenTracker implements vscode.Disposable {
 					vscode.postMessage({ command: 'refresh' });
 				}
 
-				// Chart.js configuration with mixed chart types (bar + line)
-				// Note: Using type property at dataset level for Chart.js v4 mixed charts
+				// Data for different views
+				const labels = ${JSON.stringify(labels)};
+				const tokensData = ${JSON.stringify(tokensData)};
+				const sessionsData = ${JSON.stringify(sessionsData)};
+				const modelDatasets = ${JSON.stringify(modelDatasets)};
+
+				// Chart instance
+				let chart;
+				let currentView = 'total';
+
+				// Initialize chart with total view
 				const ctx = document.getElementById('tokenChart').getContext('2d');
-				const chart = new Chart(ctx, {
-					type: 'bar',
-					data: {
-						labels: ${JSON.stringify(labels)},
-						datasets: [
-							{
-								label: 'Tokens',
-								data: ${JSON.stringify(tokensData)},
-								backgroundColor: 'rgba(54, 162, 235, 0.6)',
-								borderColor: 'rgba(54, 162, 235, 1)',
-								borderWidth: 1,
-								yAxisID: 'y'
-							},
-							{
-								label: 'Sessions',
-								data: ${JSON.stringify(sessionsData)},
-								backgroundColor: 'rgba(255, 99, 132, 0.6)',
-								borderColor: 'rgba(255, 99, 132, 1)',
-								borderWidth: 1,
-								type: 'line',
-								yAxisID: 'y1'
-							}
-						]
-					},
-					options: {
-						responsive: true,
-						maintainAspectRatio: false,
-						interaction: {
-							mode: 'index',
-							intersect: false,
-						},
-						plugins: {
-							legend: {
-								position: 'top',
-								labels: {
-									color: '#cccccc',
-									font: {
-										size: 12
-									}
-								}
-							},
-							title: {
-								display: false
-							},
-							tooltip: {
-								backgroundColor: 'rgba(0, 0, 0, 0.8)',
-								titleColor: '#ffffff',
-								bodyColor: '#cccccc',
-								borderColor: '#5a5a5a',
-								borderWidth: 1,
-								padding: 10,
-								displayColors: true
-							}
-						},
-						scales: {
-							x: {
-								grid: {
-									color: '#5a5a5a'
+				
+				function createTotalView() {
+					return {
+						type: 'bar',
+						data: {
+							labels: labels,
+							datasets: [
+								{
+									label: 'Tokens',
+									data: tokensData,
+									backgroundColor: 'rgba(54, 162, 235, 0.6)',
+									borderColor: 'rgba(54, 162, 235, 1)',
+									borderWidth: 1,
+									yAxisID: 'y'
 								},
-								ticks: {
-									color: '#cccccc',
-									font: {
-										size: 11
-									}
+								{
+									label: 'Sessions',
+									data: sessionsData,
+									backgroundColor: 'rgba(255, 99, 132, 0.6)',
+									borderColor: 'rgba(255, 99, 132, 1)',
+									borderWidth: 1,
+									type: 'line',
+									yAxisID: 'y1'
 								}
+							]
+						},
+						options: {
+							responsive: true,
+							maintainAspectRatio: false,
+							interaction: {
+								mode: 'index',
+								intersect: false,
 							},
-							y: {
-								type: 'linear',
-								display: true,
-								position: 'left',
-								grid: {
-									color: '#5a5a5a'
+							scales: {
+								x: {
+									grid: { color: '#5a5a5a' },
+									ticks: { color: '#cccccc', font: { size: 11 } }
 								},
-								ticks: {
-									color: '#cccccc',
-									font: {
-										size: 11
+								y: {
+									type: 'linear',
+									display: true,
+									position: 'left',
+									grid: { color: '#5a5a5a' },
+									ticks: { 
+										color: '#cccccc', 
+										font: { size: 11 },
+										callback: function(value) { return value.toLocaleString(); }
 									},
-									callback: function(value) {
-										return value.toLocaleString();
+									title: {
+										display: true,
+										text: 'Tokens',
+										color: '#cccccc',
+										font: { size: 12, weight: 'bold' }
 									}
 								},
-								title: {
+								y1: {
+									type: 'linear',
 									display: true,
-									text: 'Tokens',
-									color: '#cccccc',
-									font: {
-										size: 12,
-										weight: 'bold'
+									position: 'right',
+									grid: { drawOnChartArea: false },
+									ticks: { color: '#cccccc', font: { size: 11 } },
+									title: {
+										display: true,
+										text: 'Sessions',
+										color: '#cccccc',
+										font: { size: 12, weight: 'bold' }
 									}
 								}
 							},
-							y1: {
-								type: 'linear',
-								display: true,
-								position: 'right',
-								grid: {
-									drawOnChartArea: false,
+							plugins: {
+								legend: {
+									position: 'top',
+									labels: { color: '#cccccc', font: { size: 12 } }
 								},
-								ticks: {
-									color: '#cccccc',
-									font: {
-										size: 11
-									}
-								},
-								title: {
-									display: true,
-									text: 'Sessions',
-									color: '#cccccc',
-									font: {
-										size: 12,
-										weight: 'bold'
-									}
+								tooltip: {
+									backgroundColor: 'rgba(0, 0, 0, 0.8)',
+									titleColor: '#ffffff',
+									bodyColor: '#cccccc',
+									borderColor: '#5a5a5a',
+									borderWidth: 1,
+									padding: 10,
+									displayColors: true
 								}
 							}
 						}
+					};
+				}
+
+				function createModelView() {
+					return {
+						type: 'bar',
+						data: {
+							labels: labels,
+							datasets: modelDatasets
+						},
+						options: {
+							responsive: true,
+							maintainAspectRatio: false,
+							interaction: {
+								mode: 'index',
+								intersect: false,
+							},
+							scales: {
+								x: {
+									stacked: true,
+									grid: { color: '#5a5a5a' },
+									ticks: { color: '#cccccc', font: { size: 11 } }
+								},
+								y: {
+									stacked: true,
+									grid: { color: '#5a5a5a' },
+									ticks: { 
+										color: '#cccccc', 
+										font: { size: 11 },
+										callback: function(value) { return value.toLocaleString(); }
+									},
+									title: {
+										display: true,
+										text: 'Tokens by Model',
+										color: '#cccccc',
+										font: { size: 12, weight: 'bold' }
+									}
+								}
+							},
+							plugins: {
+								legend: {
+									position: 'top',
+									labels: { color: '#cccccc', font: { size: 12 } }
+								},
+								tooltip: {
+									backgroundColor: 'rgba(0, 0, 0, 0.8)',
+									titleColor: '#ffffff',
+									bodyColor: '#cccccc',
+									borderColor: '#5a5a5a',
+									borderWidth: 1,
+									padding: 10,
+									displayColors: true
+								}
+							}
+						}
+					};
+				}
+
+				function switchView(viewType) {
+					currentView = viewType;
+					
+					// Update button states
+					document.getElementById('totalViewBtn').classList.toggle('active', viewType === 'total');
+					document.getElementById('modelViewBtn').classList.toggle('active', viewType === 'model');
+					
+					// Destroy existing chart
+					if (chart) {
+						chart.destroy();
 					}
-				});
+					
+					// Create new chart based on view type
+					const config = viewType === 'total' ? createTotalView() : createModelView();
+					chart = new Chart(ctx, config);
+				}
+
+				// Initialize with total view
+				chart = new Chart(ctx, createTotalView());
 			</script>
 		</body>
 		</html>`;
