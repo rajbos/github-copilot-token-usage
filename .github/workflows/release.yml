@@ -180,10 +180,12 @@ jobs:
         
     - name: Create Release
       id: create_release
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
       run: |
+        set -o pipefail
         echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
         
         # Create release with notes and upload VSIX file
@@ -191,10 +193,6 @@ jobs:
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes "${{ steps.release_notes.outputs.notes }}" \
           ./${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
-        
-        # Capture exit code
-        EXIT_CODE=${PIPESTATUS[0]}
-        exit $EXIT_CODE
         
     - name: Release Summary
       if: always()
