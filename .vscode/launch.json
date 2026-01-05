@@ -9,6 +9,7 @@
 			"name": "Run Extension",
 			"type": "extensionHost",
 			"request": "launch",
+			"preLaunchTask": "npm compile",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}"
 			],
