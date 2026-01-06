@@ -15,6 +15,13 @@ When creating a new issue, please include the following information to help us u
 - **Operating System**: Windows, macOS, or Linux with version
 - **Issue Description**: Clear description of what's happening vs. what you expected
 
+Use the "Diagnostic Report" feature in the extension to gather relevant system and extension information. This can be accessed via the details page. 
+
+## Seen before
+We have seen before that there are no sessions and tokens being reported. In that case, try out to enable the "Copilot Chat Debug View":
+
+![Screenshot showing how to reach the chat debug view, by going to the ... icon in the Copilot chat interface and choosing "Show chat debug view"](./docs/images/Chat%20debug%20view.png)
+
 ### Helpful Details
 
 - **Steps to Reproduce**: Detailed steps to recreate the issue
@@ -27,9 +34,9 @@ When creating a new issue, please include the following information to help us u
 Before reporting, please check if your issue is related to these known limitations mentioned in the README:
 
 - Numbers are based on local log files only (multi-machine usage not tracked)
-- Premium Requests are not tracked
-- Token counts are estimates based on character count
-- Extension currently tested primarily on Windows
+- Premium Request Units are not tracked by this extension, only their token usage is included
+- Token counts are estimates based on character count from the chat sessions stored on disk
+- Extension currently tested primarily on Windows, found something? Report an issue in the repo: https://github.com/rajbos/github-copilot-token-usage
 
 ## Feature Requests
 
