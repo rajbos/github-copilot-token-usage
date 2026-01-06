@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
+import * as packageJson from '../package.json';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -1576,7 +1577,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 			try {
 				const copilotApi = copilotExtension.exports;
 				if (copilotApi && copilotApi.status) {
-					report.push(`  - Status: ${JSON.stringify(copilotApi.status)}`);
+					const status = copilotApi.status;
+					// Display key status fields in a readable format
+					if (typeof status === 'object') {
+						Object.keys(status).forEach(key => {
+							const value = status[key];
+							if (value !== undefined && value !== null) {
+								report.push(`  - ${key}: ${value}`);
+							}
+						});
+					} else {
+						report.push(`  - Status: ${status}`);
+					}
 				}
 			} catch (error) {
 				this.log(`Could not retrieve Copilot tier information: ${error}`);
@@ -1604,11 +1616,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			if (sessionFiles.length > 0) {
 				report.push('Session File Locations (first 20):');
-				sessionFiles.slice(0, 20).forEach((file, index) => {
-					const stat = fs.statSync(file);
-					report.push(`  ${index + 1}. ${file}`);
-					report.push(`     - Size: ${stat.size} bytes`);
-					report.push(`     - Modified: ${stat.mtime.toISOString()}`);
+				
+				// Use async file stat to avoid blocking the event loop
+				const filesToShow = sessionFiles.slice(0, 20);
+				const fileStats = await Promise.all(
+					filesToShow.map(async (file) => {
+						try {
+							const stat = await fs.promises.stat(file);
+							return { file, stat, error: null };
+						} catch (error) {
+							return { file, stat: null, error };
+						}
+					})
+				);
+				
+				fileStats.forEach((result, index) => {
+					if (result.stat) {
+						report.push(`  ${index + 1}. ${result.file}`);
+						report.push(`     - Size: ${result.stat.size} bytes`);
+						report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
+					} else {
+						report.push(`  ${index + 1}. ${result.file}`);
+						report.push(`     - Error: ${result.error}`);
+					}
 				});
 				
 				if (sessionFiles.length > 20) {
@@ -1686,7 +1716,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		report.push('troubleshoot issues. No sensitive data from your code is included.');
 		report.push('');
 		report.push('Submit issues at:');
-		report.push('https://github.com/rajbos/github-copilot-token-usage/issues');
+		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '') || 'https://github.com/rajbos/github-copilot-token-usage';
+		report.push(`${repoUrl}/issues`);
 		
 		const fullReport = report.join('\n');
 		this.log('Diagnostic report generated successfully');
@@ -1723,7 +1754,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
 					break;
 				case 'openIssue':
-					const issueUrl = 'https://github.com/rajbos/github-copilot-token-usage/issues/new';
+					const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '') || 'https://github.com/rajbos/github-copilot-token-usage';
+					const issueUrl = `${repoUrl}/issues/new`;
 					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
 					break;
 			}
