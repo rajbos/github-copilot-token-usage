@@ -38,6 +38,11 @@
         "command": "copilot-token-tracker.showChart",
         "title": "Show Token Usage Chart",
         "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.generateDiagnosticReport",
+        "title": "Generate Diagnostic Report",
+        "category": "Copilot Token Tracker"
       }
     ]
   },

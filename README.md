@@ -9,6 +9,7 @@ A VS Code extension that shows your daily and monthly GitHub Copilot estimated t
 - **Click to Refresh**: Click the status bar item to manually refresh the token count
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
 - **Intelligent Caching**: Caches processed session files to speed up subsequent updates when files haven't changed
+- **Diagnostic Reporting**: Generate comprehensive diagnostic reports to help troubleshoot issues
 
 ## Status Bar Display
 
@@ -35,6 +36,32 @@ The extension uses intelligent caching to improve performance:
 - **Cache Statistics**: Logs cache hit/miss rates to help monitor performance improvements
 
 This caching significantly reduces the time needed for periodic updates, especially when you have many chat session files.
+
+## Diagnostic Reporting
+
+If you experience issues with the extension, you can generate a diagnostic report to help troubleshoot problems. The diagnostic report includes:
+
+- Extension and VS Code version information
+- System details (OS, Node version, environment)
+- GitHub Copilot extension status and versions
+- Session file discovery results (locations only, no content)
+- Aggregated token usage statistics
+- Cache performance metrics
+
+**To generate a diagnostic report:**
+
+1. Click the status bar item to open the detailed view
+2. Click the **"Diagnostics"** button at the bottom
+3. Review the report in the new panel
+4. Use the **"Copy to Clipboard"** button to copy the report for sharing
+5. Use the **"Open GitHub Issue"** button to submit an issue with the report
+
+Alternatively, you can use the Command Palette:
+- Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS)
+- Type "Copilot Token Tracker: Generate Diagnostic Report"
+- Press Enter
+
+**Note**: The diagnostic report does not include any of your code or conversation content. It only includes file locations, sizes, and aggregated statistics.
 
 ## Known Issues
 
