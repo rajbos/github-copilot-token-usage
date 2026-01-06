@@ -51,7 +51,7 @@ jobs:
     - name: Ensure on main branch
       if: steps.changes.outputs.changed == 'true'
       run: |
-        git checkout main
+        git checkout -b update-changelog
         
     - name: Commit and push changes
       if: steps.changes.outputs.changed == 'true'
@@ -65,6 +65,17 @@ jobs:
         the release notes from GitHub releases, ensuring consistency
         between local documentation and published releases."
         git push
+
+    - name: Create Pull Request
+      if: steps.changes.outputs.changed == 'true'
+      uses: peter-evans/create-pull-request@v5.6.3
+      with:
+        branch: update-changelog
+        title: "docs: sync CHANGELOG.md with GitHub release notes"
+        body: |
+          This pull request updates the CHANGELOG.md file to reflect the latest
+          GitHub release notes, ensuring that the changelog is always up to date
+          with the published releases.
         
     - name: Summary
       run: |
