@@ -179,19 +179,44 @@ jobs:
         fi
         
     - name: Create Release
+      id: create_release
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
       run: |
+        set -o pipefail
         echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
         
         # Create release with notes and upload VSIX file
         gh release create "${{ steps.tag_name.outputs.tag_name }}" \
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes "${{ steps.release_notes.outputs.notes }}" \
-          ./${{ steps.vsix_filename.outputs.vsix_file }}
+          ./${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
         
     - name: Release Summary
+      if: always()
       run: |
-        echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!"
-        echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}"
-        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag_name.outputs.tag_name }}"
+        if [ "${{ steps.create_release.outcome }}" == "success" ]; then
+          echo "# ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [Release URL](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag_name.outputs.tag_name }})" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "# ❌ Release Creation Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.extract_version.outputs.tag_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ steps.tag_name.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Error Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f /tmp/release_output.txt ]; then
+            cat /tmp/release_output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No error details captured" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
