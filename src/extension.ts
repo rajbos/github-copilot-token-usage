@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
+import * as packageJson from '../package.json';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -89,6 +90,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing;
+
+	// Helper method to get repository URL from package.json
+	private getRepositoryUrl(): string {
+		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
+		return repoUrl || 'https://github.com/rajbos/github-copilot-token-usage';
+	}
 
 	// Logging methods
 	public log(message: string): void {
@@ -1012,6 +1019,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showChart':
 					await this.showChart();
 					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
 			}
 		});
 
@@ -1363,6 +1373,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						<span>📈</span>
 						<span>Show Chart</span>
 					</button>
+					<button class="refresh-button" onclick="showDiagnostics()" style="margin-left: 8px; background: #5a5a5a;">
+						<span>🔍</span>
+						<span>Diagnostics</span>
+					</button>
 				</div>
 			</div>
 
@@ -1377,6 +1391,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				function showChart() {
 					// Send message to extension to show chart
 					vscode.postMessage({ command: 'showChart' });
+				}
+
+				function showDiagnostics() {
+					// Send message to extension to show diagnostic report
+					vscode.postMessage({ command: 'showDiagnostics' });
 				}
 			</script>
 		</body>
@@ -1518,6 +1537,471 @@ class CopilotTokenTracker implements vscode.Disposable {
 			'o4-mini': 'o4-mini (Preview)'
 		};
 		return modelNames[model] || model;
+	}
+
+	public async generateDiagnosticReport(): Promise<string> {
+		this.log('Generating diagnostic report...');
+		
+		const report: string[] = [];
+		
+		// Header
+		report.push('='.repeat(70));
+		report.push('GitHub Copilot Token Tracker - Diagnostic Report');
+		report.push('='.repeat(70));
+		report.push('');
+		
+		// Extension Information
+		report.push('## Extension Information');
+		report.push(`Extension Version: ${vscode.extensions.getExtension('RobBos.copilot-token-tracker')?.packageJSON.version || 'Unknown'}`);
+		report.push(`VS Code Version: ${vscode.version}`);
+		report.push('');
+		
+		// System Information
+		report.push('## System Information');
+		report.push(`OS: ${os.platform()} ${os.release()} (${os.arch()})`);
+		report.push(`Node Version: ${process.version}`);
+		report.push(`Home Directory: ${os.homedir()}`);
+		report.push(`Environment: ${process.env.CODESPACES === 'true' ? 'GitHub Codespaces' : (vscode.env.remoteName || 'Local')}`);
+		report.push(`VS Code Machine ID: ${vscode.env.machineId}`);
+		report.push(`VS Code Session ID: ${vscode.env.sessionId}`);
+		report.push(`VS Code UI Kind: ${vscode.env.uiKind === vscode.UIKind.Desktop ? 'Desktop' : 'Web'}`);
+		report.push(`Remote Name: ${vscode.env.remoteName || 'N/A'}`);
+		report.push('');
+		
+		// GitHub Copilot Extension Status
+		report.push('## GitHub Copilot Extension Status');
+		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
+		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+		
+		if (copilotExtension) {
+			report.push(`GitHub Copilot Extension:`);
+			report.push(`  - Installed: Yes`);
+			report.push(`  - Version: ${copilotExtension.packageJSON.version}`);
+			report.push(`  - Active: ${copilotExtension.isActive ? 'Yes' : 'No'}`);
+			
+			// Try to get Copilot tier information if available
+			try {
+				const copilotApi = copilotExtension.exports;
+				if (copilotApi && copilotApi.status) {
+					const status = copilotApi.status;
+					// Display key status fields in a readable format
+					if (typeof status === 'object') {
+						Object.keys(status).forEach(key => {
+							const value = status[key];
+							if (value !== undefined && value !== null) {
+								report.push(`  - ${key}: ${value}`);
+							}
+						});
+					} else {
+						report.push(`  - Status: ${status}`);
+					}
+				}
+			} catch (error) {
+				this.log(`Could not retrieve Copilot tier information: ${error}`);
+			}
+		} else {
+			report.push(`GitHub Copilot Extension: Not Installed`);
+		}
+		
+		if (copilotChatExtension) {
+			report.push(`GitHub Copilot Chat Extension:`);
+			report.push(`  - Installed: Yes`);
+			report.push(`  - Version: ${copilotChatExtension.packageJSON.version}`);
+			report.push(`  - Active: ${copilotChatExtension.isActive ? 'Yes' : 'No'}`);
+		} else {
+			report.push(`GitHub Copilot Chat Extension: Not Installed`);
+		}
+		report.push('');
+		
+		// Session Files Discovery
+		report.push('## Session Files Discovery');
+		try {
+			const sessionFiles = await this.getCopilotSessionFiles();
+			report.push(`Total Session Files Found: ${sessionFiles.length}`);
+			report.push('');
+			
+			if (sessionFiles.length > 0) {
+				report.push('Session File Locations (first 20):');
+				
+				// Use async file stat to avoid blocking the event loop
+				const filesToShow = sessionFiles.slice(0, 20);
+				const fileStats = await Promise.all(
+					filesToShow.map(async (file) => {
+						try {
+							const stat = await fs.promises.stat(file);
+							return { file, stat, error: null };
+						} catch (error) {
+							return { file, stat: null, error };
+						}
+					})
+				);
+				
+				fileStats.forEach((result, index) => {
+					if (result.stat) {
+						report.push(`  ${index + 1}. ${result.file}`);
+						report.push(`     - Size: ${result.stat.size} bytes`);
+						report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
+					} else {
+						report.push(`  ${index + 1}. ${result.file}`);
+						report.push(`     - Error: ${result.error}`);
+					}
+				});
+				
+				if (sessionFiles.length > 20) {
+					report.push(`  ... and ${sessionFiles.length - 20} more files`);
+				}
+			} else {
+				report.push('No session files found. Possible reasons:');
+				report.push('  - Copilot extensions are not active');
+				report.push('  - No Copilot Chat conversations have been initiated');
+				report.push('  - Sessions stored in unsupported location');
+				report.push('  - Authentication required with GitHub Copilot');
+			}
+			report.push('');
+		} catch (error) {
+			report.push(`Error discovering session files: ${error}`);
+			report.push('');
+		}
+		
+		// Token Statistics
+		report.push('## Token Usage Statistics');
+		try {
+			// Ensure detailed stats calculation runs; currently used for side effects/logging
+			await this.calculateDetailedStats();
+			
+			try {
+				const sessionFiles = await this.getCopilotSessionFiles();
+				report.push(`Total Session Files Found: ${sessionFiles.length}`);
+				report.push("");
+
+				// Group session files by their parent directory
+				const dirCounts = new Map<string, number>();
+				for (const file of sessionFiles) {
+					const parent = require('path').dirname(file);
+					dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1);
+				}
+				if (dirCounts.size > 0) {
+					report.push("Session Files by Directory:");
+					for (const [dir, count] of dirCounts.entries()) {
+						report.push(`  ${dir}: ${count}`);
+					}
+					report.push("");
+				}
+
+				if (sessionFiles.length > 0) {
+					report.push('Session File Locations (first 20):');
+					const filesToShow = sessionFiles.slice(0, 20);
+					const fileStats = await Promise.all(
+						filesToShow.map(async (file) => {
+							try {
+								const stat = await fs.promises.stat(file);
+								return { file, stat, error: null };
+							} catch (error) {
+								return { file, stat: null, error };
+							}
+						})
+					);
+					fileStats.forEach((result, index) => {
+						if (result.stat) {
+							report.push(`  ${index + 1}. ${result.file}`);
+							report.push(`     - Size: ${result.stat.size} bytes`);
+							report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
+						} else {
+							report.push(`  ${index + 1}. ${result.file}`);
+							report.push(`     - Error: ${result.error}`);
+						}
+					});
+					if (sessionFiles.length > 20) {
+						report.push(`  ... and ${sessionFiles.length - 20} more files`);
+					}
+				} else {
+					report.push('No session files found. Possible reasons:');
+					report.push('  - Copilot extensions are not active');
+					report.push('  - No Copilot Chat conversations have been initiated');
+					report.push('  - Sessions stored in unsupported location');
+					report.push('  - Authentication required with GitHub Copilot');
+				}
+				report.push('');
+			} catch (error) {
+				report.push(`Error discovering session files: ${error}`);
+				report.push('');
+			}
+		} catch (error) {
+			report.push(`Error calculating token usage statistics: ${error}`);
+			report.push('');
+		}
+		
+		// Footer
+		report.push('='.repeat(70));
+		report.push(`Report Generated: ${new Date().toISOString()}`);
+		report.push('='.repeat(70));
+		report.push('');
+		report.push('This report can be shared with the extension maintainers to help');
+		report.push('troubleshoot issues. No sensitive data from your code is included.');
+		report.push('');
+		report.push('Submit issues at:');
+		report.push(`${this.getRepositoryUrl()}/issues`);
+		
+		const fullReport = report.join('\n');
+		this.log('Diagnostic report generated successfully');
+		return fullReport;
+	}
+
+	public async showDiagnosticReport(): Promise<void> {
+		this.log('Showing diagnostic report...');
+		
+		const report = await this.generateDiagnosticReport();
+		
+		// Create a webview panel to display the report
+		const panel = vscode.window.createWebviewPanel(
+			'copilotTokenDiagnostics',
+			'Diagnostic Report',
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: false
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false
+			}
+		);
+		
+		// Set the HTML content
+		panel.webview.html = this.getDiagnosticReportHtml(report);
+		
+		// Handle messages from the webview
+		panel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'copyReport':
+					await vscode.env.clipboard.writeText(report);
+					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
+					break;
+				case 'openIssue':
+					await vscode.env.clipboard.writeText(report);
+					vscode.window.showInformationMessage('Diagnostic report copied to clipboard. Please paste it into the GitHub issue.');
+					const shortBody = encodeURIComponent('The diagnostic report has been copied to the clipboard. Please paste it below.');
+					const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
+					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					break;
+				case 'openSessionFile':
+					if (message.file) {
+						try {
+							await vscode.window.showTextDocument(vscode.Uri.file(message.file));
+						} catch (err) {
+							vscode.window.showErrorMessage('Could not open file: ' + message.file);
+						}
+					}
+					break;
+			}
+		});
+	}
+
+	private getDiagnosticReportHtml(report: string): string {
+		// Split the report into sections
+		const sessionFilesSectionMatch = report.match(/Session File Locations \(first 20\):([\s\S]*?)(?=\n\s*\n|$)/);
+		let sessionFilesHtml = '';
+		if (sessionFilesSectionMatch) {
+			const lines = sessionFilesSectionMatch[1].split('\n').filter(l => l.trim());
+			sessionFilesHtml = '<div class="session-files-list"><h4>Session File Locations (first 20):</h4><ul style="padding-left:20px;">';
+			for (let i = 0; i < lines.length; i += 3) {
+				const fileLine = lines[i];
+				const sizeLine = lines[i+1] || '';
+				const modLine = lines[i+2] || '';
+				const fileMatch = fileLine.match(/(\d+)\. (.+)/);
+				if (fileMatch) {
+					const idx = fileMatch[1];
+					const file = fileMatch[2];
+					sessionFilesHtml += `<li><a href="#" class="session-file-link" data-file="${encodeURIComponent(file)}">${idx}. ${file}</a><br><span style="color:#aaa;">${sizeLine}<br>${modLine}</span></li>`;
+				} else {
+					sessionFilesHtml += `<li>${fileLine}</li>`;
+				}
+			}
+			sessionFilesHtml += '</ul></div>';
+		}
+
+		// Escape HTML for the rest of the report
+		let escapedReport = report.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+		// Remove the session files section from the escaped report
+		if (sessionFilesSectionMatch) {
+			escapedReport = escapedReport.replace(sessionFilesSectionMatch[0], '');
+		}
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<title>Diagnostic Report</title>
+			<style>
+				* {
+					margin: 0;
+					padding: 0;
+					box-sizing: border-box;
+				}
+				body {
+					font-family: 'Consolas', 'Courier New', monospace;
+					background: #2d2d2d;
+					color: #cccccc;
+					padding: 16px;
+					line-height: 1.6;
+				}
+				.container {
+					background: #3c3c3c;
+					border: 1px solid #5a5a5a;
+					border-radius: 8px;
+					padding: 16px;
+					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+					max-width: 1200px;
+					margin: 0 auto;
+				}
+				.header {
+					display: flex;
+					align-items: center;
+					justify-content: space-between;
+					gap: 8px;
+					margin-bottom: 16px;
+					padding-bottom: 12px;
+					border-bottom: 1px solid #5a5a5a;
+				}
+				.header-left {
+					display: flex;
+					align-items: center;
+					gap: 8px;
+				}
+				.header-icon {
+					font-size: 20px;
+				}
+				.header-title {
+					font-size: 16px;
+					font-weight: 600;
+					color: #ffffff;
+				}
+				.report-content {
+					background: #2a2a2a;
+					border: 1px solid #5a5a5a;
+					border-radius: 4px;
+					padding: 16px;
+					white-space: pre-wrap;
+					font-size: 13px;
+					overflow-x: auto;
+					max-height: 70vh;
+					overflow-y: auto;
+				}
+				.session-files-list ul {
+					list-style: none;
+				}
+				.session-file-link {
+					color: #4FC3F7;
+					text-decoration: underline;
+					cursor: pointer;
+				}
+				.session-file-link:hover {
+					color: #81D4FA;
+				}
+				.button-group {
+					display: flex;
+					gap: 12px;
+					margin-top: 16px;
+					flex-wrap: wrap;
+				}
+				.button {
+					background: #0e639c;
+					border: 1px solid #1177bb;
+					color: #ffffff;
+					padding: 10px 20px;
+					border-radius: 4px;
+					cursor: pointer;
+					font-size: 13px;
+					font-weight: 500;
+					transition: background-color 0.2s;
+					display: inline-flex;
+					align-items: center;
+					gap: 8px;
+				}
+				.button:hover {
+					background: #1177bb;
+				}
+				.button:active {
+					background: #0a5a8a;
+				}
+				.button.secondary {
+					background: #3c3c3c;
+					border-color: #5a5a5a;
+				}
+				.button.secondary:hover {
+					background: #4a4a4a;
+				}
+				.info-box {
+					background: #3a4a5a;
+					border: 1px solid #4a5a6a;
+					border-radius: 4px;
+					padding: 12px;
+					margin-bottom: 16px;
+					font-size: 13px;
+				}
+				.info-box-title {
+					font-weight: 600;
+					color: #ffffff;
+					margin-bottom: 6px;
+				}
+			</style>
+		</head>
+		<body>
+			<div class="container">
+				<div class="header">
+					<div class="header-left">
+						<span class="header-icon">🔍</span>
+						<span class="header-title">Diagnostic Report</span>
+					</div>
+				</div>
+                
+				<div class="info-box">
+					<div class="info-box-title">📋 About This Report</div>
+					<div>
+						This diagnostic report contains information about your GitHub Copilot Token Tracker
+						extension setup and usage statistics. It does <strong>not</strong> include any of your
+						code or conversation content. You can safely share this report when reporting issues.
+					</div>
+				</div>
+                
+				<div class="report-content">${escapedReport}</div>
+				${sessionFilesHtml}
+				<div class="button-group">
+					<button class="button" onclick="copyReport()">
+						<span>📋</span>
+						<span>Copy to Clipboard</span>
+					</button>
+					<button class="button secondary" onclick="openIssue()">
+						<span>🐛</span>
+						<span>Open GitHub Issue</span>
+					</button>
+				</div>
+			</div>
+
+			<script>
+				const vscode = acquireVsCodeApi();
+
+				function copyReport() {
+					vscode.postMessage({ command: 'copyReport' });
+				}
+
+				function openIssue() {
+					vscode.postMessage({ command: 'openIssue' });
+				}
+
+				// Make session file links clickable
+				document.addEventListener('DOMContentLoaded', () => {
+					document.querySelectorAll('.session-file-link').forEach(link => {
+						link.addEventListener('click', (e) => {
+							e.preventDefault();
+							const file = decodeURIComponent(link.getAttribute('data-file'));
+							vscode.postMessage({ command: 'openSessionFile', file });
+						});
+					});
+				});
+			</script>
+		</body>
+		</html>`;
 	}
 
 	private getChartHtml(dailyStats: DailyTokenStats[]): string {
@@ -1975,8 +2459,14 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showChart();
 	});
 
+	// Register the generate diagnostic report command
+	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
+		tokenTracker.log('Generate diagnostic report command called');
+		await tokenTracker.showDiagnosticReport();
+	});
+
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, generateDiagnosticReportCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
