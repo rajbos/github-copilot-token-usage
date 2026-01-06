@@ -1555,6 +1555,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		report.push(`Node Version: ${process.version}`);
 		report.push(`Home Directory: ${os.homedir()}`);
 		report.push(`Environment: ${process.env.CODESPACES === 'true' ? 'GitHub Codespaces' : (vscode.env.remoteName || 'Local')}`);
+		report.push(`VS Code Machine ID: ${vscode.env.machineId}`);
+		report.push(`VS Code Session ID: ${vscode.env.sessionId}`);
+		report.push(`VS Code UI Kind: ${vscode.env.uiKind === vscode.UIKind.Desktop ? 'Desktop' : 'Web'}`);
+		report.push(`Remote Name: ${vscode.env.remoteName || 'N/A'}`);
 		report.push('');
 		
 		// GitHub Copilot Extension Status
