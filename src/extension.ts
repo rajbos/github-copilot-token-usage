@@ -1759,7 +1759,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
 					break;
 				case 'openIssue':
-					const issueUrl = `${this.getRepositoryUrl()}/issues/new`;
+					// Copy the full report to clipboard
+					await vscode.env.clipboard.writeText(report);
+					vscode.window.showInformationMessage('Diagnostic report copied to clipboard. Please paste it into the GitHub issue.');
+					// Pre-fill the issue with a short message
+					const shortBody = encodeURIComponent('The diagnostic report has been copied to the clipboard. Please paste it below.');
+					const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
 					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
 					break;
 			}
