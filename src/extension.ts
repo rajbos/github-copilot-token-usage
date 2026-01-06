@@ -91,6 +91,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing;
 
+	// Helper method to get repository URL from package.json
+	private getRepositoryUrl(): string {
+		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
+		return repoUrl || 'https://github.com/rajbos/github-copilot-token-usage';
+	}
+
 	// Logging methods
 	public log(message: string): void {
 		const timestamp = new Date().toLocaleTimeString();
@@ -1716,8 +1722,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		report.push('troubleshoot issues. No sensitive data from your code is included.');
 		report.push('');
 		report.push('Submit issues at:');
-		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '') || 'https://github.com/rajbos/github-copilot-token-usage';
-		report.push(`${repoUrl}/issues`);
+		report.push(`${this.getRepositoryUrl()}/issues`);
 		
 		const fullReport = report.join('\n');
 		this.log('Diagnostic report generated successfully');
@@ -1754,8 +1759,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
 					break;
 				case 'openIssue':
-					const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '') || 'https://github.com/rajbos/github-copilot-token-usage';
-					const issueUrl = `${repoUrl}/issues/new`;
+					const issueUrl = `${this.getRepositoryUrl()}/issues/new`;
 					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
 					break;
 			}
