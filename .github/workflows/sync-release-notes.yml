@@ -48,6 +48,11 @@ jobs:
           echo "Changes detected in CHANGELOG.md"
         fi
         
+    - name: Ensure on main branch
+      if: steps.changes.outputs.changed == 'true'
+      run: |
+        git checkout main
+        
     - name: Commit and push changes
       if: steps.changes.outputs.changed == 'true'
       run: |
