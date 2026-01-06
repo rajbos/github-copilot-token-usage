@@ -1666,52 +1666,70 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Token Statistics
 		report.push('## Token Usage Statistics');
 		try {
-			const stats = await this.calculateDetailedStats();
+			// Ensure detailed stats calculation runs; currently used for side effects/logging
+			await this.calculateDetailedStats();
 			
-			// Today's stats
-			report.push('### Today');
-			report.push(`  - Total Tokens: ${stats.today.tokens.toLocaleString()}`);
-			report.push(`  - Sessions: ${stats.today.sessions}`);
-			report.push(`  - Avg Interactions/Session: ${stats.today.avgInteractionsPerSession}`);
-			report.push(`  - Avg Tokens/Session: ${stats.today.avgTokensPerSession.toLocaleString()}`);
-			report.push(`  - Estimated Cost: $${stats.today.estimatedCost.toFixed(4)}`);
-			
-			// Model breakdown for today
-			if (Object.keys(stats.today.modelUsage).length > 0) {
-				report.push('  - Models Used:');
-				for (const [model, usage] of Object.entries(stats.today.modelUsage)) {
-					const total = usage.inputTokens + usage.outputTokens;
-					report.push(`    * ${model}: ${total.toLocaleString()} tokens (↑${usage.inputTokens.toLocaleString()} ↓${usage.outputTokens.toLocaleString()})`);
+			try {
+				const sessionFiles = await this.getCopilotSessionFiles();
+				report.push(`Total Session Files Found: ${sessionFiles.length}`);
+				report.push("");
+
+				// Group session files by their parent directory
+				const dirCounts = new Map<string, number>();
+				for (const file of sessionFiles) {
+					const parent = require('path').dirname(file);
+					dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1);
 				}
-			}
-			report.push('');
-			
-			// Month's stats
-			report.push('### This Month');
-			report.push(`  - Total Tokens: ${stats.month.tokens.toLocaleString()}`);
-			report.push(`  - Sessions: ${stats.month.sessions}`);
-			report.push(`  - Avg Interactions/Session: ${stats.month.avgInteractionsPerSession}`);
-			report.push(`  - Avg Tokens/Session: ${stats.month.avgTokensPerSession.toLocaleString()}`);
-			report.push(`  - Estimated Cost: $${stats.month.estimatedCost.toFixed(4)}`);
-			
-			// Model breakdown for month
-			if (Object.keys(stats.month.modelUsage).length > 0) {
-				report.push('  - Models Used:');
-				for (const [model, usage] of Object.entries(stats.month.modelUsage)) {
-					const total = usage.inputTokens + usage.outputTokens;
-					report.push(`    * ${model}: ${total.toLocaleString()} tokens (↑${usage.inputTokens.toLocaleString()} ↓${usage.outputTokens.toLocaleString()})`);
+				if (dirCounts.size > 0) {
+					report.push("Session Files by Directory:");
+					for (const [dir, count] of dirCounts.entries()) {
+						report.push(`  ${dir}: ${count}`);
+					}
+					report.push("");
 				}
+
+				if (sessionFiles.length > 0) {
+					report.push('Session File Locations (first 20):');
+					const filesToShow = sessionFiles.slice(0, 20);
+					const fileStats = await Promise.all(
+						filesToShow.map(async (file) => {
+							try {
+								const stat = await fs.promises.stat(file);
+								return { file, stat, error: null };
+							} catch (error) {
+								return { file, stat: null, error };
+							}
+						})
+					);
+					fileStats.forEach((result, index) => {
+						if (result.stat) {
+							report.push(`  ${index + 1}. ${result.file}`);
+							report.push(`     - Size: ${result.stat.size} bytes`);
+							report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
+						} else {
+							report.push(`  ${index + 1}. ${result.file}`);
+							report.push(`     - Error: ${result.error}`);
+						}
+					});
+					if (sessionFiles.length > 20) {
+						report.push(`  ... and ${sessionFiles.length - 20} more files`);
+					}
+				} else {
+					report.push('No session files found. Possible reasons:');
+					report.push('  - Copilot extensions are not active');
+					report.push('  - No Copilot Chat conversations have been initiated');
+					report.push('  - Sessions stored in unsupported location');
+					report.push('  - Authentication required with GitHub Copilot');
+				}
+				report.push('');
+			} catch (error) {
+				report.push(`Error discovering session files: ${error}`);
+				report.push('');
 			}
-			report.push('');
 		} catch (error) {
-			report.push(`Error calculating statistics: ${error}`);
+			report.push(`Error calculating token usage statistics: ${error}`);
 			report.push('');
 		}
-		
-		// Cache Statistics
-		report.push('## Cache Statistics');
-		report.push(`  - Cached Session Files: ${this.sessionFileCache.size}`);
-		report.push('');
 		
 		// Footer
 		report.push('='.repeat(70));
@@ -1759,27 +1777,55 @@ class CopilotTokenTracker implements vscode.Disposable {
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
 					break;
 				case 'openIssue':
-					// Copy the full report to clipboard
 					await vscode.env.clipboard.writeText(report);
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard. Please paste it into the GitHub issue.');
-					// Pre-fill the issue with a short message
 					const shortBody = encodeURIComponent('The diagnostic report has been copied to the clipboard. Please paste it below.');
 					const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
 					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					break;
+				case 'openSessionFile':
+					if (message.file) {
+						try {
+							await vscode.window.showTextDocument(vscode.Uri.file(message.file));
+						} catch (err) {
+							vscode.window.showErrorMessage('Could not open file: ' + message.file);
+						}
+					}
 					break;
 			}
 		});
 	}
 
 	private getDiagnosticReportHtml(report: string): string {
-		// Escape HTML special characters in the report
-		const escapedReport = report
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/'/g, '&#039;');
-		
+		// Split the report into sections
+		const sessionFilesSectionMatch = report.match(/Session File Locations \(first 20\):([\s\S]*?)(?=\n\s*\n|$)/);
+		let sessionFilesHtml = '';
+		if (sessionFilesSectionMatch) {
+			const lines = sessionFilesSectionMatch[1].split('\n').filter(l => l.trim());
+			sessionFilesHtml = '<div class="session-files-list"><h4>Session File Locations (first 20):</h4><ul style="padding-left:20px;">';
+			for (let i = 0; i < lines.length; i += 3) {
+				const fileLine = lines[i];
+				const sizeLine = lines[i+1] || '';
+				const modLine = lines[i+2] || '';
+				const fileMatch = fileLine.match(/(\d+)\. (.+)/);
+				if (fileMatch) {
+					const idx = fileMatch[1];
+					const file = fileMatch[2];
+					sessionFilesHtml += `<li><a href="#" class="session-file-link" data-file="${encodeURIComponent(file)}">${idx}. ${file}</a><br><span style="color:#aaa;">${sizeLine}<br>${modLine}</span></li>`;
+				} else {
+					sessionFilesHtml += `<li>${fileLine}</li>`;
+				}
+			}
+			sessionFilesHtml += '</ul></div>';
+		}
+
+		// Escape HTML for the rest of the report
+		let escapedReport = report.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+		// Remove the session files section from the escaped report
+		if (sessionFilesSectionMatch) {
+			escapedReport = escapedReport.replace(sessionFilesSectionMatch[0], '');
+		}
+
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
@@ -1841,6 +1887,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 					max-height: 70vh;
 					overflow-y: auto;
 				}
+				.session-files-list ul {
+					list-style: none;
+				}
+				.session-file-link {
+					color: #4FC3F7;
+					text-decoration: underline;
+					cursor: pointer;
+				}
+				.session-file-link:hover {
+					color: #81D4FA;
+				}
 				.button-group {
 					display: flex;
 					gap: 12px;
@@ -1897,7 +1954,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						<span class="header-title">Diagnostic Report</span>
 					</div>
 				</div>
-				
+                
 				<div class="info-box">
 					<div class="info-box-title">📋 About This Report</div>
 					<div>
@@ -1906,9 +1963,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						code or conversation content. You can safely share this report when reporting issues.
 					</div>
 				</div>
-				
+                
 				<div class="report-content">${escapedReport}</div>
-				
+				${sessionFilesHtml}
 				<div class="button-group">
 					<button class="button" onclick="copyReport()">
 						<span>📋</span>
@@ -1931,6 +1988,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 				function openIssue() {
 					vscode.postMessage({ command: 'openIssue' });
 				}
+
+				// Make session file links clickable
+				document.addEventListener('DOMContentLoaded', () => {
+					document.querySelectorAll('.session-file-link').forEach(link => {
+						link.addEventListener('click', (e) => {
+							e.preventDefault();
+							const file = decodeURIComponent(link.getAttribute('data-file'));
+							vscode.postMessage({ command: 'openSessionFile', file });
+						});
+					});
+				});
 			</script>
 		</body>
 		</html>`;
