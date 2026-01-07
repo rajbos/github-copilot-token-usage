@@ -35,30 +35,33 @@ jobs:
       - name: Fetch documentation page
         id: fetch_docs
         run: |
-          # Run the scraping script
-          chmod +x .github/scripts/scrape-models.sh
-          .github/scripts/scrape-models.sh
+          echo "Installing scraper dependencies..."
+          pushd .github/scripts
+          npm ci
+          echo "Running Node.js scraper..."
+          npm run scrape
+          popd
 
       - name: Upload scraped data as artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: scraped-data
           path: |
-            scraped-models.json
-            models.txt
-            page-content.html
-            scraper.log
+            .github/scripts/scraped-models.json
+            .github/scripts/models.txt
+            .github/scripts/page-content.html
+            .github/scripts/scraper.log
 
       - name: Extract models from scraped data
         id: fetch_models
         run: |
           # Read the models from the file created by the scraping step
-          if [ ! -f models.txt ]; then
+          if [ ! -f .github/scripts/models.txt ]; then
             echo "Error: models.txt not found"
             exit 1
           fi
           
-          MODELS=$(cat models.txt | sort -u)
+          MODELS=$(cat .github/scripts/models.txt | sort -u)
           
           echo "=== Scraped Models from Documentation ==="
           echo "$MODELS"
