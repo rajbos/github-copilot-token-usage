@@ -1,0 +1,14 @@
+{
+  "name": "copilot-model-scraper",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Scraper for GitHub Copilot supported models (CI helper)",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "scripts": {
+    "scrape": "node scrape-models.js"
+  },
+  "dependencies": {
+    "puppeteer": "^22.6.0"
+  }
+}
