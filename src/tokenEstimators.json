@@ -15,6 +15,7 @@
     "gpt-5.1-codex-max": 0.25,
     "gpt-5.1-codex-mini": 0.25,
     "gpt-5.2": 0.25,
+    "gpt-5.2-codex": 0.25,
     "claude-sonnet-3.5": 0.24,
     "claude-sonnet-3.7": 0.24,
     "claude-sonnet-4": 0.24,

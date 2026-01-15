@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2025-12-27",
+    "lastUpdated": "2026-01-15",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -64,6 +64,11 @@
       "category": "GPT-5 models"
     },
     "gpt-5.2": {
+      "inputCostPerMillion": 1.75,
+      "outputCostPerMillion": 14.0,
+      "category": "GPT-5 models"
+    },
+    "gpt-5.2-codex": {
       "inputCostPerMillion": 1.75,
       "outputCostPerMillion": 14.0,
       "category": "GPT-5 models"
