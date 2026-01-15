@@ -544,6 +544,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				let interactions = 0;
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (event.type === 'user.message') {
+							interactions++;
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return interactions;
+			}
+			
+			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 
 			// Count the number of requests as interactions
@@ -564,6 +584,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				// Default model for CLI sessions - they may not specify the model per event
+				const defaultModel = 'gpt-4o';
+				
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						const model = event.model || defaultModel;
+						
+						if (!modelUsage[model]) {
+							modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+						}
+						
+						if (event.type === 'user.message' && event.data?.content) {
+							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
+						} else if (event.type === 'assistant.message' && event.data?.content) {
+							modelUsage[model].outputTokens += this.estimateTokensFromText(event.data.content, model);
+						} else if (event.type === 'tool.result' && event.data?.output) {
+							// Tool outputs are typically input context
+							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return modelUsage;
+			}
+			
+			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
@@ -729,11 +782,58 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Get all possible VS Code user data paths for all VS Code variants
+	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
+	 */
+	private getVSCodeUserPaths(): string[] {
+		const platform = os.platform();
+		const homedir = os.homedir();
+		const paths: string[] = [];
+
+		// VS Code variants to check
+		const vscodeVariants = [
+			'Code',               // Stable
+			'Code - Insiders',    // Insiders
+			'Code - Exploration', // Exploration builds
+			'VSCodium',           // VSCodium
+			'Cursor'              // Cursor editor
+		];
+
+		if (platform === 'win32') {
+			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
+			for (const variant of vscodeVariants) {
+				paths.push(path.join(appDataPath, variant, 'User'));
+			}
+		} else if (platform === 'darwin') {
+			for (const variant of vscodeVariants) {
+				paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User'));
+			}
+		} else {
+			// Linux and other Unix-like systems
+			const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
+			for (const variant of vscodeVariants) {
+				paths.push(path.join(xdgConfigHome, variant, 'User'));
+			}
+		}
+
+		// Remote/Server paths (used in Codespaces, WSL, SSH remotes)
+		const remotePaths = [
+			path.join(homedir, '.vscode-server', 'data', 'User'),
+			path.join(homedir, '.vscode-server-insiders', 'data', 'User'),
+			path.join(homedir, '.vscode-remote', 'data', 'User'),
+			path.join('/tmp', '.vscode-server', 'data', 'User'),
+			path.join('/workspace', '.vscode-server', 'data', 'User')
+		];
+
+		paths.push(...remotePaths);
+
+		return paths;
+	}
+
 	private async getCopilotSessionFiles(): Promise<string[]> {
 		const sessionFiles: string[] = [];
 
-		// Cross-platform path resolution for VS Code user data
-		let codeUserPath: string;
 		const platform = os.platform();
 		const homedir = os.homedir();
 
@@ -749,154 +849,95 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log(`  CODESPACES: ${process.env.CODESPACES}`);
 		this.log(`  GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
 
-		if (platform === 'win32') {
-			// Windows: %APPDATA%/Code/User
-			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
-			codeUserPath = path.join(appDataPath, 'Code', 'User');
-			this.log(`Windows path - APPDATA: ${appDataPath}`);
-		} else if (platform === 'darwin') {
-			// macOS: ~/Library/Application Support/Code/User
-			codeUserPath = path.join(homedir, 'Library', 'Application Support', 'Code', 'User');
-			this.log(`macOS path calculated`);
-		} else {
-			// Linux and other Unix-like systems: ~/.config/Code/User
-			// In GitHub Codespaces, also check for alternative VS Code paths
-			const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-			if (xdgConfigHome) {
-				codeUserPath = path.join(xdgConfigHome, 'Code', 'User');
-				this.log(`Linux path using XDG_CONFIG_HOME: ${xdgConfigHome}`);
-			} else {
-				codeUserPath = path.join(homedir, '.config', 'Code', 'User');
-				this.log(`Linux path using default .config`);
-			}
-		}
+		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
+		const allVSCodePaths = this.getVSCodeUserPaths();
+		this.log(`Checking ${allVSCodePaths.length} VS Code path variants`);
 
-		this.log(`Calculated VS Code user path: ${codeUserPath}`);
-		this.log(`Path exists: ${fs.existsSync(codeUserPath)}`);
-
-		// Check alternative VS Code paths that might be used in Codespaces
-		const alternativePaths = [
-			path.join(homedir, '.vscode-server', 'data', 'User'),
-			path.join(homedir, '.vscode-remote', 'data', 'User'),
-			path.join('/tmp', '.vscode-server', 'data', 'User'),
-			path.join('/workspace', '.vscode-server', 'data', 'User')
-		];
-
-		this.log('Checking alternative VS Code paths:');
-		for (const altPath of alternativePaths) {
-			const exists = fs.existsSync(altPath);
-			this.log(`  ${altPath}: ${exists ? 'EXISTS' : 'not found'}`);
-			if (exists && !fs.existsSync(codeUserPath)) {
-				this.log(`  Using alternative path: ${altPath}`);
-				codeUserPath = altPath;
-				break;
+		// Track which paths we actually found
+		const foundPaths: string[] = [];
+		for (const codeUserPath of allVSCodePaths) {
+			if (fs.existsSync(codeUserPath)) {
+				foundPaths.push(codeUserPath);
+				this.log(`Found VS Code path: ${codeUserPath}`);
 			}
 		}
 
 		try {
-			// Workspace storage sessions
-			const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
-			this.log(`Checking workspace storage path: ${workspaceStoragePath}`);
-			this.log(`Workspace storage exists: ${fs.existsSync(workspaceStoragePath)}`);
+			// Scan all found VS Code paths for session files
+			for (const codeUserPath of foundPaths) {
+				this.log(`Scanning VS Code path: ${codeUserPath}`);
 
-			if (fs.existsSync(workspaceStoragePath)) {
-				const workspaceDirs = fs.readdirSync(workspaceStoragePath);
-				this.log(`Found ${workspaceDirs.length} workspace directories`);
+				// Workspace storage sessions
+				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
+				if (fs.existsSync(workspaceStoragePath)) {
+					const workspaceDirs = fs.readdirSync(workspaceStoragePath);
+					this.log(`Found ${workspaceDirs.length} workspace directories in ${path.basename(path.dirname(codeUserPath))}`);
 
-				for (const workspaceDir of workspaceDirs) {
-					const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-					this.log(`Checking chat sessions path: ${chatSessionsPath}`);
-
-					if (fs.existsSync(chatSessionsPath)) {
-						const sessionFiles2 = fs.readdirSync(chatSessionsPath)
-							.filter(file => file.endsWith('.json'))
-							.map(file => path.join(chatSessionsPath, file));
-						this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
-						sessionFiles.push(...sessionFiles2);
-					} else {
-						this.log(`Chat sessions path does not exist: ${chatSessionsPath}`);
-						// Investigate what's actually in this workspace directory
-						try {
-							const workspaceDirPath = path.join(workspaceStoragePath, workspaceDir);
-							const dirContents = fs.readdirSync(workspaceDirPath);
-							this.log(`  Workspace ${workspaceDir} contains: ${dirContents.join(', ')}`);
-
-							// Check for GitHub Copilot specific directories
-							const copilotDirs = dirContents.filter(dir =>
-								dir.toLowerCase().includes('copilot') ||
-								dir.toLowerCase().includes('chat') ||
-								dir.toLowerCase().includes('github')
-							);
-							if (copilotDirs.length > 0) {
-								this.log(`  Found potential Copilot-related directories: ${copilotDirs.join(', ')}`);
+					for (const workspaceDir of workspaceDirs) {
+						const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
+						if (fs.existsSync(chatSessionsPath)) {
+							const sessionFiles2 = fs.readdirSync(chatSessionsPath)
+								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+								.map(file => path.join(chatSessionsPath, file));
+							if (sessionFiles2.length > 0) {
+								this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
+								sessionFiles.push(...sessionFiles2);
 							}
-						} catch (error) {
-							this.warn(`  Could not read workspace directory ${workspaceDir}: ${error}`);
 						}
 					}
 				}
-			} else {
-				this.log(`Workspace storage path does not exist: ${workspaceStoragePath}`);
-			}			// Global storage sessions
-			const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
-			this.log(`Checking global storage path: ${globalStoragePath}`);
-			this.log(`Global storage exists: ${fs.existsSync(globalStoragePath)}`);
 
-			if (fs.existsSync(globalStoragePath)) {
-				const globalSessionFiles = fs.readdirSync(globalStoragePath)
-					.filter(file => file.endsWith('.json'))
-					.map(file => path.join(globalStoragePath, file));
-				this.log(`Found ${globalSessionFiles.length} global session files`);
-				sessionFiles.push(...globalSessionFiles);
-			} else {
-				this.log(`Global storage path does not exist: ${globalStoragePath}`);
-			}
-
-			// If no session files found, check for alternative GitHub Copilot storage locations
-			if (sessionFiles.length === 0) {
-				this.log('No session files found in standard locations. Checking alternative GitHub Copilot storage...');
-
-				// Check for GitHub Copilot extension specific storage
-				const alternativeStorageLocations = [
-					path.join(codeUserPath, 'globalStorage', 'github.copilot'),
-					path.join(codeUserPath, 'globalStorage', 'github.copilot-chat'),
-					path.join(codeUserPath, 'globalStorage', 'github.copilot-labs'),
-					path.join(codeUserPath, 'User', 'globalStorage', 'github.copilot-chat'),
-					path.join(os.homedir(), '.copilot'),
-					path.join(os.homedir(), '.github-copilot')
-				];
-
-				for (const altLocation of alternativeStorageLocations) {
-					if (fs.existsSync(altLocation)) {
-						this.log(`Found alternative Copilot storage: ${altLocation}`);
-						try {
-							const contents = fs.readdirSync(altLocation);
-							this.log(`  Contains: ${contents.join(', ')}`);
-
-							// Look for any JSON files that might be session files
-							const jsonFiles = contents.filter(file => file.endsWith('.json'));
-							if (jsonFiles.length > 0) {
-								this.log(`  Found ${jsonFiles.length} JSON files that might be sessions: ${jsonFiles.join(', ')}`);
-							}
-						} catch (error) {
-							this.warn(`  Could not read alternative storage ${altLocation}: ${error}`);
-						}
+				// Global storage sessions (legacy emptyWindowChatSessions)
+				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
+				if (fs.existsSync(globalStoragePath)) {
+					const globalSessionFiles = fs.readdirSync(globalStoragePath)
+						.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+						.map(file => path.join(globalStoragePath, file));
+					if (globalSessionFiles.length > 0) {
+						this.log(`Found ${globalSessionFiles.length} global session files`);
+						sessionFiles.push(...globalSessionFiles);
 					}
+				}
+
+				// GitHub Copilot Chat extension global storage
+				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
+				if (fs.existsSync(copilotChatGlobalPath)) {
+					this.log(`Found github.copilot-chat global storage: ${copilotChatGlobalPath}`);
+					this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
 				}
 			}
 
+			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
+			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
+			this.log(`Checking Copilot CLI session-state path: ${copilotCliSessionPath}`);
+			if (fs.existsSync(copilotCliSessionPath)) {
+				this.log(`Found Copilot CLI session-state directory`);
+				const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
+					.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+					.map(file => path.join(copilotCliSessionPath, file));
+				if (cliSessionFiles.length > 0) {
+					this.log(`Found ${cliSessionFiles.length} Copilot CLI session files`);
+					sessionFiles.push(...cliSessionFiles);
+				}
+			}
+
+			// Log summary
 			this.log(`Total session files found: ${sessionFiles.length}`);
 			if (sessionFiles.length > 0) {
 				this.log('Session file paths:');
-				sessionFiles.forEach((file, index) => {
+				sessionFiles.slice(0, 20).forEach((file, index) => {
 					this.log(`  ${index + 1}: ${file}`);
 				});
+				if (sessionFiles.length > 20) {
+					this.log(`  ... and ${sessionFiles.length - 20} more files`);
+				}
 			} else {
 				this.warn('No GitHub Copilot session files found. This could be because:');
-				this.log('  1. Copilot extensions are not active (most likely in Codespaces)');
+				this.log('  1. Copilot extensions are not active');
 				this.log('  2. No Copilot Chat conversations have been initiated yet');
 				this.log('  3. Sessions are stored in a different location not yet supported');
 				this.log('  4. User needs to authenticate with GitHub Copilot first');
+				this.log('  Run: node scripts/diagnose-session-files.js for detailed diagnostics');
 			}
 		} catch (error) {
 			this.error('Error getting session files:', error);
@@ -905,9 +946,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return sessionFiles;
 	}
 
+	/**
+	 * Recursively scan a directory for session files (.json and .jsonl)
+	 */
+	private scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
+		try {
+			const entries = fs.readdirSync(dir, { withFileTypes: true });
+			for (const entry of entries) {
+				const fullPath = path.join(dir, entry.name);
+				if (entry.isDirectory()) {
+					this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
+				} else if (entry.name.endsWith('.json') || entry.name.endsWith('.jsonl')) {
+					// Only add files that look like session files (have reasonable content)
+					try {
+						const stats = fs.statSync(fullPath);
+						if (stats.size > 0) {
+							sessionFiles.push(fullPath);
+						}
+					} catch (e) {
+						// Ignore file access errors
+					}
+				}
+			}
+		} catch (error) {
+			this.warn(`Could not scan directory ${dir}: ${error}`);
+		}
+	}
+
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+			
+			// Handle .jsonl files (each line is a separate JSON object)
+			if (sessionFilePath.endsWith('.jsonl')) {
+				return this.estimateTokensFromJsonlSession(fileContent);
+			}
+			
+			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 			let totalInputTokens = 0;
 			let totalOutputTokens = 0;
@@ -939,6 +1014,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
 			return 0;
 		}
+	}
+
+	/**
+	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode)
+	 * Each line is a separate JSON object representing an event in the session
+	 */
+	private estimateTokensFromJsonlSession(fileContent: string): number {
+		let totalTokens = 0;
+		const lines = fileContent.trim().split('\n');
+		
+		for (const line of lines) {
+			if (!line.trim()) { continue; }
+			
+			try {
+				const event = JSON.parse(line);
+				
+				// Handle different event types from the Copilot CLI session format
+				if (event.type === 'user.message' && event.data?.content) {
+					totalTokens += this.estimateTokensFromText(event.data.content);
+				} else if (event.type === 'assistant.message' && event.data?.content) {
+					totalTokens += this.estimateTokensFromText(event.data.content);
+				} else if (event.type === 'tool.result' && event.data?.output) {
+					totalTokens += this.estimateTokensFromText(event.data.output);
+				} else if (event.content) {
+					// Fallback for other formats that might have content
+					totalTokens += this.estimateTokensFromText(event.content);
+				}
+			} catch (e) {
+				// Skip malformed lines
+			}
+		}
+		
+		return totalTokens;
 	}
 
 	private getModelFromRequest(request: any): string {
