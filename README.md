@@ -18,13 +18,23 @@ The extension shows token usage in the format: `# <today> | <this month>` in the
 ![Status Bar Display](docs/images/01%20Toolbar%20info.png)  
 
 Hovering on the status bar item shows a detailed breakdown of token usage:
-![Hover Details](docs/images/02%20Popup.png)
+![Hover Details](docs/images/02%20Popup.png)  
 
 Clicking the status bar item opens a detailed view with comprehensive statistics:
-![Detailed View](docs/images/03%20Detail%20panel.png)
+![Detailed View](docs/images/03%20Detail%20panel.png)  
 
 Chart overview per day, with option to view per model as well:  
-![Chart View](docs/images/04%20Chart.png)
+![Chart View](docs/images/04%20Chart.png)  
+
+Or per supported editor:
+![Chart View](docs/images/04%20Chart_02.png)  
+Supported editors are:
+
+- `Code` — Stable VS Code release
+- `Code - Insiders` — VS Code Insiders (preview) builds
+- `Code - Exploration` — Exploration/pre-release builds
+- `VSCodium` — Community-built VS Code distribution
+- `Cursor` — Cursor editor
 
 ## Performance Optimization
 
