@@ -25,6 +25,13 @@ interface ModelPricing {
 	category?: string;
 }
 
+interface EditorUsage {
+	[editorType: string]: {
+		tokens: number;
+		sessions: number;
+	};
+}
+
 interface DetailedStats {
 	today: {
 		tokens: number;
@@ -32,6 +39,7 @@ interface DetailedStats {
 		avgInteractionsPerSession: number;
 		avgTokensPerSession: number;
 		modelUsage: ModelUsage;
+		editorUsage: EditorUsage;
 		co2: number;
 		treesEquivalent: number;
 		waterUsage: number;
@@ -43,6 +51,7 @@ interface DetailedStats {
 		avgInteractionsPerSession: number;
 		avgTokensPerSession: number;
 		modelUsage: ModelUsage;
+		editorUsage: EditorUsage;
 		co2: number;
 		treesEquivalent: number;
 		waterUsage: number;
@@ -57,6 +66,7 @@ interface DailyTokenStats {
 	sessions: number;
 	interactions: number;
 	modelUsage: ModelUsage;
+	editorUsage: EditorUsage;
 }
 
 interface SessionFileCache {
@@ -95,6 +105,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private getRepositoryUrl(): string {
 		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
 		return repoUrl || 'https://github.com/rajbos/github-copilot-token-usage';
+	}
+
+	/**
+	 * Determine the editor type from a session file path
+	 * Returns: 'VS Code', 'VS Code Insiders', 'VSCodium', 'Cursor', 'Copilot CLI', or 'Unknown'
+	 */
+	private getEditorTypeFromPath(filePath: string): string {
+		const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
+		
+		if (normalizedPath.includes('/.copilot/session-state/')) {
+			return 'Copilot CLI';
+		}
+		if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
+			return 'VS Code Insiders';
+		}
+		if (normalizedPath.includes('/code - exploration/') || normalizedPath.includes('/code%20-%20exploration/')) {
+			return 'VS Code Exploration';
+		}
+		if (normalizedPath.includes('/vscodium/')) {
+			return 'VSCodium';
+		}
+		if (normalizedPath.includes('/cursor/')) {
+			return 'Cursor';
+		}
+		if (normalizedPath.includes('.vscode-server-insiders/')) {
+			return 'VS Code Server (Insiders)';
+		}
+		if (normalizedPath.includes('.vscode-server/') || normalizedPath.includes('.vscode-remote/')) {
+			return 'VS Code Server';
+		}
+		if (normalizedPath.includes('/code/')) {
+			return 'VS Code';
+		}
+		
+		return 'Unknown';
 	}
 
 	// Logging methods
@@ -351,8 +396,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage };
-		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage };
+		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -385,6 +430,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						const editorType = this.getEditorTypeFromPath(sessionFile);
 
 						// Update cache statistics
 						if (wasCached) {
@@ -393,11 +439,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 							cacheMisses++;
 						}
 
-						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions`);
+						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions, editor: ${editorType}`);
 
 						monthStats.tokens += tokens;
 						monthStats.sessions += 1;
 						monthStats.interactions += interactions;
+
+						// Add editor usage to month stats
+						if (!monthStats.editorUsage[editorType]) {
+							monthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						monthStats.editorUsage[editorType].tokens += tokens;
+						monthStats.editorUsage[editorType].sessions += 1;
 
 						// Add model usage to month stats
 						for (const [model, usage] of Object.entries(modelUsage)) {
@@ -412,6 +465,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 							todayStats.tokens += tokens;
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
+
+							// Add editor usage to today stats
+							if (!todayStats.editorUsage[editorType]) {
+								todayStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+							}
+							todayStats.editorUsage[editorType].tokens += tokens;
+							todayStats.editorUsage[editorType].sessions += 1;
 
 							// Add model usage to today stats
 							for (const [model, usage] of Object.entries(modelUsage)) {
@@ -449,6 +509,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgInteractionsPerSession: todayStats.sessions > 0 ? Math.round(todayStats.interactions / todayStats.sessions) : 0,
 				avgTokensPerSession: todayStats.sessions > 0 ? Math.round(todayStats.tokens / todayStats.sessions) : 0,
 				modelUsage: todayStats.modelUsage,
+				editorUsage: todayStats.editorUsage,
 				co2: todayCo2,
 				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: todayWater,
@@ -460,6 +521,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgInteractionsPerSession: monthStats.sessions > 0 ? Math.round(monthStats.interactions / monthStats.sessions) : 0,
 				avgTokensPerSession: monthStats.sessions > 0 ? Math.round(monthStats.tokens / monthStats.sessions) : 0,
 				modelUsage: monthStats.modelUsage,
+				editorUsage: monthStats.editorUsage,
 				co2: monthCo2,
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: monthWater,
@@ -498,6 +560,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						const editorType = this.getEditorTypeFromPath(sessionFile);
 						
 						// Get the date in YYYY-MM-DD format
 						const dateKey = this.formatDateKey(new Date(fileStats.mtime));
@@ -509,7 +572,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 								tokens: 0,
 								sessions: 0,
 								interactions: 0,
-								modelUsage: {}
+								modelUsage: {},
+								editorUsage: {}
 							});
 						}
 						
@@ -517,6 +581,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 						dailyStats.tokens += tokens;
 						dailyStats.sessions += 1;
 						dailyStats.interactions += interactions;
+						
+						// Merge editor usage
+						if (!dailyStats.editorUsage[editorType]) {
+							dailyStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						dailyStats.editorUsage[editorType].tokens += tokens;
+						dailyStats.editorUsage[editorType].sessions += 1;
 						
 						// Merge model usage
 						for (const [model, usage] of Object.entries(modelUsage)) {
@@ -1451,6 +1522,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</tbody>
 				</table>
 
+				${this.getEditorUsageHtml(stats)}
+
 				${this.getModelUsageHtml(stats)}
 
 				<div style="margin-top: 24px;">
@@ -1487,7 +1560,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</button>
 				</div>
 			</div>
-
 			<script>
 				const vscode = acquireVsCodeApi();
 
@@ -1610,6 +1682,97 @@ class CopilotTokenTracker implements vscode.Disposable {
 				</table>
 			</div>
 		`;
+	}
+
+	private getEditorUsageHtml(stats: DetailedStats): string {
+		// Get all unique editors from both periods
+		const allEditors = new Set([
+			...Object.keys(stats.today.editorUsage),
+			...Object.keys(stats.month.editorUsage)
+		]);
+
+		if (allEditors.size === 0) {
+			return '';
+		}
+
+		// Calculate totals for percentages
+		const todayTotal = Object.values(stats.today.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
+		const monthTotal = Object.values(stats.month.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
+
+		const editorRows = Array.from(allEditors).sort().map(editor => {
+			const todayUsage = stats.today.editorUsage[editor] || { tokens: 0, sessions: 0 };
+			const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
+			
+			const todayPercent = todayTotal > 0 ? ((todayUsage.tokens / todayTotal) * 100).toFixed(1) : '0.0';
+			const monthPercent = monthTotal > 0 ? ((monthUsage.tokens / monthTotal) * 100).toFixed(1) : '0.0';
+
+			return `
+			<tr>
+				<td class="metric-label">
+					${this.getEditorIcon(editor)} ${editor}
+				</td>
+				<td class="today-value">
+					${todayUsage.tokens.toLocaleString()}
+					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">${todayPercent}% · ${todayUsage.sessions} sessions</div>
+				</td>
+				<td class="month-value">
+					${monthUsage.tokens.toLocaleString()}
+					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">${monthPercent}% · ${monthUsage.sessions} sessions</div>
+				</td>
+			</tr>
+		`;
+		}).join('');
+
+		return `
+			<div style="margin-top: 16px;">
+				<h3 style="color: #ffffff; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+					<span>💻</span>
+					<span>Usage by Editor</span>
+				</h3>
+				<table class="stats-table">
+					<colgroup>
+						<col class="metric-col">
+						<col class="value-col">
+						<col class="value-col">
+					</colgroup>
+					<thead>
+						<tr>
+							<th>Editor</th>
+							<th>
+								<div class="period-header">
+									<span>📅</span>
+									<span>Today</span>
+								</div>
+							</th>
+							<th>
+								<div class="period-header">
+									<span>📊</span>
+									<span>This Month</span>
+								</div>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						${editorRows}
+					</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	private getEditorIcon(editor: string): string {
+		const icons: { [key: string]: string } = {
+			'VS Code': '💙',
+			'VS Code Insiders': '💚',
+			'VS Code Exploration': '🧪',
+			'VS Code Server': '☁️',
+			'VS Code Server (Insiders)': '☁️',
+			'VSCodium': '🔷',
+			'Cursor': '⚡',
+			'Copilot CLI': '🤖',
+			'Unknown': '❓'
+		};
+		return icons[editor] || '📝';
 	}
 
 	private getModelDisplayName(model: string): string {
@@ -2125,6 +2288,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 		const modelList = Array.from(allModels).sort();
 		
+		// Prepare editor-specific data for stacked bars
+		const allEditors = new Set<string>();
+		dailyStats.forEach(stat => {
+			Object.keys(stat.editorUsage).forEach(editor => allEditors.add(editor));
+		});
+		const editorList = Array.from(allEditors).sort();
+		
 		// Create model-specific datasets for stacked view
 		const modelColors = [
 			'rgba(54, 162, 235, 0.8)',
@@ -2137,20 +2307,112 @@ class CopilotTokenTracker implements vscode.Disposable {
 			'rgba(83, 102, 255, 0.8)'
 		];
 		
+		// Editor-specific colors
+		const editorColors: { [key: string]: string } = {
+			'VS Code': 'rgba(0, 122, 204, 0.8)',           // Blue
+			'VS Code Insiders': 'rgba(38, 168, 67, 0.8)',  // Green
+			'VS Code Exploration': 'rgba(156, 39, 176, 0.8)', // Purple
+			'VS Code Server': 'rgba(0, 188, 212, 0.8)',    // Cyan
+			'VS Code Server (Insiders)': 'rgba(0, 150, 136, 0.8)', // Teal
+			'VSCodium': 'rgba(33, 150, 243, 0.8)',         // Light Blue
+			'Cursor': 'rgba(255, 193, 7, 0.8)',            // Yellow
+			'Copilot CLI': 'rgba(233, 30, 99, 0.8)',       // Pink
+			'Unknown': 'rgba(158, 158, 158, 0.8)'          // Grey
+		};
+		
+		// Compute total tokens per model so we can prefer non-grey colors for the largest models
+		const modelTotals: { [key: string]: number } = {};
+		for (const m of modelList) modelTotals[m] = 0;
+		dailyStats.forEach(stat => {
+			for (const m of modelList) {
+				const usage = stat.modelUsage[m];
+				if (usage) modelTotals[m] += usage.inputTokens + usage.outputTokens;
+			}
+		});
+		// Sort models by total desc for color assignment
+		const modelsBySize = modelList.slice().sort((a, b) => (modelTotals[b] || 0) - (modelTotals[a] || 0));
+		
+		// Avoid using grey/black/white for the top N largest models
+		const forbiddenColorKeywords = ['199, 199, 199', '158, 158, 158', '0, 0, 0', '255, 255, 255'];
+		const topN = Math.min(3, modelsBySize.length);
+		const reservedColors: { [model: string]: string } = {};
+		let colorIndex = 0;
+		for (let i = 0; i < topN; i++) {
+			const m = modelsBySize[i];
+			// find next modelColors[colorIndex] that is not forbidden
+			while (colorIndex < modelColors.length) {
+				const candidate = modelColors[colorIndex];
+				const rgbPart = candidate.match(/rgba\(([^,]+),\s*([^,]+),\s*([^,]+),/);
+				if (rgbPart) {
+					const rgbKey = `${rgbPart[1].trim()}, ${rgbPart[2].trim()}, ${rgbPart[3].trim()}`;
+					if (!forbiddenColorKeywords.includes(rgbKey)) {
+						reservedColors[m] = candidate;
+						colorIndex++;
+						break;
+					}
+				}
+				colorIndex++;
+			}
+		}
+
 		const modelDatasets = modelList.map((model, index) => {
 			const data = dailyStats.map(stat => {
 				const usage = stat.modelUsage[model];
 				return usage ? usage.inputTokens + usage.outputTokens : 0;
 			});
-			
+			const assignedColor = reservedColors[model] || modelColors[index % modelColors.length];
 			return {
 				label: this.getModelDisplayName(model),
 				data: data,
-				backgroundColor: modelColors[index % modelColors.length],
-				borderColor: modelColors[index % modelColors.length].replace('0.8', '1'),
+				backgroundColor: assignedColor,
+				borderColor: assignedColor.replace('0.8', '1'),
 				borderWidth: 1
 			};
 		});
+
+		const editorDatasets = editorList.map((editor, index) => {
+			const data = dailyStats.map(stat => {
+				const usage = stat.editorUsage[editor];
+				return usage ? usage.tokens : 0;
+			});
+			
+			const color = editorColors[editor] || modelColors[index % modelColors.length];
+			
+			return {
+				label: editor,
+				data: data,
+				backgroundColor: color,
+				borderColor: color.replace('0.8', '1'),
+				borderWidth: 1
+			};
+		});
+
+		// Calculate total tokens per editor (for summary panels)
+		const editorTotalsMap: { [key: string]: number } = {};
+		for (const ed of editorList) {
+			editorTotalsMap[ed] = 0;
+		}
+			dailyStats.forEach(stat => {
+				for (const ed of editorList) {
+					const usage = stat.editorUsage[ed];
+					if (usage) {
+						editorTotalsMap[ed] += usage.tokens;
+					}
+				}
+			});
+
+		const editorPanelsHtml = editorList.map(ed => {
+			const tokens = editorTotalsMap[ed] || 0;
+			return `<div class="stat-card"><div class="stat-label">${this.getEditorIcon(ed)} ${ed}</div><div class="stat-value">${tokens.toLocaleString()}</div></div>`;
+		}).join('');
+
+		let editorSummaryHtml = '';
+		if (editorList.length > 1) {
+			// Debug: log editor summary data to output for troubleshooting
+			this.log(`Editor list for chart: ${JSON.stringify(editorList)}`);
+			this.log(`Editor totals: ${JSON.stringify(editorTotalsMap)}`);
+			editorSummaryHtml = `<div class="stats-summary" style="margin-top:12px;">${editorPanelsHtml}</div>`;
+		}
 
 		// Pre-calculate summary statistics
 		const totalTokens = dailyStats.reduce((sum, stat) => sum + stat.tokens, 0);
@@ -2294,7 +2556,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					<span class="header-icon">📈</span>
 					<span class="header-title">Token Usage Over Time</span>
 				</div>
-				
 				<div class="stats-summary">
 					<div class="stat-card">
 						<div class="stat-label">Total Days</div>
@@ -2314,9 +2575,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</div>
 				</div>
 
+				${editorSummaryHtml}
+
 				<div class="chart-controls">
 					<button class="toggle-button active" id="totalViewBtn" onclick="switchView('total')">Total Tokens</button>
 					<button class="toggle-button" id="modelViewBtn" onclick="switchView('model')">By Model</button>
+					<button class="toggle-button" id="editorViewBtn" onclick="switchView('editor')">By Editor</button>
 				</div>
 
 				<div class="chart-container">
@@ -2349,6 +2613,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const tokensData = ${JSON.stringify(tokensData)};
 				const sessionsData = ${JSON.stringify(sessionsData)};
 				const modelDatasets = ${JSON.stringify(modelDatasets)};
+				const editorDatasets = ${JSON.stringify(editorDatasets)};
 
 				// Chart instance
 				let chart;
@@ -2499,12 +2764,68 @@ class CopilotTokenTracker implements vscode.Disposable {
 					};
 				}
 
+				function createEditorView() {
+					return {
+						type: 'bar',
+						data: {
+							labels: labels,
+							datasets: editorDatasets
+						},
+						options: {
+							responsive: true,
+							maintainAspectRatio: false,
+							interaction: {
+								mode: 'index',
+								intersect: false,
+							},
+							scales: {
+								x: {
+									stacked: true,
+									grid: { color: '#5a5a5a' },
+									ticks: { color: '#cccccc', font: { size: 11 } }
+								},
+								y: {
+									stacked: true,
+									grid: { color: '#5a5a5a' },
+									ticks: { 
+										color: '#cccccc', 
+										font: { size: 11 },
+										callback: function(value) { return value.toLocaleString(); }
+									},
+									title: {
+										display: true,
+										text: 'Tokens by Editor',
+										color: '#cccccc',
+										font: { size: 12, weight: 'bold' }
+									}
+								}
+							},
+							plugins: {
+								legend: {
+									position: 'top',
+									labels: { color: '#cccccc', font: { size: 12 } }
+								},
+								tooltip: {
+									backgroundColor: 'rgba(0, 0, 0, 0.8)',
+									titleColor: '#ffffff',
+									bodyColor: '#cccccc',
+									borderColor: '#5a5a5a',
+									borderWidth: 1,
+									padding: 10,
+									displayColors: true
+								}
+							}
+						}
+					};
+				}
+
 				function switchView(viewType) {
 					currentView = viewType;
 					
 					// Update button states
 					document.getElementById('totalViewBtn').classList.toggle('active', viewType === 'total');
 					document.getElementById('modelViewBtn').classList.toggle('active', viewType === 'model');
+					document.getElementById('editorViewBtn').classList.toggle('active', viewType === 'editor');
 					
 					// Destroy existing chart
 					if (chart) {
@@ -2512,7 +2833,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 					
 					// Create new chart based on view type
-					const config = viewType === 'total' ? createTotalView() : createModelView();
+					let config;
+					if (viewType === 'total') {
+						config = createTotalView();
+					} else if (viewType === 'model') {
+						config = createModelView();
+					} else {
+						config = createEditorView();
+					}
 					chart = new Chart(ctx, config);
 				}
 
