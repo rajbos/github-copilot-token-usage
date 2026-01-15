@@ -174,6 +174,8 @@ The workflow will automatically:
 - Create a GitHub release with auto-generated release notes
 - Attach the VSIX file as a release asset
 
+Then run the `./publish.ps1` script to package the VSIX file locally.
+
 #### Method 2: Tag-Based Release (Traditional)
 
 1. Update the version in `package.json`
