@@ -25,6 +25,13 @@ interface ModelPricing {
 	category?: string;
 }
 
+interface EditorUsage {
+	[editorType: string]: {
+		tokens: number;
+		sessions: number;
+	};
+}
+
 interface DetailedStats {
 	today: {
 		tokens: number;
@@ -32,6 +39,7 @@ interface DetailedStats {
 		avgInteractionsPerSession: number;
 		avgTokensPerSession: number;
 		modelUsage: ModelUsage;
+		editorUsage: EditorUsage;
 		co2: number;
 		treesEquivalent: number;
 		waterUsage: number;
@@ -43,6 +51,7 @@ interface DetailedStats {
 		avgInteractionsPerSession: number;
 		avgTokensPerSession: number;
 		modelUsage: ModelUsage;
+		editorUsage: EditorUsage;
 		co2: number;
 		treesEquivalent: number;
 		waterUsage: number;
@@ -57,6 +66,7 @@ interface DailyTokenStats {
 	sessions: number;
 	interactions: number;
 	modelUsage: ModelUsage;
+	editorUsage: EditorUsage;
 }
 
 interface SessionFileCache {
@@ -95,6 +105,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private getRepositoryUrl(): string {
 		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
 		return repoUrl || 'https://github.com/rajbos/github-copilot-token-usage';
+	}
+
+	/**
+	 * Determine the editor type from a session file path
+	 * Returns: 'VS Code', 'VS Code Insiders', 'VSCodium', 'Cursor', 'Copilot CLI', or 'Unknown'
+	 */
+	private getEditorTypeFromPath(filePath: string): string {
+		const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
+		
+		if (normalizedPath.includes('/.copilot/session-state/')) {
+			return 'Copilot CLI';
+		}
+		if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
+			return 'VS Code Insiders';
+		}
+		if (normalizedPath.includes('/code - exploration/') || normalizedPath.includes('/code%20-%20exploration/')) {
+			return 'VS Code Exploration';
+		}
+		if (normalizedPath.includes('/vscodium/')) {
+			return 'VSCodium';
+		}
+		if (normalizedPath.includes('/cursor/')) {
+			return 'Cursor';
+		}
+		if (normalizedPath.includes('.vscode-server-insiders/')) {
+			return 'VS Code Server (Insiders)';
+		}
+		if (normalizedPath.includes('.vscode-server/') || normalizedPath.includes('.vscode-remote/')) {
+			return 'VS Code Server';
+		}
+		if (normalizedPath.includes('/code/')) {
+			return 'VS Code';
+		}
+		
+		return 'Unknown';
 	}
 
 	// Logging methods
@@ -351,8 +396,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage };
-		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage };
+		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -385,6 +430,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						const editorType = this.getEditorTypeFromPath(sessionFile);
 
 						// Update cache statistics
 						if (wasCached) {
@@ -393,11 +439,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 							cacheMisses++;
 						}
 
-						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions`);
+						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions, editor: ${editorType}`);
 
 						monthStats.tokens += tokens;
 						monthStats.sessions += 1;
 						monthStats.interactions += interactions;
+
+						// Add editor usage to month stats
+						if (!monthStats.editorUsage[editorType]) {
+							monthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						monthStats.editorUsage[editorType].tokens += tokens;
+						monthStats.editorUsage[editorType].sessions += 1;
 
 						// Add model usage to month stats
 						for (const [model, usage] of Object.entries(modelUsage)) {
@@ -412,6 +465,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 							todayStats.tokens += tokens;
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
+
+							// Add editor usage to today stats
+							if (!todayStats.editorUsage[editorType]) {
+								todayStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+							}
+							todayStats.editorUsage[editorType].tokens += tokens;
+							todayStats.editorUsage[editorType].sessions += 1;
 
 							// Add model usage to today stats
 							for (const [model, usage] of Object.entries(modelUsage)) {
@@ -449,6 +509,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgInteractionsPerSession: todayStats.sessions > 0 ? Math.round(todayStats.interactions / todayStats.sessions) : 0,
 				avgTokensPerSession: todayStats.sessions > 0 ? Math.round(todayStats.tokens / todayStats.sessions) : 0,
 				modelUsage: todayStats.modelUsage,
+				editorUsage: todayStats.editorUsage,
 				co2: todayCo2,
 				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: todayWater,
@@ -460,6 +521,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgInteractionsPerSession: monthStats.sessions > 0 ? Math.round(monthStats.interactions / monthStats.sessions) : 0,
 				avgTokensPerSession: monthStats.sessions > 0 ? Math.round(monthStats.tokens / monthStats.sessions) : 0,
 				modelUsage: monthStats.modelUsage,
+				editorUsage: monthStats.editorUsage,
 				co2: monthCo2,
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: monthWater,
@@ -498,6 +560,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						const editorType = this.getEditorTypeFromPath(sessionFile);
 						
 						// Get the date in YYYY-MM-DD format
 						const dateKey = this.formatDateKey(new Date(fileStats.mtime));
@@ -509,7 +572,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 								tokens: 0,
 								sessions: 0,
 								interactions: 0,
-								modelUsage: {}
+								modelUsage: {},
+								editorUsage: {}
 							});
 						}
 						
@@ -517,6 +581,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 						dailyStats.tokens += tokens;
 						dailyStats.sessions += 1;
 						dailyStats.interactions += interactions;
+						
+						// Merge editor usage
+						if (!dailyStats.editorUsage[editorType]) {
+							dailyStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						dailyStats.editorUsage[editorType].tokens += tokens;
+						dailyStats.editorUsage[editorType].sessions += 1;
 						
 						// Merge model usage
 						for (const [model, usage] of Object.entries(modelUsage)) {
@@ -544,6 +615,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				let interactions = 0;
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (event.type === 'user.message') {
+							interactions++;
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return interactions;
+			}
+			
+			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 
 			// Count the number of requests as interactions
@@ -564,6 +655,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				// Default model for CLI sessions - they may not specify the model per event
+				const defaultModel = 'gpt-4o';
+				
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						const model = event.model || defaultModel;
+						
+						if (!modelUsage[model]) {
+							modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+						}
+						
+						if (event.type === 'user.message' && event.data?.content) {
+							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
+						} else if (event.type === 'assistant.message' && event.data?.content) {
+							modelUsage[model].outputTokens += this.estimateTokensFromText(event.data.content, model);
+						} else if (event.type === 'tool.result' && event.data?.output) {
+							// Tool outputs are typically input context
+							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return modelUsage;
+			}
+			
+			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
@@ -729,11 +853,58 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Get all possible VS Code user data paths for all VS Code variants
+	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
+	 */
+	private getVSCodeUserPaths(): string[] {
+		const platform = os.platform();
+		const homedir = os.homedir();
+		const paths: string[] = [];
+
+		// VS Code variants to check
+		const vscodeVariants = [
+			'Code',               // Stable
+			'Code - Insiders',    // Insiders
+			'Code - Exploration', // Exploration builds
+			'VSCodium',           // VSCodium
+			'Cursor'              // Cursor editor
+		];
+
+		if (platform === 'win32') {
+			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
+			for (const variant of vscodeVariants) {
+				paths.push(path.join(appDataPath, variant, 'User'));
+			}
+		} else if (platform === 'darwin') {
+			for (const variant of vscodeVariants) {
+				paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User'));
+			}
+		} else {
+			// Linux and other Unix-like systems
+			const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
+			for (const variant of vscodeVariants) {
+				paths.push(path.join(xdgConfigHome, variant, 'User'));
+			}
+		}
+
+		// Remote/Server paths (used in Codespaces, WSL, SSH remotes)
+		const remotePaths = [
+			path.join(homedir, '.vscode-server', 'data', 'User'),
+			path.join(homedir, '.vscode-server-insiders', 'data', 'User'),
+			path.join(homedir, '.vscode-remote', 'data', 'User'),
+			path.join('/tmp', '.vscode-server', 'data', 'User'),
+			path.join('/workspace', '.vscode-server', 'data', 'User')
+		];
+
+		paths.push(...remotePaths);
+
+		return paths;
+	}
+
 	private async getCopilotSessionFiles(): Promise<string[]> {
 		const sessionFiles: string[] = [];
 
-		// Cross-platform path resolution for VS Code user data
-		let codeUserPath: string;
 		const platform = os.platform();
 		const homedir = os.homedir();
 
@@ -749,154 +920,95 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log(`  CODESPACES: ${process.env.CODESPACES}`);
 		this.log(`  GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
 
-		if (platform === 'win32') {
-			// Windows: %APPDATA%/Code/User
-			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
-			codeUserPath = path.join(appDataPath, 'Code', 'User');
-			this.log(`Windows path - APPDATA: ${appDataPath}`);
-		} else if (platform === 'darwin') {
-			// macOS: ~/Library/Application Support/Code/User
-			codeUserPath = path.join(homedir, 'Library', 'Application Support', 'Code', 'User');
-			this.log(`macOS path calculated`);
-		} else {
-			// Linux and other Unix-like systems: ~/.config/Code/User
-			// In GitHub Codespaces, also check for alternative VS Code paths
-			const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-			if (xdgConfigHome) {
-				codeUserPath = path.join(xdgConfigHome, 'Code', 'User');
-				this.log(`Linux path using XDG_CONFIG_HOME: ${xdgConfigHome}`);
-			} else {
-				codeUserPath = path.join(homedir, '.config', 'Code', 'User');
-				this.log(`Linux path using default .config`);
-			}
-		}
+		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
+		const allVSCodePaths = this.getVSCodeUserPaths();
+		this.log(`Checking ${allVSCodePaths.length} VS Code path variants`);
 
-		this.log(`Calculated VS Code user path: ${codeUserPath}`);
-		this.log(`Path exists: ${fs.existsSync(codeUserPath)}`);
-
-		// Check alternative VS Code paths that might be used in Codespaces
-		const alternativePaths = [
-			path.join(homedir, '.vscode-server', 'data', 'User'),
-			path.join(homedir, '.vscode-remote', 'data', 'User'),
-			path.join('/tmp', '.vscode-server', 'data', 'User'),
-			path.join('/workspace', '.vscode-server', 'data', 'User')
-		];
-
-		this.log('Checking alternative VS Code paths:');
-		for (const altPath of alternativePaths) {
-			const exists = fs.existsSync(altPath);
-			this.log(`  ${altPath}: ${exists ? 'EXISTS' : 'not found'}`);
-			if (exists && !fs.existsSync(codeUserPath)) {
-				this.log(`  Using alternative path: ${altPath}`);
-				codeUserPath = altPath;
-				break;
+		// Track which paths we actually found
+		const foundPaths: string[] = [];
+		for (const codeUserPath of allVSCodePaths) {
+			if (fs.existsSync(codeUserPath)) {
+				foundPaths.push(codeUserPath);
+				this.log(`Found VS Code path: ${codeUserPath}`);
 			}
 		}
 
 		try {
-			// Workspace storage sessions
-			const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
-			this.log(`Checking workspace storage path: ${workspaceStoragePath}`);
-			this.log(`Workspace storage exists: ${fs.existsSync(workspaceStoragePath)}`);
+			// Scan all found VS Code paths for session files
+			for (const codeUserPath of foundPaths) {
+				this.log(`Scanning VS Code path: ${codeUserPath}`);
 
-			if (fs.existsSync(workspaceStoragePath)) {
-				const workspaceDirs = fs.readdirSync(workspaceStoragePath);
-				this.log(`Found ${workspaceDirs.length} workspace directories`);
+				// Workspace storage sessions
+				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
+				if (fs.existsSync(workspaceStoragePath)) {
+					const workspaceDirs = fs.readdirSync(workspaceStoragePath);
+					this.log(`Found ${workspaceDirs.length} workspace directories in ${path.basename(path.dirname(codeUserPath))}`);
 
-				for (const workspaceDir of workspaceDirs) {
-					const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-					this.log(`Checking chat sessions path: ${chatSessionsPath}`);
-
-					if (fs.existsSync(chatSessionsPath)) {
-						const sessionFiles2 = fs.readdirSync(chatSessionsPath)
-							.filter(file => file.endsWith('.json'))
-							.map(file => path.join(chatSessionsPath, file));
-						this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
-						sessionFiles.push(...sessionFiles2);
-					} else {
-						this.log(`Chat sessions path does not exist: ${chatSessionsPath}`);
-						// Investigate what's actually in this workspace directory
-						try {
-							const workspaceDirPath = path.join(workspaceStoragePath, workspaceDir);
-							const dirContents = fs.readdirSync(workspaceDirPath);
-							this.log(`  Workspace ${workspaceDir} contains: ${dirContents.join(', ')}`);
-
-							// Check for GitHub Copilot specific directories
-							const copilotDirs = dirContents.filter(dir =>
-								dir.toLowerCase().includes('copilot') ||
-								dir.toLowerCase().includes('chat') ||
-								dir.toLowerCase().includes('github')
-							);
-							if (copilotDirs.length > 0) {
-								this.log(`  Found potential Copilot-related directories: ${copilotDirs.join(', ')}`);
+					for (const workspaceDir of workspaceDirs) {
+						const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
+						if (fs.existsSync(chatSessionsPath)) {
+							const sessionFiles2 = fs.readdirSync(chatSessionsPath)
+								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+								.map(file => path.join(chatSessionsPath, file));
+							if (sessionFiles2.length > 0) {
+								this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
+								sessionFiles.push(...sessionFiles2);
 							}
-						} catch (error) {
-							this.warn(`  Could not read workspace directory ${workspaceDir}: ${error}`);
 						}
 					}
 				}
-			} else {
-				this.log(`Workspace storage path does not exist: ${workspaceStoragePath}`);
-			}			// Global storage sessions
-			const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
-			this.log(`Checking global storage path: ${globalStoragePath}`);
-			this.log(`Global storage exists: ${fs.existsSync(globalStoragePath)}`);
 
-			if (fs.existsSync(globalStoragePath)) {
-				const globalSessionFiles = fs.readdirSync(globalStoragePath)
-					.filter(file => file.endsWith('.json'))
-					.map(file => path.join(globalStoragePath, file));
-				this.log(`Found ${globalSessionFiles.length} global session files`);
-				sessionFiles.push(...globalSessionFiles);
-			} else {
-				this.log(`Global storage path does not exist: ${globalStoragePath}`);
-			}
-
-			// If no session files found, check for alternative GitHub Copilot storage locations
-			if (sessionFiles.length === 0) {
-				this.log('No session files found in standard locations. Checking alternative GitHub Copilot storage...');
-
-				// Check for GitHub Copilot extension specific storage
-				const alternativeStorageLocations = [
-					path.join(codeUserPath, 'globalStorage', 'github.copilot'),
-					path.join(codeUserPath, 'globalStorage', 'github.copilot-chat'),
-					path.join(codeUserPath, 'globalStorage', 'github.copilot-labs'),
-					path.join(codeUserPath, 'User', 'globalStorage', 'github.copilot-chat'),
-					path.join(os.homedir(), '.copilot'),
-					path.join(os.homedir(), '.github-copilot')
-				];
-
-				for (const altLocation of alternativeStorageLocations) {
-					if (fs.existsSync(altLocation)) {
-						this.log(`Found alternative Copilot storage: ${altLocation}`);
-						try {
-							const contents = fs.readdirSync(altLocation);
-							this.log(`  Contains: ${contents.join(', ')}`);
-
-							// Look for any JSON files that might be session files
-							const jsonFiles = contents.filter(file => file.endsWith('.json'));
-							if (jsonFiles.length > 0) {
-								this.log(`  Found ${jsonFiles.length} JSON files that might be sessions: ${jsonFiles.join(', ')}`);
-							}
-						} catch (error) {
-							this.warn(`  Could not read alternative storage ${altLocation}: ${error}`);
-						}
+				// Global storage sessions (legacy emptyWindowChatSessions)
+				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
+				if (fs.existsSync(globalStoragePath)) {
+					const globalSessionFiles = fs.readdirSync(globalStoragePath)
+						.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+						.map(file => path.join(globalStoragePath, file));
+					if (globalSessionFiles.length > 0) {
+						this.log(`Found ${globalSessionFiles.length} global session files`);
+						sessionFiles.push(...globalSessionFiles);
 					}
+				}
+
+				// GitHub Copilot Chat extension global storage
+				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
+				if (fs.existsSync(copilotChatGlobalPath)) {
+					this.log(`Found github.copilot-chat global storage: ${copilotChatGlobalPath}`);
+					this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
 				}
 			}
 
+			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
+			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
+			this.log(`Checking Copilot CLI session-state path: ${copilotCliSessionPath}`);
+			if (fs.existsSync(copilotCliSessionPath)) {
+				this.log(`Found Copilot CLI session-state directory`);
+				const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
+					.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+					.map(file => path.join(copilotCliSessionPath, file));
+				if (cliSessionFiles.length > 0) {
+					this.log(`Found ${cliSessionFiles.length} Copilot CLI session files`);
+					sessionFiles.push(...cliSessionFiles);
+				}
+			}
+
+			// Log summary
 			this.log(`Total session files found: ${sessionFiles.length}`);
 			if (sessionFiles.length > 0) {
 				this.log('Session file paths:');
-				sessionFiles.forEach((file, index) => {
+				sessionFiles.slice(0, 20).forEach((file, index) => {
 					this.log(`  ${index + 1}: ${file}`);
 				});
+				if (sessionFiles.length > 20) {
+					this.log(`  ... and ${sessionFiles.length - 20} more files`);
+				}
 			} else {
 				this.warn('No GitHub Copilot session files found. This could be because:');
-				this.log('  1. Copilot extensions are not active (most likely in Codespaces)');
+				this.log('  1. Copilot extensions are not active');
 				this.log('  2. No Copilot Chat conversations have been initiated yet');
 				this.log('  3. Sessions are stored in a different location not yet supported');
 				this.log('  4. User needs to authenticate with GitHub Copilot first');
+				this.log('  Run: node scripts/diagnose-session-files.js for detailed diagnostics');
 			}
 		} catch (error) {
 			this.error('Error getting session files:', error);
@@ -905,9 +1017,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return sessionFiles;
 	}
 
+	/**
+	 * Recursively scan a directory for session files (.json and .jsonl)
+	 */
+	private scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
+		try {
+			const entries = fs.readdirSync(dir, { withFileTypes: true });
+			for (const entry of entries) {
+				const fullPath = path.join(dir, entry.name);
+				if (entry.isDirectory()) {
+					this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
+				} else if (entry.name.endsWith('.json') || entry.name.endsWith('.jsonl')) {
+					// Only add files that look like session files (have reasonable content)
+					try {
+						const stats = fs.statSync(fullPath);
+						if (stats.size > 0) {
+							sessionFiles.push(fullPath);
+						}
+					} catch (e) {
+						// Ignore file access errors
+					}
+				}
+			}
+		} catch (error) {
+			this.warn(`Could not scan directory ${dir}: ${error}`);
+		}
+	}
+
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+			
+			// Handle .jsonl files (each line is a separate JSON object)
+			if (sessionFilePath.endsWith('.jsonl')) {
+				return this.estimateTokensFromJsonlSession(fileContent);
+			}
+			
+			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 			let totalInputTokens = 0;
 			let totalOutputTokens = 0;
@@ -939,6 +1085,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
 			return 0;
 		}
+	}
+
+	/**
+	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode)
+	 * Each line is a separate JSON object representing an event in the session
+	 */
+	private estimateTokensFromJsonlSession(fileContent: string): number {
+		let totalTokens = 0;
+		const lines = fileContent.trim().split('\n');
+		
+		for (const line of lines) {
+			if (!line.trim()) { continue; }
+			
+			try {
+				const event = JSON.parse(line);
+				
+				// Handle different event types from the Copilot CLI session format
+				if (event.type === 'user.message' && event.data?.content) {
+					totalTokens += this.estimateTokensFromText(event.data.content);
+				} else if (event.type === 'assistant.message' && event.data?.content) {
+					totalTokens += this.estimateTokensFromText(event.data.content);
+				} else if (event.type === 'tool.result' && event.data?.output) {
+					totalTokens += this.estimateTokensFromText(event.data.output);
+				} else if (event.content) {
+					// Fallback for other formats that might have content
+					totalTokens += this.estimateTokensFromText(event.content);
+				}
+			} catch (e) {
+				// Skip malformed lines
+			}
+		}
+		
+		return totalTokens;
 	}
 
 	private getModelFromRequest(request: any): string {
@@ -1343,6 +1522,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</tbody>
 				</table>
 
+				${this.getEditorUsageHtml(stats)}
+
 				${this.getModelUsageHtml(stats)}
 
 				<div style="margin-top: 24px;">
@@ -1379,7 +1560,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</button>
 				</div>
 			</div>
-
 			<script>
 				const vscode = acquireVsCodeApi();
 
@@ -1502,6 +1682,97 @@ class CopilotTokenTracker implements vscode.Disposable {
 				</table>
 			</div>
 		`;
+	}
+
+	private getEditorUsageHtml(stats: DetailedStats): string {
+		// Get all unique editors from both periods
+		const allEditors = new Set([
+			...Object.keys(stats.today.editorUsage),
+			...Object.keys(stats.month.editorUsage)
+		]);
+
+		if (allEditors.size === 0) {
+			return '';
+		}
+
+		// Calculate totals for percentages
+		const todayTotal = Object.values(stats.today.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
+		const monthTotal = Object.values(stats.month.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
+
+		const editorRows = Array.from(allEditors).sort().map(editor => {
+			const todayUsage = stats.today.editorUsage[editor] || { tokens: 0, sessions: 0 };
+			const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
+			
+			const todayPercent = todayTotal > 0 ? ((todayUsage.tokens / todayTotal) * 100).toFixed(1) : '0.0';
+			const monthPercent = monthTotal > 0 ? ((monthUsage.tokens / monthTotal) * 100).toFixed(1) : '0.0';
+
+			return `
+			<tr>
+				<td class="metric-label">
+					${this.getEditorIcon(editor)} ${editor}
+				</td>
+				<td class="today-value">
+					${todayUsage.tokens.toLocaleString()}
+					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">${todayPercent}% · ${todayUsage.sessions} sessions</div>
+				</td>
+				<td class="month-value">
+					${monthUsage.tokens.toLocaleString()}
+					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">${monthPercent}% · ${monthUsage.sessions} sessions</div>
+				</td>
+			</tr>
+		`;
+		}).join('');
+
+		return `
+			<div style="margin-top: 16px;">
+				<h3 style="color: #ffffff; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+					<span>💻</span>
+					<span>Usage by Editor</span>
+				</h3>
+				<table class="stats-table">
+					<colgroup>
+						<col class="metric-col">
+						<col class="value-col">
+						<col class="value-col">
+					</colgroup>
+					<thead>
+						<tr>
+							<th>Editor</th>
+							<th>
+								<div class="period-header">
+									<span>📅</span>
+									<span>Today</span>
+								</div>
+							</th>
+							<th>
+								<div class="period-header">
+									<span>📊</span>
+									<span>This Month</span>
+								</div>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						${editorRows}
+					</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	private getEditorIcon(editor: string): string {
+		const icons: { [key: string]: string } = {
+			'VS Code': '💙',
+			'VS Code Insiders': '💚',
+			'VS Code Exploration': '🧪',
+			'VS Code Server': '☁️',
+			'VS Code Server (Insiders)': '☁️',
+			'VSCodium': '🔷',
+			'Cursor': '⚡',
+			'Copilot CLI': '🤖',
+			'Unknown': '❓'
+		};
+		return icons[editor] || '📝';
 	}
 
 	private getModelDisplayName(model: string): string {
@@ -2017,6 +2288,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 		const modelList = Array.from(allModels).sort();
 		
+		// Prepare editor-specific data for stacked bars
+		const allEditors = new Set<string>();
+		dailyStats.forEach(stat => {
+			Object.keys(stat.editorUsage).forEach(editor => allEditors.add(editor));
+		});
+		const editorList = Array.from(allEditors).sort();
+		
 		// Create model-specific datasets for stacked view
 		const modelColors = [
 			'rgba(54, 162, 235, 0.8)',
@@ -2029,20 +2307,112 @@ class CopilotTokenTracker implements vscode.Disposable {
 			'rgba(83, 102, 255, 0.8)'
 		];
 		
+		// Editor-specific colors
+		const editorColors: { [key: string]: string } = {
+			'VS Code': 'rgba(0, 122, 204, 0.8)',           // Blue
+			'VS Code Insiders': 'rgba(38, 168, 67, 0.8)',  // Green
+			'VS Code Exploration': 'rgba(156, 39, 176, 0.8)', // Purple
+			'VS Code Server': 'rgba(0, 188, 212, 0.8)',    // Cyan
+			'VS Code Server (Insiders)': 'rgba(0, 150, 136, 0.8)', // Teal
+			'VSCodium': 'rgba(33, 150, 243, 0.8)',         // Light Blue
+			'Cursor': 'rgba(255, 193, 7, 0.8)',            // Yellow
+			'Copilot CLI': 'rgba(233, 30, 99, 0.8)',       // Pink
+			'Unknown': 'rgba(158, 158, 158, 0.8)'          // Grey
+		};
+		
+		// Compute total tokens per model so we can prefer non-grey colors for the largest models
+		const modelTotals: { [key: string]: number } = {};
+		for (const m of modelList) modelTotals[m] = 0;
+		dailyStats.forEach(stat => {
+			for (const m of modelList) {
+				const usage = stat.modelUsage[m];
+				if (usage) modelTotals[m] += usage.inputTokens + usage.outputTokens;
+			}
+		});
+		// Sort models by total desc for color assignment
+		const modelsBySize = modelList.slice().sort((a, b) => (modelTotals[b] || 0) - (modelTotals[a] || 0));
+		
+		// Avoid using grey/black/white for the top N largest models
+		const forbiddenColorKeywords = ['199, 199, 199', '158, 158, 158', '0, 0, 0', '255, 255, 255'];
+		const topN = Math.min(3, modelsBySize.length);
+		const reservedColors: { [model: string]: string } = {};
+		let colorIndex = 0;
+		for (let i = 0; i < topN; i++) {
+			const m = modelsBySize[i];
+			// find next modelColors[colorIndex] that is not forbidden
+			while (colorIndex < modelColors.length) {
+				const candidate = modelColors[colorIndex];
+				const rgbPart = candidate.match(/rgba\(([^,]+),\s*([^,]+),\s*([^,]+),/);
+				if (rgbPart) {
+					const rgbKey = `${rgbPart[1].trim()}, ${rgbPart[2].trim()}, ${rgbPart[3].trim()}`;
+					if (!forbiddenColorKeywords.includes(rgbKey)) {
+						reservedColors[m] = candidate;
+						colorIndex++;
+						break;
+					}
+				}
+				colorIndex++;
+			}
+		}
+
 		const modelDatasets = modelList.map((model, index) => {
 			const data = dailyStats.map(stat => {
 				const usage = stat.modelUsage[model];
 				return usage ? usage.inputTokens + usage.outputTokens : 0;
 			});
-			
+			const assignedColor = reservedColors[model] || modelColors[index % modelColors.length];
 			return {
 				label: this.getModelDisplayName(model),
 				data: data,
-				backgroundColor: modelColors[index % modelColors.length],
-				borderColor: modelColors[index % modelColors.length].replace('0.8', '1'),
+				backgroundColor: assignedColor,
+				borderColor: assignedColor.replace('0.8', '1'),
 				borderWidth: 1
 			};
 		});
+
+		const editorDatasets = editorList.map((editor, index) => {
+			const data = dailyStats.map(stat => {
+				const usage = stat.editorUsage[editor];
+				return usage ? usage.tokens : 0;
+			});
+			
+			const color = editorColors[editor] || modelColors[index % modelColors.length];
+			
+			return {
+				label: editor,
+				data: data,
+				backgroundColor: color,
+				borderColor: color.replace('0.8', '1'),
+				borderWidth: 1
+			};
+		});
+
+		// Calculate total tokens per editor (for summary panels)
+		const editorTotalsMap: { [key: string]: number } = {};
+		for (const ed of editorList) {
+			editorTotalsMap[ed] = 0;
+		}
+			dailyStats.forEach(stat => {
+				for (const ed of editorList) {
+					const usage = stat.editorUsage[ed];
+					if (usage) {
+						editorTotalsMap[ed] += usage.tokens;
+					}
+				}
+			});
+
+		const editorPanelsHtml = editorList.map(ed => {
+			const tokens = editorTotalsMap[ed] || 0;
+			return `<div class="stat-card"><div class="stat-label">${this.getEditorIcon(ed)} ${ed}</div><div class="stat-value">${tokens.toLocaleString()}</div></div>`;
+		}).join('');
+
+		let editorSummaryHtml = '';
+		if (editorList.length > 1) {
+			// Debug: log editor summary data to output for troubleshooting
+			this.log(`Editor list for chart: ${JSON.stringify(editorList)}`);
+			this.log(`Editor totals: ${JSON.stringify(editorTotalsMap)}`);
+			editorSummaryHtml = `<div class="stats-summary" style="margin-top:12px;">${editorPanelsHtml}</div>`;
+		}
 
 		// Pre-calculate summary statistics
 		const totalTokens = dailyStats.reduce((sum, stat) => sum + stat.tokens, 0);
@@ -2186,7 +2556,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					<span class="header-icon">📈</span>
 					<span class="header-title">Token Usage Over Time</span>
 				</div>
-				
 				<div class="stats-summary">
 					<div class="stat-card">
 						<div class="stat-label">Total Days</div>
@@ -2206,9 +2575,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 					</div>
 				</div>
 
+				${editorSummaryHtml}
+
 				<div class="chart-controls">
 					<button class="toggle-button active" id="totalViewBtn" onclick="switchView('total')">Total Tokens</button>
 					<button class="toggle-button" id="modelViewBtn" onclick="switchView('model')">By Model</button>
+					<button class="toggle-button" id="editorViewBtn" onclick="switchView('editor')">By Editor</button>
 				</div>
 
 				<div class="chart-container">
@@ -2241,6 +2613,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const tokensData = ${JSON.stringify(tokensData)};
 				const sessionsData = ${JSON.stringify(sessionsData)};
 				const modelDatasets = ${JSON.stringify(modelDatasets)};
+				const editorDatasets = ${JSON.stringify(editorDatasets)};
 
 				// Chart instance
 				let chart;
@@ -2391,12 +2764,68 @@ class CopilotTokenTracker implements vscode.Disposable {
 					};
 				}
 
+				function createEditorView() {
+					return {
+						type: 'bar',
+						data: {
+							labels: labels,
+							datasets: editorDatasets
+						},
+						options: {
+							responsive: true,
+							maintainAspectRatio: false,
+							interaction: {
+								mode: 'index',
+								intersect: false,
+							},
+							scales: {
+								x: {
+									stacked: true,
+									grid: { color: '#5a5a5a' },
+									ticks: { color: '#cccccc', font: { size: 11 } }
+								},
+								y: {
+									stacked: true,
+									grid: { color: '#5a5a5a' },
+									ticks: { 
+										color: '#cccccc', 
+										font: { size: 11 },
+										callback: function(value) { return value.toLocaleString(); }
+									},
+									title: {
+										display: true,
+										text: 'Tokens by Editor',
+										color: '#cccccc',
+										font: { size: 12, weight: 'bold' }
+									}
+								}
+							},
+							plugins: {
+								legend: {
+									position: 'top',
+									labels: { color: '#cccccc', font: { size: 12 } }
+								},
+								tooltip: {
+									backgroundColor: 'rgba(0, 0, 0, 0.8)',
+									titleColor: '#ffffff',
+									bodyColor: '#cccccc',
+									borderColor: '#5a5a5a',
+									borderWidth: 1,
+									padding: 10,
+									displayColors: true
+								}
+							}
+						}
+					};
+				}
+
 				function switchView(viewType) {
 					currentView = viewType;
 					
 					// Update button states
 					document.getElementById('totalViewBtn').classList.toggle('active', viewType === 'total');
 					document.getElementById('modelViewBtn').classList.toggle('active', viewType === 'model');
+					document.getElementById('editorViewBtn').classList.toggle('active', viewType === 'editor');
 					
 					// Destroy existing chart
 					if (chart) {
@@ -2404,7 +2833,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 					
 					// Create new chart based on view type
-					const config = viewType === 'total' ? createTotalView() : createModelView();
+					let config;
+					if (viewType === 'total') {
+						config = createTotalView();
+					} else if (viewType === 'model') {
+						config = createModelView();
+					} else {
+						config = createEditorView();
+					}
 					chart = new Chart(ctx, config);
 				}
 
