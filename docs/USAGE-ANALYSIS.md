@@ -4,7 +4,6 @@ description: Guide to the Usage Analysis Dashboard features and tracked metrics
 lastUpdated: 2026-01-26
 status: current
 ---
-
 # Usage Analysis Dashboard
 
 ## Overview
