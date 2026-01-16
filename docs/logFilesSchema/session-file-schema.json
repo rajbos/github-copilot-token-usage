@@ -1,0 +1,1082 @@
+{
+  "title": "GitHub Copilot Session File Schema Documentation",
+  "description": "This document describes the structure of session log files created by GitHub Copilot Chat extension. These files are used by the Copilot Token Tracker extension to calculate token usage statistics.",
+  "version": "1.0",
+  "lastUpdated": "2026-01-16",
+  "fileLocations": {
+    "workspace": {
+      "path": "{APPDATA}/{VSCodeVariant}/User/workspaceStorage/{workspaceId}/chatSessions/*.json",
+      "description": "Session files for workspace-specific Copilot chats",
+      "example_windows": "C:\\Users\\{username}\\AppData\\Roaming\\Code\\User\\workspaceStorage\\07ef241ffb818c9c0a56c99733ce899e\\chatSessions\\*.json",
+      "variants": [
+        "Code (Stable)",
+        "Code - Insiders",
+        "Code - Exploration",
+        "VSCodium",
+        "Cursor"
+      ]
+    },
+    "global": {
+      "path": "{APPDATA}/{VSCodeVariant}/User/globalStorage/emptyWindowChatSessions/*.json",
+      "description": "Session files for empty window (no workspace) Copilot chats",
+      "example_windows": "C:\\Users\\{username}\\AppData\\Roaming\\Code\\User\\globalStorage\\emptyWindowChatSessions\\*.json",
+      "variants": [
+        "Code (Stable)",
+        "Code - Insiders",
+        "Code - Exploration",
+        "VSCodium",
+        "Cursor"
+      ]
+    },
+    "copilot_cli": {
+      "path": "{HOME}/.copilot/session-state/*.jsonl",
+      "description": "Session files for Copilot CLI/Agent mode (JSONL format, one JSON object per line)",
+      "example_windows": "C:\\Users\\{username}\\.copilot\\session-state\\*.jsonl",
+      "note": "Not editor-specific"
+    },
+    "remote_server": {
+      "paths": [
+        "{HOME}/.vscode-server/data/User",
+        "{HOME}/.vscode-server-insiders/data/User",
+        "{HOME}/.vscode-remote/data/User",
+        "/tmp/.vscode-server/data/User",
+        "/workspace/.vscode-server/data/User"
+      ],
+      "description": "Session files in remote/server environments (Codespaces, WSL, SSH remotes)",
+      "note": "These paths are checked by the extension but not by the analysis script (which is Windows-focused)"
+    },
+    "copilot_chat_global": {
+      "path": "{APPDATA}/{VSCodeVariant}/User/globalStorage/github.copilot-chat/**/*.json",
+      "description": "Additional session files from GitHub Copilot Chat extension",
+      "example_windows": "C:\\Users\\{username}\\AppData\\Roaming\\Code\\User\\globalStorage\\github.copilot-chat\\**\\*.json",
+      "variants": [
+        "Code (Stable)",
+        "Code - Insiders",
+        "Code - Exploration",
+        "VSCodium",
+        "Cursor"
+      ]
+    }
+  },
+  "fileFormats": {
+    "json": {
+      "description": "Standard JSON session files from VS Code Copilot Chat",
+      "extension": ".json",
+      "schema": "See 'jsonSessionFileSchema' below"
+    },
+    "jsonl": {
+      "description": "JSON Lines format for Copilot CLI sessions (one JSON object per line)",
+      "extension": ".jsonl",
+      "schema": "See 'jsonlSessionFileSchema' below"
+    }
+  },
+  "jsonSessionFileSchema": {
+    "description": "Schema for standard .json session files from VS Code Copilot Chat",
+    "topLevelFields": {
+      "version": {
+        "type": "number",
+        "description": "Schema version number for the session file format",
+        "example": 3,
+        "usedBy": "Extension does not currently use this field"
+      },
+      "responderUsername": {
+        "type": "string",
+        "description": "Display name of the AI assistant responding",
+        "example": "GitHub Copilot",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "responderAvatarIconUri": {
+        "type": "object",
+        "description": "Icon identifier for the AI assistant's avatar",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Icon ID from VS Code icon theme",
+            "example": "copilot"
+          }
+        },
+        "usedBy": "Extension does not currently use this field"
+      },
+      "initialLocation": {
+        "type": "string",
+        "description": "Where the chat was initially opened (e.g., 'panel', 'editor')",
+        "example": "panel",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "requests": {
+        "type": "array",
+        "description": "Array of user interactions (requests) and AI responses in this session",
+        "items": "See 'requestObjectSchema' below",
+        "usedBy": "PRIMARY DATA SOURCE - Extension reads message.parts[].text for input tokens and response[].value for output tokens. Array length used to count interactions."
+      },
+      "sessionId": {
+        "type": "string",
+        "description": "Unique identifier for this chat session (UUID format)",
+        "example": "034abc61-a219-43e5-a14a-a6ba0372255a",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "creationDate": {
+        "type": "number",
+        "description": "Unix timestamp (milliseconds) when the session was created",
+        "example": 1767556938222,
+        "usedBy": "Extension does not currently use this field"
+      },
+      "lastMessageDate": {
+        "type": "number",
+        "description": "Unix timestamp (milliseconds) of the last message in the session",
+        "example": 1767556938222,
+        "usedBy": "Extension does not currently use this field (uses file modification time instead)"
+      },
+      "customTitle": {
+        "type": "string",
+        "description": "User-defined title for the chat session (optional)",
+        "example": "Fix rate limit issue",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "hasPendingEdits": {
+        "type": "boolean",
+        "description": "Whether the session has edits waiting to be applied",
+        "example": false,
+        "usedBy": "Extension does not currently use this field"
+      },
+      "contrib": {
+        "type": "object",
+        "description": "Contributions from extensions (e.g., dynamic variables)",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "attachments": {
+        "type": "array",
+        "description": "Files or resources attached to the session",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "mode": {
+        "type": "object",
+        "description": "Chat mode configuration",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Mode identifier (e.g., 'agent', 'chat')",
+            "example": "agent"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Mode kind/type",
+            "example": "agent"
+          }
+        },
+        "usedBy": "Extension does not currently use this field"
+      },
+      "selectedModel": {
+        "type": "object",
+        "description": "Currently selected AI model for the session",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Full model identifier",
+            "example": "copilot/gpt-4.1"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Model metadata including name, family, version, capabilities",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Model ID",
+                "example": "gpt-4.1"
+              },
+              "vendor": {
+                "type": "string",
+                "description": "Model vendor",
+                "example": "copilot"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name",
+                "example": "GPT-4.1"
+              },
+              "family": {
+                "type": "string",
+                "description": "Model family",
+                "example": "gpt-4.1"
+              },
+              "version": {
+                "type": "string",
+                "description": "Specific model version",
+                "example": "gpt-4.1-2025-04-14"
+              },
+              "maxInputTokens": {
+                "type": "number",
+                "description": "Maximum input context tokens",
+                "example": 111424
+              },
+              "maxOutputTokens": {
+                "type": "number",
+                "description": "Maximum output tokens",
+                "example": 16384
+              }
+            }
+          }
+        },
+        "usedBy": "Extension does not use selectedModel; it reads model info from individual request.result.details instead"
+      },
+      "inputText": {
+        "type": "string",
+        "description": "Current input text in the chat box (may be empty)",
+        "example": "",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "selections": {
+        "type": "array",
+        "description": "Editor selections/cursor positions when chat was opened",
+        "usedBy": "Extension does not currently use this field"
+      }
+    }
+  },
+  "requestObjectSchema": {
+    "description": "Schema for each request object in the requests array",
+    "fields": {
+      "requestId": {
+        "type": "string",
+        "description": "Unique identifier for this request (UUID format)",
+        "example": "6853e485-7c3b-4965-9f10-0f4d29101d5d",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "message": {
+        "type": "object",
+        "description": "User's message/prompt in this interaction",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Full text of the user's message",
+            "example": "fix the x axis in the chart"
+          },
+          "parts": {
+            "type": "array",
+            "description": "Message broken into parts (text, code, attachments)",
+            "items": {
+              "range": {
+                "type": "object",
+                "description": "Character range in the full message"
+              },
+              "editorRange": {
+                "type": "object",
+                "description": "Line and column range if from editor"
+              },
+              "text": {
+                "type": "string",
+                "description": "Text content of this part"
+              },
+              "kind": {
+                "type": "string",
+                "description": "Part type (e.g., 'text')"
+              }
+            }
+          }
+        },
+        "usedBy": "PRIMARY DATA SOURCE - Extension reads message.parts[].text to estimate input tokens"
+      },
+      "variableData": {
+        "type": "object",
+        "description": "Data for variables referenced in the message (e.g., @workspace)",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "response": {
+        "type": "array",
+        "description": "Array of response items from the AI assistant",
+        "items": "See 'responseItemSchema' below",
+        "usedBy": "PRIMARY DATA SOURCE - Extension reads response[].value fields (strings) to estimate output tokens"
+      },
+      "agent": {
+        "type": "object",
+        "description": "Information about the agent that handled this request",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Agent identifier",
+            "example": "github.copilot.editsAgent"
+          },
+          "name": {
+            "type": "string",
+            "description": "Agent name",
+            "example": "agent"
+          },
+          "fullName": {
+            "type": "string",
+            "description": "Agent display name",
+            "example": "GitHub Copilot"
+          },
+          "extensionId": {
+            "type": "object",
+            "description": "Extension that provides this agent"
+          }
+        },
+        "usedBy": "Extension does not currently use this field"
+      },
+      "timestamp": {
+        "type": "number",
+        "description": "Unix timestamp (milliseconds) when the request was made",
+        "example": 1767453841815,
+        "usedBy": "Extension does not currently use this field"
+      },
+      "modelId": {
+        "type": "string",
+        "description": "Model identifier used for this specific request",
+        "example": "gpt-4o",
+        "usedBy": "Extension does not currently use this field (uses result.details instead)"
+      },
+      "responseId": {
+        "type": "string",
+        "description": "Unique identifier for the response",
+        "example": "f3c35b09-0cba-4688-96f8-cf6b6a2e65d5",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "result": {
+        "type": "object",
+        "description": "Metadata about the request execution",
+        "properties": {
+          "timings": {
+            "type": "object",
+            "description": "Performance timing information",
+            "properties": {
+              "firstProgress": {
+                "type": "number",
+                "description": "Milliseconds until first response token"
+              },
+              "totalElapsed": {
+                "type": "number",
+                "description": "Total milliseconds for the request"
+              }
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Additional metadata including rendered contexts, tool calls, etc."
+          },
+          "details": {
+            "type": "string",
+            "description": "Human-readable details about the model used",
+            "example": "Claude Opus 4.5 • 3x"
+          }
+        },
+        "usedBy": "Extension reads result.details to identify the AI model used (e.g., 'Claude Opus 4.5', 'GPT-4.1')"
+      },
+      "responseMarkdownInfo": {
+        "type": "array",
+        "description": "Information about markdown rendering in the response",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "followups": {
+        "type": "array",
+        "description": "Suggested follow-up questions from the AI",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "modelState": {
+        "type": "object",
+        "description": "State of the model after processing",
+        "properties": {
+          "value": {
+            "type": "number",
+            "description": "State value/code"
+          },
+          "completedAt": {
+            "type": "number",
+            "description": "Unix timestamp when completed"
+          }
+        },
+        "usedBy": "Extension does not currently use this field"
+      },
+      "contentReferences": {
+        "type": "array",
+        "description": "References to content used in the request (files, images, etc.)",
+        "items": {
+          "kind": {
+            "type": "string",
+            "description": "Reference kind (e.g., 'reference')"
+          },
+          "reference": {
+            "type": "object",
+            "description": "The referenced content (file URI, variable, etc.)"
+          }
+        },
+        "usedBy": "Extension does not currently use this field"
+      },
+      "codeCitations": {
+        "type": "array",
+        "description": "Citations to code snippets from public repositories",
+        "usedBy": "Extension does not currently use this field"
+      },
+      "timeSpentWaiting": {
+        "type": "number",
+        "description": "Time spent waiting for user interaction (milliseconds)",
+        "usedBy": "Extension does not currently use this field"
+      }
+    }
+  },
+  "responseItemSchema": {
+    "description": "Schema for individual items in the response array. Response arrays contain heterogeneous items with different 'kind' values.",
+    "variants": [
+      {
+        "kind": "no-kind (text response)",
+        "description": "Text content from the AI's response",
+        "fields": {
+          "value": {
+            "type": "string",
+            "description": "The actual text content",
+            "usedBy": "PRIMARY DATA SOURCE - Extension estimates output tokens from this text"
+          },
+          "supportThemeIcons": {
+            "type": "boolean",
+            "description": "Whether theme icons are supported in rendering"
+          },
+          "supportHtml": {
+            "type": "boolean",
+            "description": "Whether HTML is supported in rendering"
+          },
+          "baseUri": {
+            "type": "object",
+            "description": "Base URI for resolving relative links"
+          }
+        }
+      },
+      {
+        "kind": "mcpServersStarting",
+        "description": "Notification that MCP (Model Context Protocol) servers are starting",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "mcpServersStarting"
+          },
+          "didStartServerIds": {
+            "type": "array",
+            "description": "Array of MCP server IDs that started"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "inlineReference",
+        "description": "Reference to inline content (e.g., code block, file)",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "inlineReference"
+          },
+          "inlineReference": {
+            "type": "object",
+            "description": "The referenced content"
+          },
+          "resolveId": {
+            "type": "string",
+            "description": "ID to resolve the reference"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "prepareToolInvocation",
+        "description": "Preparation for a tool call",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "prepareToolInvocation"
+          },
+          "toolName": {
+            "type": "string",
+            "description": "Name of the tool being prepared"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "toolInvocationSerialized",
+        "description": "Serialized tool invocation details",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "toolInvocationSerialized"
+          },
+          "invocationMessage": {
+            "type": "object",
+            "description": "Message describing the tool invocation"
+          },
+          "pastTenseMessage": {
+            "type": "object",
+            "description": "Past tense description of the action"
+          },
+          "isConfirmed": {
+            "type": "object",
+            "description": "Whether the invocation was confirmed"
+          },
+          "isComplete": {
+            "type": "boolean",
+            "description": "Whether the invocation completed"
+          },
+          "source": {
+            "type": "object",
+            "description": "Source of the tool invocation"
+          },
+          "toolCallId": {
+            "type": "string",
+            "description": "Unique ID for this tool call"
+          },
+          "toolId": {
+            "type": "string",
+            "description": "Tool identifier"
+          },
+          "generatedTitle": {
+            "type": "string",
+            "description": "Generated title for the tool call"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "undoStop",
+        "description": "Marker for undo/redo functionality",
+        "fields": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier"
+          },
+          "kind": {
+            "type": "string",
+            "value": "undoStop"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "codeblockUri",
+        "description": "URI reference to a code block",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "codeblockUri"
+          },
+          "uri": {
+            "type": "object",
+            "description": "URI of the code block"
+          },
+          "isEdit": {
+            "type": "boolean",
+            "description": "Whether this is an edit operation"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "textEditGroup",
+        "description": "Group of text edits to be applied",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "textEditGroup"
+          },
+          "uri": {
+            "type": "object",
+            "description": "URI of the file to edit"
+          },
+          "edits": {
+            "type": "array",
+            "description": "Array of edit operations"
+          },
+          "done": {
+            "type": "boolean",
+            "description": "Whether edits are complete"
+          }
+        },
+        "usedBy": "Extension does not use this response type"
+      },
+      {
+        "kind": "thinking",
+        "description": "AI's internal reasoning/thinking process (shown in UI)",
+        "fields": {
+          "kind": {
+            "type": "string",
+            "value": "thinking"
+          },
+          "value": {
+            "type": "string",
+            "description": "The thinking content/reasoning",
+            "usedBy": "Extension may estimate tokens from this value"
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique identifier"
+          },
+          "generatedTitle": {
+            "type": "string",
+            "description": "Generated title for this thinking block"
+          }
+        },
+        "usedBy": "Extension may use 'value' field for token estimation"
+      }
+    ]
+  },
+  "jsonlSessionFileSchema": {
+    "description": "Schema for JSONL session files from Copilot CLI. Each line is a separate JSON object representing an event.",
+    "format": "One JSON object per line (JSON Lines format)",
+    "eventTypes": [
+      {
+        "type": "session.start",
+        "description": "Session initialization event",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "session.start"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "description": "Unique session identifier"
+              },
+              "version": {
+                "type": "number",
+                "description": "Session format version"
+              },
+              "producer": {
+                "type": "string",
+                "description": "Producer identifier (e.g., 'copilot-agent')"
+              },
+              "copilotVersion": {
+                "type": "string",
+                "description": "Copilot CLI version"
+              },
+              "startTime": {
+                "type": "string",
+                "description": "ISO 8601 timestamp of session start"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp of event"
+          },
+          "parentId": {
+            "type": "string|null",
+            "description": "Parent event ID (null for root events)"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type"
+      },
+      {
+        "type": "session.info",
+        "description": "Informational session event (e.g., authentication, MCP connection)",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "session.info"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "infoType": {
+                "type": "string",
+                "description": "Type of info (e.g., 'authentication', 'mcp')"
+              },
+              "message": {
+                "type": "string",
+                "description": "Informational message"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type"
+      },
+      {
+        "type": "user.message",
+        "description": "User's message/prompt",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "user.message"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "User's message text"
+              },
+              "transformedContent": {
+                "type": "string",
+                "description": "Message with added context (datetime, etc.)"
+              },
+              "attachments": {
+                "type": "array",
+                "description": "Attached files or resources"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "PRIMARY DATA SOURCE - Extension reads data.content to estimate input tokens and counts these events for interactions"
+      },
+      {
+        "type": "assistant.turn_start",
+        "description": "Start of an assistant turn",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "assistant.turn_start"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "turnId": {
+                "type": "string",
+                "description": "Turn identifier"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type"
+      },
+      {
+        "type": "assistant.turn_end",
+        "description": "End of an assistant turn",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "assistant.turn_end"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "turnId": {
+                "type": "string",
+                "description": "Turn identifier"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type"
+      },
+      {
+        "type": "assistant.message",
+        "description": "Assistant's response message",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "assistant.message"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "messageId": {
+                "type": "string",
+                "description": "Message identifier"
+              },
+              "content": {
+                "type": "string",
+                "description": "Assistant's response text"
+              },
+              "toolRequests": {
+                "type": "array",
+                "description": "Tool calls requested by the assistant"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "PRIMARY DATA SOURCE - Extension reads data.content to estimate output tokens"
+      },
+      {
+        "type": "session.truncation",
+        "description": "Context truncation information",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "session.truncation"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "tokenLimit": {
+                "type": "number",
+                "description": "Maximum token limit"
+              },
+              "preTruncationTokensInMessages": {
+                "type": "number",
+                "description": "Tokens before truncation"
+              },
+              "postTruncationTokensInMessages": {
+                "type": "number",
+                "description": "Tokens after truncation"
+              },
+              "tokensRemovedDuringTruncation": {
+                "type": "number",
+                "description": "Tokens removed"
+              },
+              "performedBy": {
+                "type": "string",
+                "description": "Truncator identifier"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type (could potentially use actual token counts in future)"
+      },
+      {
+        "type": "tool.execution_start",
+        "description": "Start of tool execution",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "tool.execution_start"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "toolCallId": {
+                "type": "string",
+                "description": "Tool call identifier"
+              },
+              "toolName": {
+                "type": "string",
+                "description": "Name of tool being executed"
+              },
+              "arguments": {
+                "type": "object",
+                "description": "Tool arguments"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type"
+      },
+      {
+        "type": "tool.execution_complete",
+        "description": "Tool execution completed",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "tool.execution_complete"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "toolCallId": {
+                "type": "string",
+                "description": "Tool call identifier"
+              },
+              "success": {
+                "type": "boolean",
+                "description": "Whether execution succeeded"
+              },
+              "result": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "description": "Result content"
+                  }
+                }
+              },
+              "toolTelemetry": {
+                "type": "object",
+                "description": "Telemetry data for the tool execution"
+              }
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique event ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent event ID"
+          }
+        },
+        "usedBy": "Extension does not currently use this event type"
+      },
+      {
+        "type": "tool.result",
+        "description": "Tool result (alternative event type)",
+        "fields": {
+          "type": {
+            "type": "string",
+            "value": "tool.result"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "output": {
+                "type": "string",
+                "description": "Tool output text"
+              }
+            }
+          }
+        },
+        "usedBy": "Extension reads data.output to estimate input tokens (tool outputs become context)"
+      }
+    ],
+    "commonFields": {
+      "id": {
+        "type": "string",
+        "description": "Unique identifier for the event (UUID)",
+        "present": "all events"
+      },
+      "timestamp": {
+        "type": "string",
+        "description": "ISO 8601 timestamp when the event occurred",
+        "present": "all events"
+      },
+      "parentId": {
+        "type": "string|null",
+        "description": "ID of the parent event, forming an event chain. Null for root events.",
+        "present": "all events"
+      },
+      "type": {
+        "type": "string",
+        "description": "Event type identifier",
+        "present": "all events"
+      },
+      "data": {
+        "type": "object",
+        "description": "Event-specific data payload",
+        "present": "all events"
+      },
+      "model": {
+        "type": "string",
+        "description": "AI model identifier (optional, may not be present in all events)",
+        "example": "gpt-4o",
+        "present": "some events"
+      }
+    }
+  },
+  "extensionUsageSummary": {
+    "description": "Summary of which fields the Copilot Token Tracker extension actually uses",
+    "primaryDataSources": {
+      "json_files": {
+        "input_tokens": "requests[].message.parts[].text - All text parts of user messages",
+        "output_tokens": "requests[].response[].value - String values in response items",
+        "model_identification": "requests[].result.details - Parsed to identify AI model used (e.g., 'Claude Opus 4.5', 'GPT-4.1')",
+        "interaction_count": "requests.length - Number of user interactions"
+      },
+      "jsonl_files": {
+        "input_tokens": "Lines with type='user.message': data.content field",
+        "output_tokens": "Lines with type='assistant.message': data.content field",
+        "tool_context": "Lines with type='tool.result': data.output field (counted as input tokens)",
+        "interaction_count": "Count of lines with type='user.message'",
+        "model_identification": "event.model field (defaults to 'gpt-4o' if not present)"
+      }
+    },
+    "fileMetadata": {
+      "modification_time": "File mtime is used to filter files by date (today, this month) instead of using timestamps in the JSON",
+      "file_path": "Path is parsed to determine editor type (workspace vs global vs CLI)"
+    },
+    "tokenEstimation": {
+      "method": "Character-to-token ratio estimation",
+      "ratios": "Defined in src/tokenEstimators.json per model",
+      "default_ratio": 0.25,
+      "note": "Extension does NOT use actual token counts from session.truncation events; it estimates based on text length"
+    },
+    "ignoredFields": [
+      "Most metadata fields like sessionId, creationDate, agent info, etc.",
+      "UI-related fields like selections, inputText, mode",
+      "Response items without 'value' fields (mcpServersStarting, toolInvocationSerialized, etc.)",
+      "selectedModel at session level (uses per-request model info instead)",
+      "Actual token counts in JSONL session.truncation events"
+    ]
+  },
+  "notes": {
+    "fileModificationTime": "The extension uses file modification time (mtime) to determine which date a session belongs to, not the timestamps inside the JSON. This means a session file modified today counts toward today's stats even if the conversation timestamps are older.",
+    "modelDetection": "Model identification is heuristic-based, parsing strings like 'Claude Opus 4.5' from result.details or using the model field in JSONL events. It may not be 100% accurate for all model variants.",
+    "tokenEstimation": "Token counts are ESTIMATES based on character counts and model-specific ratios. They are not actual token counts from the API.",
+    "caching": "The extension caches parsed session data using file modification time as the cache key to avoid re-parsing unchanged files.",
+    "editorTypes": "Files are categorized by location: 'workspace' (workspaceStorage), 'global' (globalStorage/emptyWindowChatSessions), 'cli' (Copilot CLI), 'copilot-chat' (globalStorage/github.copilot-chat)"
+  }
+}
