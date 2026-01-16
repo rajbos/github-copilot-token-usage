@@ -61,7 +61,7 @@ Before updating these files, ensure you have:
    ```
 
 3. **Common model families and their ratios**:
-   - GPT-4, GPT-5, GPT-o models: 0.25
+   - GPT-4, GPT-5, GPT-O models: 0.25
    - Claude models: 0.24
    - Gemini models: 0.25
    - Other models: verify with provider documentation

@@ -107,20 +107,20 @@ try {
             
             // Validate each pricing entry
             for (const [model, priceData] of Object.entries(pricing)) {
-                if (!priceData.inputCostPerMillion) {
+                if (priceData.inputCostPerMillion === undefined || priceData.inputCostPerMillion === null) {
                     logError(`Model "${model}": missing inputCostPerMillion`);
                 } else if (typeof priceData.inputCostPerMillion !== 'number') {
                     logError(`Model "${model}": inputCostPerMillion must be a number`);
                 } else if (priceData.inputCostPerMillion < 0) {
-                    logError(`Model "${model}": inputCostPerMillion must be positive`);
+                    logError(`Model "${model}": inputCostPerMillion must be non-negative`);
                 }
                 
-                if (!priceData.outputCostPerMillion) {
+                if (priceData.outputCostPerMillion === undefined || priceData.outputCostPerMillion === null) {
                     logError(`Model "${model}": missing outputCostPerMillion`);
                 } else if (typeof priceData.outputCostPerMillion !== 'number') {
                     logError(`Model "${model}": outputCostPerMillion must be a number`);
                 } else if (priceData.outputCostPerMillion < 0) {
-                    logError(`Model "${model}": outputCostPerMillion must be positive`);
+                    logError(`Model "${model}": outputCostPerMillion must be non-negative`);
                 }
                 
                 if (!priceData.category) {
