@@ -74,6 +74,56 @@ interface SessionFileCache {
 	interactions: number;
 	modelUsage: ModelUsage;
 	mtime: number; // file modification time as timestamp
+	usageAnalysis?: SessionUsageAnalysis; // New analysis data
+}
+
+// New interfaces for usage analysis
+interface SessionUsageAnalysis {
+	toolCalls: ToolCallUsage;
+	modeUsage: ModeUsage;
+	contextReferences: ContextReferenceUsage;
+	mcpTools: McpToolUsage;
+}
+
+interface ToolCallUsage {
+	total: number;
+	byTool: { [toolName: string]: number };
+}
+
+interface ModeUsage {
+	ask: number;     // Regular chat mode
+	edit: number;    // Edit mode interactions
+	agent: number;   // Agent mode interactions
+}
+
+interface ContextReferenceUsage {
+	file: number;        // #file references
+	selection: number;   // #selection references
+	symbol: number;      // #symbol references
+	codebase: number;    // #codebase references
+	workspace: number;   // @workspace references
+	terminal: number;    // @terminal references
+	vscode: number;      // @vscode references
+}
+
+interface McpToolUsage {
+	total: number;
+	byServer: { [serverName: string]: number };
+	byTool: { [toolName: string]: number };
+}
+
+interface UsageAnalysisStats {
+	today: UsageAnalysisPeriod;
+	month: UsageAnalysisPeriod;
+	lastUpdated: Date;
+}
+
+interface UsageAnalysisPeriod {
+	sessions: number;
+	toolCalls: ToolCallUsage;
+	modeUsage: ModeUsage;
+	contextReferences: ContextReferenceUsage;
+	mcpTools: McpToolUsage;
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -87,6 +137,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private chartPanel: vscode.WebviewPanel | undefined;
+	private analysisPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -338,6 +389,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.chartPanel) {
 				const dailyStats = await this.calculateDailyStats();
 				this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+			}
+
+			// If the analysis panel is open, update its content
+			if (this.analysisPanel) {
+				const analysisStats = await this.calculateUsageAnalysisStats();
+				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(analysisStats);
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
@@ -612,6 +669,103 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return dailyStatsArray;
 	}
 
+	/**
+	 * Calculate usage analysis statistics for today and this month
+	 */
+	private async calculateUsageAnalysisStats(): Promise<UsageAnalysisStats> {
+		const now = new Date();
+		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+		const emptyPeriod = (): UsageAnalysisPeriod => ({
+			sessions: 0,
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} }
+		});
+
+		const todayStats = emptyPeriod();
+		const monthStats = emptyPeriod();
+
+		try {
+			const sessionFiles = await this.getCopilotSessionFiles();
+			this.log(`Processing ${sessionFiles.length} session files for usage analysis`);
+
+			for (const sessionFile of sessionFiles) {
+				try {
+					const fileStats = fs.statSync(sessionFile);
+
+					if (fileStats.mtime >= monthStart) {
+						const analysis = await this.getUsageAnalysisFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						
+						// Add to month stats
+						monthStats.sessions++;
+						this.mergeUsageAnalysis(monthStats, analysis);
+
+						// Add to today stats if modified today
+						if (fileStats.mtime >= todayStart) {
+							todayStats.sessions++;
+							this.mergeUsageAnalysis(todayStats, analysis);
+						}
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+				}
+			}
+		} catch (error) {
+			this.error('Error calculating usage analysis stats:', error);
+		}
+
+		return {
+			today: todayStats,
+			month: monthStats,
+			lastUpdated: now
+		};
+	}
+
+	/**
+	 * Merge usage analysis data into period stats
+	 */
+	private mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+		// Merge tool calls
+		period.toolCalls.total += analysis.toolCalls.total;
+		for (const [tool, count] of Object.entries(analysis.toolCalls.byTool)) {
+			period.toolCalls.byTool[tool] = (period.toolCalls.byTool[tool] || 0) + count;
+		}
+
+		// Merge mode usage
+		period.modeUsage.ask += analysis.modeUsage.ask;
+		period.modeUsage.edit += analysis.modeUsage.edit;
+		period.modeUsage.agent += analysis.modeUsage.agent;
+
+		// Merge context references
+		period.contextReferences.file += analysis.contextReferences.file;
+		period.contextReferences.selection += analysis.contextReferences.selection;
+		period.contextReferences.symbol += analysis.contextReferences.symbol;
+		period.contextReferences.codebase += analysis.contextReferences.codebase;
+		period.contextReferences.workspace += analysis.contextReferences.workspace;
+		period.contextReferences.terminal += analysis.contextReferences.terminal;
+		period.contextReferences.vscode += analysis.contextReferences.vscode;
+
+		// Merge MCP tools
+		period.mcpTools.total += analysis.mcpTools.total;
+		for (const [server, count] of Object.entries(analysis.mcpTools.byServer)) {
+			period.mcpTools.byServer[server] = (period.mcpTools.byServer[server] || 0) + count;
+		}
+		for (const [tool, count] of Object.entries(analysis.mcpTools.byTool)) {
+			period.mcpTools.byTool[tool] = (period.mcpTools.byTool[tool] || 0) + count;
+		}
+	}
+
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
@@ -728,6 +882,228 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return modelUsage;
 	}
 
+	/**
+	 * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
+	 */
+	private async analyzeSessionUsage(sessionFile: string): Promise<SessionUsageAnalysis> {
+		const analysis: SessionUsageAnalysis = {
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} }
+		};
+
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						
+						// Detect mode from event type
+						if (event.type === 'user.message') {
+							// CLI is typically agent mode
+							analysis.modeUsage.agent++;
+						}
+						
+						// Detect tool calls
+						if (event.type === 'tool.call' || event.type === 'tool.result') {
+							analysis.toolCalls.total++;
+							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+						
+						// Detect MCP tools
+						if (event.type === 'mcp.tool.call' || (event.data?.mcpServer)) {
+							analysis.mcpTools.total++;
+							const serverName = event.data?.mcpServer || 'unknown';
+							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+							analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+						}
+						
+						// Detect context references in user messages
+						if (event.type === 'user.message' && event.data?.content) {
+							this.analyzeContextReferences(event.data.content, analysis.contextReferences);
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return analysis;
+			}
+			
+			// Handle regular .json files
+			const sessionContent = JSON.parse(fileContent);
+
+			// Detect session mode
+			if (sessionContent.mode?.id) {
+				const modeId = sessionContent.mode.id.toLowerCase();
+				if (modeId.includes('agent')) {
+					analysis.modeUsage.agent = sessionContent.requests?.length || 0;
+				} else if (modeId.includes('edit')) {
+					analysis.modeUsage.edit = sessionContent.requests?.length || 0;
+				} else {
+					analysis.modeUsage.ask = sessionContent.requests?.length || 0;
+				}
+			} else {
+				// Default to ask mode if not specified
+				analysis.modeUsage.ask = sessionContent.requests?.length || 0;
+			}
+
+			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				for (const request of sessionContent.requests) {
+					// Detect agent mode from agent field
+					if (request.agent?.id) {
+						const agentId = request.agent.id.toLowerCase();
+						if (agentId.includes('edit')) {
+							analysis.modeUsage.edit++;
+							analysis.modeUsage.ask--;
+						} else if (agentId.includes('agent')) {
+							analysis.modeUsage.agent++;
+							analysis.modeUsage.ask--;
+						}
+					}
+					
+					// Analyze user message for context references
+					if (request.message) {
+						if (request.message.text) {
+							this.analyzeContextReferences(request.message.text, analysis.contextReferences);
+						}
+						if (request.message.parts) {
+							for (const part of request.message.parts) {
+								if (part.text) {
+									this.analyzeContextReferences(part.text, analysis.contextReferences);
+								}
+							}
+						}
+					}
+					
+					// Analyze variableData for @workspace, @terminal, @vscode references
+					if (request.variableData) {
+						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
+						if (varDataStr.includes('workspace')) {
+							analysis.contextReferences.workspace++;
+						}
+						if (varDataStr.includes('terminal')) {
+							analysis.contextReferences.terminal++;
+						}
+						if (varDataStr.includes('vscode')) {
+							analysis.contextReferences.vscode++;
+						}
+					}
+					
+					// Analyze response for tool calls and MCP tools
+					if (request.response && Array.isArray(request.response)) {
+						for (const responseItem of request.response) {
+							// Detect tool invocations
+							if (responseItem.kind === 'toolInvocationSerialized' || 
+							    responseItem.kind === 'prepareToolInvocation') {
+								analysis.toolCalls.total++;
+								const toolName = responseItem.toolName || 
+								                responseItem.invocationMessage?.toolName || 
+								                'unknown';
+								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							}
+							
+							// Detect MCP servers starting
+							if (responseItem.kind === 'mcpServersStarting' && responseItem.didStartServerIds) {
+								for (const serverId of responseItem.didStartServerIds) {
+									analysis.mcpTools.total++;
+									analysis.mcpTools.byServer[serverId] = (analysis.mcpTools.byServer[serverId] || 0) + 1;
+								}
+							}
+						}
+					}
+					
+					// Check metadata for tool calls
+					if (request.result?.metadata) {
+						const metadataStr = JSON.stringify(request.result.metadata).toLowerCase();
+						// Look for tool-related metadata
+						if (metadataStr.includes('tool') || metadataStr.includes('function')) {
+							// This is a heuristic - actual structure may vary
+							try {
+								const metadata = request.result.metadata;
+								if (metadata.toolCalls || metadata.tools || metadata.functionCalls) {
+									const toolData = metadata.toolCalls || metadata.tools || metadata.functionCalls;
+									if (Array.isArray(toolData)) {
+										analysis.toolCalls.total += toolData.length;
+									}
+								}
+							} catch (e) {
+								// Ignore parsing errors
+							}
+						}
+					}
+				}
+			}
+		} catch (error) {
+			this.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
+		}
+
+		return analysis;
+	}
+
+	/**
+	 * Analyze text for context references like #file, #selection, @workspace
+	 */
+	private analyzeContextReferences(text: string, refs: ContextReferenceUsage): void {
+		// Count #file references
+		const fileMatches = text.match(/#file/gi);
+		if (fileMatches) {
+			refs.file += fileMatches.length;
+		}
+		
+		// Count #selection references
+		const selectionMatches = text.match(/#selection/gi);
+		if (selectionMatches) {
+			refs.selection += selectionMatches.length;
+		}
+		
+		// Count #symbol references
+		const symbolMatches = text.match(/#symbol/gi);
+		if (symbolMatches) {
+			refs.symbol += symbolMatches.length;
+		}
+		
+		// Count #codebase references
+		const codebaseMatches = text.match(/#codebase/gi);
+		if (codebaseMatches) {
+			refs.codebase += codebaseMatches.length;
+		}
+		
+		// Count @workspace references
+		const workspaceMatches = text.match(/@workspace/gi);
+		if (workspaceMatches) {
+			refs.workspace += workspaceMatches.length;
+		}
+		
+		// Count @terminal references
+		const terminalMatches = text.match(/@terminal/gi);
+		if (terminalMatches) {
+			refs.terminal += terminalMatches.length;
+		}
+		
+		// Count @vscode references
+		const vscodeMatches = text.match(/@vscode/gi);
+		if (vscodeMatches) {
+			refs.vscode += vscodeMatches.length;
+		}
+	}
+
 	// Cached versions of session file reading methods
 	private async getSessionFileDataCached(sessionFilePath: string, mtime: number): Promise<SessionFileCache> {
 		// Check if we have valid cached data
@@ -740,12 +1116,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const tokens = await this.estimateTokensFromSession(sessionFilePath);
 		const interactions = await this.countInteractionsInSession(sessionFilePath);
 		const modelUsage = await this.getModelUsageFromSession(sessionFilePath);
+		const usageAnalysis = await this.analyzeSessionUsage(sessionFilePath);
 		
 		const sessionData: SessionFileCache = {
 			tokens,
 			interactions,
 			modelUsage,
-			mtime
+			mtime,
+			usageAnalysis
 		};
 
 		this.setCachedSessionData(sessionFilePath, sessionData);
@@ -765,6 +1143,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async getModelUsageFromSessionCached(sessionFile: string, mtime: number): Promise<ModelUsage> {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
 		return sessionData.modelUsage;
+	}
+
+	private async getUsageAnalysisFromSessionCached(sessionFile: string, mtime: number): Promise<SessionUsageAnalysis> {
+		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
+		return sessionData.usageAnalysis || {
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} }
+		};
 	}
 
 	/**
@@ -1209,6 +1605,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showChart':
 					await this.showChart();
 					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
@@ -1263,6 +1662,48 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 	}
 
+	public async showUsageAnalysis(): Promise<void> {
+		// If panel already exists, just reveal it
+		if (this.analysisPanel) {
+			this.analysisPanel.reveal();
+			return;
+		}
+
+		// Get usage analysis stats
+		const analysisStats = await this.calculateUsageAnalysisStats();
+
+		// Create webview panel
+		this.analysisPanel = vscode.window.createWebviewPanel(
+			'copilotUsageAnalysis',
+			'Copilot Usage Analysis',
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: true
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false
+			}
+		);
+
+		// Set the HTML content
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(analysisStats);
+
+		// Handle messages from the webview
+		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshAnalysisPanel();
+					break;
+			}
+		});
+
+		// Handle panel disposal
+		this.analysisPanel.onDidDispose(() => {
+			this.analysisPanel = undefined;
+		});
+	}
+
 	private async refreshDetailsPanel(): Promise<void> {
 		if (!this.detailsPanel) {
 			return;
@@ -1283,6 +1724,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Refresh the chart webview content
 		const dailyStats = await this.calculateDailyStats();
 		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+	}
+
+	private async refreshAnalysisPanel(): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
+
+		// Refresh the analysis webview content
+		const analysisStats = await this.calculateUsageAnalysisStats();
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(analysisStats);
 	}
 
 	private getDetailsHtml(stats: DetailedStats): string {
@@ -1565,6 +2016,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						<span>📈</span>
 						<span>Show Chart</span>
 					</button>
+					<button class="refresh-button" onclick="showUsageAnalysis()" style="margin-left: 8px; background: #7c3aed;">
+						<span>📊</span>
+						<span>Usage Analysis</span>
+					</button>
 					<button class="refresh-button" onclick="showDiagnostics()" style="margin-left: 8px; background: #5a5a5a;">
 						<span>🔍</span>
 						<span>Diagnostics</span>
@@ -1582,6 +2037,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				function showChart() {
 					// Send message to extension to show chart
 					vscode.postMessage({ command: 'showChart' });
+				}
+
+				function showUsageAnalysis() {
+					// Send message to extension to show usage analysis
+					vscode.postMessage({ command: 'showUsageAnalysis' });
 				}
 
 				function showDiagnostics() {
@@ -2862,6 +3322,496 @@ class CopilotTokenTracker implements vscode.Disposable {
 		</html>`;
 	}
 
+	private getUsageAnalysisHtml(stats: UsageAnalysisStats): string {
+		// Helper to get the total of context references
+		const getTotalContextRefs = (refs: ContextReferenceUsage): number => {
+			return refs.file + refs.selection + refs.symbol + refs.codebase + 
+			       refs.workspace + refs.terminal + refs.vscode;
+		};
+
+		const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
+		const monthTotalRefs = getTotalContextRefs(stats.month.contextReferences);
+		const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent;
+		const monthTotalModes = stats.month.modeUsage.ask + stats.month.modeUsage.edit + stats.month.modeUsage.agent;
+
+		// Generate top tools lists
+		const generateTopToolsList = (byTool: { [key: string]: number }, limit: number = 5): string => {
+			const sortedTools = Object.entries(byTool)
+				.sort(([, a], [, b]) => b - a)
+				.slice(0, limit);
+			
+			if (sortedTools.length === 0) {
+				return '<li style="color: #999;">No tools used yet</li>';
+			}
+			
+			return sortedTools.map(([tool, count]) => 
+				`<li><strong>${tool}</strong>: ${count} ${count === 1 ? 'call' : 'calls'}</li>`
+			).join('');
+		};
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<title>Usage Analysis</title>
+			<style>
+				* {
+					margin: 0;
+					padding: 0;
+					box-sizing: border-box;
+				}
+				body {
+					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+					background: #2d2d2d;
+					color: #cccccc;
+					padding: 16px;
+					line-height: 1.5;
+					min-width: 320px;
+				}
+				.container {
+					background: #3c3c3c;
+					border: 1px solid #5a5a5a;
+					border-radius: 8px;
+					padding: 16px;
+					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+					max-width: 1200px;
+					margin: 0 auto;
+				}
+				.header {
+					display: flex;
+					align-items: center;
+					gap: 8px;
+					margin-bottom: 16px;
+					padding-bottom: 12px;
+					border-bottom: 1px solid #5a5a5a;
+				}
+				.header-icon {
+					font-size: 20px;
+				}
+				.header-title {
+					font-size: 16px;
+					font-weight: 600;
+					color: #ffffff;
+				}
+				.section {
+					margin-bottom: 24px;
+				}
+				.section-title {
+					font-size: 15px;
+					font-weight: 600;
+					color: #ffffff;
+					margin-bottom: 12px;
+					display: flex;
+					align-items: center;
+					gap: 8px;
+				}
+				.section-subtitle {
+					font-size: 13px;
+					color: #999;
+					margin-bottom: 12px;
+				}
+				.stats-grid {
+					display: grid;
+					grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+					gap: 12px;
+					margin-bottom: 16px;
+				}
+				.stat-card {
+					background: #353535;
+					border: 1px solid #5a5a5a;
+					border-radius: 4px;
+					padding: 12px;
+				}
+				.stat-label {
+					font-size: 11px;
+					color: #b3b3b3;
+					margin-bottom: 4px;
+				}
+				.stat-value {
+					font-size: 20px;
+					font-weight: 600;
+					color: #ffffff;
+				}
+				.bar-chart {
+					background: #353535;
+					border: 1px solid #5a5a5a;
+					border-radius: 4px;
+					padding: 12px;
+					margin-bottom: 12px;
+				}
+				.bar-item {
+					margin-bottom: 8px;
+				}
+				.bar-label {
+					display: flex;
+					justify-content: space-between;
+					font-size: 12px;
+					margin-bottom: 4px;
+				}
+				.bar-track {
+					background: #2a2a2a;
+					height: 8px;
+					border-radius: 4px;
+					overflow: hidden;
+				}
+				.bar-fill {
+					background: linear-gradient(90deg, #7c3aed, #a855f7);
+					height: 100%;
+					border-radius: 4px;
+					transition: width 0.3s ease;
+				}
+				.list {
+					background: #353535;
+					border: 1px solid #5a5a5a;
+					border-radius: 4px;
+					padding: 12px 16px;
+				}
+				.list ul {
+					list-style: none;
+					padding: 0;
+				}
+				.list li {
+					padding: 4px 0;
+					font-size: 13px;
+				}
+				.two-column {
+					display: grid;
+					grid-template-columns: 1fr 1fr;
+					gap: 16px;
+				}
+				.info-box {
+					background: #3a4a5a;
+					border: 1px solid #4a5a6a;
+					border-radius: 4px;
+					padding: 12px;
+					margin-bottom: 16px;
+					font-size: 13px;
+				}
+				.info-box-title {
+					font-weight: 600;
+					color: #ffffff;
+					margin-bottom: 6px;
+				}
+				.footer {
+					margin-top: 16px;
+					padding-top: 12px;
+					border-top: 1px solid #5a5a5a;
+					text-align: center;
+					font-size: 11px;
+					color: #999999;
+					font-style: italic;
+				}
+				.refresh-button {
+					background: #0e639c;
+					border: 1px solid #1177bb;
+					color: #ffffff;
+					padding: 8px 16px;
+					border-radius: 4px;
+					cursor: pointer;
+					font-size: 12px;
+					font-weight: 500;
+					margin-top: 8px;
+					transition: background-color 0.2s;
+					display: inline-flex;
+					align-items: center;
+					gap: 6px;
+				}
+				.refresh-button:hover {
+					background: #1177bb;
+				}
+				.refresh-button:active {
+					background: #0a5a8a;
+				}
+				@media (max-width: 768px) {
+					.two-column {
+						grid-template-columns: 1fr;
+					}
+				}
+			</style>
+		</head>
+		<body>
+			<div class="container">
+				<div class="header">
+					<span class="header-icon">📊</span>
+					<span class="header-title">Copilot Usage Analysis Dashboard</span>
+				</div>
+
+				<div class="info-box">
+					<div class="info-box-title">📋 About This Dashboard</div>
+					<div>
+						This dashboard analyzes your GitHub Copilot usage patterns by examining session log files.
+						It tracks modes (ask/edit/agent), tool usage, context references (#file, @workspace, etc.),
+						and MCP (Model Context Protocol) tools to help you understand how you interact with Copilot.
+					</div>
+				</div>
+
+				<!-- Mode Usage Section -->
+				<div class="section">
+					<div class="section-title">
+						<span>🎯</span>
+						<span>Interaction Modes</span>
+					</div>
+					<div class="section-subtitle">
+						How you're using Copilot: Ask (chat), Edit (code edits), or Agent (autonomous tasks)
+					</div>
+					
+					<div class="two-column">
+						<div>
+							<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+							<div class="bar-chart">
+								<div class="bar-item">
+									<div class="bar-label">
+										<span>💬 Ask Mode</span>
+										<span><strong>${stats.today.modeUsage.ask}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100).toFixed(0) : 0}%)</span>
+									</div>
+									<div class="bar-track">
+										<div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div>
+									</div>
+								</div>
+								<div class="bar-item">
+									<div class="bar-label">
+										<span>✏️ Edit Mode</span>
+										<span><strong>${stats.today.modeUsage.edit}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100).toFixed(0) : 0}%)</span>
+									</div>
+									<div class="bar-track">
+										<div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div>
+									</div>
+								</div>
+								<div class="bar-item">
+									<div class="bar-label">
+										<span>🤖 Agent Mode</span>
+										<span><strong>${stats.today.modeUsage.agent}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(0) : 0}%)</span>
+									</div>
+									<div class="bar-track">
+										<div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div>
+							<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
+							<div class="bar-chart">
+								<div class="bar-item">
+									<div class="bar-label">
+										<span>💬 Ask Mode</span>
+										<span><strong>${stats.month.modeUsage.ask}</strong> (${monthTotalModes > 0 ? ((stats.month.modeUsage.ask / monthTotalModes) * 100).toFixed(0) : 0}%)</span>
+									</div>
+									<div class="bar-track">
+										<div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.month.modeUsage.ask / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div>
+									</div>
+								</div>
+								<div class="bar-item">
+									<div class="bar-label">
+										<span>✏️ Edit Mode</span>
+										<span><strong>${stats.month.modeUsage.edit}</strong> (${monthTotalModes > 0 ? ((stats.month.modeUsage.edit / monthTotalModes) * 100).toFixed(0) : 0}%)</span>
+									</div>
+									<div class="bar-track">
+										<div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.month.modeUsage.edit / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div>
+									</div>
+								</div>
+								<div class="bar-item">
+									<div class="bar-label">
+										<span>🤖 Agent Mode</span>
+										<span><strong>${stats.month.modeUsage.agent}</strong> (${monthTotalModes > 0 ? ((stats.month.modeUsage.agent / monthTotalModes) * 100).toFixed(0) : 0}%)</span>
+									</div>
+									<div class="bar-track">
+										<div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.month.modeUsage.agent / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Context References Section -->
+				<div class="section">
+					<div class="section-title">
+						<span>🔗</span>
+						<span>Context References</span>
+					</div>
+					<div class="section-subtitle">
+						How often you reference files, selections, symbols, and workspace context
+					</div>
+					
+					<div class="stats-grid">
+						<div class="stat-card">
+							<div class="stat-label">📄 #file</div>
+							<div class="stat-value">${stats.month.contextReferences.file}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.file}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">✂️ #selection</div>
+							<div class="stat-value">${stats.month.contextReferences.selection}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.selection}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">🔤 #symbol</div>
+							<div class="stat-value">${stats.month.contextReferences.symbol}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.symbol}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">🗂️ #codebase</div>
+							<div class="stat-value">${stats.month.contextReferences.codebase}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.codebase}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">📁 @workspace</div>
+							<div class="stat-value">${stats.month.contextReferences.workspace}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.workspace}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">💻 @terminal</div>
+							<div class="stat-value">${stats.month.contextReferences.terminal}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.terminal}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">🔧 @vscode</div>
+							<div class="stat-value">${stats.month.contextReferences.vscode}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.vscode}</div>
+						</div>
+						<div class="stat-card" style="background: #4a3a5a;">
+							<div class="stat-label">📊 Total References</div>
+							<div class="stat-value">${monthTotalRefs}</div>
+							<div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${todayTotalRefs}</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Tool Calls Section -->
+				<div class="section">
+					<div class="section-title">
+						<span>🔧</span>
+						<span>Tool Usage</span>
+					</div>
+					<div class="section-subtitle">
+						Functions and tools invoked by Copilot during interactions
+					</div>
+					
+					<div class="two-column">
+						<div>
+							<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+							<div class="list">
+								<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+									Total Tool Calls: ${stats.today.toolCalls.total}
+								</div>
+								<ul>
+									${generateTopToolsList(stats.today.toolCalls.byTool)}
+								</ul>
+							</div>
+						</div>
+						<div>
+							<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
+							<div class="list">
+								<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+									Total Tool Calls: ${stats.month.toolCalls.total}
+								</div>
+								<ul>
+									${generateTopToolsList(stats.month.toolCalls.byTool)}
+								</ul>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- MCP Tools Section -->
+				<div class="section">
+					<div class="section-title">
+						<span>🔌</span>
+						<span>MCP Tools</span>
+					</div>
+					<div class="section-subtitle">
+						Model Context Protocol (MCP) server and tool usage
+					</div>
+					
+					<div class="two-column">
+						<div>
+							<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+							<div class="list">
+								<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+									Total MCP Calls: ${stats.today.mcpTools.total}
+								</div>
+								${stats.today.mcpTools.total > 0 ? `
+									<div style="margin-top: 12px;">
+										<strong>By Server:</strong>
+										<ul style="margin-top: 4px;">
+											${generateTopToolsList(stats.today.mcpTools.byServer)}
+										</ul>
+									</div>
+									<div style="margin-top: 12px;">
+										<strong>By Tool:</strong>
+										<ul style="margin-top: 4px;">
+											${generateTopToolsList(stats.today.mcpTools.byTool)}
+										</ul>
+									</div>
+								` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
+							</div>
+						</div>
+						<div>
+							<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
+							<div class="list">
+								<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+									Total MCP Calls: ${stats.month.mcpTools.total}
+								</div>
+								${stats.month.mcpTools.total > 0 ? `
+									<div style="margin-top: 12px;">
+										<strong>By Server:</strong>
+										<ul style="margin-top: 4px;">
+											${generateTopToolsList(stats.month.mcpTools.byServer)}
+										</ul>
+									</div>
+									<div style="margin-top: 12px;">
+										<strong>By Tool:</strong>
+										<ul style="margin-top: 4px;">
+											${generateTopToolsList(stats.month.mcpTools.byTool)}
+										</ul>
+									</div>
+								` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Summary Section -->
+				<div class="section">
+					<div class="section-title">
+						<span>📈</span>
+						<span>Sessions Summary</span>
+					</div>
+					<div class="stats-grid">
+						<div class="stat-card">
+							<div class="stat-label">📅 Today Sessions</div>
+							<div class="stat-value">${stats.today.sessions}</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-label">📊 Month Sessions</div>
+							<div class="stat-value">${stats.month.sessions}</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="footer">
+					Last updated: ${stats.lastUpdated.toLocaleString()}<br>
+					Updates automatically every 5 minutes
+					<br>
+					<button class="refresh-button" onclick="refreshAnalysis()">
+						<span>🔄</span>
+						<span>Refresh Analysis</span>
+					</button>
+				</div>
+			</div>
+
+			<script>
+				const vscode = acquireVsCodeApi();
+
+				function refreshAnalysis() {
+					vscode.postMessage({ command: 'refresh' });
+				}
+			</script>
+		</body>
+		</html>`;
+	}
+
 	public dispose(): void {
 		if (this.updateInterval) {
 			clearInterval(this.updateInterval);
@@ -2875,6 +3825,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		if (this.chartPanel) {
 			this.chartPanel.dispose();
+		}
+		if (this.analysisPanel) {
+			this.analysisPanel.dispose();
 		}
 		this.statusBarItem.dispose();
 		this.outputChannel.dispose();
@@ -2906,6 +3859,12 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showChart();
 	});
 
+	// Register the show usage analysis command
+	const showUsageAnalysisCommand = vscode.commands.registerCommand('copilot-token-tracker.showUsageAnalysis', async () => {
+		tokenTracker.log('Show usage analysis command called');
+		await tokenTracker.showUsageAnalysis();
+	});
+
 	// Register the generate diagnostic report command
 	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
 		tokenTracker.log('Generate diagnostic report command called');
@@ -2913,7 +3872,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, generateDiagnosticReportCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
