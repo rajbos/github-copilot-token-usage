@@ -69,7 +69,7 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 **Location**: `src/extension.ts` (lines 1102-1134)
 - Primary: `request.result.metadata.modelId`
 - Fallback: parses `request.result.details` for known model patterns
-- Detects GPT-3.5-Turbo, GPT-4 family (4, 4.1, 4o, 4o-mini, 5, o3-mini, o4-mini), Claude Sonnet (3.5, 3.7, 4), Gemini (2.5 Pro, 3 Pro); defaults to `gpt-4`
+- Detected patterns: GPT-3.5-Turbo, GPT-4 family (4, 4.1, 4o, 4o-mini, 5, o3-mini, o4-mini), Claude Sonnet (3.5, 3.7, 4), Gemini (2.5 Pro, 3 Pro, 3 Pro Preview); defaults to `gpt-4`
 - Display name mapping in `getModelDisplayName()` (lines 1778-1811) adds variants such as GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, and Raptor when present in `metadata.modelId`.
 
 ### Editor Type Detection: `getEditorTypeFromPath()`
