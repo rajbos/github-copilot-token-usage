@@ -4,7 +4,6 @@ description: Comprehensive list of metrics that can be extracted from GitHub Cop
 lastUpdated: 2026-01-26
 status: current
 ---
-
 # Trackable Data from GitHub Copilot Session Logs
 
 This document describes what data can be extracted and tracked from GitHub Copilot Chat session log files.
