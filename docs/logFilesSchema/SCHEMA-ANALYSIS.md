@@ -6,7 +6,7 @@ Quick guide for analyzing and updating Copilot session file schemas.
 
 **Analyze current session files:**
 ```powershell
-.\scripts\analyze-session-schema.ps1
+.\.github\skills\copilot-log-analysis\analyze-session-schema.ps1
 ```
 
 **View results:**
