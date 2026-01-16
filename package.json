@@ -40,6 +40,11 @@
         "category": "Copilot Token Tracker"
       },
       {
+        "command": "copilot-token-tracker.showUsageAnalysis",
+        "title": "Show Usage Analysis Dashboard",
+        "category": "Copilot Token Tracker"
+      },
+      {
         "command": "copilot-token-tracker.generateDiagnosticReport",
         "title": "Generate Diagnostic Report",
         "category": "Copilot Token Tracker"
