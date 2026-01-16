@@ -858,10 +858,22 @@ import { writeClipboardText } from './utils/clipboard';
 					try {
 						const event = JSON.parse(line);
 						
-						// Detect mode from event type
+						// Detect mode from event type - CLI can be chat or agent mode
+						// We check for indicators of autonomous agent behavior
 						if (event.type === 'user.message') {
-							// CLI is typically agent mode
-							analysis.modeUsage.agent++;
+							// Check if this appears to be an agent mode interaction
+							// Agent mode typically has tool calls, file operations, etc.
+							// For now, default to chat (ask) for CLI unless we see agent indicators
+							analysis.modeUsage.ask++;
+						}
+						
+						// If we see tool calls, upgrade to agent mode for this session
+						if (event.type === 'tool.call' || event.type === 'tool.result') {
+							// Tool usage indicates agent mode - adjust if we counted this as ask
+							if (analysis.modeUsage.ask > 0) {
+								analysis.modeUsage.ask--;
+								analysis.modeUsage.agent++;
+							}
 						}
 						
 						// Detect tool calls
@@ -894,33 +906,38 @@ import { writeClipboardText } from './utils/clipboard';
 			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
 
-			// Detect session mode
-			if (sessionContent.mode?.id) {
-				const modeId = sessionContent.mode.id.toLowerCase();
-				if (modeId.includes('agent')) {
-					analysis.modeUsage.agent = sessionContent.requests?.length || 0;
-				} else if (modeId.includes('edit')) {
-					analysis.modeUsage.edit = sessionContent.requests?.length || 0;
-				} else {
-					analysis.modeUsage.ask = sessionContent.requests?.length || 0;
-				}
-			} else {
-				// Default to ask mode if not specified
-				analysis.modeUsage.ask = sessionContent.requests?.length || 0;
-			}
-
+			// Detect session mode and count interactions per request
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				for (const request of sessionContent.requests) {
-					// Detect agent mode from agent field
+					// Determine mode for each individual request
+					let requestMode = 'ask'; // default
+					
+					// Check request-level agent ID first (more specific)
 					if (request.agent?.id) {
 						const agentId = request.agent.id.toLowerCase();
 						if (agentId.includes('edit')) {
-							analysis.modeUsage.edit++;
-							analysis.modeUsage.ask--;
+							requestMode = 'edit';
 						} else if (agentId.includes('agent')) {
-							analysis.modeUsage.agent++;
-							analysis.modeUsage.ask--;
+							requestMode = 'agent';
 						}
+					}
+					// Fall back to session-level mode if no request-specific agent
+					else if (sessionContent.mode?.id) {
+						const modeId = sessionContent.mode.id.toLowerCase();
+						if (modeId.includes('agent')) {
+							requestMode = 'agent';
+						} else if (modeId.includes('edit')) {
+							requestMode = 'edit';
+						}
+					}
+					
+					// Count this request in the appropriate mode
+					if (requestMode === 'agent') {
+						analysis.modeUsage.agent++;
+					} else if (requestMode === 'edit') {
+						analysis.modeUsage.edit++;
+					} else {
+						analysis.modeUsage.ask++;
 					}
 					
 					// Analyze user message for context references
@@ -985,7 +1002,12 @@ import { writeClipboardText } from './utils/clipboard';
 								if (metadata.toolCalls || metadata.tools || metadata.functionCalls) {
 									const toolData = metadata.toolCalls || metadata.tools || metadata.functionCalls;
 									if (Array.isArray(toolData)) {
-										analysis.toolCalls.total += toolData.length;
+										for (const toolItem of toolData) {
+											analysis.toolCalls.total++;
+											// Try to extract tool name from various possible fields
+											const toolName = toolItem.name || toolItem.function?.name || toolItem.toolName || 'metadata-tool';
+											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+										}
 									}
 								}
 							} catch (e) {
@@ -3582,6 +3604,16 @@ import { writeClipboardText } from './utils/clipboard';
 	}
 
 	private getUsageAnalysisHtml(stats: UsageAnalysisStats): string {
+		// Helper to escape HTML to prevent XSS
+		const escapeHtml = (text: string): string => {
+			return text
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#039;');
+		};
+
 		// Helper to get the total of context references
 		const getTotalContextRefs = (refs: ContextReferenceUsage): number => {
 			return refs.file + refs.selection + refs.symbol + refs.codebase + 
@@ -3604,7 +3636,7 @@ import { writeClipboardText } from './utils/clipboard';
 			}
 			
 			return sortedTools.map(([tool, count]) => 
-				`<li><strong>${tool}</strong>: ${count} ${count === 1 ? 'call' : 'calls'}</li>`
+				`<li><strong>${escapeHtml(tool)}</strong>: ${count} ${count === 1 ? 'call' : 'calls'}</li>`
 			).join('');
 		};
 
