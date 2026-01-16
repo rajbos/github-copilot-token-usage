@@ -5,7 +5,7 @@
  * This script scans for GitHub Copilot Chat session files across all known locations
  * on any VS Code installation (stable, Insiders, remote, etc.) and reports what it finds.
  * 
- * Usage: node scripts/diagnose-session-files.js
+ * Usage: node .github/skills/copilot-log-analysis/diagnose-session-files.js
  * 
  * Can be run directly from the terminal on any machine to diagnose session file discovery issues.
  */

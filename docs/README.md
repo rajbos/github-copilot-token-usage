@@ -20,7 +20,7 @@ For comprehensive documentation about Copilot session log file schemas, see:
 
 ```powershell
 # Analyze current session files
-.\scripts\analyze-session-schema.ps1
+.\.github\skills\copilot-log-analysis\analyze-session-schema.ps1
 
 # View results
 Get-Content docs\logFilesSchema\session-file-schema-analysis.json | ConvertFrom-Json
