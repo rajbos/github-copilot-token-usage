@@ -115,12 +115,13 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 **Model Detection Logic**: `getModelFromRequest()` (lines 1123-1145)
 - Primary: `request.result.metadata.modelId`
 - Fallback: Parse `request.result.details` string for model names
-- Supported patterns (defined in code lines 1129-1142):
-  - OpenAI: GPT-4, GPT-4.1, GPT-4o, GPT-4o-mini, GPT-5, GPT-3.5-Turbo, o3-mini, o4-mini
-  - Anthropic: Claude Sonnet 3.5, 3.7, 4, Claude Haiku, Claude Opus
-  - Google: Gemini 2.5 Pro, Gemini 3 Pro, Gemini 3 Flash
-  - X.AI: Grok Code Fast 1
-  - Other: Raptor Mini
+- Detected patterns (defined in code lines 1129-1143):
+  - OpenAI: GPT-3.5-Turbo, GPT-4, GPT-4.1, GPT-4o, GPT-4o-mini, GPT-5, o3-mini, o4-mini
+  - Anthropic: Claude Sonnet 3.5, Claude Sonnet 3.7, Claude Sonnet 4
+  - Google: Gemini 2.5 Pro, Gemini 3 Pro (Preview), Gemini 3 Pro
+  - Default fallback: gpt-4
+
+**Note**: The display name mapping in `getModelDisplayName()` (lines 1778-1811) includes additional model variants (GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, Raptor) that may appear if specified via `metadata.modelId` but are not pattern-matched from `result.details`.
 
 ### 4. Editor Type Detection: `getEditorTypeFromPath()`
 **Location**: `src/extension.ts` (lines 111-143)
