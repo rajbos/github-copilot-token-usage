@@ -198,20 +198,11 @@ All use `getSessionFileDataCached()` (lines 732-753) which:
 
 **Note**: The analysis JSON file is auto-generated and may not exist in fresh clones. It's created by running the schema analysis script documented in the README.
 
-### Schema Analysis Script
-**Location**: `scripts/diagnose-session-files.js`
-
-**Purpose**: Diagnostic tool to:
-- Scan all VS Code installation paths
-- Discover session files
-- Report file locations, counts, and metadata
-- Help troubleshoot session file discovery issues
-
-**Usage:**
-```bash
-node scripts/diagnose-session-files.js
-node scripts/diagnose-session-files.js --verbose  # Show all file paths
-```
+### Schema Analysis
+See the **Executable Scripts** section above for three available scripts:
+1. `get-session-files.js` - Quick session file discovery
+2. `diagnose-session-files.js` - Detailed diagnostics
+3. `analyze-session-schema.ps1` - PowerShell schema analysis
 
 ## JSON File Structure (VS Code Sessions)
 
@@ -290,6 +281,124 @@ Contains per-million-token costs for input and output:
 - Output cost = `(outputTokens / 1_000_000) * outputCostPerMillion`
 - Total cost = input cost + output cost
 - Fallback to `gpt-4o-mini` pricing for unknown models
+
+## Executable Scripts
+
+This skill includes three executable scripts that can be run directly to analyze session files. **Always run scripts with their appropriate command first** before attempting to read or modify them.
+
+### Script 1: Quick Session File Discovery
+
+**Purpose**: Quickly discover all Copilot session files on your system with summary statistics.
+
+**Location**: `.github/skills/copilot-log-analysis/get-session-files.js`
+
+**When to use:**
+- Need a quick overview of session file locations
+- Want to know how many session files exist
+- Need sample paths for manual inspection
+- Troubleshooting why session files aren't being found
+
+**Usage:**
+```bash
+# Basic output with summary statistics
+node .github/skills/copilot-log-analysis/get-session-files.js
+
+# Show all file paths (verbose mode)
+node .github/skills/copilot-log-analysis/get-session-files.js --verbose
+
+# JSON output for programmatic use
+node .github/skills/copilot-log-analysis/get-session-files.js --json
+```
+
+**What it does:**
+- Scans all VS Code variants (Stable, Insiders, Cursor, VSCodium, etc.)
+- Finds files in workspace storage, global storage, and Copilot CLI locations
+- Categorizes files by location and editor type
+- Shows total counts and sample file paths
+
+**Example output:**
+```
+Platform: win32
+Home directory: C:\Users\YourName
+
+VS Code installations found:
+  C:\Users\YourName\AppData\Roaming\Code\User
+  C:\Users\YourName\AppData\Roaming\Code - Insiders\User
+
+Total session files found: 274
+
+Session files by location:
+  Workspace Storage: 192 files
+  Global Storage (Legacy): 67 files
+  Copilot Chat Extension: 6 files
+  Copilot CLI: 9 files
+
+Session files by editor:
+  VS Code: 265 files
+  VS Code Insiders: 9 files
+```
+
+### Script 2: Detailed Session File Diagnostics
+
+**Purpose**: Comprehensive diagnostic tool that analyzes session file structure, content, and provides debugging information.
+
+**Location**: `.github/skills/copilot-log-analysis/diagnose-session-files.js`
+
+**When to use:**
+- Debugging session file discovery issues
+- Need detailed information about session file structure
+- Investigating token counting discrepancies
+- Troubleshooting parser failures
+- Understanding session file metadata and format variations
+
+**Usage:**
+```bash
+# Basic diagnostic report
+node .github/skills/copilot-log-analysis/diagnose-session-files.js
+
+# Verbose output with all file paths and details
+node .github/skills/copilot-log-analysis/diagnose-session-files.js --verbose
+```
+
+**What it does:**
+- Discovers all session files across VS Code variants
+- Reports file locations, counts, and metadata
+- Analyzes file structure (JSON vs JSONL format)
+- Validates session file integrity
+- Provides diagnostic information for troubleshooting
+- Shows file modification times and sizes
+
+### Script 3: Schema Analysis and Field Discovery
+
+**Purpose**: PowerShell script that analyzes session files to discover field structures and generate schema documentation.
+
+**Location**: `.github/skills/copilot-log-analysis/analyze-session-schema.ps1`
+
+**When to use:**
+- Need to understand the complete structure of session files
+- Discovering new fields added by VS Code updates
+- Generating schema documentation
+- Understanding field variations across different VS Code versions
+- Creating or updating schema reference files
+
+**Usage:**
+```powershell
+# Analyze session files and generate schema
+pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1
+
+# Specify custom output directory
+pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputPath ./output
+```
+
+**What it does:**
+- Scans all discovered session files
+- Extracts and catalogs all field names and structures
+- Generates JSON schema documentation
+- Creates field analysis reports
+- Outputs to `docs/logFilesSchema/session-file-schema-analysis.json`
+- Documents field types, occurrences, and variations
+
+**Note**: This script generates the `session-file-schema-analysis.json` file referenced in the Schema Documentation section below.
 
 ## Usage Examples
 
@@ -378,9 +487,11 @@ When working with log analysis, refer to these files:
    - Field analysis tools
    - VS Code variant information
 
-4. **Diagnostic script**: `scripts/diagnose-session-files.js`
-   - Session file discovery testing
-   - Troubleshooting helper
+4. **Skill resources**: `.github/skills/copilot-log-analysis/`
+   - `get-session-files.js` - Quick session file discovery script
+   - `diagnose-session-files.js` - Detailed diagnostic tool
+   - `analyze-session-schema.ps1` - PowerShell schema analysis script
+   - `SKILL.md` - This documentation
 
 5. **Project instructions**: `.github/copilot-instructions.md`
    - Architecture overview
@@ -390,7 +501,7 @@ When working with log analysis, refer to these files:
 
 ### Issue: No session files found
 **Solution**: 
-1. Run diagnostic script: `node scripts/diagnose-session-files.js`
+1. Run diagnostic script: `node .github/skills/copilot-log-analysis/diagnose-session-files.js`
 2. Check if Copilot Chat extension is active
 3. Verify user has started at least one Copilot Chat session
 4. Check OS-specific paths are correct
