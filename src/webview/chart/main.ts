@@ -118,6 +118,14 @@ function renderLayout(data: InitialChartData): void {
 	diagnosticsBtn.textContent = '🔍 Diagnostics';
 	buttons.append(refreshBtn, detailsBtn, usageBtn, diagnosticsBtn);
 	header.append(headerLeft, buttons);
+=======
+	const title = el('div', 'title', '📈 Token Usage Over Time');
+	const buttons = el('div', 'button-row');
+	const refreshBtn = el('button', 'toggle active', '🔄 Refresh');
+	refreshBtn.id = 'btn-refresh';
+	buttons.append(refreshBtn);
+	header.append(title, buttons);
+>>>>>>> 92412ab (Reconfigured main and chart views)
 
 	const summarySection = el('div', 'section');
 	summarySection.append(el('h3', '', '📊 Summary'));
