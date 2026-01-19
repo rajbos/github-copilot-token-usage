@@ -47,3 +47,30 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **`src/modelPricing.json`**: Model pricing data with input/output costs per million tokens. Includes metadata about pricing sources and last update date. See `src/README.md` for detailed update instructions and current pricing sources.
 - **`package.json`**: Defines activation events, commands, and build scripts.
 - **`esbuild.js`**: The build script that bundles the TypeScript source and JSON data files.
+
+## Webview Navigation Buttons
+
+To maintain a consistent, VS Code-native look across all webview panels (Details, Chart, Usage Analysis, Diagnostics), use the VS Code Webview UI Toolkit for top-level navigation buttons.
+
+- **Use `vscode-button`**: Prefer the toolkit button component for header navigation controls instead of custom `<button>` elements. Example usage in a webview script:
+
+  ```ts
+  const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+  provideVSCodeDesignSystem().register(vsCodeButton());
+
+  // then create buttons in the DOM:
+  const btn = document.createElement('vscode-button');
+  btn.id = 'btn-details';
+  btn.textContent = '🤖 Details';
+  btn.setAttribute('appearance', 'primary');
+  ```
+
+- **Register the toolkit in each webview**: Each webview that uses `vscode-button` should import and register the toolkit in its `bootstrap()` or initialization function before rendering the layout.
+
+- **Wire messages unchanged**: Buttons should `postMessage` the same navigation commands (`showDetails`, `showChart`, `showUsageAnalysis`, `showDiagnostics`, `refresh`) so the extension can reuse existing panels. Do not change the command names.
+
+- **Checklist for PRs touching webviews**:
+  - Ensure the toolkit is registered before creating `vscode-button` elements.
+  - Keep navigation command names unchanged so `extension.ts` handlers continue to work.
+  - Run `npm run compile` and verify TypeScript and ESLint pass.
+  - Visually compare the header with the Details and other panels to confirm parity.
