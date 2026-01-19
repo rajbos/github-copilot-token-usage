@@ -139,6 +139,7 @@ interface SessionFileDetails {
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
+	private diagnosticsPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 
@@ -1310,6 +1311,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private detectEditorSource(filePath: string): string {
 		const lowerPath = filePath.toLowerCase();
+		if (lowerPath.includes('copilot-cli') || lowerPath.includes('cli')) { return 'Copilot CLI'; }
 		if (lowerPath.includes('cursor')) { return 'Cursor'; }
 		if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
 		if (lowerPath.includes('vscodium')) { return 'VSCodium'; }
@@ -1810,6 +1812,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'refresh':
 					await this.refreshChartPanel();
 					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
 			}
 		});
 
@@ -1852,6 +1863,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			switch (message.command) {
 				case 'refresh':
 					await this.refreshAnalysisPanel();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
 					break;
 			}
 		});
@@ -2371,10 +2391,32 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	public async showDiagnosticReport(): Promise<void> {
 		this.log('Showing diagnostic report...');
-		
+
+		// If panel already exists, just reveal it and update content
+		if (this.diagnosticsPanel) {
+			this.diagnosticsPanel.reveal();
+			// Optionally, refresh content if needed
+			const report = await this.generateDiagnosticReport();
+			const sessionFiles = await this.getCopilotSessionFiles();
+			const sessionFileData: { file: string; size: number; modified: string }[] = [];
+			for (const file of sessionFiles.slice(0, 20)) {
+				try {
+					const stat = await fs.promises.stat(file);
+					sessionFileData.push({
+						file,
+						size: stat.size,
+						modified: stat.mtime.toISOString()
+					});
+				} catch {
+					// Skip inaccessible files
+				}
+			}
+			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, []);
+			this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
+			return;
+		}
+
 		const report = await this.generateDiagnosticReport();
-		
-		// Extract session files for structured data (basic info for first 20) - this is fast
 		const sessionFiles = await this.getCopilotSessionFiles();
 		const sessionFileData: { file: string; size: number; modified: string }[] = [];
 		for (const file of sessionFiles.slice(0, 20)) {
@@ -2389,9 +2431,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// Skip inaccessible files
 			}
 		}
-		
-		// Create a webview panel FIRST with empty session details (loading state)
-		const panel = vscode.window.createWebviewPanel(
+
+		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
 			'Diagnostic Report',
 			{
@@ -2404,12 +2445,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
-		
+
 		// Set the HTML content immediately with empty session files (shows loading state)
-		panel.webview.html = this.getDiagnosticReportHtml(panel.webview, report, sessionFileData, []);
-		
+		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, []);
+
 		// Handle messages from the webview
-		panel.webview.onDidReceiveMessage(async (message) => {
+		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -2431,11 +2472,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
 			}
 		});
-		
+
+		// Handle panel disposal
+		this.diagnosticsPanel.onDidDispose(() => {
+			this.diagnosticsPanel = undefined;
+		});
+
 		// Load detailed session files in the background and send to webview when ready
-		this.loadSessionFilesInBackground(panel, sessionFiles);
+		this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
 	}
 
 	/**

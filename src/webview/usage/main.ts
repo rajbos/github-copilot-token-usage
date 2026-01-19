@@ -94,42 +94,65 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			* { margin: 0; padding: 0; box-sizing: border-box; }
 			body {
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-				background: #2d2d2d;
-				color: #cccccc;
+				background: #0e0e0f;
+				color: #e7e7e7;
 				padding: 16px;
 				line-height: 1.5;
 				min-width: 320px;
 			}
 			.container {
-				background: #3c3c3c;
-				border: 1px solid #5a5a5a;
-				border-radius: 8px;
+				background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%);
+				border: 1px solid #2e2e34;
+				border-radius: 10px;
 				padding: 16px;
-				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+				box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
 				max-width: 1200px;
 				margin: 0 auto;
 			}
 			.header {
 				display: flex;
+				justify-content: space-between;
 				align-items: center;
-				gap: 8px;
-				margin-bottom: 16px;
-				padding-bottom: 12px;
-				border-bottom: 1px solid #5a5a5a;
+				gap: 12px;
+				margin-bottom: 14px;
+				padding-bottom: 4px;
 			}
+			.header-left { display: flex; align-items: center; gap: 8px; }
 			.header-icon { font-size: 20px; }
-			.header-title { font-size: 16px; font-weight: 600; color: #ffffff; }
-			.section { margin-bottom: 24px; }
+			.header-title { font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.2px; }
+			.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+			.nav-button {
+				background: #202024;
+				border: 1px solid #2d2d33;
+				color: #e7e7e7;
+				padding: 8px 12px;
+				border-radius: 6px;
+				font-size: 12px;
+				cursor: pointer;
+				transition: all 0.15s ease;
+			}
+			.nav-button:hover { background: #2a2a30; }
+			.nav-button.primary { background: #0e639c; border-color: #1177bb; color: #fff; }
+			.nav-button.primary:hover { background: #1177bb; }
+			.section { 
+				background: #1b1b1e;
+				border: 1px solid #2a2a30;
+				border-radius: 8px;
+				padding: 12px;
+				margin-bottom: 16px;
+				box-shadow: 0 2px 6px rgba(0,0,0,0.24);
+			}
 			.section-title {
-				font-size: 15px;
-				font-weight: 600;
+				font-size: 14px;
+				font-weight: 700;
 				color: #ffffff;
-				margin-bottom: 12px;
+				margin-bottom: 10px;
 				display: flex;
 				align-items: center;
-				gap: 8px;
+				gap: 6px;
+				letter-spacing: 0.2px;
 			}
-			.section-subtitle { font-size: 13px; color: #999; margin-bottom: 12px; }
+			.section-subtitle { font-size: 12px; color: #b8b8b8; margin-bottom: 12px; }
 			.stats-grid {
 				display: grid;
 				grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -137,74 +160,66 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				margin-bottom: 16px;
 			}
 			.stat-card {
-				background: #353535;
-				border: 1px solid #5a5a5a;
-				border-radius: 4px;
+				background: #18181b;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
 				padding: 12px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 			}
-			.stat-label { font-size: 11px; color: #b3b3b3; margin-bottom: 4px; }
-			.stat-value { font-size: 20px; font-weight: 600; color: #ffffff; }
+			.stat-label { font-size: 11px; color: #b8b8b8; margin-bottom: 4px; }
+			.stat-value { font-size: 20px; font-weight: 700; color: #f6f6f6; }
 			.bar-chart {
-				background: #353535;
-				border: 1px solid #5a5a5a;
-				border-radius: 4px;
+				background: #18181b;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
 				padding: 12px;
 				margin-bottom: 12px;
 			}
 			.bar-item { margin-bottom: 8px; }
-			.bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
-			.bar-track { background: #2a2a2a; height: 8px; border-radius: 4px; overflow: hidden; }
+			.bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #d0d0d0; }
+			.bar-track { background: #242429; height: 8px; border-radius: 4px; overflow: hidden; }
 			.bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
 			.list {
-				background: #353535;
-				border: 1px solid #5a5a5a;
-				border-radius: 4px;
+				background: #18181b;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
 				padding: 12px 16px;
 			}
 			.list ul { list-style: none; padding: 0; }
 			.list li { padding: 4px 0; font-size: 13px; }
 			.two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 			.info-box {
-				background: #3a4a5a;
-				border: 1px solid #4a5a6a;
-				border-radius: 4px;
+				background: #1b1b1e;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
 				padding: 12px;
 				margin-bottom: 16px;
-				font-size: 13px;
+				font-size: 12px;
+				color: #c8c8c8;
 			}
 			.info-box-title { font-weight: 600; color: #ffffff; margin-bottom: 6px; }
 			.footer {
-				margin-top: 16px;
+				margin-top: 6px;
 				padding-top: 12px;
-				border-top: 1px solid #5a5a5a;
-				text-align: center;
+				border-top: 1px solid #2a2a30;
+				text-align: left;
 				font-size: 11px;
-				color: #999999;
-				font-style: italic;
+				color: #a0a0a0;
 			}
-			.refresh-button {
-				background: #0e639c;
-				border: 1px solid #1177bb;
-				color: #ffffff;
-				padding: 8px 16px;
-				border-radius: 4px;
-				cursor: pointer;
-				font-size: 12px;
-				font-weight: 500;
-				margin-top: 8px;
-				transition: background-color 0.2s;
-				display: inline-flex;
-				align-items: center;
-				gap: 6px;
-			}
-			.refresh-button:hover { background: #1177bb; }
-			.refresh-button:active { background: #0a5a8a; }
 			@media (max-width: 768px) { .two-column { grid-template-columns: 1fr; } }
 		</style>
 		<div class="container">
 			<div class="header">
-				<span class="header-icon">📊</span>
-				<span class="header-title">Copilot Usage Analysis Dashboard</span>
+				<div class="header-left">
+					<span class="header-icon">📊</span>
+					<span class="header-title">Usage Analysis</span>
+				</div>
+				<div class="button-row">
+					<vscode-button id="btn-refresh" appearance="primary">🔄 Refresh</vscode-button>
+					<vscode-button id="btn-details">🤖 Details</vscode-button>
+					<vscode-button id="btn-chart">📈 Chart</vscode-button>
+					<vscode-button id="btn-diagnostics">🔍 Diagnostics</vscode-button>
+				</div>
 			</div>
 
 			<div class="info-box">
@@ -334,20 +349,31 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			</div>
 
 			<div class="footer">
-				Last updated: ${new Date(stats.lastUpdated).toLocaleString()}<br>
-				Updates automatically every 5 minutes
-				<br>
-				<button class="refresh-button" id="btn-refresh"><span>🔄</span><span>Refresh Analysis</span></button>
+				Last updated: ${new Date(stats.lastUpdated).toLocaleString()} · Updates every 5 minutes
 			</div>
 		</div>
 	`;
 
+	// Wire up navigation buttons
 	document.getElementById('btn-refresh')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'refresh' });
 	});
+	document.getElementById('btn-details')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDetails' });
+	});
+	document.getElementById('btn-chart')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showChart' });
+	});
+	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDiagnostics' });
+	});
 }
 
-function bootstrap(): void {
+
+async function bootstrap(): Promise<void> {
+	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+	provideVSCodeDesignSystem().register(vsCodeButton());
+
 	if (!initialData) {
 		const root = document.getElementById('root');
 		if (root) {
@@ -358,4 +384,4 @@ function bootstrap(): void {
 	renderLayout(initialData);
 }
 
-bootstrap();
+void bootstrap();

@@ -270,33 +270,34 @@ function renderLayout(data: DiagnosticsData): void {
 		<style>
 			* { margin: 0; padding: 0; box-sizing: border-box; }
 			body {
-				font-family: 'Consolas', 'Courier New', monospace;
-				background: #2d2d2d;
-				color: #cccccc;
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				background: #0e0e0f;
+				color: #e7e7e7;
 				padding: 16px;
-				line-height: 1.6;
+				line-height: 1.5;
+				min-width: 320px;
 			}
 			.container {
-				background: #3c3c3c;
-				border: 1px solid #5a5a5a;
-				border-radius: 8px;
+				background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%);
+				border: 1px solid #2e2e34;
+				border-radius: 10px;
 				padding: 16px;
-				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-				max-width: 1400px;
+				box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+				max-width: 1200px;
 				margin: 0 auto;
 			}
 			.header {
 				display: flex;
-				align-items: center;
 				justify-content: space-between;
-				gap: 8px;
+				align-items: center;
+				gap: 12px;
 				margin-bottom: 16px;
-				padding-bottom: 12px;
-				border-bottom: 1px solid #5a5a5a;
+				padding-bottom: 4px;
 			}
 			.header-left { display: flex; align-items: center; gap: 8px; }
 			.header-icon { font-size: 20px; }
-			.header-title { font-size: 16px; font-weight: 600; color: #ffffff; }
+			.header-title { font-size: 16px; font-weight: 700; color: #fff; }
+			.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
 			
 			/* Tab styles */
 			.tabs {
@@ -462,22 +463,22 @@ function renderLayout(data: DiagnosticsData): void {
 			.session-file-link:hover { color: #81D4FA; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 			.button {
-				background: #0e639c;
-				border: 1px solid #1177bb;
-				color: #ffffff;
-				padding: 10px 20px;
-				border-radius: 4px;
+				background: #202024;
+				border: 1px solid #2d2d33;
+				color: #e7e7e7;
+				padding: 8px 12px;
+				border-radius: 6px;
 				cursor: pointer;
 				font-size: 13px;
 				font-weight: 500;
-				transition: background-color 0.2s;
+				transition: background-color 0.15s ease;
 				display: inline-flex;
 				align-items: center;
 				gap: 8px;
 			}
-			.button:hover { background: #1177bb; }
+			.button:hover { background: #2a2a30; }
 			.button:active { background: #0a5a8a; }
-			.button.secondary { background: #3c3c3c; border-color: #5a5a5a; }
+			.button.secondary { background: #3c3c3c; border-color: #5a5a5a; color: #ffffff; }
 			.button.secondary:hover { background: #4a4a4a; }
 			.info-box {
 				background: #3a4a5a;
@@ -495,6 +496,11 @@ function renderLayout(data: DiagnosticsData): void {
 					<span class="header-icon">🔍</span>
 					<span class="header-title">Diagnostic Report</span>
 				</div>
+				<div class="button-row">
+					<vscode-button id="btn-chart">📈 Chart</vscode-button>
+					<vscode-button id="btn-usage">📊 Usage Analysis</vscode-button>
+					<vscode-button id="btn-details">📋 Details</vscode-button>
+				</div>
 			</div>
 			
 			<div class="tabs">
@@ -507,7 +513,7 @@ function renderLayout(data: DiagnosticsData): void {
 					<div class="info-box-title">📋 About This Report</div>
 					<div>
 						This diagnostic report contains information about your GitHub Copilot Token Tracker
-						extension setup and usage statistics. It does <strong>not</strong> include any of your
+						extension setup and usage statistics. </br> It does <strong>not</strong> include any of your
 						code or conversation content. You can safely share this report when reporting issues.
 					</div>
 				</div>
@@ -523,7 +529,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<div class="info-box">
 					<div class="info-box-title">📁 Session File Analysis</div>
 					<div>
-						This tab shows session files with activity in the last 14 days from all detected editors.
+						This tab shows session files with activity in the last 14 days from all detected editors. </br>
 						Click on an editor panel to filter, click column headers to sort, and click a file name to open it.
 					</div>
 				</div>
@@ -637,12 +643,20 @@ function renderLayout(data: DiagnosticsData): void {
 		vscode.postMessage({ command: 'openIssue' });
 	});
 
+	// Navigation buttons (match details view)
+	document.getElementById('btn-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
+	document.getElementById('btn-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
+	document.getElementById('btn-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+
 	setupSortHandlers();
 	setupEditorFilterHandlers();
 	setupFileLinks();
 }
 
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
+	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+	provideVSCodeDesignSystem().register(vsCodeButton());
+
 	if (!initialData) {
 		const root = document.getElementById('root');
 		if (root) {
@@ -653,4 +667,4 @@ function bootstrap(): void {
 	renderLayout(initialData);
 }
 
-bootstrap();
+void bootstrap();

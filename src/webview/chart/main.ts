@@ -74,34 +74,50 @@ function renderLayout(data: InitialChartData): void {
 		body { margin: 0; background: #0e0e0f; }
 		.container { padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 1200px; margin: 0 auto; }
 		.header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 4px; }
-		.title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #fff; }
+		.header-left { display: flex; align-items: center; gap: 8px; }
+		.header-icon { font-size: 20px; }
+		.header-title { font-size: 16px; font-weight: 700; color: #fff; text-align: left; }
 		.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
-		.section { background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%); border: 1px solid #2e2e34; border-radius: 10px; padding: 12px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28); }
-		.section h3 { margin: 0 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 6px; color: #ffffff; letter-spacing: 0.2px; }
-		.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-		.card { background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 8px; padding: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.24); }
+		.section { background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%); border: 1px solid #2e2e34; border-radius: 10px; padding: 12px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28); text-align: center; }
+		.section h3 { margin: 0 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 6px; color: #ffffff; letter-spacing: 0.2px; text-align: left; }
+		.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; text-align: center; }
+		.card { background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 8px; padding: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.24); text-align: center; }
 		.card-label { color: #b8b8b8; font-size: 11px; margin-bottom: 6px; }
 		.card-value { color: #f6f6f6; font-size: 18px; font-weight: 700; }
 		.card-sub { color: #9aa0a6; font-size: 11px; margin-top: 2px; }
-		.chart-shell { background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.22); }
-		.chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+		.chart-shell { background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.22); text-align: center; }
+		.chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; justify-content: center; }
 		.toggle { background: #202024; border: 1px solid #2d2d33; color: #e7e7e7; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s ease; }
 		.toggle.active { background: #0e639c; border-color: #1177bb; color: #fff; }
 		.toggle:hover { background: #2a2a30; }
 		.toggle.active:hover { background: #1177bb; }
 		.canvas-wrap { position: relative; height: 420px; }
-		.footer { color: #a0a0a0; font-size: 11px; margin-top: 6px; text-align: left; }
+		.footer { color: #a0a0a0; font-size: 11px; margin-top: 6px; text-align: center; }
 		.footer em { color: #c0c0c0; }
 	`;
 
 	const container = el('div', 'container');
 	const header = el('div', 'header');
-	const title = el('div', 'title', '📈 Token Usage Over Time');
+	const headerLeft = el('div', 'header-left');
+	const icon = el('span', 'header-icon', '📈');
+	const title = el('span', 'header-title', 'Token Usage Over Time');
+	headerLeft.append(icon, title);
 	const buttons = el('div', 'button-row');
-	const refreshBtn = el('button', 'toggle active', '🔄 Refresh');
+	const refreshBtn = document.createElement('vscode-button');
 	refreshBtn.id = 'btn-refresh';
-	buttons.append(refreshBtn);
-	header.append(title, buttons);
+	refreshBtn.setAttribute('appearance', 'primary');
+	refreshBtn.textContent = '🔄 Refresh';
+	const detailsBtn = document.createElement('vscode-button');
+	detailsBtn.id = 'btn-details';
+	detailsBtn.textContent = '🤖 Details';
+	const usageBtn = document.createElement('vscode-button');
+	usageBtn.id = 'btn-usage';
+	usageBtn.textContent = '📊 Usage Analysis';
+	const diagnosticsBtn = document.createElement('vscode-button');
+	diagnosticsBtn.id = 'btn-diagnostics';
+	diagnosticsBtn.textContent = '🔍 Diagnostics';
+	buttons.append(refreshBtn, detailsBtn, usageBtn, diagnosticsBtn);
+	header.append(headerLeft, buttons);
 
 	const summarySection = el('div', 'section');
 	summarySection.append(el('h3', '', '📊 Summary'));
@@ -170,6 +186,15 @@ function buildEditorCards(editorTotals: Record<string, number>): HTMLElement | n
 function wireInteractions(data: InitialChartData): void {
 	const refresh = document.getElementById('btn-refresh');
 	refresh?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+
+	const details = document.getElementById('btn-details');
+	details?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+
+	const usage = document.getElementById('btn-usage');
+	usage?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
+
+	const diagnostics = document.getElementById('btn-diagnostics');
+	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
 
 	const viewButtons = [
 		{ id: 'view-total', view: 'total' as const },
@@ -321,7 +346,11 @@ function createConfig(view: 'total' | 'model' | 'editor', data: InitialChartData
 	};
 }
 
-function bootstrap(): void {
+
+async function bootstrap(): Promise<void> {
+	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+	provideVSCodeDesignSystem().register(vsCodeButton());
+
 	if (!initialData) {
 		const root = document.getElementById('root');
 		if (root) {
@@ -332,4 +361,4 @@ function bootstrap(): void {
 	renderLayout(initialData);
 }
 
-bootstrap();
+void bootstrap();
