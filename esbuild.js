@@ -44,6 +44,8 @@ async function main() {
 		entryPoints: {
 			details: 'src/webview/details/main.ts',
 			chart: 'src/webview/chart/main.ts',
+			usage: 'src/webview/usage/main.ts',
+			diagnostics: 'src/webview/diagnostics/main.ts',
 		},
 		bundle: true,
 		format: 'iife',
