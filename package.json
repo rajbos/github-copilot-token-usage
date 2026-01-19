@@ -82,6 +82,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "jsdom": "^27.4.0"
+    "jsdom": "^27.4.0",
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "chart.js": "^4.4.1"
   }
 }

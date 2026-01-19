@@ -28,6 +28,8 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **Watch Mode**: For active development, use `npm run watch`. This will automatically recompile the extension on file changes.
 - **Testing/Debugging**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools).
 
+**Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run `npm run compile` to validate that the project still builds and lints cleanly before opening a pull request or releasing. You do not need to run the full compile step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
+
 ## Development Guidelines
 
 - **Minimal Changes**: Only modify files that are directly needed for the actual changes being implemented. Avoid touching unrelated files, configuration files, or dependencies unless absolutely necessary for the feature or fix.

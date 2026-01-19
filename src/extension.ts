@@ -128,6 +128,7 @@ interface UsageAnalysisPeriod {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
+	private readonly extensionUri: vscode.Uri;
 
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
@@ -253,7 +254,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 
 
-	constructor() {
+	constructor(extensionUri: vscode.Uri) {
+		this.extensionUri = extensionUri;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
 		this.log('Constructor called');
@@ -295,7 +297,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		if (extensionsExistButInactive) {
 			// Use shorter delay for testing in Codespaces
-			const delaySeconds = process.env.CODESPACES === 'true' ? 10 : 15;
+			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
 			this.log(`Copilot extensions found but not active yet - delaying initial update by ${delaySeconds} seconds to allow extensions to load`);
 			this.log(`Setting timeout for ${new Date(Date.now() + (delaySeconds * 1000)).toLocaleTimeString()}`);
 
@@ -313,8 +315,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Add a heartbeat to prove the timeout mechanism is working
 			setTimeout(() => {
-				this.log('💓 Heartbeat: 5 seconds elapsed, timeout still pending...');
-			}, 5 * 1000);
+				this.log('💓 Heartbeat: 2 seconds elapsed, timeout still pending...');
+			}, 2 * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
 			this.log('No Copilot extensions found - starting immediate update');
 			setTimeout(() => this.updateTokenStats(), 100);
@@ -382,13 +384,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the details panel is open, update its content
 			if (this.detailsPanel) {
-				this.detailsPanel.webview.html = this.getDetailsHtml(detailedStats);
+				this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, detailedStats);
 			}
 
 			// If the chart panel is open, update its content
 			if (this.chartPanel) {
 				const dailyStats = await this.calculateDailyStats();
-				this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+				this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 			}
 
 			// If the analysis panel is open, update its content
@@ -1611,12 +1613,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
 
 		// Set the HTML content
-		this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
@@ -1662,12 +1665,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
 
 		// Set the HTML content
-		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 
 		// Handle messages from the webview
 		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
@@ -1734,7 +1738,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Update token stats and refresh the webview content
 		const stats = await this.updateTokenStats();
 		if (stats) {
-			this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 		}
 	}
 
@@ -1745,7 +1749,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Refresh the chart webview content
 		const dailyStats = await this.calculateDailyStats();
-		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 	}
 
 	private async refreshAnalysisPanel(): Promise<void> {
@@ -1758,319 +1762,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(analysisStats);
 	}
 
-	private getDetailsHtml(stats: DetailedStats): string {
-		const usedModels = new Set([
-			...Object.keys(stats.today.modelUsage),
-			...Object.keys(stats.month.modelUsage)
-		]);
+	private getNonce(): string {
+		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+		let text = '';
+		for (let i = 0; i < 32; i++) {
+			text += possible.charAt(Math.floor(Math.random() * possible.length));
+		}
+		return text;
+	}
 
-		const now = new Date();
-		const currentDayOfMonth = now.getDate();
-		const daysInYear = (now.getFullYear() % 4 === 0 && now.getFullYear() % 100 !== 0) || now.getFullYear() % 400 === 0 ? 366 : 365;
+	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js'));
 
-		const calculateProjection = (monthlyValue: number) => {
-			if (currentDayOfMonth === 0) {
-				return 0;
-			}
-			const dailyAverage = monthlyValue / currentDayOfMonth;
-			return dailyAverage * daysInYear;
-		};
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
 
-		const projectedTokens = calculateProjection(stats.month.tokens);
-		const projectedSessions = calculateProjection(stats.month.sessions);
-		const projectedCo2 = calculateProjection(stats.month.co2);
-		const projectedTrees = calculateProjection(stats.month.treesEquivalent);
-		const projectedWater = calculateProjection(stats.month.waterUsage);
-		const projectedCost = calculateProjection(stats.month.estimatedCost);
+		const initialData = JSON.stringify(stats).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Copilot Token Usage</title>
-			<style>
-				* {
-					margin: 0;
-					padding: 0;
-					box-sizing: border-box;
-				}
-				body {
-					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-					background: #2d2d2d;
-					color: #cccccc;
-					padding: 16px;
-					line-height: 1.5;
-					min-width: 320px;
-				}
-				.container {
-					background: #3c3c3c;
-					border: 1px solid #5a5a5a;
-					border-radius: 8px;
-					padding: 16px;
-					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-				}
-				.header {
-					display: flex;
-					align-items: center;
-					gap: 8px;
-					margin-bottom: 16px;
-					padding-bottom: 12px;
-					border-bottom: 1px solid #5a5a5a;
-				}
-				.header-icon {
-					font-size: 20px;
-				}
-				.header-title {
-					font-size: 16px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.stats-table {
-					width: 100%;
-					border-collapse: collapse;
-					margin-bottom: 16px;
-					table-layout: fixed;
-				}
-				.stats-table col.metric-col {
-					width: 180px;
-				}
-				.stats-table col.value-col {
-					width: 110px;
-				}
-				.stats-table th {
-					background: #4a4a4a;
-					color: #ffffff;
-					font-weight: 600;
-					font-size: 13px;
-					padding: 10px 8px;
-					text-align: left;
-					border: 1px solid #5a5a5a;
-					white-space: nowrap;
-				}
-				.stats-table th:first-child {
-					border-top-left-radius: 4px;
-				}
-				.stats-table th:last-child {
-					border-top-right-radius: 4px;
-				}
-				.stats-table td {
-					padding: 8px;
-					font-size: 12px;
-					border: 1px solid #5a5a5a;
-					background: #353535;
-				}
-				.stats-table tr:last-child td:first-child {
-					border-bottom-left-radius: 4px;
-				}
-				.stats-table tr:last-child td:last-child {
-					border-bottom-right-radius: 4px;
-				}
-				.metric-label {
-					color: #b3b3b3;
-					font-weight: 500;
-				}
-				.today-value {
-					color: #ffffff;
-					font-weight: 600;
-					text-align: right;
-				}
-				.month-value {
-					color: #ffffff;
-					font-weight: 600;
-					text-align: right;
-				}
-				.period-header {
-					display: flex;
-					align-items: center;
-					gap: 4px;
-				}
-				.footer {
-					margin-top: 12px;
-					padding-top: 12px;
-					border-top: 1px solid #5a5a5a;
-					text-align: center;
-					font-size: 11px;
-					color: #999999;
-					font-style: italic;
-				}
-				.refresh-button {
-					background: #0e639c;
-					border: 1px solid #1177bb;
-					color: #ffffff;
-					padding: 8px 16px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 12px;
-					font-weight: 500;
-					margin-top: 12px;
-					transition: background-color 0.2s;
-					display: inline-flex;
-					align-items: center;
-					gap: 6px;
-				}
-				.refresh-button:hover {
-					background: #1177bb;
-				}
-				.refresh-button:active {
-					background: #0a5a8a;
-				}
-			</style>
 		</head>
 		<body>
-			<div class="container">
-				<div class="header">
-					<span class="header-icon">🤖</span>
-					<span class="header-title">Copilot Token Usage</span>
-				</div>
-				
-				<table class="stats-table">
-					<colgroup>
-						<col class="metric-col">
-						<col class="value-col">
-						<col class="value-col">
-						<col class="value-col">
-					</colgroup>
-					<thead>
-						<tr>
-							<th>Metric</th>
-							<th>
-								<div class="period-header">
-									<span>📅</span>
-									<span>Today</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>📊</span>
-									<span>This Month</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>🌍</span>
-									<span>Projected Year</span>
-								</div>
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						<tr>
-							<td class="metric-label">Tokens</td>
-							<td class="today-value">${stats.today.tokens.toLocaleString()}</td>
-							<td class="month-value">${stats.month.tokens.toLocaleString()}</td>
-							<td class="month-value">${Math.round(projectedTokens).toLocaleString()}</td>
-						</tr>
-						<tr>
-							<td class="metric-label">💵 Est. Cost (USD)</td>
-							<td class="today-value">$${stats.today.estimatedCost.toFixed(4)}</td>
-							<td class="month-value">$${stats.month.estimatedCost.toFixed(4)}</td>
-							<td class="month-value">$${projectedCost.toFixed(2)}</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Sessions</td>
-							<td class="today-value">${stats.today.sessions}</td>
-							<td class="month-value">${stats.month.sessions}</td>
-							<td class="month-value">${Math.round(projectedSessions)}</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Avg Interactions</td>
-							<td class="today-value">${stats.today.avgInteractionsPerSession}</td>
-							<td class="month-value">${stats.month.avgInteractionsPerSession}</td>
-							<td class="month-value">-</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Avg Tokens</td>
-							<td class="today-value">${stats.today.avgTokensPerSession.toLocaleString()}</td>
-							<td class="month-value">${stats.month.avgTokensPerSession.toLocaleString()}</td>
-							<td class="month-value">-</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Est. CO₂ (${this.co2Per1kTokens}g/1k&nbsp;tk)</td>
-							<td class="today-value">${stats.today.co2.toFixed(2)} g</td>
-							<td class="month-value">${stats.month.co2.toFixed(2)} g</td>
-							<td class="month-value">${projectedCo2.toFixed(2)} g</td>
-						</tr>
-						<tr>
-							<td class="metric-label">💧 Est. Water (${this.waterUsagePer1kTokens}L/1k&nbsp;tk)</td>
-							<td class="today-value">${stats.today.waterUsage.toFixed(3)} L</td>
-							<td class="month-value">${stats.month.waterUsage.toFixed(3)} L</td>
-							<td class="month-value">${projectedWater.toFixed(3)} L</td>
-						</tr>
-						<tr>
-							<td class="metric-label">🌳 Tree Equivalent (yr)</td>
-							<td class="today-value">${stats.today.treesEquivalent.toFixed(6)}</td>
-							<td class="month-value">${stats.month.treesEquivalent.toFixed(6)}</td>
-							<td class="month-value">${projectedTrees.toFixed(4)}</td>
-						</tr>
-					</tbody>
-				</table>
-
-				${this.getEditorUsageHtml(stats)}
-
-				${this.getModelUsageHtml(stats)}
-
-				<div style="margin-top: 24px;">
-					<h3 style="color: #ffffff; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-						<span>💡</span>
-						<span>Calculation & Estimates</span>
-					</h3>
-					<p style="font-size: 12px; color: #b3b3b3; margin-bottom: 8px;">
-						Token counts are estimated based on character count. CO₂, tree equivalents, water usage, and costs are derived from these token estimates.
-					</p>
-					<ul style="font-size: 12px; color: #b3b3b3; padding-left: 20px; list-style-position: inside; margin-top: 8px;">
-						<li><b>Cost Estimate:</b> Based on public API pricing (see <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/src/modelPricing.json" style="color: #3794ff;">modelPricing.json</a> for sources and rates). Uses actual input/output token counts for accurate cost calculation. <b>Note:</b> GitHub Copilot pricing may differ from direct API usage. These are reference estimates only.</li>
-						<li><b>CO₂ Estimate:</b> Based on ~${this.co2Per1kTokens}g of CO₂e per 1,000 tokens.</li>
-						<li><b>Tree Equivalent:</b> Represents the fraction of a single mature tree's annual CO₂ absorption (~${(this.co2AbsorptionPerTreePerYear / 1000).toFixed(1)} kg/year).</li>
-						<li><b>Water Estimate:</b> Based on ~${this.waterUsagePer1kTokens}L of water per 1,000 tokens for data center cooling and operations.</li>
-					</ul>
-				</div>
-
-				<div class="footer">
-					Last updated: ${stats.lastUpdated.toLocaleString()}<br>
-					Updates automatically every 5 minutes
-					<br>
-					<button class="refresh-button" onclick="refreshData()">
-						<span>🔄</span>
-						<span>Refresh Now</span>
-					</button>
-					<button class="refresh-button" onclick="showChart()" style="margin-left: 8px; background: #0e639c;">
-						<span>📈</span>
-						<span>Show Chart</span>
-					</button>
-					<button class="refresh-button" onclick="showUsageAnalysis()" style="margin-left: 8px; background: #7c3aed;">
-						<span>📊</span>
-						<span>Usage Analysis</span>
-					</button>
-					<button class="refresh-button" onclick="showDiagnostics()" style="margin-left: 8px; background: #5a5a5a;">
-						<span>🔍</span>
-						<span>Diagnostics</span>
-					</button>
-				</div>
-			</div>
-			<script>
-				const vscode = acquireVsCodeApi();
-
-				function refreshData() {
-					// Send message to extension to refresh data
-					vscode.postMessage({ command: 'refresh' });
-				}
-
-				function showChart() {
-					// Send message to extension to show chart
-					vscode.postMessage({ command: 'showChart' });
-				}
-
-				function showUsageAnalysis() {
-					// Send message to extension to show usage analysis
-					vscode.postMessage({ command: 'showUsageAnalysis' });
-				}
-
-				function showDiagnostics() {
-					// Send message to extension to show diagnostic report
-					vscode.postMessage({ command: 'showDiagnostics' });
-				}
-			</script>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
 	}
@@ -2768,578 +2494,106 @@ class CopilotTokenTracker implements vscode.Disposable {
 		</html>`;
 	}
 
-	private getChartHtml(dailyStats: DailyTokenStats[]): string {
-		// Prepare data for Chart.js
-		const labels = dailyStats.map(stat => stat.date);
-		const tokensData = dailyStats.map(stat => stat.tokens);
-		const sessionsData = dailyStats.map(stat => stat.sessions);
+	private getChartHtml(webview: vscode.Webview, dailyStats: DailyTokenStats[]): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'chart.js'));
 
-		// Prepare model-specific data for stacked bars
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		// Transform dailyStats into the structure expected by the webview
+		const labels = dailyStats.map(d => d.date);
+		const tokensData = dailyStats.map(d => d.tokens);
+		const sessionsData = dailyStats.map(d => d.sessions);
+
+		// Aggregate model usage across all days
 		const allModels = new Set<string>();
-		dailyStats.forEach(stat => {
-			Object.keys(stat.modelUsage).forEach(model => allModels.add(model));
-		});
-		const modelList = Array.from(allModels).sort();
-		
-		// Prepare editor-specific data for stacked bars
-		const allEditors = new Set<string>();
-		dailyStats.forEach(stat => {
-			Object.keys(stat.editorUsage).forEach(editor => allEditors.add(editor));
-		});
-		const editorList = Array.from(allEditors).sort();
-		
-		// Create model-specific datasets for stacked view
-		const modelColors = [
-			'rgba(54, 162, 235, 0.8)',
-			'rgba(255, 99, 132, 0.8)',
-			'rgba(255, 206, 86, 0.8)',
-			'rgba(75, 192, 192, 0.8)',
-			'rgba(153, 102, 255, 0.8)',
-			'rgba(255, 159, 64, 0.8)',
-			'rgba(199, 199, 199, 0.8)',
-			'rgba(83, 102, 255, 0.8)'
-		];
-		
-		// Editor-specific colors
-		const editorColors: { [key: string]: string } = {
-			'VS Code': 'rgba(0, 122, 204, 0.8)',           // Blue
-			'VS Code Insiders': 'rgba(38, 168, 67, 0.8)',  // Green
-			'VS Code Exploration': 'rgba(156, 39, 176, 0.8)', // Purple
-			'VS Code Server': 'rgba(0, 188, 212, 0.8)',    // Cyan
-			'VS Code Server (Insiders)': 'rgba(0, 150, 136, 0.8)', // Teal
-			'VSCodium': 'rgba(33, 150, 243, 0.8)',         // Light Blue
-			'Cursor': 'rgba(255, 193, 7, 0.8)',            // Yellow
-			'Copilot CLI': 'rgba(233, 30, 99, 0.8)',       // Pink
-			'Unknown': 'rgba(158, 158, 158, 0.8)'          // Grey
-		};
-		
-		// Compute total tokens per model so we can prefer non-grey colors for the largest models
-		const modelTotals: { [key: string]: number } = {};
-		for (const m of modelList) modelTotals[m] = 0;
-		dailyStats.forEach(stat => {
-			for (const m of modelList) {
-				const usage = stat.modelUsage[m];
-				if (usage) modelTotals[m] += usage.inputTokens + usage.outputTokens;
-			}
-		});
-		// Sort models by total desc for color assignment
-		const modelsBySize = modelList.slice().sort((a, b) => (modelTotals[b] || 0) - (modelTotals[a] || 0));
-		
-		// Avoid using grey/black/white for the top N largest models
-		const forbiddenColorKeywords = ['199, 199, 199', '158, 158, 158', '0, 0, 0', '255, 255, 255'];
-		const topN = Math.min(3, modelsBySize.length);
-		const reservedColors: { [model: string]: string } = {};
-		let colorIndex = 0;
-		for (let i = 0; i < topN; i++) {
-			const m = modelsBySize[i];
-			// find next modelColors[colorIndex] that is not forbidden
-			while (colorIndex < modelColors.length) {
-				const candidate = modelColors[colorIndex];
-				const rgbPart = candidate.match(/rgba\(([^,]+),\s*([^,]+),\s*([^,]+),/);
-				if (rgbPart) {
-					const rgbKey = `${rgbPart[1].trim()}, ${rgbPart[2].trim()}, ${rgbPart[3].trim()}`;
-					if (!forbiddenColorKeywords.includes(rgbKey)) {
-						reservedColors[m] = candidate;
-						colorIndex++;
-						break;
-					}
-				}
-				colorIndex++;
-			}
-		}
+		dailyStats.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
 
-		const modelDatasets = modelList.map((model, index) => {
-			const data = dailyStats.map(stat => {
-				const usage = stat.modelUsage[model];
-				return usage ? usage.inputTokens + usage.outputTokens : 0;
-			});
-			const assignedColor = reservedColors[model] || modelColors[index % modelColors.length];
+		const modelColors = [
+			{ bg: 'rgba(54, 162, 235, 0.6)', border: 'rgba(54, 162, 235, 1)' },
+			{ bg: 'rgba(255, 99, 132, 0.6)', border: 'rgba(255, 99, 132, 1)' },
+			{ bg: 'rgba(75, 192, 192, 0.6)', border: 'rgba(75, 192, 192, 1)' },
+			{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
+			{ bg: 'rgba(255, 159, 64, 0.6)', border: 'rgba(255, 159, 64, 1)' },
+			{ bg: 'rgba(255, 205, 86, 0.6)', border: 'rgba(255, 205, 86, 1)' },
+			{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
+			{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' }
+		];
+
+		const modelDatasets = Array.from(allModels).map((model, idx) => {
+			const color = modelColors[idx % modelColors.length];
 			return {
 				label: this.getModelDisplayName(model),
-				data: data,
-				backgroundColor: assignedColor,
-				borderColor: assignedColor.replace('0.8', '1'),
+				data: dailyStats.map(d => {
+					const usage = d.modelUsage[model];
+					return usage ? usage.inputTokens + usage.outputTokens : 0;
+				}),
+				backgroundColor: color.bg,
+				borderColor: color.border,
 				borderWidth: 1
 			};
 		});
 
-		const editorDatasets = editorList.map((editor, index) => {
-			const data = dailyStats.map(stat => {
-				const usage = stat.editorUsage[editor];
-				return usage ? usage.tokens : 0;
-			});
-			
-			const color = editorColors[editor] || modelColors[index % modelColors.length];
-			
+		// Aggregate editor usage across all days
+		const allEditors = new Set<string>();
+		dailyStats.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
+
+		const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+			const color = modelColors[idx % modelColors.length];
 			return {
 				label: editor,
-				data: data,
-				backgroundColor: color,
-				borderColor: color.replace('0.8', '1'),
+				data: dailyStats.map(d => d.editorUsage[editor]?.tokens || 0),
+				backgroundColor: color.bg,
+				borderColor: color.border,
 				borderWidth: 1
 			};
 		});
 
-		// Calculate total tokens per editor (for summary panels)
-		const editorTotalsMap: { [key: string]: number } = {};
-		for (const ed of editorList) {
-			editorTotalsMap[ed] = 0;
-		}
-			dailyStats.forEach(stat => {
-				for (const ed of editorList) {
-					const usage = stat.editorUsage[ed];
-					if (usage) {
-						editorTotalsMap[ed] += usage.tokens;
-					}
-				}
+		// Calculate editor totals for summary cards
+		const editorTotalsMap: Record<string, number> = {};
+		dailyStats.forEach(d => {
+			Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+				editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
 			});
+		});
 
-		const editorPanelsHtml = editorList.map(ed => {
-			const tokens = editorTotalsMap[ed] || 0;
-			return `<div class="stat-card"><div class="stat-label">${this.getEditorIcon(ed)} ${ed}</div><div class="stat-value">${tokens.toLocaleString()}</div></div>`;
-		}).join('');
+		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
 
-		let editorSummaryHtml = '';
-		if (editorList.length > 1) {
-			// Debug: log editor summary data to output for troubleshooting
-			this.log(`Editor list for chart: ${JSON.stringify(editorList)}`);
-			this.log(`Editor totals: ${JSON.stringify(editorTotalsMap)}`);
-			editorSummaryHtml = `<div class="stats-summary" style="margin-top:12px;">${editorPanelsHtml}</div>`;
-		}
+		const chartData = {
+			labels,
+			tokensData,
+			sessionsData,
+			modelDatasets,
+			editorDatasets,
+			editorTotalsMap,
+			dailyCount: dailyStats.length,
+			totalTokens,
+			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
+			totalSessions,
+			lastUpdated: new Date().toISOString()
+		};
 
-		// Pre-calculate summary statistics
-		const totalTokens = dailyStats.reduce((sum, stat) => sum + stat.tokens, 0);
-		const totalSessions = dailyStats.reduce((sum, stat) => sum + stat.sessions, 0);
-		const avgTokensPerDay = dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0;
+		const initialData = JSON.stringify(chartData).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<title>Token Usage Over Time</title>
-			<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-			<style>
-				* {
-					margin: 0;
-					padding: 0;
-					box-sizing: border-box;
-				}
-				body {
-					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-					background: #2d2d2d;
-					color: #cccccc;
-					padding: 16px;
-					line-height: 1.5;
-					min-width: 320px;
-				}
-				.container {
-					background: #3c3c3c;
-					border: 1px solid #5a5a5a;
-					border-radius: 8px;
-					padding: 16px;
-					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-				}
-				.header {
-					display: flex;
-					align-items: center;
-					gap: 8px;
-					margin-bottom: 16px;
-					padding-bottom: 12px;
-					border-bottom: 1px solid #5a5a5a;
-				}
-				.header-icon {
-					font-size: 20px;
-				}
-				.header-title {
-					font-size: 16px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.chart-container {
-					position: relative;
-					height: 400px;
-					margin-bottom: 16px;
-				}
-				.footer {
-					margin-top: 12px;
-					padding-top: 12px;
-					border-top: 1px solid #5a5a5a;
-					text-align: center;
-					font-size: 11px;
-					color: #999999;
-					font-style: italic;
-				}
-				.refresh-button {
-					background: #0e639c;
-					border: 1px solid #1177bb;
-					color: #ffffff;
-					padding: 8px 16px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 12px;
-					font-weight: 500;
-					margin-top: 12px;
-					transition: background-color 0.2s;
-					display: inline-flex;
-					align-items: center;
-					gap: 6px;
-				}
-				.refresh-button:hover {
-					background: #1177bb;
-				}
-				.refresh-button:active {
-					background: #0a5a8a;
-				}
-				.stats-summary {
-					display: grid;
-					grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-					gap: 12px;
-					margin-bottom: 16px;
-				}
-				.stat-card {
-					background: #353535;
-					border: 1px solid #5a5a5a;
-					border-radius: 4px;
-					padding: 12px;
-					text-align: center;
-				}
-				.stat-label {
-					font-size: 11px;
-					color: #b3b3b3;
-					margin-bottom: 4px;
-				}
-				.stat-value {
-					font-size: 18px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.chart-controls {
-					display: flex;
-					justify-content: center;
-					gap: 8px;
-					margin-bottom: 16px;
-				}
-				.toggle-button {
-					background: #353535;
-					border: 1px solid #5a5a5a;
-					color: #cccccc;
-					padding: 6px 12px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 12px;
-					transition: all 0.2s;
-				}
-				.toggle-button.active {
-					background: #0e639c;
-					border-color: #1177bb;
-					color: #ffffff;
-				}
-				.toggle-button:hover {
-					background: #4a4a4a;
-				}
-				.toggle-button.active:hover {
-					background: #1177bb;
-				}
-			</style>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Copilot Token Usage Chart</title>
 		</head>
 		<body>
-			<div class="container">
-				<div class="header">
-					<span class="header-icon">📈</span>
-					<span class="header-title">Token Usage Over Time</span>
-				</div>
-				<div class="stats-summary">
-					<div class="stat-card">
-						<div class="stat-label">Total Days</div>
-						<div class="stat-value">${dailyStats.length}</div>
-					</div>
-					<div class="stat-card">
-						<div class="stat-label">Total Tokens</div>
-						<div class="stat-value">${totalTokens.toLocaleString()}</div>
-					</div>
-					<div class="stat-card">
-						<div class="stat-label">Avg Tokens/Day</div>
-						<div class="stat-value">${avgTokensPerDay.toLocaleString()}</div>
-					</div>
-					<div class="stat-card">
-						<div class="stat-label">Total Sessions</div>
-						<div class="stat-value">${totalSessions}</div>
-					</div>
-				</div>
-
-				${editorSummaryHtml}
-
-				<div class="chart-controls">
-					<button class="toggle-button active" id="totalViewBtn" onclick="switchView('total')">Total Tokens</button>
-					<button class="toggle-button" id="modelViewBtn" onclick="switchView('model')">By Model</button>
-					<button class="toggle-button" id="editorViewBtn" onclick="switchView('editor')">By Editor</button>
-				</div>
-
-				<div class="chart-container">
-					<canvas id="tokenChart"></canvas>
-				</div>
-
-				<div class="footer">
-					Day-by-day token usage for the current month
-					<br>
-					Last updated: ${new Date().toLocaleString()}
-					<br>
-					<em>Updates automatically every 5 minutes</em>
-					<br>
-					<button class="refresh-button" onclick="refreshChart()">
-						<span>🔄</span>
-						<span>Refresh Chart</span>
-					</button>
-				</div>
-			</div>
-
-			<script>
-				const vscode = acquireVsCodeApi();
-
-				function refreshChart() {
-					vscode.postMessage({ command: 'refresh' });
-				}
-
-				// Data for different views
-				const labels = ${JSON.stringify(labels)};
-				const tokensData = ${JSON.stringify(tokensData)};
-				const sessionsData = ${JSON.stringify(sessionsData)};
-				const modelDatasets = ${JSON.stringify(modelDatasets)};
-				const editorDatasets = ${JSON.stringify(editorDatasets)};
-
-				// Chart instance
-				let chart;
-				let currentView = 'total';
-
-				// Initialize chart with total view
-				const ctx = document.getElementById('tokenChart').getContext('2d');
-				
-				function createTotalView() {
-					return {
-						type: 'bar',
-						data: {
-							labels: labels,
-							datasets: [
-								{
-									label: 'Tokens',
-									data: tokensData,
-									backgroundColor: 'rgba(54, 162, 235, 0.6)',
-									borderColor: 'rgba(54, 162, 235, 1)',
-									borderWidth: 1,
-									yAxisID: 'y'
-								},
-								{
-									label: 'Sessions',
-									data: sessionsData,
-									backgroundColor: 'rgba(255, 99, 132, 0.6)',
-									borderColor: 'rgba(255, 99, 132, 1)',
-									borderWidth: 1,
-									type: 'line',
-									yAxisID: 'y1'
-								}
-							]
-						},
-						options: {
-							responsive: true,
-							maintainAspectRatio: false,
-							interaction: {
-								mode: 'index',
-								intersect: false,
-							},
-							scales: {
-								x: {
-									grid: { color: '#5a5a5a' },
-									ticks: { color: '#cccccc', font: { size: 11 } }
-								},
-								y: {
-									type: 'linear',
-									display: true,
-									position: 'left',
-									grid: { color: '#5a5a5a' },
-									ticks: { 
-										color: '#cccccc', 
-										font: { size: 11 },
-										callback: function(value) { return value.toLocaleString(); }
-									},
-									title: {
-										display: true,
-										text: 'Tokens',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								},
-								y1: {
-									type: 'linear',
-									display: true,
-									position: 'right',
-									grid: { drawOnChartArea: false },
-									ticks: { color: '#cccccc', font: { size: 11 } },
-									title: {
-										display: true,
-										text: 'Sessions',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								}
-							},
-							plugins: {
-								legend: {
-									position: 'top',
-									labels: { color: '#cccccc', font: { size: 12 } }
-								},
-								tooltip: {
-									backgroundColor: 'rgba(0, 0, 0, 0.8)',
-									titleColor: '#ffffff',
-									bodyColor: '#cccccc',
-									borderColor: '#5a5a5a',
-									borderWidth: 1,
-									padding: 10,
-									displayColors: true
-								}
-							}
-						}
-					};
-				}
-
-				function createModelView() {
-					return {
-						type: 'bar',
-						data: {
-							labels: labels,
-							datasets: modelDatasets
-						},
-						options: {
-							responsive: true,
-							maintainAspectRatio: false,
-							interaction: {
-								mode: 'index',
-								intersect: false,
-							},
-							scales: {
-								x: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { color: '#cccccc', font: { size: 11 } }
-								},
-								y: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { 
-										color: '#cccccc', 
-										font: { size: 11 },
-										callback: function(value) { return value.toLocaleString(); }
-									},
-									title: {
-										display: true,
-										text: 'Tokens by Model',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								}
-							},
-							plugins: {
-								legend: {
-									position: 'top',
-									labels: { color: '#cccccc', font: { size: 12 } }
-								},
-								tooltip: {
-									backgroundColor: 'rgba(0, 0, 0, 0.8)',
-									titleColor: '#ffffff',
-									bodyColor: '#cccccc',
-									borderColor: '#5a5a5a',
-									borderWidth: 1,
-									padding: 10,
-									displayColors: true
-								}
-							}
-						}
-					};
-				}
-
-				function createEditorView() {
-					return {
-						type: 'bar',
-						data: {
-							labels: labels,
-							datasets: editorDatasets
-						},
-						options: {
-							responsive: true,
-							maintainAspectRatio: false,
-							interaction: {
-								mode: 'index',
-								intersect: false,
-							},
-							scales: {
-								x: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { color: '#cccccc', font: { size: 11 } }
-								},
-								y: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { 
-										color: '#cccccc', 
-										font: { size: 11 },
-										callback: function(value) { return value.toLocaleString(); }
-									},
-									title: {
-										display: true,
-										text: 'Tokens by Editor',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								}
-							},
-							plugins: {
-								legend: {
-									position: 'top',
-									labels: { color: '#cccccc', font: { size: 12 } }
-								},
-								tooltip: {
-									backgroundColor: 'rgba(0, 0, 0, 0.8)',
-									titleColor: '#ffffff',
-									bodyColor: '#cccccc',
-									borderColor: '#5a5a5a',
-									borderWidth: 1,
-									padding: 10,
-									displayColors: true
-								}
-							}
-						}
-					};
-				}
-
-				function switchView(viewType) {
-					currentView = viewType;
-					
-					// Update button states
-					document.getElementById('totalViewBtn').classList.toggle('active', viewType === 'total');
-					document.getElementById('modelViewBtn').classList.toggle('active', viewType === 'model');
-					document.getElementById('editorViewBtn').classList.toggle('active', viewType === 'editor');
-					
-					// Destroy existing chart
-					if (chart) {
-						chart.destroy();
-					}
-					
-					// Create new chart based on view type
-					let config;
-					if (viewType === 'total') {
-						config = createTotalView();
-					} else if (viewType === 'model') {
-						config = createModelView();
-					} else {
-						config = createEditorView();
-					}
-					chart = new Chart(ctx, config);
-				}
-
-				// Initialize with total view
-				chart = new Chart(ctx, createTotalView());
-			</script>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_CHART__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
 	}
@@ -3870,7 +3124,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
-	const tokenTracker = new CopilotTokenTracker();
+	const tokenTracker = new CopilotTokenTracker(context.extensionUri);
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
