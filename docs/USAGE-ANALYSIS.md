@@ -18,13 +18,22 @@ You can access the Usage Analysis Dashboard in three ways:
 
 The dashboard tracks three primary interaction modes:
 
-- **💬 Ask Mode (Chat)**: Regular conversational interactions where you ask Copilot questions or request explanations
-- **✏️ Edit Mode**: Interactions where Copilot directly edits your code based on instructions
-- **🤖 Agent Mode**: Autonomous task execution where Copilot operates as an independent agent (including Copilot CLI usage)
+- **💬 Ask Mode (Chat)**: Regular conversational interactions where you ask Copilot questions or request explanations in the chat panel
+- **✏️ Edit Mode**: Interactions where Copilot directly edits your code inline using the edits agent (triggered via inline edit UI or commands)
+- **🤖 Agent Mode**: Autonomous task execution where Copilot operates as an independent agent (including Copilot CLI usage and agent mode in the chat panel)
 
 **Data Source**: 
-- JSON files: `mode.id` field and `agent.id` field in requests
-- JSONL files: Primarily detected as agent mode (CLI sessions)
+- JSON files: 
+  - Agent mode: `mode.id = "agent"` at session level
+  - Edit mode: `agent.id = "github.copilot.editsAgent"` at request level
+  - Ask mode: Default when neither agent nor edit mode indicators are present
+- JSONL files: All treated as agent mode (Copilot CLI sessions)
+
+**Key Points:**
+- Agent mode is determined at the **session level**, not per-request
+- When you start an agent mode session in VS Code, ALL interactions in that session count as agent mode
+- Inline code edits (Edit Mode) use a specific agent ID and override the session mode
+- JSONL files from `~/.copilot/session-state/` are always agent mode (Copilot CLI)
 
 ### 2. Context References
 

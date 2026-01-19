@@ -88,11 +88,17 @@ Tracked editors:
 ## Newly Added Metrics (Usage Analysis Dashboard)
 
 ### 8. Interaction Modes
-**Data Source**: `mode.id`, `agent.id` fields, and file format
+**Data Source**: `mode.id` at session level, `agent.id` at request level, and file format
 
-- **Ask Mode**: Regular chat interactions (default when no specific mode set)
-- **Edit Mode**: Code editing interactions (detected from `agent.id` containing "edit")
-- **Agent Mode**: Autonomous tasks (detected from `mode.id` or `agent.id` containing "agent", or JSONL files)
+- **Ask Mode**: Regular chat panel conversations (session.mode.id is not "agent", and request has no agent.id or non-edits agent)
+- **Edit Mode**: Inline code editing interactions (detected from `agent.id = "github.copilot.editsAgent"`)
+- **Agent Mode**: Autonomous coding agent (detected from `mode.id = "agent"` at session level, OR JSONL format files from Copilot CLI)
+
+**Important Notes:**
+- Agent mode is primarily determined at the **session level** via `mode.id = "agent"`
+- Individual requests in agent mode sessions may not have a specific `agent.id`
+- The `"github.copilot.editsAgent"` specifically indicates inline editing, NOT agent mode
+- All `.jsonl` files (from `~/.copilot/session-state/`) are agent mode by definition
 
 ### 9. Context References
 **Data Source**: Pattern matching in message text
