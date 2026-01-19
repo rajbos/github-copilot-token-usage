@@ -1409,6 +1409,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Get all possible VS Code user data paths for all VS Code variants
 	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
+	 * 
+	 * NOTE: The canonical JavaScript implementation is in:
+	 * .github/skills/copilot-log-analysis/session-file-discovery.js
+	 * This TypeScript implementation should mirror that logic.
 	 */
 	private getVSCodeUserPaths(): string[] {
 		const platform = os.platform();
@@ -1455,6 +1459,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return paths;
 	}
 
+	/**
+	 * NOTE: The canonical JavaScript implementation is in:
+	 * .github/skills/copilot-log-analysis/session-file-discovery.js
+	 * This TypeScript implementation should mirror that logic.
+	 */
 	private async getCopilotSessionFiles(): Promise<string[]> {
 		const sessionFiles: string[] = [];
 
@@ -1561,7 +1570,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log('  2. No Copilot Chat conversations have been initiated yet');
 				this.log('  3. Sessions are stored in a different location not yet supported');
 				this.log('  4. User needs to authenticate with GitHub Copilot first');
-				this.log('  Run: node scripts/diagnose-session-files.js for detailed diagnostics');
+				this.log('  Run: node .github/skills/copilot-log-analysis/diagnose-session-files.js for detailed diagnostics');
 			}
 		} catch (error) {
 			this.error('Error getting session files:', error);
@@ -1572,6 +1581,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Recursively scan a directory for session files (.json and .jsonl)
+	 * 
+	 * NOTE: Mirrors logic in .github/skills/copilot-log-analysis/session-file-discovery.js
 	 */
 	private scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
 		try {

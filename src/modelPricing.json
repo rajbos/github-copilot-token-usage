@@ -2,27 +2,28 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-01-15",
+    "lastUpdated": "2026-01-16",
     "sources": [
       {
         "name": "OpenAI API Pricing",
         "url": "https://openai.com/api/pricing/",
-        "retrievedDate": "2025-12-27"
+        "retrievedDate": "2026-01-16"
       },
       {
         "name": "Anthropic Claude Pricing",
         "url": "https://www.anthropic.com/pricing",
-        "note": "Standard rates"
+        "note": "Standard rates",
+        "retrievedDate": "2026-01-16"
       },
       {
         "name": "Google AI Gemini API Pricing",
         "url": "https://ai.google.dev/pricing",
-        "retrievedDate": "2025-12-27"
+        "retrievedDate": "2026-01-16"
       },
       {
         "name": "GitHub Copilot Supported Models",
         "url": "https://docs.github.com/en/copilot/reference/ai-models/supported-models",
-        "retrievedDate": "2025-12-27"
+        "retrievedDate": "2026-01-16"
       }
     ],
     "disclaimer": "GitHub Copilot uses these models but pricing may differ from direct API usage. These are reference prices for cost estimation purposes only."
@@ -73,6 +74,11 @@
       "outputCostPerMillion": 14.0,
       "category": "GPT-5 models"
     },
+    "gpt-5.2-pro": {
+      "inputCostPerMillion": 21.0,
+      "outputCostPerMillion": 168.0,
+      "category": "GPT-5 models"
+    },
     "gpt-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 12.0,
@@ -86,6 +92,11 @@
     "gpt-4.1-mini": {
       "inputCostPerMillion": 0.8,
       "outputCostPerMillion": 3.2,
+      "category": "GPT-4 models"
+    },
+    "gpt-4.1-nano": {
+      "inputCostPerMillion": 0.2,
+      "outputCostPerMillion": 0.8,
       "category": "GPT-4 models"
     },
     "gpt-4o": {
@@ -156,6 +167,26 @@
     "gemini-2.5-pro": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
+      "category": "Google Gemini models"
+    },
+    "gemini-2.5-flash": {
+      "inputCostPerMillion": 0.30,
+      "outputCostPerMillion": 2.5,
+      "category": "Google Gemini models"
+    },
+    "gemini-2.5-flash-lite": {
+      "inputCostPerMillion": 0.10,
+      "outputCostPerMillion": 0.40,
+      "category": "Google Gemini models"
+    },
+    "gemini-2.0-flash": {
+      "inputCostPerMillion": 0.10,
+      "outputCostPerMillion": 0.40,
+      "category": "Google Gemini models"
+    },
+    "gemini-2.0-flash-lite": {
+      "inputCostPerMillion": 0.075,
+      "outputCostPerMillion": 0.30,
       "category": "Google Gemini models"
     },
     "gemini-3-flash": {

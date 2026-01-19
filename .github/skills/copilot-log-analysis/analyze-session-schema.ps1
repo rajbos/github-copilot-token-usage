@@ -25,10 +25,12 @@
     Default: $true
 
 .EXAMPLE
-    .\scripts\analyze-session-schema.ps1
+    .\.github\skills\copilot-log-analysis\analyze-session-schema.ps1
+    Analyzes session files and generates a schema comparison.
     
 .EXAMPLE
-    .\scripts\analyze-session-schema.ps1 -MaxFiles 20 -OutputFile "temp-analysis.json"
+    .\.github\skills\copilot-log-analysis\analyze-session-schema.ps1 -MaxFiles 20 -OutputFile "temp-analysis.json"
+    Analyzes up to 20 files and saves to a custom location.
 #>
 
 [CmdletBinding()]
