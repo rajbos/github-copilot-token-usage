@@ -64,18 +64,50 @@ function getTotalContextRefs(refs: ContextReferenceUsage): number {
 		refs.workspace + refs.terminal + refs.vscode;
 }
 
-function generateTopToolsList(byTool: { [key: string]: number }, limit = 5): string {
+import toolNames from '../../toolNames.json';
+
+let TOOL_NAME_MAP: { [key: string]: string } | null = toolNames || null;
+
+function lookupToolName(id: string): string {
+	if (!TOOL_NAME_MAP) {
+		return id;
+	}
+	return TOOL_NAME_MAP[id] || id;
+}
+
+function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string {
 	const sortedTools = Object.entries(byTool)
 		.sort(([, a], [, b]) => b - a)
 		.slice(0, limit);
 
 	if (sortedTools.length === 0) {
-		return '<li style="color: #999;">No tools used yet</li>';
+		return '<div style="color: #999;">No tools used yet</div>';
 	}
 
-	return sortedTools.map(([tool, count]) =>
-		`<li><strong>${escapeHtml(tool)}</strong>: ${count} ${count === 1 ? 'call' : 'calls'}</li>`
-	).join('');
+	const rows = sortedTools.map(([tool, count], idx) => {
+		const friendly = escapeHtml(lookupToolName(tool));
+		const idEscaped = escapeHtml(tool);
+		return `
+			<tr>
+				<td style="padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.04);">${idx + 1}</td>
+				<td style="padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.04);"><strong title="${idEscaped}">${friendly}</strong></td>
+				<td style="padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right;">${count}</td>
+			</tr>`;
+	}).join('');
+
+	return `
+		<table style="width:100%; border-collapse:collapse;">
+			<thead>
+				<tr style="color:#b8b8b8; font-size:12px; text-align:left;">
+					<th style="padding:8px 12px; opacity:0.9;">#</th>
+					<th style="padding:8px 12px; opacity:0.9;">Tool</th>
+					<th style="padding:8px 12px; opacity:0.9; text-align:right;">Calls</th>
+				</tr>
+			</thead>
+			<tbody>
+				${rows}
+			</tbody>
+		</table>`;
 }
 
 function renderLayout(stats: UsageAnalysisStats): void {
@@ -298,14 +330,14 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total Tool Calls: ${stats.today.toolCalls.total}</div>
-							<ul>${generateTopToolsList(stats.today.toolCalls.byTool)}</ul>
+							${renderToolsTable(stats.today.toolCalls.byTool, 10)}
 						</div>
 					</div>
 					<div>
 						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total Tool Calls: ${stats.month.toolCalls.total}</div>
-							<ul>${generateTopToolsList(stats.month.toolCalls.byTool)}</ul>
+							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
 						</div>
 					</div>
 				</div>
@@ -321,8 +353,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total MCP Calls: ${stats.today.mcpTools.total}</div>
 							${stats.today.mcpTools.total > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><ul style="margin-top: 4px;">${generateTopToolsList(stats.today.mcpTools.byServer)}</ul></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><ul style="margin-top: 4px;">${generateTopToolsList(stats.today.mcpTools.byTool)}</ul></div>
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8)}</div></div>
 							` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -331,8 +363,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total MCP Calls: ${stats.month.mcpTools.total}</div>
 							${stats.month.mcpTools.total > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><ul style="margin-top: 4px;">${generateTopToolsList(stats.month.mcpTools.byServer)}</ul></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><ul style="margin-top: 4px;">${generateTopToolsList(stats.month.mcpTools.byTool)}</ul></div>
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8)}</div></div>
 							` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -373,6 +405,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 async function bootstrap(): Promise<void> {
 	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
 	provideVSCodeDesignSystem().register(vsCodeButton());
+
+	// TOOL_NAME_MAP is imported at build-time from src/toolNames.json
 
 	if (!initialData) {
 		const root = document.getElementById('root');
