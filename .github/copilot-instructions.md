@@ -28,6 +28,8 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **Watch Mode**: For active development, use `npm run watch`. This will automatically recompile the extension on file changes.
 - **Testing/Debugging**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools).
 
+**Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run `npm run compile` to validate that the project still builds and lints cleanly before opening a pull request or releasing. You do not need to run the full compile step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
+
 ## Development Guidelines
 
 - **Minimal Changes**: Only modify files that are directly needed for the actual changes being implemented. Avoid touching unrelated files, configuration files, or dependencies unless absolutely necessary for the feature or fix.
@@ -45,3 +47,30 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **`src/modelPricing.json`**: Model pricing data with input/output costs per million tokens. Includes metadata about pricing sources and last update date. See `src/README.md` for detailed update instructions and current pricing sources.
 - **`package.json`**: Defines activation events, commands, and build scripts.
 - **`esbuild.js`**: The build script that bundles the TypeScript source and JSON data files.
+
+## Webview Navigation Buttons
+
+To maintain a consistent, VS Code-native look across all webview panels (Details, Chart, Usage Analysis, Diagnostics), use the VS Code Webview UI Toolkit for top-level navigation buttons.
+
+- **Use `vscode-button`**: Prefer the toolkit button component for header navigation controls instead of custom `<button>` elements. Example usage in a webview script:
+
+  ```ts
+  const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+  provideVSCodeDesignSystem().register(vsCodeButton());
+
+  // then create buttons in the DOM:
+  const btn = document.createElement('vscode-button');
+  btn.id = 'btn-details';
+  btn.textContent = '🤖 Details';
+  btn.setAttribute('appearance', 'primary');
+  ```
+
+- **Register the toolkit in each webview**: Each webview that uses `vscode-button` should import and register the toolkit in its `bootstrap()` or initialization function before rendering the layout.
+
+- **Wire messages unchanged**: Buttons should `postMessage` the same navigation commands (`showDetails`, `showChart`, `showUsageAnalysis`, `showDiagnostics`, `refresh`) so the extension can reuse existing panels. Do not change the command names.
+
+- **Checklist for PRs touching webviews**:
+  - Ensure the toolkit is registered before creating `vscode-button` elements.
+  - Keep navigation command names unchanged so `extension.ts` handlers continue to work.
+  - Run `npm run compile` and verify TypeScript and ESLint pass.
+  - Visually compare the header with the Details and other panels to confirm parity.
