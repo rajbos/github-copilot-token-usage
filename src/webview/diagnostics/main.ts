@@ -253,7 +253,19 @@ function renderLayout(data: DiagnosticsData): void {
 	if (sessionFolders.length > 0) {
 		// Sort folders by descending count so top folders show first
 		const sorted = [...sessionFolders].sort((a, b) => b.count - a.count);
-		sessionFilesHtml = '<div class="session-files-list"><h4>Main Session Folders (by editor root):</h4><ul>';
+		sessionFilesHtml = `
+			<div class="session-folders-table">
+				<h4>Main Session Folders (by editor root):</h4>
+				<table class="session-table">
+					<thead>
+						<tr>
+							<th>Folder</th>
+							<th>Editor</th>
+							<th># of Sessions</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>`;
 		sorted.forEach((sf: { dir: string; count: number; editorName?: string }) => {
 			// Shorten common user paths for readability
 			let display = sf.dir;
@@ -261,11 +273,19 @@ function renderLayout(data: DiagnosticsData): void {
 			if (home && display.startsWith(home)) {
 				display = display.replace(home, '~');
 			}
-			const editorLabel = sf.editorName ? ` (${escapeHtml(sf.editorName)})` : '';
-			const friendly = sf.editorName ? ` <em style="color:#9aa0a6; font-style:normal;">(${escapeHtml(sf.editorName)})</em>` : '';
-			sessionFilesHtml += `<li><strong>${escapeHtml(display)}</strong>${friendly} — ${sf.count} sessions <a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Reveal</a></li>`;
+			const editorName = sf.editorName || 'Unknown';
+			sessionFilesHtml += `
+				<tr>
+					<td title="${escapeHtml(sf.dir)}">${escapeHtml(display)}</td>
+					<td><span class="editor-badge">${escapeHtml(editorName)}</span></td>
+					<td>${sf.count}</td>
+					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Reveal</a></td>
+				</tr>`;
 		});
-		sessionFilesHtml += '</ul></div>';
+		sessionFilesHtml += `
+					</tbody>
+				</table>
+			</div>`;
 	}
 
 	// Remove session files section from report text (it's shown separately as clickable links)
@@ -459,6 +479,24 @@ function renderLayout(data: DiagnosticsData): void {
 				color: #fff;
 			}
 			
+			.session-folders-table {
+				margin-top: 16px;
+				margin-bottom: 16px;
+			}
+			.session-folders-table h4 {
+				color: #ffffff;
+				font-size: 14px;
+				margin-bottom: 12px;
+			}
+			.reveal-link {
+				color: #4FC3F7;
+				text-decoration: underline;
+				cursor: pointer;
+			}
+			.reveal-link:hover {
+				color: #81D4FA;
+			}
+			
 			.report-content {
 				background: #2a2a2a;
 				border: 1px solid #5a5a5a;
@@ -475,9 +513,6 @@ function renderLayout(data: DiagnosticsData): void {
 				color: #9aa0a6;
 				margin-top: 4px;
 			}
-			.session-files-list ul { list-style: none; padding-left: 20px; }
-			.session-files-list li { margin-bottom: 8px; }
-			.session-files-list { margin-top: 16px; }
 			.session-file-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
 			.session-file-link:hover { color: #81D4FA; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
