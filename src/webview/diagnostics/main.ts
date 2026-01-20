@@ -18,6 +18,8 @@ type SessionFileDetails = {
 	firstInteraction: string | null;
 	lastInteraction: string | null;
 	editorSource: string;
+	editorRoot?: string;
+	editorName?: string;
 };
 
 type DiagnosticsData = {
@@ -222,8 +224,10 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 					${sortedFiles.map((sf, idx) => `
 						<tr>
 							<td>${idx + 1}</td>
-							<td><span class="editor-badge">${escapeHtml(sf.editorSource)}</span></td>
-							<td><a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.file)}">${escapeHtml(getFileName(sf.file))}</a></td>
+							<td><span class="editor-badge" title="${escapeHtml(sf.editorSource)}">${escapeHtml(sf.editorName || sf.editorSource)}</span></td>
+							<td>
+								<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.file)}">${escapeHtml(getFileName(sf.file))}</a>
+							</td>
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sf.interactions}</td>
 							<td title="${getContextRefsSummary(sf.contextReferences)}">${getTotalContextRefs(sf.contextReferences)}</td>
@@ -243,21 +247,30 @@ function renderLayout(data: DiagnosticsData): void {
 		return;
 	}
 
-	// Build session files HTML for basic list (first 20)
+	// Build session folder summary (main entry folders) for reference
 	let sessionFilesHtml = '';
-	if (data.sessionFiles.length > 0) {
-		sessionFilesHtml = '<div class="session-files-list"><h4>Session File Locations (first 20):</h4><ul>';
-		data.sessionFiles.slice(0, 20).forEach((sf, idx) => {
-			sessionFilesHtml += `<li><a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}">${idx + 1}. ${escapeHtml(sf.file)}</a><br><span style="color:#aaa;">     - Size: ${sf.size} bytes<br>     - Modified: ${sf.modified}</span></li>`;
+	const sessionFolders = (data as any).sessionFolders || [];
+	if (sessionFolders.length > 0) {
+		// Sort folders by descending count so top folders show first
+		const sorted = [...sessionFolders].sort((a, b) => b.count - a.count);
+		sessionFilesHtml = '<div class="session-files-list"><h4>Main Session Folders (by editor root):</h4><ul>';
+		sorted.forEach((sf: { dir: string; count: number; editorName?: string }) => {
+			// Shorten common user paths for readability
+			let display = sf.dir;
+			const home = (window as any).process?.env?.HOME || (window as any).process?.env?.USERPROFILE || '';
+			if (home && display.startsWith(home)) {
+				display = display.replace(home, '~');
+			}
+			const editorLabel = sf.editorName ? ` (${escapeHtml(sf.editorName)})` : '';
+			const friendly = sf.editorName ? ` <em style="color:#9aa0a6; font-style:normal;">(${escapeHtml(sf.editorName)})</em>` : '';
+			sessionFilesHtml += `<li><strong>${escapeHtml(display)}</strong>${friendly} — ${sf.count} sessions <a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Reveal</a></li>`;
 		});
-		if (data.sessionFiles.length > 20) {
-			sessionFilesHtml += `<li>... and ${data.sessionFiles.length - 20} more files</li>`;
-		}
 		sessionFilesHtml += '</ul></div>';
 	}
 
 	// Remove session files section from report text (it's shown separately as clickable links)
 	let escapedReport = escapeHtml(data.report);
+	// Remove the old session files list from the report text if present
 	const sessionMatch = escapedReport.match(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/);
 	if (sessionMatch) {
 		escapedReport = escapedReport.replace(sessionMatch[0], '');
@@ -457,8 +470,14 @@ function renderLayout(data: DiagnosticsData): void {
 				max-height: 60vh;
 				overflow-y: auto;
 			}
+			.file-subpath {
+				font-size: 11px;
+				color: #9aa0a6;
+				margin-top: 4px;
+			}
 			.session-files-list ul { list-style: none; padding-left: 20px; }
 			.session-files-list li { margin-bottom: 8px; }
+			.session-files-list { margin-top: 16px; }
 			.session-file-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
 			.session-file-link:hover { color: #81D4FA; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
@@ -630,6 +649,15 @@ function renderLayout(data: DiagnosticsData): void {
 				e.preventDefault();
 				const file = decodeURIComponent((link as HTMLElement).getAttribute('data-file') || '');
 				vscode.postMessage({ command: 'openSessionFile', file });
+			});
+		});
+
+		// Reveal link handlers
+		document.querySelectorAll('.reveal-link').forEach(link => {
+			link.addEventListener('click', (e) => {
+				e.preventDefault();
+				const path = decodeURIComponent((link as HTMLElement).getAttribute('data-path') || '');
+				vscode.postMessage({ command: 'revealPath', path });
 			});
 		});
 	}

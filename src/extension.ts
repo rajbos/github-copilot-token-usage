@@ -136,6 +136,8 @@ interface SessionFileDetails {
 	firstInteraction: string | null;
 	lastInteraction: string | null;
 	editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
+	editorRoot?: string; // top-level editor root path (for display in diagnostics)
+	editorName?: string; // friendly editor name (e.g., 'VS Code')
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -204,6 +206,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return 'VS Code';
 		}
 		
+		return 'Unknown';
+	}
+
+	/**
+	 * Determine a friendly editor name from an editor root path (folder name)
+	 * e.g. 'C:\...\AppData\Roaming\Code' -> 'VS Code'
+	 */
+	private getEditorNameFromRoot(rootPath: string): string {
+		if (!rootPath) { return 'Unknown'; }
+		const lower = rootPath.toLowerCase();
+		// Check obvious markers first
+		if (lower.includes('.copilot') || lower.includes('copilot')) { return 'Copilot CLI'; }
+		if (lower.includes('code - insiders') || lower.includes('code-insiders') || lower.includes('insiders')) { return 'VS Code Insiders'; }
+		if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
+		if (lower.includes('vscodium')) { return 'VSCodium'; }
+		if (lower.includes('cursor')) { return 'Cursor'; }
+		// Generic 'code' match (catch AppData\Roaming\Code)
+		if (lower.endsWith('code') || lower.includes(path.sep + 'code' + path.sep) || lower.includes('/code/')) { return 'VS Code'; }
 		return 'Unknown';
 	}
 
@@ -1219,6 +1239,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction: null,
 			editorSource: this.detectEditorSource(sessionFile)
 		};
+
+		// Determine top-level editor root path for this session file (up to the folder before 'User')
+		try {
+			const parts = sessionFile.split(/[/\\\\]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			if (userIdx > 0) {
+				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
+			} else {
+				details.editorRoot = require('path').dirname(sessionFile);
+			}
+			// Also populate a friendly editor name for this file
+			details['editorName'] = this.getEditorNameFromRoot(details.editorRoot || '');
+		} catch (e) {
+			details.editorRoot = require('path').dirname(sessionFile);
+			details['editorName'] = this.getEditorNameFromRoot(details.editorRoot || '');
+		}
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
@@ -2411,7 +2447,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Skip inaccessible files
 				}
 			}
-			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, []);
+			// Build folder counts grouped by top-level VS Code user folder (editor roots)
+			const dirCounts = new Map<string, number>();
+			const pathModule = require('path');
+			for (const file of sessionFiles) {
+				// Walk up the path to find the 'User' directory which is the canonical editor folder root
+				const parts = file.split(/[\\\/]/);
+				// Find index of 'User' folder in path parts (case-insensitive)
+				const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+				let editorRoot = '';
+				if (userIdx > 0) {
+					// Reconstruct path up to the parent of 'User' (that's the editor folder, e.g., .../Roaming/Code)
+					const rootParts = parts.slice(0, userIdx); // exclude 'User'
+					editorRoot = pathModule.join(...rootParts);
+				} else {
+					// Fallback: use parent dir of the file
+					editorRoot = pathModule.dirname(file);
+				}
+
+				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+			}
+			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
+			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
 			this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
 			return;
 		}
@@ -2432,6 +2489,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
+		// Build folder counts grouped by top-level VS Code user folder (editor roots)
+		const dirCounts = new Map<string, number>();
+		const pathModule = require('path');
+		for (const file of sessionFiles) {
+			const parts = file.split(/[\\\/]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			let editorRoot = '';
+			if (userIdx > 0) {
+				const rootParts = parts.slice(0, userIdx);
+				editorRoot = pathModule.join(...rootParts);
+			} else {
+				editorRoot = pathModule.dirname(file);
+			}
+			dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+		}
+		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
+
 		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
 			'Diagnostic Report',
@@ -2447,7 +2521,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		);
 
 		// Set the HTML content immediately with empty session files (shows loading state)
-		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, []);
+		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
@@ -2469,6 +2543,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 							await vscode.window.showTextDocument(vscode.Uri.file(message.file));
 						} catch (err) {
 							vscode.window.showErrorMessage('Could not open file: ' + message.file);
+						}
+					}
+					break;
+
+				case 'revealPath':
+					if (message.path) {
+						try {
+							await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(message.path));
+						} catch (err) {
+							vscode.window.showErrorMessage('Could not reveal: ' + message.path);
 						}
 					}
 					break;
@@ -2542,7 +2626,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		webview: vscode.Webview, 
 		report: string, 
 		sessionFiles: { file: string; size: number; modified: string }[],
-		detailedSessionFiles: SessionFileDetails[]
+		detailedSessionFiles: SessionFileDetails[],
+		sessionFolders: { dir: string; count: number }[] = []
 	): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'diagnostics.js'));
@@ -2555,7 +2640,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles }).replace(/</g, '\\u003c');
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
