@@ -164,6 +164,19 @@ To test and debug the extension in a local VS Code environment:
 - `npm run package` - Build production version
 - `npm run watch` - Watch mode for development
 - `npm test` - Run tests (requires VS Code)
+- `npm run test:data` - Validate test data files
+- `npm run screenshot:setup` - Set up screenshot generation (see [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md))
+
+### Generating Screenshots
+
+The extension includes test data and automation tools for generating documentation screenshots. See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for complete instructions.
+
+Quick start:
+```bash
+npm run screenshot:setup
+```
+
+This will guide you through the process of capturing screenshots of all extension views using synthetic test data.
 
 ### CI/CD
 
