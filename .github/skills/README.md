@@ -26,6 +26,25 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Schema documentation references
 - Usage examples and troubleshooting guides
 
+### screenshot-ui-views
+
+**Purpose**: Generate screenshots of the extension UI using test data.
+
+**Use this skill when:**
+- Documenting UI changes in pull requests
+- Updating screenshots in README or documentation
+- Creating visual examples for user guides
+- Testing UI rendering with controlled data
+- Capturing before/after screenshots for UI improvements
+
+**Contents:**
+- Test data setup and structure (3 sample session files)
+- Screenshot automation script with instructions
+- Step-by-step process for capturing all extension views
+- Environment configuration for test data loading
+- Troubleshooting guide for common issues
+- Future automation options and limitations
+
 ## Using Agent Skills
 
 ### In VS Code

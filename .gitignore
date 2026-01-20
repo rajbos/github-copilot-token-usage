@@ -7,3 +7,4 @@ node_modules
 .github/scripts/models.txt
 .github/scripts/scraper.log
 .github/scripts/scraped-models.json
+docs/images/screenshots/screenshot-instructions.html

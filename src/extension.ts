@@ -1517,6 +1517,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log(`  VSCODE_PORTABLE: ${process.env.VSCODE_PORTABLE}`);
 		this.log(`  CODESPACES: ${process.env.CODESPACES}`);
 		this.log(`  GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
+		this.log(`  COPILOT_TEST_DATA_PATH: ${process.env.COPILOT_TEST_DATA_PATH}`);
+
+		// Check for test data path override (used for screenshots and testing)
+		const testDataPath = process.env.COPILOT_TEST_DATA_PATH;
+		if (testDataPath && fs.existsSync(testDataPath)) {
+			this.log(`Using test data from: ${testDataPath}`);
+			const testFiles = fs.readdirSync(testDataPath)
+				.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+				.map(file => path.join(testDataPath, file));
+			if (testFiles.length > 0) {
+				this.log(`Found ${testFiles.length} test data file(s)`);
+				sessionFiles.push(...testFiles);
+				return sessionFiles;
+			}
+		} else if (testDataPath) {
+			this.log(`Test data path specified but not found: ${testDataPath}`);
+		}
 
 		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
 		const allVSCodePaths = this.getVSCodeUserPaths();
