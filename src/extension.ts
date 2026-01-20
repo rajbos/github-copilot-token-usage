@@ -2493,7 +2493,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 			dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
 		}
-		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
+		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
 
 		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
