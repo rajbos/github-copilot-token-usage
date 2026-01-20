@@ -488,14 +488,6 @@ function renderLayout(data: DiagnosticsData): void {
 				font-size: 14px;
 				margin-bottom: 12px;
 			}
-			.reveal-link {
-				color: #4FC3F7;
-				text-decoration: underline;
-				cursor: pointer;
-			}
-			.reveal-link:hover {
-				color: #81D4FA;
-			}
 			
 			.report-content {
 				background: #2a2a2a;
@@ -513,8 +505,8 @@ function renderLayout(data: DiagnosticsData): void {
 				color: #9aa0a6;
 				margin-top: 4px;
 			}
-			.session-file-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
-			.session-file-link:hover { color: #81D4FA; }
+			.session-file-link, .reveal-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
+			.session-file-link:hover, .reveal-link:hover { color: #81D4FA; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 			.button {
 				background: #202024;
