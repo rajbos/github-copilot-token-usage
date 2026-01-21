@@ -119,8 +119,13 @@ for (const filePath of testFiles) {
     editorUsage['Code'].sessions = totalSessions;
 }
 
-const avgInteractionsPerSession = totalSessions > 0 ? (totalInteractions / totalSessions).toFixed(1) : '0';
-const avgTokensPerSession = totalSessions > 0 ? Math.round(totalTokens / totalSessions) : 0;
+// Helper functions matching extension logic
+const formatNumber = (num) => Math.round(num).toLocaleString();
+const formatCost = (cost) => `$${cost.toFixed(4)}`;
+const formatFixed = (num, decimals) => num.toFixed(decimals);
+
+const avgInteractionsPerSession = totalSessions > 0 ? (totalInteractions / totalSessions) : 0;
+const avgTokensPerSession = totalSessions > 0 ? (totalTokens / totalSessions) : 0;
 
 let estimatedCost = 0;
 for (const [model, usage] of Object.entries(modelUsage)) {
@@ -208,9 +213,21 @@ const commonStyles = `
 `;
 
 // =============================================================================
-// 1. DETAILS VIEW
+// 1. DETAILS VIEW - Using exact extension rendering logic
 // =============================================================================
 console.log('Generating 1/4: Details View...');
+
+// Exact metric rows from src/webview/details/main.ts lines 321-330
+const metricRows = [
+    { label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(totalTokens), month: formatNumber(totalTokens), projected: formatNumber(projectedTokens) },
+    { label: 'Est. Cost (USD)', icon: '🪙', color: '#ffd166', today: formatCost(estimatedCost), month: formatCost(estimatedCost), projected: formatCost(projectedCost) },
+    { label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(totalSessions), month: formatNumber(totalSessions), projected: formatNumber(projectedSessions) },
+    { label: 'Avg Interactions', icon: '💬', color: '#8ce0ff', today: formatNumber(avgInteractionsPerSession), month: formatNumber(avgInteractionsPerSession), projected: '—' },
+    { label: 'Avg Tokens', icon: '🔢', color: '#7ce38b', today: formatNumber(avgTokensPerSession), month: formatNumber(avgTokensPerSession), projected: '—' },
+    { label: 'Est. CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(co2, 2)} g`, month: `${formatFixed(co2, 2)} g`, projected: `${formatFixed(projectedCo2, 2)} g` },
+    { label: 'Est. Water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(waterUsage, 3)} L`, month: `${formatFixed(waterUsage, 3)} L`, projected: `${formatFixed(projectedWater, 3)} L` },
+    { label: 'Tree Equivalent (yr)', icon: '🌳', color: '#9de67f', today: treesEquivalent.toFixed(6), month: treesEquivalent.toFixed(6), projected: projectedTrees.toFixed(4) }
+];
 
 const detailsHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -248,6 +265,9 @@ const detailsHtml = `<!DOCTYPE html>
             font-size: 13px;
             border-bottom: 1px solid #5a5a5a;
         }
+        .stats-table th.align-right {
+            text-align: right;
+        }
         .stats-table td {
             padding: 10px 12px;
             border-bottom: 1px solid #3e3e42;
@@ -259,15 +279,22 @@ const detailsHtml = `<!DOCTYPE html>
             color: #b3b3b3;
             font-weight: 500;
         }
-        .today-value, .month-value {
+        .metric-label span:first-child {
+            margin-right: 6px;
+        }
+        .value-right {
             color: #fff;
-            font-weight: 600;
+            font-weight: 400;
+            text-align: right;
+        }
+        .align-right {
             text-align: right;
         }
         .period-header {
             display: flex;
             align-items: center;
             gap: 4px;
+            justify-content: flex-end;
         }
         .footer {
             margin-top: 12px;
@@ -278,34 +305,13 @@ const detailsHtml = `<!DOCTYPE html>
             color: #999;
             font-style: italic;
         }
-        .model-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 16px 0;
+        .section {
+            margin-top: 20px;
         }
-        .model-table th {
-            background: transparent;
-            color: #b3b3b3;
-            padding: 8px 12px;
-            text-align: left;
-            font-weight: 500;
-            font-size: 13px;
-            border-bottom: 1px solid #5a5a5a;
-        }
-        .model-table td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #3e3e42;
-        }
-        .model-table tr:last-child td {
-            border-bottom: none;
-        }
-        .section-title {
+        .section h3 {
             color: #ffffff;
             font-size: 14px;
-            margin: 16px 0 8px 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            margin-bottom: 12px;
         }
     </style>
 </head>
@@ -332,20 +338,25 @@ const detailsHtml = `<!DOCTYPE html>
             </colgroup>
             <thead>
                 <tr>
-                    <th>Metric</th>
                     <th>
+                        <div class="period-header" style="justify-content: flex-start;">
+                            <span>📊</span>
+                            <span>Metric</span>
+                        </div>
+                    </th>
+                    <th class="align-right">
                         <div class="period-header">
                             <span>📅</span>
                             <span>Today</span>
                         </div>
                     </th>
-                    <th>
+                    <th class="align-right">
                         <div class="period-header">
-                            <span>📊</span>
+                            <span>📈</span>
                             <span>This Month</span>
                         </div>
                     </th>
-                    <th>
+                    <th class="align-right">
                         <div class="period-header">
                             <span>🌍</span>
                             <span>Projected Year</span>
@@ -354,163 +365,129 @@ const detailsHtml = `<!DOCTYPE html>
                 </tr>
             </thead>
             <tbody>
+                ${metricRows.map(row => `
                 <tr>
-                    <td class="metric-label">Tokens</td>
-                    <td class="today-value">${totalTokens.toLocaleString()}</td>
-                    <td class="month-value">${totalTokens.toLocaleString()}</td>
-                    <td class="month-value">${projectedTokens.toLocaleString()}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">💵 Est. Cost (USD)</td>
-                    <td class="today-value">$${estimatedCost.toFixed(4)}</td>
-                    <td class="month-value">$${estimatedCost.toFixed(4)}</td>
-                    <td class="month-value">$${projectedCost.toFixed(2)}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Sessions</td>
-                    <td class="today-value">${totalSessions}</td>
-                    <td class="month-value">${totalSessions}</td>
-                    <td class="month-value">${projectedSessions}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Avg Interactions</td>
-                    <td class="today-value">${avgInteractionsPerSession}</td>
-                    <td class="month-value">${avgInteractionsPerSession}</td>
-                    <td class="month-value">—</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Avg Tokens</td>
-                    <td class="today-value">${avgTokensPerSession.toLocaleString()}</td>
-                    <td class="month-value">${avgTokensPerSession.toLocaleString()}</td>
-                    <td class="month-value">—</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">🌱 Est. CO₂ (g)</td>
-                    <td class="today-value">${co2.toFixed(2)} g</td>
-                    <td class="month-value">${co2.toFixed(2)} g</td>
-                    <td class="month-value">${projectedCo2.toFixed(2)} g</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">💧 Est. Water (L)</td>
-                    <td class="today-value">${waterUsage.toFixed(3)} L</td>
-                    <td class="month-value">${waterUsage.toFixed(3)} L</td>
-                    <td class="month-value">${projectedWater.toFixed(3)} L</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">🌳 Tree Equivalent (yr)</td>
-                    <td class="today-value">${treesEquivalent.toFixed(6)}</td>
-                    <td class="month-value">${treesEquivalent.toFixed(6)}</td>
-                    <td class="month-value">${projectedTrees.toFixed(6)}</td>
-                </tr>
+                    <td class="metric-label">
+                        <span style="color: ${row.color}">${row.icon}</span>
+                        <span>${row.label}</span>
+                    </td>
+                    <td class="value-right">${row.today}</td>
+                    <td class="value-right">${row.month}</td>
+                    <td class="value-right">${row.projected}</td>
+                </tr>`).join('')}
             </tbody>
         </table>
 
-        <div class="section-title">🎯 <span>Model Usage (Tokens)</span></div>
-        <table class="model-table">
-            <colgroup>
-                <col style="width: 40%">
-                <col style="width: 20%">
-                <col style="width: 20%">
-                <col style="width: 20%">
-            </colgroup>
-            <thead>
-                <tr>
-                    <th>Model</th>
-                    <th>
-                        <div class="period-header">
-                            <span>📅</span>
-                            <span>Today</span>
-                        </div>
-                    </th>
-                    <th>
-                        <div class="period-header">
-                            <span>📊</span>
-                            <span>This Month</span>
-                        </div>
-                    </th>
-                    <th>
-                        <div class="period-header">
-                            <span>🌍</span>
-                            <span>Projected Year</span>
-                        </div>
-                    </th>
-                </tr>
-            </thead>
-            <tbody>
-                ${Object.entries(modelUsage).map(([model, usage]) => {
-                    const total = usage.inputTokens + usage.outputTokens;
-                    const projectedModel = Math.round(calculateProjection(total));
-                    const inputPercent = total > 0 ? Math.round((usage.inputTokens / total) * 100) : 0;
-                    const outputPercent = total > 0 ? Math.round((usage.outputTokens / total) * 100) : 0;
-                    const charsPerToken = (1 / (tokenEstimators[model] || 0.28)).toFixed(1);
-                    return `
+        <div class="section">
+            <h3>🎯 Model Usage (Tokens)</h3>
+            <table class="stats-table">
+                <colgroup>
+                    <col style="width: 40%">
+                    <col style="width: 20%">
+                    <col style="width: 20%">
+                    <col style="width: 20%">
+                </colgroup>
+                <thead>
                     <tr>
-                        <td class="metric-label">
-                            ${model} 
-                            <span style="font-size: 11px; color: #a0a0a0;">(~${charsPerToken} chars/tk)</span>
-                        </td>
-                        <td class="today-value">
-                            ${total.toLocaleString()}
-                            <div style="font-size: 10px; color: #999; margin-top: 2px;">
-                                ↑${inputPercent}% ↓${outputPercent}%
+                        <th>Model</th>
+                        <th class="align-right">
+                            <div class="period-header">
+                                <span>📅</span>
+                                <span>Today</span>
                             </div>
-                        </td>
-                        <td class="month-value">${total.toLocaleString()}</td>
-                        <td class="month-value">${projectedModel.toLocaleString()}</td>
-                    </tr>`;
-                }).join('')}
-            </tbody>
-        </table>
+                        </th>
+                        <th class="align-right">
+                            <div class="period-header">
+                                <span>📈</span>
+                                <span>This Month</span>
+                            </div>
+                        </th>
+                        <th class="align-right">
+                            <div class="period-header">
+                                <span>🌍</span>
+                                <span>Projected Year</span>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${Object.entries(modelUsage).map(([model, usage]) => {
+                        const total = usage.inputTokens + usage.outputTokens;
+                        const projectedModel = Math.round(calculateProjection(total));
+                        const inputPercent = total > 0 ? Math.round((usage.inputTokens / total) * 100) : 0;
+                        const outputPercent = total > 0 ? Math.round((usage.outputTokens / total) * 100) : 0;
+                        const charsPerToken = (1 / (tokenEstimators[model] || 0.28)).toFixed(1);
+                        return `
+                        <tr>
+                            <td class="metric-label">
+                                ${model}
+                                <div style="font-size: 11px; color: #a0a0a0; margin-top: 2px;">~${charsPerToken} chars/tk</div>
+                            </td>
+                            <td class="value-right">
+                                ${total.toLocaleString()}
+                                <div style="font-size: 10px; color: #999; margin-top: 2px;">
+                                    ↑${inputPercent}% ↓${outputPercent}%
+                                </div>
+                            </td>
+                            <td class="value-right">${total.toLocaleString()}</td>
+                            <td class="value-right">${projectedModel.toLocaleString()}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
 
-        <div class="section-title">🎯 <span>Usage by Editor</span></div>
-        <table class="model-table">
-            <colgroup>
-                <col style="width: 40%">
-                <col style="width: 20%">
-                <col style="width: 20%">
-                <col style="width: 20%">
-            </colgroup>
-            <thead>
-                <tr>
-                    <th>Editor</th>
-                    <th>
-                        <div class="period-header">
-                            <span>📅</span>
-                            <span>Today</span>
-                        </div>
-                    </th>
-                    <th>
-                        <div class="period-header">
-                            <span>📊</span>
-                            <span>This Month</span>
-                        </div>
-                    </th>
-                    <th>
-                        <div class="period-header">
-                            <span>🌍</span>
-                            <span>Projected Year</span>
-                        </div>
-                    </th>
-                </tr>
-            </thead>
-            <tbody>
-                ${Object.entries(editorUsage).map(([editor, usage]) => {
-                    const projectedEditor = Math.round(calculateProjection(usage.tokens));
-                    return `
+        <div class="section">
+            <h3>💻 Usage by Editor</h3>
+            <table class="stats-table">
+                <colgroup>
+                    <col style="width: 40%">
+                    <col style="width: 20%">
+                    <col style="width: 20%">
+                    <col style="width: 20%">
+                </colgroup>
+                <thead>
                     <tr>
-                        <td class="metric-label">${editor}</td>
-                        <td class="today-value">
-                            ${usage.tokens.toLocaleString()}
-                            <div style="font-size: 10px; color: #999; margin-top: 2px;">
-                                ${usage.sessions} sessions
+                        <th>Editor</th>
+                        <th class="align-right">
+                            <div class="period-header">
+                                <span>📅</span>
+                                <span>Today</span>
                             </div>
-                        </td>
-                        <td class="month-value">${usage.tokens.toLocaleString()}</td>
-                        <td class="month-value">${projectedEditor.toLocaleString()}</td>
-                    </tr>`;
-                }).join('')}
-            </tbody>
-        </table>
+                        </th>
+                        <th class="align-right">
+                            <div class="period-header">
+                                <span>📈</span>
+                                <span>This Month</span>
+                            </div>
+                        </th>
+                        <th class="align-right">
+                            <div class="period-header">
+                                <span>🌍</span>
+                                <span>Projected Year</span>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${Object.entries(editorUsage).map(([editor, usage]) => {
+                        const projectedEditor = Math.round(calculateProjection(usage.tokens));
+                        return `
+                        <tr>
+                            <td class="metric-label">${editor}</td>
+                            <td class="value-right">
+                                ${usage.tokens.toLocaleString()}
+                                <div style="font-size: 10px; color: #999; margin-top: 2px;">
+                                    ${usage.sessions} sessions
+                                </div>
+                            </td>
+                            <td class="value-right">${usage.tokens.toLocaleString()}</td>
+                            <td class="value-right">${projectedEditor.toLocaleString()}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
 
         <div class="footer">
             Last updated: ${new Date().toLocaleString()}<br>
