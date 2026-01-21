@@ -568,6 +568,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<div class="button-group">
 					<button class="button" id="btn-copy"><span>📋</span><span>Copy to Clipboard</span></button>
 					<button class="button secondary" id="btn-issue"><span>🐛</span><span>Open GitHub Issue</span></button>
+					<button class="button secondary" id="btn-clear-cache"><span>🗑️</span><span>Clear Cache</span></button>
 				</div>
 			</div>
 			
@@ -696,6 +697,12 @@ function renderLayout(data: DiagnosticsData): void {
 
 	document.getElementById('btn-issue')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'openIssue' });
+	});
+
+	document.getElementById('btn-clear-cache')?.addEventListener('click', () => {
+		if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
+			vscode.postMessage({ command: 'clearCache' });
+		}
 	});
 
 	// Navigation buttons (match details view)

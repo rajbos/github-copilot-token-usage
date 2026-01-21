@@ -48,6 +48,11 @@
         "command": "copilot-token-tracker.generateDiagnosticReport",
         "title": "Generate Diagnostic Report",
         "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.clearCache",
+        "title": "Clear Cache",
+        "category": "Copilot Token Tracker"
       }
     ]
   },
