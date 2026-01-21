@@ -2474,8 +2474,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
 				let editorRoot = '';
 				if (userIdx > 0) {
-					// Reconstruct path up to the parent of 'User' (that's the editor folder, e.g., .../Roaming/Code)
-					const rootParts = parts.slice(0, userIdx); // exclude 'User'
+					// Reconstruct path including 'User' and the next folder (e.g., .../Roaming/Code/User/workspaceStorage)
+					// Include two extra levels after the 'User' segment so we can distinguish
+					// between 'User\\workspaceStorage' and 'User\\globalStorage'.
+					const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
 					editorRoot = pathModule.join(...rootParts);
 				} else {
 					// Fallback: use parent dir of the file
@@ -2514,14 +2516,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
 			let editorRoot = '';
 			if (userIdx > 0) {
-				const rootParts = parts.slice(0, userIdx);
+				// Include 'User' plus one following folder (e.g., 'User\\workspaceStorage' or 'User\\globalStorage')
+				const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
 				editorRoot = pathModule.join(...rootParts);
 			} else {
 				editorRoot = pathModule.dirname(file);
 			}
 			dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
 		}
-		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
+		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
 
 		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
@@ -2567,7 +2570,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'revealPath':
 					if (message.path) {
 						try {
-							await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(message.path));
+							const fs = require('fs');
+							const pathModule = require('path');
+							const normalized = pathModule.normalize(message.path);
+
+							// If the path exists and is a directory, open it directly in the OS file manager.
+							// Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
+							try {
+								const stat = await fs.promises.stat(normalized);
+								if (stat.isDirectory()) {
+									await vscode.env.openExternal(vscode.Uri.file(normalized));
+								} else {
+									// For files, reveal the file in OS (select it)
+									await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(normalized));
+								}
+							} catch (err) {
+								// If the stat fails, fallback to revealFileInOS which may still work
+								await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(normalized));
+							}
 						} catch (err) {
 							vscode.window.showErrorMessage('Could not reveal: ' + message.path);
 						}

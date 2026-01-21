@@ -74,9 +74,9 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "25.x",
     "@types/vscode": "^1.108.1",
-    "@typescript-eslint/eslint-plugin": "^8.52.0",
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
     "@typescript-eslint/parser": "^8.42.0",
-    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
@@ -85,8 +85,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "jsdom": "^27.4.0",
     "@vscode/webview-ui-toolkit": "^1.4.0",
-    "chart.js": "^4.4.1"
+    "chart.js": "^4.4.1",
+    "jsdom": "^27.4.0"
   }
 }
