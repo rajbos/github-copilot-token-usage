@@ -262,7 +262,7 @@ function renderLayout(data: DiagnosticsData): void {
 							<th>Folder</th>
 							<th>Editor</th>
 							<th># of Sessions</th>
-							<th>Actions</th>
+							<th>Open</th>
 						</tr>
 					</thead>
 					<tbody>`;
@@ -279,7 +279,7 @@ function renderLayout(data: DiagnosticsData): void {
 					<td title="${escapeHtml(sf.dir)}">${escapeHtml(display)}</td>
 					<td><span class="editor-badge">${escapeHtml(editorName)}</span></td>
 					<td>${sf.count}</td>
-					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Reveal</a></td>
+					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a></td>
 				</tr>`;
 		});
 		sessionFilesHtml += `
