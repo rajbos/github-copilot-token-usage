@@ -138,6 +138,7 @@ interface SessionFileDetails {
 	editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
 	editorRoot?: string; // top-level editor root path (for display in diagnostics)
 	editorName?: string; // friendly editor name (e.g., 'VS Code')
+	title?: string; // session title (customTitle from session file)
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -1366,9 +1367,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Handle VS Code incremental .jsonl format (kind: 0, 1, 2)
 						// kind: 0 = session header with creationDate
 						// kind: 2 = requests array with timestamps
-						if (event.kind === 0 && event.v?.creationDate) {
+						if (event.kind === 0 && event.v) {
 							// Session creation timestamp
-							timestamps.push(event.v.creationDate);
+							if (event.v.creationDate) {
+								timestamps.push(event.v.creationDate);
+							}
+							// Session title
+							if (event.v.customTitle && !details.title) {
+								details.title = event.v.customTitle;
+							}
 						}
 						
 						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
@@ -1383,6 +1390,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 								// Analyze context references in request message
 								if (request.message?.text) {
 									this.analyzeContextReferences(request.message.text, details.contextReferences);
+								}
+								// Fallback: look for generatedTitle in response items
+								if (!details.title && request.response && Array.isArray(request.response)) {
+									for (const responseItem of request.response) {
+										if (responseItem.generatedTitle) {
+											details.title = responseItem.generatedTitle;
+											break;
+										}
+									}
+								}
+							}
+						}
+						
+						// Also check kind: 2 events that update response arrays directly
+						if (!details.title && event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.generatedTitle) {
+									details.title = responseItem.generatedTitle;
+									break;
 								}
 							}
 						}
@@ -1401,6 +1427,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
+			
+			// Extract session title if available
+			if (sessionContent.customTitle) {
+				details.title = sessionContent.customTitle;
+			}
+			
+			// Fallback: look for generatedTitle in responses if no customTitle
+			if (!details.title && sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				for (const request of sessionContent.requests) {
+					if (details.title) { break; }
+					if (request.response && Array.isArray(request.response)) {
+						for (const responseItem of request.response) {
+							if (responseItem.generatedTitle) {
+								details.title = responseItem.generatedTitle;
+								break;
+							}
+						}
+					}
+				}
+			}
 			
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				details.interactions = sessionContent.requests.length;
@@ -2744,6 +2790,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
+				// Filter: skip empty sessions (no interactions = just opened chat panel, no messages sent)
+				if (details.interactions === 0) {
+					continue;
+				}
 				// Filter: only include sessions with activity in the last 14 days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 

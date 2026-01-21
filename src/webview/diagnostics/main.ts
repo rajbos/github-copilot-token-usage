@@ -20,6 +20,7 @@ type SessionFileDetails = {
 	editorSource: string;
 	editorRoot?: string;
 	editorName?: string;
+	title?: string;
 };
 
 type DiagnosticsData = {
@@ -213,6 +214,7 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 						<th>#</th>
 						<th>Editor</th>
 						<th>File Name</th>
+						<th>Title</th>
 						<th>Size</th>
 						<th>Interactions</th>
 						<th>Context Refs</th>
@@ -228,6 +230,7 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 							<td>
 								<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.file)}">${escapeHtml(getFileName(sf.file))}</a>
 							</td>
+							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : ''}">${sf.title ? escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title) : '<span style="color: #666;">—</span>'}</td>
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sf.interactions}</td>
 							<td title="${getContextRefsSummary(sf.contextReferences)}">${getTotalContextRefs(sf.contextReferences)}</td>

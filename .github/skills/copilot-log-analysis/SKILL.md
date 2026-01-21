@@ -154,22 +154,23 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 ### 5. Session Title Extraction
 **Location**: `src/extension.ts` in `getSessionFileDetails()` method
 
-**Purpose**: Extracts the user-defined session title for display in diagnostics.
+**Purpose**: Extracts the session title for display in diagnostics.
 
 **How it works:**
 
 **For JSON files:**
-- Reads `customTitle` field from root of session object
-- Example: `{ "customTitle": "My Chat Session", "requests": [...] }`
+1. Primary: `customTitle` field from root of session object
+2. Fallback: `generatedTitle` from response items (e.g., thinking blocks, tool invocations)
+   - Iterates through `requests[].response[]` looking for `generatedTitle`
 
 **For JSONL files (Incremental format):**
-- Reads `customTitle` from the `kind: 0` header entry (first line)
-- Example: `{"kind": 0, "customTitle": "My Session", "sessionId": "..."}`
+1. Primary: `customTitle` from the `kind: 0` header entry
+2. Fallback: `generatedTitle` from `kind: 2` response entries
 
 **For JSONL files (CLI format):**
 - Not available (CLI sessions don't have titles)
 
-**Note**: `customTitle` is optional. Many sessions don't have a title if the user never renamed them.
+**Note**: `customTitle` is user-defined (when they rename the session). `generatedTitle` is AI-generated summary text found in thinking blocks or tool results.
 
 ## Token Estimation Algorithm
 
