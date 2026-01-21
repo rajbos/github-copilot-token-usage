@@ -68,6 +68,7 @@
     "sync-changelog:test": "node scripts/sync-changelog.js --test",
     "screenshot:setup": "node scripts/screenshot-ui-views.js",
     "screenshot:preview": "node scripts/generate-preview.js",
+    "screenshot:all": "node scripts/generate-all-previews.js",
     "test:data": "node scripts/test-data-validation.js"
   },
   "devDependencies": {

@@ -9,3 +9,4 @@ node_modules
 .github/scripts/scraped-models.json
 docs/images/screenshots/screenshot-instructions.html
 docs/images/screenshots/details-view-preview.html
+docs/images/screenshots/preview-*.html
