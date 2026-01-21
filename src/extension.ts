@@ -2641,40 +2641,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'clearCache':
 					await this.clearCache();
-					// After clearing cache, refresh the diagnostic report
+					// After clearing cache, refresh the diagnostic report if it's open
 					if (this.diagnosticsPanel) {
-						const newReport = await this.generateDiagnosticReport();
-						const newSessionFiles = await this.getCopilotSessionFiles();
-						const newSessionFileData: { file: string; size: number; modified: string }[] = [];
-						for (const file of newSessionFiles.slice(0, 20)) {
-							try {
-								const stat = await fs.promises.stat(file);
-								newSessionFileData.push({
-									file,
-									size: stat.size,
-									modified: stat.mtime.toISOString()
-								});
-							} catch {
-								// Skip inaccessible files
-							}
-						}
-						// Rebuild folder counts
-						const newDirCounts = new Map<string, number>();
-						for (const file of newSessionFiles) {
-							const parts = file.split(/[\\\/]/);
-							const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
-							let editorRoot = '';
-							if (userIdx > 0) {
-								const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
-								editorRoot = require('path').join(...rootParts);
-							} else {
-								editorRoot = require('path').dirname(file);
-							}
-							newDirCounts.set(editorRoot, (newDirCounts.get(editorRoot) || 0) + 1);
-						}
-						const newSessionFolders = Array.from(newDirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
-						this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, newReport, newSessionFileData, [], newSessionFolders);
-						this.loadSessionFilesInBackground(this.diagnosticsPanel, newSessionFiles);
+						// Simply refresh the diagnostic report by revealing it again
+						// This will trigger a rebuild with fresh data
+						await this.showDiagnosticReport();
 					}
 					break;
 			}
