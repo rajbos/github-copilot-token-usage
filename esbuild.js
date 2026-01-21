@@ -46,6 +46,7 @@ async function main() {
 			chart: 'src/webview/chart/main.ts',
 			usage: 'src/webview/usage/main.ts',
 			diagnostics: 'src/webview/diagnostics/main.ts',
+			logviewer: 'src/webview/logviewer/main.ts',
 		},
 		bundle: true,
 		format: 'iife',
