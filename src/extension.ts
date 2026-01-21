@@ -861,7 +861,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
 				let interactions = 0;
@@ -869,8 +869,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+						// Handle Copilot CLI format
 						if (event.type === 'user.message') {
 							interactions++;
+						}
+						// Handle VS Code incremental format (kind: 2 with requests array)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									interactions++;
+								}
+							}
 						}
 					} catch (e) {
 						// Skip malformed lines
@@ -901,22 +910,34 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
 				// Default model for CLI sessions - they may not specify the model per event
-				const defaultModel = 'gpt-4o';
+				let defaultModel = 'gpt-4o';
 				
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+						
+						// Handle VS Code incremental format - extract model from session header
+						if (event.kind === 0 && event.v?.inputState?.selectedModel?.metadata?.id) {
+							defaultModel = event.v.inputState.selectedModel.metadata.id;
+						}
+						
+						// Handle model changes (kind: 1 with selectedModel update)
+						if (event.kind === 1 && event.k?.includes('selectedModel') && event.v?.metadata?.id) {
+							defaultModel = event.v.metadata.id;
+						}
+						
 						const model = event.model || defaultModel;
 						
 						if (!modelUsage[model]) {
 							modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 						}
 						
+						// Handle Copilot CLI format
 						if (event.type === 'user.message' && event.data?.content) {
 							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
 						} else if (event.type === 'assistant.message' && event.data?.content) {
@@ -924,6 +945,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 						} else if (event.type === 'tool.result' && event.data?.output) {
 							// Tool outputs are typically input context
 							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
+						}
+						
+						// Handle VS Code incremental format (kind: 2 with requests)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.message?.text) {
+									modelUsage[model].inputTokens += this.estimateTokensFromText(request.message.text, model);
+								}
+							}
+						}
+						
+						// Handle VS Code incremental format - response content (kind: 2 with response)
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.value) {
+									modelUsage[model].outputTokens += this.estimateTokensFromText(responseItem.value, model);
+								} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
+									modelUsage[model].outputTokens += this.estimateTokensFromText(responseItem.content.value, model);
+								}
+							}
 						}
 					} catch (e) {
 						// Skip malformed lines
@@ -995,21 +1036,62 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
+				let sessionMode = 'ask'; // Default mode
 				
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
 						
+						// Handle VS Code incremental format - detect mode from session header
+						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
+							sessionMode = event.v.inputState.mode.kind;
+						}
+						
+						// Handle mode changes (kind: 1 with mode update)
+						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
+							sessionMode = event.v.kind;
+						}
+						
+						// Handle VS Code incremental format - count requests as interactions
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									// Count by mode
+									if (sessionMode === 'agent') {
+										analysis.modeUsage.agent++;
+									} else if (sessionMode === 'edit') {
+										analysis.modeUsage.edit++;
+									} else {
+										analysis.modeUsage.ask++;
+									}
+								}
+								// Check for agent in request
+								if (request.agent?.id) {
+									const toolName = request.agent.id;
+									analysis.toolCalls.total++;
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+						
+						// Handle VS Code incremental format - tool invocations in responses
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.kind === 'toolInvocationSerialized') {
+									analysis.toolCalls.total++;
+									const toolName = responseItem.toolSpecificData?.kind || 'unknown';
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+						
+						// Handle Copilot CLI format
 						// Detect mode from event type - CLI can be chat or agent mode
-						// We check for indicators of autonomous agent behavior
 						if (event.type === 'user.message') {
-							// Check if this appears to be an agent mode interaction
-							// Agent mode typically has tool calls, file operations, etc.
-							// For now, default to chat (ask) for CLI unless we see agent indicators
 							analysis.modeUsage.ask++;
 						}
 						
@@ -1022,7 +1104,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 						
-						// Detect tool calls
+						// Detect tool calls from Copilot CLI
 						if (event.type === 'tool.call' || event.type === 'tool.result') {
 							analysis.toolCalls.total++;
 							const toolName = event.data?.toolName || event.toolName || 'unknown';
@@ -1315,7 +1397,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
 				const timestamps: number[] = [];
@@ -1324,6 +1406,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+						
+						// Handle Copilot CLI format (type: 'user.message')
 						if (event.type === 'user.message') {
 							details.interactions++;
 							if (event.timestamp || event.ts || event.data?.timestamp) {
@@ -1332,6 +1416,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 							if (event.data?.content) {
 								this.analyzeContextReferences(event.data.content, details.contextReferences);
+							}
+						}
+						
+						// Handle VS Code incremental .jsonl format (kind: 0, 1, 2)
+						// kind: 0 = session header with creationDate
+						// kind: 2 = requests array with timestamps
+						if (event.kind === 0 && event.v?.creationDate) {
+							// Session creation timestamp
+							timestamps.push(event.v.creationDate);
+						}
+						
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							// New requests being added - count interactions and extract timestamps
+							for (const request of event.v) {
+								if (request.requestId) {
+									details.interactions++;
+								}
+								if (request.timestamp) {
+									timestamps.push(request.timestamp);
+								}
+								// Analyze context references in request message
+								if (request.message?.text) {
+									this.analyzeContextReferences(request.message.text, details.contextReferences);
+								}
 							}
 						}
 					} catch {
@@ -1733,7 +1841,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
-	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode)
+	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
 	 * Each line is a separate JSON object representing an event in the session
 	 */
 	private estimateTokensFromJsonlSession(fileContent: string): number {
@@ -1746,7 +1854,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			try {
 				const event = JSON.parse(line);
 				
-				// Handle different event types from the Copilot CLI session format
+				// Handle Copilot CLI event types
 				if (event.type === 'user.message' && event.data?.content) {
 					totalTokens += this.estimateTokensFromText(event.data.content);
 				} else if (event.type === 'assistant.message' && event.data?.content) {
@@ -1756,6 +1864,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 				} else if (event.content) {
 					// Fallback for other formats that might have content
 					totalTokens += this.estimateTokensFromText(event.content);
+				}
+				
+				// Handle VS Code incremental format (kind: 2 with requests or response)
+				if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+					for (const request of event.v) {
+						if (request.message?.text) {
+							totalTokens += this.estimateTokensFromText(request.message.text);
+						}
+					}
+				}
+				
+				if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+					for (const responseItem of event.v) {
+						if (responseItem.value) {
+							totalTokens += this.estimateTokensFromText(responseItem.value);
+						} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
+							totalTokens += this.estimateTokensFromText(responseItem.content.value);
+						}
+					}
 				}
 			} catch (e) {
 				// Skip malformed lines
