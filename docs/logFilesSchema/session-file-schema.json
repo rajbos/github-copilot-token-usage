@@ -223,7 +223,7 @@
         "type": "string",
         "description": "User-defined title for the chat session (optional)",
         "example": "Fix rate limit issue",
-        "usedBy": "Extension does not currently use this field"
+        "usedBy": "Extension displays this in the diagnostics session files table"
       },
       "hasPendingEdits": {
         "type": "boolean",
