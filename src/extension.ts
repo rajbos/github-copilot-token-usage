@@ -316,10 +316,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async saveCacheToStorage(): Promise<void> {
 		try {
 			// Convert Map to plain object for storage
-			const cacheData: Record<string, SessionFileCache> = {};
-			this.sessionFileCache.forEach((value, key) => {
-				cacheData[key] = value;
-			});
+			const cacheData = Object.fromEntries(this.sessionFileCache);
 			await this.context.globalState.update('sessionFileCache', cacheData);
 			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage`);
 		} catch (error) {
@@ -340,7 +337,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			vscode.window.showErrorMessage('Failed to clear cache: ' + error);
 		}
 	}
-
 
 	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
 		this.extensionUri = extensionUri;
@@ -2941,7 +2937,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.analysisPanel.dispose();
 		}
 		// Save cache to storage before disposing (fire-and-forget async operation)
-		// VS Code will wait for this promise to settle before fully shutting down
+		// Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
 		// We can't await here since dispose() is synchronous
 		this.saveCacheToStorage().catch(err => {
 			// Output channel will be disposed, so log to console as fallback
