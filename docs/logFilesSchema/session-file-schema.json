@@ -1,20 +1,103 @@
 {
   "title": "GitHub Copilot Session File Schema Documentation",
   "description": "This document describes the structure of session log files created by GitHub Copilot Chat extension. These files are used by the Copilot Token Tracker extension to calculate token usage statistics.",
-  "version": "1.0",
-  "lastUpdated": "2026-01-16",
+  "version": "2.0",
+  "lastUpdated": "2026-01-21",
+  "schemaChanges": {
+    "2.0": {
+      "date": "2026-01-21",
+      "changes": [
+        "Added VS Code Incremental JSONL format (kind: 0, 1, 2) used by VS Code Insiders",
+        "Added official vscode-copilot-chat repository source code references",
+        "Updated file locations to include .jsonl files in workspaceStorage",
+        "Added logging architecture overview section"
+      ]
+    },
+    "1.0": {
+      "date": "2026-01-16",
+      "changes": [
+        "Initial schema documentation for JSON and Copilot CLI JSONL formats"
+      ]
+    }
+  },
+  "officialSourceReferences": {
+    "description": "Links to the official vscode-copilot-chat repository containing the TypeScript code that defines these schemas",
+    "repository": "https://github.com/microsoft/vscode-copilot-chat",
+    "note": "The vscode-copilot-chat repository is the source of truth for session file formats. Schema versions and file structure may evolve; refer to these files for the most up-to-date types.",
+    "keyFiles": {
+      "chatSessionsProvider": {
+        "path": "src/extension/vscode.proposed.chatSessionsProvider.d.ts",
+        "url": "https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/vscode.proposed.chatSessionsProvider.d.ts",
+        "description": "Defines ChatSessionItem interface for persistent session data, including metadata, timestamps, and per-session statistics"
+      },
+      "editLogService": {
+        "path": "src/platform/multiFileEdit/common/editLogService.ts",
+        "url": "https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/multiFileEdit/common/editLogService.ts",
+        "description": "Defines IEditLogEntry interface for logging edits performed during chat sessions"
+      },
+      "copilotCloudSessionContentBuilder": {
+        "path": "src/extension/chatSessions/vscode-node/copilotCloudSessionContentBuilder.ts",
+        "url": "https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/chatSessions/vscode-node/copilotCloudSessionContentBuilder.ts",
+        "description": "Defines SessionResponseLogChunk interface for streaming assistant responses and tool calls, including token usage"
+      },
+      "workspaceRecorder": {
+        "path": "src/extension/workspaceRecorder/vscode-node/workspaceRecorder.ts",
+        "url": "https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/workspaceRecorder/vscode-node/workspaceRecorder.ts",
+        "description": "Handles JSONL workspace recording, defining the log file path and event structure"
+      }
+    },
+    "keyInterfaces": {
+      "ChatSessionItem": {
+        "source": "vscode.proposed.chatSessionsProvider.d.ts",
+        "description": "Session metadata, times, changes tracking",
+        "properties": ["endTime", "changes", "repository"]
+      },
+      "ChatSessionChangedFile": {
+        "source": "vscode.proposed.chatSessionsProvider.d.ts",
+        "description": "Tracks edited files with insertions/deletions",
+        "properties": ["modifiedUri", "originalUri", "insertions", "deletions"]
+      },
+      "IEditLogEntry": {
+        "source": "editLogService.ts",
+        "description": "Logs prompt, response, and file edits",
+        "properties": ["prompt", "response", "edits"]
+      },
+      "SessionResponseLogChunk": {
+        "source": "copilotCloudSessionContentBuilder.ts",
+        "description": "Streaming response chunks with token usage",
+        "properties": ["choices", "created", "id", "usage", "model"]
+      }
+    }
+  },
+  "loggingArchitectureOverview": {
+    "description": "High-level overview of how chat interactions and session logs are tracked and stored",
+    "sessionDataCapture": [
+      "Chat prompts and responses",
+      "Edited files and operations",
+      "Session timing and metadata",
+      "Tool calls and streaming assistant output"
+    ],
+    "storageFormats": {
+      "json": "Complete session snapshots with full conversation history",
+      "jsonl_cli": "Event stream format for Copilot CLI sessions",
+      "jsonl_incremental": "Delta-based incremental updates for VS Code Insiders (kind: 0, 1, 2)"
+    },
+    "logLocation": "C:\\Users\\<user>\\AppData\\Roaming\\{VSCodeVariant}\\User\\workspaceStorage\\<ID>\\chatSessions"
+  },
   "fileLocations": {
     "workspace": {
-      "path": "{APPDATA}/{VSCodeVariant}/User/workspaceStorage/{workspaceId}/chatSessions/*.json",
-      "description": "Session files for workspace-specific Copilot chats",
+      "path": "{APPDATA}/{VSCodeVariant}/User/workspaceStorage/{workspaceId}/chatSessions/*.json|*.jsonl",
+      "description": "Session files for workspace-specific Copilot chats. JSON files contain complete session snapshots; JSONL files (VS Code Insiders) use incremental delta format.",
       "example_windows": "C:\\Users\\{username}\\AppData\\Roaming\\Code\\User\\workspaceStorage\\07ef241ffb818c9c0a56c99733ce899e\\chatSessions\\*.json",
+      "example_windows_jsonl": "C:\\Users\\{username}\\AppData\\Roaming\\Code - Insiders\\User\\workspaceStorage\\e9230c6ce10cc9ad838926aea472abcc\\chatSessions\\*.jsonl",
       "variants": [
         "Code (Stable)",
         "Code - Insiders",
         "Code - Exploration",
         "VSCodium",
         "Cursor"
-      ]
+      ],
+      "note": "VS Code Insiders introduced incremental JSONL format (kind: 0, 1, 2) for workspace sessions"
     },
     "global": {
       "path": "{APPDATA}/{VSCodeVariant}/User/globalStorage/emptyWindowChatSessions/*.json",
@@ -60,14 +143,23 @@
   },
   "fileFormats": {
     "json": {
-      "description": "Standard JSON session files from VS Code Copilot Chat",
+      "description": "Standard JSON session files from VS Code Copilot Chat - complete session snapshots",
       "extension": ".json",
       "schema": "See 'jsonSessionFileSchema' below"
     },
-    "jsonl": {
-      "description": "JSON Lines format for Copilot CLI sessions (one JSON object per line)",
+    "jsonl_cli": {
+      "description": "JSON Lines format for Copilot CLI sessions - event-based stream with type field (user.message, assistant.message, etc.)",
       "extension": ".jsonl",
+      "location": "{HOME}/.copilot/session-state/",
       "schema": "See 'jsonlSessionFileSchema' below"
+    },
+    "jsonl_incremental": {
+      "description": "JSON Lines incremental format for VS Code Insiders workspace sessions - delta-based updates with kind field (0=header, 1=delete, 2=insert/update)",
+      "extension": ".jsonl",
+      "location": "{APPDATA}/{VSCodeVariant}/User/workspaceStorage/{workspaceId}/chatSessions/",
+      "schema": "See 'jsonlIncrementalSchema' below",
+      "introducedIn": "VS Code Insiders (observed January 2026)",
+      "note": "This newer format stores session data as incremental changes rather than complete snapshots"
     }
   },
   "jsonSessionFileSchema": {
@@ -1037,21 +1129,319 @@
       }
     }
   },
+  "jsonlIncrementalSchema": {
+    "description": "Schema for JSONL incremental session files from VS Code Insiders. Each line is a separate JSON object representing an incremental update (delta) to the session state. This format is used instead of the standard JSON session files in newer VS Code versions.",
+    "format": "One JSON object per line (JSON Lines format) - delta-based incremental updates",
+    "introducedIn": "VS Code Insiders (observed January 2026)",
+    "distinguishingFeature": "Uses 'kind' field (0, 1, 2) instead of 'type' field to differentiate from Copilot CLI format",
+    "keyConceptNote": "Unlike the Copilot CLI JSONL format which uses event types like 'user.message' and 'assistant.message', this incremental format uses numeric 'kind' values to represent different operations on the session state.",
+    "kindValues": {
+      "0": {
+        "name": "Session Header/Initialization",
+        "description": "Contains session metadata and initial state - appears once at the start of the file",
+        "usedBy": "Extension reads v.creationDate for first interaction timestamp, v.mode for session mode"
+      },
+      "1": {
+        "name": "Delete",
+        "description": "Indicates removal of data at the specified key path (rare in practice)",
+        "usedBy": "Extension does not currently use this kind"
+      },
+      "2": {
+        "name": "Insert/Update",
+        "description": "Contains incremental data updates - used for adding requests, responses, and other session changes",
+        "usedBy": "PRIMARY DATA SOURCE - Extension reads request content, timestamps, and model info from these entries"
+      }
+    },
+    "kind0Schema": {
+      "description": "Session header - appears as the first line in the file",
+      "fields": {
+        "kind": {
+          "type": "number",
+          "value": 0,
+          "description": "Indicates session header"
+        },
+        "k": {
+          "type": "array",
+          "description": "Key path - empty array for session header",
+          "example": []
+        },
+        "v": {
+          "type": "object",
+          "description": "Session metadata and initial state",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Unique session identifier (UUID)",
+              "example": "91a2e934-3aa4-4cb9-9a12-c7fa5482969e"
+            },
+            "creationDate": {
+              "type": "number",
+              "description": "Unix timestamp (milliseconds) when the session was created",
+              "example": 1769028599647,
+              "usedBy": "Extension uses this as the 'First Interaction' date"
+            },
+            "lastMessageDate": {
+              "type": "number",
+              "description": "Unix timestamp (milliseconds) of the last message - may be same as creationDate initially",
+              "example": 1769028599647
+            },
+            "mode": {
+              "type": "object",
+              "description": "Chat mode configuration",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "example": "agent"
+                },
+                "kind": {
+                  "type": "string",
+                  "example": "agent"
+                }
+              },
+              "usedBy": "Extension reads mode.id for session mode detection"
+            },
+            "selectedModel": {
+              "type": "object",
+              "description": "Initially selected AI model",
+              "properties": {
+                "identifier": {
+                  "type": "string",
+                  "example": "copilot/claude-opus-4.5"
+                },
+                "metadata": {
+                  "type": "object",
+                  "description": "Model details including name, family, version, capabilities"
+                }
+              },
+              "usedBy": "Extension reads selectedModel.identifier for model identification"
+            },
+            "requests": {
+              "type": "array",
+              "description": "Initial requests array - typically empty in header, populated via kind:2 deltas",
+              "example": []
+            }
+          }
+        }
+      },
+      "example": {
+        "kind": 0,
+        "k": [],
+        "v": {
+          "sessionId": "91a2e934-3aa4-4cb9-9a12-c7fa5482969e",
+          "creationDate": 1769028599647,
+          "lastMessageDate": 1769028599647,
+          "mode": {
+            "id": "agent",
+            "kind": "agent"
+          },
+          "selectedModel": {
+            "identifier": "copilot/claude-opus-4.5"
+          },
+          "requests": []
+        }
+      }
+    },
+    "kind1Schema": {
+      "description": "Delete operation - removes data at specified key path",
+      "fields": {
+        "kind": {
+          "type": "number",
+          "value": 1,
+          "description": "Indicates delete operation"
+        },
+        "k": {
+          "type": "array",
+          "description": "Key path specifying what to delete",
+          "example": ["requests", "0"]
+        }
+      },
+      "note": "Rarely seen in practice - most operations are inserts/updates",
+      "usedBy": "Extension does not currently process delete operations"
+    },
+    "kind2Schema": {
+      "description": "Insert/Update operation - adds or updates data at specified key path. This is the primary data carrier.",
+      "fields": {
+        "kind": {
+          "type": "number",
+          "value": 2,
+          "description": "Indicates insert/update operation"
+        },
+        "k": {
+          "type": "array",
+          "description": "Key path specifying where to insert/update. First element is field name, subsequent elements are indices or nested keys.",
+          "examples": [
+            ["requests"],
+            ["selectedModel"],
+            ["lastMessageDate"]
+          ]
+        },
+        "v": {
+          "type": "any",
+          "description": "The value to insert/update at the key path. Type depends on what's being updated."
+        }
+      },
+      "variants": [
+        {
+          "keyPath": ["requests"],
+          "description": "Request array updates - contains user messages, responses, timestamps",
+          "valueSchema": {
+            "type": "array",
+            "items": {
+              "requestId": {
+                "type": "string",
+                "example": "request_1e52c44d-8b4f-4ec3-9b9b-f88d0f5b3c37"
+              },
+              "timestamp": {
+                "type": "number",
+                "description": "Unix timestamp when request was made",
+                "example": 1769028780953,
+                "usedBy": "Extension uses this for 'Last Interaction' date calculation"
+              },
+              "message": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "User's message text"
+                  },
+                  "parts": {
+                    "type": "array",
+                    "description": "Message parts with text content"
+                  }
+                },
+                "usedBy": "Extension reads message.parts[].text for input token estimation"
+              },
+              "modelId": {
+                "type": "string",
+                "description": "Model identifier for this specific request",
+                "example": "copilot/claude-opus-4.5"
+              },
+              "response": {
+                "type": "array",
+                "description": "Response items from the AI assistant",
+                "usedBy": "Extension reads response[].value for output token estimation"
+              },
+              "result": {
+                "type": "object",
+                "properties": {
+                  "details": {
+                    "type": "string",
+                    "description": "Human-readable model info",
+                    "example": "Claude Opus 4.5 • 3x"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "description": "Additional metadata including tool call results"
+                  }
+                },
+                "usedBy": "Extension parses result.details for model identification"
+              }
+            }
+          },
+          "usedBy": "PRIMARY DATA SOURCE - Extension extracts requests for token estimation, interaction counting, and model tracking"
+        },
+        {
+          "keyPath": ["selectedModel"],
+          "description": "Model selection updates - sent when user changes model mid-session",
+          "valueSchema": {
+            "identifier": {
+              "type": "string",
+              "example": "copilot/gpt-4.1"
+            },
+            "metadata": {
+              "type": "object"
+            }
+          },
+          "usedBy": "Extension reads identifier for model tracking"
+        },
+        {
+          "keyPath": ["lastMessageDate"],
+          "description": "Timestamp updates for the last message",
+          "valueSchema": {
+            "type": "number",
+            "example": 1769028780953
+          },
+          "usedBy": "Extension may use for last interaction time"
+        }
+      ]
+    },
+    "example_complete_file": {
+      "description": "Example of a complete incremental JSONL file with multiple entries",
+      "lines": [
+        "{\"kind\":0,\"k\":[],\"v\":{\"sessionId\":\"91a2e934-3aa4-4cb9-9a12-c7fa5482969e\",\"creationDate\":1769028599647,\"mode\":{\"id\":\"agent\"},\"requests\":[]}}",
+        "{\"kind\":2,\"k\":[\"selectedModel\"],\"v\":{\"identifier\":\"copilot/claude-opus-4.5\"}}",
+        "{\"kind\":2,\"k\":[\"requests\"],\"v\":[{\"requestId\":\"request_abc\",\"timestamp\":1769028780953,\"message\":{\"text\":\"Hello\"},\"response\":[{\"value\":\"Hi there!\"}]}]}",
+        "{\"kind\":2,\"k\":[\"lastMessageDate\"],\"v\":1769028780953}"
+      ],
+      "note": "Each line is a separate JSON object. The session is reconstructed by applying these deltas in order."
+    },
+    "comparison_with_cli_format": {
+      "description": "Key differences between VS Code Incremental JSONL and Copilot CLI JSONL formats",
+      "differences": [
+        {
+          "aspect": "Discriminator field",
+          "cli_format": "Uses 'type' field with string values like 'user.message', 'assistant.message'",
+          "incremental_format": "Uses 'kind' field with numeric values (0, 1, 2)"
+        },
+        {
+          "aspect": "Data structure",
+          "cli_format": "Each line is a complete event with 'type', 'data', 'id', 'timestamp', 'parentId'",
+          "incremental_format": "Each line is a delta with 'kind', 'k' (key path), 'v' (value)"
+        },
+        {
+          "aspect": "Session reconstruction",
+          "cli_format": "Events are independent; session is the sequence of events",
+          "incremental_format": "Deltas must be applied in order to reconstruct session state"
+        },
+        {
+          "aspect": "Timestamp location",
+          "cli_format": "Each event has its own 'timestamp' field",
+          "incremental_format": "Timestamps are in 'v.creationDate' (kind:0) or 'v[].timestamp' (kind:2 requests)"
+        },
+        {
+          "aspect": "File location",
+          "cli_format": "{HOME}/.copilot/session-state/*.jsonl",
+          "incremental_format": "{APPDATA}/{VSCodeVariant}/User/workspaceStorage/{id}/chatSessions/*.jsonl"
+        }
+      ]
+    },
+    "extensionParsingNotes": {
+      "detection": "Extension detects this format by checking for 'kind' field (number) instead of 'type' field (string)",
+      "creationDate": "Read from kind:0 entry's v.creationDate",
+      "lastInteraction": "Derived from the latest timestamp in kind:2 entries with k[0]==='requests'",
+      "interactions": "Count of request objects in kind:2 entries where k[0]==='requests'",
+      "modelUsage": "Extracted from kind:0 v.selectedModel.identifier, kind:2 selectedModel updates, and request-level modelId",
+      "tokenEstimation": "Same character-to-token ratio estimation as other formats, using request message text and response values"
+    }
+  },
   "extensionUsageSummary": {
     "description": "Summary of which fields the Copilot Token Tracker extension actually uses",
     "primaryDataSources": {
       "json_files": {
+        "format": "Standard JSON session files",
         "input_tokens": "requests[].message.parts[].text - All text parts of user messages",
         "output_tokens": "requests[].response[].value - String values in response items",
         "model_identification": "requests[].result.details - Parsed to identify AI model used (e.g., 'Claude Opus 4.5', 'GPT-4.1')",
         "interaction_count": "requests.length - Number of user interactions"
       },
-      "jsonl_files": {
+      "jsonl_cli_files": {
+        "format": "Copilot CLI JSONL files (type-based events)",
         "input_tokens": "Lines with type='user.message': data.content field",
         "output_tokens": "Lines with type='assistant.message': data.content field",
         "tool_context": "Lines with type='tool.result': data.output field (counted as input tokens)",
         "interaction_count": "Count of lines with type='user.message'",
         "model_identification": "event.model field (defaults to 'gpt-4o' if not present)"
+      },
+      "jsonl_incremental_files": {
+        "format": "VS Code Incremental JSONL files (kind-based deltas)",
+        "detection": "Identified by presence of 'kind' field (number) instead of 'type' field (string)",
+        "first_interaction": "kind:0 entry's v.creationDate field",
+        "last_interaction": "Latest timestamp from kind:2 entries where k[0]==='requests' and v[].timestamp exists",
+        "input_tokens": "kind:2 entries with k[0]==='requests': v[].message.parts[].text",
+        "output_tokens": "kind:2 entries with k[0]==='requests': v[].response[].value",
+        "model_identification": "kind:0 v.selectedModel.identifier, kind:2 selectedModel updates, or request-level modelId/result.details",
+        "interaction_count": "Count of request objects in kind:2 entries with k[0]==='requests'",
+        "mode_detection": "kind:0 v.mode.id for session mode (e.g., 'agent')"
       }
     },
     "fileMetadata": {
@@ -1069,7 +1459,8 @@
       "UI-related fields like selections, inputText, mode",
       "Response items without 'value' fields (mcpServersStarting, toolInvocationSerialized, etc.)",
       "selectedModel at session level (uses per-request model info instead)",
-      "Actual token counts in JSONL session.truncation events"
+      "Actual token counts in JSONL session.truncation events",
+      "kind:1 delete operations in incremental JSONL files"
     ]
   },
   "notes": {
@@ -1077,6 +1468,9 @@
     "modelDetection": "Model identification is heuristic-based, parsing strings like 'Claude Opus 4.5' from result.details or using the model field in JSONL events. It may not be 100% accurate for all model variants.",
     "tokenEstimation": "Token counts are ESTIMATES based on character counts and model-specific ratios. They are not actual token counts from the API.",
     "caching": "The extension caches parsed session data using file modification time as the cache key to avoid re-parsing unchanged files.",
-    "editorTypes": "Files are categorized by location: 'workspace' (workspaceStorage), 'global' (globalStorage/emptyWindowChatSessions), 'cli' (Copilot CLI), 'copilot-chat' (globalStorage/github.copilot-chat)"
+    "editorTypes": "Files are categorized by location: 'workspace' (workspaceStorage), 'global' (globalStorage/emptyWindowChatSessions), 'cli' (Copilot CLI), 'copilot-chat' (globalStorage/github.copilot-chat)",
+    "jsonlFormatDetection": "When processing .jsonl files, the extension first checks if lines contain a 'kind' field (VS Code Incremental format) or a 'type' field (Copilot CLI format) to determine the correct parsing strategy.",
+    "vsCodeInsidersFormat": "VS Code Insiders (as of January 2026) uses the incremental JSONL format (kind: 0, 1, 2) for workspace sessions instead of standard JSON files. This format stores session data as deltas rather than complete snapshots.",
+    "schemaEvolution": "Session file formats may evolve with VS Code updates. The extension attempts to handle multiple format versions gracefully. Check the officialSourceReferences section for links to the canonical TypeScript definitions."
   }
 }
