@@ -7,10 +7,20 @@ The Copilot Token Tracker extension and analysis script check session files for 
 | Editor | Status | Notes |
 |--------|--------|-------|
 | **VS Code Stable** | ✅ Supported | Main VS Code release |
-| **VS Code Insiders** | ✅ Supported | Pre-release builds |
+| **VS Code Insiders** | ✅ Supported | Pre-release builds, uses incremental JSONL format |
 | **VS Code Exploration** | ✅ Supported | Experimental builds |
 | **VSCodium** | ✅ Supported | Open-source build |
 | **Cursor** | ✅ Supported | AI-first editor |
+
+## Session File Formats by Variant
+
+| Variant | JSON Files | JSONL Incremental |
+|---------|------------|-------------------|
+| VS Code Stable | ✅ Primary | ❓ May adopt later |
+| VS Code Insiders | ⚠️ Legacy | ✅ Primary (as of Jan 2026) |
+| Other variants | ✅ Primary | ❓ Varies |
+
+> **Note:** VS Code Insiders introduced the incremental JSONL format (`kind: 0, 1, 2`) for workspace sessions. The extension automatically detects and handles both formats.
 
 ## File Locations (Windows)
 
@@ -21,7 +31,9 @@ For each variant, session files are stored in:
 %APPDATA%\{Variant}\User\
 ├── workspaceStorage\
 │   └── {workspaceId}\
-│       └── chatSessions\*.json       ← Workspace-specific chats
+│       └── chatSessions\
+│           ├── *.json       ← Complete session snapshots
+│           └── *.jsonl      ← Incremental updates (VS Code Insiders)
 ├── globalStorage\
 │   ├── emptyWindowChatSessions\*.json ← No-workspace chats
 │   └── github.copilot-chat\**\*.json  ← Additional Copilot chats
