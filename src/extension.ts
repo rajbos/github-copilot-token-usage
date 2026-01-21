@@ -2929,9 +2929,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.analysisPanel) {
 			this.analysisPanel.dispose();
 		}
-		// Save cache to storage before disposing (must be done before disposing output channel)
+		// Save cache to storage before disposing (fire-and-forget async operation)
+		// VS Code will wait for this promise to settle before fully shutting down
+		// We can't await here since dispose() is synchronous
 		this.saveCacheToStorage().catch(err => {
-			// Output channel may already be disposed, so just log to console as fallback
+			// Output channel will be disposed, so log to console as fallback
 			console.error('Error saving cache during disposal:', err);
 		});
 		this.statusBarItem.dispose();
