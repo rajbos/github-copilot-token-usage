@@ -261,13 +261,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.sessionFileCache.set(filePath, data);
 		
 		// Limit cache size to prevent memory issues (keep last 1000 files)
-		if (this.sessionFileCache.size > 1000) {
-			const entries = Array.from(this.sessionFileCache.entries());
-			// Remove oldest entries (simple FIFO approach)
-			const toRemove = entries.slice(0, this.sessionFileCache.size - 1000);
-			for (const [key] of toRemove) {
+		// Only trigger cleanup when size exceeds limit by 100 to avoid frequent operations
+		if (this.sessionFileCache.size > 1100) {
+			// Remove 100 oldest entries to bring size back to 1000
+			// Maps maintain insertion order, so the first entries are the oldest
+			const keysToDelete: string[] = [];
+			let count = 0;
+			for (const key of this.sessionFileCache.keys()) {
+				keysToDelete.push(key);
+				count++;
+				if (count >= 100) {
+					break;
+				}
+			}
+			for (const key of keysToDelete) {
 				this.sessionFileCache.delete(key);
 			}
+			this.log(`Cache size limit reached, removed ${keysToDelete.length} oldest entries. Current size: ${this.sessionFileCache.size}`);
 		}
 	}
 
@@ -287,7 +297,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	// Persistent cache storage methods
-	private async loadCacheFromStorage(): Promise<void> {
+	private loadCacheFromStorage(): void {
 		try {
 			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
 			if (cacheData) {
@@ -2919,12 +2929,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.analysisPanel) {
 			this.analysisPanel.dispose();
 		}
-		this.statusBarItem.dispose();
-		this.outputChannel.dispose();
-		// Save cache to storage before disposing
+		// Save cache to storage before disposing (must be done before disposing output channel)
 		this.saveCacheToStorage().catch(err => {
+			// Output channel may already be disposed, so just log to console as fallback
 			console.error('Error saving cache during disposal:', err);
 		});
+		this.statusBarItem.dispose();
+		this.outputChannel.dispose();
 	}
 }
 
