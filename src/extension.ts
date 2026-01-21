@@ -74,10 +74,76 @@ interface SessionFileCache {
 	interactions: number;
 	modelUsage: ModelUsage;
 	mtime: number; // file modification time as timestamp
+	usageAnalysis?: SessionUsageAnalysis; // New analysis data
+}
+
+// New interfaces for usage analysis
+interface SessionUsageAnalysis {
+	toolCalls: ToolCallUsage;
+	modeUsage: ModeUsage;
+	contextReferences: ContextReferenceUsage;
+	mcpTools: McpToolUsage;
+}
+
+interface ToolCallUsage {
+	total: number;
+	byTool: { [toolName: string]: number };
+}
+
+interface ModeUsage {
+	ask: number;     // Regular chat mode
+	edit: number;    // Edit mode interactions
+	agent: number;   // Agent mode interactions
+}
+
+interface ContextReferenceUsage {
+	file: number;        // #file references
+	selection: number;   // #selection references
+	symbol: number;      // #symbol references
+	codebase: number;    // #codebase references
+	workspace: number;   // @workspace references
+	terminal: number;    // @terminal references
+	vscode: number;      // @vscode references
+}
+
+interface McpToolUsage {
+	total: number;
+	byServer: { [serverName: string]: number };
+	byTool: { [toolName: string]: number };
+}
+
+interface UsageAnalysisStats {
+	today: UsageAnalysisPeriod;
+	month: UsageAnalysisPeriod;
+	lastUpdated: Date;
+}
+
+interface UsageAnalysisPeriod {
+	sessions: number;
+	toolCalls: ToolCallUsage;
+	modeUsage: ModeUsage;
+	contextReferences: ContextReferenceUsage;
+	mcpTools: McpToolUsage;
+}
+
+// Detailed session file information for diagnostics view
+interface SessionFileDetails {
+	file: string;
+	size: number;
+	modified: string;
+	interactions: number;
+	contextReferences: ContextReferenceUsage;
+	firstInteraction: string | null;
+	lastInteraction: string | null;
+	editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
+	editorRoot?: string; // top-level editor root path (for display in diagnostics)
+	editorName?: string; // friendly editor name (e.g., 'VS Code')
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
+	private diagnosticsPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
+	private readonly extensionUri: vscode.Uri;
 
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
@@ -87,6 +153,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private chartPanel: vscode.WebviewPanel | undefined;
+	private analysisPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -139,6 +206,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return 'VS Code';
 		}
 		
+		return 'Unknown';
+	}
+
+	/**
+	 * Determine a friendly editor name from an editor root path (folder name)
+	 * e.g. 'C:\...\AppData\Roaming\Code' -> 'VS Code'
+	 */
+	private getEditorNameFromRoot(rootPath: string): string {
+		if (!rootPath) { return 'Unknown'; }
+		const lower = rootPath.toLowerCase();
+		// Check obvious markers first
+		if (lower.includes('.copilot') || lower.includes('copilot')) { return 'Copilot CLI'; }
+		if (lower.includes('code - insiders') || lower.includes('code-insiders') || lower.includes('insiders')) { return 'VS Code Insiders'; }
+		if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
+		if (lower.includes('vscodium')) { return 'VSCodium'; }
+		if (lower.includes('cursor')) { return 'Cursor'; }
+		// Generic 'code' match (catch AppData\Roaming\Code)
+		if (lower.endsWith('code') || lower.includes(path.sep + 'code' + path.sep) || lower.includes('/code/')) { return 'VS Code'; }
 		return 'Unknown';
 	}
 
@@ -202,7 +287,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 
 
-	constructor() {
+	constructor(extensionUri: vscode.Uri) {
+		this.extensionUri = extensionUri;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
 		this.log('Constructor called');
@@ -244,7 +330,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		if (extensionsExistButInactive) {
 			// Use shorter delay for testing in Codespaces
-			const delaySeconds = process.env.CODESPACES === 'true' ? 10 : 15;
+			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
 			this.log(`Copilot extensions found but not active yet - delaying initial update by ${delaySeconds} seconds to allow extensions to load`);
 			this.log(`Setting timeout for ${new Date(Date.now() + (delaySeconds * 1000)).toLocaleTimeString()}`);
 
@@ -262,8 +348,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Add a heartbeat to prove the timeout mechanism is working
 			setTimeout(() => {
-				this.log('💓 Heartbeat: 5 seconds elapsed, timeout still pending...');
-			}, 5 * 1000);
+				this.log('💓 Heartbeat: 2 seconds elapsed, timeout still pending...');
+			}, 2 * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
 			this.log('No Copilot extensions found - starting immediate update');
 			setTimeout(() => this.updateTokenStats(), 100);
@@ -331,13 +417,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the details panel is open, update its content
 			if (this.detailsPanel) {
-				this.detailsPanel.webview.html = this.getDetailsHtml(detailedStats);
+				this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, detailedStats);
 			}
 
 			// If the chart panel is open, update its content
 			if (this.chartPanel) {
 				const dailyStats = await this.calculateDailyStats();
-				this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+				this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+			}
+
+			// If the analysis panel is open, update its content
+			if (this.analysisPanel) {
+				const analysisStats = await this.calculateUsageAnalysisStats();
+				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
@@ -612,6 +704,103 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return dailyStatsArray;
 	}
 
+	/**
+	 * Calculate usage analysis statistics for today and this month
+	 */
+	private async calculateUsageAnalysisStats(): Promise<UsageAnalysisStats> {
+		const now = new Date();
+		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+		const emptyPeriod = (): UsageAnalysisPeriod => ({
+			sessions: 0,
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} }
+		});
+
+		const todayStats = emptyPeriod();
+		const monthStats = emptyPeriod();
+
+		try {
+			const sessionFiles = await this.getCopilotSessionFiles();
+			this.log(`Processing ${sessionFiles.length} session files for usage analysis`);
+
+			for (const sessionFile of sessionFiles) {
+				try {
+					const fileStats = fs.statSync(sessionFile);
+
+					if (fileStats.mtime >= monthStart) {
+						const analysis = await this.getUsageAnalysisFromSessionCached(sessionFile, fileStats.mtime.getTime());
+						
+						// Add to month stats
+						monthStats.sessions++;
+						this.mergeUsageAnalysis(monthStats, analysis);
+
+						// Add to today stats if modified today
+						if (fileStats.mtime >= todayStart) {
+							todayStats.sessions++;
+							this.mergeUsageAnalysis(todayStats, analysis);
+						}
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+				}
+			}
+		} catch (error) {
+			this.error('Error calculating usage analysis stats:', error);
+		}
+
+		return {
+			today: todayStats,
+			month: monthStats,
+			lastUpdated: now
+		};
+	}
+
+	/**
+	 * Merge usage analysis data into period stats
+	 */
+	private mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+		// Merge tool calls
+		period.toolCalls.total += analysis.toolCalls.total;
+		for (const [tool, count] of Object.entries(analysis.toolCalls.byTool)) {
+			period.toolCalls.byTool[tool] = (period.toolCalls.byTool[tool] || 0) + count;
+		}
+
+		// Merge mode usage
+		period.modeUsage.ask += analysis.modeUsage.ask;
+		period.modeUsage.edit += analysis.modeUsage.edit;
+		period.modeUsage.agent += analysis.modeUsage.agent;
+
+		// Merge context references
+		period.contextReferences.file += analysis.contextReferences.file;
+		period.contextReferences.selection += analysis.contextReferences.selection;
+		period.contextReferences.symbol += analysis.contextReferences.symbol;
+		period.contextReferences.codebase += analysis.contextReferences.codebase;
+		period.contextReferences.workspace += analysis.contextReferences.workspace;
+		period.contextReferences.terminal += analysis.contextReferences.terminal;
+		period.contextReferences.vscode += analysis.contextReferences.vscode;
+
+		// Merge MCP tools
+		period.mcpTools.total += analysis.mcpTools.total;
+		for (const [server, count] of Object.entries(analysis.mcpTools.byServer)) {
+			period.mcpTools.byServer[server] = (period.mcpTools.byServer[server] || 0) + count;
+		}
+		for (const [tool, count] of Object.entries(analysis.mcpTools.byTool)) {
+			period.mcpTools.byTool[tool] = (period.mcpTools.byTool[tool] || 0) + count;
+		}
+	}
+
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
@@ -728,6 +917,250 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return modelUsage;
 	}
 
+	/**
+	 * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
+	 */
+	private async analyzeSessionUsage(sessionFile: string): Promise<SessionUsageAnalysis> {
+		const analysis: SessionUsageAnalysis = {
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} }
+		};
+
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						
+						// Detect mode from event type - CLI can be chat or agent mode
+						// We check for indicators of autonomous agent behavior
+						if (event.type === 'user.message') {
+							// Check if this appears to be an agent mode interaction
+							// Agent mode typically has tool calls, file operations, etc.
+							// For now, default to chat (ask) for CLI unless we see agent indicators
+							analysis.modeUsage.ask++;
+						}
+						
+						// If we see tool calls, upgrade to agent mode for this session
+						if (event.type === 'tool.call' || event.type === 'tool.result') {
+							// Tool usage indicates agent mode - adjust if we counted this as ask
+							if (analysis.modeUsage.ask > 0) {
+								analysis.modeUsage.ask--;
+								analysis.modeUsage.agent++;
+							}
+						}
+						
+						// Detect tool calls
+						if (event.type === 'tool.call' || event.type === 'tool.result') {
+							analysis.toolCalls.total++;
+							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+						
+						// Detect MCP tools
+						if (event.type === 'mcp.tool.call' || (event.data?.mcpServer)) {
+							analysis.mcpTools.total++;
+							const serverName = event.data?.mcpServer || 'unknown';
+							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+							analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+						}
+						
+						// Detect context references in user messages
+						if (event.type === 'user.message' && event.data?.content) {
+							this.analyzeContextReferences(event.data.content, analysis.contextReferences);
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return analysis;
+			}
+			
+			// Handle regular .json files
+			const sessionContent = JSON.parse(fileContent);
+
+			// Detect session mode and count interactions per request
+			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				for (const request of sessionContent.requests) {
+					// Determine mode for each individual request
+					let requestMode = 'ask'; // default
+					
+					// Check request-level agent ID first (more specific)
+					if (request.agent?.id) {
+						const agentId = request.agent.id.toLowerCase();
+						if (agentId.includes('edit')) {
+							requestMode = 'edit';
+						} else if (agentId.includes('agent')) {
+							requestMode = 'agent';
+						}
+					}
+					// Fall back to session-level mode if no request-specific agent
+					else if (sessionContent.mode?.id) {
+						const modeId = sessionContent.mode.id.toLowerCase();
+						if (modeId.includes('agent')) {
+							requestMode = 'agent';
+						} else if (modeId.includes('edit')) {
+							requestMode = 'edit';
+						}
+					}
+					
+					// Count this request in the appropriate mode
+					if (requestMode === 'agent') {
+						analysis.modeUsage.agent++;
+					} else if (requestMode === 'edit') {
+						analysis.modeUsage.edit++;
+					} else {
+						analysis.modeUsage.ask++;
+					}
+					
+					// Analyze user message for context references
+					if (request.message) {
+						if (request.message.text) {
+							this.analyzeContextReferences(request.message.text, analysis.contextReferences);
+						}
+						if (request.message.parts) {
+							for (const part of request.message.parts) {
+								if (part.text) {
+									this.analyzeContextReferences(part.text, analysis.contextReferences);
+								}
+							}
+						}
+					}
+					
+					// Analyze variableData for @workspace, @terminal, @vscode references
+					if (request.variableData) {
+						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
+						if (varDataStr.includes('workspace')) {
+							analysis.contextReferences.workspace++;
+						}
+						if (varDataStr.includes('terminal')) {
+							analysis.contextReferences.terminal++;
+						}
+						if (varDataStr.includes('vscode')) {
+							analysis.contextReferences.vscode++;
+						}
+					}
+					
+					// Analyze response for tool calls and MCP tools
+					if (request.response && Array.isArray(request.response)) {
+						for (const responseItem of request.response) {
+							// Detect tool invocations
+							if (responseItem.kind === 'toolInvocationSerialized' || 
+							    responseItem.kind === 'prepareToolInvocation') {
+								analysis.toolCalls.total++;
+								const toolName = responseItem.toolName || 
+								                responseItem.invocationMessage?.toolName || 
+								                'unknown';
+								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							}
+							
+							// Detect MCP servers starting
+							if (responseItem.kind === 'mcpServersStarting' && responseItem.didStartServerIds) {
+								for (const serverId of responseItem.didStartServerIds) {
+									analysis.mcpTools.total++;
+									analysis.mcpTools.byServer[serverId] = (analysis.mcpTools.byServer[serverId] || 0) + 1;
+								}
+							}
+						}
+					}
+					
+					// Check metadata for tool calls
+					if (request.result?.metadata) {
+						const metadataStr = JSON.stringify(request.result.metadata).toLowerCase();
+						// Look for tool-related metadata
+						if (metadataStr.includes('tool') || metadataStr.includes('function')) {
+							// This is a heuristic - actual structure may vary
+							try {
+								const metadata = request.result.metadata;
+								if (metadata.toolCalls || metadata.tools || metadata.functionCalls) {
+									const toolData = metadata.toolCalls || metadata.tools || metadata.functionCalls;
+									if (Array.isArray(toolData)) {
+										for (const toolItem of toolData) {
+											analysis.toolCalls.total++;
+											// Try to extract tool name from various possible fields
+											const toolName = toolItem.name || toolItem.function?.name || toolItem.toolName || 'metadata-tool';
+											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+										}
+									}
+								}
+							} catch (e) {
+								// Ignore parsing errors
+							}
+						}
+					}
+				}
+			}
+		} catch (error) {
+			this.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
+		}
+
+		return analysis;
+	}
+
+	/**
+	 * Analyze text for context references like #file, #selection, @workspace
+	 */
+	private analyzeContextReferences(text: string, refs: ContextReferenceUsage): void {
+		// Count #file references
+		const fileMatches = text.match(/#file/gi);
+		if (fileMatches) {
+			refs.file += fileMatches.length;
+		}
+		
+		// Count #selection references
+		const selectionMatches = text.match(/#selection/gi);
+		if (selectionMatches) {
+			refs.selection += selectionMatches.length;
+		}
+		
+		// Count #symbol references
+		const symbolMatches = text.match(/#symbol/gi);
+		if (symbolMatches) {
+			refs.symbol += symbolMatches.length;
+		}
+		
+		// Count #codebase references
+		const codebaseMatches = text.match(/#codebase/gi);
+		if (codebaseMatches) {
+			refs.codebase += codebaseMatches.length;
+		}
+		
+		// Count @workspace references
+		const workspaceMatches = text.match(/@workspace/gi);
+		if (workspaceMatches) {
+			refs.workspace += workspaceMatches.length;
+		}
+		
+		// Count @terminal references
+		const terminalMatches = text.match(/@terminal/gi);
+		if (terminalMatches) {
+			refs.terminal += terminalMatches.length;
+		}
+		
+		// Count @vscode references
+		const vscodeMatches = text.match(/@vscode/gi);
+		if (vscodeMatches) {
+			refs.vscode += vscodeMatches.length;
+		}
+	}
+
 	// Cached versions of session file reading methods
 	private async getSessionFileDataCached(sessionFilePath: string, mtime: number): Promise<SessionFileCache> {
 		// Check if we have valid cached data
@@ -740,12 +1173,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const tokens = await this.estimateTokensFromSession(sessionFilePath);
 		const interactions = await this.countInteractionsInSession(sessionFilePath);
 		const modelUsage = await this.getModelUsageFromSession(sessionFilePath);
+		const usageAnalysis = await this.analyzeSessionUsage(sessionFilePath);
 		
 		const sessionData: SessionFileCache = {
 			tokens,
 			interactions,
 			modelUsage,
-			mtime
+			mtime,
+			usageAnalysis
 		};
 
 		this.setCachedSessionData(sessionFilePath, sessionData);
@@ -765,6 +1200,160 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async getModelUsageFromSessionCached(sessionFile: string, mtime: number): Promise<ModelUsage> {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
 		return sessionData.modelUsage;
+	}
+
+	private async getUsageAnalysisFromSessionCached(sessionFile: string, mtime: number): Promise<SessionUsageAnalysis> {
+		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
+		return sessionData.usageAnalysis || {
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} }
+		};
+	}
+
+	/**
+	 * Get detailed session file information for diagnostics view.
+	 * Analyzes session files to extract interactions, context references, and timestamps.
+	 */
+	private async getSessionFileDetails(sessionFile: string): Promise<SessionFileDetails> {
+		const stat = await fs.promises.stat(sessionFile);
+		const details: SessionFileDetails = {
+			file: sessionFile,
+			size: stat.size,
+			modified: stat.mtime.toISOString(),
+			interactions: 0,
+			contextReferences: {
+				file: 0, selection: 0, symbol: 0, codebase: 0,
+				workspace: 0, terminal: 0, vscode: 0
+			},
+			firstInteraction: null,
+			lastInteraction: null,
+			editorSource: this.detectEditorSource(sessionFile)
+		};
+
+		// Determine top-level editor root path for this session file (up to the folder before 'User')
+		try {
+			const parts = sessionFile.split(/[/\\\\]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			if (userIdx > 0) {
+				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
+			} else {
+				details.editorRoot = require('path').dirname(sessionFile);
+			}
+			// Also populate a friendly editor name for this file
+			details['editorName'] = this.getEditorNameFromRoot(details.editorRoot || '');
+		} catch (e) {
+			details.editorRoot = require('path').dirname(sessionFile);
+			details['editorName'] = this.getEditorNameFromRoot(details.editorRoot || '');
+		}
+
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			// Handle .jsonl files (Copilot CLI format)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = fileContent.trim().split('\n');
+				const timestamps: number[] = [];
+				
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (event.type === 'user.message') {
+							details.interactions++;
+							if (event.timestamp || event.ts || event.data?.timestamp) {
+								const ts = event.timestamp || event.ts || event.data?.timestamp;
+								timestamps.push(new Date(ts).getTime());
+							}
+							if (event.data?.content) {
+								this.analyzeContextReferences(event.data.content, details.contextReferences);
+							}
+						}
+					} catch {
+						// Skip malformed lines
+					}
+				}
+				
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				return details;
+			}
+			
+			// Handle regular .json files
+			const sessionContent = JSON.parse(fileContent);
+			
+			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				details.interactions = sessionContent.requests.length;
+				const timestamps: number[] = [];
+				
+				for (const request of sessionContent.requests) {
+					// Extract timestamps from requests
+					if (request.timestamp || request.ts || request.result?.timestamp) {
+						const ts = request.timestamp || request.ts || request.result?.timestamp;
+						timestamps.push(new Date(ts).getTime());
+					}
+					
+					// Analyze context references
+					if (request.message?.text) {
+						this.analyzeContextReferences(request.message.text, details.contextReferences);
+					}
+					if (request.message?.parts) {
+						for (const part of request.message.parts) {
+							if (part.text) {
+								this.analyzeContextReferences(part.text, details.contextReferences);
+							}
+						}
+					}
+					
+					// Check variableData for @workspace, @terminal, @vscode references
+					if (request.variableData) {
+						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
+						if (varDataStr.includes('workspace')) { details.contextReferences.workspace++; }
+						if (varDataStr.includes('terminal')) { details.contextReferences.terminal++; }
+						if (varDataStr.includes('vscode')) { details.contextReferences.vscode++; }
+					}
+				}
+				
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				} else {
+					// Fallback to file modification time if no timestamps in content
+					details.lastInteraction = stat.mtime.toISOString();
+				}
+			}
+		} catch (error) {
+			this.warn(`Error analyzing session file details for ${sessionFile}: ${error}`);
+		}
+		
+		return details;
+	}
+
+	/**
+	 * Detect which editor the session file belongs to based on its path.
+	 */
+	private detectEditorSource(filePath: string): string {
+		const lowerPath = filePath.toLowerCase();
+		if (lowerPath.includes('copilot-cli') || lowerPath.includes('cli')) { return 'Copilot CLI'; }
+		if (lowerPath.includes('cursor')) { return 'Cursor'; }
+		if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
+		if (lowerPath.includes('vscodium')) { return 'VSCodium'; }
+		if (lowerPath.includes('windsurf')) { return 'Windsurf'; }
+		if (lowerPath.includes('code')) { return 'VS Code'; }
+		return 'Unknown';
 	}
 
 	/**
@@ -1193,12 +1782,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
 
 		// Set the HTML content
-		this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
@@ -1208,6 +1798,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showChart':
 					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
 					break;
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
@@ -1241,12 +1834,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
 
 		// Set the HTML content
-		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 
 		// Handle messages from the webview
 		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
@@ -1254,12 +1848,73 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'refresh':
 					await this.refreshChartPanel();
 					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
 			}
 		});
 
 		// Handle panel disposal
 		this.chartPanel.onDidDispose(() => {
 			this.chartPanel = undefined;
+		});
+	}
+
+	public async showUsageAnalysis(): Promise<void> {
+		// If panel already exists, just reveal it
+		if (this.analysisPanel) {
+			this.analysisPanel.reveal();
+			return;
+		}
+
+		// Get usage analysis stats
+		const analysisStats = await this.calculateUsageAnalysisStats();
+
+		// Create webview panel
+		this.analysisPanel = vscode.window.createWebviewPanel(
+			'copilotUsageAnalysis',
+			'Copilot Usage Analysis',
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: true
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		// Set the HTML content
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+
+		// Handle messages from the webview
+		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshAnalysisPanel();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+			}
+		});
+
+		// Handle panel disposal
+		this.analysisPanel.onDidDispose(() => {
+			this.analysisPanel = undefined;
 		});
 	}
 
@@ -1271,7 +1926,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Update token stats and refresh the webview content
 		const stats = await this.updateTokenStats();
 		if (stats) {
-			this.detailsPanel.webview.html = this.getDetailsHtml(stats);
+			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 		}
 	}
 
@@ -1282,313 +1937,54 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Refresh the chart webview content
 		const dailyStats = await this.calculateDailyStats();
-		this.chartPanel.webview.html = this.getChartHtml(dailyStats);
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 	}
 
-	private getDetailsHtml(stats: DetailedStats): string {
-		const usedModels = new Set([
-			...Object.keys(stats.today.modelUsage),
-			...Object.keys(stats.month.modelUsage)
-		]);
+	private async refreshAnalysisPanel(): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
 
-		const now = new Date();
-		const currentDayOfMonth = now.getDate();
-		const daysInYear = (now.getFullYear() % 4 === 0 && now.getFullYear() % 100 !== 0) || now.getFullYear() % 400 === 0 ? 366 : 365;
+		// Refresh the analysis webview content
+		const analysisStats = await this.calculateUsageAnalysisStats();
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+	}
 
-		const calculateProjection = (monthlyValue: number) => {
-			if (currentDayOfMonth === 0) {
-				return 0;
-			}
-			const dailyAverage = monthlyValue / currentDayOfMonth;
-			return dailyAverage * daysInYear;
-		};
+	private getNonce(): string {
+		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+		let text = '';
+		for (let i = 0; i < 32; i++) {
+			text += possible.charAt(Math.floor(Math.random() * possible.length));
+		}
+		return text;
+	}
 
-		const projectedTokens = calculateProjection(stats.month.tokens);
-		const projectedSessions = calculateProjection(stats.month.sessions);
-		const projectedCo2 = calculateProjection(stats.month.co2);
-		const projectedTrees = calculateProjection(stats.month.treesEquivalent);
-		const projectedWater = calculateProjection(stats.month.waterUsage);
-		const projectedCost = calculateProjection(stats.month.estimatedCost);
+	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const initialData = JSON.stringify(stats).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Copilot Token Usage</title>
-			<style>
-				* {
-					margin: 0;
-					padding: 0;
-					box-sizing: border-box;
-				}
-				body {
-					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-					background: #2d2d2d;
-					color: #cccccc;
-					padding: 16px;
-					line-height: 1.5;
-					min-width: 320px;
-				}
-				.container {
-					background: #3c3c3c;
-					border: 1px solid #5a5a5a;
-					border-radius: 8px;
-					padding: 16px;
-					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-				}
-				.header {
-					display: flex;
-					align-items: center;
-					gap: 8px;
-					margin-bottom: 16px;
-					padding-bottom: 12px;
-					border-bottom: 1px solid #5a5a5a;
-				}
-				.header-icon {
-					font-size: 20px;
-				}
-				.header-title {
-					font-size: 16px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.stats-table {
-					width: 100%;
-					border-collapse: collapse;
-					margin-bottom: 16px;
-					table-layout: fixed;
-				}
-				.stats-table col.metric-col {
-					width: 180px;
-				}
-				.stats-table col.value-col {
-					width: 110px;
-				}
-				.stats-table th {
-					background: #4a4a4a;
-					color: #ffffff;
-					font-weight: 600;
-					font-size: 13px;
-					padding: 10px 8px;
-					text-align: left;
-					border: 1px solid #5a5a5a;
-					white-space: nowrap;
-				}
-				.stats-table th:first-child {
-					border-top-left-radius: 4px;
-				}
-				.stats-table th:last-child {
-					border-top-right-radius: 4px;
-				}
-				.stats-table td {
-					padding: 8px;
-					font-size: 12px;
-					border: 1px solid #5a5a5a;
-					background: #353535;
-				}
-				.stats-table tr:last-child td:first-child {
-					border-bottom-left-radius: 4px;
-				}
-				.stats-table tr:last-child td:last-child {
-					border-bottom-right-radius: 4px;
-				}
-				.metric-label {
-					color: #b3b3b3;
-					font-weight: 500;
-				}
-				.today-value {
-					color: #ffffff;
-					font-weight: 600;
-					text-align: right;
-				}
-				.month-value {
-					color: #ffffff;
-					font-weight: 600;
-					text-align: right;
-				}
-				.period-header {
-					display: flex;
-					align-items: center;
-					gap: 4px;
-				}
-				.footer {
-					margin-top: 12px;
-					padding-top: 12px;
-					border-top: 1px solid #5a5a5a;
-					text-align: center;
-					font-size: 11px;
-					color: #999999;
-					font-style: italic;
-				}
-				.refresh-button {
-					background: #0e639c;
-					border: 1px solid #1177bb;
-					color: #ffffff;
-					padding: 8px 16px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 12px;
-					font-weight: 500;
-					margin-top: 12px;
-					transition: background-color 0.2s;
-					display: inline-flex;
-					align-items: center;
-					gap: 6px;
-				}
-				.refresh-button:hover {
-					background: #1177bb;
-				}
-				.refresh-button:active {
-					background: #0a5a8a;
-				}
-			</style>
 		</head>
 		<body>
-			<div class="container">
-				<div class="header">
-					<span class="header-icon">🤖</span>
-					<span class="header-title">Copilot Token Usage</span>
-				</div>
-				
-				<table class="stats-table">
-					<colgroup>
-						<col class="metric-col">
-						<col class="value-col">
-						<col class="value-col">
-						<col class="value-col">
-					</colgroup>
-					<thead>
-						<tr>
-							<th>Metric</th>
-							<th>
-								<div class="period-header">
-									<span>📅</span>
-									<span>Today</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>📊</span>
-									<span>This Month</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>🌍</span>
-									<span>Projected Year</span>
-								</div>
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						<tr>
-							<td class="metric-label">Tokens</td>
-							<td class="today-value">${stats.today.tokens.toLocaleString()}</td>
-							<td class="month-value">${stats.month.tokens.toLocaleString()}</td>
-							<td class="month-value">${Math.round(projectedTokens).toLocaleString()}</td>
-						</tr>
-						<tr>
-							<td class="metric-label">💵 Est. Cost (USD)</td>
-							<td class="today-value">$${stats.today.estimatedCost.toFixed(4)}</td>
-							<td class="month-value">$${stats.month.estimatedCost.toFixed(4)}</td>
-							<td class="month-value">$${projectedCost.toFixed(2)}</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Sessions</td>
-							<td class="today-value">${stats.today.sessions}</td>
-							<td class="month-value">${stats.month.sessions}</td>
-							<td class="month-value">${Math.round(projectedSessions)}</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Avg Interactions</td>
-							<td class="today-value">${stats.today.avgInteractionsPerSession}</td>
-							<td class="month-value">${stats.month.avgInteractionsPerSession}</td>
-							<td class="month-value">-</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Avg Tokens</td>
-							<td class="today-value">${stats.today.avgTokensPerSession.toLocaleString()}</td>
-							<td class="month-value">${stats.month.avgTokensPerSession.toLocaleString()}</td>
-							<td class="month-value">-</td>
-						</tr>
-						<tr>
-							<td class="metric-label">Est. CO₂ (${this.co2Per1kTokens}g/1k&nbsp;tk)</td>
-							<td class="today-value">${stats.today.co2.toFixed(2)} g</td>
-							<td class="month-value">${stats.month.co2.toFixed(2)} g</td>
-							<td class="month-value">${projectedCo2.toFixed(2)} g</td>
-						</tr>
-						<tr>
-							<td class="metric-label">💧 Est. Water (${this.waterUsagePer1kTokens}L/1k&nbsp;tk)</td>
-							<td class="today-value">${stats.today.waterUsage.toFixed(3)} L</td>
-							<td class="month-value">${stats.month.waterUsage.toFixed(3)} L</td>
-							<td class="month-value">${projectedWater.toFixed(3)} L</td>
-						</tr>
-						<tr>
-							<td class="metric-label">🌳 Tree Equivalent (yr)</td>
-							<td class="today-value">${stats.today.treesEquivalent.toFixed(6)}</td>
-							<td class="month-value">${stats.month.treesEquivalent.toFixed(6)}</td>
-							<td class="month-value">${projectedTrees.toFixed(4)}</td>
-						</tr>
-					</tbody>
-				</table>
-
-				${this.getEditorUsageHtml(stats)}
-
-				${this.getModelUsageHtml(stats)}
-
-				<div style="margin-top: 24px;">
-					<h3 style="color: #ffffff; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-						<span>💡</span>
-						<span>Calculation & Estimates</span>
-					</h3>
-					<p style="font-size: 12px; color: #b3b3b3; margin-bottom: 8px;">
-						Token counts are estimated based on character count. CO₂, tree equivalents, water usage, and costs are derived from these token estimates.
-					</p>
-					<ul style="font-size: 12px; color: #b3b3b3; padding-left: 20px; list-style-position: inside; margin-top: 8px;">
-						<li><b>Cost Estimate:</b> Based on public API pricing (see <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/src/modelPricing.json" style="color: #3794ff;">modelPricing.json</a> for sources and rates). Uses actual input/output token counts for accurate cost calculation. <b>Note:</b> GitHub Copilot pricing may differ from direct API usage. These are reference estimates only.</li>
-						<li><b>CO₂ Estimate:</b> Based on ~${this.co2Per1kTokens}g of CO₂e per 1,000 tokens.</li>
-						<li><b>Tree Equivalent:</b> Represents the fraction of a single mature tree's annual CO₂ absorption (~${(this.co2AbsorptionPerTreePerYear / 1000).toFixed(1)} kg/year).</li>
-						<li><b>Water Estimate:</b> Based on ~${this.waterUsagePer1kTokens}L of water per 1,000 tokens for data center cooling and operations.</li>
-					</ul>
-				</div>
-
-				<div class="footer">
-					Last updated: ${stats.lastUpdated.toLocaleString()}<br>
-					Updates automatically every 5 minutes
-					<br>
-					<button class="refresh-button" onclick="refreshData()">
-						<span>🔄</span>
-						<span>Refresh Now</span>
-					</button>
-					<button class="refresh-button" onclick="showChart()" style="margin-left: 8px; background: #0e639c;">
-						<span>📈</span>
-						<span>Show Chart</span>
-					</button>
-					<button class="refresh-button" onclick="showDiagnostics()" style="margin-left: 8px; background: #5a5a5a;">
-						<span>🔍</span>
-						<span>Diagnostics</span>
-					</button>
-				</div>
-			</div>
-			<script>
-				const vscode = acquireVsCodeApi();
-
-				function refreshData() {
-					// Send message to extension to refresh data
-					vscode.postMessage({ command: 'refresh' });
-				}
-
-				function showChart() {
-					// Send message to extension to show chart
-					vscode.postMessage({ command: 'showChart' });
-				}
-
-				function showDiagnostics() {
-					// Send message to extension to show diagnostic report
-					vscode.postMessage({ command: 'showDiagnostics' });
-				}
-			</script>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
 	}
@@ -2031,11 +2427,89 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	public async showDiagnosticReport(): Promise<void> {
 		this.log('Showing diagnostic report...');
-		
+
+		// If panel already exists, just reveal it and update content
+		if (this.diagnosticsPanel) {
+			this.diagnosticsPanel.reveal();
+			// Optionally, refresh content if needed
+			const report = await this.generateDiagnosticReport();
+			const sessionFiles = await this.getCopilotSessionFiles();
+			const sessionFileData: { file: string; size: number; modified: string }[] = [];
+			for (const file of sessionFiles.slice(0, 20)) {
+				try {
+					const stat = await fs.promises.stat(file);
+					sessionFileData.push({
+						file,
+						size: stat.size,
+						modified: stat.mtime.toISOString()
+					});
+				} catch {
+					// Skip inaccessible files
+				}
+			}
+			// Build folder counts grouped by top-level VS Code user folder (editor roots)
+			const dirCounts = new Map<string, number>();
+			const pathModule = require('path');
+			for (const file of sessionFiles) {
+				// Walk up the path to find the 'User' directory which is the canonical editor folder root
+				const parts = file.split(/[\\\/]/);
+				// Find index of 'User' folder in path parts (case-insensitive)
+				const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+				let editorRoot = '';
+				if (userIdx > 0) {
+					// Reconstruct path including 'User' and the next folder (e.g., .../Roaming/Code/User/workspaceStorage)
+					// Include two extra levels after the 'User' segment so we can distinguish
+					// between 'User\\workspaceStorage' and 'User\\globalStorage'.
+					const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
+					editorRoot = pathModule.join(...rootParts);
+				} else {
+					// Fallback: use parent dir of the file
+					editorRoot = pathModule.dirname(file);
+				}
+
+				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+			}
+			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
+			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
+			this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
+			return;
+		}
+
 		const report = await this.generateDiagnosticReport();
-		
-		// Create a webview panel to display the report
-		const panel = vscode.window.createWebviewPanel(
+		const sessionFiles = await this.getCopilotSessionFiles();
+		const sessionFileData: { file: string; size: number; modified: string }[] = [];
+		for (const file of sessionFiles.slice(0, 20)) {
+			try {
+				const stat = await fs.promises.stat(file);
+				sessionFileData.push({
+					file,
+					size: stat.size,
+					modified: stat.mtime.toISOString()
+				});
+			} catch {
+				// Skip inaccessible files
+			}
+		}
+
+		// Build folder counts grouped by top-level VS Code user folder (editor roots)
+		const dirCounts = new Map<string, number>();
+		const pathModule = require('path');
+		for (const file of sessionFiles) {
+			const parts = file.split(/[\\\/]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			let editorRoot = '';
+			if (userIdx > 0) {
+				// Include 'User' plus one following folder (e.g., 'User\\workspaceStorage' or 'User\\globalStorage')
+				const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
+				editorRoot = pathModule.join(...rootParts);
+			} else {
+				editorRoot = pathModule.dirname(file);
+			}
+			dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+		}
+		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
+
+		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
 			'Diagnostic Report',
 			{
@@ -2044,15 +2518,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false
+				retainContextWhenHidden: true, // Keep context so we can update it
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
-		
-		// Set the HTML content
-		panel.webview.html = this.getDiagnosticReportHtml(report);
-		
+
+		// Set the HTML content immediately with empty session files (shows loading state)
+		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
+
 		// Handle messages from the webview
-		panel.webview.onDidReceiveMessage(async (message) => {
+		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -2074,790 +2549,269 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					break;
+
+				case 'revealPath':
+					if (message.path) {
+						try {
+							const fs = require('fs');
+							const pathModule = require('path');
+							const normalized = pathModule.normalize(message.path);
+
+							// If the path exists and is a directory, open it directly in the OS file manager.
+							// Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
+							try {
+								const stat = await fs.promises.stat(normalized);
+								if (stat.isDirectory()) {
+									await vscode.env.openExternal(vscode.Uri.file(normalized));
+								} else {
+									// For files, reveal the file in OS (select it)
+									await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(normalized));
+								}
+							} catch (err) {
+								// If the stat fails, fallback to revealFileInOS which may still work
+								await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(normalized));
+							}
+						} catch (err) {
+							vscode.window.showErrorMessage('Could not reveal: ' + message.path);
+						}
+					}
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
 			}
 		});
+
+		// Handle panel disposal
+		this.diagnosticsPanel.onDidDispose(() => {
+			this.diagnosticsPanel = undefined;
+		});
+
+		// Load detailed session files in the background and send to webview when ready
+		this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
 	}
 
-	private getDiagnosticReportHtml(report: string): string {
-		// Split the report into sections
-		const sessionFilesSectionMatch = report.match(/Session File Locations \(first 20\):([\s\S]*?)(?=\n\s*\n|$)/);
-		let sessionFilesHtml = '';
-		if (sessionFilesSectionMatch) {
-			const lines = sessionFilesSectionMatch[1].split('\n').filter(l => l.trim());
-			sessionFilesHtml = '<div class="session-files-list"><h4>Session File Locations (first 20):</h4><ul style="padding-left:20px;">';
-			for (let i = 0; i < lines.length; i += 3) {
-				const fileLine = lines[i];
-				const sizeLine = lines[i+1] || '';
-				const modLine = lines[i+2] || '';
-				const fileMatch = fileLine.match(/(\d+)\. (.+)/);
-				if (fileMatch) {
-					const idx = fileMatch[1];
-					const file = fileMatch[2];
-					sessionFilesHtml += `<li><a href="#" class="session-file-link" data-file="${encodeURIComponent(file)}">${idx}. ${file}</a><br><span style="color:#aaa;">${sizeLine}<br>${modLine}</span></li>`;
-				} else {
-					sessionFilesHtml += `<li>${fileLine}</li>`;
-				}
+	/**
+	 * Load session file details in the background and send to webview.
+	 */
+	private async loadSessionFilesInBackground(
+		panel: vscode.WebviewPanel, 
+		sessionFiles: string[]
+	): Promise<void> {
+		const fourteenDaysAgo = new Date();
+		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+		const detailedSessionFiles: SessionFileDetails[] = [];
+		
+		for (const file of sessionFiles.slice(0, 500)) {
+			// Check if panel was disposed
+			if (!panel.visible && panel.viewColumn === undefined) {
+				this.log('Diagnostic panel closed, stopping background load');
+				return;
 			}
-			sessionFilesHtml += '</ul></div>';
+			
+			try {
+				const details = await this.getSessionFileDetails(file);
+				// Filter: only include sessions with activity in the last 14 days
+				const lastActivity = details.lastInteraction 
+					? new Date(details.lastInteraction) 
+					: new Date(details.modified);
+				if (lastActivity >= fourteenDaysAgo) {
+					detailedSessionFiles.push(details);
+				}
+			} catch {
+				// Skip inaccessible files
+			}
 		}
+		
+		// Send the loaded data to the webview
+		try {
+			await panel.webview.postMessage({
+				command: 'sessionFilesLoaded',
+				detailedSessionFiles
+			});
+			this.log(`Loaded ${detailedSessionFiles.length} session files in background`);
+		} catch (err) {
+			// Panel may have been disposed
+			this.log('Could not send session files to panel (may be closed)');
+		}
+	}
 
-		// Escape HTML for the rest of the report
-		let escapedReport = report.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-		// Remove the session files section from the escaped report
-		if (sessionFilesSectionMatch) {
-			escapedReport = escapedReport.replace(sessionFilesSectionMatch[0], '');
-		}
+	private getDiagnosticReportHtml(
+		webview: vscode.Webview, 
+		report: string, 
+		sessionFiles: { file: string; size: number; modified: string }[],
+		detailedSessionFiles: SessionFileDetails[],
+		sessionFolders: { dir: string; count: number }[] = []
+	): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'diagnostics.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Diagnostic Report</title>
-			<style>
-				* {
-					margin: 0;
-					padding: 0;
-					box-sizing: border-box;
-				}
-				body {
-					font-family: 'Consolas', 'Courier New', monospace;
-					background: #2d2d2d;
-					color: #cccccc;
-					padding: 16px;
-					line-height: 1.6;
-				}
-				.container {
-					background: #3c3c3c;
-					border: 1px solid #5a5a5a;
-					border-radius: 8px;
-					padding: 16px;
-					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-					max-width: 1200px;
-					margin: 0 auto;
-				}
-				.header {
-					display: flex;
-					align-items: center;
-					justify-content: space-between;
-					gap: 8px;
-					margin-bottom: 16px;
-					padding-bottom: 12px;
-					border-bottom: 1px solid #5a5a5a;
-				}
-				.header-left {
-					display: flex;
-					align-items: center;
-					gap: 8px;
-				}
-				.header-icon {
-					font-size: 20px;
-				}
-				.header-title {
-					font-size: 16px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.report-content {
-					background: #2a2a2a;
-					border: 1px solid #5a5a5a;
-					border-radius: 4px;
-					padding: 16px;
-					white-space: pre-wrap;
-					font-size: 13px;
-					overflow-x: auto;
-					max-height: 70vh;
-					overflow-y: auto;
-				}
-				.session-files-list ul {
-					list-style: none;
-				}
-				.session-file-link {
-					color: #4FC3F7;
-					text-decoration: underline;
-					cursor: pointer;
-				}
-				.session-file-link:hover {
-					color: #81D4FA;
-				}
-				.button-group {
-					display: flex;
-					gap: 12px;
-					margin-top: 16px;
-					flex-wrap: wrap;
-				}
-				.button {
-					background: #0e639c;
-					border: 1px solid #1177bb;
-					color: #ffffff;
-					padding: 10px 20px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 13px;
-					font-weight: 500;
-					transition: background-color 0.2s;
-					display: inline-flex;
-					align-items: center;
-					gap: 8px;
-				}
-				.button:hover {
-					background: #1177bb;
-				}
-				.button:active {
-					background: #0a5a8a;
-				}
-				.button.secondary {
-					background: #3c3c3c;
-					border-color: #5a5a5a;
-				}
-				.button.secondary:hover {
-					background: #4a4a4a;
-				}
-				.info-box {
-					background: #3a4a5a;
-					border: 1px solid #4a5a6a;
-					border-radius: 4px;
-					padding: 12px;
-					margin-bottom: 16px;
-					font-size: 13px;
-				}
-				.info-box-title {
-					font-weight: 600;
-					color: #ffffff;
-					margin-bottom: 6px;
-				}
-			</style>
 		</head>
 		<body>
-			<div class="container">
-				<div class="header">
-					<div class="header-left">
-						<span class="header-icon">🔍</span>
-						<span class="header-title">Diagnostic Report</span>
-					</div>
-				</div>
-                
-				<div class="info-box">
-					<div class="info-box-title">📋 About This Report</div>
-					<div>
-						This diagnostic report contains information about your GitHub Copilot Token Tracker
-						extension setup and usage statistics. It does <strong>not</strong> include any of your
-						code or conversation content. You can safely share this report when reporting issues.
-					</div>
-				</div>
-                
-				<div class="report-content">${escapedReport}</div>
-				${sessionFilesHtml}
-				<div class="button-group">
-					<button class="button" onclick="copyReport()">
-						<span>📋</span>
-						<span>Copy to Clipboard</span>
-					</button>
-					<button class="button secondary" onclick="openIssue()">
-						<span>🐛</span>
-						<span>Open GitHub Issue</span>
-					</button>
-				</div>
-			</div>
-
-			<script>
-				const vscode = acquireVsCodeApi();
-
-				function copyReport() {
-					vscode.postMessage({ command: 'copyReport' });
-				}
-
-				function openIssue() {
-					vscode.postMessage({ command: 'openIssue' });
-				}
-
-				// Make session file links clickable
-				document.addEventListener('DOMContentLoaded', () => {
-					document.querySelectorAll('.session-file-link').forEach(link => {
-						link.addEventListener('click', (e) => {
-							e.preventDefault();
-							const file = decodeURIComponent(link.getAttribute('data-file'));
-							vscode.postMessage({ command: 'openSessionFile', file });
-						});
-					});
-				});
-			</script>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_DIAGNOSTICS__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
 	}
 
-	private getChartHtml(dailyStats: DailyTokenStats[]): string {
-		// Prepare data for Chart.js
-		const labels = dailyStats.map(stat => stat.date);
-		const tokensData = dailyStats.map(stat => stat.tokens);
-		const sessionsData = dailyStats.map(stat => stat.sessions);
+	private getChartHtml(webview: vscode.Webview, dailyStats: DailyTokenStats[]): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'chart.js'));
 
-		// Prepare model-specific data for stacked bars
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		// Transform dailyStats into the structure expected by the webview
+		const labels = dailyStats.map(d => d.date);
+		const tokensData = dailyStats.map(d => d.tokens);
+		const sessionsData = dailyStats.map(d => d.sessions);
+
+		// Aggregate model usage across all days
 		const allModels = new Set<string>();
-		dailyStats.forEach(stat => {
-			Object.keys(stat.modelUsage).forEach(model => allModels.add(model));
-		});
-		const modelList = Array.from(allModels).sort();
-		
-		// Prepare editor-specific data for stacked bars
-		const allEditors = new Set<string>();
-		dailyStats.forEach(stat => {
-			Object.keys(stat.editorUsage).forEach(editor => allEditors.add(editor));
-		});
-		const editorList = Array.from(allEditors).sort();
-		
-		// Create model-specific datasets for stacked view
-		const modelColors = [
-			'rgba(54, 162, 235, 0.8)',
-			'rgba(255, 99, 132, 0.8)',
-			'rgba(255, 206, 86, 0.8)',
-			'rgba(75, 192, 192, 0.8)',
-			'rgba(153, 102, 255, 0.8)',
-			'rgba(255, 159, 64, 0.8)',
-			'rgba(199, 199, 199, 0.8)',
-			'rgba(83, 102, 255, 0.8)'
-		];
-		
-		// Editor-specific colors
-		const editorColors: { [key: string]: string } = {
-			'VS Code': 'rgba(0, 122, 204, 0.8)',           // Blue
-			'VS Code Insiders': 'rgba(38, 168, 67, 0.8)',  // Green
-			'VS Code Exploration': 'rgba(156, 39, 176, 0.8)', // Purple
-			'VS Code Server': 'rgba(0, 188, 212, 0.8)',    // Cyan
-			'VS Code Server (Insiders)': 'rgba(0, 150, 136, 0.8)', // Teal
-			'VSCodium': 'rgba(33, 150, 243, 0.8)',         // Light Blue
-			'Cursor': 'rgba(255, 193, 7, 0.8)',            // Yellow
-			'Copilot CLI': 'rgba(233, 30, 99, 0.8)',       // Pink
-			'Unknown': 'rgba(158, 158, 158, 0.8)'          // Grey
-		};
-		
-		// Compute total tokens per model so we can prefer non-grey colors for the largest models
-		const modelTotals: { [key: string]: number } = {};
-		for (const m of modelList) modelTotals[m] = 0;
-		dailyStats.forEach(stat => {
-			for (const m of modelList) {
-				const usage = stat.modelUsage[m];
-				if (usage) modelTotals[m] += usage.inputTokens + usage.outputTokens;
-			}
-		});
-		// Sort models by total desc for color assignment
-		const modelsBySize = modelList.slice().sort((a, b) => (modelTotals[b] || 0) - (modelTotals[a] || 0));
-		
-		// Avoid using grey/black/white for the top N largest models
-		const forbiddenColorKeywords = ['199, 199, 199', '158, 158, 158', '0, 0, 0', '255, 255, 255'];
-		const topN = Math.min(3, modelsBySize.length);
-		const reservedColors: { [model: string]: string } = {};
-		let colorIndex = 0;
-		for (let i = 0; i < topN; i++) {
-			const m = modelsBySize[i];
-			// find next modelColors[colorIndex] that is not forbidden
-			while (colorIndex < modelColors.length) {
-				const candidate = modelColors[colorIndex];
-				const rgbPart = candidate.match(/rgba\(([^,]+),\s*([^,]+),\s*([^,]+),/);
-				if (rgbPart) {
-					const rgbKey = `${rgbPart[1].trim()}, ${rgbPart[2].trim()}, ${rgbPart[3].trim()}`;
-					if (!forbiddenColorKeywords.includes(rgbKey)) {
-						reservedColors[m] = candidate;
-						colorIndex++;
-						break;
-					}
-				}
-				colorIndex++;
-			}
-		}
+		dailyStats.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
 
-		const modelDatasets = modelList.map((model, index) => {
-			const data = dailyStats.map(stat => {
-				const usage = stat.modelUsage[model];
-				return usage ? usage.inputTokens + usage.outputTokens : 0;
-			});
-			const assignedColor = reservedColors[model] || modelColors[index % modelColors.length];
+		const modelColors = [
+			{ bg: 'rgba(54, 162, 235, 0.6)', border: 'rgba(54, 162, 235, 1)' },
+			{ bg: 'rgba(255, 99, 132, 0.6)', border: 'rgba(255, 99, 132, 1)' },
+			{ bg: 'rgba(75, 192, 192, 0.6)', border: 'rgba(75, 192, 192, 1)' },
+			{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
+			{ bg: 'rgba(255, 159, 64, 0.6)', border: 'rgba(255, 159, 64, 1)' },
+			{ bg: 'rgba(255, 205, 86, 0.6)', border: 'rgba(255, 205, 86, 1)' },
+			{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
+			{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' }
+		];
+
+		const modelDatasets = Array.from(allModels).map((model, idx) => {
+			const color = modelColors[idx % modelColors.length];
 			return {
 				label: this.getModelDisplayName(model),
-				data: data,
-				backgroundColor: assignedColor,
-				borderColor: assignedColor.replace('0.8', '1'),
+				data: dailyStats.map(d => {
+					const usage = d.modelUsage[model];
+					return usage ? usage.inputTokens + usage.outputTokens : 0;
+				}),
+				backgroundColor: color.bg,
+				borderColor: color.border,
 				borderWidth: 1
 			};
 		});
 
-		const editorDatasets = editorList.map((editor, index) => {
-			const data = dailyStats.map(stat => {
-				const usage = stat.editorUsage[editor];
-				return usage ? usage.tokens : 0;
-			});
-			
-			const color = editorColors[editor] || modelColors[index % modelColors.length];
-			
+		// Aggregate editor usage across all days
+		const allEditors = new Set<string>();
+		dailyStats.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
+
+		const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+			const color = modelColors[idx % modelColors.length];
 			return {
 				label: editor,
-				data: data,
-				backgroundColor: color,
-				borderColor: color.replace('0.8', '1'),
+				data: dailyStats.map(d => d.editorUsage[editor]?.tokens || 0),
+				backgroundColor: color.bg,
+				borderColor: color.border,
 				borderWidth: 1
 			};
 		});
 
-		// Calculate total tokens per editor (for summary panels)
-		const editorTotalsMap: { [key: string]: number } = {};
-		for (const ed of editorList) {
-			editorTotalsMap[ed] = 0;
-		}
-			dailyStats.forEach(stat => {
-				for (const ed of editorList) {
-					const usage = stat.editorUsage[ed];
-					if (usage) {
-						editorTotalsMap[ed] += usage.tokens;
-					}
-				}
+		// Calculate editor totals for summary cards
+		const editorTotalsMap: Record<string, number> = {};
+		dailyStats.forEach(d => {
+			Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+				editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
 			});
+		});
 
-		const editorPanelsHtml = editorList.map(ed => {
-			const tokens = editorTotalsMap[ed] || 0;
-			return `<div class="stat-card"><div class="stat-label">${this.getEditorIcon(ed)} ${ed}</div><div class="stat-value">${tokens.toLocaleString()}</div></div>`;
-		}).join('');
+		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
 
-		let editorSummaryHtml = '';
-		if (editorList.length > 1) {
-			// Debug: log editor summary data to output for troubleshooting
-			this.log(`Editor list for chart: ${JSON.stringify(editorList)}`);
-			this.log(`Editor totals: ${JSON.stringify(editorTotalsMap)}`);
-			editorSummaryHtml = `<div class="stats-summary" style="margin-top:12px;">${editorPanelsHtml}</div>`;
-		}
+		const chartData = {
+			labels,
+			tokensData,
+			sessionsData,
+			modelDatasets,
+			editorDatasets,
+			editorTotalsMap,
+			dailyCount: dailyStats.length,
+			totalTokens,
+			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
+			totalSessions,
+			lastUpdated: new Date().toISOString()
+		};
 
-		// Pre-calculate summary statistics
-		const totalTokens = dailyStats.reduce((sum, stat) => sum + stat.tokens, 0);
-		const totalSessions = dailyStats.reduce((sum, stat) => sum + stat.sessions, 0);
-		const avgTokensPerDay = dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0;
+		const initialData = JSON.stringify(chartData).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<title>Token Usage Over Time</title>
-			<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-			<style>
-				* {
-					margin: 0;
-					padding: 0;
-					box-sizing: border-box;
-				}
-				body {
-					font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-					background: #2d2d2d;
-					color: #cccccc;
-					padding: 16px;
-					line-height: 1.5;
-					min-width: 320px;
-				}
-				.container {
-					background: #3c3c3c;
-					border: 1px solid #5a5a5a;
-					border-radius: 8px;
-					padding: 16px;
-					box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-				}
-				.header {
-					display: flex;
-					align-items: center;
-					gap: 8px;
-					margin-bottom: 16px;
-					padding-bottom: 12px;
-					border-bottom: 1px solid #5a5a5a;
-				}
-				.header-icon {
-					font-size: 20px;
-				}
-				.header-title {
-					font-size: 16px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.chart-container {
-					position: relative;
-					height: 400px;
-					margin-bottom: 16px;
-				}
-				.footer {
-					margin-top: 12px;
-					padding-top: 12px;
-					border-top: 1px solid #5a5a5a;
-					text-align: center;
-					font-size: 11px;
-					color: #999999;
-					font-style: italic;
-				}
-				.refresh-button {
-					background: #0e639c;
-					border: 1px solid #1177bb;
-					color: #ffffff;
-					padding: 8px 16px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 12px;
-					font-weight: 500;
-					margin-top: 12px;
-					transition: background-color 0.2s;
-					display: inline-flex;
-					align-items: center;
-					gap: 6px;
-				}
-				.refresh-button:hover {
-					background: #1177bb;
-				}
-				.refresh-button:active {
-					background: #0a5a8a;
-				}
-				.stats-summary {
-					display: grid;
-					grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-					gap: 12px;
-					margin-bottom: 16px;
-				}
-				.stat-card {
-					background: #353535;
-					border: 1px solid #5a5a5a;
-					border-radius: 4px;
-					padding: 12px;
-					text-align: center;
-				}
-				.stat-label {
-					font-size: 11px;
-					color: #b3b3b3;
-					margin-bottom: 4px;
-				}
-				.stat-value {
-					font-size: 18px;
-					font-weight: 600;
-					color: #ffffff;
-				}
-				.chart-controls {
-					display: flex;
-					justify-content: center;
-					gap: 8px;
-					margin-bottom: 16px;
-				}
-				.toggle-button {
-					background: #353535;
-					border: 1px solid #5a5a5a;
-					color: #cccccc;
-					padding: 6px 12px;
-					border-radius: 4px;
-					cursor: pointer;
-					font-size: 12px;
-					transition: all 0.2s;
-				}
-				.toggle-button.active {
-					background: #0e639c;
-					border-color: #1177bb;
-					color: #ffffff;
-				}
-				.toggle-button:hover {
-					background: #4a4a4a;
-				}
-				.toggle-button.active:hover {
-					background: #1177bb;
-				}
-			</style>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Copilot Token Usage Chart</title>
 		</head>
 		<body>
-			<div class="container">
-				<div class="header">
-					<span class="header-icon">📈</span>
-					<span class="header-title">Token Usage Over Time</span>
-				</div>
-				<div class="stats-summary">
-					<div class="stat-card">
-						<div class="stat-label">Total Days</div>
-						<div class="stat-value">${dailyStats.length}</div>
-					</div>
-					<div class="stat-card">
-						<div class="stat-label">Total Tokens</div>
-						<div class="stat-value">${totalTokens.toLocaleString()}</div>
-					</div>
-					<div class="stat-card">
-						<div class="stat-label">Avg Tokens/Day</div>
-						<div class="stat-value">${avgTokensPerDay.toLocaleString()}</div>
-					</div>
-					<div class="stat-card">
-						<div class="stat-label">Total Sessions</div>
-						<div class="stat-value">${totalSessions}</div>
-					</div>
-				</div>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_CHART__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+	}
 
-				${editorSummaryHtml}
+	private getUsageAnalysisHtml(webview: vscode.Webview, stats: UsageAnalysisStats): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'usage.js'));
 
-				<div class="chart-controls">
-					<button class="toggle-button active" id="totalViewBtn" onclick="switchView('total')">Total Tokens</button>
-					<button class="toggle-button" id="modelViewBtn" onclick="switchView('model')">By Model</button>
-					<button class="toggle-button" id="editorViewBtn" onclick="switchView('editor')">By Editor</button>
-				</div>
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
 
-				<div class="chart-container">
-					<canvas id="tokenChart"></canvas>
-				</div>
+		const initialData = JSON.stringify({
+			today: stats.today,
+			month: stats.month,
+			lastUpdated: stats.lastUpdated.toISOString()
+		}).replace(/</g, '\\u003c');
 
-				<div class="footer">
-					Day-by-day token usage for the current month
-					<br>
-					Last updated: ${new Date().toLocaleString()}
-					<br>
-					<em>Updates automatically every 5 minutes</em>
-					<br>
-					<button class="refresh-button" onclick="refreshChart()">
-						<span>🔄</span>
-						<span>Refresh Chart</span>
-					</button>
-				</div>
-			</div>
-
-			<script>
-				const vscode = acquireVsCodeApi();
-
-				function refreshChart() {
-					vscode.postMessage({ command: 'refresh' });
-				}
-
-				// Data for different views
-				const labels = ${JSON.stringify(labels)};
-				const tokensData = ${JSON.stringify(tokensData)};
-				const sessionsData = ${JSON.stringify(sessionsData)};
-				const modelDatasets = ${JSON.stringify(modelDatasets)};
-				const editorDatasets = ${JSON.stringify(editorDatasets)};
-
-				// Chart instance
-				let chart;
-				let currentView = 'total';
-
-				// Initialize chart with total view
-				const ctx = document.getElementById('tokenChart').getContext('2d');
-				
-				function createTotalView() {
-					return {
-						type: 'bar',
-						data: {
-							labels: labels,
-							datasets: [
-								{
-									label: 'Tokens',
-									data: tokensData,
-									backgroundColor: 'rgba(54, 162, 235, 0.6)',
-									borderColor: 'rgba(54, 162, 235, 1)',
-									borderWidth: 1,
-									yAxisID: 'y'
-								},
-								{
-									label: 'Sessions',
-									data: sessionsData,
-									backgroundColor: 'rgba(255, 99, 132, 0.6)',
-									borderColor: 'rgba(255, 99, 132, 1)',
-									borderWidth: 1,
-									type: 'line',
-									yAxisID: 'y1'
-								}
-							]
-						},
-						options: {
-							responsive: true,
-							maintainAspectRatio: false,
-							interaction: {
-								mode: 'index',
-								intersect: false,
-							},
-							scales: {
-								x: {
-									grid: { color: '#5a5a5a' },
-									ticks: { color: '#cccccc', font: { size: 11 } }
-								},
-								y: {
-									type: 'linear',
-									display: true,
-									position: 'left',
-									grid: { color: '#5a5a5a' },
-									ticks: { 
-										color: '#cccccc', 
-										font: { size: 11 },
-										callback: function(value) { return value.toLocaleString(); }
-									},
-									title: {
-										display: true,
-										text: 'Tokens',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								},
-								y1: {
-									type: 'linear',
-									display: true,
-									position: 'right',
-									grid: { drawOnChartArea: false },
-									ticks: { color: '#cccccc', font: { size: 11 } },
-									title: {
-										display: true,
-										text: 'Sessions',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								}
-							},
-							plugins: {
-								legend: {
-									position: 'top',
-									labels: { color: '#cccccc', font: { size: 12 } }
-								},
-								tooltip: {
-									backgroundColor: 'rgba(0, 0, 0, 0.8)',
-									titleColor: '#ffffff',
-									bodyColor: '#cccccc',
-									borderColor: '#5a5a5a',
-									borderWidth: 1,
-									padding: 10,
-									displayColors: true
-								}
-							}
-						}
-					};
-				}
-
-				function createModelView() {
-					return {
-						type: 'bar',
-						data: {
-							labels: labels,
-							datasets: modelDatasets
-						},
-						options: {
-							responsive: true,
-							maintainAspectRatio: false,
-							interaction: {
-								mode: 'index',
-								intersect: false,
-							},
-							scales: {
-								x: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { color: '#cccccc', font: { size: 11 } }
-								},
-								y: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { 
-										color: '#cccccc', 
-										font: { size: 11 },
-										callback: function(value) { return value.toLocaleString(); }
-									},
-									title: {
-										display: true,
-										text: 'Tokens by Model',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								}
-							},
-							plugins: {
-								legend: {
-									position: 'top',
-									labels: { color: '#cccccc', font: { size: 12 } }
-								},
-								tooltip: {
-									backgroundColor: 'rgba(0, 0, 0, 0.8)',
-									titleColor: '#ffffff',
-									bodyColor: '#cccccc',
-									borderColor: '#5a5a5a',
-									borderWidth: 1,
-									padding: 10,
-									displayColors: true
-								}
-							}
-						}
-					};
-				}
-
-				function createEditorView() {
-					return {
-						type: 'bar',
-						data: {
-							labels: labels,
-							datasets: editorDatasets
-						},
-						options: {
-							responsive: true,
-							maintainAspectRatio: false,
-							interaction: {
-								mode: 'index',
-								intersect: false,
-							},
-							scales: {
-								x: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { color: '#cccccc', font: { size: 11 } }
-								},
-								y: {
-									stacked: true,
-									grid: { color: '#5a5a5a' },
-									ticks: { 
-										color: '#cccccc', 
-										font: { size: 11 },
-										callback: function(value) { return value.toLocaleString(); }
-									},
-									title: {
-										display: true,
-										text: 'Tokens by Editor',
-										color: '#cccccc',
-										font: { size: 12, weight: 'bold' }
-									}
-								}
-							},
-							plugins: {
-								legend: {
-									position: 'top',
-									labels: { color: '#cccccc', font: { size: 12 } }
-								},
-								tooltip: {
-									backgroundColor: 'rgba(0, 0, 0, 0.8)',
-									titleColor: '#ffffff',
-									bodyColor: '#cccccc',
-									borderColor: '#5a5a5a',
-									borderWidth: 1,
-									padding: 10,
-									displayColors: true
-								}
-							}
-						}
-					};
-				}
-
-				function switchView(viewType) {
-					currentView = viewType;
-					
-					// Update button states
-					document.getElementById('totalViewBtn').classList.toggle('active', viewType === 'total');
-					document.getElementById('modelViewBtn').classList.toggle('active', viewType === 'model');
-					document.getElementById('editorViewBtn').classList.toggle('active', viewType === 'editor');
-					
-					// Destroy existing chart
-					if (chart) {
-						chart.destroy();
-					}
-					
-					// Create new chart based on view type
-					let config;
-					if (viewType === 'total') {
-						config = createTotalView();
-					} else if (viewType === 'model') {
-						config = createModelView();
-					} else {
-						config = createEditorView();
-					}
-					chart = new Chart(ctx, config);
-				}
-
-				// Initialize with total view
-				chart = new Chart(ctx, createTotalView());
-			</script>
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Usage Analysis</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_USAGE__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
 	}
@@ -2876,6 +2830,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.chartPanel) {
 			this.chartPanel.dispose();
 		}
+		if (this.analysisPanel) {
+			this.analysisPanel.dispose();
+		}
 		this.statusBarItem.dispose();
 		this.outputChannel.dispose();
 		// Clear cache on disposal
@@ -2885,7 +2842,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
-	const tokenTracker = new CopilotTokenTracker();
+	const tokenTracker = new CopilotTokenTracker(context.extensionUri);
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
@@ -2906,6 +2863,12 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showChart();
 	});
 
+	// Register the show usage analysis command
+	const showUsageAnalysisCommand = vscode.commands.registerCommand('copilot-token-tracker.showUsageAnalysis', async () => {
+		tokenTracker.log('Show usage analysis command called');
+		await tokenTracker.showUsageAnalysis();
+	});
+
 	// Register the generate diagnostic report command
 	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
 		tokenTracker.log('Generate diagnostic report command called');
@@ -2913,7 +2876,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, generateDiagnosticReportCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }

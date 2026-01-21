@@ -1,0 +1,421 @@
+// Usage Analysis webview
+type ModeUsage = { ask: number; edit: number; agent: number };
+type ContextReferenceUsage = {
+	file: number;
+	selection: number;
+	symbol: number;
+	codebase: number;
+	workspace: number;
+	terminal: number;
+	vscode: number;
+};
+type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
+type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
+
+type UsageAnalysisPeriod = {
+	sessions: number;
+	toolCalls: ToolCallUsage;
+	modeUsage: ModeUsage;
+	contextReferences: ContextReferenceUsage;
+	mcpTools: McpToolUsage;
+};
+
+type UsageAnalysisStats = {
+	today: UsageAnalysisPeriod;
+	month: UsageAnalysisPeriod;
+	lastUpdated: string;
+};
+
+declare function acquireVsCodeApi<TState = unknown>(): {
+	postMessage: (message: unknown) => void;
+	setState: (newState: TState) => void;
+	getState: () => TState | undefined;
+};
+
+declare global {
+	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats; }
+}
+
+const vscode = acquireVsCodeApi();
+const initialData = window.__INITIAL_USAGE__;
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
+	const node = document.createElement(tag);
+	if (className) {
+		node.className = className;
+	}
+	if (text !== undefined) {
+		node.textContent = text;
+	}
+	return node;
+}
+
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
+
+function getTotalContextRefs(refs: ContextReferenceUsage): number {
+	return refs.file + refs.selection + refs.symbol + refs.codebase +
+		refs.workspace + refs.terminal + refs.vscode;
+}
+
+import toolNames from '../../toolNames.json';
+
+let TOOL_NAME_MAP: { [key: string]: string } | null = toolNames || null;
+
+function lookupToolName(id: string): string {
+	if (!TOOL_NAME_MAP) {
+		return id;
+	}
+	return TOOL_NAME_MAP[id] || id;
+}
+
+function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string {
+	const sortedTools = Object.entries(byTool)
+		.sort(([, a], [, b]) => b - a)
+		.slice(0, limit);
+
+	if (sortedTools.length === 0) {
+		return '<div style="color: #999;">No tools used yet</div>';
+	}
+
+	const rows = sortedTools.map(([tool, count], idx) => {
+		const friendly = escapeHtml(lookupToolName(tool));
+		const idEscaped = escapeHtml(tool);
+		return `
+			<tr>
+				<td style="padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.04);">${idx + 1}</td>
+				<td style="padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.04);"><strong title="${idEscaped}">${friendly}</strong></td>
+				<td style="padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:right;">${count}</td>
+			</tr>`;
+	}).join('');
+
+	return `
+		<table style="width:100%; border-collapse:collapse;">
+			<thead>
+				<tr style="color:#b8b8b8; font-size:12px; text-align:left;">
+					<th style="padding:8px 12px; opacity:0.9;">#</th>
+					<th style="padding:8px 12px; opacity:0.9;">Tool</th>
+					<th style="padding:8px 12px; opacity:0.9; text-align:right;">Calls</th>
+				</tr>
+			</thead>
+			<tbody>
+				${rows}
+			</tbody>
+		</table>`;
+}
+
+function renderLayout(stats: UsageAnalysisStats): void {
+	const root = document.getElementById('root');
+	if (!root) {
+		return;
+	}
+
+	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
+	const monthTotalRefs = getTotalContextRefs(stats.month.contextReferences);
+	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent;
+	const monthTotalModes = stats.month.modeUsage.ask + stats.month.modeUsage.edit + stats.month.modeUsage.agent;
+
+	root.innerHTML = `
+		<style>
+			* { margin: 0; padding: 0; box-sizing: border-box; }
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				background: #0e0e0f;
+				color: #e7e7e7;
+				padding: 16px;
+				line-height: 1.5;
+				min-width: 320px;
+			}
+			.container {
+				background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%);
+				border: 1px solid #2e2e34;
+				border-radius: 10px;
+				padding: 16px;
+				box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+				max-width: 1200px;
+				margin: 0 auto;
+			}
+			.header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				gap: 12px;
+				margin-bottom: 14px;
+				padding-bottom: 4px;
+			}
+			.header-left { display: flex; align-items: center; gap: 8px; }
+			.header-icon { font-size: 20px; }
+			.header-title { font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.2px; }
+			.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+			.nav-button {
+				background: #202024;
+				border: 1px solid #2d2d33;
+				color: #e7e7e7;
+				padding: 8px 12px;
+				border-radius: 6px;
+				font-size: 12px;
+				cursor: pointer;
+				transition: all 0.15s ease;
+			}
+			.nav-button:hover { background: #2a2a30; }
+			.nav-button.primary { background: #0e639c; border-color: #1177bb; color: #fff; }
+			.nav-button.primary:hover { background: #1177bb; }
+			.section { 
+				background: #1b1b1e;
+				border: 1px solid #2a2a30;
+				border-radius: 8px;
+				padding: 12px;
+				margin-bottom: 16px;
+				box-shadow: 0 2px 6px rgba(0,0,0,0.24);
+			}
+			.section-title {
+				font-size: 14px;
+				font-weight: 700;
+				color: #ffffff;
+				margin-bottom: 10px;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				letter-spacing: 0.2px;
+			}
+			.section-subtitle { font-size: 12px; color: #b8b8b8; margin-bottom: 12px; }
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+				gap: 12px;
+				margin-bottom: 16px;
+			}
+			.stat-card {
+				background: #18181b;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
+				padding: 12px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+			}
+			.stat-label { font-size: 11px; color: #b8b8b8; margin-bottom: 4px; }
+			.stat-value { font-size: 20px; font-weight: 700; color: #f6f6f6; }
+			.bar-chart {
+				background: #18181b;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
+				padding: 12px;
+				margin-bottom: 12px;
+			}
+			.bar-item { margin-bottom: 8px; }
+			.bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #d0d0d0; }
+			.bar-track { background: #242429; height: 8px; border-radius: 4px; overflow: hidden; }
+			.bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+			.list {
+				background: #18181b;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
+				padding: 12px 16px;
+			}
+			.list ul { list-style: none; padding: 0; }
+			.list li { padding: 4px 0; font-size: 13px; }
+			.two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+			.info-box {
+				background: #1b1b1e;
+				border: 1px solid #2a2a30;
+				border-radius: 6px;
+				padding: 12px;
+				margin-bottom: 16px;
+				font-size: 12px;
+				color: #c8c8c8;
+			}
+			.info-box-title { font-weight: 600; color: #ffffff; margin-bottom: 6px; }
+			.footer {
+				margin-top: 6px;
+				padding-top: 12px;
+				border-top: 1px solid #2a2a30;
+				text-align: left;
+				font-size: 11px;
+				color: #a0a0a0;
+			}
+			@media (max-width: 768px) { .two-column { grid-template-columns: 1fr; } }
+		</style>
+		<div class="container">
+			<div class="header">
+				<div class="header-left">
+					<span class="header-icon">📊</span>
+					<span class="header-title">Usage Analysis</span>
+				</div>
+				<div class="button-row">
+					<vscode-button id="btn-refresh" appearance="primary">🔄 Refresh</vscode-button>
+					<vscode-button id="btn-details">🤖 Details</vscode-button>
+					<vscode-button id="btn-chart">📈 Chart</vscode-button>
+					<vscode-button id="btn-diagnostics">🔍 Diagnostics</vscode-button>
+				</div>
+			</div>
+
+			<div class="info-box">
+				<div class="info-box-title">📋 About This Dashboard</div>
+				<div>
+					This dashboard analyzes your GitHub Copilot usage patterns by examining session log files.
+					It tracks modes (ask/edit/agent), tool usage, context references (#file, @workspace, etc.),
+					and MCP (Model Context Protocol) tools to help you understand how you interact with Copilot.
+				</div>
+			</div>
+
+			<!-- Mode Usage Section -->
+			<div class="section">
+				<div class="section-title"><span>🎯</span><span>Interaction Modes</span></div>
+				<div class="section-subtitle">How you're using Copilot: Ask (chat), Edit (code edits), or Agent (autonomous tasks)</div>
+				<div class="two-column">
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+						<div class="bar-chart">
+							<div class="bar-item">
+								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${stats.today.modeUsage.ask}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
+							</div>
+							<div class="bar-item">
+								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${stats.today.modeUsage.edit}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
+							</div>
+							<div class="bar-item">
+								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${stats.today.modeUsage.agent}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
+							</div>
+						</div>
+					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
+						<div class="bar-chart">
+							<div class="bar-item">
+								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${stats.month.modeUsage.ask}</strong> (${monthTotalModes > 0 ? ((stats.month.modeUsage.ask / monthTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.month.modeUsage.ask / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
+							</div>
+							<div class="bar-item">
+								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${stats.month.modeUsage.edit}</strong> (${monthTotalModes > 0 ? ((stats.month.modeUsage.edit / monthTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.month.modeUsage.edit / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
+							</div>
+							<div class="bar-item">
+								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${stats.month.modeUsage.agent}</strong> (${monthTotalModes > 0 ? ((stats.month.modeUsage.agent / monthTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.month.modeUsage.agent / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Context References Section -->
+			<div class="section">
+				<div class="section-title"><span>🔗</span><span>Context References</span></div>
+				<div class="section-subtitle">How often you reference files, selections, symbols, and workspace context</div>
+				<div class="stats-grid">
+					<div class="stat-card"><div class="stat-label">📄 #file</div><div class="stat-value">${stats.month.contextReferences.file}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.file}</div></div>
+					<div class="stat-card"><div class="stat-label">✂️ #selection</div><div class="stat-value">${stats.month.contextReferences.selection}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.selection}</div></div>
+					<div class="stat-card"><div class="stat-label">🔤 #symbol</div><div class="stat-value">${stats.month.contextReferences.symbol}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.symbol}</div></div>
+					<div class="stat-card"><div class="stat-label">🗂️ #codebase</div><div class="stat-value">${stats.month.contextReferences.codebase}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.codebase}</div></div>
+					<div class="stat-card"><div class="stat-label">📁 @workspace</div><div class="stat-value">${stats.month.contextReferences.workspace}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.workspace}</div></div>
+					<div class="stat-card"><div class="stat-label">💻 @terminal</div><div class="stat-value">${stats.month.contextReferences.terminal}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.terminal}</div></div>
+					<div class="stat-card"><div class="stat-label">🔧 @vscode</div><div class="stat-value">${stats.month.contextReferences.vscode}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.vscode}</div></div>
+					<div class="stat-card" style="background: #4a3a5a;"><div class="stat-label">📊 Total References</div><div class="stat-value">${monthTotalRefs}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${todayTotalRefs}</div></div>
+				</div>
+			</div>
+
+			<!-- Tool Calls Section -->
+			<div class="section">
+				<div class="section-title"><span>🔧</span><span>Tool Usage</span></div>
+				<div class="section-subtitle">Functions and tools invoked by Copilot during interactions</div>
+				<div class="two-column">
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total Tool Calls: ${stats.today.toolCalls.total}</div>
+							${renderToolsTable(stats.today.toolCalls.byTool, 10)}
+						</div>
+					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total Tool Calls: ${stats.month.toolCalls.total}</div>
+							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- MCP Tools Section -->
+			<div class="section">
+				<div class="section-title"><span>🔌</span><span>MCP Tools</span></div>
+				<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
+				<div class="two-column">
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total MCP Calls: ${stats.today.mcpTools.total}</div>
+							${stats.today.mcpTools.total > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8)}</div></div>
+							` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
+						</div>
+					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📊 This Month</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total MCP Calls: ${stats.month.mcpTools.total}</div>
+							${stats.month.mcpTools.total > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8)}</div></div>
+							` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Summary Section -->
+			<div class="section">
+				<div class="section-title"><span>📈</span><span>Sessions Summary</span></div>
+				<div class="stats-grid">
+					<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${stats.today.sessions}</div></div>
+					<div class="stat-card"><div class="stat-label">📊 Month Sessions</div><div class="stat-value">${stats.month.sessions}</div></div>
+				</div>
+			</div>
+
+			<div class="footer">
+				Last updated: ${new Date(stats.lastUpdated).toLocaleString()} · Updates every 5 minutes
+			</div>
+		</div>
+	`;
+
+	// Wire up navigation buttons
+	document.getElementById('btn-refresh')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'refresh' });
+	});
+	document.getElementById('btn-details')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDetails' });
+	});
+	document.getElementById('btn-chart')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showChart' });
+	});
+	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+}
+
+
+async function bootstrap(): Promise<void> {
+	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+	provideVSCodeDesignSystem().register(vsCodeButton());
+
+	// TOOL_NAME_MAP is imported at build-time from src/toolNames.json
+
+	if (!initialData) {
+		const root = document.getElementById('root');
+		if (root) {
+			root.textContent = 'No data available.';
+		}
+		return;
+	}
+	renderLayout(initialData);
+}
+
+void bootstrap();

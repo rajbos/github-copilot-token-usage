@@ -24,10 +24,9 @@ const esbuildProblemMatcherPlugin = {
 };
 
 async function main() {
-	const ctx = await esbuild.context({
-		entryPoints: [
-			'src/extension.ts'
-		],
+	// Extension bundle (Node target)
+	const extensionCtx = await esbuild.context({
+		entryPoints: ['src/extension.ts'],
 		bundle: true,
 		format: 'cjs',
 		minify: production,
@@ -37,16 +36,36 @@ async function main() {
 		outfile: 'dist/extension.js',
 		external: ['vscode'],
 		logLevel: 'silent',
-		plugins: [
-			/* add to the end of plugins array */
-			esbuildProblemMatcherPlugin,
-		],
+		plugins: [esbuildProblemMatcherPlugin],
 	});
+
+	// Webview bundle(s) (Browser target)
+	const webviewCtx = await esbuild.context({
+		entryPoints: {
+			details: 'src/webview/details/main.ts',
+			chart: 'src/webview/chart/main.ts',
+			usage: 'src/webview/usage/main.ts',
+			diagnostics: 'src/webview/diagnostics/main.ts',
+		},
+		bundle: true,
+		format: 'iife',
+		minify: production,
+		sourcemap: !production,
+		platform: 'browser',
+		target: 'es2020',
+		outdir: 'dist/webview',
+		entryNames: '[name]',
+		external: ['vscode'],
+		logLevel: 'silent',
+		plugins: [esbuildProblemMatcherPlugin],
+	});
+
 	if (watch) {
-		await ctx.watch();
+		await Promise.all([extensionCtx.watch(), webviewCtx.watch()]);
 	} else {
-		await ctx.rebuild();
-		await ctx.dispose();
+		await Promise.all([extensionCtx.rebuild(), webviewCtx.rebuild()]);
+		await extensionCtx.dispose();
+		await webviewCtx.dispose();
 	}
 }
 

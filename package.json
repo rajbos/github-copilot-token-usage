@@ -40,6 +40,11 @@
         "category": "Copilot Token Tracker"
       },
       {
+        "command": "copilot-token-tracker.showUsageAnalysis",
+        "title": "Show Usage Analysis Dashboard",
+        "category": "Copilot Token Tracker"
+      },
+      {
         "command": "copilot-token-tracker.generateDiagnosticReport",
         "title": "Generate Diagnostic Report",
         "category": "Copilot Token Tracker"
@@ -77,6 +82,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "jsdom": "^27.4.0"
+    "jsdom": "^27.4.0",
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "chart.js": "^4.4.1"
   }
 }
