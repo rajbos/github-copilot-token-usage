@@ -140,9 +140,12 @@ function renderTurnCard(turn: ChatTurn): string {
 		<div class="turn-tools">
 			<div class="tools-header">🔧 Tool Calls (${turn.toolCalls.length})</div>
 			<div class="tools-list">
-				${turn.toolCalls.map(tc => `
+				${turn.toolCalls.map((tc, idx) => `
 					<div class="tool-item">
-						<span class="tool-name" title="${escapeHtml(tc.toolName)}">${escapeHtml(lookupToolName(tc.toolName))}</span>
+						<div class="tool-item-header">
+							<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
+							<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
+						</div>
 						${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
 						${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
 					</div>
@@ -565,11 +568,24 @@ function renderLayout(data: SessionLogData): void {
 				background: #242430;
 				border-radius: 4px;
 				padding: 8px 10px;
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.tool-item-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 10px;
 			}
 			.tool-name {
-				font-weight: 600;
-				color: #7c3aed;
+				font-weight: 700;
+				color: #c084fc;
 				font-size: 12px;
+			}
+			.tool-call-pretty {
+				font-weight: 600;
+				color: #34d399;
 			}
 			.tool-details {
 				margin-top: 6px;
@@ -752,6 +768,26 @@ function renderLayout(data: SessionLogData): void {
 	document.getElementById('file-link')?.addEventListener('click', (e) => {
 		e.preventDefault();
 		vscode.postMessage({ command: 'openRawFile' });
+	});
+
+	// Wire tool call clicks after DOM render so listeners bind correctly
+	document.querySelectorAll('.tool-call-link').forEach(link => {
+		link.addEventListener('click', (e) => {
+			e.preventDefault();
+			const turnNumber = parseInt(link.getAttribute('data-turn') || '0', 10);
+			const toolCallIdx = parseInt(link.getAttribute('data-toolcall') || '0', 10);
+			vscode.postMessage({ command: 'revealToolCallSource', turnNumber, toolCallIdx });
+		});
+	});
+
+	// Pretty JSON view for a single tool call
+	document.querySelectorAll('.tool-call-pretty').forEach(link => {
+		link.addEventListener('click', (e) => {
+			e.preventDefault();
+			const turnNumber = parseInt(link.getAttribute('data-turn') || '0', 10);
+			const toolCallIdx = parseInt(link.getAttribute('data-toolcall') || '0', 10);
+			vscode.postMessage({ command: 'showToolCallPretty', turnNumber, toolCallIdx });
+		});
 	});
 
 }

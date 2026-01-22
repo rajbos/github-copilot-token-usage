@@ -2508,6 +2508,115 @@ class CopilotTokenTracker implements vscode.Disposable {
 						vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
 					}
 					break;
+				case 'showToolCallPretty': {
+					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
+					this.log(`showToolCallPretty: turn=${turnNumber}, toolCallIdx=${toolCallIdx}, file=${sessionFilePath}`);
+					try {
+						const turn = logData.turns.find(t => t.turnNumber === turnNumber);
+						const turnIndex = logData.turns.findIndex(t => t.turnNumber === turnNumber);
+						const toolCall = turn?.toolCalls?.[toolCallIdx];
+						if (!toolCall) {
+							this.log('showToolCallPretty: tool call not found in session data');
+							vscode.window.showInformationMessage('Tool call not found in session data.');
+							break;
+						}
+
+						const safeParse = (text?: string) => {
+							if (!text) { return text; }
+							try { return JSON.parse(text); } catch { return text; }
+						};
+
+						const mapTurnForContext = (t?: ChatTurn) => t ? {
+							turnNumber: t.turnNumber,
+							timestamp: t.timestamp,
+							mode: t.mode,
+							model: t.model,
+							userMessage: t.userMessage,
+							assistantResponse: t.assistantResponse,
+							inputTokensEstimate: t.inputTokensEstimate,
+							outputTokensEstimate: t.outputTokensEstimate,
+							toolCalls: t.toolCalls?.map((tc, idx) => ({ index: idx, toolName: tc.toolName, arguments: tc.arguments, result: tc.result }))
+						} : undefined;
+
+						const mapToolCallForContext = (tc: { toolName: string; arguments?: string; result?: string }, idx: number, parentTurn?: ChatTurn) => ({
+							turn: parentTurn?.turnNumber ?? turnNumber,
+							toolCallIdx: idx,
+							toolName: tc.toolName,
+							model: parentTurn?.model,
+							mode: parentTurn?.mode,
+							timestamp: parentTurn?.timestamp,
+							userMessage: parentTurn?.userMessage,
+							assistantResponse: parentTurn?.assistantResponse,
+							inputTokensEstimate: parentTurn?.inputTokensEstimate,
+							outputTokensEstimate: parentTurn?.outputTokensEstimate,
+							argumentsRaw: tc.arguments ?? null,
+							argumentsParsed: safeParse(tc.arguments),
+							resultRaw: tc.result ?? null,
+							resultParsed: safeParse(tc.result)
+						});
+
+						const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 60) || 'toolcall';
+						const prettyName = sanitize(`${toolCall.toolName || 'tool'}-turn-${turnNumber}-call-${toolCallIdx}`);
+
+						const prettyPayload = {
+							turnBefore: turnIndex > 0 ? mapTurnForContext(logData.turns[turnIndex - 1]) : undefined,
+							toolCall: mapToolCallForContext(toolCall, toolCallIdx, turn),
+							turnAfter: turnIndex >= 0 && turnIndex < logData.turns.length - 1 ? mapTurnForContext(logData.turns[turnIndex + 1]) : undefined
+						};
+
+						const prettyUri = vscode.Uri.parse(`untitled:${prettyName}.json`);
+						const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === prettyUri.toString());
+						if (openDoc) {
+							await vscode.window.showTextDocument(openDoc, { preview: true });
+							break;
+						}
+
+						const doc = await vscode.workspace.openTextDocument(prettyUri);
+						const editor = await vscode.window.showTextDocument(doc, { preview: true });
+						const jsonText = JSON.stringify(prettyPayload, null, 2);
+						await editor.edit((editBuilder) => {
+							editBuilder.insert(new vscode.Position(0, 0), jsonText);
+						});
+						await vscode.languages.setTextDocumentLanguage(doc, 'json');
+					} catch (err) {
+						this.error('showToolCallPretty: error', err);
+						vscode.window.showErrorMessage('Could not open formatted tool call.');
+					}
+					break;
+				}
+				case 'revealToolCallSource': {
+					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
+					this.log(`revealToolCallSource: turn=${turnNumber}, toolCallIdx=${toolCallIdx}, file=${sessionFilePath}`);
+					try {
+						const turn = logData.turns.find(t => t.turnNumber === turnNumber);
+						const toolCall = turn?.toolCalls?.[toolCallIdx];
+						if (!toolCall) {
+							this.log('revealToolCallSource: tool call not found in session data');
+							vscode.window.showInformationMessage('Tool call not found in session data.');
+							break;
+						}
+
+						const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+						const searchTerm = toolCall.toolName || '';
+						const matchIdx = searchTerm ? fileContent.indexOf(searchTerm) : -1;
+						this.log(`revealToolCallSource: searchTerm='${searchTerm}', matchIdx=${matchIdx}`);
+
+						const doc = await vscode.workspace.openTextDocument(sessionFilePath);
+						const editor = await vscode.window.showTextDocument(doc);
+
+						if (matchIdx >= 0) {
+							const pos = doc.positionAt(matchIdx);
+							editor.selection = new vscode.Selection(pos, pos);
+							editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+						} else {
+							vscode.window.showInformationMessage('Opened session file, but could not locate this tool call text.');
+						}
+					} catch (err) {
+						this.error('revealToolCallSource: error', err);
+						vscode.window.showErrorMessage('Could not reveal tool call in file.');
+					}
+					break;
+				}
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
