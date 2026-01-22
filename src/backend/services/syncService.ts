@@ -21,20 +21,32 @@ import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
 
 /**
- * CR-009: Validate and normalize consent timestamp.
+ * Validate and normalize consent timestamp.
  * Returns ISO string if valid, undefined if invalid or in the future.
  */
-function validateConsentTimestamp(ts: string | undefined): string | undefined {
+function validateConsentTimestamp(ts: string | undefined, logger?: (msg: string) => void): string | undefined {
 	if (!ts) {
 		return undefined;
 	}
 	try {
 		const parsed = new Date(ts);
-		if (isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) {
-			return undefined; // Invalid or future date
+		if (isNaN(parsed.getTime())) {
+			if (logger) {
+				logger(`Invalid consent timestamp (not a valid date): "${ts}"`);
+			}
+			return undefined;
+		}
+		if (parsed.getTime() > Date.now()) {
+			if (logger) {
+				logger(`Invalid consent timestamp (future date): "${ts}" (parsed: ${parsed.toISOString()})`);
+			}
+			return undefined;
 		}
 		return parsed.toISOString();
-	} catch {
+	} catch (e) {
+		if (logger) {
+			logger(`Failed to parse consent timestamp: "${ts}", error: ${e}`);
+		}
 		return undefined;
 	}
 }
@@ -55,6 +67,8 @@ export class SyncService {
 	private backendSyncInProgress = false;
 	private syncQueue = Promise.resolve();
 	private backendSyncInterval: NodeJS.Timeout | undefined;
+	private consecutiveFailures = 0;
+	private readonly MAX_CONSECUTIVE_FAILURES = 5;
 
 	constructor(
 		private deps: SyncServiceDeps,
@@ -82,6 +96,11 @@ export class SyncService {
 			this.backendSyncInterval = setInterval(() => {
 				this.syncToBackendStore(false, settings, isConfigured).catch((e) => {
 					this.deps.warn(`Backend sync timer failed: ${e?.message ?? e}`);
+					this.consecutiveFailures++;
+					if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+						this.deps.warn(`Backend sync: stopping timer after ${this.MAX_CONSECUTIVE_FAILURES} consecutive failures`);
+						this.stopTimer();
+					}
 				});
 			}, intervalMs);
 			// Immediate initial sync
@@ -100,6 +119,7 @@ export class SyncService {
 		if (this.backendSyncInterval) {
 			clearInterval(this.backendSyncInterval);
 			this.backendSyncInterval = undefined;
+			this.consecutiveFailures = 0;
 		}
 	}
 
@@ -196,6 +216,9 @@ export class SyncService {
 					}
 					try {
 						const event = JSON.parse(line);
+						if (!event || typeof event !== 'object') {
+							continue;
+						}
 						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
 						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
 						if (!eventMs || eventMs < startMs) {
@@ -232,6 +255,10 @@ export class SyncService {
 			let sessionJson: any;
 			try {
 				sessionJson = JSON.parse(content);
+				if (!sessionJson || typeof sessionJson !== 'object') {
+					this.deps.warn(`Backend sync: session file has invalid JSON structure: ${sessionFile}`);
+					continue;
+				}
 			} catch (e) {
 				this.deps.warn(`Backend sync: failed to parse JSON session file ${sessionFile}: ${e}`);
 				continue;
@@ -320,8 +347,9 @@ export class SyncService {
 				this.deps.log(`Backend sync: upserting ${rollups.size} rollup entities (lookback ${settings.lookbackDays} days)`);
 
 				const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+				const entities = [];
 				for (const { key, value } of rollups.values()) {
-					const effectiveUserId = (key.userId ?? '').trim();
+					const effectiveUserId = (key.userId ?? '').trim() || undefined;
 					const includeConsent = sharingPolicy.includeUserDimension && !!effectiveUserId;
 					const includeNames = sharingPolicy.includeNames;
 					const workspaceIdToStore = sharingPolicy.workspaceIdStrategy === 'hashed'
@@ -340,18 +368,33 @@ export class SyncService {
 						workspaceName,
 						machineId: machineIdToStore,
 						machineName,
-						userId: effectiveUserId || undefined,
+						userId: effectiveUserId,
 						userKeyType: resolvedIdentity.userKeyType,
 						shareWithTeam: includeConsent ? true : undefined,
-						consentAt: validateConsentTimestamp(settings.shareConsentAt),
+						consentAt: validateConsentTimestamp(settings.shareConsentAt, this.deps.log),
 						inputTokens: value.inputTokens,
 						outputTokens: value.outputTokens,
 						interactions: value.interactions
 					});
-					await tableClient.upsertEntity(entity, 'Replace');
+					entities.push(entity);
 				}
 
-				await this.deps.context?.globalState.update('backend.lastSyncAt', Date.now());
+				const { successCount, errors } = await this.dataPlaneService.upsertEntitiesBatch(tableClient, entities);
+				
+				if (errors.length > 0) {
+					this.deps.warn(`Backend sync: ${successCount}/${entities.length} entities synced successfully, ${errors.length} failed`);
+				} else {
+					this.deps.log(`Backend sync: ${successCount} entities synced successfully`);
+				}
+
+				this.consecutiveFailures = 0;
+
+				try {
+					await this.deps.context?.globalState.update('backend.lastSyncAt', Date.now());
+				} catch (e) {
+					this.deps.warn(`Backend sync: failed to update lastSyncAt: ${e}`);
+				}
+				
 				this.deps.log('Backend sync: completed');
 			} catch (e: any) {
 				// Keep local mode functional.

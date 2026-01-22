@@ -35,8 +35,10 @@ export interface DailyRollupValueLike {
 
 /**
  * Builds a stable map key from rollup dimensions.
- * @param key - The rollup key
- * @returns String key for Map
+ * Empty string userIds are normalized to undefined for consistent keying.
+ * 
+ * @param key - The rollup key containing all dimensions
+ * @returns Stable JSON string key suitable for Map operations
  */
 export function dailyRollupMapKey(key: DailyRollupKey): string {
 	const userId = (key.userId ?? '').trim();
@@ -51,9 +53,12 @@ export function dailyRollupMapKey(key: DailyRollupKey): string {
 
 /**
  * Upserts a daily rollup into a map, merging values if key already exists.
- * @param map - The map to update
- * @param key - The rollup key
- * @param value - The rollup value to add
+ * If a rollup with matching dimensions exists, token counts and interactions are added.
+ * Otherwise, a new entry is created.
+ * 
+ * @param map - The map to update (modified in place)
+ * @param key - The rollup key identifying dimensions
+ * @param value - The rollup value to add (tokens and interactions)
  */
 export function upsertDailyRollup(
 	map: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>,
@@ -64,12 +69,10 @@ export function upsertDailyRollup(
 	const existing = map.get(mapKey);
 
 	if (existing) {
-		// Merge values
 		existing.value.inputTokens += value.inputTokens;
 		existing.value.outputTokens += value.outputTokens;
 		existing.value.interactions += value.interactions;
 	} else {
-		// New entry
 		map.set(mapKey, {
 			key: { ...key },
 			value: {

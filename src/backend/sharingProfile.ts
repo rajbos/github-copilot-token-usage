@@ -18,6 +18,14 @@ export function parseBackendSharingProfile(value: unknown): BackendSharingProfil
 	return undefined;
 }
 
+/**
+ * Computes the effective sharing policy based on settings and sharing profile.
+ * Implements five privacy profiles: off, soloFull, teamAnonymized, teamPseudonymous, teamIdentified.
+ * Privacy by default: team modes use hashed IDs, names only included when explicitly enabled.
+ * 
+ * @param args - Configuration including enabled flag, profile, and name sharing preference
+ * @returns Concrete policy object that controls sync behavior
+ */
 export function computeBackendSharingPolicy(args: {
 	enabled: boolean;
 	profile: BackendSharingProfile;
@@ -58,7 +66,6 @@ export function computeBackendSharingPolicy(args: {
 		};
 	}
 
-	// teamPseudonymous / teamIdentified
 	return {
 		profile: args.profile,
 		allowCloudSync,

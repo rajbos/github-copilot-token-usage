@@ -22,9 +22,44 @@ export class BackendUtility {
 
 	/**
 	 * Convert a Date to a UTC day key string (YYYY-MM-DD).
+	 * @throws {Error} If date is invalid
 	 */
 	static toUtcDayKey(date: Date): string {
+		if (!(date instanceof Date) || isNaN(date.getTime())) {
+			throw new Error(`Invalid date object provided to toUtcDayKey: ${date}`);
+		}
 		return date.toISOString().slice(0, 10);
+	}
+
+	/**
+	 * Validate a dayKey string format (YYYY-MM-DD).
+	 * @param dayKey - The day key to validate
+	 * @returns true if valid, false otherwise
+	 */
+	static isValidDayKey(dayKey: string): boolean {
+		if (!dayKey || typeof dayKey !== 'string') {
+			return false;
+		}
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
+			return false;
+		}
+		const date = new Date(`${dayKey}T00:00:00.000Z`);
+		if (isNaN(date.getTime())) {
+			return false;
+		}
+		return date.toISOString().slice(0, 10) === dayKey;
+	}
+
+	/**
+	 * Validate and sanitize a dayKey, returning undefined if invalid.
+	 * @param dayKey - The day key to validate
+	 * @returns Validated dayKey or undefined
+	 */
+	static validateDayKey(dayKey: unknown): string | undefined {
+		if (typeof dayKey !== 'string') {
+			return undefined;
+		}
+		return BackendUtility.isValidDayKey(dayKey) ? dayKey : undefined;
 	}
 
 	/**
@@ -38,8 +73,28 @@ export class BackendUtility {
 
 	/**
 	 * Get an array of day keys (YYYY-MM-DD) inclusive between start and end.
+	 * @throws {Error} If dayKeys are invalid or range is too large
 	 */
 	static getDayKeysInclusive(startDayKey: string, endDayKey: string): string[] {
+		if (!BackendUtility.isValidDayKey(startDayKey)) {
+			throw new Error(`Invalid startDayKey format: ${startDayKey}`);
+		}
+		if (!BackendUtility.isValidDayKey(endDayKey)) {
+			throw new Error(`Invalid endDayKey format: ${endDayKey}`);
+		}
+		
+		const MAX_DAYS = 400;
+		const startDate = new Date(`${startDayKey}T00:00:00.000Z`);
+		const endDate = new Date(`${endDayKey}T00:00:00.000Z`);
+		const dayCount = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+		
+		if (dayCount < 0) {
+			throw new Error(`Invalid date range: startDayKey (${startDayKey}) is after endDayKey (${endDayKey})`);
+		}
+		if (dayCount > MAX_DAYS) {
+			throw new Error(`Date range too large: ${dayCount} days (max ${MAX_DAYS})`);
+		}
+		
 		const result: string[] = [];
 		let current = startDayKey;
 		while (current <= endDayKey) {

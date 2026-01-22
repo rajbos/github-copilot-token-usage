@@ -363,18 +363,23 @@ function redactBackendQueryResultForExport(result: any, opts?: { includeIdentifi
 	if (!result || typeof result !== 'object') {
 		return result;
 	}
-	const cloned = JSON.parse(JSON.stringify(result));
-	const includeIdentifiers = !!opts?.includeIdentifiers;
+	try {
+			const cloned = JSON.parse(JSON.stringify(result));
+		const includeIdentifiers = !!opts?.includeIdentifiers;
 
-	if (!includeIdentifiers) {
-		delete cloned.workspaceNamesById;
-		delete cloned.machineNamesById;
-		cloned.availableWorkspaces = [];
-		cloned.availableMachines = [];
-		cloned.availableUsers = [];
-		cloned.workspaceTokenTotals = [];
-		cloned.machineTokenTotals = [];
+		if (!includeIdentifiers) {
+			delete cloned.workspaceNamesById;
+			delete cloned.machineNamesById;
+			cloned.availableWorkspaces = [];
+			cloned.availableMachines = [];
+			cloned.availableUsers = [];
+			cloned.workspaceTokenTotals = [];
+			cloned.machineTokenTotals = [];
+		}
+
+		return cloned;
+	} catch (e) {
+		// Fall back to returning original result if cloning fails (e.g., circular references)
+		return result;
 	}
-
-	return cloned;
 }

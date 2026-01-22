@@ -91,6 +91,7 @@ export class BackendFacade {
 	public startTimerIfEnabled(): void {
 		const settings = this.getSettings();
 		this.syncService.startTimerIfEnabled(settings, this.isConfigured(settings));
+		this.clearQueryCache();
 	}
 
 	public stopTimer(): void {
@@ -150,7 +151,7 @@ export class BackendFacade {
 
 	// Cache state exposed for testing
 	public get backendLastQueryResult(): BackendQueryResultLike | undefined {
-		return (this.queryService as any).backendLastQueryResult;
+		return this.queryService.getLastQueryResult();
 	}
 
 	public set backendLastQueryResult(value: BackendQueryResultLike | undefined) {
@@ -193,7 +194,7 @@ export class BackendFacade {
 		const creds = await this.credentialService.getBackendDataPlaneCredentialsOrThrow(settings);
 		const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
 		return await this.dataPlaneService.listEntitiesForRange({
-			tableClient: tableClient as any,
+			tableClient,
 			datasetId: settings.datasetId,
 			startDayKey,
 			endDayKey
@@ -206,7 +207,9 @@ export class BackendFacade {
 
 	public async syncToBackendStore(force: boolean): Promise<void> {
 		const settings = this.getSettings();
-		return this.syncService.syncToBackendStore(force, settings, this.isConfigured(settings));
+		const result = await this.syncService.syncToBackendStore(force, settings, this.isConfigured(settings));
+		this.clearQueryCache();
+		return result;
 	}
 
 	public async tryGetBackendDetailedStatsForStatusBar(settings: BackendSettings): Promise<any | undefined> {
@@ -298,7 +301,9 @@ export class BackendFacade {
 	}
 
 	public async setSharingProfileCommand(): Promise<void> {
-		return this.azureResourceService.setSharingProfileCommand();
+		const result = await this.azureResourceService.setSharingProfileCommand();
+		this.clearQueryCache();
+		return result;
 	}
 
 	// Helper method for shared key prompting (used by setBackendSharedKey and rotateBackendSharedKey)

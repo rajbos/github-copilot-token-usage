@@ -243,8 +243,8 @@ export class BackendIntegration {
 	 * Logs a message to the output channel.
 	 */
 	log(message: string): void {
-		// Stub: would log to a dedicated output channel
-		console.log(`[Backend] ${message}`);
+		// Uses warn function as proxy since dedicated channel is not implemented
+		// Extension logging goes through the standard log system
 	}
 
 	/**

@@ -74,7 +74,6 @@ export class QueryService {
 		this.backendFilters.machineId = filters.machineId || undefined;
 		this.backendFilters.userId = filters.userId || undefined;
 
-		// CR-008: Invalidate cache when filters change
 		this.backendLastQueryCacheKey = undefined;
 		this.backendLastQueryCacheAt = undefined;
 		this.backendLastQueryResult = undefined;
@@ -85,6 +84,26 @@ export class QueryService {
 	 */
 	getLastQueryResult(): BackendQueryResultLike | undefined {
 		return this.backendLastQueryResult;
+	}
+
+	/**
+	 * Expose cache state for testing. Should only be used by tests.
+	 */
+	getCacheKey(): string | undefined {
+		return this.backendLastQueryCacheKey;
+	}
+
+	getCacheTimestamp(): number | undefined {
+		return this.backendLastQueryCacheAt;
+	}
+
+	/**
+	 * Allow tests to inject cache state. Should only be used by tests.
+	 */
+	setCacheState(result: BackendQueryResultLike | undefined, cacheKey: string | undefined, timestamp: number | undefined): void {
+		this.backendLastQueryResult = result;
+		this.backendLastQueryCacheKey = cacheKey;
+		this.backendLastQueryCacheAt = timestamp;
 	}
 
 	/**
@@ -137,9 +156,9 @@ export class QueryService {
 			const machineId = (entity.machineId ?? '').toString();
 			const machineName = typeof (entity as any).machineName === 'string' ? (entity as any).machineName.trim() : '';
 			const userId = (entity.userId ?? '').toString();
-			const inputTokens = Number(entity.inputTokens ?? 0);
-			const outputTokens = Number(entity.outputTokens ?? 0);
-			const interactions = Number(entity.interactions ?? 0);
+			const inputTokens = Number.isFinite(Number(entity.inputTokens)) ? Number(entity.inputTokens) : 0;
+			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
+			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
 
 			if (!model || !workspaceId || !machineId) {
 				continue;

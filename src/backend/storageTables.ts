@@ -134,32 +134,41 @@ export async function listAggDailyEntitiesFromTableClient(args: {
 		};
 
 		for await (const entity of tableClient.listEntities(queryOptions)) {
+			const dayString = entity.day?.toString() || defaultDayKey;
+			
+			if (!entity.model || !entity.workspaceId || !entity.machineId) {
+				logger.error(`Skipping entity with missing required fields: ${entity.rowKey}`);
+				continue;
+			}
+
+			const inputTokens = typeof entity.inputTokens === 'number' ? Math.max(0, entity.inputTokens) : 0;
+			const outputTokens = typeof entity.outputTokens === 'number' ? Math.max(0, entity.outputTokens) : 0;
+			const interactions = typeof entity.interactions === 'number' ? Math.max(0, entity.interactions) : 0;
+			const userId = entity.userId?.toString()?.trim() || undefined;
+
 			// Normalize entity to our interface
 			const normalized: BackendAggDailyEntityLike = {
 				partitionKey: entity.partitionKey?.toString() || partitionKey,
 				rowKey: entity.rowKey?.toString() || '',
 				schemaVersion: typeof entity.schemaVersion === 'number' ? entity.schemaVersion : undefined,
 				datasetId: entity.datasetId?.toString() || '',
-				day: entity.day?.toString() || defaultDayKey,
-				model: entity.model?.toString() || '',
-				workspaceId: entity.workspaceId?.toString() || '',
-				workspaceName: typeof entity.workspaceName === 'string' && entity.workspaceName.trim() ? entity.workspaceName : undefined,
-				machineId: entity.machineId?.toString() || '',
-				machineName: typeof entity.machineName === 'string' && entity.machineName.trim() ? entity.machineName : undefined,
-				userId: entity.userId?.toString() || undefined,
+				day: dayString,
+				model: entity.model.toString(),
+				workspaceId: entity.workspaceId.toString(),
+				workspaceName: typeof entity.workspaceName === 'string' && entity.workspaceName.trim() ? entity.workspaceName.trim() : undefined,
+				machineId: entity.machineId.toString(),
+				machineName: typeof entity.machineName === 'string' && entity.machineName.trim() ? entity.machineName.trim() : undefined,
+				userId,
 				userKeyType: entity.userKeyType?.toString() || undefined,
 				shareWithTeam: typeof entity.shareWithTeam === 'boolean' ? entity.shareWithTeam : undefined,
 				consentAt: entity.consentAt?.toString() || undefined,
-				inputTokens: typeof entity.inputTokens === 'number' ? entity.inputTokens : 0,
-				outputTokens: typeof entity.outputTokens === 'number' ? entity.outputTokens : 0,
-				interactions: typeof entity.interactions === 'number' ? entity.interactions : 0,
+				inputTokens,
+				outputTokens,
+				interactions,
 				updatedAt: entity.updatedAt?.toString() || new Date().toISOString()
 			};
 
-			// Only include entities with required fields
-			if (normalized.model && normalized.workspaceId && normalized.machineId) {
-				results.push(normalized);
-			}
+			results.push(normalized);
 		}
 	} catch (error) {
 		// Log error but don't throw - return empty array for graceful degradation

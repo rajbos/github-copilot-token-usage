@@ -129,8 +129,9 @@ export class AzureResourceService {
 				if (rg.location) {
 					location = rg.location;
 				}
-			} catch {
-				// ignore
+			} catch (e) {
+				// Use default location if fetch fails (non-critical)
+				this.deps.log(`Could not fetch resource group location, using default: ${e}`);
 			}
 		}
 
@@ -484,9 +485,10 @@ export class AzureResourceService {
 					const endpoint = `https://${finalSettings.storageAccount}.table.core.windows.net`;
 					const serviceClient = new TableServiceClient(endpoint, creds.tableCredential as any);
 					await serviceClient.createTable(finalSettings.eventsTable);
+					this.deps.log(`Created optional events table: ${finalSettings.eventsTable}`);
 				}
-			} catch {
-				// ignore
+			} catch (e) {
+				this.deps.log(`Optional events table creation failed (non-blocking): ${safeStringifyError(e)}`);
 			}
 		}
 		if (createRaw.startsWith('Yes')) {
@@ -500,8 +502,8 @@ export class AzureResourceService {
 					const containerClient = blobClient.getContainerClient(finalSettings.rawContainer);
 					await containerClient.createIfNotExists();
 				}
-			} catch {
-				// ignore
+			} catch (e) {
+				this.deps.log(`Optional raw container creation failed (non-blocking): ${safeStringifyError(e)}`);
 			}
 		}
 

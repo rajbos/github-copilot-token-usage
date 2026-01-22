@@ -61,6 +61,14 @@ export function tryParseJwtClaims(accessToken: string): JwtClaims {
 	}
 }
 
+/**
+ * Derives a pseudonymous user key from Entra ID claims and dataset ID.
+ * Creates a stable, privacy-preserving identifier using SHA-256 hashing.
+ * Dataset scoping enables key rotation by changing the dataset ID.
+ * 
+ * @param args - Object containing tenantId, objectId (from Entra ID JWT), and datasetId
+ * @returns 16-character hex string (64-bit hash)
+ */
 export function derivePseudonymousUserKey(args: { tenantId: string; objectId: string; datasetId: string }): string {
 	const input = `tenant:${args.tenantId}|object:${args.objectId}|dataset:${args.datasetId}`;
 	return createHash('sha256').update(input).digest('hex').slice(0, 16);
@@ -70,6 +78,14 @@ export type ResolvedUserIdentity =
 	| { userId?: undefined; userKeyType?: undefined }
 	| { userId: string; userKeyType: BackendUserIdentityMode };
 
+/**
+ * Resolves the effective user identity for backend sync operations.
+ * Implements privacy model with multiple sharing modes: personal, team alias,
+ * Entra object ID, and pseudonymous. All identifiers are validated before use.
+ * 
+ * @param args - Configuration for identity resolution
+ * @returns Resolved identity with userId and keyType, or empty object if no user dimension
+ */
 export function resolveUserIdentityForSync(args: {
 	shareWithTeam: boolean;
 	userIdentityMode: BackendUserIdentityMode;
@@ -98,7 +114,6 @@ export function resolveUserIdentityForSync(args: {
 		return { userId: id, userKeyType: 'entraObjectId' };
 	}
 
-	// pseudonymous
 	const claims = tryParseJwtClaims(args.accessTokenForClaims ?? '');
 	if (!claims.tenantId || !claims.objectId) {
 		return {};
