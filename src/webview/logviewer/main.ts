@@ -23,6 +23,16 @@ type ChatTurn = {
 	outputTokensEstimate: number;
 };
 
+type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
+type ModeUsage = { ask: number; edit: number; agent: number };
+type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
+type SessionUsageAnalysis = {
+	toolCalls: ToolCallUsage;
+	modeUsage: ModeUsage;
+	contextReferences: ContextReferenceUsage;
+	mcpTools: McpToolUsage;
+};
+
 type SessionLogData = {
 	file: string;
 	title: string | null;
@@ -35,6 +45,7 @@ type SessionLogData = {
 	firstInteraction: string | null;
 	lastInteraction: string | null;
 	turns: ChatTurn[];
+	usageAnalysis?: SessionUsageAnalysis;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -100,6 +111,13 @@ function getContextRefsSummary(refs: ContextReferenceUsage): string {
 	if (refs.terminal > 0) { parts.push(`@terminal: ${refs.terminal}`); }
 	if (refs.vscode > 0) { parts.push(`@vscode: ${refs.vscode}`); }
 	return parts.length > 0 ? parts.join(', ') : 'None';
+}
+
+function getTopEntries(map: { [key: string]: number } = {}, limit = 3): { key: string; value: number }[] {
+	return Object.entries(map)
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, limit)
+		.map(([key, value]) => ({ key, value }));
 }
 
 function getModeIcon(mode: string): string {
@@ -211,6 +229,19 @@ function renderLayout(data: SessionLogData): void {
 	const totalToolCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.length, 0);
 	const totalMcpTools = data.turns.reduce((sum, t) => sum + t.mcpTools.length, 0);
 	const totalRefs = getTotalContextRefs(data.contextReferences);
+	const usage = data.usageAnalysis;
+	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0 };
+	const usageToolTotal = usage?.toolCalls?.total ?? totalToolCalls;
+	const usageTopTools = usage ? getTopEntries(usage.toolCalls.byTool, 3) : [];
+	const usageMcpTotal = usage?.mcpTools?.total ?? totalMcpTools;
+	const usageTopMcpTools = usage ? getTopEntries(usage.mcpTools.byTool, 3) : [];
+	const usageContextRefs = usage?.contextReferences || data.contextReferences;
+	const usageContextTotal = getTotalContextRefs(usageContextRefs);
+
+	const formatTopList = (entries: { key: string; value: number }[], mapper?: (k: string) => string) => {
+		if (!entries.length) { return 'None'; }
+		return entries.map(e => `${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}`).join(', ');
+	};
 	
 	// Mode usage summary
 	const modeUsage = { ask: 0, edit: 0, agent: 0 };
@@ -229,237 +260,163 @@ function renderLayout(data: SessionLogData): void {
 			body {
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 				background: #0e0e0f;
-				<style>
-					* { margin: 0; padding: 0; box-sizing: border-box; }
-					body {
-						font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-						background: #0e0e0f;
-						color: #e7e7e7;
-						padding: 16px;
-						line-height: 1.5;
-						min-width: 320px;
-					}
-					.container {
-						background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%);
-						border: 1px solid #2e2e34;
-						border-radius: 10px;
-						padding: 16px;
-						box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
-						max-width: 1200px;
-						margin: 0 auto;
-					}
-					.header {
-						display: flex;
-						justify-content: space-between;
-						align-items: flex-start;
-						gap: 12px;
-						margin-bottom: 16px;
-						padding-bottom: 12px;
-						border-bottom: 1px solid #2e2e34;
-					}
-					.header-left { flex: 1; }
-					.header-title {
-						font-size: 20px;
-						font-weight: 700;
-						color: #fff;
-						margin-bottom: 4px;
-						display: flex;
-						align-items: center;
-						gap: 8px;
-					}
-					.header-subtitle {
-						font-size: 13px;
-						color: #3b82f6;
-						font-weight: 500;
-					}
-					.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
-					.button-row vscode-button {
-						transition: box-shadow 0.2s;
-					}
-					.button-row vscode-button:hover {
-						box-shadow: 0 2px 8px #3b82f6;
-					}
-
-					/* Mode/model bar improvements */
-					.mode-bar-group {
-						background: #18181b;
-						border: 1px solid #2a2a30;
-						border-radius: 8px;
-						padding: 12px 18px;
-						display: flex;
-						align-items: center;
-						gap: 24px;
-						margin-bottom: 18px;
-						box-shadow: 0 2px 8px rgba(60,60,80,0.08);
-					}
-					.mode-bar {
-						display: flex;
-						align-items: center;
-						gap: 8px;
-						font-size: 14px;
-						font-weight: 500;
-					}
-					.mode-icon {
-						width: 28px;
-						height: 28px;
-						border-radius: 6px;
-						display: flex;
-						align-items: center;
-						justify-content: center;
-						font-size: 16px;
-						background: #23232a;
-						border: 1px solid #2a2a30;
-					}
-					.mode-label {
-						color: #b0b0b0;
-					}
-					.mode-count {
-						color: #fff;
-						font-weight: 700;
-					}
-					.model-summary {
-						margin-left: 16px;
-						font-size: 14px;
-						font-weight: 600;
-						color: #fff;
-						display: flex;
-						align-items: center;
-						gap: 10px;
-					}
-					.model-list {
-						margin-left: 8px;
-						font-size: 13px;
-						color: #b0b0b0;
-						font-weight: 500;
-						display: flex;
-						gap: 16px;
-					}
-					.model-item {
-						background: #23232a;
-						border-radius: 4px;
-						padding: 2px 8px;
-						color: #3b82f6;
-						font-weight: 600;
-						box-shadow: 0 1px 4px rgba(60,60,80,0.08);
-					}
-
-					/* Summary cards */
-					.summary-cards {
-						display: grid;
-						grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-						gap: 14px;
-						margin-bottom: 18px;
-					}
-					.summary-card {
-						background: #18181b;
-						border: 1px solid #2a2a30;
-						border-radius: 8px;
-						padding: 18px 10px 14px 10px;
-						text-align: center;
-						box-shadow: 0 2px 8px rgba(60,60,80,0.08);
-					}
-					.summary-label { font-size: 16px; color: #fff; margin-bottom: 4px; font-weight: 700; }
-					.summary-value { font-size: 22px; font-weight: 700; color: #3b82f6; }
-
-					/* ...existing code... */
-				grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-				gap: 12px;
-			<!-- Footer removed: file path no longer shown here -->
-				border-radius: 8px;
-				padding: 12px;
+				color: #e7e7e7;
+				padding: 20px;
+				line-height: 1.6;
+				min-width: 320px;
 			}
-			.info-item {
+			.container {
+				max-width: 1400px;
+				margin: 0 auto;
+			}
+
+			/* Mode/model bar improvements */
+			.mode-bar-group {
+				background: linear-gradient(135deg, #1a1a22 0%, #1f1f28 100%);
+				border: 1px solid #3a3a44;
+				border-radius: 12px;
+				padding: 20px 24px;
 				display: flex;
-				flex-direction: column;
-			}
-			.info-label {
-				font-size: 10px;
-				color: #888;
-				text-transform: uppercase;
-				letter-spacing: 0.5px;
-			}
-			.info-value {
-				font-size: 14px;
-				font-weight: 600;
-				color: #fff;
-			}
-			.info-value.small {
-				font-size: 12px;
-				font-weight: 400;
-			}
-			
-			/* Summary cards */
-			.summary-cards {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-				gap: 10px;
-				margin-bottom: 16px;
-			}
-			.summary-card {
-				background: #18181b;
-				border: 1px solid #2a2a30;
-				border-radius: 6px;
-				padding: 10px;
-				text-align: center;
-			}
-			.summary-label { font-size: 10px; color: #999; margin-bottom: 2px; }
-			.summary-value { font-size: 18px; font-weight: 700; color: #fff; }
-			
-			/* Mode bars */
-			.mode-bars {
-				display: flex;
-				gap: 16px;
-				margin-bottom: 16px;
+				align-items: center;
 				flex-wrap: wrap;
+				gap: 28px;
+				margin-bottom: 24px;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.2);
 			}
 			.mode-bar {
 				display: flex;
 				align-items: center;
-				gap: 6px;
-				font-size: 12px;
+				gap: 10px;
+				font-size: 15px;
+				font-weight: 500;
 			}
 			.mode-icon {
-				width: 24px;
-				height: 24px;
-				border-radius: 4px;
+				width: 36px;
+				height: 36px;
+				border-radius: 8px;
 				display: flex;
 				align-items: center;
 				justify-content: center;
-				font-size: 14px;
+				font-size: 18px;
+				background: #23232a;
+				border: 2px solid #2a2a30;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+			}
+			.mode-label {
+				color: #b8b8c0;
+				font-weight: 600;
+			}
+			.mode-count {
+				color: #fff;
+				font-weight: 700;
+				font-size: 18px;
+			}
+			.model-summary {
+				margin-left: auto;
+				font-size: 15px;
+				font-weight: 600;
+				color: #fff;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				flex-wrap: wrap;
+			}
+			.model-list {
+				display: flex;
+				gap: 10px;
+				flex-wrap: wrap;
+			}
+			.model-item {
+				background: linear-gradient(135deg, #2a2a35 0%, #25252f 100%);
+				border: 1px solid #3a3a44;
+				border-radius: 6px;
+				padding: 4px 12px;
+				color: #60a5fa;
+				font-weight: 600;
+				font-size: 13px;
+				box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+			}
+
+			/* Summary cards */
+			.summary-cards {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+				gap: 16px;
+				margin-bottom: 24px;
+			}
+			.summary-card {
+				background: linear-gradient(135deg, #1a1a22 0%, #1f1f28 100%);
+				border: 1px solid #3a3a44;
+				border-radius: 12px;
+				padding: 24px 16px;
+				text-align: center;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.2);
+				transition: transform 0.2s, box-shadow 0.2s;
+			}
+			.summary-card:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 6px 16px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.2);
+			}
+			.summary-label { 
+				font-size: 14px; 
+				color: #b8b8c0; 
+				margin-bottom: 8px; 
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.summary-value { 
+				font-size: 32px; 
+				font-weight: 700; 
+				color: #60a5fa;
+				margin-bottom: 8px;
+			}
+			.summary-sub { 
+				font-size: 12px; 
+				color: #94a3b8; 
+				line-height: 1.5;
 			}
 			
 			/* Turns container */
 			.turns-header {
-				font-size: 14px;
-				font-weight: 600;
+				font-size: 18px;
+				font-weight: 700;
 				color: #fff;
-				margin-bottom: 12px;
+				margin-bottom: 16px;
 				display: flex;
 				align-items: center;
-				gap: 8px;
+				gap: 10px;
+				padding: 12px 0;
+				border-bottom: 2px solid #3a3a44;
 			}
 			.turns-list {
 				display: flex;
 				flex-direction: column;
-				gap: 12px;
+				gap: 16px;
 			}
 			
 			/* Turn card */
 			.turn-card {
-				background: #18181b;
-				border: 1px solid #2a2a30;
-				border-radius: 8px;
+				background: linear-gradient(135deg, #1a1a22 0%, #1f1f28 100%);
+				border: 1px solid #3a3a44;
+				border-radius: 12px;
 				overflow: hidden;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.2);
+				transition: transform 0.2s, box-shadow 0.2s;
+			}
+			.turn-card:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 6px 16px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.2);
 			}
 			.turn-header {
-				background: #1f1f24;
-				padding: 10px 12px;
+				background: linear-gradient(135deg, #22222a 0%, #27272f 100%);
+				padding: 14px 16px;
 				display: flex;
 				justify-content: space-between;
 				align-items: center;
 				flex-wrap: wrap;
-				gap: 8px;
-				border-bottom: 1px solid #2a2a30;
+				gap: 10px;
+				border-bottom: 1px solid #3a3a44;
 			}
 			.turn-meta {
 				display: flex;
@@ -479,141 +436,188 @@ function renderLayout(data: SessionLogData): void {
 				font-weight: 600;
 				color: #fff;
 			}
+			.turn-10px;
+				flex-wrap: wrap;
+			}
+			.turn-number {
+				font-weight: 700;
+				color: #fff;
+				font-size: 16px;
+				background: #3a3a44;
+				padding: 4px 10px;
+				border-radius: 6px;
+			}
+			.turn-mode {
+				padding: 4px 12px;
+				border-radius: 16px;
+				font-size: 12px;
+				font-weight: 700;
+				color: #fff;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+			}
 			.turn-model {
-				font-size: 11px;
-				color: #b0b0b0;
-				background: #2a2a30;
-				padding: 2px 6px;
-				border-radius: 4px;
+				font-size: 12px;
+				color: #94a3b8;
+				background: #2a2a35;
+				padding: 4px 10px;
+				border-radius: 6px;
+				font-weight: 600;
+				border: 1px solid #3a3a44;
 			}
 			.turn-tokens {
-				font-size: 11px;
-				color: #888;
+				font-size: 12px;
+				color: #94a3b8;
+				font-weight: 600;
 			}
 			.turn-time {
-				font-size: 11px;
-				color: #666;
-			}
-			
-			.turn-content {
-				padding: 12px;
-			}
-			
-			/* Messages */
-			.message {
-				margin-bottom: 12px;
+				font-size: 12px;
+				color: #71717a;
+				font-weight: 500;
+			}4px;
 			}
 			.message:last-child {
 				margin-bottom: 0;
 			}
 			.message-label {
-				font-size: 11px;
-				font-weight: 600;
-				color: #888;
-				margin-bottom: 4px;
+				font-size: 12px;
+				font-weight: 700;
+				color: #94a3b8;
+				margin-bottom: 6px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
 			}
 			.message-text {
-				background: #242428;
-				border-radius: 6px;
-				padding: 10px 12px;
-				font-size: 13px;
+				background: #22222a;
+				border-radius: 8px;
+				padding: 14px 16px;
+				font-size: 14px;
+				line-height: 1.6;
 				white-space: pre-wrap;
 				word-break: break-word;
 				max-height: 400px;
 				overflow-y: auto;
+				border: 1px solid #3a3a44;
 			}
 			.user-message .message-text {
-				border-left: 3px solid #3b82f6;
+				border-left: 4px solid #60a5fa;
+				background: linear-gradient(135deg, #1e293b 0%, #22222a 100%);
 			}
 			.assistant-message .message-text {
-				border-left: 3px solid #10b981;
-			}
-			
-			/* Context references */
-			.turn-context {
-				margin-bottom: 12px;
-				padding: 8px 10px;
-				background: #252530;
-				border-radius: 4px;
-				font-size: 12px;
+				border-left: 4px4px;
+				padding: 12px 14px;
+				background: linear-gradient(135deg, #2a2a35 0%, #25252f 100%);
+				border: 1px solid #3a3a44;
+				border-radius: 8px;
+				font-size: 13px;
 			}
 			.context-label {
-				color: #888;
-				margin-right: 6px;
+				color: #94a3b8;
+				margin-right: 8px;
+				font-weight: 600;
 			}
 			.context-value {
-				color: #c0c0c0;
+				color: #cbd5e1;
 			}
 			
 			/* Tool calls */
 			.turn-tools {
-				margin-bottom: 12px;
-				background: #1e1e28;
-				border: 1px solid #3a3a50;
-				border-radius: 6px;
-				padding: 10px;
+				margin-bottom: 14px;
+				background: linear-gradient(135deg, #221e2e 0%, #252030 100%);
+				border: 1px solid #4a4a5a;
+				border-radius: 8px;
+				padding: 14px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 			}
 			.tools-header {
-				font-size: 12px;
-				font-weight: 600;
+				font-size: 13px;
+				font-weight: 700;
 				color: #fff;
-				margin-bottom: 8px;
-			}
-			.tools-list {
-				display: flex;
-				flex-direction: column;
-				gap: 6px;
-			}
-			.tool-item {
-				background: #242430;
-				border-radius: 4px;
-				padding: 8px 10px;
-				display: flex;
-				flex-direction: column;
-				gap: 6px;
-			}
-			.tool-item-header {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
-				gap: 10px;
+				margin-bottom: 10px;
+				text-t2px;
 			}
 			.tool-name {
 				font-weight: 700;
 				color: #c084fc;
-				font-size: 12px;
+				font-size: 13px;
 			}
 			.tool-call-pretty {
-				font-weight: 600;
+				font-weight: 700;
 				color: #34d399;
+				font-size: 12px;
+				text-decoration: underline;
+			}
+			.tool-call-pretty:hover {
+				color: #6ee7b7;
 			}
 			.tool-details {
-				margin-top: 6px;
-				font-size: 11px;
+				margin-top: 8px;
+				font-size: 12px;
 			}
 			.tool-details summary {
 				cursor: pointer;
-				color: #888;
+				color: #94a3b8;
+				font-weight: 600;
+			}
+			.tool-details summary:hover {
+				color: #cbd5e1;
 			}
 			.tool-details pre {
 				background: #1a1a20;
-				padding: 8px;
-				border-radius: 4px;
+				border: 1px solid #2a2a30;
+				padding: 10px;
+				border-radius: 6px;
 				overflow-x: auto;
 				max-height: 200px;
 				font-size: 11px;
-				margin-top: 4px;
+				margin-top: 6px;
+				line-height: 1.5;
 			}
 			
 			/* MCP tools */
 			.turn-mcp {
-				margin-bottom: 12px;
-				background: #1e281e;
-				border: 1px solid #3a503a;
-				border-radius: 6px;
-				padding: 10px;
+				margin-bottom: 14px;
+				background: linear-gradient(135deg, #1e2e1e 0%, #1a261a 100%);
+				border: 1px solid #3a5a3a;
+				border-radius: 8px;
+				padding: 14px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 			}
 			.mcp-header {
+				font-size: 13px;
+				font-weight: 700;
+				color: #fff;
+				margin-bottom: 10px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.mcp-list {
+				display: flex;
+				flEmpty state */
+			.empty-state {
+				text-align: center;
+				padding: 60px 20px;
+				color: #94a3b8;
+				font-size: 16px;
+				background: linear-gradient(135deg, #1a1a22 0%, #1f1f28 100%);
+				border: 1px solid #3a3a44;
+				border-radius: 12px;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+			}
+
+			/* Scrollbar styling */
+			::-webkit-scrollbar {
+				width: 10px;
+				height: 10px;
+			}
+			::-webkit-scrollbar-track {
+				background: #1a1a22;
+			}
+			::-webkit-scrollbar-thumb {
+				background: #3a3a44;
+				border-radius: 5px;
+			}
+			::-webkit-scrollbar-thumb:hover {
+				background: #4a4a54{
 				font-size: 12px;
 				font-weight: 600;
 				color: #fff;
@@ -653,88 +657,28 @@ function renderLayout(data: SessionLogData): void {
 		</style>
 		
 		<div class="container">
-			<div class="header">
-				<div class="header-left">
-					<div class="header-title">
-						<span>📜</span>
-						<span>${data.title ? escapeHtml(data.title) : 'Session Log'}</span>
-					</div>
-					<div class="header-subtitle"><a id="file-link" href="#" style="color:#3b82f6;text-decoration:underline;">${escapeHtml(getFileName(data.file))}</a></div>
-				</div>
-				<div class="button-row">
-					<vscode-button id="btn-raw">📄 View Raw</vscode-button>
-					<vscode-button id="btn-diagnostics">🔍 Back to Files</vscode-button>
-					<vscode-button id="btn-usage">📊 Usage Analysis</vscode-button>
-				</div>
-			</div>
-			
-			<div class="session-info" style="display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 18px;">
-				<div class="info-item">
-					<span class="info-label">Editor</span>
-					<span class="info-value">${escapeHtml(data.editorName)}</span>
-				</div>
-				<div class="info-item">
-					<span class="info-label">File Size</span>
-					<span class="info-value">${formatFileSize(data.size)}</span>
-				</div>
-				<div class="info-item">
-					<span class="info-label">Modified</span>
-					<span class="info-value small">${formatDate(data.modified)}</span>
-				</div>
-				<div class="info-item">
-					<span class="info-label">First Interaction</span>
-					<span class="info-value small">${formatDate(data.firstInteraction)}</span>
-				</div>
-				<div class="info-item">
-					<span class="info-label">Last Interaction</span>
-					<span class="info-value small">${formatDate(data.lastInteraction)}</span>
-				</div>
-			</div>
-			
 			<div class="summary-cards">
 				<div class="summary-card">
-					<div class="summary-label">💬 Turns</div>
-					<div class="summary-value">${data.turns.length}</div>
-				</div>
-				<div class="summary-card">
-					<div class="summary-label">📊 Est. Tokens</div>
-					<div class="summary-value">${totalTokens.toLocaleString()}</div>
+					<div class="summary-label">📝 Interactions</div>
+					<div class="summary-value">${data.interactions}</div>
+					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
-					<div class="summary-value">${totalToolCalls}</div>
+					<div class="summary-value">${usageToolTotal}</div>
+					<div class="summary-sub">Top: ${formatTopList(usageTopTools, lookupToolName)}</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🔌 MCP Tools</div>
-					<div class="summary-value">${totalMcpTools}</div>
+					<div class="summary-value">${usageMcpTotal}</div>
+					<div class="summary-sub">Top: ${formatTopList(usageTopMcpTools)}</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🔗 Context Refs</div>
-					<div class="summary-value">${totalRefs}</div>
+					<div class="summary-value">${usageContextTotal}</div>
+					<div class="summary-sub">#file ${usageContextRefs.file || 0} · @vscode ${usageContextRefs.vscode || 0} · @workspace ${usageContextRefs.workspace || 0}</div>
 				</div>
 			</div>
-			
-				<div class="mode-bar-group">
-					<div class="mode-bar">
-						<div class="mode-icon" style="background: ${getModeColor('ask')};">💬</div>
-						<span class="mode-label">Ask:</span>
-						<span class="mode-count">${modeUsage.ask}</span>
-					</div>
-					<div class="mode-bar">
-						<div class="mode-icon" style="background: ${getModeColor('edit')};">✏️</div>
-						<span class="mode-label">Edit:</span>
-						<span class="mode-count">${modeUsage.edit}</span>
-					</div>
-					<div class="mode-bar">
-						<div class="mode-icon" style="background: ${getModeColor('agent')};">🤖</div>
-						<span class="mode-label">Agent:</span>
-						<span class="mode-count">${modeUsage.agent}</span>
-					</div>
-					<div class="model-summary">
-						<span>Models used: <strong>${modelNames.length}</strong></span>
-						${modelNames.length > 0 ? `<span class="model-list">${modelNames.map(m => `<span class="model-item">${escapeHtml(m)}: <strong>${modelUsage[m]}</strong></span>`).join('')}</span>` : ''}
-					</div>
-				</div>
 			
 			<div class="turns-header">
 				<span>📝</span>
