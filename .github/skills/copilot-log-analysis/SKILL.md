@@ -72,9 +72,13 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 
 **For JSONL files:**
 - Processes line-by-line JSON events
-- **User messages**: `type: 'user.message'`, field: `data.content`
-- **Assistant messages**: `type: 'assistant.message'`, field: `data.content`
-- **Tool results**: `type: 'tool.result'`, field: `data.output`
+- **Copilot CLI format** (uses `type` field):
+  - **User messages**: `type: 'user.message'`, field: `data.content`
+  - **Assistant messages**: `type: 'assistant.message'`, field: `data.content`
+  - **Tool results**: `type: 'tool.result'`, field: `data.output`
+- **VS Code Incremental format** (uses `kind` field):
+  - **User requests**: `kind: 1`, field: `request.message.parts[].text`
+  - **Assistant responses**: `kind: 2`, field: `response[].value`, `model`
 
 ### 2. Interaction Counting: `countInteractionsInSession()`
 **Location**: `src/extension.ts` (lines 615-651)
@@ -88,8 +92,10 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 - Each request = one user interaction
 
 **For JSONL files:**
-- Counts events with `type: 'user.message'`
+- **Copilot CLI format**: Counts events with `type: 'user.message'`
+- **VS Code Incremental format**: Counts events with `kind: 1`
 - Processes line-by-line, skipping malformed lines
+- **Note**: Sessions with 0 interactions (empty `requests: []` or no `kind: 1` entries) are filtered out in diagnostics view
 
 ### 3. Model Usage Extraction: `getModelUsageFromSession()`
 **Location**: `src/extension.ts` (lines 653-729)
@@ -104,13 +110,19 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 - Tracks input tokens from `message.parts[].text`
 - Tracks output tokens from `response[].value`
 
-**For JSONL files:**
+**For JSONL files (Copilot CLI format):**
 - Default model: `gpt-4o` (for CLI sessions)
 - Reads `event.model` if specified
 - Categorizes by event type:
   - `user.message` → input tokens
   - `assistant.message` → output tokens
   - `tool.result` → input tokens (context)
+
+**For JSONL files (VS Code Incremental format):**
+- Reads `model` field from `kind: 2` response entries
+- Categorizes by kind:
+  - `kind: 1` → input tokens (from `request.message.parts[].text`)
+  - `kind: 2` → output tokens (from `response[].value`)
 
 **Model Detection Logic**: `getModelFromRequest()` (lines 1123-1145)
 - Primary: `request.result.metadata.modelId`
@@ -138,6 +150,27 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 - Contains `.vscode-server/` → `'VS Code Server'`
 - Contains `/code/` → `'VS Code'`
 - Default → `'Unknown'`
+
+### 5. Session Title Extraction
+**Location**: `src/extension.ts` in `getSessionFileDetails()` method
+
+**Purpose**: Extracts the session title for display in diagnostics.
+
+**How it works:**
+
+**For JSON files:**
+1. Primary: `customTitle` field from root of session object
+2. Fallback: `generatedTitle` from response items (e.g., thinking blocks, tool invocations)
+   - Iterates through `requests[].response[]` looking for `generatedTitle`
+
+**For JSONL files (Incremental format):**
+1. Primary: `customTitle` from the `kind: 0` header entry
+2. Fallback: `generatedTitle` from `kind: 2` response entries
+
+**For JSONL files (CLI format):**
+- Not available (CLI sessions don't have titles)
+
+**Note**: `customTitle` is user-defined (when they rename the session). `generatedTitle` is AI-generated summary text found in thinking blocks or tool results.
 
 ## Token Estimation Algorithm
 
@@ -254,6 +287,45 @@ See the **Executable Scripts** section above for three available scripts:
 - Assistant output: `data.content` (when `type: 'assistant.message'`)
 - Tool output: `data.output` (when `type: 'tool.result'`)
 - Model: `model` (optional, defaults to `gpt-4o`)
+
+## JSONL File Structure (VS Code Incremental)
+
+**Introduced in**: VS Code Insiders ~0.25+ (April 2025)
+
+This is a newer incremental format used by VS Code Insiders that logs session data progressively. Unlike the CLI format that uses `type`, this format uses `kind` to identify log entry types.
+
+**Entry kinds:**
+
+```jsonl
+{"kind": 0, "sessionId": "...", "customTitle": "Session Title", "mode": "agent", "version": 1}
+{"kind": 1, "requestId": "...", "request": {"message": {"parts": [{"text": "user prompt"}]}}}
+{"kind": 2, "requestId": "...", "response": [{"value": "assistant reply"}], "model": "claude-3.5-sonnet"}
+```
+
+**Kind values:**
+- `kind: 0` - Session header (contains `sessionId`, `customTitle`, `mode`, `version`)
+- `kind: 1` - User request (contains `requestId`, `request.message.parts[].text`)
+- `kind: 2` - Assistant response (contains `requestId`, `response[].value`, `model`)
+
+**Key fields:**
+- Session title: `customTitle` (when `kind: 0`)
+- User input: `request.message.parts[].text` (when `kind: 1`)
+- Assistant output: `response[].value` (when `kind: 2`)
+- Model: `model` (when `kind: 2`, e.g., `claude-3.5-sonnet`)
+
+**Format detection:**
+```javascript
+// Read first line of JSONL file
+const firstLine = JSON.parse(lines[0]);
+if ('kind' in firstLine) {
+    // VS Code Incremental format
+} else if ('type' in firstLine) {
+    // Copilot CLI format
+}
+```
+
+**Official source reference**: 
+- `vscode-copilot-chat/src/vs/workbench/contrib/chat/common/chatSessionsProvider.d.ts`
 
 ## Pricing and Cost Calculation
 
