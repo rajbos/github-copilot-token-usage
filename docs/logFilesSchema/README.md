@@ -8,7 +8,8 @@ This directory contains documentation and analysis of GitHub Copilot session fil
 **Manually curated documentation** of the Copilot session file structure. This file describes:
 - File locations and formats (.json and .jsonl)
 - Complete schema for JSON session files
-- Complete schema for JSONL session files  
+- Complete schema for JSONL session files (both Copilot CLI and VS Code Incremental formats)
+- Links to official vscode-copilot-chat repository source code
 - Which fields the extension actually uses
 - Detailed descriptions and examples
 
@@ -24,6 +25,40 @@ Contains:
 - All discovered field paths with types and examples
 - Field occurrence counts
 - Detection of new fields not in the manual documentation
+
+## Session File Formats
+
+The extension supports three distinct session file formats:
+
+| Format | Extension | Location | Discriminator |
+|--------|-----------|----------|---------------|
+| **JSON** | `.json` | workspaceStorage, globalStorage | N/A (standard JSON) |
+| **JSONL CLI** | `.jsonl` | `~/.copilot/session-state/` | `type` field (string) |
+| **JSONL Incremental** | `.jsonl` | workspaceStorage (VS Code Insiders) | `kind` field (number) |
+
+### JSONL Format Detection
+
+When processing `.jsonl` files, the extension checks:
+1. If lines have a `kind` field (number) → **VS Code Incremental format**
+2. If lines have a `type` field (string) → **Copilot CLI format**
+
+### VS Code Incremental Format (New in 2026)
+
+VS Code Insiders introduced a new incremental JSONL format that stores session data as deltas:
+- `kind: 0` - Session header with metadata
+- `kind: 1` - Delete operation (rare)
+- `kind: 2` - Insert/Update with request data
+
+See `session-file-schema.json` → `jsonlIncrementalSchema` for full details.
+
+## Official Source References
+
+The session file schemas are defined in the `vscode-copilot-chat` repository:
+
+- [Chat Session Provider](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/vscode.proposed.chatSessionsProvider.d.ts) - Session metadata interfaces
+- [Edit Log Service](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/multiFileEdit/common/editLogService.ts) - Edit logging
+- [Session Content Builder](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/chatSessions/vscode-node/copilotCloudSessionContentBuilder.ts) - Streaming responses
+- [Workspace Recorder](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/workspaceRecorder/vscode-node/workspaceRecorder.ts) - JSONL logging
 
 ## Updating the Schema
 
