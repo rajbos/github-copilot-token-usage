@@ -169,6 +169,7 @@ interface SessionLogData {
 	firstInteraction: string | null;
 	lastInteraction: string | null;
 	turns: ChatTurn[];
+	usageAnalysis?: SessionUsageAnalysis;
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -1777,6 +1778,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		} catch (error) {
 			this.warn(`Error extracting chat turns from ${sessionFile}: ${error}`);
 		}
+
+		let usageAnalysis: SessionUsageAnalysis | undefined;
+		try {
+			const mtimeMs = new Date(details.modified).getTime();
+			usageAnalysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtimeMs);
+		} catch (usageError) {
+			this.warn(`Error loading usage analysis for ${sessionFile}: ${usageError}`);
+		}
 		
 		return {
 			file: details.file,
@@ -1789,7 +1798,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			contextReferences: details.contextReferences,
 			firstInteraction: details.firstInteraction,
 			lastInteraction: details.lastInteraction,
-			turns
+			turns,
+			usageAnalysis
 		};
 	}
 
