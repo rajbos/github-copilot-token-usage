@@ -1,3 +1,12 @@
+---
+title: Documentation Index
+created: 2026-01-19
+updated: 2026-01-19
+status: active
+type: reference
+tags: [documentation, index]
+---
+
 # Documentation
 
 This directory contains documentation for the GitHub Copilot Token Tracker extension.
@@ -10,11 +19,11 @@ For comprehensive documentation about Copilot session log file schemas, see:
 
 ### Quick Links
 
-- **[SCHEMA-ANALYSIS.md](logFilesSchema/SCHEMA-ANALYSIS.md)** - Quick reference guide
+- **[schema-analysis.md](logFilesSchema/schema-analysis.md)** - Quick reference guide
 - **[session-file-schema.json](logFilesSchema/session-file-schema.json)** - Manual schema documentation
 - **[session-file-schema-analysis.json](logFilesSchema/session-file-schema-analysis.json)** - Auto-generated analysis
 - **[README.md](logFilesSchema/README.md)** - Detailed guide for working with schemas
-- **[VSCODE-VARIANTS.md](logFilesSchema/VSCODE-VARIANTS.md)** - VS Code variants support info
+- **[vscode-variants.md](logFilesSchema/vscode-variants.md)** - VS Code variants support info
 
 ### Quick Start
 
@@ -26,4 +35,4 @@ For comprehensive documentation about Copilot session log file schemas, see:
 Get-Content docs\logFilesSchema\session-file-schema-analysis.json | ConvertFrom-Json
 ```
 
-See [logFilesSchema/SCHEMA-ANALYSIS.md](logFilesSchema/SCHEMA-ANALYSIS.md) for more information.
+See [logFilesSchema/schema-analysis.md](logFilesSchema/schema-analysis.md) for more information.
