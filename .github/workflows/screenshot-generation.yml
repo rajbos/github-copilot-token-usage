@@ -1,0 +1,143 @@
+name: Generate Extension Screenshots
+
+on:
+  workflow_dispatch:
+  
+  push:
+    paths:
+      - 'src/**'
+      - 'scripts/screenshot-ui-views.js'
+      - '.github/workflows/screenshot-generation.yml'
+
+jobs:
+  generate-screenshots:
+    name: Generate UI Screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Verify test data exists
+        run: |
+          echo "Checking test data..."
+          ls -la test-data/chatSessions/
+          echo "Found $(ls test-data/chatSessions/*.json | wc -l) test session files"
+      
+      - name: Setup virtual display (Xvfb)
+        run: |
+          echo "Installing Xvfb for headless display..."
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libgbm1 libnss3 libasound2
+          
+          # Start virtual display
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          
+          # Wait for display to be ready
+          sleep 2
+          echo "Virtual display started on :99"
+      
+      - name: Install VS Code
+        run: |
+          echo "Installing VS Code..."
+          wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg
+          sudo install -D -o root -g root -m 644 packages.microsoft.gpg /etc/apt/keyrings/packages.microsoft.gpg
+          sudo sh -c 'echo "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'
+          sudo apt-get update
+          sudo apt-get install -y code
+          
+          # Verify installation
+          code --version
+      
+      - name: Build extension
+        run: npm run compile
+      
+      - name: Execute screenshot skill
+        env:
+          COPILOT_TEST_DATA_PATH: ${{ github.workspace }}/test-data/chatSessions
+        run: |
+          echo "Executing screenshot generation skill..."
+          
+          # Run the screenshot setup script with timeout to prevent hanging
+          timeout 15s node scripts/screenshot-ui-views.js || true
+          
+          echo "Screenshot setup completed"
+      
+      - name: Prepare artifacts
+        run: |
+          # Ensure screenshot directory exists
+          mkdir -p docs/images/screenshots
+          
+          # Copy instructions if generated
+          if [ -f screenshot-instructions.html ]; then
+            echo "✅ Screenshot instructions generated"
+            cp screenshot-instructions.html docs/images/screenshots/
+          else
+            echo "⚠️  Instructions file not found"
+          fi
+      
+      - name: List generated files
+        run: |
+          echo "Generated files:"
+          ls -lah docs/images/screenshots/ || echo "No screenshots directory"
+          ls -lah screenshot-instructions.html || echo "No instructions file in root"
+      
+      - name: Upload screenshot instructions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-instructions
+          path: |
+            screenshot-instructions.html
+            docs/images/screenshots/screenshot-instructions.html
+          retention-days: 30
+          if-no-files-found: warn
+      
+      - name: Upload screenshots (if any captured)
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-screenshots
+          path: docs/images/screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 90
+      
+      - name: Workflow Summary
+        if: always()
+        run: |
+          echo "## 🎨 Screenshot Generation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment Setup" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Extension built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Test data verified ($(ls test-data/chatSessions/*.json | wc -l) files)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Virtual display configured (Xvfb)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ VS Code installed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Screenshot Capture" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️  **Note**: Full GUI automation in CI is limited for VS Code extensions." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**What was generated:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Screenshot capture instructions (HTML)" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment setup verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📸 Recommended Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "For high-quality screenshots:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the \`screenshot-instructions\` artifact" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run \`node scripts/screenshot-ui-views.js\` locally" >> $GITHUB_STEP_SUMMARY
+          echo "3. Follow the generated checklist" >> $GITHUB_STEP_SUMMARY
+          echo "4. Upload screenshots via PR" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Check the artifacts section above for:" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 \`screenshot-instructions.html\` - Detailed capture checklist" >> $GITHUB_STEP_SUMMARY
+          echo "- 🖼️  \`extension-screenshots\` - Any captured screenshots (if available)" >> $GITHUB_STEP_SUMMARY

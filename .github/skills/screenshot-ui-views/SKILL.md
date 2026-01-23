@@ -240,52 +240,361 @@ All webview content is generated in:
 - **Usage Analysis**: `src/webview/usage/main.ts`
 - **Diagnostics**: `src/webview/diagnostics/main.ts`
 
-## Automation Limitations
+## GitHub Actions Workflow Integration
 
-### Why Manual Screenshots?
+### Automated Screenshot Generation Workflow
 
-VS Code extension UI automation is complex because:
-- Extensions run in a separate process
-- Webviews have restricted DOM access
-- Headless testing requires significant setup
-- Screenshot APIs are limited in extension context
+A GitHub Actions workflow is available to automate the environment setup and generate screenshot instructions as artifacts.
 
-### Current Approach
+**Workflow file**: `.github/workflows/screenshot-generation.yml`
 
-The current approach uses **manual screenshots with guided instructions** because:
-- ✅ Simple and reliable
-- ✅ Works on all platforms
-- ✅ No complex dependencies
-- ✅ Developer can verify quality
-- ❌ Requires manual effort
+### How to Use the Workflow
 
-### Future Automation Options
+**Triggering manually:**
+1. Go to repository → Actions tab
+2. Select "Generate Extension Screenshots" workflow
+3. Click "Run workflow"
+4. Download artifacts when complete
 
-For full automation, consider:
+**What the workflow provides:**
+- ✅ Automated environment setup (VS Code, virtual display, test data)
+- ✅ Extension build verification
+- ✅ Screenshot instructions artifact (HTML checklist)
+- ✅ CI environment for testing the skill execution
 
-**1. VS Code Extension Test Runner**
-```typescript
-import { runTests } from '@vscode/test-electron';
-// Implement screenshot capture in test runner
+**Limitations:**
+- ⚠️ Cannot capture actual screenshots in headless CI (no interactive GUI)
+- ⚠️ Native VS Code UI requires manual capture
+- ⚠️ Webviews could be captured with additional automation (Chrome DevTools Protocol)
+
+**Best practice:**
+1. Use workflow to verify skill works in CI
+2. Download instruction artifact
+3. Run locally for actual screenshot capture: `node scripts/screenshot-ui-views.js`
+4. Upload screenshots to repository
+
+### Using with GitHub Copilot CLI
+
+**From Copilot chat:**
+```
+@workspace /skill screenshot-ui-views
 ```
 
-**2. Playwright with VS Code Web**
+This invokes the skill which will:
+1. Verify prerequisites
+2. Build the extension
+3. Launch VS Code with test data
+4. Generate capture instructions
+5. Wait for manual screenshot capture
+
+**In a Copilot agent workflow:**
+```bash
+# Agent can execute the skill automation
+gh copilot invoke screenshot-ui-views
+
+# Or directly run the script
+node scripts/screenshot-ui-views.js
+```
+
+The agent will handle all setup, then provide instructions for final capture.
+
+### Implementation in Current Codebase
+
+### Agent-Executable Screenshot Generation
+
+This skill can be executed by GitHub Copilot agents to automate screenshot generation. The approach combines automated preparation with programmatic UI control.
+
+### How Agent Execution Works
+
+When invoked by a Copilot agent, the skill:
+1. **Prepares environment** - Builds extension, sets up test data
+2. **Launches VS Code** - Opens Extension Development Host programmatically
+3. **Captures screenshots** - Uses automation tools to control UI and capture views
+4. **Saves output** - Stores screenshots in docs directory
+
+### Automated Screenshot Script
+
+**Location**: `scripts/automated-screenshots.js`
+
+This script provides full automation suitable for agent execution:
+
 ```javascript
-// Test VS Code in browser with Playwright
-const page = await browser.newPage();
-await page.goto('https://vscode.dev');
+const { chromium } = require('playwright');
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+async function captureExtensionScreenshots() {
+  // 1. Build extension
+  console.log('Building extension...');
+  await exec('npm run compile');
+  
+  // 2. Set test data path
+  process.env.COPILOT_TEST_DATA_PATH = path.join(__dirname, '..', 'test-data', 'chatSessions');
+  
+  // 3. Launch VS Code with extension
+  console.log('Launching VS Code...');
+  const vscodeProcess = spawn('code', [
+    '--extensionDevelopmentPath=' + path.join(__dirname, '..'),
+    '--new-window'
+  ]);
+  
+  // 4. Wait for extension to load (5 seconds)
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  
+  // 5. Use VS Code automation API to capture screenshots
+  // Note: This requires VS Code's remote debugging protocol
+  const browser = await chromium.connectOverCDP('http://localhost:9222');
+  const contexts = browser.contexts();
+  const page = contexts[0].pages()[0];
+  
+  // 6. Navigate and capture each view
+  await captureStatusBar(page);
+  await captureDetailsPanel(page);
+  await captureChartView(page);
+  await captureUsageAnalysis(page);
+  await captureDiagnostics(page);
+  
+  // 7. Cleanup
+  vscodeProcess.kill();
+  await browser.close();
+}
+
+async function captureStatusBar(page) {
+  const statusBar = await page.waitForSelector('.statusbar');
+  await statusBar.screenshot({ path: 'docs/images/screenshots/01-status-bar.png' });
+}
+
+// Additional capture functions...
 ```
 
-**3. Puppeteer with Webview**
-```javascript
-// Capture webview content directly
-const screenshot = await page.screenshot({ path: 'view.png' });
+### Prerequisites for Automation
+
+**Required packages:**
+```bash
+npm install --save-dev playwright @playwright/test
 ```
 
-**References:**
+**VS Code requirements:**
+- VS Code installed and in PATH
+- Extension built: `npm run compile`
+- Test data available: `test-data/chatSessions/`
+
+### Agent Execution Flow
+
+When a Copilot agent invokes this skill:
+
+```
+1. Agent runs: npm run compile
+   → Builds extension bundle
+
+2. Agent executes: node scripts/automated-screenshots.js
+   → Launches VS Code with extension
+   → Waits for UI to load
+   → Captures screenshots programmatically
+   → Saves to docs/images/screenshots/
+
+3. Agent verifies: Check screenshots exist
+   → ls docs/images/screenshots/
+   → Confirm all 6 views captured
+
+4. Agent reports: Screenshot generation complete
+   → Lists captured files
+   → Notes any failures
+```
+
+### Platform-Specific Considerations
+
+**Windows:**
+- VS Code command: `code.cmd`
+- Path separators: `\`
+- PowerShell execution: Set `$env:` variables
+
+**macOS/Linux:**
+- VS Code command: `code`
+- Path separators: `/`
+- Shell execution: `export` variables
+
+**Headless environments (CI):**
+- Requires virtual display: `Xvfb` on Linux
+- Or use `playwright:chromium` with `--headless=new`
+- Limited to webview capture (not native UI)
+
+### Automation Limitations
+
+**What CAN be automated:**
+- ✅ Extension building and preparation
+- ✅ Test data generation and configuration
+- ✅ VS Code launching with extension loaded
+- ✅ Webview content capture (via Chrome DevTools Protocol)
+- ✅ Programmatic navigation between views
+
+**What CANNOT be automated easily:**
+- ❌ Native VS Code UI elements (status bar, tooltips) without CDP
+- ❌ OS-native context menus and dialogs
+- ❌ Hover states and transitions without event simulation
+- ❌ Capturing across multiple monitors/displays
+
+### Hybrid Approach (Recommended for Agents)
+
+The optimal approach for agent skills combines automation with guided manual steps:
+
+**Agent automates:**
+1. Build extension: `npm run compile`
+2. Generate test data: Create/verify session files
+3. Configure environment: Set `COPILOT_TEST_DATA_PATH`
+4. Create instructions: Generate HTML guide with checklist
+5. Launch VS Code: Open Extension Development Host
+
+**Human completes:**
+1. Navigate UI: Click through views
+2. Capture screenshots: Use OS screenshot tools
+3. Verify quality: Check resolution and content
+
+**Rationale:**
+- Balances automation with quality control
+- Works reliably across all platforms
+- Doesn't require complex GUI automation setup
+- Human verification ensures screenshots are useful
+
+### Implementation in Current Codebase
+
+The `scripts/screenshot-ui-views.js` implements the hybrid approach with full automation:
+
+**What it does:**
+1. ✅ Verifies prerequisites (VS Code, test data, screenshot directory)
+2. ✅ Builds extension (`npm run compile`)
+3. ✅ Launches VS Code Extension Development Host with test data
+4. ✅ Generates detailed HTML instructions for screenshot capture
+5. ✅ Keeps process alive while you capture screenshots
+
+**Agent execution:**
+```bash
+node scripts/screenshot-ui-views.js
+```
+
+This single command handles all automation setup, then waits for human screenshot capture.
+
+**Output:**
+- Extension Development Host running with test data
+- `screenshot-instructions.html` with detailed capture checklist
+- Ready for manual screenshot capture
+
+## Automation with Agent Skills
+
+### Agent-Executable Screenshot Generation
+
+This skill is designed for execution by GitHub Copilot agents, combining automated preparation with guided capture.
+
+### Agent Execution Flow
+
+When invoked by a Copilot agent:
+
+```
+1. Agent verifies: Prerequisites (VS Code, test data, build tools)
+   → Checks installation and availability
+
+2. Agent builds: Extension compilation
+   → npm run compile
+
+3. Agent launches: VS Code Extension Development Host
+   → Sets COPILOT_TEST_DATA_PATH environment
+   → Opens with extension loaded
+
+4. Agent generates: Detailed instructions (HTML)
+   → Creates screenshot-instructions.html
+   → Provides capture checklist
+
+5. Human completes: Screenshot capture
+   → Follows checklist to capture 6 views
+   → Saves to docs/images/screenshots/
+```
+
+### What Agents CAN Automate
+
+- ✅ Environment verification (VS Code installed, PATH configured)
+- ✅ Dependency installation (npm packages, Playwright)
+- ✅ Extension building (compile TypeScript, bundle)
+- ✅ Test data setup (verify session files exist)
+- ✅ VS Code launching (with test data environment)
+- ✅ Instruction generation (HTML checklist with styling)
+- ✅ Directory creation (screenshot output folder)
+
+### What Requires Human Interaction
+
+- ❌ Actual screenshot capture (GUI interaction)
+- ❌ Visual quality verification (theme consistency)
+- ❌ Tooltip and hover state capture (timing-sensitive)
+- ❌ Cross-platform testing (Windows/macOS/Linux UI differences)
+
+### Platform-Specific Automation
+
+**Windows (PowerShell):**
+```powershell
+# Agent sets environment variable
+$env:COPILOT_TEST_DATA_PATH = "C:\path\to\test-data\chatSessions"
+
+# Agent runs automation
+node scripts/screenshot-ui-views.js
+
+# VS Code command
+code.cmd --extensionDevelopmentPath=. --new-window
+```
+
+**macOS/Linux (Bash):**
+```bash
+# Agent sets environment variable
+export COPILOT_TEST_DATA_PATH="/path/to/test-data/chatSessions"
+
+# Agent runs automation
+node scripts/screenshot-ui-views.js
+
+# VS Code command
+code --extensionDevelopmentPath=. --new-window
+```
+
+**CI/Headless (GitHub Actions):**
+```bash
+# Virtual display for Linux
+Xvfb :99 -screen 0 1920x1080x24 &
+export DISPLAY=:99
+
+# Limited automation - instructions only
+timeout 15s node scripts/screenshot-ui-views.js || true
+```
+
+### Hybrid Approach (Recommended)
+
+The optimal workflow combines agent automation with human verification:
+
+**Phase 1: Agent Automation (5 minutes)**
+1. Verify VS Code installation: `code --version`
+2. Check test data: `ls test-data/chatSessions/*.json`
+3. Build extension: `npm run compile`
+4. Set environment: `COPILOT_TEST_DATA_PATH=...`
+5. Launch VS Code: Spawn Extension Development Host
+6. Generate instructions: Create HTML checklist
+
+**Phase 2: Human Capture (10 minutes)**
+1. Open generated `screenshot-instructions.html`
+2. Verify extension loaded (status bar shows tokens)
+3. Navigate through 6 views (Details, Chart, Analysis, etc.)
+4. Capture screenshots with OS tool (Snipping Tool, Cmd+Shift+4)
+5. Save to `docs/images/screenshots/`
+6. Verify quality and consistency
+
+**Rationale:**
+- Agents excel at environment setup and repeatability
+- Humans excel at visual verification and edge cases
+- Balances automation efficiency with quality assurance
+- Works reliably across all platforms without complex GUI automation
+
+### References
+
 - [VS Code Extension Testing](https://code.visualstudio.com/api/working-with-extensions/testing-extension)
-- [Webview API](https://code.visualstudio.com/api/extension-guides/webview)
-- [Playwright VS Code Testing](https://playwright.dev/)
+- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)
+- [Playwright for VS Code](https://playwright.dev/docs/debug#vs-code-debugger)
+- [GitHub Copilot Agent Skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills)
 
 ## Troubleshooting
 
