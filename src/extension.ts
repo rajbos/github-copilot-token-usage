@@ -3283,7 +3283,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: true, // Keep context so we can update it
+				retainContextWhenHidden: false, // Match other panels to avoid output channel issues
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
