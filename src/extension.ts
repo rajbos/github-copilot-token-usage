@@ -359,14 +359,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	public async clearCache(): Promise<void> {
 		   try {
+			   // Show the output channel so users can see what's happening
+			   this.outputChannel.show(true);
 			   this.log('[DEBUG] clearCache() called');
+			   this.log('Clearing session file cache...');
+			   
+			   const cacheSize = this.sessionFileCache.size;
 			   this.sessionFileCache.clear();
 			   await this.context.globalState.update('sessionFileCache', undefined);
-			   this.log('Cache cleared successfully');
+			   
+			   this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
 			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
+			   
 			   // Trigger a refresh after clearing the cache
+			   this.log('Reloading token statistics...');
 			   await this.updateTokenStats();
+			   this.log('Token statistics reloaded successfully.');
 		   } catch (error) {
+			   this.outputChannel.show(true);
 			   this.error('Error clearing cache:', error);
 			   vscode.window.showErrorMessage('Failed to clear cache: ' + error);
 		   }
@@ -3324,6 +3334,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.clearCache();
 					// After clearing cache, refresh the diagnostic report if it's open
 					if (this.diagnosticsPanel) {
+						// Send completion message to webview before refreshing
+						this.diagnosticsPanel.webview.postMessage({ command: 'cacheCleared' });
+						// Wait a moment for the message to be processed
+						await new Promise(resolve => setTimeout(resolve, 500));
 						// Simply refresh the diagnostic report by revealing it again
 						// This will trigger a rebuild with fresh data
 						await this.showDiagnosticReport();
