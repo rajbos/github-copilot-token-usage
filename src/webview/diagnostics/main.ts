@@ -555,6 +555,7 @@ function renderLayout(data: DiagnosticsData): void {
 			}
 			.button:hover { background: #2a2a30; }
 			.button:active { background: #0a5a8a; }
+			.button:disabled { opacity: 0.6; cursor: not-allowed; }
 			.button.secondary { background: #3c3c3c; border-color: #5a5a5a; color: #ffffff; }
 			.button.secondary:hover { background: #4a4a4a; }
 			.info-box {
@@ -703,6 +704,19 @@ function renderLayout(data: DiagnosticsData): void {
 			
 			// Re-render the table
 			reRenderTable();
+		} else if (message.command === 'cacheCleared') {
+			// Reset button states to indicate success
+			const btnReport = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
+			const btnTab = document.getElementById('btn-clear-cache-tab') as HTMLButtonElement | null;
+			if (btnReport) {
+				btnReport.style.background = '#2d6a4f';
+				btnReport.innerHTML = '<span>✅</span><span>Cache Cleared</span>';
+			}
+			if (btnTab) {
+				btnTab.style.background = '#2d6a4f';
+				btnTab.innerHTML = '<span>✅</span><span>Cache Cleared</span>';
+			}
+			console.log('[DEBUG] Cache cleared confirmation received');
 		}
 	});
 
@@ -800,26 +814,24 @@ function renderLayout(data: DiagnosticsData): void {
 
 	document.getElementById('btn-clear-cache')?.addEventListener('click', () => {
 		console.log('[DEBUG] Clear cache button clicked (report tab)');
-		if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
-			const btn = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
-			if (btn) {
-				btn.style.background = '#2d6a4f';
-				btn.textContent = 'Clearing...';
-			}
-			vscode.postMessage({ command: 'clearCache' });
+		const btn = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
+		if (btn) {
+			btn.style.background = '#d97706';
+			btn.innerHTML = '<span>⏳</span><span>Clearing...</span>';
+			btn.disabled = true;
 		}
+		vscode.postMessage({ command: 'clearCache' });
 	});
 
 	document.getElementById('btn-clear-cache-tab')?.addEventListener('click', () => {
 		console.log('[DEBUG] Clear cache button clicked (cache tab)');
-		if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
-			const btn = document.getElementById('btn-clear-cache-tab') as HTMLButtonElement | null;
-			if (btn) {
-				btn.style.background = '#2d6a4f';
-				btn.textContent = 'Clearing...';
-			}
-			vscode.postMessage({ command: 'clearCache' });
+		const btn = document.getElementById('btn-clear-cache-tab') as HTMLButtonElement | null;
+		if (btn) {
+			btn.style.background = '#d97706';
+			btn.innerHTML = '<span>⏳</span><span>Clearing...</span>';
+			btn.disabled = true;
 		}
+		vscode.postMessage({ command: 'clearCache' });
 	});
 
 	// Fallback click delegation in case direct listeners are not attached
@@ -828,11 +840,12 @@ function renderLayout(data: DiagnosticsData): void {
 		if (!target) { return; }
 		if (target.id === 'btn-clear-cache' || target.id === 'btn-clear-cache-tab') {
 			console.log('[DEBUG] Clear cache button clicked via delegated handler', target.id);
-			if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
-				target.style.background = '#2d6a4f';
-				target.textContent = 'Clearing...';
-				vscode.postMessage({ command: 'clearCache' });
+			target.style.background = '#d97706';
+			target.innerHTML = '<span>⏳</span><span>Clearing...</span>';
+			if (target instanceof HTMLButtonElement) {
+				target.disabled = true;
 			}
+			vscode.postMessage({ command: 'clearCache' });
 		}
 	});
 
