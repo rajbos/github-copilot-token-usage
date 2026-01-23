@@ -711,12 +711,53 @@ function renderLayout(data: DiagnosticsData): void {
 			if (btnReport) {
 				btnReport.style.background = '#2d6a4f';
 				btnReport.innerHTML = '<span>✅</span><span>Cache Cleared</span>';
+				btnReport.disabled = false;
 			}
 			if (btnTab) {
 				btnTab.style.background = '#2d6a4f';
 				btnTab.innerHTML = '<span>✅</span><span>Cache Cleared</span>';
+				btnTab.disabled = false;
 			}
+			
 			console.log('[DEBUG] Cache cleared confirmation received');
+			
+			// Re-enable buttons after a short delay and reset to original state
+			setTimeout(() => {
+				if (btnReport) {
+					btnReport.style.background = '';
+					btnReport.innerHTML = '<span>🗑️</span><span>Clear Cache</span>';
+				}
+				if (btnTab) {
+					btnTab.style.background = '';
+					btnTab.innerHTML = '<span>🗑️</span><span>Clear Cache</span>';
+				}
+			}, 2000);
+		} else if (message.command === 'cacheRefreshed') {
+			// Update cache numbers with refreshed data
+			if (message.cacheInfo) {
+				const cacheInfo = message.cacheInfo;
+				const cacheTabContent = document.getElementById('tab-cache');
+				if (cacheTabContent) {
+					const summaryCards = cacheTabContent.querySelectorAll('.summary-card');
+					if (summaryCards.length >= 4) {
+						const entriesValue = summaryCards[0]?.querySelector('.summary-value');
+						if (entriesValue) { entriesValue.textContent = String(cacheInfo.size); }
+						
+						const sizeValue = summaryCards[1]?.querySelector('.summary-value');
+						if (sizeValue) { sizeValue.textContent = `${cacheInfo.sizeInMB.toFixed(2)} MB`; }
+						
+						const lastUpdatedValue = summaryCards[2]?.querySelector('.summary-value');
+						if (lastUpdatedValue) { 
+							const date = new Date(cacheInfo.lastUpdated);
+							lastUpdatedValue.textContent = date.toLocaleString();
+						}
+						
+						const ageValue = summaryCards[3]?.querySelector('.summary-value');
+						if (ageValue) { ageValue.textContent = '0 seconds ago'; }
+					}
+				}
+				console.log('[DEBUG] Cache refreshed with new data:', cacheInfo);
+			}
 		}
 	});
 
@@ -812,6 +853,27 @@ function renderLayout(data: DiagnosticsData): void {
 		vscode.postMessage({ command: 'openIssue' });
 	});
 
+	// Helper function to update cache numbers to zero
+	function updateCacheNumbers(): void {
+		const cacheTabContent = document.getElementById('tab-cache');
+		if (cacheTabContent) {
+			const summaryCards = cacheTabContent.querySelectorAll('.summary-card');
+			if (summaryCards.length >= 4) {
+				const entriesValue = summaryCards[0]?.querySelector('.summary-value');
+				if (entriesValue) { entriesValue.textContent = '0'; }
+				
+				const sizeValue = summaryCards[1]?.querySelector('.summary-value');
+				if (sizeValue) { sizeValue.textContent = '0 MB'; }
+				
+				const lastUpdatedValue = summaryCards[2]?.querySelector('.summary-value');
+				if (lastUpdatedValue) { lastUpdatedValue.textContent = 'Never'; }
+				
+				const ageValue = summaryCards[3]?.querySelector('.summary-value');
+				if (ageValue) { ageValue.textContent = 'N/A'; }
+			}
+		}
+	}
+
 	document.getElementById('btn-clear-cache')?.addEventListener('click', () => {
 		console.log('[DEBUG] Clear cache button clicked (report tab)');
 		const btn = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
@@ -820,6 +882,8 @@ function renderLayout(data: DiagnosticsData): void {
 			btn.innerHTML = '<span>⏳</span><span>Clearing...</span>';
 			btn.disabled = true;
 		}
+		// Immediately update cache numbers (optimistic update)
+		updateCacheNumbers();
 		vscode.postMessage({ command: 'clearCache' });
 	});
 
@@ -831,6 +895,8 @@ function renderLayout(data: DiagnosticsData): void {
 			btn.innerHTML = '<span>⏳</span><span>Clearing...</span>';
 			btn.disabled = true;
 		}
+		// Immediately update cache numbers (optimistic update)
+		updateCacheNumbers();
 		vscode.postMessage({ command: 'clearCache' });
 	});
 
@@ -845,6 +911,8 @@ function renderLayout(data: DiagnosticsData): void {
 			if (target instanceof HTMLButtonElement) {
 				target.disabled = true;
 			}
+			// Immediately update cache numbers (optimistic update)
+			updateCacheNumbers();
 			vscode.postMessage({ command: 'clearCache' });
 		}
 	});
