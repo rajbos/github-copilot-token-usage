@@ -589,6 +589,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			let cacheHits = 0;
 			let cacheMisses = 0;
+			let skippedFiles = 0;
 
 			for (let i = 0; i < sessionFiles.length; i++) {
 				const sessionFile = sessionFiles[i];
@@ -658,13 +659,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+					else {
+						// File is too old, skip it
+						skippedFiles++;
+					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
 
 			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
-			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${sessionFiles.length > 0 ? ((cacheHits / sessionFiles.length) * 100).toFixed(1) : 0}% hit rate)`);
+			if (skippedFiles > 0) {
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+			}
+			const totalCacheAccesses = cacheHits + cacheMisses;
+			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
 		} catch (error) {
 			this.error('Error calculating detailed stats:', error);
 		}
