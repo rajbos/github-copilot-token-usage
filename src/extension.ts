@@ -177,6 +177,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private logViewerPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
+	private readonly context: vscode.ExtensionContext;
 
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
@@ -293,13 +294,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.sessionFileCache.set(filePath, data);
 		
 		// Limit cache size to prevent memory issues (keep last 1000 files)
-		if (this.sessionFileCache.size > 1000) {
-			const entries = Array.from(this.sessionFileCache.entries());
-			// Remove oldest entries (simple FIFO approach)
-			const toRemove = entries.slice(0, this.sessionFileCache.size - 1000);
-			for (const [key] of toRemove) {
+		// Only trigger cleanup when size exceeds limit by 100 to avoid frequent operations
+		if (this.sessionFileCache.size > 1100) {
+			// Remove 100 oldest entries to bring size back to 1000
+			// Maps maintain insertion order, so the first entries are the oldest
+			const keysToDelete: string[] = [];
+			let count = 0;
+			for (const key of this.sessionFileCache.keys()) {
+				keysToDelete.push(key);
+				count++;
+				if (count >= 100) {
+					break;
+				}
+			}
+			for (const key of keysToDelete) {
 				this.sessionFileCache.delete(key);
 			}
+			this.log(`Cache size limit reached, removed ${keysToDelete.length} oldest entries. Current size: ${this.sessionFileCache.size}`);
 		}
 	}
 
@@ -318,13 +329,68 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	// Persistent cache storage methods
+	private loadCacheFromStorage(): void {
+		try {
+			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
+			if (cacheData) {
+				this.sessionFileCache = new Map(Object.entries(cacheData));
+				this.log(`Loaded ${this.sessionFileCache.size} cached session files from storage`);
+			} else {
+				this.log('No cached session files found in storage');
+			}
+		} catch (error) {
+			this.error('Error loading cache from storage:', error);
+			// Start with empty cache on error
+			this.sessionFileCache = new Map();
+		}
+	}
 
+	private async saveCacheToStorage(): Promise<void> {
+		try {
+			// Convert Map to plain object for storage
+			const cacheData = Object.fromEntries(this.sessionFileCache);
+			await this.context.globalState.update('sessionFileCache', cacheData);
+			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage`);
+		} catch (error) {
+			this.error('Error saving cache to storage:', error);
+		}
+	}
 
-	constructor(extensionUri: vscode.Uri) {
+	public async clearCache(): Promise<void> {
+		   try {
+			   // Show the output channel so users can see what's happening
+			   this.outputChannel.show(true);
+			   this.log('[DEBUG] clearCache() called');
+			   this.log('Clearing session file cache...');
+			   
+			   const cacheSize = this.sessionFileCache.size;
+			   this.sessionFileCache.clear();
+			   await this.context.globalState.update('sessionFileCache', undefined);
+			   
+			   this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
+			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
+			   
+			   // Trigger a refresh after clearing the cache
+			   this.log('Reloading token statistics...');
+			   await this.updateTokenStats();
+			   this.log('Token statistics reloaded successfully.');
+		   } catch (error) {
+			   this.outputChannel.show(true);
+			   this.error('Error clearing cache:', error);
+			   vscode.window.showErrorMessage('Failed to clear cache: ' + error);
+		   }
+	}
+
+	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
 		this.extensionUri = extensionUri;
+		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
 		this.log('Constructor called');
+
+		// Load persisted cache from storage
+		this.loadCacheFromStorage();
 
 		// Check GitHub Copilot extension status
 		this.checkCopilotExtension();
@@ -346,9 +412,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Smart initial update with delay for extension loading
 		this.scheduleInitialUpdate();
 
-		// Update every 5 minutes
+		// Update every 5 minutes and save cache
 		this.updateInterval = setInterval(() => {
 			this.updateTokenStats();
+			this.saveCacheToStorage();
 		}, 5 * 60 * 1000);
 	}
 
@@ -522,6 +589,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			let cacheHits = 0;
 			let cacheMisses = 0;
+			let skippedFiles = 0;
 
 			for (let i = 0; i < sessionFiles.length; i++) {
 				const sessionFile = sessionFiles[i];
@@ -591,13 +659,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+					else {
+						// File is too old, skip it
+						skippedFiles++;
+					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
 
 			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
-			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${sessionFiles.length > 0 ? ((cacheHits / sessionFiles.length) * 100).toFixed(1) : 0}% hit rate)`);
+			if (skippedFiles > 0) {
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+			}
+			const totalCacheAccesses = cacheHits + cacheMisses;
+			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
 		} catch (error) {
 			this.error('Error calculating detailed stats:', error);
 		}
@@ -3004,6 +3080,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			report.push('');
 		}
 		
+		// Cache Statistics
+		report.push('## Cache Statistics');
+		report.push(`Cached Session Files: ${this.sessionFileCache.size}`);
+		report.push(`Cache Storage: Extension Global State`);
+		report.push('');
+		report.push('Cache provides faster loading by storing parsed session data with file modification timestamps.');
+		report.push('Files are only re-parsed when their modification time changes.');
+		report.push('');
+		
 		// Token Statistics
 		report.push('## Token Usage Statistics');
 		try {
@@ -3182,7 +3267,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: true, // Keep context so we can update it
+				retainContextWhenHidden: false, // Match other panels to avoid output channel issues
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
@@ -3194,6 +3279,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+			this.log(`[DEBUG] Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -3251,6 +3337,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showUsageAnalysis':
 					await this.showUsageAnalysis();
+					break;
+				case 'clearCache':
+					this.log('[DEBUG] clearCache message received from diagnostics webview');
+					await this.clearCache();
+					// After clearing cache, refresh the diagnostic report if it's open
+					if (this.diagnosticsPanel) {
+						// Send completion message to webview before refreshing
+						this.diagnosticsPanel.webview.postMessage({ command: 'cacheCleared' });
+						// Wait a moment for the message to be processed
+						await new Promise(resolve => setTimeout(resolve, 500));
+						// Simply refresh the diagnostic report by revealing it again
+						// This will trigger a rebuild with fresh data
+						await this.showDiagnosticReport();
+					}
 					break;
 			}
 		});
@@ -3332,7 +3432,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders }).replace(/</g, '\\u003c');
+		// Get cache information
+		let cacheSizeInMB = 0;
+		try {
+			// Estimate cache size by serializing to JSON
+			const cacheData = Object.fromEntries(this.sessionFileCache);
+			const jsonString = JSON.stringify(cacheData);
+			cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
+		} catch {
+			cacheSizeInMB = 0;
+		}
+		
+		const cacheInfo = {
+			size: this.sessionFileCache.size,
+			sizeInMB: cacheSizeInMB,
+			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
+			location: 'VS Code Global State - extension.globalState.get sessionFileCache'
+		};
+
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -3505,6 +3623,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.analysisPanel) {
 			this.analysisPanel.dispose();
 		}
+		// Save cache to storage before disposing (fire-and-forget async operation)
+		// Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
+		// We can't await here since dispose() is synchronous
+		this.saveCacheToStorage().catch(err => {
+			// Output channel will be disposed, so log to console as fallback
+			console.error('Error saving cache during disposal:', err);
+		});
 		if (this.logViewerPanel) {
 			this.logViewerPanel.dispose();
 		}
@@ -3513,14 +3638,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		this.statusBarItem.dispose();
 		this.outputChannel.dispose();
-		// Clear cache on disposal
-		this.sessionFileCache.clear();
 	}
 }
 
 export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
-	const tokenTracker = new CopilotTokenTracker(context.extensionUri);
+	const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
@@ -3553,8 +3676,14 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showDiagnosticReport();
 	});
 
+	// Register the clear cache command
+	const clearCacheCommand = vscode.commands.registerCommand('copilot-token-tracker.clearCache', async () => {
+		tokenTracker.log('Clear cache command called');
+		await tokenTracker.clearCache();
+	});
+
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
