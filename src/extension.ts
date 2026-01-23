@@ -138,12 +138,46 @@ interface SessionFileDetails {
 	editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
 	editorRoot?: string; // top-level editor root path (for display in diagnostics)
 	editorName?: string; // friendly editor name (e.g., 'VS Code')
+	title?: string; // session title (customTitle from session file)
+}
+
+// Chat turn information for log viewer
+interface ChatTurn {
+	turnNumber: number;
+	timestamp: string | null;
+	mode: 'ask' | 'edit' | 'agent';
+	userMessage: string;
+	assistantResponse: string;
+	model: string | null;
+	toolCalls: { toolName: string; arguments?: string; result?: string }[];
+	contextReferences: ContextReferenceUsage;
+	mcpTools: { server: string; tool: string }[];
+	inputTokensEstimate: number;
+	outputTokensEstimate: number;
+}
+
+// Full session log data for the log viewer
+interface SessionLogData {
+	file: string;
+	title: string | null;
+	editorSource: string;
+	editorName: string;
+	size: number;
+	modified: string;
+	interactions: number;
+	contextReferences: ContextReferenceUsage;
+	firstInteraction: string | null;
+	lastInteraction: string | null;
+	turns: ChatTurn[];
+	usageAnalysis?: SessionUsageAnalysis;
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
 	private diagnosticsPanel?: vscode.WebviewPanel;
+	private logViewerPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
+	private readonly context: vscode.ExtensionContext;
 
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
@@ -260,13 +294,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.sessionFileCache.set(filePath, data);
 		
 		// Limit cache size to prevent memory issues (keep last 1000 files)
-		if (this.sessionFileCache.size > 1000) {
-			const entries = Array.from(this.sessionFileCache.entries());
-			// Remove oldest entries (simple FIFO approach)
-			const toRemove = entries.slice(0, this.sessionFileCache.size - 1000);
-			for (const [key] of toRemove) {
+		// Only trigger cleanup when size exceeds limit by 100 to avoid frequent operations
+		if (this.sessionFileCache.size > 1100) {
+			// Remove 100 oldest entries to bring size back to 1000
+			// Maps maintain insertion order, so the first entries are the oldest
+			const keysToDelete: string[] = [];
+			let count = 0;
+			for (const key of this.sessionFileCache.keys()) {
+				keysToDelete.push(key);
+				count++;
+				if (count >= 100) {
+					break;
+				}
+			}
+			for (const key of keysToDelete) {
 				this.sessionFileCache.delete(key);
 			}
+			this.log(`Cache size limit reached, removed ${keysToDelete.length} oldest entries. Current size: ${this.sessionFileCache.size}`);
 		}
 	}
 
@@ -285,13 +329,68 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	// Persistent cache storage methods
+	private loadCacheFromStorage(): void {
+		try {
+			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
+			if (cacheData) {
+				this.sessionFileCache = new Map(Object.entries(cacheData));
+				this.log(`Loaded ${this.sessionFileCache.size} cached session files from storage`);
+			} else {
+				this.log('No cached session files found in storage');
+			}
+		} catch (error) {
+			this.error('Error loading cache from storage:', error);
+			// Start with empty cache on error
+			this.sessionFileCache = new Map();
+		}
+	}
 
+	private async saveCacheToStorage(): Promise<void> {
+		try {
+			// Convert Map to plain object for storage
+			const cacheData = Object.fromEntries(this.sessionFileCache);
+			await this.context.globalState.update('sessionFileCache', cacheData);
+			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage`);
+		} catch (error) {
+			this.error('Error saving cache to storage:', error);
+		}
+	}
 
-	constructor(extensionUri: vscode.Uri) {
+	public async clearCache(): Promise<void> {
+		   try {
+			   // Show the output channel so users can see what's happening
+			   this.outputChannel.show(true);
+			   this.log('[DEBUG] clearCache() called');
+			   this.log('Clearing session file cache...');
+			   
+			   const cacheSize = this.sessionFileCache.size;
+			   this.sessionFileCache.clear();
+			   await this.context.globalState.update('sessionFileCache', undefined);
+			   
+			   this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
+			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
+			   
+			   // Trigger a refresh after clearing the cache
+			   this.log('Reloading token statistics...');
+			   await this.updateTokenStats();
+			   this.log('Token statistics reloaded successfully.');
+		   } catch (error) {
+			   this.outputChannel.show(true);
+			   this.error('Error clearing cache:', error);
+			   vscode.window.showErrorMessage('Failed to clear cache: ' + error);
+		   }
+	}
+
+	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
 		this.extensionUri = extensionUri;
+		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
 		this.log('Constructor called');
+
+		// Load persisted cache from storage
+		this.loadCacheFromStorage();
 
 		// Check GitHub Copilot extension status
 		this.checkCopilotExtension();
@@ -313,9 +412,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Smart initial update with delay for extension loading
 		this.scheduleInitialUpdate();
 
-		// Update every 5 minutes
+		// Update every 5 minutes and save cache
 		this.updateInterval = setInterval(() => {
 			this.updateTokenStats();
+			this.saveCacheToStorage();
 		}, 5 * 60 * 1000);
 	}
 
@@ -331,52 +431,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (extensionsExistButInactive) {
 			// Use shorter delay for testing in Codespaces
 			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
-			this.log(`Copilot extensions found but not active yet - delaying initial update by ${delaySeconds} seconds to allow extensions to load`);
-			this.log(`Setting timeout for ${new Date(Date.now() + (delaySeconds * 1000)).toLocaleTimeString()}`);
+			this.log(`⏳ Waiting for Copilot Extension to start (${delaySeconds}s delay)`);
 
 			this.initialDelayTimeout = setTimeout(() => {
 				try {
-					this.log('🚀 Delayed initial update starting now...');
+					this.log('🚀 Starting token usage analysis...');
 					this.recheckCopilotExtensionsAfterDelay();
 					this.updateTokenStats();
 				} catch (error) {
 					this.error('Error in delayed initial update:', error);
 				}
 			}, delaySeconds * 1000);
-
-			this.log(`Timeout ID: ${this.initialDelayTimeout} set successfully`);
-
-			// Add a heartbeat to prove the timeout mechanism is working
-			setTimeout(() => {
-				this.log('💓 Heartbeat: 2 seconds elapsed, timeout still pending...');
-			}, 2 * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
-			this.log('No Copilot extensions found - starting immediate update');
+			this.log('⚠️ No Copilot extensions found - starting analysis anyway');
 			setTimeout(() => this.updateTokenStats(), 100);
 		} else {
-			this.log('Copilot extensions are active - starting immediate update');
+			this.log('✅ Copilot extensions are active - starting token analysis');
 			setTimeout(() => this.updateTokenStats(), 100);
 		}
 	}
 
 	private recheckCopilotExtensionsAfterDelay(): void {
-		this.log('Re-checking Copilot extensions after delay...');
-
 		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
 		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
 
-		if (copilotExtension) {
-			this.log(`GitHub Copilot extension: ${copilotExtension.isActive ? 'NOW ACTIVE' : 'STILL INACTIVE'}`);
-		}
+		const copilotActive = copilotExtension?.isActive;
+		const chatActive = copilotChatExtension?.isActive;
 
-		if (copilotChatExtension) {
-			this.log(`GitHub Copilot Chat extension: ${copilotChatExtension.isActive ? 'NOW ACTIVE' : 'STILL INACTIVE'}`);
-		}
-
-		// If still not active, provide guidance
-		if ((copilotExtension && !copilotExtension.isActive) || (copilotChatExtension && !copilotChatExtension.isActive)) {
-			this.warn('Some Copilot extensions are still not active after 60-second delay');
-			this.log('This may be normal in Codespaces - extensions might need manual activation or authentication');
+		if (copilotActive && chatActive) {
+			this.log('✅ Copilot extensions are now active');
+		} else {
+			this.warn('⚠️ Some Copilot extensions still inactive after delay');
 		}
 	}
 
@@ -496,14 +581,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.clearExpiredCache();
 			
 			const sessionFiles = await this.getCopilotSessionFiles();
-			this.log(`Processing ${sessionFiles.length} session files for detailed stats`);
+			this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
 
 			if (sessionFiles.length === 0) {
-				this.warn('No session files found - this might indicate an issue in GitHub Codespaces or different VS Code configuration');
+				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
 			}
 
 			let cacheHits = 0;
 			let cacheMisses = 0;
+			let skippedFiles = 0;
 
 			for (let i = 0; i < sessionFiles.length; i++) {
 				const sessionFile = sessionFiles[i];
@@ -530,8 +616,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 						} else {
 							cacheMisses++;
 						}
-
-						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions, editor: ${editorType}`);
 
 						monthStats.tokens += tokens;
 						monthStats.sessions += 1;
@@ -575,12 +659,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+					else {
+						// File is too old, skip it
+						skippedFiles++;
+					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
 
-			this.log(`Cache performance - Hits: ${cacheHits}, Misses: ${cacheMisses}, Hit Rate: ${sessionFiles.length > 0 ? ((cacheHits / sessionFiles.length) * 100).toFixed(1) : 0}%`);
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
+			if (skippedFiles > 0) {
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+			}
+			const totalCacheAccesses = cacheHits + cacheMisses;
+			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
 		} catch (error) {
 			this.error('Error calculating detailed stats:', error);
 		}
@@ -622,9 +715,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastUpdated: now
 		};
 
-		this.log(`Today: ${todayStats.interactions} total interactions / ${todayStats.sessions} sessions = ${result.today.avgInteractionsPerSession} avg`);
-		this.log(`Month: ${monthStats.interactions} total interactions / ${monthStats.sessions} sessions = ${result.month.avgInteractionsPerSession} avg`);
-
 		return result;
 	}
 
@@ -641,7 +731,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		try {
 			const sessionFiles = await this.getCopilotSessionFiles();
-			this.log(`Processing ${sessionFiles.length} session files for daily chart stats`);
+			this.log(`📈 Preparing chart data from ${sessionFiles.length} session file(s)...`);
 			
 			for (const sessionFile of sessionFiles) {
 				try {
@@ -805,7 +895,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
 				let interactions = 0;
@@ -813,8 +903,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+						// Handle Copilot CLI format
 						if (event.type === 'user.message') {
 							interactions++;
+						}
+						// Handle VS Code incremental format (kind: 2 with requests array)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									interactions++;
+								}
+							}
 						}
 					} catch (e) {
 						// Skip malformed lines
@@ -845,22 +944,34 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
 				// Default model for CLI sessions - they may not specify the model per event
-				const defaultModel = 'gpt-4o';
+				let defaultModel = 'gpt-4o';
 				
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+						
+						// Handle VS Code incremental format - extract model from session header
+						if (event.kind === 0 && event.v?.inputState?.selectedModel?.metadata?.id) {
+							defaultModel = event.v.inputState.selectedModel.metadata.id;
+						}
+						
+						// Handle model changes (kind: 1 with selectedModel update)
+						if (event.kind === 1 && event.k?.includes('selectedModel') && event.v?.metadata?.id) {
+							defaultModel = event.v.metadata.id;
+						}
+						
 						const model = event.model || defaultModel;
 						
 						if (!modelUsage[model]) {
 							modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 						}
 						
+						// Handle Copilot CLI format
 						if (event.type === 'user.message' && event.data?.content) {
 							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
 						} else if (event.type === 'assistant.message' && event.data?.content) {
@@ -868,6 +979,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 						} else if (event.type === 'tool.result' && event.data?.output) {
 							// Tool outputs are typically input context
 							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
+						}
+						
+						// Handle VS Code incremental format (kind: 2 with requests)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.message?.text) {
+									modelUsage[model].inputTokens += this.estimateTokensFromText(request.message.text, model);
+								}
+							}
+						}
+						
+						// Handle VS Code incremental format - response content (kind: 2 with response)
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.value) {
+									modelUsage[model].outputTokens += this.estimateTokensFromText(responseItem.value, model);
+								} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
+									modelUsage[model].outputTokens += this.estimateTokensFromText(responseItem.content.value, model);
+								}
+							}
 						}
 					} catch (e) {
 						// Skip malformed lines
@@ -939,21 +1070,62 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
+				let sessionMode = 'ask'; // Default mode
 				
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
 						
+						// Handle VS Code incremental format - detect mode from session header
+						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
+							sessionMode = event.v.inputState.mode.kind;
+						}
+						
+						// Handle mode changes (kind: 1 with mode update)
+						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
+							sessionMode = event.v.kind;
+						}
+						
+						// Handle VS Code incremental format - count requests as interactions
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									// Count by mode
+									if (sessionMode === 'agent') {
+										analysis.modeUsage.agent++;
+									} else if (sessionMode === 'edit') {
+										analysis.modeUsage.edit++;
+									} else {
+										analysis.modeUsage.ask++;
+									}
+								}
+								// Check for agent in request
+								if (request.agent?.id) {
+									const toolName = request.agent.id;
+									analysis.toolCalls.total++;
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+						
+						// Handle VS Code incremental format - tool invocations in responses
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.kind === 'toolInvocationSerialized') {
+									analysis.toolCalls.total++;
+									const toolName = responseItem.toolSpecificData?.kind || 'unknown';
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+						
+						// Handle Copilot CLI format
 						// Detect mode from event type - CLI can be chat or agent mode
-						// We check for indicators of autonomous agent behavior
 						if (event.type === 'user.message') {
-							// Check if this appears to be an agent mode interaction
-							// Agent mode typically has tool calls, file operations, etc.
-							// For now, default to chat (ask) for CLI unless we see agent indicators
 							analysis.modeUsage.ask++;
 						}
 						
@@ -966,7 +1138,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 						
-						// Detect tool calls
+						// Detect tool calls from Copilot CLI
 						if (event.type === 'tool.call' || event.type === 'tool.result') {
 							analysis.toolCalls.total++;
 							const toolName = event.data?.toolName || event.toolName || 'unknown';
@@ -1259,7 +1431,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format)
+			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = fileContent.trim().split('\n');
 				const timestamps: number[] = [];
@@ -1268,6 +1440,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+						
+						// Handle Copilot CLI format (type: 'user.message')
 						if (event.type === 'user.message') {
 							details.interactions++;
 							if (event.timestamp || event.ts || event.data?.timestamp) {
@@ -1276,6 +1450,55 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 							if (event.data?.content) {
 								this.analyzeContextReferences(event.data.content, details.contextReferences);
+							}
+						}
+						
+						// Handle VS Code incremental .jsonl format (kind: 0, 1, 2)
+						// kind: 0 = session header with creationDate
+						// kind: 2 = requests array with timestamps
+						if (event.kind === 0 && event.v) {
+							// Session creation timestamp
+							if (event.v.creationDate) {
+								timestamps.push(event.v.creationDate);
+							}
+							// Session title
+							if (event.v.customTitle && !details.title) {
+								details.title = event.v.customTitle;
+							}
+						}
+						
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							// New requests being added - count interactions and extract timestamps
+							for (const request of event.v) {
+								if (request.requestId) {
+									details.interactions++;
+								}
+								if (request.timestamp) {
+									timestamps.push(request.timestamp);
+								}
+								// Analyze context references in request message
+								if (request.message?.text) {
+									this.analyzeContextReferences(request.message.text, details.contextReferences);
+								}
+								// Fallback: look for generatedTitle in response items
+								if (!details.title && request.response && Array.isArray(request.response)) {
+									for (const responseItem of request.response) {
+										if (responseItem.generatedTitle) {
+											details.title = responseItem.generatedTitle;
+											break;
+										}
+									}
+								}
+							}
+						}
+						
+						// Also check kind: 2 events that update response arrays directly
+						if (!details.title && event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.generatedTitle) {
+									details.title = responseItem.generatedTitle;
+									break;
+								}
 							}
 						}
 					} catch {
@@ -1293,6 +1516,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
+			
+			// Extract session title if available
+			if (sessionContent.customTitle) {
+				details.title = sessionContent.customTitle;
+			}
+			
+			// Fallback: look for generatedTitle in responses if no customTitle
+			if (!details.title && sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				for (const request of sessionContent.requests) {
+					if (details.title) { break; }
+					if (request.response && Array.isArray(request.response)) {
+						for (const responseItem of request.response) {
+							if (responseItem.generatedTitle) {
+								details.title = responseItem.generatedTitle;
+								break;
+							}
+						}
+					}
+				}
+			}
 			
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				details.interactions = sessionContent.requests.length;
@@ -1357,6 +1600,318 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Extract full session log data including chat turns for the log viewer.
+	 */
+	private async getSessionLogData(sessionFile: string): Promise<SessionLogData> {
+		const details = await this.getSessionFileDetails(sessionFile);
+		const turns: ChatTurn[] = [];
+		
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			
+			if (sessionFile.endsWith('.jsonl')) {
+				// Handle JSONL formats (CLI and VS Code incremental)
+				const lines = fileContent.trim().split('\n');
+				let turnNumber = 0;
+				let sessionMode: 'ask' | 'edit' | 'agent' = 'ask';
+				let currentModel: string | null = null;
+				
+				// For VS Code incremental format, we need to accumulate requests
+				const pendingRequests: Map<string, ChatTurn> = new Map();
+				
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						
+						// Handle VS Code incremental format - detect mode from session header
+						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
+							sessionMode = event.v.inputState.mode.kind as 'ask' | 'edit' | 'agent';
+							if (event.v.inputState.selectedModel?.metadata?.id) {
+								currentModel = event.v.inputState.selectedModel.metadata.id;
+							}
+						}
+						
+						// Handle mode changes
+						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
+							sessionMode = event.v.kind as 'ask' | 'edit' | 'agent';
+						}
+						
+						// Handle model changes
+						if (event.kind === 1 && event.k?.includes('selectedModel') && event.v?.metadata?.id) {
+							currentModel = event.v.metadata.id;
+						}
+						
+						// Handle VS Code incremental format - new requests
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									turnNumber++;
+									const contextRefs = this.createEmptyContextRefs();
+									const userMessage = request.message?.text || '';
+									this.analyzeContextReferences(userMessage, contextRefs);
+									
+									const turn: ChatTurn = {
+										turnNumber,
+										timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
+										mode: sessionMode,
+										userMessage,
+										assistantResponse: '',
+										model: currentModel,
+										toolCalls: [],
+										contextReferences: contextRefs,
+										mcpTools: [],
+										inputTokensEstimate: this.estimateTokensFromText(userMessage, currentModel || 'gpt-4'),
+										outputTokensEstimate: 0
+									};
+									
+									// Process response if present
+									if (request.response && Array.isArray(request.response)) {
+										const { responseText, toolCalls, mcpTools } = this.extractResponseData(request.response);
+										turn.assistantResponse = responseText;
+										turn.toolCalls = toolCalls;
+										turn.mcpTools = mcpTools;
+										turn.outputTokensEstimate = this.estimateTokensFromText(responseText, currentModel || 'gpt-4');
+									}
+									
+									pendingRequests.set(request.requestId, turn);
+								}
+							}
+						}
+						
+						// Handle VS Code incremental format - response updates
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							// Find the request this response belongs to
+							const requestIdPath = event.k?.find((k: string) => k.match(/^\d+$/));
+							if (requestIdPath !== undefined) {
+								// This is updating an existing request's response
+								for (const turn of pendingRequests.values()) {
+									const { responseText, toolCalls, mcpTools } = this.extractResponseData(event.v);
+									if (responseText) {
+										turn.assistantResponse += responseText;
+										turn.outputTokensEstimate = this.estimateTokensFromText(turn.assistantResponse, turn.model || 'gpt-4');
+									}
+									turn.toolCalls.push(...toolCalls);
+									turn.mcpTools.push(...mcpTools);
+									break;
+								}
+							}
+						}
+						
+						// Handle Copilot CLI format
+						if (event.type === 'user.message' && event.data?.content) {
+							turnNumber++;
+							const contextRefs = this.createEmptyContextRefs();
+							const userMessage = event.data.content;
+							this.analyzeContextReferences(userMessage, contextRefs);
+							
+							const turn: ChatTurn = {
+								turnNumber,
+								timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
+								mode: 'agent', // CLI is typically agent mode
+								userMessage,
+								assistantResponse: '',
+								model: event.model || 'gpt-4o',
+								toolCalls: [],
+								contextReferences: contextRefs,
+								mcpTools: [],
+								inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
+								outputTokensEstimate: 0
+							};
+							turns.push(turn);
+						}
+						
+						// Handle CLI assistant response
+						if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
+							const lastTurn = turns[turns.length - 1];
+							lastTurn.assistantResponse += event.data.content;
+							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+						}
+						
+						// Handle CLI tool calls
+						if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
+							const lastTurn = turns[turns.length - 1];
+							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							lastTurn.toolCalls.push({
+								toolName,
+								arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+								result: event.type === 'tool.result' ? event.data?.output : undefined
+							});
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				
+				// Add pending requests to turns
+				turns.push(...pendingRequests.values());
+				turns.sort((a, b) => a.turnNumber - b.turnNumber);
+				
+			} else {
+				// Handle regular .json files
+				const sessionContent = JSON.parse(fileContent);
+				let sessionMode: 'ask' | 'edit' | 'agent' = 'ask';
+				
+				// Detect session-level mode
+				if (sessionContent.mode?.id) {
+					const modeId = sessionContent.mode.id.toLowerCase();
+					if (modeId.includes('agent')) {
+						sessionMode = 'agent';
+					} else if (modeId.includes('edit')) {
+						sessionMode = 'edit';
+					}
+				}
+				
+				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+					let turnNumber = 0;
+					for (const request of sessionContent.requests) {
+						turnNumber++;
+						
+						// Determine mode for this request
+						let requestMode = sessionMode;
+						if (request.agent?.id) {
+							const agentId = request.agent.id.toLowerCase();
+							if (agentId.includes('edit')) {
+								requestMode = 'edit';
+							} else if (agentId.includes('agent')) {
+								requestMode = 'agent';
+							}
+						}
+						
+						// Extract user message
+						let userMessage = '';
+						if (request.message?.text) {
+							userMessage = request.message.text;
+						} else if (request.message?.parts) {
+							userMessage = request.message.parts
+								.filter((p: any) => p.text)
+								.map((p: any) => p.text)
+								.join('\n');
+						}
+						
+						// Analyze context references
+						const contextRefs = this.createEmptyContextRefs();
+						this.analyzeContextReferences(userMessage, contextRefs);
+						if (request.variableData) {
+							const varDataStr = JSON.stringify(request.variableData).toLowerCase();
+							if (varDataStr.includes('workspace')) { contextRefs.workspace++; }
+							if (varDataStr.includes('terminal')) { contextRefs.terminal++; }
+							if (varDataStr.includes('vscode')) { contextRefs.vscode++; }
+						}
+						
+						// Extract model
+						const model = this.getModelFromRequest(request);
+						
+						// Extract response
+						let assistantResponse = '';
+						const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+						const mcpTools: { server: string; tool: string }[] = [];
+						
+						if (request.response && Array.isArray(request.response)) {
+							const { responseText, toolCalls: tc, mcpTools: mcp } = this.extractResponseData(request.response);
+							assistantResponse = responseText;
+							toolCalls.push(...tc);
+							mcpTools.push(...mcp);
+						}
+						
+						const turn: ChatTurn = {
+							turnNumber,
+							timestamp: request.timestamp || request.ts || request.result?.timestamp || null,
+							mode: requestMode,
+							userMessage,
+							assistantResponse,
+							model,
+							toolCalls,
+							contextReferences: contextRefs,
+							mcpTools,
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, model),
+							outputTokensEstimate: this.estimateTokensFromText(assistantResponse, model)
+						};
+						
+						turns.push(turn);
+					}
+				}
+			}
+		} catch (error) {
+			this.warn(`Error extracting chat turns from ${sessionFile}: ${error}`);
+		}
+
+		let usageAnalysis: SessionUsageAnalysis | undefined;
+		try {
+			const mtimeMs = new Date(details.modified).getTime();
+			usageAnalysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtimeMs);
+		} catch (usageError) {
+			this.warn(`Error loading usage analysis for ${sessionFile}: ${usageError}`);
+		}
+		
+		return {
+			file: details.file,
+			title: details.title || null,
+			editorSource: details.editorSource,
+			editorName: details.editorName || details.editorSource,
+			size: details.size,
+			modified: details.modified,
+			interactions: details.interactions,
+			contextReferences: details.contextReferences,
+			firstInteraction: details.firstInteraction,
+			lastInteraction: details.lastInteraction,
+			turns,
+			usageAnalysis
+		};
+	}
+
+	/**
+	 * Create empty context references object.
+	 */
+	private createEmptyContextRefs(): ContextReferenceUsage {
+		return {
+			file: 0, selection: 0, symbol: 0, codebase: 0,
+			workspace: 0, terminal: 0, vscode: 0
+		};
+	}
+
+	/**
+	 * Extract response data from a response array.
+	 */
+	private extractResponseData(response: any[]): {
+		responseText: string;
+		toolCalls: { toolName: string; arguments?: string; result?: string }[];
+		mcpTools: { server: string; tool: string }[];
+	} {
+		let responseText = '';
+		const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+		const mcpTools: { server: string; tool: string }[] = [];
+		
+		for (const item of response) {
+			// Extract text content
+			if (item.value && typeof item.value === 'string') {
+				responseText += item.value;
+			} else if (item.kind === 'markdownContent' && item.content?.value) {
+				responseText += item.content.value;
+			}
+			
+			// Extract tool invocations
+			if (item.kind === 'toolInvocationSerialized' || item.kind === 'prepareToolInvocation') {
+				const toolName = item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
+				toolCalls.push({
+					toolName,
+					arguments: item.input ? JSON.stringify(item.input) : undefined,
+					result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+				});
+			}
+			
+			// Extract MCP tools
+			if (item.kind === 'mcpServersStarting' && item.didStartServerIds) {
+				for (const serverId of item.didStartServerIds) {
+					mcpTools.push({ server: serverId, tool: 'start' });
+				}
+			}
+		}
+		
+		return { responseText, toolCalls, mcpTools };
+	}
+
+	/**
 	 * Calculate estimated cost in USD based on model usage
 	 * Assumes 50/50 split between input and output tokens for estimation
 	 * @param modelUsage Object with model names as keys and token counts as values
@@ -1391,54 +1946,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private checkCopilotExtension(): void {
-		this.log('Checking GitHub Copilot extension status');
-
 		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
 		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
 
-		this.log(`GitHub Copilot extension: ${copilotExtension ? 'FOUND' : 'NOT FOUND'}`);
-		if (copilotExtension) {
-			this.log(`  - Active: ${copilotExtension.isActive}`);
-			this.log(`  - Version: ${copilotExtension.packageJSON.version}`);
-			if (!copilotExtension.isActive) {
-				this.log(`  - Status: Extension found but not yet activated (likely still loading)`);
-			}
-		}
-
-		this.log(`GitHub Copilot Chat extension: ${copilotChatExtension ? 'FOUND' : 'NOT FOUND'}`);
-		if (copilotChatExtension) {
-			this.log(`  - Active: ${copilotChatExtension.isActive}`);
-			this.log(`  - Version: ${copilotChatExtension.packageJSON.version}`);
-			if (!copilotChatExtension.isActive) {
-				this.log(`  - Status: Extension found but not yet activated (likely still loading)`);
-			}
+		if (!copilotExtension && !copilotChatExtension) {
+			this.log('⚠️ GitHub Copilot extensions not found');
+		} else {
+			const copilotStatus = copilotExtension ? (copilotExtension.isActive ? '✅ Active' : '⏳ Loading') : '❌ Not found';
+			const chatStatus = copilotChatExtension ? (copilotChatExtension.isActive ? '✅ Active' : '⏳ Loading') : '❌ Not found';
+			this.log(`GitHub Copilot: ${copilotStatus}, Chat: ${chatStatus}`);
 		}
 
 		// Check if we're in GitHub Codespaces
 		const isCodespaces = process.env.CODESPACES === 'true';
-		const isVSCodeServer = process.env.VSCODE_IPC_HOOK_CLI || process.env.VSCODE_SERVER;
-
-		this.log(`Environment detection:`);
-		this.log(`  - GitHub Codespaces: ${isCodespaces}`);
-		this.log(`  - VS Code Server: ${!!isVSCodeServer}`);
-		this.log(`  - Remote Name: ${vscode.env.remoteName || 'local'}`);
-		this.log(`  - VS Code Machine ID: ${vscode.env.machineId}`);
-		this.log(`  - VS Code Session ID: ${vscode.env.sessionId}`);
-
-		// Enhanced analysis for Codespaces
-		if (isCodespaces) {
-			if (!copilotExtension || !copilotChatExtension) {
-				this.warn('Running in GitHub Codespaces but Copilot extension(s) not found - this may explain why no session files are located');
-			} else if (!copilotExtension.isActive || !copilotChatExtension.isActive) {
-				this.warn('Copilot extensions found but NOT ACTIVE in Codespaces - this is likely why no chat sessions exist');
-				this.log('Possible reasons:');
-				this.log('  1. Extensions may not be pre-activated in Codespaces');
-				this.log('  2. User may need to manually activate Copilot');
-				this.log('  3. Copilot may not be configured for this workspace');
-				this.log('  4. Authentication issues with GitHub Copilot in Codespaces');
-			} else {
-				this.log('Copilot extensions are active in Codespaces - investigating session storage...');
-			}
+		if (isCodespaces && (!copilotExtension?.isActive || !copilotChatExtension?.isActive)) {
+			this.warn('⚠️ Running in Codespaces with inactive Copilot extensions');
 		}
 	}
 
@@ -1506,58 +2028,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const platform = os.platform();
 		const homedir = os.homedir();
 
-		// Debug environment information
-		this.log('Debugging getCopilotSessionFiles');
-		this.log(`Platform: ${platform}`);
-		this.log(`Home directory: ${homedir}`);
-		this.log(`Environment variables:`);
-		this.log(`  APPDATA: ${process.env.APPDATA}`);
-		this.log(`  HOME: ${process.env.HOME}`);
-		this.log(`  XDG_CONFIG_HOME: ${process.env.XDG_CONFIG_HOME}`);
-		this.log(`  VSCODE_PORTABLE: ${process.env.VSCODE_PORTABLE}`);
-		this.log(`  CODESPACES: ${process.env.CODESPACES}`);
-		this.log(`  GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
-		this.log(`  COPILOT_TEST_DATA_PATH: ${process.env.COPILOT_TEST_DATA_PATH}`);
-
-		// Check for test data path override (used for screenshots and testing)
-		const testDataPath = process.env.COPILOT_TEST_DATA_PATH;
-		if (testDataPath && fs.existsSync(testDataPath)) {
-			this.log(`Using test data from: ${testDataPath}`);
-			const testFiles = fs.readdirSync(testDataPath)
-				.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-				.map(file => path.join(testDataPath, file));
-			if (testFiles.length > 0) {
-				this.log(`Found ${testFiles.length} test data file(s)`);
-				sessionFiles.push(...testFiles);
-				return sessionFiles;
-			}
-		} else if (testDataPath) {
-			this.log(`Test data path specified but not found: ${testDataPath}`);
-		}
+		this.log(`🔍 Searching for Copilot session files on ${platform}`);
 
 		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
 		const allVSCodePaths = this.getVSCodeUserPaths();
-		this.log(`Checking ${allVSCodePaths.length} VS Code path variants`);
+		this.log(`📂 Reading local folders [0/${allVSCodePaths.length}]`);
 
 		// Track which paths we actually found
 		const foundPaths: string[] = [];
-		for (const codeUserPath of allVSCodePaths) {
+		for (let i = 0; i < allVSCodePaths.length; i++) {
+			const codeUserPath = allVSCodePaths[i];
 			if (fs.existsSync(codeUserPath)) {
 				foundPaths.push(codeUserPath);
-				this.log(`Found VS Code path: ${codeUserPath}`);
+			}
+			// Update progress
+			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
+				this.log(`📂 Reading local folders [${i + 1}/${allVSCodePaths.length}]`);
 			}
 		}
 
+		this.log(`✅ Found ${foundPaths.length} VS Code installation(s)`);
+
 		try {
 			// Scan all found VS Code paths for session files
-			for (const codeUserPath of foundPaths) {
-				this.log(`Scanning VS Code path: ${codeUserPath}`);
+			for (let i = 0; i < foundPaths.length; i++) {
+				const codeUserPath = foundPaths[i];
+				const pathName = path.basename(path.dirname(codeUserPath));
 
 				// Workspace storage sessions
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 				if (fs.existsSync(workspaceStoragePath)) {
 					const workspaceDirs = fs.readdirSync(workspaceStoragePath);
-					this.log(`Found ${workspaceDirs.length} workspace directories in ${path.basename(path.dirname(codeUserPath))}`);
 
 					for (const workspaceDir of workspaceDirs) {
 						const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
@@ -1566,7 +2067,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 								.map(file => path.join(chatSessionsPath, file));
 							if (sessionFiles2.length > 0) {
-								this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
+								this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
 								sessionFiles.push(...sessionFiles2);
 							}
 						}
@@ -1580,7 +2081,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 						.map(file => path.join(globalStoragePath, file));
 					if (globalSessionFiles.length > 0) {
-						this.log(`Found ${globalSessionFiles.length} global session files`);
+						this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
 						sessionFiles.push(...globalSessionFiles);
 					}
 				}
@@ -1588,42 +2089,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// GitHub Copilot Chat extension global storage
 				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
 				if (fs.existsSync(copilotChatGlobalPath)) {
-					this.log(`Found github.copilot-chat global storage: ${copilotChatGlobalPath}`);
+					this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
 					this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
 				}
 			}
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			this.log(`Checking Copilot CLI session-state path: ${copilotCliSessionPath}`);
 			if (fs.existsSync(copilotCliSessionPath)) {
-				this.log(`Found Copilot CLI session-state directory`);
 				const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
 					.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 					.map(file => path.join(copilotCliSessionPath, file));
 				if (cliSessionFiles.length > 0) {
-					this.log(`Found ${cliSessionFiles.length} Copilot CLI session files`);
+					this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
 					sessionFiles.push(...cliSessionFiles);
 				}
 			}
 
 			// Log summary
-			this.log(`Total session files found: ${sessionFiles.length}`);
-			if (sessionFiles.length > 0) {
-				this.log('Session file paths:');
-				sessionFiles.slice(0, 20).forEach((file, index) => {
-					this.log(`  ${index + 1}: ${file}`);
-				});
-				if (sessionFiles.length > 20) {
-					this.log(`  ... and ${sessionFiles.length - 20} more files`);
-				}
-			} else {
-				this.warn('No GitHub Copilot session files found. This could be because:');
-				this.log('  1. Copilot extensions are not active');
-				this.log('  2. No Copilot Chat conversations have been initiated yet');
-				this.log('  3. Sessions are stored in a different location not yet supported');
-				this.log('  4. User needs to authenticate with GitHub Copilot first');
-				this.log('  Run: node .github/skills/copilot-log-analysis/diagnose-session-files.js for detailed diagnostics');
+			this.log(`✨ Total: ${sessionFiles.length} session file(s) discovered`);
+			if (sessionFiles.length === 0) {
+				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
 			}
 		} catch (error) {
 			this.error('Error getting session files:', error);
@@ -1705,7 +2191,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
-	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode)
+	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
 	 * Each line is a separate JSON object representing an event in the session
 	 */
 	private estimateTokensFromJsonlSession(fileContent: string): number {
@@ -1718,7 +2204,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			try {
 				const event = JSON.parse(line);
 				
-				// Handle different event types from the Copilot CLI session format
+				// Handle Copilot CLI event types
 				if (event.type === 'user.message' && event.data?.content) {
 					totalTokens += this.estimateTokensFromText(event.data.content);
 				} else if (event.type === 'assistant.message' && event.data?.content) {
@@ -1728,6 +2214,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 				} else if (event.content) {
 					// Fallback for other formats that might have content
 					totalTokens += this.estimateTokensFromText(event.content);
+				}
+				
+				// Handle VS Code incremental format (kind: 2 with requests or response)
+				if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+					for (const request of event.v) {
+						if (request.message?.text) {
+							totalTokens += this.estimateTokensFromText(request.message.text);
+						}
+					}
+				}
+				
+				if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+					for (const responseItem of event.v) {
+						if (responseItem.value) {
+							totalTokens += this.estimateTokensFromText(responseItem.value);
+						} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
+							totalTokens += this.estimateTokensFromText(responseItem.content.value);
+						}
+					}
 				}
 			} catch (e) {
 				// Skip malformed lines
@@ -1777,9 +2282,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async showDetails(): Promise<void> {
+		this.log('📊 Opening Details panel');
+		
 		// If panel already exists, just reveal it
 		if (this.detailsPanel) {
 			this.detailsPanel.reveal();
+			this.log('📊 Details panel revealed (already exists)');
 			return;
 		}
 
@@ -1804,6 +2312,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		);
 
+		this.log('✅ Details panel created successfully');
+
 		// Set the HTML content
 		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 
@@ -1827,14 +2337,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.detailsPanel.onDidDispose(() => {
+			this.log('📊 Details panel closed');
 			this.detailsPanel = undefined;
 		});
 	}
 
 	public async showChart(): Promise<void> {
+		this.log('📈 Opening Chart view');
+		
 		// If panel already exists, just reveal it
 		if (this.chartPanel) {
 			this.chartPanel.reveal();
+			this.log('📈 Chart view revealed (already exists)');
 			return;
 		}
 
@@ -1855,6 +2369,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
+
+		this.log('✅ Chart view created successfully');
 
 		// Set the HTML content
 		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
@@ -1879,14 +2395,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.chartPanel.onDidDispose(() => {
+			this.log('📈 Chart view closed');
 			this.chartPanel = undefined;
 		});
 	}
 
 	public async showUsageAnalysis(): Promise<void> {
+		this.log('📊 Opening Usage Analysis dashboard');
+		
 		// If panel already exists, just reveal it
 		if (this.analysisPanel) {
 			this.analysisPanel.reveal();
+			this.log('📊 Usage Analysis dashboard revealed (already exists)');
 			return;
 		}
 
@@ -1907,6 +2427,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
+
+		this.log('✅ Usage Analysis dashboard created successfully');
 
 		// Set the HTML content
 		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
@@ -1931,8 +2453,204 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.analysisPanel.onDidDispose(() => {
+			this.log('📊 Usage Analysis dashboard closed');
 			this.analysisPanel = undefined;
 		});
+	}
+
+	public async showLogViewer(sessionFilePath: string): Promise<void> {
+		// Close existing log viewer panel if open
+		if (this.logViewerPanel) {
+			this.logViewerPanel.dispose();
+			this.logViewerPanel = undefined;
+		}
+
+		// Get session log data with chat turns
+		const logData = await this.getSessionLogData(sessionFilePath);
+
+		// Create webview panel
+		this.logViewerPanel = vscode.window.createWebviewPanel(
+			'copilotLogViewer',
+			`Session: ${logData.title || path.basename(sessionFilePath)}`,
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: false
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		// Set the HTML content
+		this.logViewerPanel.webview.html = this.getLogViewerHtml(this.logViewerPanel.webview, logData);
+
+		// Handle messages from the webview
+		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'openRawFile':
+					try {
+						await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
+					} catch (err) {
+						vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
+					}
+					break;
+				case 'showToolCallPretty': {
+					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
+					this.log(`showToolCallPretty: turn=${turnNumber}, toolCallIdx=${toolCallIdx}, file=${sessionFilePath}`);
+					try {
+						const turn = logData.turns.find(t => t.turnNumber === turnNumber);
+						const turnIndex = logData.turns.findIndex(t => t.turnNumber === turnNumber);
+						const toolCall = turn?.toolCalls?.[toolCallIdx];
+						if (!toolCall) {
+							this.log('showToolCallPretty: tool call not found in session data');
+							vscode.window.showInformationMessage('Tool call not found in session data.');
+							break;
+						}
+
+						const safeParse = (text?: string) => {
+							if (!text) { return text; }
+							try { return JSON.parse(text); } catch { return text; }
+						};
+
+						const mapTurnForContext = (t?: ChatTurn) => t ? {
+							turnNumber: t.turnNumber,
+							timestamp: t.timestamp,
+							mode: t.mode,
+							model: t.model,
+							userMessage: t.userMessage,
+							assistantResponse: t.assistantResponse,
+							inputTokensEstimate: t.inputTokensEstimate,
+							outputTokensEstimate: t.outputTokensEstimate,
+							toolCalls: t.toolCalls?.map((tc, idx) => ({ index: idx, toolName: tc.toolName, arguments: tc.arguments, result: tc.result }))
+						} : undefined;
+
+						const mapToolCallForContext = (tc: { toolName: string; arguments?: string; result?: string }, idx: number, parentTurn?: ChatTurn) => ({
+							turn: parentTurn?.turnNumber ?? turnNumber,
+							toolCallIdx: idx,
+							toolName: tc.toolName,
+							model: parentTurn?.model,
+							mode: parentTurn?.mode,
+							timestamp: parentTurn?.timestamp,
+							userMessage: parentTurn?.userMessage,
+							assistantResponse: parentTurn?.assistantResponse,
+							inputTokensEstimate: parentTurn?.inputTokensEstimate,
+							outputTokensEstimate: parentTurn?.outputTokensEstimate,
+							argumentsRaw: tc.arguments ?? null,
+							argumentsParsed: safeParse(tc.arguments),
+							resultRaw: tc.result ?? null,
+							resultParsed: safeParse(tc.result)
+						});
+
+						const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 60) || 'toolcall';
+						const prettyName = sanitize(`${toolCall.toolName || 'tool'}-turn-${turnNumber}-call-${toolCallIdx}`);
+
+						const prettyPayload = {
+							turnBefore: turnIndex > 0 ? mapTurnForContext(logData.turns[turnIndex - 1]) : undefined,
+							toolCall: mapToolCallForContext(toolCall, toolCallIdx, turn),
+							turnAfter: turnIndex >= 0 && turnIndex < logData.turns.length - 1 ? mapTurnForContext(logData.turns[turnIndex + 1]) : undefined
+						};
+
+						const prettyUri = vscode.Uri.parse(`untitled:${prettyName}.json`);
+						const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === prettyUri.toString());
+						if (openDoc) {
+							await vscode.window.showTextDocument(openDoc, { preview: true });
+							break;
+						}
+
+						const doc = await vscode.workspace.openTextDocument(prettyUri);
+						const editor = await vscode.window.showTextDocument(doc, { preview: true });
+						const jsonText = JSON.stringify(prettyPayload, null, 2);
+						await editor.edit((editBuilder) => {
+							editBuilder.insert(new vscode.Position(0, 0), jsonText);
+						});
+						await vscode.languages.setTextDocumentLanguage(doc, 'json');
+					} catch (err) {
+						this.error('showToolCallPretty: error', err);
+						vscode.window.showErrorMessage('Could not open formatted tool call.');
+					}
+					break;
+				}
+				case 'revealToolCallSource': {
+					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
+					this.log(`revealToolCallSource: turn=${turnNumber}, toolCallIdx=${toolCallIdx}, file=${sessionFilePath}`);
+					try {
+						const turn = logData.turns.find(t => t.turnNumber === turnNumber);
+						const toolCall = turn?.toolCalls?.[toolCallIdx];
+						if (!toolCall) {
+							this.log('revealToolCallSource: tool call not found in session data');
+							vscode.window.showInformationMessage('Tool call not found in session data.');
+							break;
+						}
+
+						const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+						const searchTerm = toolCall.toolName || '';
+						const matchIdx = searchTerm ? fileContent.indexOf(searchTerm) : -1;
+						this.log(`revealToolCallSource: searchTerm='${searchTerm}', matchIdx=${matchIdx}`);
+
+						const doc = await vscode.workspace.openTextDocument(sessionFilePath);
+						const editor = await vscode.window.showTextDocument(doc);
+
+						if (matchIdx >= 0) {
+							const pos = doc.positionAt(matchIdx);
+							editor.selection = new vscode.Selection(pos, pos);
+							editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+						} else {
+							vscode.window.showInformationMessage('Opened session file, but could not locate this tool call text.');
+						}
+					} catch (err) {
+						this.error('revealToolCallSource: error', err);
+						vscode.window.showErrorMessage('Could not reveal tool call in file.');
+					}
+					break;
+				}
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+			}
+		});
+
+		// Handle panel disposal
+		this.logViewerPanel.onDidDispose(() => {
+			this.logViewerPanel = undefined;
+		});
+	}
+
+	private getLogViewerHtml(webview: vscode.Webview, logData: SessionLogData): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'logviewer.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const initialData = JSON.stringify(logData).replace(/</g, '\\u003c');
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Session Log Viewer</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_LOGDATA__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
 	}
 
 	private async refreshDetailsPanel(): Promise<void> {
@@ -1940,10 +2658,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
+		this.log('🔄 Refreshing Details panel');
 		// Update token stats and refresh the webview content
 		const stats = await this.updateTokenStats();
 		if (stats) {
 			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+			this.log('✅ Details panel refreshed');
 		}
 	}
 
@@ -1952,9 +2672,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Refresh the chart webview content
-		const dailyStats = await this.calculateDailyStats();
-		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+		this.log('🔄 Refreshing Chart view');
+		// Refresh all stats so the status bar and tooltip stay in sync
+		await this.updateTokenStats();
+		this.log('✅ Chart view refreshed');
 	}
 
 	private async refreshAnalysisPanel(): Promise<void> {
@@ -1962,9 +2683,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Refresh the analysis webview content
-		const analysisStats = await this.calculateUsageAnalysisStats();
-		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+		this.log('🔄 Refreshing Usage Analysis dashboard');
+		// Refresh all stats so the status bar and tooltip stay in sync
+		await this.updateTokenStats();
+		this.log('✅ Usage Analysis dashboard refreshed');
 	}
 
 	private getNonce(): string {
@@ -2358,6 +3080,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			report.push('');
 		}
 		
+		// Cache Statistics
+		report.push('## Cache Statistics');
+		report.push(`Cached Session Files: ${this.sessionFileCache.size}`);
+		report.push(`Cache Storage: Extension Global State`);
+		report.push('');
+		report.push('Cache provides faster loading by storing parsed session data with file modification timestamps.');
+		report.push('Files are only re-parsed when their modification time changes.');
+		report.push('');
+		
 		// Token Statistics
 		report.push('## Token Usage Statistics');
 		try {
@@ -2443,11 +3174,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async showDiagnosticReport(): Promise<void> {
-		this.log('Showing diagnostic report...');
+		this.log('🔍 Opening Diagnostic Report');
 
 		// If panel already exists, just reveal it and update content
 		if (this.diagnosticsPanel) {
 			this.diagnosticsPanel.reveal();
+			this.log('🔍 Diagnostic Report revealed (already exists)');
 			// Optionally, refresh content if needed
 			const report = await this.generateDiagnosticReport();
 			const sessionFiles = await this.getCopilotSessionFiles();
@@ -2535,16 +3267,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: true, // Keep context so we can update it
+				retainContextWhenHidden: false, // Match other panels to avoid output channel issues
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
+
+		this.log('✅ Diagnostic Report created successfully');
 
 		// Set the HTML content immediately with empty session files (shows loading state)
 		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+			this.log(`[DEBUG] Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -2560,9 +3295,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'openSessionFile':
 					if (message.file) {
 						try {
-							await vscode.window.showTextDocument(vscode.Uri.file(message.file));
+							// Open the session file in the log viewer
+							await this.showLogViewer(message.file);
 						} catch (err) {
-							vscode.window.showErrorMessage('Could not open file: ' + message.file);
+							vscode.window.showErrorMessage('Could not open log viewer: ' + message.file);
 						}
 					}
 					break;
@@ -2602,11 +3338,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showUsageAnalysis':
 					await this.showUsageAnalysis();
 					break;
+				case 'clearCache':
+					this.log('[DEBUG] clearCache message received from diagnostics webview');
+					await this.clearCache();
+					// After clearing cache, refresh the diagnostic report if it's open
+					if (this.diagnosticsPanel) {
+						// Send completion message to webview before refreshing
+						this.diagnosticsPanel.webview.postMessage({ command: 'cacheCleared' });
+						// Wait a moment for the message to be processed
+						await new Promise(resolve => setTimeout(resolve, 500));
+						// Simply refresh the diagnostic report by revealing it again
+						// This will trigger a rebuild with fresh data
+						await this.showDiagnosticReport();
+					}
+					break;
 			}
 		});
 
 		// Handle panel disposal
 		this.diagnosticsPanel.onDidDispose(() => {
+			this.log('🔍 Diagnostic Report closed');
 			this.diagnosticsPanel = undefined;
 		});
 
@@ -2634,6 +3385,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
+				// Filter: skip empty sessions (no interactions = just opened chat panel, no messages sent)
+				if (details.interactions === 0) {
+					continue;
+				}
 				// Filter: only include sessions with activity in the last 14 days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
@@ -2677,7 +3432,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders }).replace(/</g, '\\u003c');
+		// Get cache information
+		let cacheSizeInMB = 0;
+		try {
+			// Estimate cache size by serializing to JSON
+			const cacheData = Object.fromEntries(this.sessionFileCache);
+			const jsonString = JSON.stringify(cacheData);
+			cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
+		} catch {
+			cacheSizeInMB = 0;
+		}
+		
+		const cacheInfo = {
+			size: this.sessionFileCache.size,
+			sizeInMB: cacheSizeInMB,
+			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
+			location: 'VS Code Global State - extension.globalState.get sessionFileCache'
+		};
+
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -2850,16 +3623,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.analysisPanel) {
 			this.analysisPanel.dispose();
 		}
+		// Save cache to storage before disposing (fire-and-forget async operation)
+		// Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
+		// We can't await here since dispose() is synchronous
+		this.saveCacheToStorage().catch(err => {
+			// Output channel will be disposed, so log to console as fallback
+			console.error('Error saving cache during disposal:', err);
+		});
+		if (this.logViewerPanel) {
+			this.logViewerPanel.dispose();
+		}
+		if (this.diagnosticsPanel) {
+			this.diagnosticsPanel.dispose();
+		}
 		this.statusBarItem.dispose();
 		this.outputChannel.dispose();
-		// Clear cache on disposal
-		this.sessionFileCache.clear();
 	}
 }
 
 export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
-	const tokenTracker = new CopilotTokenTracker(context.extensionUri);
+	const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
@@ -2892,8 +3676,14 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showDiagnosticReport();
 	});
 
+	// Register the clear cache command
+	const clearCacheCommand = vscode.commands.registerCommand('copilot-token-tracker.clearCache', async () => {
+		tokenTracker.log('Clear cache command called');
+		await tokenTracker.clearCache();
+	});
+
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }

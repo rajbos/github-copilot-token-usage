@@ -167,7 +167,7 @@ function scanWorkspaceStorage(workspaceStoragePath) {
                 try {
                     const files = fs.readdirSync(chatSessionsPath);
                     for (const file of files) {
-                        if (file.endsWith('.json')) {
+                        if (file.endsWith('.json') || file.endsWith('.jsonl')) {
                             const filePath = path.join(chatSessionsPath, file);
                             try {
                                 const stats = fs.statSync(filePath);
@@ -195,7 +195,7 @@ function scanGlobalStorage(userPath) {
         try {
             const files = fs.readdirSync(emptyWindowPath);
             for (const file of files) {
-                if (file.endsWith('.json')) {
+                if (file.endsWith('.json') || file.endsWith('.jsonl')) {
                     const filePath = path.join(emptyWindowPath, file);
                     try {
                         const stats = fs.statSync(filePath);
