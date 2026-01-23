@@ -38,7 +38,7 @@ jobs:
         run: |
           echo "Installing Xvfb for headless display..."
           sudo apt-get update
-          sudo apt-get install -y xvfb libgtk-3-0 libgbm1 libnss3 libasound2
+          sudo apt-get install -y xvfb libgtk-3-0 libgbm1 libnss3 libasound2t64
           
           # Start virtual display
           Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
