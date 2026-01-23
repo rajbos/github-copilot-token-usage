@@ -358,17 +358,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async clearCache(): Promise<void> {
-		try {
-			this.sessionFileCache.clear();
-			await this.context.globalState.update('sessionFileCache', undefined);
-			this.log('Cache cleared successfully');
-			vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
-			// Trigger a refresh after clearing the cache
-			await this.updateTokenStats();
-		} catch (error) {
-			this.error('Error clearing cache:', error);
-			vscode.window.showErrorMessage('Failed to clear cache: ' + error);
-		}
+		   try {
+			   this.log('[DEBUG] clearCache() called');
+			   this.sessionFileCache.clear();
+			   await this.context.globalState.update('sessionFileCache', undefined);
+			   this.log('Cache cleared successfully');
+			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
+			   // Trigger a refresh after clearing the cache
+			   await this.updateTokenStats();
+		   } catch (error) {
+			   this.error('Error clearing cache:', error);
+			   vscode.window.showErrorMessage('Failed to clear cache: ' + error);
+		   }
 	}
 
 	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
@@ -3292,6 +3293,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+			this.log(`[DEBUG] Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -3351,6 +3353,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.showUsageAnalysis();
 					break;
 				case 'clearCache':
+					this.log('[DEBUG] clearCache message received from diagnostics webview');
 					await this.clearCache();
 					// After clearing cache, refresh the diagnostic report if it's open
 					if (this.diagnosticsPanel) {
@@ -3438,7 +3441,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders }).replace(/</g, '\\u003c');
+		// Get cache information
+		let cacheSizeInMB = 0;
+		try {
+			// Estimate cache size by serializing to JSON
+			const cacheData = Object.fromEntries(this.sessionFileCache);
+			const jsonString = JSON.stringify(cacheData);
+			cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
+		} catch {
+			cacheSizeInMB = 0;
+		}
+		
+		const cacheInfo = {
+			size: this.sessionFileCache.size,
+			sizeInMB: cacheSizeInMB,
+			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
+			location: 'VS Code Global State - extension.globalState.get sessionFileCache'
+		};
+
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">

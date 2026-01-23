@@ -23,10 +23,18 @@ type SessionFileDetails = {
 	title?: string;
 };
 
+type CacheInfo = {
+	size: number;
+	sizeInMB: number;
+	lastUpdated: string | null;
+	location: string;
+};
+
 type DiagnosticsData = {
 	report: string;
 	sessionFiles: { file: string; size: number; modified: string }[];
 	detailedSessionFiles?: SessionFileDetails[];
+	cacheInfo?: CacheInfo;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -62,6 +70,28 @@ function formatDate(isoString: string | null): string {
 		return new Date(isoString).toLocaleString();
 	} catch {
 		return isoString;
+	}
+}
+
+function getTimeSince(isoString: string): string {
+	try {
+		const now = Date.now();
+		const then = new Date(isoString).getTime();
+		const diffMs = now - then;
+		
+		if (diffMs < 0) { return 'Just now'; }
+		
+		const seconds = Math.floor(diffMs / 1000);
+		const minutes = Math.floor(seconds / 60);
+		const hours = Math.floor(minutes / 60);
+		const days = Math.floor(hours / 24);
+		
+		if (days > 0) { return `${days} day${days !== 1 ? 's' : ''} ago`; }
+		if (hours > 0) { return `${hours} hour${hours !== 1 ? 's' : ''} ago`; }
+		if (minutes > 0) { return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`; }
+		return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+	} catch {
+		return 'Unknown';
 	}
 }
 
@@ -536,6 +566,19 @@ function renderLayout(data: DiagnosticsData): void {
 				font-size: 13px;
 			}
 			.info-box-title { font-weight: 600; color: #ffffff; margin-bottom: 6px; }
+			.cache-details { margin-top: 16px; }
+			.cache-location { margin-top: 20px; }
+			.cache-location h4 { color: #fff; font-size: 14px; margin-bottom: 8px; }
+			.location-box {
+				background: #2a2a2a;
+				border: 1px solid #5a5a5a;
+				border-radius: 4px;
+				padding: 12px;
+				overflow-x: auto;
+			}
+			.location-box code { color: #4FC3F7; font-size: 12px; }
+			.cache-actions { margin-top: 20px; }
+			.cache-actions h4 { color: #fff; font-size: 14px; margin-bottom: 8px; }
 		</style>
 		<div class="container">
 			<div class="header">
@@ -553,6 +596,7 @@ function renderLayout(data: DiagnosticsData): void {
 			<div class="tabs">
 				<button class="tab active" data-tab="report">📋 Report</button>
 				<button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
+				<button class="tab" data-tab="cache">💾 Cache</button>
 			</div>
 			
 			<div id="tab-report" class="tab-content active">
@@ -582,6 +626,60 @@ function renderLayout(data: DiagnosticsData): void {
 					</div>
 				</div>
 				<div id="session-table-container">${renderSessionTable(detailedFiles, detailedFiles.length === 0)}</div>
+			</div>
+			
+			<div id="tab-cache" class="tab-content">
+				<div class="info-box">
+					<div class="info-box-title">💾 Cache Information</div>
+					<div>
+						The extension caches session file data to improve performance and reduce file system operations.
+						Cache is stored in VS Code's global state and persists across sessions.
+					</div>
+				</div>
+				<div class="cache-details">
+					<div class="summary-cards">
+						<div class="summary-card">
+						<div class="summary-label">📦 Cache Entries</div>
+						<div class="summary-value">${data.cacheInfo?.size || 0}</div>
+					</div>
+					<div class="summary-card">
+						<div class="summary-label">💾 Cache Size</div>
+						<div class="summary-value">${data.cacheInfo?.sizeInMB ? data.cacheInfo.sizeInMB.toFixed(2) + ' MB' : 'N/A'}</div>
+						</div>
+						<div class="summary-card">
+							<div class="summary-label">🕒 Last Updated</div>
+							<div class="summary-value" style="font-size: 14px;">${data.cacheInfo?.lastUpdated ? formatDate(data.cacheInfo.lastUpdated) : 'Never'}</div>
+						</div>
+						<div class="summary-card">
+							<div class="summary-label">⏱️ Cache Age</div>
+							<div class="summary-value" style="font-size: 14px;">${data.cacheInfo?.lastUpdated ? getTimeSince(data.cacheInfo.lastUpdated) : 'N/A'}</div>
+						</div>
+					</div>
+					<div class="cache-location">
+						<h4>Storage Location</h4>
+						<div class="location-box">
+							<code>${escapeHtml(data.cacheInfo?.location || 'VS Code Global State')}</code>
+						</div>
+						<p style="color: #999; font-size: 12px; margin-top: 8px;">
+							Cache is stored in VS Code's global state (extension storage) and includes:
+							<ul style="margin: 8px 0 0 20px;">
+								<li>Token counts per session file</li>
+								<li>Interaction counts</li>
+								<li>Model usage statistics</li>
+								<li>File modification timestamps for validation</li>
+								<li>Usage analysis data (tool calls, modes, context references)</li>
+							</ul>
+						</p>
+					</div>
+					<div class="cache-actions">
+						<h4>Cache Management</h4>
+						<p style="color: #999; font-size: 12px; margin-bottom: 12px;">
+							Clearing the cache will force the extension to re-read and re-analyze all session files on the next update.
+							This can help resolve issues with stale or incorrect data.
+						</p>
+						<button class="button secondary" id="btn-clear-cache-tab"><span>🗑️</span><span>Clear Cache</span></button>
+					</div>
+				</div>
 			</div>
 		</div>
 	`;
@@ -701,8 +799,40 @@ function renderLayout(data: DiagnosticsData): void {
 	});
 
 	document.getElementById('btn-clear-cache')?.addEventListener('click', () => {
+		console.log('[DEBUG] Clear cache button clicked (report tab)');
 		if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
+			const btn = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
+			if (btn) {
+				btn.style.background = '#2d6a4f';
+				btn.textContent = 'Clearing...';
+			}
 			vscode.postMessage({ command: 'clearCache' });
+		}
+	});
+
+	document.getElementById('btn-clear-cache-tab')?.addEventListener('click', () => {
+		console.log('[DEBUG] Clear cache button clicked (cache tab)');
+		if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
+			const btn = document.getElementById('btn-clear-cache-tab') as HTMLButtonElement | null;
+			if (btn) {
+				btn.style.background = '#2d6a4f';
+				btn.textContent = 'Clearing...';
+			}
+			vscode.postMessage({ command: 'clearCache' });
+		}
+	});
+
+	// Fallback click delegation in case direct listeners are not attached
+	document.addEventListener('click', (event) => {
+		const target = event.target as HTMLElement;
+		if (!target) { return; }
+		if (target.id === 'btn-clear-cache' || target.id === 'btn-clear-cache-tab') {
+			console.log('[DEBUG] Clear cache button clicked via delegated handler', target.id);
+			if (confirm('Are you sure you want to clear the cache? This will remove all cached session file data and reload statistics.')) {
+				target.style.background = '#2d6a4f';
+				target.textContent = 'Clearing...';
+				vscode.postMessage({ command: 'clearCache' });
+			}
 		}
 	});
 
