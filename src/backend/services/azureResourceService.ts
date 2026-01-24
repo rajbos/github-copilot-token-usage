@@ -135,6 +135,31 @@ export class AzureResourceService {
 			}
 		}
 
+		const authPick = await vscode.window.showQuickPick(
+			[
+				{
+					label: 'Entra ID (RBAC)',
+					description: 'Recommended: Use DefaultAzureCredential for Storage Tables/Blob (no secrets).',
+					authMode: 'entraId' as BackendAuthMode,
+					picked: true
+				},
+				{
+					label: 'Storage Shared Key',
+					description: 'Advanced: Use Storage account key (stored securely in VS Code SecretStorage on this machine only).',
+					authMode: 'sharedKey' as BackendAuthMode
+				}
+			],
+			{
+				title: 'Select backend authentication mode',
+				ignoreFocusOut: true,
+				placeHolder: 'Entra ID (RBAC) is recommended for most users'
+			}
+		);
+		if (!authPick) {
+			return;
+		}
+		const authMode = authPick.authMode;
+
 		// 3) Choose or create storage account
 		const storageMgmt = new StorageManagementClient(credential, subscriptionId);
 		const saNames: string[] = [];
@@ -196,11 +221,9 @@ export class AzureResourceService {
 				kind: 'StorageV2',
 				enableHttpsTrafficOnly: true,
 				minimumTlsVersion: 'TLS1_2',
-				// Allow both Entra ID and Shared Key auth. The wizard lets users choose their auth mode.
-				// Organizations with policies requiring Entra-only can configure this post-creation.
-				allowSharedKeyAccess: true,
-				// Prefer OAuth (Entra ID) by default, but support Shared Key if needed.
-				defaultToOAuthAuthentication: true,
+				// Respect the chosen auth mode: disable Shared Key when Entra ID is selected.
+				allowSharedKeyAccess: authMode === 'sharedKey',
+				defaultToOAuthAuthentication: authMode === 'entraId',
 				// Low-risk hardening: disallow public access to blobs/containers.
 				allowBlobPublicAccess: false
 			} as const;
@@ -210,7 +233,7 @@ export class AzureResourceService {
 			} catch (e: any) {
 				if (isAzurePolicyDisallowedError(e) || isStorageLocalAuthDisallowedByPolicyError(e)) {
 					const extra = isStorageLocalAuthDisallowedByPolicyError(e)
-						? '\n\nThis policy typically requires disabling local authentication (Shared Key). If your policy requires Entra-only auth, choose Entra ID mode in the next step, or create a storage account externally that meets your org policies.'
+						? '\n\nThis policy typically requires disabling local authentication (Shared Key). Select Entra ID auth (Shared Key disabled) or create a storage account externally that meets your org policies.'
 						: '';
 					const choice = await vscode.window.showWarningMessage(
 						`Storage account creation was blocked by Azure Policy (RequestDisallowedByPolicy).${extra}\n\nTo continue, select an existing compliant Storage account in this resource group (or create one externally that meets your org policies), then re-run the wizard if needed.`,
@@ -275,31 +298,6 @@ export class AzureResourceService {
 		if (!datasetId) {
 			return;
 		}
-		const authPick = await vscode.window.showQuickPick(
-			[
-				{
-					label: 'Entra ID (RBAC)',
-					description: 'Recommended: Use DefaultAzureCredential for Storage Tables/Blob (no secrets).',
-					authMode: 'entraId' as BackendAuthMode,
-					picked: true
-				},
-				{
-					label: 'Storage Shared Key',
-					description: 'Advanced: Use Storage account key (stored securely in VS Code SecretStorage on this machine only).',
-					authMode: 'sharedKey' as BackendAuthMode
-				}
-			],
-			{ 
-				title: 'Select backend authentication mode', 
-				ignoreFocusOut: true,
-				placeHolder: 'Entra ID (RBAC) is recommended for most users'
-			}
-		);
-		if (!authPick) {
-			return;
-		}
-		const authMode = authPick.authMode;
-
 		const profilePick = await vscode.window.showQuickPick(
 			[
 				{
@@ -598,27 +596,47 @@ export class AzureResourceService {
 			}
 		}
 
+		const existingUserId = config.get<string>('backend.userId', '');
+		const existingUserIdMode = config.get<'alias' | 'custom'>('backend.userIdMode', 'alias');
+		const existingIdentityMode = config.get<'pseudonymous' | 'teamAlias' | 'entraObjectId'>('backend.userIdentityMode', 'pseudonymous');
+
 		// Set profile-specific defaults
 		let shareWithTeam = false;
 		let shareWorkspaceMachineNames = false;
-		let userIdentityMode: 'pseudonymous' | 'teamAlias' | 'entraObjectId' = 'pseudonymous';
+		let userId: string = existingUserId;
+		let userIdMode: 'alias' | 'custom' = existingUserIdMode;
+		let userIdentityMode: 'pseudonymous' | 'teamAlias' | 'entraObjectId' = existingIdentityMode;
 		let shareConsentAt = '';
 
 		if (newProfile === 'off') {
 			// No cloud sync
 			shareWithTeam = false;
 			shareWorkspaceMachineNames = false;
+			userId = '';
+			userIdMode = 'alias';
+			userIdentityMode = 'pseudonymous';
+			shareConsentAt = '';
 		} else if (newProfile === 'soloFull') {
 			shareWithTeam = false;
 			shareWorkspaceMachineNames = true;
+			userId = '';
+			userIdMode = 'alias';
+			userIdentityMode = 'pseudonymous';
+			shareConsentAt = '';
 		} else if (newProfile === 'teamAnonymized') {
 			shareWithTeam = false;
 			shareWorkspaceMachineNames = false;
+			userId = '';
+			userIdMode = 'alias';
+			userIdentityMode = 'pseudonymous';
+			shareConsentAt = '';
 		} else if (newProfile === 'teamPseudonymous') {
 			shareWithTeam = true;
 			shareWorkspaceMachineNames = false;
 			userIdentityMode = 'pseudonymous';
 			shareConsentAt = new Date().toISOString();
+			userId = '';
+			userIdMode = 'alias';
 		} else if (newProfile === 'teamIdentified') {
 			shareWithTeam = true;
 			shareWorkspaceMachineNames = false;
@@ -661,10 +679,10 @@ export class AzureResourceService {
 		await config.update('backend.sharingProfile', newProfile, vscode.ConfigurationTarget.Global);
 		await config.update('backend.shareWithTeam', shareWithTeam, vscode.ConfigurationTarget.Global);
 		await config.update('backend.shareWorkspaceMachineNames', shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
+		await config.update('backend.userId', userId, vscode.ConfigurationTarget.Global);
+		await config.update('backend.userIdMode', userIdMode, vscode.ConfigurationTarget.Global);
 		await config.update('backend.userIdentityMode', userIdentityMode, vscode.ConfigurationTarget.Global);
-		if (shareConsentAt) {
-			await config.update('backend.shareConsentAt', shareConsentAt, vscode.ConfigurationTarget.Global);
-		}
+		await config.update('backend.shareConsentAt', shareConsentAt, vscode.ConfigurationTarget.Global);
 
 		// Clear facade cache to prevent showing old cached data with different privacy level
 		this.deps.clearQueryCache();

@@ -211,6 +211,7 @@ export async function confirmAction(message: string, confirmLabel: string = 'Con
 export class BackendIntegration {
 	private facade: Pick<BackendFacade, 'getSettings' | 'isConfigured' | 'syncToBackendStore' | 'getStatsForDetailsPanel' | 'setFilters'>;
 	private context?: vscode.ExtensionContext;
+	private logFn: (m: string) => void;
 	private warnFn: (m: string) => void;
 	private errorFn: (m: string, e?: unknown) => void;
 	private updateTokenStatsFn: () => Promise<unknown>;
@@ -219,6 +220,7 @@ export class BackendIntegration {
 	constructor(deps: {
 		facade: Pick<BackendFacade, 'getSettings' | 'isConfigured' | 'syncToBackendStore' | 'getStatsForDetailsPanel' | 'setFilters'>;
 		context?: vscode.ExtensionContext;
+		log: (m: string) => void;
 		warn: (m: string) => void;
 		error: (m: string, e?: unknown) => void;
 		updateTokenStats: () => Promise<unknown>;
@@ -226,6 +228,7 @@ export class BackendIntegration {
 	}) {
 		this.facade = deps.facade;
 		this.context = deps.context;
+		this.logFn = deps.log;
 		this.warnFn = deps.warn;
 		this.errorFn = deps.error;
 		this.updateTokenStatsFn = deps.updateTokenStats;
@@ -243,8 +246,7 @@ export class BackendIntegration {
 	 * Logs a message to the output channel.
 	 */
 	log(message: string): void {
-		// Uses warn function as proxy since dedicated channel is not implemented
-		// Extension logging goes through the standard log system
+		this.logFn(`[Backend] ${message}`);
 	}
 
 	/**

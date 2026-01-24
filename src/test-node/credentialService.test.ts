@@ -44,8 +44,8 @@ test('getBackendDataPlaneCredentials returns undefined when user cancels shared 
 test('getBackendDataPlaneCredentials prompts, stores, and returns shared key credentials', async () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setNextPick('Set Shared Key');
-	(vscode as any).window = (vscode as any).window ?? {};
-	(vscode as any).window.showInputBox = async () => 'shh-key';
+	const windowMock = vscode.window as unknown as { showInputBox: typeof vscode.window.showInputBox };
+	windowMock.showInputBox = async () => 'shh-key';
 	const svc = new CredentialService(makeContext());
 	const creds = await svc.getBackendDataPlaneCredentials(sharedKeySettings);
 	assert.ok(creds);

@@ -295,6 +295,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.backendIntegration = new BackendIntegration({
 			facade: this.backend,
 			context: this.context,
+			log: (m) => this.log(m),
 			warn: (m) => this.warn(m),
 			error: (m, e) => this.error(m, e),
 			updateTokenStats: async () => await this.updateTokenStats(),

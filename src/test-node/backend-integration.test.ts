@@ -163,10 +163,11 @@ test('BackendIntegration proxies facade calls and fallbacks', async () => {
 
 	const warnMessages: string[] = [];
 	const errorMessages: Array<{ message: string; error?: unknown }> = [];
-	let logged = '';
+	const loggedMessages: string[] = [];
 	const integration = new BackendIntegration({
 		facade,
 		context: undefined,
+		log: (m) => loggedMessages.push(m),
 		warn: (m) => warnMessages.push(m),
 		error: (m, e) => errorMessages.push({ message: m, error: e }),
 		updateTokenStats: async () => 'local-fallback',
@@ -174,15 +175,10 @@ test('BackendIntegration proxies facade calls and fallbacks', async () => {
 	});
 
 	assert.equal(integration.getContext(), undefined);
-	const originalLog = console.log;
-	console.log = (msg?: any) => {
-		logged = String(msg ?? '');
-	};
 	integration.log('again');
 	integration.warn('warned');
 	integration.error('errored', new Error('boom'));
-	console.log = originalLog;
-	assert.ok(logged.includes('[Backend] again'));
+	assert.ok(loggedMessages.some(m => m.includes('[Backend] again')));
 	assert.deepEqual(warnMessages, ['warned']);
 	assert.equal(errorMessages.length, 1);
 	assert.equal(errorMessages[0].message, 'errored');
