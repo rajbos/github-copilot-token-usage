@@ -219,8 +219,8 @@ function buildMetricsSection(
 		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), month: formatNumber(stats.month.tokens), projected: formatNumber(projections.projectedTokens) },
 		{ label: 'Est. Cost (USD)', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), month: formatCost(stats.month.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), month: formatNumber(stats.month.sessions), projected: formatNumber(projections.projectedSessions) },
-		{ label: 'Avg Interactions', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
-		{ label: 'Avg Tokens', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
+		{ label: 'Avg Interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
+		{ label: 'Avg Tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
 		{ label: 'Est. CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, month: `${formatFixed(stats.month.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
 		{ label: 'Est. Water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, month: `${formatFixed(stats.month.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
 		{ label: 'Tree Equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), month: stats.month.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
@@ -286,7 +286,8 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	const headers = [
 		{ icon: '📝', text: 'Editor' },
 		{ icon: '📅', text: 'Today' },
-		{ icon: '📈', text: 'This Month' }
+		{ icon: '📈', text: 'This Month' },
+		{ icon: '🌍', text: 'Projected Year' }
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
@@ -307,6 +308,8 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const todayPercent = todayTotal > 0 ? (todayUsage.tokens / todayTotal) * 100 : 0;
 		const monthPercent = monthTotal > 0 ? (monthUsage.tokens / monthTotal) * 100 : 0;
+		const projectedTokens = Math.round(calculateProjection(monthUsage.tokens));
+		const projectedSessions = Math.round(calculateProjection(monthUsage.sessions));
 
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
@@ -327,7 +330,13 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		const monthSub = el('div', 'muted', `${formatPercent(monthPercent)} · ${monthUsage.sessions} sessions`);
 		monthTd.append(monthSub);
 
-		tr.append(labelTd, todayTd, monthTd);
+		const projTd = document.createElement('td');
+		projTd.className = 'value-right align-right';
+		projTd.textContent = formatNumber(projectedTokens);
+		const projSub = el('div', 'muted', `${projectedSessions} sessions`);
+		projTd.append(projSub);
+
+		tr.append(labelTd, todayTd, monthTd, projTd);
 		tbody.append(tr);
 	});
 
