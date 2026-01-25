@@ -1,3 +1,12 @@
+// Import shared utilities
+import { getModelDisplayName } from '../shared/modelUtils';
+import { getEditorIcon, getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost } from '../shared/formatUtils';
+import { el, createButton } from '../shared/domUtils';
+import { BUTTONS } from '../shared/buttonConfig';
+// Token estimators loaded from JSON
+// @ts-ignore
+import tokenEstimatorsJson from '../../tokenEstimators.json';
+
 type ModelUsage = Record<string, { inputTokens: number; outputTokens: number }>;
 type EditorUsage = Record<string, { tokens: number; sessions: number }>;
 
@@ -39,131 +48,17 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 declare global {
-	interface Window { __INITIAL_DETAILS__?: DetailedStats; }
+	interface Window {
+		__INITIAL_DETAILS__?: DetailedStats;
+		Chart?: any;
+	}
 }
 
 const vscode: VSCodeApi = acquireVsCodeApi();
 const initialData = window.__INITIAL_DETAILS__;
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-	const node = document.createElement(tag);
-	if (className) { node.className = className; }
-	if (text !== undefined) { node.textContent = text; }
-	return node;
-}
-
-function createButton(id: string, label: string, appearance?: 'primary' | 'secondary'): HTMLElement {
-	const button = document.createElement('vscode-button');
-	button.id = id;
-	button.textContent = label;
-	if (appearance) { button.setAttribute('appearance', appearance); }
-	return button;
-}
-
-const tokenEstimators: Record<string, number> = {
-	'gpt-4': 0.25,
-	'gpt-4.1': 0.25,
-	'gpt-4o': 0.25,
-	'gpt-4o-mini': 0.25,
-	'gpt-3.5-turbo': 0.25,
-	'gpt-5': 0.25,
-	'gpt-5-codex': 0.25,
-	'gpt-5-mini': 0.25,
-	'gpt-5.1': 0.25,
-	'gpt-5.1-codex': 0.25,
-	'gpt-5.1-codex-max': 0.25,
-	'gpt-5.1-codex-mini': 0.25,
-	'gpt-5.2': 0.25,
-	'gpt-5.2-codex': 0.25,
-	'claude-sonnet-3.5': 0.24,
-	'claude-sonnet-3.7': 0.24,
-	'claude-sonnet-4': 0.24,
-	'claude-sonnet-4.5': 0.24,
-	'claude-haiku': 0.24,
-	'claude-haiku-4.5': 0.24,
-	'claude-opus-4.1': 0.24,
-	'claude-opus-4.5': 0.24,
-	'gemini-2.5-pro': 0.25,
-	'gemini-3-flash': 0.25,
-	'gemini-3-pro': 0.25,
-	'gemini-3-pro-preview': 0.25,
-	'grok-code-fast-1': 0.25,
-	'raptor-mini': 0.25,
-	'o3-mini': 0.25,
-	'o4-mini': 0.25
-};
-
-function getEditorIcon(editor: string): string {
-	const icons: Record<string, string> = {
-		'VS Code': '💙',
-		'VS Code Insiders': '💚',
-		'VS Code Exploration': '🧪',
-		'VS Code Server': '☁️',
-		'VS Code Server (Insiders)': '☁️',
-		'VSCodium': '🔷',
-		'Cursor': '⚡',
-		'Copilot CLI': '🤖',
-		'Unknown': '❓'
-	};
-	return icons[editor] || '📝';
-}
-
-function getModelDisplayName(model: string): string {
-	const names: Record<string, string> = {
-		'gpt-4': 'GPT-4',
-		'gpt-4.1': 'GPT-4.1',
-		'gpt-4o': 'GPT-4o',
-		'gpt-4o-mini': 'GPT-4o Mini',
-		'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-		'gpt-5': 'GPT-5',
-		'gpt-5-codex': 'GPT-5 Codex (Preview)',
-		'gpt-5-mini': 'GPT-5 Mini',
-		'gpt-5.1': 'GPT-5.1',
-		'gpt-5.1-codex': 'GPT-5.1 Codex',
-		'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
-		'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini (Preview)',
-		'gpt-5.2': 'GPT-5.2',
-		'gpt-5.2-codex': 'GPT-5.2 Codex',
-		'claude-sonnet-3.5': 'Claude Sonnet 3.5',
-		'claude-sonnet-3.7': 'Claude Sonnet 3.7',
-		'claude-sonnet-4': 'Claude Sonnet 4',
-		'claude-sonnet-4.5': 'Claude Sonnet 4.5',
-		'claude-haiku': 'Claude Haiku',
-		'claude-haiku-4.5': 'Claude Haiku 4.5',
-		'claude-opus-4.1': 'Claude Opus 4.1',
-		'claude-opus-4.5': 'Claude Opus 4.5',
-		'gemini-2.5-pro': 'Gemini 2.5 Pro',
-		'gemini-3-flash': 'Gemini 3 Flash',
-		'gemini-3-pro': 'Gemini 3 Pro',
-		'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
-		'grok-code-fast-1': 'Grok Code Fast 1',
-		'raptor-mini': 'Raptor Mini',
-		'o3-mini': 'o3-mini',
-		'o4-mini': 'o4-mini (Preview)'
-	};
-	return names[model] || model;
-}
-
-function getCharsPerToken(model: string): number {
-	const ratio = tokenEstimators[model] ?? 0.25;
-	return 1 / ratio;
-}
-
-function formatFixed(value: number, digits: number): string {
-	return value.toFixed(digits);
-}
-
-function formatPercent(value: number): string {
-	return `${value.toFixed(1)}%`;
-}
-
-function formatNumber(value: number): string {
-	return value.toLocaleString();
-}
-
-function formatCost(value: number): string {
-	return `$${value.toFixed(4)}`;
-}
+console.log('[CopilotTokenTracker] details webview loaded');
+console.log('[CopilotTokenTracker] window.__INITIAL_DETAILS__:', window.__INITIAL_DETAILS__);
+console.log('[CopilotTokenTracker] initialData:', initialData);
 
 function calculateProjection(monthValue: number): number {
 	const now = new Date();
@@ -230,13 +125,14 @@ function renderShell(
 		.section h3 { margin: 0 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 6px; color: #ffffff; letter-spacing: 0.2px; }
 		.stats-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 8px; overflow: hidden; }
 		.stats-table thead { background: #242429; }
-		.stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid #2d2d33; }
+		.stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid #2d2d33; vertical-align: middle; }
 		.stats-table th { text-align: left; color: #d0d0d0; font-weight: 700; font-size: 12px; letter-spacing: 0.1px; }
-		.stats-table td { color: #f0f0f0; font-size: 12px; vertical-align: middle; }
+		.stats-table td { color: #f0f0f0; font-size: 12px; }
 		.stats-table th.align-right, .stats-table td.align-right { text-align: right; }
 		.stats-table tbody tr:nth-child(even) { background: #18181b; }
-		.metric-label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+		.metric-label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 		.period-header { display: flex; align-items: center; gap: 4px; color: #c8c8c8; }
+		.align-right .period-header { justify-content: flex-end; }
 		.value-right { text-align: right; }
 		.muted { color: #a0a0a0; font-size: 11px; margin-top: 4px; }
 		.notes { margin: 4px 0 0 0; padding-left: 16px; color: #c8c8c8; }
@@ -250,10 +146,10 @@ function renderShell(
 	const buttonRow = el('div', 'button-row');
 
 	buttonRow.append(
-		createButton('btn-refresh', '🔄 Refresh', 'primary'),
-		createButton('btn-chart', '📈 Chart'),
-		createButton('btn-usage', '📊 Usage Analysis'),
-		createButton('btn-diagnostics', '🔍 Diagnostics')
+		createButton(BUTTONS['btn-refresh']),
+		createButton(BUTTONS['btn-chart']),
+		createButton(BUTTONS['btn-usage']),
+		createButton(BUTTONS['btn-diagnostics'])
 	);
 
 	header.append(title, buttonRow);
@@ -308,6 +204,7 @@ function buildMetricsSection(
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
+		// Only the first column is left-aligned; others get 'align-right' for right alignment
 		th.className = idx === 0 ? '' : 'align-right';
 		const wrap = el('div', 'period-header');
 		wrap.textContent = `${h.icon} ${h.text}`;
@@ -322,8 +219,8 @@ function buildMetricsSection(
 		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), month: formatNumber(stats.month.tokens), projected: formatNumber(projections.projectedTokens) },
 		{ label: 'Est. Cost (USD)', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), month: formatCost(stats.month.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), month: formatNumber(stats.month.sessions), projected: formatNumber(projections.projectedSessions) },
-		{ label: 'Avg Interactions', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
-		{ label: 'Avg Tokens', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
+		{ label: 'Avg Interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
+		{ label: 'Avg Tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
 		{ label: 'Est. CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, month: `${formatFixed(stats.month.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
 		{ label: 'Est. Water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, month: `${formatFixed(stats.month.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
 		{ label: 'Tree Equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), month: stats.month.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
@@ -332,13 +229,15 @@ function buildMetricsSection(
 	rows.forEach(row => {
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
-		labelTd.className = 'metric-label';
+		const labelWrapper = document.createElement('span');
+		labelWrapper.className = 'metric-label';
 		const iconSpan = document.createElement('span');
 		iconSpan.textContent = row.icon;
 		if (row.color) { iconSpan.style.color = row.color; }
 		const textSpan = document.createElement('span');
 		textSpan.textContent = row.label;
-		labelTd.append(iconSpan, textSpan);
+		labelWrapper.append(iconSpan, textSpan);
+		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
@@ -387,10 +286,12 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	const headers = [
 		{ icon: '📝', text: 'Editor' },
 		{ icon: '📅', text: 'Today' },
-		{ icon: '📈', text: 'This Month' }
+		{ icon: '📈', text: 'This Month' },
+		{ icon: '🌍', text: 'Projected Year' }
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
+		// Only the first column is left-aligned; others get 'align-right' for right alignment
 		th.className = idx === 0 ? '' : 'align-right';
 		const wrap = el('div', 'period-header');
 		wrap.textContent = `${h.icon} ${h.text}`;
@@ -407,11 +308,15 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const todayPercent = todayTotal > 0 ? (todayUsage.tokens / todayTotal) * 100 : 0;
 		const monthPercent = monthTotal > 0 ? (monthUsage.tokens / monthTotal) * 100 : 0;
+		const projectedTokens = Math.round(calculateProjection(monthUsage.tokens));
+		const projectedSessions = Math.round(calculateProjection(monthUsage.sessions));
 
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
-		labelTd.className = 'metric-label';
-		labelTd.textContent = `${getEditorIcon(editor)} ${editor}`;
+		const labelWrapper = document.createElement('span');
+		labelWrapper.className = 'metric-label';
+		labelWrapper.textContent = `${getEditorIcon(editor)} ${editor}`;
+		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
@@ -425,7 +330,13 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		const monthSub = el('div', 'muted', `${formatPercent(monthPercent)} · ${monthUsage.sessions} sessions`);
 		monthTd.append(monthSub);
 
-		tr.append(labelTd, todayTd, monthTd);
+		const projTd = document.createElement('td');
+		projTd.className = 'value-right align-right';
+		projTd.textContent = formatNumber(projectedTokens);
+		const projSub = el('div', 'muted', `${projectedSessions} sessions`);
+		projTd.append(projSub);
+
+		tr.append(labelTd, todayTd, monthTd, projTd);
 		tbody.append(tr);
 	});
 
@@ -462,6 +373,7 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
+		// Only the first column is left-aligned; others get 'align-right' for right alignment
 		th.className = idx === 0 ? '' : 'align-right';
 		const wrap = el('div', 'period-header');
 		wrap.textContent = `${h.icon} ${h.text}`;
@@ -487,8 +399,10 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
-		labelTd.className = 'metric-label';
-		labelTd.innerHTML = `${getModelDisplayName(model)} <span style="color:#9aa0a6;font-size:11px; font-weight:500;">(~${charsPerToken.toFixed(1)} chars/tk)</span>`;
+		const labelWrapper = document.createElement('span');
+		labelWrapper.className = 'metric-label';
+		labelWrapper.innerHTML = `${getModelDisplayName(model)} <span style="color:#9aa0a6;font-size:11px; font-weight:500;">(~${charsPerToken.toFixed(1)} chars/tk)</span>`;
+		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
@@ -554,12 +468,15 @@ function wireButtons(): void {
 }
 
 async function bootstrap(): Promise<void> {
+	console.log('[CopilotTokenTracker] bootstrap called');
 	const { provideVSCodeDesignSystem, vsCodeButton, vsCodeBadge } = await import('@vscode/webview-ui-toolkit');
 	provideVSCodeDesignSystem().register(vsCodeButton(), vsCodeBadge());
 
 	if (initialData) {
+		console.log('[CopilotTokenTracker] Rendering details with initialData:', initialData);
 		render(initialData);
 	} else {
+		console.warn('[CopilotTokenTracker] No initialData found, rendering fallback.');
 		const root = document.getElementById('root');
 		if (root) {
 			root.textContent = '';

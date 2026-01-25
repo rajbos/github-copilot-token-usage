@@ -5,6 +5,7 @@ import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import * as packageJson from '../package.json';
+import {getModelDisplayName} from './webview/shared/modelUtils';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -789,7 +790,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		
 		// Convert map to array and sort by date
-		const dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		let dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		
+		// Fill in missing dates between the first date and today
+		if (dailyStatsArray.length > 0) {
+			const firstDate = new Date(dailyStatsArray[0].date);
+			const today = new Date();
+			
+			// Create a set of existing dates for quick lookup
+			const existingDates = new Set(dailyStatsArray.map(s => s.date));
+			
+			// Generate all dates from first date to today
+			const allDates: string[] = [];
+			const currentDate = new Date(firstDate);
+			
+			while (currentDate <= today) {
+				const dateKey = this.formatDateKey(currentDate);
+				allDates.push(dateKey);
+				currentDate.setDate(currentDate.getDate() + 1);
+			}
+			
+			// Add missing dates with zero values
+			for (const dateKey of allDates) {
+				if (!existingDates.has(dateKey)) {
+					dailyStatsMap.set(dateKey, {
+						date: dateKey,
+						tokens: 0,
+						sessions: 0,
+						interactions: 0,
+						modelUsage: {},
+						editorUsage: {}
+					});
+				}
+			}
+			
+			// Re-convert map to array and sort by date
+			dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		}
 		
 		return dailyStatsArray;
 	}
@@ -1698,13 +1735,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 						
-						// Handle Copilot CLI format
+						// Handle Copilot CLI format (type: 'user.message')
 						if (event.type === 'user.message' && event.data?.content) {
 							turnNumber++;
 							const contextRefs = this.createEmptyContextRefs();
 							const userMessage = event.data.content;
 							this.analyzeContextReferences(userMessage, contextRefs);
-							
 							const turn: ChatTurn = {
 								turnNumber,
 								timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
@@ -2308,7 +2344,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			{
 				enableScripts: true,
 				retainContextWhenHidden: false,
-				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist')]
 			}
 		);
 
@@ -2700,7 +2736,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
 		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js'));
+		const scriptUri = webview.asWebviewUri(
+			vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js')
+		);
 
 		const csp = [
 			`default-src 'none'`,
@@ -2728,233 +2766,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		</html>`;
 	}
 
-	private getModelUsageHtml(stats: DetailedStats): string {
-		// Get all unique models from both periods
-		const allModels = new Set([
-			...Object.keys(stats.today.modelUsage),
-			...Object.keys(stats.month.modelUsage)
-		]);
-
-		if (allModels.size === 0) {
-			return '';
-		}
-
-		const now = new Date();
-		const currentDayOfMonth = now.getDate();
-		const daysInYear = (now.getFullYear() % 4 === 0 && now.getFullYear() % 100 !== 0) || now.getFullYear() % 400 === 0 ? 366 : 365;
-
-		const calculateProjection = (monthlyValue: number) => {
-			if (currentDayOfMonth === 0) {
-				return 0;
-			}
-			const dailyAverage = monthlyValue / currentDayOfMonth;
-			return dailyAverage * daysInYear;
-		};
-
-		const modelRows = Array.from(allModels).map(model => {
-			const ratio = this.tokenEstimators[model] || 0.25;
-			const charsPerToken = (1 / ratio).toFixed(1);
-			
-			const todayUsage = stats.today.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
-			const monthUsage = stats.month.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
-			
-			const todayTotal = todayUsage.inputTokens + todayUsage.outputTokens;
-			const monthTotal = monthUsage.inputTokens + monthUsage.outputTokens;
-			const projectedTokens = calculateProjection(monthTotal);
-			
-			const todayInputPercent = todayTotal > 0 ? ((todayUsage.inputTokens / todayTotal) * 100).toFixed(0) : 0;
-			const todayOutputPercent = todayTotal > 0 ? ((todayUsage.outputTokens / todayTotal) * 100).toFixed(0) : 0;
-			const monthInputPercent = monthTotal > 0 ? ((monthUsage.inputTokens / monthTotal) * 100).toFixed(0) : 0;
-			const monthOutputPercent = monthTotal > 0 ? ((monthUsage.outputTokens / monthTotal) * 100).toFixed(0) : 0;
-
-			return `
-			<tr>
-				<td class="metric-label">
-					${this.getModelDisplayName(model)}
-					<span style="font-size: 11px; color: #a0a0a0; font-weight: normal;">(~${charsPerToken} chars/tk)</span>
-				</td>
-				<td class="today-value">
-					${todayTotal.toLocaleString()}
-					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">↑${todayInputPercent}% ↓${todayOutputPercent}%</div>
-				</td>
-				<td class="month-value">
-					${monthTotal.toLocaleString()}
-					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">↑${monthInputPercent}% ↓${monthOutputPercent}%</div>
-				</td>
-				<td class="month-value">${Math.round(projectedTokens).toLocaleString()}</td>
-			</tr>
-		`;
-		}).join('');
-
-		return `
-			<div style="margin-top: 16px;">
-				<h3 style="color: #ffffff; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-					<span>🎯</span>
-					<span>Model Usage (Tokens)</span>
-				</h3>
-				<table class="stats-table">
-					<colgroup>
-						<col class="metric-col">
-						<col class="value-col">
-						<col class="value-col">
-						<col class="value-col">
-					</colgroup>
-					<thead>
-						<tr>
-							<th>Model</th>
-							<th>
-								<div class="period-header">
-									<span>📅</span>
-									<span>Today</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>📊</span>
-									<span>This Month</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>🌍</span>
-									<span>Projected Year</span>
-								</div>
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						${modelRows}
-					</tbody>
-				</table>
-			</div>
-		`;
-	}
-
-	private getEditorUsageHtml(stats: DetailedStats): string {
-		// Get all unique editors from both periods
-		const allEditors = new Set([
-			...Object.keys(stats.today.editorUsage),
-			...Object.keys(stats.month.editorUsage)
-		]);
-
-		if (allEditors.size === 0) {
-			return '';
-		}
-
-		// Calculate totals for percentages
-		const todayTotal = Object.values(stats.today.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
-		const monthTotal = Object.values(stats.month.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
-
-		const editorRows = Array.from(allEditors).sort().map(editor => {
-			const todayUsage = stats.today.editorUsage[editor] || { tokens: 0, sessions: 0 };
-			const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
-			
-			const todayPercent = todayTotal > 0 ? ((todayUsage.tokens / todayTotal) * 100).toFixed(1) : '0.0';
-			const monthPercent = monthTotal > 0 ? ((monthUsage.tokens / monthTotal) * 100).toFixed(1) : '0.0';
-
-			return `
-			<tr>
-				<td class="metric-label">
-					${this.getEditorIcon(editor)} ${editor}
-				</td>
-				<td class="today-value">
-					${todayUsage.tokens.toLocaleString()}
-					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">${todayPercent}% · ${todayUsage.sessions} sessions</div>
-				</td>
-				<td class="month-value">
-					${monthUsage.tokens.toLocaleString()}
-					<div style="font-size: 10px; color: #999; font-weight: normal; margin-top: 2px;">${monthPercent}% · ${monthUsage.sessions} sessions</div>
-				</td>
-			</tr>
-		`;
-		}).join('');
-
-		return `
-			<div style="margin-top: 16px;">
-				<h3 style="color: #ffffff; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-					<span>💻</span>
-					<span>Usage by Editor</span>
-				</h3>
-				<table class="stats-table">
-					<colgroup>
-						<col class="metric-col">
-						<col class="value-col">
-						<col class="value-col">
-					</colgroup>
-					<thead>
-						<tr>
-							<th>Editor</th>
-							<th>
-								<div class="period-header">
-									<span>📅</span>
-									<span>Today</span>
-								</div>
-							</th>
-							<th>
-								<div class="period-header">
-									<span>📊</span>
-									<span>This Month</span>
-								</div>
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						${editorRows}
-					</tbody>
-				</table>
-			</div>
-		`;
-	}
-
-	private getEditorIcon(editor: string): string {
-		const icons: { [key: string]: string } = {
-			'VS Code': '💙',
-			'VS Code Insiders': '💚',
-			'VS Code Exploration': '🧪',
-			'VS Code Server': '☁️',
-			'VS Code Server (Insiders)': '☁️',
-			'VSCodium': '🔷',
-			'Cursor': '⚡',
-			'Copilot CLI': '🤖',
-			'Unknown': '❓'
-		};
-		return icons[editor] || '📝';
-	}
-
-	private getModelDisplayName(model: string): string {
-		const modelNames: { [key: string]: string } = {
-			'gpt-4': 'GPT-4',
-			'gpt-4.1': 'GPT-4.1',
-			'gpt-4o': 'GPT-4o',
-			'gpt-4o-mini': 'GPT-4o Mini',
-			'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-			'gpt-5': 'GPT-5',
-			'gpt-5-codex': 'GPT-5 Codex (Preview)',
-			'gpt-5-mini': 'GPT-5 Mini',
-			'gpt-5.1': 'GPT-5.1',
-			'gpt-5.1-codex': 'GPT-5.1 Codex',
-			'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
-			'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini (Preview)',
-			'gpt-5.2': 'GPT-5.2',
-			'claude-sonnet-3.5': 'Claude Sonnet 3.5',
-			'claude-sonnet-3.7': 'Claude Sonnet 3.7',
-			'claude-sonnet-4': 'Claude Sonnet 4',
-			'claude-sonnet-4.5': 'Claude Sonnet 4.5',
-			'claude-haiku': 'Claude Haiku',
-			'claude-haiku-4.5': 'Claude Haiku 4.5',
-			'claude-opus-4.1': 'Claude Opus 4.1',
-			'claude-opus-4.5': 'Claude Opus 4.5',
-			'gemini-2.5-pro': 'Gemini 2.5 Pro',
-			'gemini-3-flash': 'Gemini 3 Flash',
-			'gemini-3-pro': 'Gemini 3 Pro',
-			'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
-			'grok-code-fast-1': 'Grok Code Fast 1',
-			'raptor-mini': 'Raptor Mini',
-			'o3-mini': 'o3-mini',
-			'o4-mini': 'o4-mini (Preview)'
-		};
-		return modelNames[model] || model;
-	}
 
 	public async generateDiagnosticReport(): Promise<string> {
 		this.log('Generating diagnostic report...');
@@ -3503,7 +3314,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const modelDatasets = Array.from(allModels).map((model, idx) => {
 			const color = modelColors[idx % modelColors.length];
 			return {
-				label: this.getModelDisplayName(model),
+				label: getModelDisplayName(model),
 				data: dailyStats.map(d => {
 					const usage = d.modelUsage[model];
 					return usage ? usage.inputTokens + usage.outputTokens : 0;

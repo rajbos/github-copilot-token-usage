@@ -1,4 +1,7 @@
 // Usage Analysis webview
+import { el } from '../shared/domUtils';
+import { buttonHtml } from '../shared/buttonConfig';
+
 type ModeUsage = { ask: number; edit: number; agent: number };
 type ContextReferenceUsage = {
 	file: number;
@@ -38,17 +41,6 @@ declare global {
 
 const vscode = acquireVsCodeApi();
 const initialData = window.__INITIAL_USAGE__;
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-	const node = document.createElement(tag);
-	if (className) {
-		node.className = className;
-	}
-	if (text !== undefined) {
-		node.textContent = text;
-	}
-	return node;
-}
 
 function escapeHtml(text: string): string {
 	return text
@@ -247,10 +239,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<span class="header-title">Usage Analysis</span>
 				</div>
 				<div class="button-row">
-					<vscode-button id="btn-refresh" appearance="primary">🔄 Refresh</vscode-button>
-					<vscode-button id="btn-details">🤖 Details</vscode-button>
-					<vscode-button id="btn-chart">📈 Chart</vscode-button>
-					<vscode-button id="btn-diagnostics">🔍 Diagnostics</vscode-button>
+				${buttonHtml('btn-refresh')}
+				${buttonHtml('btn-details')}
+				${buttonHtml('btn-chart')}
+				${buttonHtml('btn-diagnostics')}
 				</div>
 			</div>
 
