@@ -124,7 +124,7 @@ Recursively scans directories for `.json` and `.jsonl` session files.
   - `kind: 1` → input tokens (from `request.message.parts[].text`)
   - `kind: 2` → output tokens (from `response[].value`)
 
-**Model Detection Logic**: `getModelFromRequest()` (lines 1123-1145)
+**Model Detection Logic**: `getModelFromRequest()`
 - Primary: `request.result.metadata.modelId`
 - Fallback: Parse `request.result.details` string for model names
 - Detected patterns (defined in code lines 1129-1143):
@@ -133,7 +133,7 @@ Recursively scans directories for `.json` and `.jsonl` session files.
   - Google: Gemini 2.5 Pro, Gemini 3 Pro (Preview), Gemini 3 Pro
   - Default fallback: gpt-4
 
-**Note**: The display name mapping in `getModelDisplayName()` (lines 1778-1811) includes additional model variants (GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, Raptor) that may appear if specified via `metadata.modelId` but are not pattern-matched from `result.details`.
+**Note**: The display name mapping in `getModelDisplayName()` includes additional model variants (GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, Raptor) that may appear if specified via `metadata.modelId` but are not pattern-matched from `result.details`.
 
 ### 4. Editor Type Detection: `getEditorTypeFromPath()`
 **Location**: `src/extension.ts` (lines 111-143)
