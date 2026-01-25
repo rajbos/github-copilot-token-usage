@@ -1,4 +1,7 @@
 // @ts-nocheck // Chart.js ESM bundle is loaded dynamically; skip CJS resolution noise
+import { el, createButton } from '../shared/domUtils';
+import { BUTTONS } from '../shared/buttonConfig';
+
 type ChartModule = typeof import('chart.js/auto');
 type ChartConstructor = ChartModule['default'];
 type ChartInstance = InstanceType<ChartConstructor>;
@@ -36,17 +39,6 @@ declare global {
 
 const vscode: VSCodeApi = acquireVsCodeApi();
 const initialData = window.__INITIAL_CHART__;
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-	const node = document.createElement(tag);
-	if (className) {
-		node.className = className;
-	}
-	if (text !== undefined) {
-		node.textContent = text;
-	}
-	return node;
-}
 
 let chart: ChartInstance | undefined;
 let Chart: ChartConstructor | undefined;
@@ -103,20 +95,12 @@ function renderLayout(data: InitialChartData): void {
 	const title = el('span', 'header-title', 'Token Usage Over Time');
 	headerLeft.append(icon, title);
 	const buttons = el('div', 'button-row');
-	const refreshBtn = document.createElement('vscode-button');
-	refreshBtn.id = 'btn-refresh';
-	refreshBtn.setAttribute('appearance', 'primary');
-	refreshBtn.textContent = '🔄 Refresh';
-	const detailsBtn = document.createElement('vscode-button');
-	detailsBtn.id = 'btn-details';
-	detailsBtn.textContent = '🤖 Details';
-	const usageBtn = document.createElement('vscode-button');
-	usageBtn.id = 'btn-usage';
-	usageBtn.textContent = '📊 Usage Analysis';
-	const diagnosticsBtn = document.createElement('vscode-button');
-	diagnosticsBtn.id = 'btn-diagnostics';
-	diagnosticsBtn.textContent = '🔍 Diagnostics';
-	buttons.append(refreshBtn, detailsBtn, usageBtn, diagnosticsBtn);
+	buttons.append(
+		createButton(BUTTONS['btn-refresh']),
+		createButton(BUTTONS['btn-details']),
+		createButton(BUTTONS['btn-usage']),
+		createButton(BUTTONS['btn-diagnostics'])
+	);
 	header.append(headerLeft, buttons);
 =======
 	const title = el('div', 'title', '📈 Token Usage Over Time');
