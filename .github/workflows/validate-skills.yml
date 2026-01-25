@@ -3,6 +3,7 @@ name: Validate Skills
 on:
   push:
     paths:
+      - "*"
       - ".github/skills/**"
       - ".github/workflows/validate-skills.yml"
   pull_request:
@@ -59,7 +60,7 @@ jobs:
 
   validate:
     needs: detect-changes
-    if: needs.detect-changes.outputs.skills != '[]'
+    #if: needs.detect-changes.outputs.skills != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
