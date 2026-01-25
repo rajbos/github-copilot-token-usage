@@ -176,13 +176,14 @@ function renderShell(
 		.section h3 { margin: 0 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 6px; color: #ffffff; letter-spacing: 0.2px; }
 		.stats-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 8px; overflow: hidden; }
 		.stats-table thead { background: #242429; }
-		.stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid #2d2d33; }
+		.stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid #2d2d33; vertical-align: middle; }
 		.stats-table th { text-align: left; color: #d0d0d0; font-weight: 700; font-size: 12px; letter-spacing: 0.1px; }
-		.stats-table td { color: #f0f0f0; font-size: 12px; vertical-align: middle; }
+		.stats-table td { color: #f0f0f0; font-size: 12px; }
 		.stats-table th.align-right, .stats-table td.align-right { text-align: right; }
 		.stats-table tbody tr:nth-child(even) { background: #18181b; }
-		.metric-label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+		.metric-label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 		.period-header { display: flex; align-items: center; gap: 4px; color: #c8c8c8; }
+		.align-right .period-header { justify-content: flex-end; }
 		.value-right { text-align: right; }
 		.muted { color: #a0a0a0; font-size: 11px; margin-top: 4px; }
 		.notes { margin: 4px 0 0 0; padding-left: 16px; color: #c8c8c8; }
@@ -279,13 +280,15 @@ function buildMetricsSection(
 	rows.forEach(row => {
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
-		labelTd.className = 'metric-label';
+		const labelWrapper = document.createElement('span');
+		labelWrapper.className = 'metric-label';
 		const iconSpan = document.createElement('span');
 		iconSpan.textContent = row.icon;
 		if (row.color) { iconSpan.style.color = row.color; }
 		const textSpan = document.createElement('span');
 		textSpan.textContent = row.label;
-		labelTd.append(iconSpan, textSpan);
+		labelWrapper.append(iconSpan, textSpan);
+		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
@@ -358,8 +361,10 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
-		labelTd.className = 'metric-label';
-		labelTd.textContent = `${getEditorIcon(editor)} ${editor}`;
+		const labelWrapper = document.createElement('span');
+		labelWrapper.className = 'metric-label';
+		labelWrapper.textContent = `${getEditorIcon(editor)} ${editor}`;
+		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
@@ -436,8 +441,10 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
-		labelTd.className = 'metric-label';
-		labelTd.innerHTML = `${getModelDisplayName(model)} <span style="color:#9aa0a6;font-size:11px; font-weight:500;">(~${charsPerToken.toFixed(1)} chars/tk)</span>`;
+		const labelWrapper = document.createElement('span');
+		labelWrapper.className = 'metric-label';
+		labelWrapper.innerHTML = `${getModelDisplayName(model)} <span style="color:#9aa0a6;font-size:11px; font-weight:500;">(~${charsPerToken.toFixed(1)} chars/tk)</span>`;
+		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
