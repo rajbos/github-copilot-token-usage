@@ -5,6 +5,7 @@ import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import * as packageJson from '../package.json';
+import {getModelDisplayName} from './webview/shared/modelUtils';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -1698,13 +1699,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 						
-						// Handle Copilot CLI format
+						// Handle Copilot CLI format (type: 'user.message')
 						if (event.type === 'user.message' && event.data?.content) {
 							turnNumber++;
 							const contextRefs = this.createEmptyContextRefs();
 							const userMessage = event.data.content;
 							this.analyzeContextReferences(userMessage, contextRefs);
-							
 							const turn: ChatTurn = {
 								turnNumber,
 								timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
@@ -2308,7 +2308,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			{
 				enableScripts: true,
 				retainContextWhenHidden: false,
-				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js')]
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist')]
 			}
 		);
 
@@ -2725,7 +2725,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
-			<script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
 	}
@@ -3278,7 +3278,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const modelDatasets = Array.from(allModels).map((model, idx) => {
 			const color = modelColors[idx % modelColors.length];
 			return {
-				label: this.getModelDisplayName(model),
+				label: getModelDisplayName(model),
 				data: dailyStats.map(d => {
 					const usage = d.modelUsage[model];
 					return usage ? usage.inputTokens + usage.outputTokens : 0;
