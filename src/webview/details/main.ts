@@ -1,5 +1,8 @@
-// Import shared model display name utility
+// Import shared utilities
 import { getModelDisplayName } from '../shared/modelUtils';
+import { getEditorIcon, getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost } from '../shared/formatUtils';
+import { el, createButton } from '../shared/domUtils';
+import { BUTTONS } from '../shared/buttonConfig';
 // Token estimators loaded from JSON
 // @ts-ignore
 import tokenEstimatorsJson from '../../tokenEstimators.json';
@@ -51,65 +54,11 @@ declare global {
 	}
 }
 
-
 const vscode: VSCodeApi = acquireVsCodeApi();
 const initialData = window.__INITIAL_DETAILS__;
 console.log('[CopilotTokenTracker] details webview loaded');
 console.log('[CopilotTokenTracker] window.__INITIAL_DETAILS__:', window.__INITIAL_DETAILS__);
 console.log('[CopilotTokenTracker] initialData:', initialData);
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-	const node = document.createElement(tag);
-	if (className) { node.className = className; }
-	if (text !== undefined) { node.textContent = text; }
-	return node;
-}
-
-function createButton(id: string, label: string, appearance?: 'primary' | 'secondary'): HTMLElement {
-	const button = document.createElement('vscode-button');
-	button.id = id;
-	button.textContent = label;
-	if (appearance) { button.setAttribute('appearance', appearance); }
-	return button;
-}
-
-const tokenEstimators: Record<string, number> = tokenEstimatorsJson.estimators;
-
-function getEditorIcon(editor: string): string {
-	const icons: Record<string, string> = {
-		'VS Code': '💙',
-		'VS Code Insiders': '💚',
-		'VS Code Exploration': '🧪',
-		'VS Code Server': '☁️',
-		'VS Code Server (Insiders)': '☁️',
-		'VSCodium': '🔷',
-		'Cursor': '⚡',
-		'Copilot CLI': '🤖',
-		'Unknown': '❓'
-	};
-	return icons[editor] || '📝';
-}
-
-function getCharsPerToken(model: string): number {
-	const ratio = tokenEstimators[model] ?? 0.25;
-	return 1 / ratio;
-}
-
-function formatFixed(value: number, digits: number): string {
-	return value.toFixed(digits);
-}
-
-function formatPercent(value: number): string {
-	return `${value.toFixed(1)}%`;
-}
-
-function formatNumber(value: number): string {
-	return value.toLocaleString();
-}
-
-function formatCost(value: number): string {
-	return `$${value.toFixed(4)}`;
-}
 
 function calculateProjection(monthValue: number): number {
 	const now = new Date();
@@ -197,10 +146,10 @@ function renderShell(
 	const buttonRow = el('div', 'button-row');
 
 	buttonRow.append(
-		createButton('btn-refresh', '🔄 Refresh', 'primary'),
-		createButton('btn-chart', '📈 Chart'),
-		createButton('btn-usage', '📊 Usage Analysis'),
-		createButton('btn-diagnostics', '🔍 Diagnostics')
+		createButton(BUTTONS['btn-refresh']),
+		createButton(BUTTONS['btn-chart']),
+		createButton(BUTTONS['btn-usage']),
+		createButton(BUTTONS['btn-diagnostics'])
 	);
 
 	header.append(title, buttonRow);
@@ -508,7 +457,6 @@ function wireButtons(): void {
 	usage?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
 	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
 }
-
 
 async function bootstrap(): Promise<void> {
 	console.log('[CopilotTokenTracker] bootstrap called');

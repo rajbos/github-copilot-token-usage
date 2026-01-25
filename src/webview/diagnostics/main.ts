@@ -1,4 +1,6 @@
 // Diagnostics Report webview with tabbed interface
+import { buttonHtml } from '../shared/buttonConfig';
+
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
@@ -588,9 +590,9 @@ function renderLayout(data: DiagnosticsData): void {
 					<span class="header-title">Diagnostic Report</span>
 				</div>
 				<div class="button-row">
-					<vscode-button id="btn-chart">📈 Chart</vscode-button>
-					<vscode-button id="btn-usage">📊 Usage Analysis</vscode-button>
-					<vscode-button id="btn-details">📋 Details</vscode-button>
+					${buttonHtml('btn-chart')}
+					${buttonHtml('btn-usage')}
+					${buttonHtml('btn-details')}
 				</div>
 			</div>
 			
