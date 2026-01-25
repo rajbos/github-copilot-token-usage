@@ -790,7 +790,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		
 		// Convert map to array and sort by date
-		const dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		let dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		
+		// Fill in missing dates between the first date and today
+		if (dailyStatsArray.length > 0) {
+			const firstDate = new Date(dailyStatsArray[0].date);
+			const today = new Date();
+			
+			// Create a set of existing dates for quick lookup
+			const existingDates = new Set(dailyStatsArray.map(s => s.date));
+			
+			// Generate all dates from first date to today
+			const allDates: string[] = [];
+			const currentDate = new Date(firstDate);
+			
+			while (currentDate <= today) {
+				const dateKey = this.formatDateKey(currentDate);
+				allDates.push(dateKey);
+				currentDate.setDate(currentDate.getDate() + 1);
+			}
+			
+			// Add missing dates with zero values
+			for (const dateKey of allDates) {
+				if (!existingDates.has(dateKey)) {
+					dailyStatsMap.set(dateKey, {
+						date: dateKey,
+						tokens: 0,
+						sessions: 0,
+						interactions: 0,
+						modelUsage: {},
+						editorUsage: {}
+					});
+				}
+			}
+			
+			// Re-convert map to array and sort by date
+			dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		}
 		
 		return dailyStatsArray;
 	}
