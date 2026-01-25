@@ -2,12 +2,11 @@ name: Validate Skills
 
 on:
   push:
-    branches: [main, develop]
     paths:
       - ".github/skills/**"
       - ".github/workflows/validate-skills.yml"
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - ".github/skills/**"
       - ".github/workflows/validate-skills.yml"
