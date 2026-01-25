@@ -13,6 +13,7 @@ import type { DisplayNameStore } from './displayNames';
 import { writeClipboardText } from '../utils/clipboard';
 import type { BackendFacadeInterface } from './types';
 import type { BackendSettings } from './settings';
+import { ErrorMessages, SuccessMessages, ConfirmationMessages } from './ui/messages';
 
 /**
  * Handles backend-related commands.
@@ -44,9 +45,8 @@ export class BackendCommandHandler {
 		try {
 			await this.facade.configureBackendWizard();
 		} catch (error) {
-			showBackendError(
-				`Configuration wizard failed: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('configure backend', `Try the wizard again. Details: ${details}`));
 		}
 	}
 
@@ -91,9 +91,8 @@ export class BackendCommandHandler {
 		try {
 			await this.facade.toggleBackendWorkspaceMachineNameSync();
 		} catch (error) {
-			showBackendError(
-				`Failed to toggle workspace/machine name sync: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('toggle workspace/machine name sync', `Check settings. Details: ${details}`));
 		}
 	}
 
@@ -105,9 +104,8 @@ export class BackendCommandHandler {
 		try {
 			await this.facade.setSharingProfileCommand();
 		} catch (error) {
-			showBackendError(
-				`Failed to set sharing profile: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('set sharing profile', `Try again. Details: ${details}`));
 		}
 	}
 
@@ -158,11 +156,10 @@ export class BackendCommandHandler {
 					await this.facade.syncToBackendStore(true);
 				}
 			);
-			showBackendSuccess('Manual sync completed successfully.');
+			showBackendSuccess(SuccessMessages.synced());
 		} catch (error) {
-			showBackendError(
-				`Manual sync failed: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.sync(details));
 		}
 	}
 
@@ -193,9 +190,8 @@ export class BackendCommandHandler {
 
 			vscode.window.showInformationMessage(summary);
 		} catch (error) {
-			showBackendError(
-				`Query failed: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.query(`Details: ${details}`));
 		}
 	}
 
@@ -206,9 +202,8 @@ export class BackendCommandHandler {
 		try {
 			await this.facade.setBackendSharedKey();
 		} catch (error) {
-			showBackendError(
-				`Failed to set shared key: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('set shared key', `Verify the key is valid. Details: ${details}`));
 		}
 	}
 
@@ -216,20 +211,21 @@ export class BackendCommandHandler {
 	 * Handles the "Rotate Backend Shared Key" command.
 	 */
 	async handleRotateBackendSharedKey(): Promise<void> {
-		const confirmed = await confirmAction(
-			'This will replace the current shared key with a new one. Make sure the new key is valid.',
-			'Rotate Key'
+		const conf = ConfirmationMessages.rotateKey();
+		const confirmed = await vscode.window.showWarningMessage(
+			conf.message,
+			{ modal: true, detail: conf.detail },
+			conf.button
 		);
-		if (!confirmed) {
+		if (confirmed !== conf.button) {
 			return;
 		}
 
 		try {
 			await this.facade.rotateBackendSharedKey();
 		} catch (error) {
-			showBackendError(
-				`Failed to rotate shared key: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('rotate shared key', `Verify the new key is valid. Details: ${details}`));
 		}
 	}
 
@@ -237,20 +233,21 @@ export class BackendCommandHandler {
 	 * Handles the "Clear Backend Shared Key" command.
 	 */
 	async handleClearBackendSharedKey(): Promise<void> {
-		const confirmed = await confirmAction(
-			'This will remove the stored shared key from this machine. You will need to re-enter it to sync.',
-			'Clear Key'
+		const conf = ConfirmationMessages.clearKey();
+		const confirmed = await vscode.window.showWarningMessage(
+			conf.message,
+			{ modal: true, detail: conf.detail },
+			conf.button
 		);
-		if (!confirmed) {
+		if (confirmed !== conf.button) {
 			return;
 		}
 
 		try {
 			await this.facade.clearBackendSharedKey();
 		} catch (error) {
-			showBackendError(
-				`Failed to clear shared key: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('clear shared key', `Try again. Details: ${details}`));
 		}
 	}
 
@@ -259,12 +256,13 @@ export class BackendCommandHandler {
 	 */
 	async handleEnableTeamSharing(): Promise<void> {
 		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const conf = ConfirmationMessages.enableTeamSharing();
 		const consent = await vscode.window.showWarningMessage(
-			'Enable team sharing to include a per-user identifier in backend rollups. Anyone with access to the shared dataset can see this identifier.',
-			{ modal: true },
-			'Enable'
+			conf.message,
+			{ modal: true, detail: conf.detail },
+			conf.button
 		);
-		if (consent !== 'Enable') {
+		if (consent !== conf.button) {
 			return;
 		}
 
@@ -273,11 +271,10 @@ export class BackendCommandHandler {
 			await config.update('backend.sharingProfile', 'teamPseudonymous', vscode.ConfigurationTarget.Global);
 			await config.update('backend.shareWithTeam', true, vscode.ConfigurationTarget.Global);
 			await config.update('backend.shareConsentAt', consentAt, vscode.ConfigurationTarget.Global);
-			vscode.window.showInformationMessage('Team sharing enabled. Future syncs will include your per-user identifier.');
+			vscode.window.showInformationMessage(SuccessMessages.completed('Team sharing enabled'));
 		} catch (error) {
-			showBackendError(
-				`Failed to enable team sharing: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('enable team sharing', `Check settings. Details: ${details}`));
 		}
 	}
 
@@ -285,11 +282,13 @@ export class BackendCommandHandler {
 	 * Handles disabling team sharing (stop writing user identifiers).
 	 */
 	async handleDisableTeamSharing(): Promise<void> {
-		const confirmed = await confirmAction(
-			'Switch to anonymized sharing mode? This will hash workspace/machine IDs and remove per-user identifiers and names.',
-			'Disable Team Sharing'
+		const conf = ConfirmationMessages.disableTeamSharing();
+		const confirmed = await vscode.window.showWarningMessage(
+			conf.message,
+			{ modal: true, detail: conf.detail },
+			conf.button
 		);
-		if (!confirmed) {
+		if (confirmed !== conf.button) {
 			return;
 		}
 
@@ -298,11 +297,10 @@ export class BackendCommandHandler {
 			await config.update('backend.sharingProfile', 'teamAnonymized', vscode.ConfigurationTarget.Global);
 			await config.update('backend.shareWithTeam', false, vscode.ConfigurationTarget.Global);
 			await config.update('backend.shareWorkspaceMachineNames', false, vscode.ConfigurationTarget.Global);
-			vscode.window.showInformationMessage('Team sharing disabled. Future syncs will use hashed IDs with no per-user identifier or names.');
+			vscode.window.showInformationMessage(SuccessMessages.completed('Switched to anonymized sharing'));
 		} catch (error) {
-			showBackendError(
-				`Failed to disable team sharing: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('disable team sharing', `Check settings. Details: ${details}`));
 		}
 	}
 
@@ -349,12 +347,11 @@ export class BackendCommandHandler {
 			const json = JSON.stringify(payload, null, 2);
 			await writeClipboardText(json);
 			vscode.window.showInformationMessage(includeIdentifiers
-				? 'Exported with identifiers/names to clipboard as JSON.'
-				: 'Redacted query results exported to clipboard as JSON.');
+				? SuccessMessages.exported('Query results with identifiers')
+				: SuccessMessages.exported('Redacted query results'));
 		} catch (error) {
-			showBackendError(
-				`Failed to export: ${error instanceof Error ? error.message : String(error)}`
-			);
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('export results', `Try again. Details: ${details}`));
 		}
 	}
 }

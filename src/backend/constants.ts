@@ -25,9 +25,11 @@ export const MAX_UI_LIST_ITEMS = 50;
 export const MIN_LOOKBACK_DAYS = 1;
 
 /**
- * Maximum lookback days (1 year).
+ * Maximum lookback days for backend queries (UI-bound upper limit).
+ * UX design caps the advanced lookback slider to 90 days to keep
+ * queries responsive and aligned with the configurator validation.
  */
-export const MAX_LOOKBACK_DAYS = 365;
+export const MAX_LOOKBACK_DAYS = 90;
 
 /**
  * Default lookback days (30 days).

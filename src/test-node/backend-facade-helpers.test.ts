@@ -40,7 +40,7 @@ test('BackendFacade helper methods behave as expected (path parsing, keys, filte
 
 	facade.setFilters({ lookbackDays: 999, model: 'm', workspaceId: 'w', machineId: 'x', userId: 'u' });
 	const f = facade.getFilters();
-	assert.equal(f.lookbackDays, 365);
+	assert.equal(f.lookbackDays, 90);
 	assert.equal(f.model, 'm');
 
 	facade.setFilters({ model: '', workspaceId: '', machineId: '', userId: '' });

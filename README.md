@@ -117,6 +117,33 @@ Shared Key management (only if using shared-key auth):
 Ask:
 - `Copilot Token Tracker: Ask About Usage`
 
+### Backend settings configurator
+
+Use **Copilot Token Tracker: Configure Backend** to open the settings panel with five sections: Overview, Sharing, Azure, Advanced, and Review & Apply.
+
+**Privacy profiles** (Sharing section):
+- **Off** – All data stays local; nothing syncs to Azure
+- **Solo** – Private cloud storage; only you can access your data
+- **Team Anonymized** – Hashed workspace/machine IDs; no names stored; suitable for privacy-first team analytics
+- **Team Pseudonymous** – Stable alias (e.g., "dev-001") with hashed IDs; no real names
+- **Team Identified** – Team alias or Entra object ID included; full workspace names available
+
+**Guided setup workflow**:
+1. Run **Copilot Token Tracker: Configure Backend** command
+2. Navigate to Sharing section to choose your privacy profile
+3. Go to Azure section, enable backend, and use **Open configure walkthrough** to provision Azure resources
+4. Advanced section sets dataset ID (default examples: "my-team-copilot") and lookback days (7/30/90)
+5. Review & Apply confirms your changes with explicit consent for privacy upgrades
+6. Click **Save & Apply** to enable backend sync
+
+**Privacy gates**: Upgrading to a more permissive profile or enabling workspace/machine names triggers an explicit consent dialog. All settings are validated before saving (dataset/table names use alphanumeric rules, lookback days must be 1–90).
+
+**Authentication**: Supports **Entra ID** (role-based access, no secrets stored) or **Storage Shared Key** (stored securely in VS Code SecretStorage, never synced). Test Connection verifies credentials (disabled when offline).
+
+**Offline support**: You can edit and save settings locally when offline. Shared Key storage is per-machine only and never leaves the device.
+
+**Accessibility**: The configurator includes ARIA labels on all interactive elements, proper heading hierarchy, keyboard navigation support, and screen-reader-friendly status updates. All form fields have clear labels and error messages are programmatically associated with inputs.
+
 ## Diagnostic Reporting
 
 If you experience issues with the extension, you can generate a diagnostic report to help troubleshoot problems. The diagnostic report includes:

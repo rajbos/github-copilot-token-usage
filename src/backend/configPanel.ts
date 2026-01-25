@@ -1,0 +1,592 @@
+import * as vscode from 'vscode';
+import { safeJsonForInlineScript } from '../utils/html';
+import type { BackendConfigDraft } from './configurationFlow';
+
+export interface BackendConfigPanelState {
+	draft: BackendConfigDraft;
+	errors?: Record<string, string>;
+	sharedKeySet: boolean;
+	privacyBadge: string;
+	isConfigured: boolean;
+	authStatus: string;
+	shareConsentAt?: string;
+}
+
+export interface BackendConfigPanelCallbacks {
+	getState: () => Promise<BackendConfigPanelState>;
+	onSave: (draft: BackendConfigDraft) => Promise<{ state: BackendConfigPanelState; errors?: Record<string, string>; message?: string }>;
+	onDiscard: () => Promise<BackendConfigPanelState>;
+	onStayLocal: () => Promise<BackendConfigPanelState>;
+	onTestConnection: (draft: BackendConfigDraft) => Promise<{ ok: boolean; message: string }>;
+	onUpdateSharedKey: (storageAccount: string, draft?: BackendConfigDraft) => Promise<{ ok: boolean; message: string; state?: BackendConfigPanelState }>;
+	onLaunchWizard: () => Promise<BackendConfigPanelState>;
+}
+
+export class BackendConfigPanel implements vscode.Disposable {
+	private panel: vscode.WebviewPanel | undefined;
+	private disposed = false;
+	private dirty = false;
+
+	constructor(private readonly extensionUri: vscode.Uri, private readonly callbacks: BackendConfigPanelCallbacks) {}
+
+	public async show(): Promise<void> {
+		const state = await this.callbacks.getState();
+		if (!this.panel) {
+			this.panel = vscode.window.createWebviewPanel(
+				'copilotBackendConfig',
+				'Copilot Token Tracker: Configure Backend',
+				{ viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+				{ enableScripts: true, retainContextWhenHidden: false }
+			);
+			this.panel.onDidDispose(() => this.handleDispose());
+			this.panel.webview.onDidReceiveMessage(async (message) => this.handleMessage(message));
+		}
+		this.panel.webview.html = this.renderHtml(this.panel.webview, state);
+		this.panel.reveal();
+	}
+
+	private handleDispose(): void {
+		if (this.disposed) {
+			return;
+		}
+		this.disposed = true;
+		if (this.dirty) {
+			vscode.window.showWarningMessage('Backend configuration panel closed with unsaved changes. No changes were applied.');
+		}
+	}
+
+	public dispose(): void {
+		if (this.panel) {
+			this.panel.dispose();
+		}
+	}
+
+	private async handleMessage(message: any): Promise<void> {
+		switch (message?.command) {
+			case 'markDirty':
+				this.dirty = true;
+				return;
+			case 'save':
+				await this.handleSave(message.draft as BackendConfigDraft);
+				return;
+			case 'discard':
+				await this.handleDiscard();
+				return;
+			case 'stayLocal':
+				await this.handleStayLocal();
+				return;
+			case 'testConnection':
+				await this.handleTestConnection(message.draft as BackendConfigDraft);
+				return;
+			case 'updateSharedKey':
+				await this.handleUpdateSharedKey(message.storageAccount as string, message.draft as BackendConfigDraft | undefined);
+				return;
+			case 'launchWizard':
+				await this.handleLaunchWizard();
+				return;
+		}
+	}
+
+	private async handleSave(draft: BackendConfigDraft): Promise<void> {
+		try {
+			const result = await this.callbacks.onSave(draft);
+			this.dirty = false;
+			this.postState(result.state, result.errors, result.message);
+		} catch (error: any) {
+			vscode.window.showErrorMessage(`Failed to save backend settings: ${error?.message || String(error)}`);
+		}
+	}
+
+	private async handleDiscard(): Promise<void> {
+		const state = await this.callbacks.onDiscard();
+		this.dirty = false;
+		this.postState(state, undefined, 'Changes discarded.');
+	}
+
+	private async handleStayLocal(): Promise<void> {
+		const state = await this.callbacks.onStayLocal();
+		this.dirty = false;
+		this.postState(state, undefined, 'Backend disabled. Staying local-only.');
+	}
+
+	private async handleTestConnection(draft: BackendConfigDraft): Promise<void> {
+		const result = await this.callbacks.onTestConnection(draft);
+		this.postMessage({ type: 'testResult', result });
+	}
+
+	private async handleUpdateSharedKey(storageAccount: string, draft?: BackendConfigDraft): Promise<void> {
+		const result = await this.callbacks.onUpdateSharedKey(storageAccount, draft);
+		if (result.state) {
+			this.postState(result.state);
+		}
+		this.postMessage({ type: 'sharedKeyResult', result });
+	}
+
+	private async handleLaunchWizard(): Promise<void> {
+		const state = await this.callbacks.onLaunchWizard();
+		this.postState(state, undefined, 'Wizard completed. Refreshing settings.');
+	}
+
+	private postState(state: BackendConfigPanelState, errors?: Record<string, string>, message?: string): void {
+		this.postMessage({ type: 'state', state, errors, message });
+	}
+
+	private postMessage(payload: any): void {
+		if (this.panel) {
+			this.panel.webview.postMessage(payload);
+		}
+	}
+
+	private renderHtml(webview: vscode.Webview, state: BackendConfigPanelState): string {
+		const nonce = Math.random().toString(36).slice(2);
+		const toolkitUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js'));
+		const initialState = safeJsonForInlineScript(state);
+ 		return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
+	<title>Configure Backend</title>
+		<style>
+			body { font-family: 'Segoe UI', sans-serif; background: #1e1e1e; color: #e5e5e5; margin: 0; padding: 0; }
+			.banner { background: #423620; color: #f2c97d; padding: 10px 16px; display: none; }
+			.banner.offline { display: block; }
+			.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+			.nav { border-right: 1px solid #2f2f2f; padding: 16px; background: #252526; }
+			.nav vscode-button { width: 100%; margin-bottom: 8px; }
+			.nav .selected { background: #0e639c; color: #fff; }
+			.main { padding: 16px 20px 32px; }
+			.section { display: none; gap: 12px; }
+			.section.active { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+			.card { background: #252526; border: 1px solid #2f2f2f; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+			.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+			.field label { font-size: 12px; color: #c8c8c8; }
+			.field small { color: #999; }
+			.field .error { color: #f48771; font-size: 11px; }
+			.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+			.badge { display: inline-flex; align-items: center; padding: 4px 8px; background: #2b3a4a; border-radius: 12px; font-size: 12px; }
+			.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+			.inline { display: flex; align-items: center; gap: 10px; }
+			.helper { color: #b3b3b3; font-size: 12px; line-height: 1.4; }
+			.status-line { font-size: 12px; padding: 8px 10px; border-radius: 6px; background: #1b252e; }
+			.status-line.ok { color: #b8f5c4; border: 1px solid #2d4f3a; }
+			.status-line.error { color: #f8c7c0; border: 1px solid #7c2f2f; }
+			.pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+			.muted { color: #9a9a9a; }
+		</style>
+</head>
+<body>
+	<div id="offlineBanner" class="banner">Offline detected. You can edit and save locally. "Test connection" is disabled.</div>
+	<div class="layout">
+		<aside class="nav">
+			<vscode-button appearance="secondary" class="nav-btn selected" data-target="overview" aria-label="Navigate to Overview section">Overview</vscode-button>
+			<vscode-button appearance="secondary" class="nav-btn" data-target="sharing" aria-label="Navigate to Sharing section">Sharing</vscode-button>
+			<vscode-button appearance="secondary" class="nav-btn" data-target="azure" aria-label="Navigate to Azure section">Azure</vscode-button>
+			<vscode-button appearance="secondary" class="nav-btn" data-target="advanced" aria-label="Navigate to Advanced section">Advanced</vscode-button>
+			<vscode-button appearance="secondary" class="nav-btn" data-target="review" aria-label="Navigate to Review and Apply section">Review & Apply</vscode-button>
+		</aside>
+		<main class="main">
+			<section id="overview" class="section active">
+				<div class="card">
+					<h3>Backend overview</h3>
+					<div class="pill-row">
+						<span class="badge" id="backendStateBadge"></span>
+						<span class="badge" id="privacyBadge"></span>
+						<span class="badge" id="authBadge"></span>
+					</div>
+					<div class="status-line" id="overviewSummary"></div>
+					<p class="helper">Enable backend to sync token usage to Azure. Choose "Stay Local" to keep all data on this device only.</p>
+					<div class="helper" id="statusMessage"></div>
+					<div class="actions">
+						<vscode-button appearance="primary" id="saveBtn" disabled aria-label="Save backend settings and apply changes">Save & Apply</vscode-button>
+						<vscode-button id="discardBtn" appearance="secondary" aria-label="Discard unsaved changes">Discard</vscode-button>
+						<vscode-button id="stayLocalBtn" appearance="secondary" aria-label="Disable backend sync and stay local-only">Stay Local (disable backend)</vscode-button>
+					</div>
+				</div>
+				<div class="card">
+					<h3>What changes here?</h3>
+					<p class="helper">Save & Apply saves settings and starts backend sync. Discard resets to last saved state. Stay Local disables backend and keeps all data local.</p>
+					<p class="helper">Need help? Launch the guided Azure setup from the Azure tab to configure subscription, resource group, storage account, and auth mode.</p>
+				</div>
+			</section>
+			<section id="sharing" class="section">
+				<div class="card">
+					<h3>Sharing profile</h3>
+					<div class="field">
+						<label for="sharingProfile">Profile</label>
+						<vscode-dropdown id="sharingProfile" aria-describedby="sharingProfile-help">
+							<vscode-option value="off">Off (local-only)</vscode-option>
+							<vscode-option value="soloFull">Solo</vscode-option>
+							<vscode-option value="teamAnonymized">Team Anonymized</vscode-option>
+							<vscode-option value="teamPseudonymous">Team Pseudonymous</vscode-option>
+							<vscode-option value="teamIdentified">Team Identified</vscode-option>
+						</vscode-dropdown>
+						<div id="sharingProfile-help" class="helper" style="margin-bottom: 8px;">Choose your privacy level. Each profile controls what data is synced to Azure.</div>
+						<details style="margin-bottom: 12px;">
+							<summary style="cursor: pointer; color: #3794ff; font-size: 12px; margin-bottom: 8px;">What do these profiles mean?</summary>
+							<table style="font-size: 11px; width: 100%; border-collapse: collapse; margin-top: 8px;">
+								<thead>
+									<tr style="border-bottom: 1px solid #444;">
+										<th style="text-align: left; padding: 6px 8px; color: #c8c8c8;">Profile</th>
+										<th style="text-align: left; padding: 6px 8px; color: #c8c8c8;">Who can see</th>
+										<th style="text-align: left; padding: 6px 8px; color: #c8c8c8;">Data includes</th>
+										<th style="text-align: left; padding: 6px 8px; color: #c8c8c8;">User ID stored</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr style="border-bottom: 1px solid #333;">
+										<td style="padding: 6px 8px; color: #e5e5e5;"><strong>Off</strong></td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">No one (local only)</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Nothing synced</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">No</td>
+									</tr>
+									<tr style="border-bottom: 1px solid #333;">
+										<td style="padding: 6px 8px; color: #e5e5e5;"><strong>Solo</strong></td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Only you</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Usage stats, workspace IDs</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">No</td>
+									</tr>
+									<tr style="border-bottom: 1px solid #333;">
+										<td style="padding: 6px 8px; color: #e5e5e5;"><strong>Team Anonymized</strong></td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Team with storage access</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Hashed workspace/machine IDs</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">No</td>
+									</tr>
+									<tr style="border-bottom: 1px solid #333;">
+										<td style="padding: 6px 8px; color: #e5e5e5;"><strong>Team Pseudonymous</strong></td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Team with storage access</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Usage stats, hashed IDs</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Stable alias (e.g., "dev-001")</td>
+									</tr>
+									<tr>
+										<td style="padding: 6px 8px; color: #e5e5e5;"><strong>Team Identified</strong></td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Team with storage access</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Usage stats, workspace names</td>
+										<td style="padding: 6px 8px; color: #b3b3b3;">Team alias or Entra object ID</td>
+									</tr>
+								</tbody>
+							</table>
+						</details>
+						<p class="helper" style="margin-top: 8px; color: #9a9a9a; font-size: 11px;">Upgrading to more permissive profiles requires consent.</p>
+					</div>
+					<div class="field inline">
+						<vscode-checkbox id="shareNames" aria-describedby="shareNames-help">Store readable workspace & machine names</vscode-checkbox>
+					</div>
+					<div id="shareNames-help" class="helper">Stores names like "frontend-monorepo" instead of hashed IDs. Team members with storage access can see these names.</div>
+					<div class="field inline">
+						<vscode-checkbox id="includeMachineBreakdown" aria-describedby="includeMachineBreakdown-help">Include machine breakdown</vscode-checkbox>
+					</div>
+					<div id="includeMachineBreakdown-help" class="helper">Includes per-machine usage rows. Disable to merge into workspace totals only.</div>
+				</div>
+				<div class="card" id="identityCard" style="display:none;">
+					<h3>Identity (Team Identified)</h3>
+					<div class="field">
+						<label for="userIdentityMode">Identity mode</label>
+						<vscode-dropdown id="userIdentityMode" aria-describedby="userIdentityMode-help">
+							<vscode-option value="teamAlias">Team alias</vscode-option>
+							<vscode-option value="entraObjectId">Entra object ID</vscode-option>
+						</vscode-dropdown>
+					</div>
+					<div class="field">
+						<label for="userId">Alias or object ID</label>
+						<vscode-text-field id="userId" placeholder="alex-dev" aria-describedby="userId-help userId-error"></vscode-text-field>
+						<div id="userId-error" class="error" role="alert" data-error-for="userId"></div>
+					</div>
+					<div id="userId-help userIdentityMode-help" class="helper">Team alias: Use a non-identifying handle like "alex-dev". Entra object ID: Use your directory GUID for compliance auditing.</div>
+				</div>
+			</section>
+			<section id="azure" class="section">
+				<div class="card">
+					<h3>Enable backend</h3>
+					<div class="field inline">
+						<vscode-checkbox id="enabledToggle" aria-describedby="enabledToggle-help">Enable backend sync to Azure</vscode-checkbox>
+					</div>
+					<div id="enabledToggle-help" class="helper">Syncs token usage to Azure Storage when enabled. Stays local-only when disabled.</div>
+				</div>
+				<div class="card">
+					<h3>Azure resource IDs</h3>
+					<p class="helper">Azure Storage connection details. Use the guided wizard to auto-fill these fields.</p>
+					<div class="grid-2">
+						<div class="field"><label for="subscriptionId">Subscription ID</label><vscode-text-field id="subscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" aria-describedby="subscriptionId-error"></vscode-text-field><div id="subscriptionId-error" class="error" role="alert" data-error-for="subscriptionId"></div></div>
+						<div class="field"><label for="resourceGroup">Resource Group</label><vscode-text-field id="resourceGroup" placeholder="copilot-tokens-rg" aria-describedby="resourceGroup-error"></vscode-text-field><div id="resourceGroup-error" class="error" role="alert" data-error-for="resourceGroup"></div></div>
+						<div class="field"><label for="storageAccount">Storage Account</label><vscode-text-field id="storageAccount" placeholder="copilottokenstorage" aria-describedby="storageAccount-error"></vscode-text-field><div id="storageAccount-error" class="error" role="alert" data-error-for="storageAccount"></div></div>
+						<div class="field"><label for="aggTable">Aggregate Table</label><vscode-text-field id="aggTable" placeholder="usageAggDaily" aria-describedby="aggTable-error"></vscode-text-field><div id="aggTable-error" class="error" role="alert" data-error-for="aggTable"></div></div>
+						<div class="field"><label for="eventsTable">Events Table (optional)</label><vscode-text-field id="eventsTable" placeholder="usageEvents" aria-describedby="eventsTable-error"></vscode-text-field><div id="eventsTable-error" class="error" role="alert" data-error-for="eventsTable"></div></div>
+						<div class="field"><label for="rawContainer">Raw Container (optional)</label><vscode-text-field id="rawContainer" placeholder="raw-logs" aria-describedby="rawContainer-error"></vscode-text-field><div id="rawContainer-error" class="error" role="alert" data-error-for="rawContainer"></div></div>
+					</div>
+				</div>
+				<div class="card">
+					<h3>Authentication</h3>
+					<div class="field">
+						<label for="authMode">Auth mode</label>
+						<vscode-dropdown id="authMode" aria-describedby="authHelper">
+							<vscode-option value="entraId">Entra ID (role-based access)</vscode-option>
+							<vscode-option value="sharedKey">Storage Shared Key</vscode-option>
+						</vscode-dropdown>
+						<div class="helper" id="authHelper"></div>
+					</div>
+					<div class="actions">
+						<vscode-button id="updateKeyBtn" appearance="secondary" aria-label="Update Storage Account Shared Key">Update shared key</vscode-button>
+						<vscode-button id="testConnectionBtn" appearance="secondary" aria-label="Test connection to Azure Storage">Test connection</vscode-button>
+						<vscode-button id="launchWizardBtn" appearance="secondary" aria-label="Open guided Azure configuration wizard">Open configure walkthrough</vscode-button>
+					</div>
+					<div class="helper" id="sharedKeyStatus"></div>
+					<div class="status-line" id="testResult" role="status" aria-live="polite"></div>
+				</div>
+			</section>
+			<section id="advanced" class="section">
+				<div class="card">
+					<h3>Advanced</h3>
+					<div class="field"><label for="datasetId">Dataset ID</label><vscode-text-field id="datasetId" placeholder="my-team-copilot" aria-describedby="datasetId-help datasetId-error"></vscode-text-field><div id="datasetId-error" class="error" role="alert" data-error-for="datasetId"></div></div>
+					<div id="datasetId-help" class="helper">Dataset ID groups your usage data. Examples: "my-team", "project-alpha", "personal-usage"</div>
+					<div class="field"><label for="lookbackDays">Lookback days <span class="range">(1-90)</span></label><vscode-text-field id="lookbackDays" type="number" placeholder="30" aria-describedby="lookbackDays-help lookbackDays-error"></vscode-text-field><div id="lookbackDays-error" class="error" role="alert" data-error-for="lookbackDays"></div></div>
+					<div id="lookbackDays-help" class="helper">How far back to sync: 7 days = current week, 30 days = current month, 90 days = full quarter. Smaller values sync faster.</div>
+				</div>
+			</section>
+			<section id="review" class="section">
+				<div class="card">
+					<h3>Review & Apply</h3>
+					<div class="helper">Confirm your changes, then Save & Apply.</div>
+					<div class="field inline"><vscode-checkbox id="confirmApply" aria-describedby="confirmApply-help">I understand this will overwrite backend settings.</vscode-checkbox></div>
+					<div id="confirmApply-help" class="helper" style="display:none;">Confirm you understand before saving</div>
+					<div class="actions">
+						<vscode-button appearance="primary" id="saveBtnReview" disabled aria-label="Save backend settings and apply changes">Save & Apply</vscode-button>
+						<vscode-button id="discardBtnReview" appearance="secondary" aria-label="Discard unsaved changes">Discard</vscode-button>
+					</div>
+				</div>
+			</section>
+		</main>
+	</div>
+	<script type="module" nonce="${nonce}" src="${toolkitUri}"></script>
+		<script nonce="${nonce}">
+		const vscodeApi = acquireVsCodeApi();
+		const initial = ${initialState};
+		let currentState = initial;
+		const aliasRegex = new RegExp(${safeJsonForInlineScript('^[A-Za-z0-9][A-Za-z0-9_-]*$')});
+
+		function byId(id) { return document.getElementById(id); }
+
+		function setFieldValues(state) {
+			byId('enabledToggle').checked = !!state.draft.enabled;
+			byId('sharingProfile').value = state.draft.sharingProfile;
+			byId('shareNames').checked = !!state.draft.shareWorkspaceMachineNames;
+			byId('includeMachineBreakdown').checked = !!state.draft.includeMachineBreakdown;
+			byId('authMode').value = state.draft.authMode;
+			byId('subscriptionId').value = state.draft.subscriptionId || '';
+			byId('resourceGroup').value = state.draft.resourceGroup || '';
+			byId('storageAccount').value = state.draft.storageAccount || '';
+			byId('aggTable').value = state.draft.aggTable || '';
+			byId('eventsTable').value = state.draft.eventsTable || '';
+			byId('rawContainer').value = state.draft.rawContainer || '';
+			byId('datasetId').value = state.draft.datasetId || '';
+			byId('lookbackDays').value = state.draft.lookbackDays ?? '';
+			byId('userIdentityMode').value = state.draft.userIdentityMode;
+			byId('userId').value = state.draft.userId || '';
+			updateUserIdPlaceholder();
+			byId('privacyBadge').innerText = state.privacyBadge;
+			byId('authBadge').innerText = state.authStatus;
+			byId('backendStateBadge').innerText = state.draft.enabled ? 'Backend: Enabled' : 'Backend: Stay Local';
+			byId('overviewSummary').textContent = state.draft.enabled
+				? 'Sharing profile: ' + state.draft.sharingProfile + '. Auth: ' + state.authStatus + '. Dataset: ' + (state.draft.datasetId || 'not set') + '.'
+				: 'Backend is off. New data stays local; no Azure writes.';
+			byId('sharedKeyStatus').textContent = state.draft.authMode === 'sharedKey'
+				? (hasSharedKey() ? 'Shared key stored securely for this storage account.' : 'Shared key not stored yet. Add it to enable connection testing.')
+				: 'Uses your signed-in identity. No secret stored.';
+			byId('confirmApply').checked = false;
+			updateIdentityVisibility();
+			updateAuthUi();
+		}
+
+		function setErrors(errors = {}) {
+			document.querySelectorAll('.error').forEach((el) => { el.textContent = ''; });
+			// Clear all aria-invalid attributes
+			document.querySelectorAll('vscode-text-field, vscode-dropdown').forEach((el) => {
+				el.removeAttribute('aria-invalid');
+			});
+			Object.entries(errors).forEach(([key, message]) => {
+				const target = document.querySelector(\`[data-error-for="\${key}"]\`);
+				if (target) { 
+					target.textContent = message;
+					// Set aria-invalid on the field
+					const field = byId(key);
+					if (field) {
+						field.setAttribute('aria-invalid', 'true');
+					}
+				}
+			});
+		}
+
+		function readDraft() {
+			return {
+				enabled: byId('enabledToggle').checked,
+				authMode: byId('authMode').value,
+				sharingProfile: byId('sharingProfile').value,
+				shareWorkspaceMachineNames: byId('shareNames').checked,
+				includeMachineBreakdown: byId('includeMachineBreakdown').checked,
+				datasetId: byId('datasetId').value,
+				lookbackDays: Number(byId('lookbackDays').value),
+				subscriptionId: byId('subscriptionId').value,
+				resourceGroup: byId('resourceGroup').value,
+				storageAccount: byId('storageAccount').value,
+				aggTable: byId('aggTable').value,
+				eventsTable: byId('eventsTable').value,
+				rawContainer: byId('rawContainer').value,
+				userIdentityMode: byId('userIdentityMode').value,
+				userId: byId('userId').value
+			};
+		}
+
+		function validateLocal(draft) {
+			const errors = {};
+			if (!draft.datasetId || !draft.datasetId.trim()) errors.datasetId = 'Required';
+			else if (!aliasRegex.test(draft.datasetId.trim())) errors.datasetId = 'Use letters, numbers, dashes, underscores';
+			if (draft.enabled) {
+				['subscriptionId','resourceGroup','storageAccount','aggTable'].forEach(f => {
+					if (!draft[f] || !draft[f].trim()) errors[f] = 'Required';
+				});
+			}
+			['aggTable','eventsTable','rawContainer'].forEach(f => {
+				if (draft[f] && !aliasRegex.test(draft[f].trim())) errors[f] = 'Use letters, numbers, dashes, underscores';
+			});
+			if (draft.lookbackDays < 1 || draft.lookbackDays > 90 || Number.isNaN(draft.lookbackDays)) {
+				errors.lookbackDays = '1-90';
+			}
+			if (draft.sharingProfile === 'teamIdentified') {
+				const id = (draft.userId || '').trim();
+				if (!id) {
+					errors.userId = 'Alias or object ID required';
+				} else if (draft.userIdentityMode === 'entraObjectId' && !/^[-0-9a-fA-F]{36}$/.test(id)) {
+					errors.userId = 'Use an Entra object ID (GUID)';
+				}
+			}
+			return { valid: Object.keys(errors).length === 0, errors };
+		}
+
+		function updateValidity() {
+			const draft = readDraft();
+			const validation = validateLocal(draft);
+			setErrors(validation.errors);
+			const allowSave = validation.valid && byId('confirmApply').checked;
+			byId('saveBtn').disabled = !allowSave;
+			byId('saveBtnReview').disabled = !allowSave;
+		}
+
+		function updateIdentityVisibility() {
+			const isIdentified = byId('sharingProfile').value === 'teamIdentified';
+			byId('identityCard').style.display = isIdentified ? 'block' : 'none';
+			updateUserIdPlaceholder();
+		}
+
+		function updateUserIdPlaceholder() {
+			const mode = byId('userIdentityMode').value;
+			const userIdField = byId('userId');
+			if (mode === 'entraObjectId') {
+				userIdField.setAttribute('placeholder', 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+			} else {
+				userIdField.setAttribute('placeholder', 'alex-dev');
+			}
+		}
+
+		function hasSharedKey() {
+			const storage = (byId('storageAccount').value || '').trim();
+			const storedFor = (currentState?.draft?.storageAccount || '').trim();
+			return !!currentState.sharedKeySet && storage && storage === storedFor;
+		}
+
+		function updateAuthUi() {
+			const mode = byId('authMode').value;
+			byId('updateKeyBtn').style.display = mode === 'sharedKey' ? 'inline-flex' : 'none';
+			byId('sharedKeyStatus').style.display = mode === 'sharedKey' ? 'block' : 'none';
+			if (mode === 'sharedKey') {
+				byId('authHelper').textContent = 'Uses Storage Account Shared Key. Stored securely in VS Code on this device only.';
+			} else {
+				byId('authHelper').textContent = 'Uses your signed-in identity. Requires role-based access to the storage account. No secrets stored.';
+			}
+			updateConnectionAvailability();
+		}
+
+		function updateConnectionAvailability() {
+			const offline = !navigator.onLine;
+			const mode = byId('authMode').value;
+			const needsKey = mode === 'sharedKey' && !hasSharedKey();
+			const disabled = offline || needsKey;
+			byId('offlineBanner').classList.toggle('offline', offline);
+			byId('testConnectionBtn').disabled = disabled;
+			byId('testResult').className = 'status-line muted';
+			if (offline) {
+				byId('testResult').textContent = '✗ Offline. Connection testing unavailable until you reconnect.';
+			} else if (needsKey) {
+				byId('testResult').textContent = 'Add a shared key to test the connection.';
+			} else {
+				byId('testResult').textContent = 'Verifies credentials can read and write to storage tables.';
+			}
+		}
+
+		function switchSection(target) {
+			document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
+			document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('selected'));
+			const sec = document.getElementById(target);
+			const btn = document.querySelector(\`.nav-btn[data-target="\${target}"]\`);
+			if (sec && btn) { sec.classList.add('active'); btn.classList.add('selected'); }
+		}
+
+		function bindNav() {
+			document.querySelectorAll('.nav-btn').forEach(btn => {
+				btn.addEventListener('click', () => switchSection(btn.getAttribute('data-target')));
+			});
+		}
+
+		function bindActions() {
+			const markDirty = () => vscodeApi.postMessage({ command: 'markDirty' });
+			const trackIds = ['sharingProfile','shareNames','includeMachineBreakdown','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','rawContainer','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId'];
+			trackIds.forEach(id => {
+				const el = byId(id);
+				if (!el) return;
+				['input','change'].forEach(evt => el.addEventListener(evt, () => { markDirty(); updateIdentityVisibility(); updateAuthUi(); updateValidity(); }));
+			});
+			byId('confirmApply').addEventListener('change', updateValidity);
+			byId('saveBtn').addEventListener('click', () => vscodeApi.postMessage({ command: 'save', draft: readDraft() }));
+			byId('saveBtnReview').addEventListener('click', () => vscodeApi.postMessage({ command: 'save', draft: readDraft() }));
+			byId('discardBtn').addEventListener('click', () => vscodeApi.postMessage({ command: 'discard' }));
+			byId('discardBtnReview').addEventListener('click', () => vscodeApi.postMessage({ command: 'discard' }));
+			byId('stayLocalBtn').addEventListener('click', () => vscodeApi.postMessage({ command: 'stayLocal' }));
+			byId('testConnectionBtn').addEventListener('click', () => vscodeApi.postMessage({ command: 'testConnection', draft: readDraft() }));
+			byId('updateKeyBtn').addEventListener('click', () => vscodeApi.postMessage({ command: 'updateSharedKey', storageAccount: byId('storageAccount').value, draft: readDraft() }));
+			byId('launchWizardBtn').addEventListener('click', () => vscodeApi.postMessage({ command: 'launchWizard' }));
+		}
+
+		window.addEventListener('message', (event) => {
+			const msg = event.data;
+			if (msg.type === 'state') {
+				currentState = msg.state;
+				setFieldValues(currentState);
+				setErrors(msg.errors || {});
+				updateValidity();
+				byId('statusMessage').textContent = msg.message || '';
+			}
+			if (msg.type === 'testResult') {
+				const { ok, message } = msg.result;
+				byId('testResult').className = ok ? 'status-line ok' : 'status-line error';
+				byId('testResult').textContent = ok ? '✓ ' + message : '✗ ' + message;
+			}
+			if (msg.type === 'sharedKeyResult') {
+				const { ok, message } = msg.result;
+				byId('testResult').className = ok ? 'status-line ok' : 'status-line error';
+				byId('testResult').textContent = ok ? '✓ ' + message : '✗ Shared key update failed: ' + message;
+			}
+		});
+
+		updateConnectionAvailability();
+		window.addEventListener('offline', updateConnectionAvailability);
+		window.addEventListener('online', updateConnectionAvailability);
+		setFieldValues(initial);
+		setErrors(initial.errors || {});
+		bindNav();
+		bindActions();
+		updateValidity();
+	</script>
+</body>
+</html>`;
+	}
+}

@@ -12,6 +12,9 @@ import { DataPlaneService } from './services/dataPlaneService';
 import { SyncService } from './services/syncService';
 import { QueryService, type BackendQueryResultLike } from './services/queryService';
 import { BackendUtility } from './services/utilityService';
+import { BackendConfigPanel, type BackendConfigPanelState } from './configPanel';
+import { applyDraftToSettings, getPrivacyBadge, needsConsent, toDraft, validateDraft, type BackendConfigDraft } from './configurationFlow';
+import { ConfirmationMessages, SuccessMessages, ErrorMessages } from './ui/messages';
 
 // Re-export BackendQueryResultLike for external consumers
 export type { BackendQueryResultLike };
@@ -38,6 +41,7 @@ export class BackendFacade {
 	private dataPlaneService: DataPlaneService;
 	private syncService: SyncService;
 	private queryService: QueryService;
+	private configPanel: BackendConfigPanel | undefined;
 
 	public constructor(deps: BackendFacadeDeps) {
 		this.deps = deps;
@@ -104,6 +108,7 @@ export class BackendFacade {
 
 	public dispose(): void {
 		this.syncService.dispose();
+		this.configPanel?.dispose();
 	}
 
 	public getSettings(): BackendSettings {
@@ -241,7 +246,7 @@ export class BackendFacade {
 		try {
 			const ok = await this.promptForAndStoreSharedKey(storageAccount, 'Set Storage Shared Key for Backend Sync');
 			if (ok) {
-				vscode.window.showInformationMessage('Backend sync Shared Key stored securely for this machine.');
+				vscode.window.showInformationMessage(SuccessMessages.keyUpdated(storageAccount));
 			}
 		} catch (e) {
 			vscode.window.showErrorMessage(`Failed to set Shared Key: ${safeStringifyError(e)}`);
@@ -254,7 +259,7 @@ export class BackendFacade {
 		try {
 			const ok = await this.promptForAndStoreSharedKey(storageAccount, 'Rotate Storage Shared Key for Backend Sync');
 			if (ok) {
-				vscode.window.showInformationMessage('Backend sync Shared Key rotated securely for this machine.');
+				vscode.window.showInformationMessage(SuccessMessages.keyUpdated(storageAccount));
 			}
 		} catch (e) {
 			vscode.window.showErrorMessage(`Failed to rotate Shared Key: ${safeStringifyError(e)}`);
@@ -268,17 +273,18 @@ export class BackendFacade {
 			vscode.window.showErrorMessage('Backend storage account is not configured yet.');
 			return;
 		}
+		const conf = ConfirmationMessages.clearKey();
 		const confirm = await vscode.window.showWarningMessage(
-			`Clear the stored Shared Key for '${storageAccount}' on this machine?`,
-			{ modal: true },
-			'Clear'
+			conf.message,
+			{ modal: true, detail: conf.detail },
+			conf.button
 		);
-		if (confirm !== 'Clear') {
+		if (confirm !== conf.button) {
 			return;
 		}
 		try {
 			await this.credentialService.clearStoredStorageSharedKey(storageAccount);
-			vscode.window.showInformationMessage('Backend sync Shared Key cleared for this machine.');
+			vscode.window.showInformationMessage(SuccessMessages.completed('Shared key removed'));
 		} catch (e) {
 			vscode.window.showErrorMessage(`Failed to clear Shared Key: ${safeStringifyError(e)}`);
 		}
@@ -296,8 +302,163 @@ export class BackendFacade {
 		vscode.window.showInformationMessage(`Backend: workspace/machine name sync ${next ? 'enabled' : 'disabled'}${suffix}`);
 	}
 
+	private async getConfigPanelState(draftOverride?: BackendConfigDraft): Promise<BackendConfigPanelState> {
+		const settings = this.getSettings();
+		const draft = draftOverride ?? toDraft(settings);
+		const sharedKeySet = !!(draft.storageAccount && (await this.credentialService.getStoredStorageSharedKey(draft.storageAccount)));
+		const privacyBadge = getPrivacyBadge(draft.sharingProfile, draft.shareWorkspaceMachineNames);
+		const authStatus = draft.authMode === 'sharedKey'
+			? sharedKeySet
+				? 'Auth: Shared Key stored on this machine'
+				: 'Auth: Shared Key missing on this machine'
+			: 'Auth: Entra ID (RBAC)';
+		return {
+			draft,
+			sharedKeySet,
+			privacyBadge,
+			isConfigured: this.isConfigured(settings),
+			authStatus,
+			shareConsentAt: settings.shareConsentAt
+		};
+	}
+
+	private async updateConfiguration(next: BackendSettings): Promise<void> {
+		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		await Promise.all([
+			config.update('backend.enabled', next.enabled, vscode.ConfigurationTarget.Global),
+			config.update('backend.authMode', next.authMode, vscode.ConfigurationTarget.Global),
+			config.update('backend.datasetId', next.datasetId, vscode.ConfigurationTarget.Global),
+			config.update('backend.sharingProfile', next.sharingProfile, vscode.ConfigurationTarget.Global),
+			config.update('backend.shareWithTeam', next.shareWithTeam, vscode.ConfigurationTarget.Global),
+			config.update('backend.shareWorkspaceMachineNames', next.shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global),
+			config.update('backend.shareConsentAt', next.shareConsentAt, vscode.ConfigurationTarget.Global),
+			config.update('backend.userIdentityMode', next.userIdentityMode, vscode.ConfigurationTarget.Global),
+			config.update('backend.userId', next.userId, vscode.ConfigurationTarget.Global),
+			config.update('backend.userIdMode', next.userIdMode, vscode.ConfigurationTarget.Global),
+			config.update('backend.subscriptionId', next.subscriptionId, vscode.ConfigurationTarget.Global),
+			config.update('backend.resourceGroup', next.resourceGroup, vscode.ConfigurationTarget.Global),
+			config.update('backend.storageAccount', next.storageAccount, vscode.ConfigurationTarget.Global),
+			config.update('backend.aggTable', next.aggTable, vscode.ConfigurationTarget.Global),
+			config.update('backend.eventsTable', next.eventsTable, vscode.ConfigurationTarget.Global),
+			config.update('backend.rawContainer', next.rawContainer, vscode.ConfigurationTarget.Global),
+			config.update('backend.lookbackDays', next.lookbackDays, vscode.ConfigurationTarget.Global),
+			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global)
+		]);
+	}
+
+	private async showConfigPanel(): Promise<void> {
+		if (!this.deps.context?.extensionUri) {
+			vscode.window.showErrorMessage('Extension context is unavailable; cannot open backend configuration.');
+			return;
+		}
+		if (!this.configPanel) {
+				this.configPanel = new BackendConfigPanel(this.deps.context.extensionUri, {
+					getState: () => this.getConfigPanelState(),
+					onSave: async (draft) => this.saveDraft(draft),
+					onDiscard: () => this.getConfigPanelState(),
+					onStayLocal: () => this.disableBackend(),
+					onTestConnection: async (draft) => this.testConnectionFromDraft(draft),
+					onUpdateSharedKey: async (storageAccount, draft) => this.updateSharedKey(storageAccount, draft),
+					onLaunchWizard: async () => this.launchConfigureWizardFromPanel()
+				});
+		}
+		await this.configPanel.show();
+	}
+
+	private async launchConfigureWizardFromPanel(): Promise<BackendConfigPanelState> {
+		await this.azureResourceService.configureBackendWizard();
+		this.startTimerIfEnabled();
+		this.deps.updateTokenStats?.();
+		this.clearQueryCache();
+		return this.getConfigPanelState();
+	}
+
+	private async disableBackend(): Promise<BackendConfigPanelState> {
+		const settings = this.getSettings();
+		const draft: BackendConfigDraft = { ...toDraft(settings), enabled: false, sharingProfile: 'off', shareWorkspaceMachineNames: false, includeMachineBreakdown: false };
+		const next = applyDraftToSettings(settings, draft, undefined);
+		await this.updateConfiguration(next);
+		this.startTimerIfEnabled();
+		this.deps.updateTokenStats?.();
+		this.clearQueryCache();
+		return this.getConfigPanelState(draft);
+	}
+
+	private async saveDraft(draft: BackendConfigDraft): Promise<{ state: BackendConfigPanelState; errors?: Record<string, string>; message?: string }> {
+		const validation = validateDraft(draft);
+		if (!validation.valid) {
+			return { state: await this.getConfigPanelState(draft), errors: validation.errors, message: 'Fix validation issues before saving.' };
+		}
+		const previousSettings = this.getSettings();
+		const previousDraft = toDraft(previousSettings);
+		const consent = needsConsent(previousDraft, draft);
+		let consentAt: string | undefined = previousSettings.shareConsentAt;
+		if (consent.required) {
+			const conf = ConfirmationMessages.privacyUpgrade(consent.reasons);
+			const choice = await vscode.window.showWarningMessage(
+				conf.message,
+				{ modal: true, detail: conf.detail },
+				conf.button
+			);
+			if (choice !== conf.button) {
+				return { state: await this.getConfigPanelState(draft), errors: validation.errors, message: 'Consent is required to apply these changes.' };
+			}
+			consentAt = new Date().toISOString();
+		}
+		const next = applyDraftToSettings(previousSettings, draft, consentAt);
+		await this.updateConfiguration(next);
+		this.startTimerIfEnabled();
+		this.deps.updateTokenStats?.();
+		this.clearQueryCache();
+		return { state: await this.getConfigPanelState(), message: 'Settings saved.' };
+	}
+
+	private async testConnectionFromDraft(draft: BackendConfigDraft): Promise<{ ok: boolean; message: string }> {
+		const validation = validateDraft(draft);
+		if (!validation.valid) {
+			return { ok: false, message: 'Fix validation errors first.' };
+		}
+		const prev = this.getSettings();
+		const settings = applyDraftToSettings(prev, draft, prev.shareConsentAt);
+		try {
+			const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
+			if (!creds) {
+				return { ok: false, message: ErrorMessages.auth('Shared Key required for this auth mode') };
+			}
+			await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
+			return { ok: true, message: SuccessMessages.connected() };
+		} catch (error: any) {
+			const details = error?.message || String(error);
+			if (details.includes('403') || details.includes('Forbidden')) {
+				return { ok: false, message: ErrorMessages.auth('Check storage account permissions') };
+			}
+			if (details.includes('404') || details.includes('NotFound')) {
+				return { ok: false, message: 'Storage account or table not found. Verify resource names.' };
+			}
+			if (details.includes('ENOTFOUND') || details.includes('ETIMEDOUT')) {
+				return { ok: false, message: ErrorMessages.connection('Check network and storage account name') };
+			}
+			return { ok: false, message: details };
+		}
+	}
+
+	private async updateSharedKey(storageAccount: string, draft?: BackendConfigDraft): Promise<{ ok: boolean; message: string; state?: BackendConfigPanelState }> {
+		if (!storageAccount || !storageAccount.trim()) {
+			return { ok: false, message: 'Storage account is required before setting a shared key.' };
+		}
+		try {
+			const ok = await this.promptForAndStoreSharedKey(storageAccount, 'Set Storage Shared Key');
+			if (!ok) {
+				return { ok: false, message: 'Shared key not updated.' };
+			}
+			return { ok: true, message: 'Shared key stored for this machine.', state: await this.getConfigPanelState(draft ?? toDraft(this.getSettings())) };
+		} catch (error: any) {
+			return { ok: false, message: error?.message || String(error) };
+		}
+	}
+
 	public async configureBackendWizard(): Promise<void> {
-		return this.azureResourceService.configureBackendWizard();
+		await this.showConfigPanel();
 	}
 
 	public async setSharingProfileCommand(): Promise<void> {

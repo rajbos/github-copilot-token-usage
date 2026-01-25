@@ -65,7 +65,7 @@ export class AzureResourceService {
 		}
 		const pickedSub = await vscode.window.showQuickPick(
 			subs.map(s => ({ label: s.name, description: s.id, subscriptionId: s.id })),
-			{ title: 'Select Azure subscription for backend sync' }
+			{ title: 'Step 1 of 8: Select Azure Subscription' }
 		);
 		if (!pickedSub) {
 			return;
@@ -86,7 +86,7 @@ export class AzureResourceService {
 				{ label: '$(add) Create new resource group…', description: '' },
 				...rgNames.map(name => ({ label: name, description: 'Existing resource group' }))
 			],
-			{ title: 'Select or create an Azure resource group' }
+			{ title: 'Step 2 of 8: Choose Resource Group' }
 		);
 		if (!rgPick) {
 			return;
@@ -96,8 +96,8 @@ export class AzureResourceService {
 		let location = 'eastus';
 		if (resourceGroup.includes('Create new resource group')) {
 			const name = await vscode.window.showInputBox({
-				title: 'New resource group name',
-				placeHolder: 'e.g. copilot-token-tracker-rg',
+				title: 'Step 3 of 8: New Resource Group Name',
+				placeHolder: 'copilot-tokens-rg',
 				validateInput: (v) => (v && v.length >= 1 ? undefined : 'Resource group name is required')
 			});
 			if (!name) {
@@ -107,7 +107,7 @@ export class AzureResourceService {
 
 			const loc = await vscode.window.showQuickPick(
 				['eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
-				{ title: 'Resource group location' }
+				{ title: 'Step 4 of 8: Choose Location for Resource Group' }
 			);
 			if (!loc) {
 				return;
@@ -139,20 +139,20 @@ export class AzureResourceService {
 			[
 				{
 					label: 'Entra ID (RBAC)',
-					description: 'Recommended: Use DefaultAzureCredential for Storage Tables/Blob (no secrets).',
+					description: 'Recommended: Uses your identity, no secrets stored',
 					authMode: 'entraId' as BackendAuthMode,
 					picked: true
 				},
 				{
 					label: 'Storage Shared Key',
-					description: 'Advanced: Use Storage account key (stored securely in VS Code SecretStorage on this machine only).',
+					description: 'Advanced: Stored securely on this device only',
 					authMode: 'sharedKey' as BackendAuthMode
 				}
 			],
 			{
-				title: 'Select backend authentication mode',
+				title: 'Step 5 of 8: Choose Authentication Mode',
 				ignoreFocusOut: true,
-				placeHolder: 'Entra ID (RBAC) is recommended for most users'
+				placeHolder: 'Entra ID recommended'
 			}
 		);
 		if (!authPick) {
@@ -174,7 +174,7 @@ export class AzureResourceService {
 				{ label: '$(add) Create new storage account…', description: '' },
 				...saNames.map(name => ({ label: name, description: 'Existing storage account' }))
 			],
-			{ title: 'Select or create a Storage account for backend sync' }
+			{ title: 'Step 6 of 8: Choose Storage Account' }
 		);
 		if (!saPick) {
 			return;
@@ -185,8 +185,8 @@ export class AzureResourceService {
 		let storageAccount = saPick.label;
 		if (storageAccount.includes('Create new storage account')) {
 			const name = await vscode.window.showInputBox({
-				title: 'New storage account name',
-				placeHolder: 'lowercase letters and numbers, 3-24 chars',
+				title: 'Step 6 of 8: New Storage Account Name',
+				placeHolder: 'copilottokensrg',
 				validateInput: (v) => {
 					if (!v) {
 						return 'Storage account name is required';
@@ -208,7 +208,7 @@ export class AzureResourceService {
 
 			const loc = await vscode.window.showQuickPick(
 				[location, 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
-				{ title: 'Storage account location' }
+				{ title: 'Step 6 of 8: Choose Location for Storage Account' }
 			);
 			if (!loc) {
 				return;
@@ -269,31 +269,35 @@ export class AzureResourceService {
 
 		// 4) Ensure tables exist (+ optional containers)
 		const aggTable = await vscode.window.showInputBox({
-			title: 'Aggregate rollup table name (required)',
+			title: 'Aggregate Table Name',
 			value: config.get<string>('backend.aggTable', 'usageAggDaily'),
+			placeHolder: 'usageAggDaily',
 			validateInput: (v) => (v ? undefined : 'Table name is required')
 		});
 		if (!aggTable) {
 			return;
 		}
 
-		const createEvents = await vscode.window.showQuickPick(['No (MVP)', 'Yes (create usageEvents table)'], {
-			title: 'Create optional usageEvents table?'
-		});
+		const createEvents = await vscode.window.showQuickPick(
+			['No (recommended)', 'Yes (create usageEvents table)'],
+			{ title: 'Create Optional Events Table?', placeHolder: 'Most users should select No' }
+		);
 		if (!createEvents) {
 			return;
 		}
 
-		const createRaw = await vscode.window.showQuickPick(['No (MVP)', 'Yes (create raw blob container)'], {
-			title: 'Create optional raw blob container?'
-		});
+		const createRaw = await vscode.window.showQuickPick(
+			['No (recommended)', 'Yes (create raw blob container)'],
+			{ title: 'Create Optional Raw Container?', placeHolder: 'Most users should select No' }
+		);
 		if (!createRaw) {
 			return;
 		}
 
 		const datasetId = (await vscode.window.showInputBox({
-			title: 'Dataset ID',
-			value: config.get<string>('backend.datasetId', 'default')
+			title: 'Step 7 of 8: Dataset ID',
+			value: config.get<string>('backend.datasetId', 'default'),
+			placeHolder: 'my-team-copilot'
 		}))?.trim();
 		if (!datasetId) {
 			return;
@@ -302,26 +306,26 @@ export class AzureResourceService {
 			[
 				{
 					label: 'Solo / Full Fidelity (personal dataset)',
-					description: 'Uploads usage + raw workspace/machine IDs and names to your dataset.',
+					description: 'Your private storage with full workspace/machine names',
 					profile: 'soloFull' as const
 				},
 				{
 					label: 'Team / Anonymized (recommended)',
-					description: 'Uploads usage with hashed workspace/machine IDs. No per-user identifier; no names.',
+					description: 'Hashed IDs only, no user identifier, no names',
 					profile: 'teamAnonymized' as const
 				},
 				{
 					label: 'Team / Pseudonymous',
-					description: 'Uploads usage + stable per-user key (derived from Entra claims). IDs hashed; no names by default.',
+					description: 'Stable user key from Entra, hashed IDs, no names by default',
 					profile: 'teamPseudonymous' as const
 				},
 				{
 					label: 'Team / Identified (explicit)',
-					description: 'Uploads usage + explicit identity (alias or Entra object ID). IDs hashed; no names by default.',
+					description: 'Explicit identity (alias/Entra OID), hashed IDs, no names by default',
 					profile: 'teamIdentified' as const
 				}
 			],
-			{ title: 'Select Sharing Profile', ignoreFocusOut: true }
+			{ title: 'Step 8 of 8: Choose Sharing Profile', ignoreFocusOut: true }
 		);
 		if (!profilePick) {
 			return;
@@ -362,16 +366,16 @@ export class AzureResourceService {
 				[
 					{
 						label: 'Team alias (recommended)',
-						description: 'User-chosen handle like dev-01 (strictly validated; avoid real names/emails).',
+						description: 'Non-identifying handle like alex-dev',
 						mode: 'teamAlias' as const
 					},
 					{
 						label: 'Entra object ID (advanced)',
-						description: 'Stores a GUID that uniquely identifies you (sensitive).',
+						description: 'Unique GUID identifier (sensitive)',
 						mode: 'entraObjectId' as const
 					}
 				],
-				{ title: 'User identity mode (Team / Identified)', ignoreFocusOut: true }
+				{ title: 'Step 8 of 8: Choose Identity Mode', ignoreFocusOut: true }
 			);
 			if (!modePick) {
 				return;
@@ -380,10 +384,10 @@ export class AzureResourceService {
 
 			if (userIdentityMode === 'teamAlias') {
 				const userIdInput = await vscode.window.showInputBox({
-					title: 'Team alias',
+					title: 'Step 8 of 8: Team Alias',
 					prompt: 'Enter a short, non-PII alias (lowercase letters/digits/dash only). Do not use email or real names.',
 					value: config.get<string>('backend.userId', ''),
-					placeHolder: 'e.g. dev-01',
+					placeHolder: 'alex-dev',
 					ignoreFocusOut: true,
 					validateInput: (v) => {
 						const res = validateTeamAlias(v);
@@ -397,7 +401,7 @@ export class AzureResourceService {
 				userIdMode = 'alias';
 			} else {
 				const objectIdInput = await vscode.window.showInputBox({
-					title: 'Entra object ID (GUID)',
+					title: 'Step 8 of 8: Entra Object ID',
 					prompt: 'Enter your Entra object ID (GUID). WARNING: uniquely identifies you. Only enable if your team requires it.',
 					value: config.get<string>('backend.userId', ''),
 					placeHolder: '00000000-0000-0000-0000-000000000000',

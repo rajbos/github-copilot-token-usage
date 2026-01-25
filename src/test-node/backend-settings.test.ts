@@ -44,7 +44,7 @@ test('getBackendSettings reads config defaults and clamps lookbackDays', () => {
 	assert.equal(s.userId, '');
 	assert.equal(s.sharingProfile, 'teamAnonymized');
 	assert.equal(s.shareWorkspaceMachineNames, false);
-	assert.equal(s.lookbackDays, 365);
+	assert.equal(s.lookbackDays, 90);
 });
 
 test('isBackendConfigured checks required fields', () => {

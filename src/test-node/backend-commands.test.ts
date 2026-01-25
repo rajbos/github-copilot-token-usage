@@ -80,7 +80,7 @@ describe('backend/commands', { concurrency: false }, () => {
 
 	await handler.handleSyncBackendNow();
 	assert.equal(synced, true);
-	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('Backend sync:')));
+	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('Synced to Azure successfully')));
 
 	(vscode as any).__mock.reset();
 	const handlerFail = new BackendCommandHandler({
@@ -95,7 +95,7 @@ describe('backend/commands', { concurrency: false }, () => {
 		log: () => undefined
 	});
 	await handlerFail.handleSyncBackendNow();
-	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Manual sync failed')));
+	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Unable to sync to Azure')));
 	});
 
 	test('BackendCommandHandler covers configure/query/export/keys and convenience wrappers', async () => {
@@ -154,11 +154,11 @@ describe('backend/commands', { concurrency: false }, () => {
 	await handler.handleSetBackendSharedKey();
 	assert.equal(setKey, true);
 
-	(vscode as any).__mock.setNextPick('Rotate Key');
+	(vscode as any).__mock.setNextPick('Replace Key');
 	await handler.handleRotateBackendSharedKey();
 	assert.equal(rotated, true);
 
-	(vscode as any).__mock.setNextPick('Clear Key');
+	(vscode as any).__mock.setNextPick('Remove Key');
 	await handler.handleClearBackendSharedKey();
 	assert.equal(cleared, true);
 
@@ -191,7 +191,7 @@ describe('backend/commands', { concurrency: false }, () => {
 	});
 
 	await handler.handleConfigureBackend();
-	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Configuration wizard failed')));
+	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Unable to configure backend')));
 
 	await handler.handleQueryBackend();
 	assert.ok((vscode as any).__mock.state.lastWarningMessages.some((m: string) => m.includes('not configured or enabled')));
@@ -226,7 +226,7 @@ describe('backend/commands', { concurrency: false }, () => {
 		log: () => undefined
 	});
 	await handler2.handleExportCurrentView();
-	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Failed to export')));
+	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Unable to export')));
 
 	// confirmAction cancellations
 	(vscode as any).__mock.reset();
@@ -252,12 +252,12 @@ describe('backend/commands', { concurrency: false }, () => {
 	// setBackendSharedKey error path
 	(vscode as any).__mock.reset();
 	await handler.handleSetBackendSharedKey();
-	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Failed to set shared key')));
+	assert.ok((vscode as any).__mock.state.lastErrorMessages.some((m: string) => m.includes('Unable to set shared key')));
 	});
 
 	test('handleEnableTeamSharing sets sharingProfile to teamPseudonymous and shareWithTeam to true', async () => {
 	(vscode as any).__mock.reset();
-	(vscode as any).__mock.setNextPick('Enable');
+	(vscode as any).__mock.setNextPick('I Understand, Continue');
 
 	const handler = new BackendCommandHandler({
 		facade: createMockFacade({
@@ -274,12 +274,11 @@ describe('backend/commands', { concurrency: false }, () => {
 
 	// Verify success message is shown (indicates config.update succeeded)
 	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('Team sharing enabled')));
-	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('per-user identifier')));
 	});
 
 	test('handleDisableTeamSharing sets sharingProfile to teamAnonymized and reduces data sharing', async () => {
 	(vscode as any).__mock.reset();
-	(vscode as any).__mock.setNextPick('Disable Team Sharing');
+	(vscode as any).__mock.setNextPick('Switch to Anonymized');
 
 	const handler = new BackendCommandHandler({
 		facade: createMockFacade({
@@ -295,8 +294,6 @@ describe('backend/commands', { concurrency: false }, () => {
 	await handler.handleDisableTeamSharing();
 
 	// Verify success message is shown (indicates config.update succeeded)
-	// The message should mention hashed IDs to verify we're using teamAnonymized
-	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('Team sharing disabled')));
-	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('hashed IDs')));
+	assert.ok((vscode as any).__mock.state.lastInfoMessages.some((m: string) => m.includes('Switched to anonymized sharing')));
 	});
 });

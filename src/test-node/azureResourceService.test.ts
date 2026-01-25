@@ -103,29 +103,29 @@ test('configureBackendWizard handles policy-blocked storage creation and falls b
 	const warningsQueue = ['Choose existing Storage account'];
 	const quickPick = async (items: any[], options?: any) => {
 		const title = options?.title ?? '';
-		if (title.includes('subscription')) {
+		if (title.includes('subscription') || title.includes('Subscription')) {
 			return items[0];
 		}
-		if (title.includes('resource group')) {
+		if (title.includes('resource group') || title.includes('Resource Group')) {
 			return items.find((i: any) => i.description === 'Existing resource group') ?? items[0];
 		}
-		if (title.includes('Storage account for backend sync')) {
+		if (title.includes('Storage Account')) {
 			return items[0]; // create new storage account
 		}
-		if (title === 'Storage account location') {
+		if (title.includes('Location')) {
 			return 'eastus';
 		}
-		if (title.includes('backend authentication mode')) {
+		if (title.includes('Authentication') || title.includes('authentication mode')) {
 			return items[0];
 		}
-		if (title.includes('Select Sharing Profile')) {
+		if (title.includes('Sharing Profile')) {
 			return items.find((i: any) => i.profile === 'teamAnonymized') ?? items[0];
 		}
-		if (title.includes('optional usageEvents')) {
-			return 'No (MVP)';
+		if (title.includes('Events Table') || title.includes('optional usageEvents')) {
+			return 'No (recommended)';
 		}
-		if (title.includes('optional raw blob')) {
-			return 'No (MVP)';
+		if (title.includes('Raw Container') || title.includes('optional raw blob')) {
+			return 'No (recommended)';
 		}
 		if (title.includes('existing Storage account')) {
 			return items.find((i: any) => i.label === 'sa-existing') ?? items[0];
@@ -290,28 +290,28 @@ test('configureBackendWizard disables Shared Key when Entra ID auth is selected'
 
 	const quickPick = async (items: any[], options?: any) => {
 		const title = options?.title ?? '';
-		if (title.includes('subscription')) {
+		if (title.includes('subscription') || title.includes('Subscription')) {
 			return items[0];
 		}
-		if (title.includes('resource group')) {
+		if (title.includes('resource group') || title.includes('Resource Group')) {
 			return items.find((i: any) => i.description === 'Existing resource group') ?? items[0];
 		}
-		if (title.includes('authentication mode')) {
+		if (title.includes('Authentication') || title.includes('authentication mode')) {
 			return items.find((i: any) => i.authMode === 'entraId') ?? items[0];
 		}
-		if (title.includes('Storage account for backend sync')) {
+		if (title.includes('Storage Account')) {
 			return items[0];
 		}
-		if (title === 'Storage account location') {
+		if (title.includes('Location')) {
 			return 'eastus';
 		}
-		if (title.includes('optional usageEvents')) {
-			return 'No (MVP)';
+		if (title.includes('Events Table') || title.includes('optional usageEvents')) {
+			return 'No (recommended)';
 		}
-		if (title.includes('optional raw blob')) {
-			return 'No (MVP)';
+		if (title.includes('Raw Container') || title.includes('optional raw blob')) {
+			return 'No (recommended)';
 		}
-		if (title.includes('Select Sharing Profile')) {
+		if (title.includes('Sharing Profile')) {
 			return items.find((i: any) => i.profile === 'teamAnonymized') ?? items[0];
 		}
 		return undefined;
@@ -457,28 +457,28 @@ test('configureBackendWizard enables Shared Key when shared-key auth is selected
 
 	const quickPick = async (items: any[], options?: any) => {
 		const title = options?.title ?? '';
-		if (title.includes('subscription')) {
+		if (title.includes('subscription') || title.includes('Subscription')) {
 			return items[0];
 		}
-		if (title.includes('resource group')) {
+		if (title.includes('resource group') || title.includes('Resource Group')) {
 			return items.find((i: any) => i.description === 'Existing resource group') ?? items[0];
 		}
-		if (title.includes('authentication mode')) {
+		if (title.includes('Authentication') || title.includes('authentication mode')) {
 			return items.find((i: any) => i.authMode === 'sharedKey') ?? items[0];
 		}
-		if (title.includes('Storage account for backend sync')) {
+		if (title.includes('Storage Account')) {
 			return items[0];
 		}
-		if (title === 'Storage account location') {
+		if (title.includes('Location')) {
 			return 'eastus';
 		}
-		if (title.includes('optional usageEvents')) {
-			return 'No (MVP)';
+		if (title.includes('Events Table') || title.includes('optional usageEvents')) {
+			return 'No (recommended)';
 		}
-		if (title.includes('optional raw blob')) {
-			return 'No (MVP)';
+		if (title.includes('Raw Container') || title.includes('optional raw blob')) {
+			return 'No (recommended)';
 		}
-		if (title.includes('Select Sharing Profile')) {
+		if (title.includes('Sharing Profile')) {
 			return items.find((i: any) => i.profile === 'teamAnonymized') ?? items[0];
 		}
 		return undefined;

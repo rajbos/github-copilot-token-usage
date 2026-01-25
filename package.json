@@ -205,12 +205,12 @@
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "maximum": 365,
+          "maximum": 90,
           "description": "Default backfill/lookback window (days) for syncing local usage to the backend store."
         },
         "copilotTokenTracker.backend.includeMachineBreakdown": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence."
         }
       }
