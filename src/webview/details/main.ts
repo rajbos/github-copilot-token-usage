@@ -39,7 +39,10 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 declare global {
-	interface Window { __INITIAL_DETAILS__?: DetailedStats; }
+	interface Window {
+		__INITIAL_DETAILS__?: DetailedStats;
+		Chart?: any;
+	}
 }
 
 const vscode: VSCodeApi = acquireVsCodeApi();
@@ -308,6 +311,7 @@ function buildMetricsSection(
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
+		// Only the first column is left-aligned; others get 'align-right' for right alignment
 		th.className = idx === 0 ? '' : 'align-right';
 		const wrap = el('div', 'period-header');
 		wrap.textContent = `${h.icon} ${h.text}`;
@@ -391,6 +395,7 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
+		// Only the first column is left-aligned; others get 'align-right' for right alignment
 		th.className = idx === 0 ? '' : 'align-right';
 		const wrap = el('div', 'period-header');
 		wrap.textContent = `${h.icon} ${h.text}`;
@@ -462,6 +467,7 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 	];
 	headers.forEach((h, idx) => {
 		const th = document.createElement('th');
+		// Only the first column is left-aligned; others get 'align-right' for right alignment
 		th.className = idx === 0 ? '' : 'align-right';
 		const wrap = el('div', 'period-header');
 		wrap.textContent = `${h.icon} ${h.text}`;
