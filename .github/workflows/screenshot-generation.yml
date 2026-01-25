@@ -3,6 +3,9 @@ name: Generate Extension Screenshots
 permissions:
   contents: read
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
   
