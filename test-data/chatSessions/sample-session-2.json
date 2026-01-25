@@ -1,0 +1,103 @@
+{
+  "version": 3,
+  "sessionId": "test-session-002",
+  "responderUsername": "GitHub Copilot",
+  "responderAvatarIconUri": {
+    "id": "copilot"
+  },
+  "initialLocation": {
+    "type": 1,
+    "location": {
+      "uri": {
+        "scheme": "file",
+        "path": "/workspace/app.py"
+      }
+    }
+  },
+  "creationDate": 1705737600000,
+  "lastMessageDate": 1705741200000,
+  "mode": "edit",
+  "requests": [
+    {
+      "requestId": "req-003",
+      "message": {
+        "text": "Create a Python function to calculate fibonacci numbers",
+        "parts": [
+          {
+            "range": {
+              "start": 0,
+              "endExclusive": 57
+            },
+            "text": "Create a Python function to calculate fibonacci numbers",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "value": "Here's a Python function to calculate Fibonacci numbers:\n\n```python\ndef fibonacci(n: int) -> int:\n    \"\"\"Calculate the nth Fibonacci number.\n    \n    Args:\n        n: The position in the Fibonacci sequence (0-indexed)\n        \n    Returns:\n        The nth Fibonacci number\n    \"\"\"\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    else:\n        return fibonacci(n - 1) + fibonacci(n - 2)\n\n# Example usage:\nprint(fibonacci(10))  # Output: 55\n```\n\nFor better performance with larger numbers, here's an iterative version:\n\n```python\ndef fibonacci_iterative(n: int) -> int:\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    \n    prev, curr = 0, 1\n    for _ in range(2, n + 1):\n        prev, curr = curr, prev + curr\n    return curr\n```",
+          "kind": "markdownContent"
+        }
+      ],
+      "result": {
+        "metadata": {
+          "model": "claude-3.5-sonnet"
+        }
+      }
+    },
+    {
+      "requestId": "req-004",
+      "message": {
+        "text": "Add memoization to optimize the recursive version",
+        "parts": [
+          {
+            "range": {
+              "start": 0,
+              "endExclusive": 51
+            },
+            "text": "Add memoization to optimize the recursive version",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "value": "Here's the memoized version using Python's lru_cache decorator:\n\n```python\nfrom functools import lru_cache\n\n@lru_cache(maxsize=None)\ndef fibonacci_memoized(n: int) -> int:\n    \"\"\"Calculate the nth Fibonacci number with memoization.\n    \n    Args:\n        n: The position in the Fibonacci sequence (0-indexed)\n        \n    Returns:\n        The nth Fibonacci number\n    \"\"\"\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    else:\n        return fibonacci_memoized(n - 1) + fibonacci_memoized(n - 2)\n\n# Example usage:\nprint(fibonacci_memoized(100))  # Much faster for large numbers\n```\n\nOr using a manual dictionary-based memoization:\n\n```python\ndef fibonacci_manual_memo(n: int, memo: dict = None) -> int:\n    if memo is None:\n        memo = {}\n    \n    if n in memo:\n        return memo[n]\n    \n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    \n    memo[n] = fibonacci_manual_memo(n - 1, memo) + fibonacci_manual_memo(n - 2, memo)\n    return memo[n]\n```",
+          "kind": "markdownContent"
+        }
+      ],
+      "result": {
+        "metadata": {
+          "model": "claude-3.5-sonnet"
+        }
+      }
+    },
+    {
+      "requestId": "req-005",
+      "message": {
+        "text": "Add unit tests for the fibonacci function",
+        "parts": [
+          {
+            "range": {
+              "start": 0,
+              "endExclusive": 42
+            },
+            "text": "Add unit tests for the fibonacci function",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "value": "Here are comprehensive unit tests using pytest:\n\n```python\nimport pytest\nfrom fibonacci import fibonacci, fibonacci_iterative, fibonacci_memoized\n\ndef test_fibonacci_base_cases():\n    assert fibonacci(0) == 0\n    assert fibonacci(1) == 1\n\ndef test_fibonacci_small_numbers():\n    assert fibonacci(2) == 1\n    assert fibonacci(3) == 2\n    assert fibonacci(4) == 3\n    assert fibonacci(5) == 5\n    assert fibonacci(6) == 8\n\ndef test_fibonacci_larger_numbers():\n    assert fibonacci(10) == 55\n    assert fibonacci(15) == 610\n\ndef test_fibonacci_iterative():\n    # Test that iterative version produces same results\n    for i in range(20):\n        assert fibonacci_iterative(i) == fibonacci(i)\n\ndef test_fibonacci_memoized():\n    # Test that memoized version produces same results\n    for i in range(50):\n        assert fibonacci_memoized(i) == fibonacci_iterative(i)\n\ndef test_fibonacci_negative():\n    assert fibonacci(-1) == 0\n    assert fibonacci(-10) == 0\n\n@pytest.mark.parametrize(\"n,expected\", [\n    (0, 0),\n    (1, 1),\n    (2, 1),\n    (7, 13),\n    (20, 6765),\n])\ndef test_fibonacci_parametrized(n, expected):\n    assert fibonacci(n) == expected\n```",
+          "kind": "markdownContent"
+        }
+      ],
+      "result": {
+        "metadata": {
+          "model": "gpt-4o-2024-11-20"
+        }
+      }
+    }
+  ]
+}
