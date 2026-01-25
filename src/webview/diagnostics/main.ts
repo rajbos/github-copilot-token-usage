@@ -1,16 +1,5 @@
 // Diagnostics Report webview with tabbed interface
 
-// Simple HTML escaping to prevent XSS when rendering untrusted content into innerHTML
-function escapeHtml(value: unknown): string {
-	const str = String(value);
-	return str
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
-}
-
 // Ensure numeric values derived from untrusted input are rendered safely as plain text
 function sanitizeNumber(value: unknown): string {
 	const num = Number(value);
