@@ -1,3 +1,9 @@
+// Import shared model display name utility
+import { getModelDisplayName } from '../shared/modelUtils';
+// Token estimators loaded from JSON
+// @ts-ignore
+import tokenEstimatorsJson from '../../tokenEstimators.json';
+
 type ModelUsage = Record<string, { inputTokens: number; outputTokens: number }>;
 type EditorUsage = Record<string, { tokens: number; sessions: number }>;
 
@@ -45,8 +51,12 @@ declare global {
 	}
 }
 
+
 const vscode: VSCodeApi = acquireVsCodeApi();
 const initialData = window.__INITIAL_DETAILS__;
+console.log('[CopilotTokenTracker] details webview loaded');
+console.log('[CopilotTokenTracker] window.__INITIAL_DETAILS__:', window.__INITIAL_DETAILS__);
+console.log('[CopilotTokenTracker] initialData:', initialData);
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
 	const node = document.createElement(tag);
@@ -63,38 +73,7 @@ function createButton(id: string, label: string, appearance?: 'primary' | 'secon
 	return button;
 }
 
-const tokenEstimators: Record<string, number> = {
-	'gpt-4': 0.25,
-	'gpt-4.1': 0.25,
-	'gpt-4o': 0.25,
-	'gpt-4o-mini': 0.25,
-	'gpt-3.5-turbo': 0.25,
-	'gpt-5': 0.25,
-	'gpt-5-codex': 0.25,
-	'gpt-5-mini': 0.25,
-	'gpt-5.1': 0.25,
-	'gpt-5.1-codex': 0.25,
-	'gpt-5.1-codex-max': 0.25,
-	'gpt-5.1-codex-mini': 0.25,
-	'gpt-5.2': 0.25,
-	'gpt-5.2-codex': 0.25,
-	'claude-sonnet-3.5': 0.24,
-	'claude-sonnet-3.7': 0.24,
-	'claude-sonnet-4': 0.24,
-	'claude-sonnet-4.5': 0.24,
-	'claude-haiku': 0.24,
-	'claude-haiku-4.5': 0.24,
-	'claude-opus-4.1': 0.24,
-	'claude-opus-4.5': 0.24,
-	'gemini-2.5-pro': 0.25,
-	'gemini-3-flash': 0.25,
-	'gemini-3-pro': 0.25,
-	'gemini-3-pro-preview': 0.25,
-	'grok-code-fast-1': 0.25,
-	'raptor-mini': 0.25,
-	'o3-mini': 0.25,
-	'o4-mini': 0.25
-};
+const tokenEstimators: Record<string, number> = tokenEstimatorsJson.estimators;
 
 function getEditorIcon(editor: string): string {
 	const icons: Record<string, string> = {
@@ -109,42 +88,6 @@ function getEditorIcon(editor: string): string {
 		'Unknown': '❓'
 	};
 	return icons[editor] || '📝';
-}
-
-function getModelDisplayName(model: string): string {
-	const names: Record<string, string> = {
-		'gpt-4': 'GPT-4',
-		'gpt-4.1': 'GPT-4.1',
-		'gpt-4o': 'GPT-4o',
-		'gpt-4o-mini': 'GPT-4o Mini',
-		'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-		'gpt-5': 'GPT-5',
-		'gpt-5-codex': 'GPT-5 Codex (Preview)',
-		'gpt-5-mini': 'GPT-5 Mini',
-		'gpt-5.1': 'GPT-5.1',
-		'gpt-5.1-codex': 'GPT-5.1 Codex',
-		'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
-		'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini (Preview)',
-		'gpt-5.2': 'GPT-5.2',
-		'gpt-5.2-codex': 'GPT-5.2 Codex',
-		'claude-sonnet-3.5': 'Claude Sonnet 3.5',
-		'claude-sonnet-3.7': 'Claude Sonnet 3.7',
-		'claude-sonnet-4': 'Claude Sonnet 4',
-		'claude-sonnet-4.5': 'Claude Sonnet 4.5',
-		'claude-haiku': 'Claude Haiku',
-		'claude-haiku-4.5': 'Claude Haiku 4.5',
-		'claude-opus-4.1': 'Claude Opus 4.1',
-		'claude-opus-4.5': 'Claude Opus 4.5',
-		'gemini-2.5-pro': 'Gemini 2.5 Pro',
-		'gemini-3-flash': 'Gemini 3 Flash',
-		'gemini-3-pro': 'Gemini 3 Pro',
-		'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
-		'grok-code-fast-1': 'Grok Code Fast 1',
-		'raptor-mini': 'Raptor Mini',
-		'o3-mini': 'o3-mini',
-		'o4-mini': 'o4-mini (Preview)'
-	};
-	return names[model] || model;
 }
 
 function getCharsPerToken(model: string): number {
@@ -559,13 +502,17 @@ function wireButtons(): void {
 	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
 }
 
+
 async function bootstrap(): Promise<void> {
+	console.log('[CopilotTokenTracker] bootstrap called');
 	const { provideVSCodeDesignSystem, vsCodeButton, vsCodeBadge } = await import('@vscode/webview-ui-toolkit');
 	provideVSCodeDesignSystem().register(vsCodeButton(), vsCodeBadge());
 
 	if (initialData) {
+		console.log('[CopilotTokenTracker] Rendering details with initialData:', initialData);
 		render(initialData);
 	} else {
+		console.warn('[CopilotTokenTracker] No initialData found, rendering fallback.');
 		const root = document.getElementById('root');
 		if (root) {
 			root.textContent = '';
