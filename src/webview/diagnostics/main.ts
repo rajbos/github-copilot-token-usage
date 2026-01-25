@@ -1,6 +1,15 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from '../shared/buttonConfig';
 
+// Ensure numeric values derived from untrusted input are rendered safely as plain text
+function sanitizeNumber(value: unknown): string {
+	const num = Number(value);
+	if (Number.isNaN(num) || !Number.isFinite(num)) {
+		return '0';
+	}
+	return String(num);
+}
+
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
@@ -193,8 +202,8 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 		: detailedFiles;
 	
 	// Summary stats for filtered files
-	const totalInteractions = filteredFiles.reduce((sum, sf) => sum + sf.interactions, 0);
-	const totalContextRefs = filteredFiles.reduce((sum, sf) => sum + getTotalContextRefs(sf.contextReferences), 0);
+	const totalInteractions = filteredFiles.reduce((sum, sf) => sum + Number(sf.interactions || 0), 0);
+	const totalContextRefs = filteredFiles.reduce((sum, sf) => sum + Number(getTotalContextRefs(sf.contextReferences) || 0), 0);
 	
 	// Sort filtered files
 	const sortedFiles = sortSessionFiles(filteredFiles);
@@ -205,13 +214,13 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 			<div class="editor-panel ${currentEditorFilter === null ? 'active' : ''}" data-editor="">
 				<div class="editor-panel-icon">🌐</div>
 				<div class="editor-panel-name">All Editors</div>
-				<div class="editor-panel-stats">${detailedFiles.length} sessions</div>
+				<div class="editor-panel-stats">${sanitizeNumber(detailedFiles.length)} sessions</div>
 			</div>
 			${editors.map(editor => `
 				<div class="editor-panel ${currentEditorFilter === editor ? 'active' : ''}" data-editor="${escapeHtml(editor)}">
 					<div class="editor-panel-icon">${getEditorIcon(editor)}</div>
 					<div class="editor-panel-name">${escapeHtml(editor)}</div>
-					<div class="editor-panel-stats">${editorStats[editor].count} sessions · ${editorStats[editor].interactions} interactions</div>
+					<div class="editor-panel-stats">${sanitizeNumber(editorStats[editor].count)} sessions · ${sanitizeNumber(editorStats[editor].interactions)} interactions</div>
 				</div>
 			`).join('')}
 		</div>
@@ -223,15 +232,15 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 		<div class="summary-cards">
 			<div class="summary-card">
 				<div class="summary-label">📁 ${currentEditorFilter ? 'Filtered' : 'Total'} Sessions</div>
-				<div class="summary-value">${filteredFiles.length}</div>
+				<div class="summary-value">${sanitizeNumber(filteredFiles.length)}</div>
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">💬 Interactions</div>
-				<div class="summary-value">${totalInteractions}</div>
+				<div class="summary-value">${sanitizeNumber(totalInteractions)}</div>
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">🔗 Context References</div>
-				<div class="summary-value">${totalContextRefs}</div>
+				<div class="summary-value">${sanitizeNumber(totalContextRefs)}</div>
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">📅 Time Range</div>
