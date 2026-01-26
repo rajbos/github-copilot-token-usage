@@ -51,7 +51,6 @@ Added realistic `placeholder` attributes to ALL input fields:
 - `storageAccount`: `"copilottokenstorage"` (lowercase, no special chars)
 - `aggTable`: `"usageAggDaily"` (table naming)
 - `eventsTable`: `"usageEvents"` (optional table)
-- `rawContainer`: `"raw-logs"` (container naming)
 
 **Advanced Section:**
 - `datasetId`: `"my-team-copilot"` (realistic example)

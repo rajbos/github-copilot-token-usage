@@ -351,7 +351,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 						<div class="field"><label for="storageAccount">Storage Account</label><vscode-text-field id="storageAccount" placeholder="copilottokenstorage" aria-describedby="storageAccount-error"></vscode-text-field><div id="storageAccount-error" class="error" role="alert" data-error-for="storageAccount"></div></div>
 						<div class="field"><label for="aggTable">Aggregate Table</label><vscode-text-field id="aggTable" placeholder="usageAggDaily" aria-describedby="aggTable-error"></vscode-text-field><div id="aggTable-error" class="error" role="alert" data-error-for="aggTable"></div></div>
 						<div class="field"><label for="eventsTable">Events Table (optional)</label><vscode-text-field id="eventsTable" placeholder="usageEvents" aria-describedby="eventsTable-error"></vscode-text-field><div id="eventsTable-error" class="error" role="alert" data-error-for="eventsTable"></div></div>
-						<div class="field"><label for="rawContainer">Raw Container (optional)</label><vscode-text-field id="rawContainer" placeholder="raw-logs" aria-describedby="rawContainer-error"></vscode-text-field><div id="rawContainer-error" class="error" role="alert" data-error-for="rawContainer"></div></div>
+
 					</div>
 				</div>
 				<div class="card">
@@ -414,7 +414,6 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('storageAccount').value = state.draft.storageAccount || '';
 			byId('aggTable').value = state.draft.aggTable || '';
 			byId('eventsTable').value = state.draft.eventsTable || '';
-			byId('rawContainer').value = state.draft.rawContainer || '';
 			byId('datasetId').value = state.draft.datasetId || '';
 			byId('lookbackDays').value = state.draft.lookbackDays ?? '';
 			byId('userIdentityMode').value = state.draft.userIdentityMode;
@@ -469,7 +468,6 @@ export class BackendConfigPanel implements vscode.Disposable {
 				storageAccount: byId('storageAccount').value,
 				aggTable: byId('aggTable').value,
 				eventsTable: byId('eventsTable').value,
-				rawContainer: byId('rawContainer').value,
 				userIdentityMode: byId('userIdentityMode').value,
 				userId: byId('userId').value
 			};
@@ -484,7 +482,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 					if (!draft[f] || !draft[f].trim()) errors[f] = 'Required';
 				});
 			}
-			['aggTable','eventsTable','rawContainer'].forEach(f => {
+			['aggTable','eventsTable'].forEach(f => {
 				if (draft[f] && !aliasRegex.test(draft[f].trim())) errors[f] = 'Use letters, numbers, dashes, underscores';
 			});
 			if (draft.lookbackDays < 1 || draft.lookbackDays > 90 || Number.isNaN(draft.lookbackDays)) {
@@ -649,7 +647,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 		function bindActions() {
 			const markDirty = () => vscodeApi.postMessage({ command: 'markDirty' });
-			const trackIds = ['sharingProfile','shareNames','includeMachineBreakdown','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','rawContainer','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId'];
+			const trackIds = ['sharingProfile','shareNames','includeMachineBreakdown','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId'];
 			trackIds.forEach(id => {
 				const el = byId(id);
 				if (!el) return;

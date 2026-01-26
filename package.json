@@ -201,11 +201,6 @@
           "default": "usageEvents",
           "description": "Azure Table name for optional raw events (not required for MVP reporting)."
         },
-        "copilotTokenTracker.backend.rawContainer": {
-          "type": "string",
-          "default": "raw-usage",
-          "description": "Azure Blob container name for optional raw backups (not required for MVP reporting)."
-        },
         "copilotTokenTracker.backend.lookbackDays": {
           "type": "number",
           "default": 30,

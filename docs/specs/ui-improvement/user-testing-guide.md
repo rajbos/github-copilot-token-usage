@@ -338,7 +338,6 @@ Q10: [1-5]
 | Storage Account | `copilottokenstorage` | Lowercase, no special chars |
 | Aggregate Table | `usageAggDaily` | Table naming |
 | Events Table | `usageEvents` | Optional table |
-| Raw Container | `raw-logs` | Container naming |
 | Team Alias | `alex-dev` | Non-identifying handle |
 
 ### Validation Messages

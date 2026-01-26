@@ -387,8 +387,7 @@ All settings in VS Code user settings (global scope, Settings Sync compatible):
   "copilotTokenTracker.backend.resourceGroup": "",
   "copilotTokenTracker.backend.storageAccount": "",
   "copilotTokenTracker.backend.aggTable": "usageAggDaily",
-  "copilotTokenTracker.backend.eventsTable": "usageEvents",
-  "copilotTokenTracker.backend.rawContainer": "raw-usage"
+  "copilotTokenTracker.backend.eventsTable": "usageEvents"
 }
 ```
 

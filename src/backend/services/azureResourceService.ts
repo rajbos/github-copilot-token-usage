@@ -8,7 +8,6 @@ import { ResourceManagementClient } from '@azure/arm-resources';
 import { StorageManagementClient } from '@azure/arm-storage';
 import { SubscriptionClient } from '@azure/arm-subscriptions';
 import { TableServiceClient } from '@azure/data-tables';
-import { BlobServiceClient } from '@azure/storage-blob';
 import { safeStringifyError, isAzurePolicyDisallowedError, isStorageLocalAuthDisallowedByPolicyError } from '../../utils/errors';
 import type { BackendAuthMode, BackendSettings } from '../settings';
 import { validateTeamAlias, type BackendUserIdentityMode } from '../identity';
@@ -65,7 +64,7 @@ export class AzureResourceService {
 		}
 		const pickedSub = await vscode.window.showQuickPick(
 			subs.map(s => ({ label: s.name, description: s.id, subscriptionId: s.id })),
-			{ title: 'Step 1 of 8: Select Azure Subscription' }
+			{ title: 'Step 1 of 7: Select Azure Subscription' }
 		);
 		if (!pickedSub) {
 			return;
@@ -86,7 +85,7 @@ export class AzureResourceService {
 				{ label: '$(add) Create new resource group…', description: '' },
 				...rgNames.map(name => ({ label: name, description: 'Existing resource group' }))
 			],
-			{ title: 'Step 2 of 8: Choose Resource Group' }
+			{ title: 'Step 2 of 7: Choose Resource Group' }
 		);
 		if (!rgPick) {
 			return;
@@ -96,7 +95,7 @@ export class AzureResourceService {
 		let location = 'eastus';
 		if (resourceGroup.includes('Create new resource group')) {
 			const name = await vscode.window.showInputBox({
-				title: 'Step 3 of 8: New Resource Group Name',
+				title: 'Step 3 of 7: New Resource Group Name',
 				placeHolder: 'copilot-tokens-rg',
 				validateInput: (v) => (v && v.length >= 1 ? undefined : 'Resource group name is required')
 			});
@@ -107,7 +106,7 @@ export class AzureResourceService {
 
 			const loc = await vscode.window.showQuickPick(
 				['eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
-				{ title: 'Step 4 of 8: Choose Location for Resource Group' }
+				{ title: 'Step 4 of 7: Choose Location for Resource Group' }
 			);
 			if (!loc) {
 				return;
@@ -150,7 +149,7 @@ export class AzureResourceService {
 				}
 			],
 			{
-				title: 'Step 5 of 8: Choose Authentication Mode',
+				title: 'Step 5 of 7: Choose Authentication Mode',
 				ignoreFocusOut: true,
 				placeHolder: 'Entra ID recommended'
 			}
@@ -174,7 +173,7 @@ export class AzureResourceService {
 				{ label: '$(add) Create new storage account…', description: '' },
 				...saNames.map(name => ({ label: name, description: 'Existing storage account' }))
 			],
-			{ title: 'Step 6 of 8: Choose Storage Account' }
+			{ title: 'Step 6 of 7: Choose Storage Account' }
 		);
 		if (!saPick) {
 			return;
@@ -185,7 +184,7 @@ export class AzureResourceService {
 		let storageAccount = saPick.label;
 		if (storageAccount.includes('Create new storage account')) {
 			const name = await vscode.window.showInputBox({
-				title: 'Step 6 of 8: New Storage Account Name',
+				title: 'Step 6 of 7: New Storage Account Name',
 				placeHolder: 'copilottokensrg',
 				validateInput: (v) => {
 					if (!v) {
@@ -208,7 +207,7 @@ export class AzureResourceService {
 
 			const loc = await vscode.window.showQuickPick(
 				[location, 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
-				{ title: 'Step 6 of 8: Choose Location for Storage Account' }
+				{ title: 'Step 6 of 7: Choose Location for Storage Account' }
 			);
 			if (!loc) {
 				return;
@@ -286,16 +285,8 @@ export class AzureResourceService {
 			return;
 		}
 
-		const createRaw = await vscode.window.showQuickPick(
-			['No (recommended)', 'Yes (create raw blob container)'],
-			{ title: 'Create Optional Raw Container?', placeHolder: 'Most users should select No' }
-		);
-		if (!createRaw) {
-			return;
-		}
-
 		const datasetId = (await vscode.window.showInputBox({
-			title: 'Step 7 of 8: Dataset ID',
+			title: 'Step 6 of 7: Dataset ID',
 			value: config.get<string>('backend.datasetId', 'default'),
 			placeHolder: 'my-team-copilot'
 		}))?.trim();
@@ -325,7 +316,7 @@ export class AzureResourceService {
 					profile: 'teamIdentified' as const
 				}
 			],
-			{ title: 'Step 8 of 8: Choose Sharing Profile', ignoreFocusOut: true }
+			{ title: 'Step 7 of 7: Choose Sharing Profile', ignoreFocusOut: true }
 		);
 		if (!profilePick) {
 			return;
@@ -375,7 +366,7 @@ export class AzureResourceService {
 						mode: 'entraObjectId' as const
 					}
 				],
-				{ title: 'Step 8 of 8: Choose Identity Mode', ignoreFocusOut: true }
+				{ title: 'Step 7 of 7: Choose Identity Mode', ignoreFocusOut: true }
 			);
 			if (!modePick) {
 				return;
@@ -384,7 +375,7 @@ export class AzureResourceService {
 
 			if (userIdentityMode === 'teamAlias') {
 				const userIdInput = await vscode.window.showInputBox({
-					title: 'Step 8 of 8: Team Alias',
+					title: 'Step 7 of 7: Team Alias',
 					prompt: 'Enter a short, non-PII alias (lowercase letters/digits/dash only). Do not use email or real names.',
 					value: config.get<string>('backend.userId', ''),
 					placeHolder: 'alex-dev',
@@ -401,7 +392,7 @@ export class AzureResourceService {
 				userIdMode = 'alias';
 			} else {
 				const objectIdInput = await vscode.window.showInputBox({
-					title: 'Step 8 of 8: Entra Object ID',
+					title: 'Step 7 of 7: Entra Object ID',
 					prompt: 'Enter your Entra object ID (GUID). WARNING: uniquely identifies you. Only enable if your team requires it.',
 					value: config.get<string>('backend.userId', ''),
 					placeHolder: '00000000-0000-0000-0000-000000000000',
@@ -491,21 +482,6 @@ export class AzureResourceService {
 				}
 			} catch (e) {
 				this.deps.log(`Optional events table creation failed (non-blocking): ${safeStringifyError(e)}`);
-			}
-		}
-		if (createRaw.startsWith('Yes')) {
-			try {
-				const creds = await this.credentialService.getBackendDataPlaneCredentials(finalSettings);
-				if (!creds) {
-					// User chose sharedKey but no key. Skip optional resources.
-				} else {
-					const endpoint = this.dataPlaneService.getStorageBlobEndpoint(finalSettings.storageAccount);
-					const blobClient = new BlobServiceClient(endpoint, creds.blobCredential as any);
-					const containerClient = blobClient.getContainerClient(finalSettings.rawContainer);
-					await containerClient.createIfNotExists();
-				}
-			} catch (e) {
-				this.deps.log(`Optional raw container creation failed (non-blocking): ${safeStringifyError(e)}`);
 			}
 		}
 

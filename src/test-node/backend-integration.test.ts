@@ -136,7 +136,6 @@ test('BackendIntegration proxies facade calls and fallbacks', async () => {
 		storageAccount: 'sa',
 		aggTable: 'usageAggDaily',
 		eventsTable: 'usageEvents',
-		rawContainer: 'raw-usage',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};

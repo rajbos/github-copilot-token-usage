@@ -29,7 +29,6 @@ test('backend sync: soloFull profile uploads raw workspace/machine IDs and names
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -65,7 +64,6 @@ test('backend sync: teamAnonymized profile hashes IDs, no user dimension, no nam
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -101,7 +99,6 @@ test('backend sync: teamPseudonymous profile includes user dimension with consen
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -138,7 +135,6 @@ test('backend sync: teamIdentified profile includes user dimension with explicit
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -176,7 +172,6 @@ test('regression: shareWithTeam=false with profile=off never uploads anything', 
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -210,7 +205,6 @@ test('regression: profile=off overrides shareWithTeam=true (safety gate)', () =>
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -244,7 +238,6 @@ test('consent timestamp: teamPseudonymous requires shareConsentAt', () => {
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -271,7 +264,6 @@ test('consent timestamp: teamIdentified requires shareConsentAt', () => {
 		storageAccount: 'sa',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};

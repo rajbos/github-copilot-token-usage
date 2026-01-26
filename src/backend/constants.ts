@@ -71,8 +71,3 @@ export const DEFAULT_AGG_TABLE = 'usageAggDaily';
  * Default events table name.
  */
 export const DEFAULT_EVENTS_TABLE = 'usageEvents';
-
-/**
- * Default raw container name.
- */
-export const DEFAULT_RAW_CONTAINER = 'raw-usage';

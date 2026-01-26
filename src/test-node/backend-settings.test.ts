@@ -33,7 +33,6 @@ test('getBackendSettings reads config defaults and clamps lookbackDays', () => {
 		'copilotTokenTracker.backend.storageAccount': 'sa',
 		'copilotTokenTracker.backend.aggTable': 'agg',
 		'copilotTokenTracker.backend.eventsTable': 'events',
-		'copilotTokenTracker.backend.rawContainer': 'raw',
 		'copilotTokenTracker.backend.lookbackDays': 999,
 		'copilotTokenTracker.backend.includeMachineBreakdown': true
 	});
@@ -66,7 +65,6 @@ test('isBackendConfigured checks required fields', () => {
 			storageAccount: 'sa',
 			aggTable: 'agg',
 			eventsTable: 'events',
-			rawContainer: 'raw',
 			lookbackDays: 30,
 			includeMachineBreakdown: true
 		}),
@@ -91,7 +89,6 @@ test('isBackendConfigured checks required fields', () => {
 			storageAccount: 'sa',
 			aggTable: 'agg',
 			eventsTable: 'events',
-			rawContainer: 'raw',
 			lookbackDays: 30,
 			includeMachineBreakdown: true
 		}),

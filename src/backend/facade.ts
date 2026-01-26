@@ -343,7 +343,6 @@ export class BackendFacade {
 			config.update('backend.storageAccount', next.storageAccount, vscode.ConfigurationTarget.Global),
 			config.update('backend.aggTable', next.aggTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.eventsTable', next.eventsTable, vscode.ConfigurationTarget.Global),
-			config.update('backend.rawContainer', next.rawContainer, vscode.ConfigurationTarget.Global),
 			config.update('backend.lookbackDays', next.lookbackDays, vscode.ConfigurationTarget.Global),
 			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global)
 		]);
@@ -432,7 +431,6 @@ export class BackendFacade {
 			storageAccount: '',
 			aggTable: 'usageAggDaily',
 			eventsTable: 'usageEvents',
-			rawContainer: 'raw-usage',
 			userIdentityMode: 'pseudonymous',
 			userId: ''
 		};
@@ -559,7 +557,6 @@ export class BackendFacade {
 			config.update('backend.storageAccount', '', vscode.ConfigurationTarget.Global),
 			config.update('backend.aggTable', 'usageAggDaily', vscode.ConfigurationTarget.Global),
 			config.update('backend.eventsTable', 'usageEvents', vscode.ConfigurationTarget.Global),
-			config.update('backend.rawContainer', 'raw-usage', vscode.ConfigurationTarget.Global),
 			config.update('backend.userId', '', vscode.ConfigurationTarget.Global),
 		]);
 

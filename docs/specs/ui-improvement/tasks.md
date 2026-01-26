@@ -294,7 +294,7 @@ phases: [1, 2, 3]
 
 ### 19. Add examples to all input fields ✓
 - Added placeholder attributes to ALL input fields
-- Azure section: subscriptionId (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), resourceGroup (`copilot-tokens-rg`), storageAccount (`copilottokenstorage`), aggTable (`usageAggDaily`), eventsTable (`usageEvents`), rawContainer (`raw-logs`)
+- Azure section: subscriptionId (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), resourceGroup (`copilot-tokens-rg`), storageAccount (`copilottokenstorage`), aggTable (`usageAggDaily`), eventsTable (`usageEvents`)
 - Advanced section: datasetId (`my-team-copilot`), lookbackDays (`30`)
 - Identity section: userId dynamically changes based on mode (`alex-dev` for team alias, GUID format for Entra object ID)
 - All placeholders are realistic examples, not instructions

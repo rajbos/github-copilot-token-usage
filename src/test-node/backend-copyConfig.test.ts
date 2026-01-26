@@ -27,7 +27,6 @@ const baseSettings: any = {
 	storageAccount: 'sa',
 	aggTable: 'usageAggDaily',
 	eventsTable: 'usageEvents',
-	rawContainer: 'raw-usage',
 	lookbackDays: 30,
 	includeMachineBreakdown: true
 };

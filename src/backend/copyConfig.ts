@@ -27,7 +27,6 @@ export interface BackendCopyConfigValues {
 	storageAccount: string;
 	aggTable: string;
 	eventsTable: string;
-	rawContainer: string;
 	lookbackDays: number;
 	includeMachineBreakdown: boolean;
 }
@@ -71,7 +70,6 @@ export async function copyBackendConfigToClipboard(settings: BackendSettings): P
 				storageAccount: settings.storageAccount,
 				aggTable: settings.aggTable,
 				eventsTable: settings.eventsTable,
-				rawContainer: settings.rawContainer,
 				lookbackDays: settings.lookbackDays,
 				includeMachineBreakdown: settings.includeMachineBreakdown
 			},
@@ -117,7 +115,6 @@ export function getBackendConfigSummary(settings: BackendSettings): string {
 		`  Storage Account: ${settings.storageAccount || '[NOT SET]'}`,
 		`  Agg Table: ${settings.aggTable}`,
 		`  Events Table: ${settings.eventsTable}`,
-		`  Raw Container: ${settings.rawContainer}`,
 		'',
 		'Behavior:',
 		`  Lookback Days: ${settings.lookbackDays}`,
@@ -152,7 +149,6 @@ export function buildBackendConfigClipboardPayload(settings: BackendSettings): B
 			storageAccount: settings.storageAccount,
 			aggTable: settings.aggTable,
 			eventsTable: settings.eventsTable,
-			rawContainer: settings.rawContainer,
 			lookbackDays: settings.lookbackDays,
 			includeMachineBreakdown: settings.includeMachineBreakdown
 		},

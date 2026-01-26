@@ -36,7 +36,6 @@ export interface BackendSettings {
 	storageAccount: string;
 	aggTable: string;
 	eventsTable: string;
-	rawContainer: string;
 	lookbackDays: number;
 	includeMachineBreakdown: boolean;
 }
@@ -94,7 +93,6 @@ export function getBackendSettings(): BackendSettings {
 		storageAccount: config.get<string>('backend.storageAccount', ''),
 		aggTable: config.get<string>('backend.aggTable', 'usageAggDaily'),
 		eventsTable: config.get<string>('backend.eventsTable', 'usageEvents'),
-		rawContainer: config.get<string>('backend.rawContainer', 'raw-usage'),
 		lookbackDays: Math.max(MIN_LOOKBACK_DAYS, Math.min(MAX_LOOKBACK_DAYS, config.get<number>('backend.lookbackDays', DEFAULT_LOOKBACK_DAYS))),
 		includeMachineBreakdown: config.get<boolean>('backend.includeMachineBreakdown', false)
 	};

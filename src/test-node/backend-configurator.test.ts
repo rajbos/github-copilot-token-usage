@@ -34,7 +34,6 @@ const baseSettings: BackendSettings = {
 	storageAccount: 'stor',
 	aggTable: 'usageAggDaily',
 	eventsTable: 'usageEvents',
-	rawContainer: 'raw-usage',
 	lookbackDays: 30,
 	includeMachineBreakdown: false
 };
@@ -49,7 +48,6 @@ test('validateDraft enforces lookback bounds, alias rules, and dataset/table for
 		datasetId: 'bad dataset',
 		aggTable: 'agg table',
 		eventsTable: 'events#1',
-		rawContainer: 'raw?',
 		lookbackDays: 0,
 		subscriptionId: '',
 		resourceGroup: '',
@@ -245,6 +243,11 @@ test('testConnectionFromDraft surfaces success, errors, and shared-key requireme
 	const missingKey = await facade['testConnectionFromDraft'](sharedKeyDraft);
 	assert.equal(missingKey.ok, false);
 	assert.ok(missingKey.message.includes('Shared Key'));
+
+	const disabledDraft = { ...toDraft(baseSettings), enabled: false };
+	const disabledResult = await facade['testConnectionFromDraft'](disabledDraft);
+	assert.equal(disabledResult.ok, false);
+	assert.ok(disabledResult.message.toLowerCase().includes('disabled'));
 });
 
 test('BackendConfigPanel routes webview messages to callbacks', async () => {
@@ -339,6 +342,51 @@ test('config panel HTML marks offline state and disables test button when offlin
 	assert.ok(banner?.classList.contains('offline'));
 	assert.equal(testBtn?.disabled, true);
 	assert.deepEqual(alerts, []);
+});
+
+test('config panel HTML disables test button when backend is disabled', async () => {
+	const state = await Promise.resolve({
+		draft: { ...toDraft(baseSettings), enabled: false },
+		sharedKeySet: false,
+		privacyBadge: 'Team Anonymized',
+		isConfigured: false,
+		authStatus: 'Auth: Entra ID (RBAC)'
+	});
+
+	const panel: any = new BackendConfigPanel((vscode as any).Uri.parse('file:///ext'), {
+		getState: async () => state,
+		onSave: async () => ({ state }),
+		onDiscard: async () => state,
+		onStayLocal: async () => state,
+		onTestConnection: async () => ({ ok: true, message: 'ok' }),
+		onUpdateSharedKey: async () => ({ ok: true, message: 'updated', state }),
+		onLaunchWizard: async () => state,
+		onClearAzureSettings: async () => state
+	});
+
+	const webview = {
+		cspSource: 'vscode-resource://',
+		asWebviewUri: () => 'toolkit.js'
+	};
+	const html: string = panel.renderHtml(webview as any, state as any);
+	const sanitized = html.replace(/<script type="module"[^>]*toolkit\.js"><\/script>/, '');
+
+	const dom = new JSDOM(sanitized, {
+		runScripts: 'dangerously',
+		resources: 'usable',
+		pretendToBeVisual: true,
+		beforeParse(window: Window) {
+			(window as any).acquireVsCodeApi = () => ({ postMessage: () => undefined });
+			Object.defineProperty(window.navigator, 'onLine', { get: () => true });
+		}
+	});
+
+	await new Promise((resolve) => dom.window.addEventListener('load', () => resolve(null)));
+	const doc = dom.window.document;
+	const testBtn = doc.getElementById('testConnectionBtn') as HTMLButtonElement;
+	const testResult = doc.getElementById('testResult') as HTMLElement;
+	assert.equal(testBtn?.disabled, true);
+	assert.ok((testResult?.textContent || '').toLowerCase().includes('enable'));
 });
 
 test('config panel HTML toggles shared-key controls, keeps enable-first layout, and shows overview copy', async () => {

@@ -18,7 +18,6 @@ export interface BackendConfigDraft {
 	storageAccount: string;
 	aggTable: string;
 	eventsTable: string;
-	rawContainer: string;
 	userIdentityMode: BackendUserIdentityMode;
 	userId: string;
 }
@@ -44,7 +43,6 @@ export function toDraft(settings: BackendSettings): BackendConfigDraft {
 		storageAccount: settings.storageAccount,
 		aggTable: settings.aggTable,
 		eventsTable: settings.eventsTable,
-		rawContainer: settings.rawContainer,
 		userIdentityMode: settings.userIdentityMode,
 		userId: settings.userId
 	};
@@ -111,10 +109,9 @@ export function validateDraft(draft: BackendConfigDraft): DraftValidationResult 
 		requireString(draft.aggTable, 'aggTable', 'Aggregate Table', 'usageAggDaily');
 	}
 
-	const tableFields: Array<['aggTable' | 'eventsTable' | 'rawContainer', string, string]> = [
+	const tableFields: Array<['aggTable' | 'eventsTable', string, string]> = [
 		['aggTable', draft.aggTable, 'Aggregate Table'],
-		['eventsTable', draft.eventsTable, 'Events Table'],
-		['rawContainer', draft.rawContainer, 'Raw Container']
+		['eventsTable', draft.eventsTable, 'Events Table']
 	];
 	for (const [key, value, label] of tableFields) {
 		if (value && !ALIAS_REGEX.test(value.trim())) {
@@ -178,7 +175,6 @@ export function applyDraftToSettings(
 		storageAccount: draft.storageAccount.trim(),
 		aggTable: draft.aggTable.trim(),
 		eventsTable: draft.eventsTable.trim(),
-		rawContainer: draft.rawContainer.trim(),
 		lookbackDays: clampLookback(draft.lookbackDays),
 		includeMachineBreakdown: !!draft.includeMachineBreakdown
 	};

@@ -124,9 +124,6 @@ test('configureBackendWizard handles policy-blocked storage creation and falls b
 		if (title.includes('Events Table') || title.includes('optional usageEvents')) {
 			return 'No (recommended)';
 		}
-		if (title.includes('Raw Container') || title.includes('optional raw blob')) {
-			return 'No (recommended)';
-		}
 		if (title.includes('existing Storage account')) {
 			return items.find((i: any) => i.label === 'sa-existing') ?? items[0];
 		}
@@ -192,7 +189,6 @@ test('configureBackendWizard handles policy-blocked storage creation and falls b
 		storageAccount: 'sa-existing',
 		aggTable: 'usageAggDaily',
 		eventsTable: 'usageEvents',
-		rawContainer: 'raw-usage',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -308,9 +304,6 @@ test('configureBackendWizard disables Shared Key when Entra ID auth is selected'
 		if (title.includes('Events Table') || title.includes('optional usageEvents')) {
 			return 'No (recommended)';
 		}
-		if (title.includes('Raw Container') || title.includes('optional raw blob')) {
-			return 'No (recommended)';
-		}
 		if (title.includes('Sharing Profile')) {
 			return items.find((i: any) => i.profile === 'teamAnonymized') ?? items[0];
 		}
@@ -361,7 +354,6 @@ test('configureBackendWizard disables Shared Key when Entra ID auth is selected'
 		storageAccount: 'sa-existing',
 		aggTable: 'usageAggDaily',
 		eventsTable: 'usageEvents',
-		rawContainer: 'raw-usage',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -475,9 +467,6 @@ test('configureBackendWizard enables Shared Key when shared-key auth is selected
 		if (title.includes('Events Table') || title.includes('optional usageEvents')) {
 			return 'No (recommended)';
 		}
-		if (title.includes('Raw Container') || title.includes('optional raw blob')) {
-			return 'No (recommended)';
-		}
 		if (title.includes('Sharing Profile')) {
 			return items.find((i: any) => i.profile === 'teamAnonymized') ?? items[0];
 		}
@@ -528,7 +517,6 @@ test('configureBackendWizard enables Shared Key when shared-key auth is selected
 		storageAccount: 'sa-existing',
 		aggTable: 'usageAggDaily',
 		eventsTable: 'usageEvents',
-		rawContainer: 'raw-usage',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};

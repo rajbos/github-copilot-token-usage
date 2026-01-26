@@ -28,7 +28,6 @@ suite('Extension Test Suite', () => {
 					storageAccount: 'staccttest',
 					aggTable: 'usageAggDaily',
 					eventsTable: 'usageEvents',
-					rawContainer: 'raw-usage',
 					lookbackDays: 30,
 					includeMachineBreakdown: true
 				});
@@ -48,7 +47,6 @@ suite('Extension Test Suite', () => {
 					'eventsTable',
 					'includeMachineBreakdown',
 					'lookbackDays',
-					'rawContainer',
 					'resourceGroup',
 					'shareConsentAt',
 					'shareWithTeam',
@@ -113,7 +111,6 @@ suite('Extension Test Suite', () => {
 						storageAccount: 'sa',
 						aggTable: 'table',
 						eventsTable: '',
-						rawContainer: '',
 						lookbackDays: 30,
 						includeMachineBreakdown: true
 					}),
@@ -139,7 +136,6 @@ suite('Extension Test Suite', () => {
 						storageAccount: 'sa',
 						aggTable: 'table',
 						eventsTable: '',
-						rawContainer: '',
 						lookbackDays: 30,
 						includeMachineBreakdown: true
 					}),
@@ -165,7 +161,6 @@ suite('Extension Test Suite', () => {
 						storageAccount: '',
 						aggTable: 'table',
 						eventsTable: '',
-						rawContainer: '',
 						lookbackDays: 30,
 						includeMachineBreakdown: true
 					}),
@@ -191,7 +186,6 @@ suite('Extension Test Suite', () => {
 						storageAccount: 'sa',
 						aggTable: '',
 						eventsTable: '',
-						rawContainer: '',
 						lookbackDays: 30,
 						includeMachineBreakdown: true
 					}),
@@ -217,7 +211,6 @@ suite('Extension Test Suite', () => {
 						storageAccount: 'sa',
 						aggTable: 'table',
 						eventsTable: '',
-						rawContainer: '',
 						lookbackDays: 30,
 						includeMachineBreakdown: true
 					}),

@@ -3273,6 +3273,22 @@ export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
 	const tokenTracker = new CopilotTokenTracker(context);
 
+	// One-time migration: remove deprecated rawContainer setting (removed in v0.0.8)
+	(async () => {
+		try {
+			const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+			const rawContainerInspect = config.inspect('backend.rawContainer');
+			if (rawContainerInspect?.globalValue !== undefined || 
+			    rawContainerInspect?.workspaceValue !== undefined) {
+				await config.update('backend.rawContainer', undefined, vscode.ConfigurationTarget.Global);
+				await config.update('backend.rawContainer', undefined, vscode.ConfigurationTarget.Workspace);
+				tokenTracker.log('[Migration] Removed deprecated rawContainer setting');
+			}
+		} catch (e) {
+			tokenTracker.log(`[Migration] Failed to remove rawContainer: ${e}`);
+		}
+	})();
+
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
 		tokenTracker.log('Refresh command called');

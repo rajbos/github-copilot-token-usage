@@ -23,7 +23,6 @@ test('config export fully redacts machineId', () => {
 		storageAccount: 'sa-test',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -53,7 +52,6 @@ test('config export includes sharingProfile', () => {
 		storageAccount: 'sa-test',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -83,7 +81,6 @@ test('config export JSON string does not contain full machineId or sessionId', (
 		storageAccount: 'sa-test',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
@@ -123,7 +120,6 @@ test('config export note mentions no secrets or PII', () => {
 		storageAccount: 'sa-test',
 		aggTable: 'agg',
 		eventsTable: 'events',
-		rawContainer: 'raw',
 		lookbackDays: 30,
 		includeMachineBreakdown: true
 	};
