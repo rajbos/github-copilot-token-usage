@@ -71,3 +71,25 @@ export const DEFAULT_AGG_TABLE = 'usageAggDaily';
  * Default events table name.
  */
 export const DEFAULT_EVENTS_TABLE = 'usageEvents';
+
+/**
+ * Azure SDK operation timeout for queries in milliseconds (30 seconds).
+ * Prevents indefinite hangs on network issues.
+ */
+export const AZURE_SDK_QUERY_TIMEOUT_MS = 30 * 1000;
+
+/**
+ * Azure SDK operation timeout for sync operations in milliseconds (60 seconds).
+ * Longer timeout for data upload operations.
+ */
+export const AZURE_SDK_SYNC_TIMEOUT_MS = 60 * 1000;
+
+/**
+ * Maximum number of consecutive sync failures before stopping timer.
+ */
+export const MAX_CONSECUTIVE_SYNC_FAILURES = 5;
+
+/**
+ * Maximum number of retries for Azure SDK calls.
+ */
+export const MAX_RETRY_ATTEMPTS = 3;

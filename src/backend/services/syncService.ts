@@ -73,14 +73,16 @@ export class SyncService {
 	private readonly MAX_CONSECUTIVE_FAILURES = 5;
 
 	constructor(
-		private deps: SyncServiceDeps,
-		private credentialService: CredentialService,
-		private dataPlaneService: DataPlaneService,
-		private utility: typeof BackendUtility
+		private readonly deps: SyncServiceDeps,
+		private readonly credentialService: CredentialService,
+		private readonly dataPlaneService: DataPlaneService,
+		private readonly utility: typeof BackendUtility
 	) {}
 
 	/**
 	 * Start the background sync timer if backend is enabled.
+	 * @param settings - Backend settings to check if sync should be enabled
+	 * @param isConfigured - Whether the backend is fully configured
 	 */
 	startTimerIfEnabled(settings: BackendSettings, isConfigured: boolean): void {
 		try {
@@ -99,8 +101,29 @@ export class SyncService {
 				this.syncToBackendStore(false, settings, isConfigured).catch((e) => {
 					this.deps.warn(`Backend sync timer failed: ${e?.message ?? e}`);
 					this.consecutiveFailures++;
+					
+					// Show user-facing warning after first few failures
+					if (this.consecutiveFailures === 3) {
+						vscode.window.showWarningMessage(
+							'Backend sync is experiencing issues. Check the output panel for details.',
+							'Show Output'
+						).then(choice => {
+							if (choice === 'Show Output') {
+								// User can manually open output panel via command palette
+							}
+						});
+					}
+					
 					if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
 						this.deps.warn(`Backend sync: stopping timer after ${this.MAX_CONSECUTIVE_FAILURES} consecutive failures`);
+						vscode.window.showErrorMessage(
+							'Backend sync stopped after repeated failures. Check your Azure configuration.',
+							'Configure Backend'
+						).then(choice => {
+							if (choice === 'Configure Backend') {
+								vscode.commands.executeCommand('copilotTokenTracker.configureBackend');
+							}
+						});
 						this.stopTimer();
 					}
 				});
@@ -454,6 +477,10 @@ export class SyncService {
 
 	/**
 	 * Sync local session data to the backend store.
+	 * @param force - If true, forces sync even if recently synced
+	 * @param settings - Backend settings for sync configuration
+	 * @param isConfigured - Whether the backend is fully configured
+	 * @throws Error if sync fails due to network or auth issues
 	 */
 	async syncToBackendStore(force: boolean, settings: BackendSettings, isConfigured: boolean): Promise<void> {
 		this.syncQueue = this.syncQueue.then(async () => {

@@ -37,12 +37,12 @@ export interface BackendFacadeDeps {
 }
 
 export class BackendFacade {
-	private deps: BackendFacadeDeps;
-	private credentialService: CredentialService;
-	private azureResourceService: AzureResourceService;
-	private dataPlaneService: DataPlaneService;
-	private syncService: SyncService;
-	private queryService: QueryService;
+	private readonly deps: BackendFacadeDeps;
+	private readonly credentialService: CredentialService;
+	private readonly azureResourceService: AzureResourceService;
+	private readonly dataPlaneService: DataPlaneService;
+	private readonly syncService: SyncService;
+	private readonly queryService: QueryService;
 	private configPanel: BackendConfigPanel | undefined;
 
 	public constructor(deps: BackendFacadeDeps) {
@@ -326,6 +326,9 @@ export class BackendFacade {
 	}
 
 	private async updateConfiguration(next: BackendSettings): Promise<void> {
+		if (!this.deps.context) {
+			throw new Error('Extension context is unavailable; cannot update configuration.');
+		}
 		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
 		await Promise.all([
 			config.update('backend.enabled', next.enabled, vscode.ConfigurationTarget.Global),

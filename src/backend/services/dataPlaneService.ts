@@ -12,15 +12,35 @@ import type { BackendAggDailyEntityLike, TableClientLike } from '../storageTable
 import { buildAggPartitionKey, listAggDailyEntitiesFromTableClient } from '../storageTables';
 import type { BackendSettings } from '../settings';
 import { BackendUtility } from './utilityService';
+import { AZURE_SDK_QUERY_TIMEOUT_MS } from '../constants';
+
+/**
+ * Wraps a promise with a timeout to prevent indefinite hangs.
+ * @param promise - The promise to wrap
+ * @param timeoutMs - Timeout in milliseconds
+ * @param operation - Description of the operation for error messages
+ * @returns Promise that rejects if timeout is exceeded
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<never>((_, reject) =>
+			setTimeout(
+				() => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
+				timeoutMs
+			)
+		)
+	]);
+}
 
 /**
  * DataPlaneService manages Azure Table Storage clients and operations.
  */
 export class DataPlaneService {
 	constructor(
-		private utility: typeof BackendUtility,
-		private log: (message: string) => void,
-		private getSecretsToRedact: (settings: BackendSettings) => Promise<string[]>
+		private readonly utility: typeof BackendUtility,
+		private readonly log: (message: string) => void,
+		private readonly getSecretsToRedact: (settings: BackendSettings) => Promise<string[]>
 	) {}
 
 	/**
@@ -39,6 +59,9 @@ export class DataPlaneService {
 
 	/**
 	 * Create a TableClient for the backend aggregate table.
+	 * @param settings - Backend settings with storage account and table names
+	 * @param credential - Azure credential (TokenCredential or AzureNamedKeyCredential)
+	 * @returns TableClient instance for the aggregate table
 	 */
 	createTableClient(settings: BackendSettings, credential: TokenCredential | AzureNamedKeyCredential): TableClient {
 		return new TableClient(
@@ -50,6 +73,9 @@ export class DataPlaneService {
 
 	/**
 	 * Ensure the aggregate table exists, creating it if necessary.
+	 * @param settings - Backend settings with table name
+	 * @param credential - Azure credential for table operations
+	 * @throws Error if table creation fails (except for 409 Already Exists)
 	 */
 	async ensureTableExists(settings: BackendSettings, credential: TokenCredential | AzureNamedKeyCredential): Promise<void> {
 		const serviceClient = new TableServiceClient(
@@ -78,6 +104,9 @@ export class DataPlaneService {
 
 	/**
 	 * Validate that we have read/write access to the backend table.
+	 * @param settings - Backend settings for the table
+	 * @param credential - Azure credential to test
+	 * @throws Error if validation fails or permissions are missing
 	 */
 	async validateAccess(settings: BackendSettings, credential: TokenCredential | AzureNamedKeyCredential): Promise<void> {
 		// Probe read/write access without requiring secrets.
@@ -89,8 +118,16 @@ export class DataPlaneService {
 			updatedAt: new Date().toISOString()
 		};
 		try {
-			await tableClient.upsertEntity(probeEntity, 'Replace');
-			await tableClient.deleteEntity(probeEntity.partitionKey, probeEntity.rowKey);
+			await withTimeout(
+				tableClient.upsertEntity(probeEntity, 'Replace'),
+				AZURE_SDK_QUERY_TIMEOUT_MS,
+				'Table entity upsert'
+			);
+			await withTimeout(
+				tableClient.deleteEntity(probeEntity.partitionKey, probeEntity.rowKey),
+				AZURE_SDK_QUERY_TIMEOUT_MS,
+				'Table entity delete'
+			);
 		} catch (e: any) {
 			const status = e?.statusCode;
 			if (status === 403) {
@@ -104,6 +141,8 @@ export class DataPlaneService {
 
 	/**
 	 * List aggregate entities for a date range.
+	 * @param args - Query arguments with table client, dataset ID, and date range
+	 * @returns Array of aggregate entities for the specified date range
 	 */
 	async listEntitiesForRange(args: {
 		tableClient: TableClientLike;
@@ -185,7 +224,11 @@ export class DataPlaneService {
 		
 		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			try {
-				await tableClient.upsertEntity(entity, 'Replace');
+				await withTimeout(
+					tableClient.upsertEntity(entity, 'Replace'),
+					AZURE_SDK_QUERY_TIMEOUT_MS,
+					'Table entity upsert'
+				);
 				return; // Success
 			} catch (error: any) {
 				lastError = error instanceof Error ? error : new Error(String(error));

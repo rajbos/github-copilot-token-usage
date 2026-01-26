@@ -144,7 +144,7 @@ export const SuccessMessages = {
 	 * Connection test passed.
 	 */
 	connected: (): string => {
-		return 'Connected to Azure Storage successfully';
+		return '✓ Connected to Azure Storage successfully';
 	},
 
 	/**

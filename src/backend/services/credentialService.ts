@@ -15,11 +15,12 @@ import { shouldPromptToSetSharedKey } from '../settings';
  * CredentialService manages authentication credentials for Azure backend resources.
  */
 export class CredentialService {
-	constructor(private context: vscode.ExtensionContext | undefined) {}
+	constructor(private readonly context: vscode.ExtensionContext | undefined) {}
 
 	/**
 	 * Create a DefaultAzureCredential for Azure resource access.
 	 * Uses local dev sign-in (Azure CLI, VS Code, env vars, managed identity) without requiring secrets.
+	 * @returns DefaultAzureCredential instance for Azure authentication
 	 */
 	createAzureCredential(): DefaultAzureCredential {
 		return new DefaultAzureCredential({});
@@ -34,16 +35,25 @@ export class CredentialService {
 
 	/**
 	 * Get the stored storage shared key for a storage account.
+	 * @param storageAccount - The storage account name
+	 * @returns The stored shared key, or undefined if not set
+	 * @throws Error if extension context is unavailable
 	 */
 	async getStoredStorageSharedKey(storageAccount: string): Promise<string | undefined> {
 		if (!storageAccount) {
 			return undefined;
 		}
-		return (await this.context?.secrets.get(this.getSharedKeySecretStorageKey(storageAccount))) ?? undefined;
+		if (!this.context?.secrets) {
+			throw new Error('Extension context or SecretStorage is unavailable. This should not happen in a running extension.');
+		}
+		return (await this.context.secrets.get(this.getSharedKeySecretStorageKey(storageAccount))) ?? undefined;
 	}
 
 	/**
 	 * Store a storage shared key securely in VS Code SecretStorage.
+	 * @param storageAccount - The storage account name
+	 * @param sharedKey - The shared key to store
+	 * @throws Error if SecretStorage is unavailable
 	 */
 	async setStoredStorageSharedKey(storageAccount: string, sharedKey: string): Promise<void> {
 		if (!this.context?.secrets) {
@@ -54,6 +64,8 @@ export class CredentialService {
 
 	/**
 	 * Clear the stored storage shared key for a storage account.
+	 * @param storageAccount - The storage account name
+	 * @throws Error if SecretStorage is unavailable
 	 */
 	async clearStoredStorageSharedKey(storageAccount: string): Promise<void> {
 		if (!this.context?.secrets) {
@@ -120,6 +132,8 @@ export class CredentialService {
 
 	/**
 	 * Get backend data plane credentials (for Table and Blob storage).
+	 * @param settings - Backend settings with auth mode and storage account
+	 * @returns Credentials object with table and blob credentials, or undefined if unavailable
 	 */
 	async getBackendDataPlaneCredentials(settings: BackendSettings): Promise<{
 		tableCredential: TokenCredential | AzureNamedKeyCredential;
@@ -150,6 +164,9 @@ export class CredentialService {
 
 	/**
 	 * Get backend data plane credentials, throwing if unavailable.
+	 * @param settings - Backend settings with auth mode and storage account
+	 * @returns Credentials object with table and blob credentials
+	 * @throws Error if credentials are unavailable
 	 */
 	async getBackendDataPlaneCredentialsOrThrow(settings: BackendSettings): Promise<{
 		tableCredential: TokenCredential | AzureNamedKeyCredential;
@@ -165,6 +182,8 @@ export class CredentialService {
 
 	/**
 	 * Get backend secrets that should be redacted from error messages.
+	 * @param settings - Backend settings to check for secrets
+	 * @returns Array of secret strings to redact
 	 */
 	async getBackendSecretsToRedactForError(settings: BackendSettings): Promise<string[]> {
 		try {

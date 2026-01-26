@@ -19,8 +19,8 @@ import { ErrorMessages, SuccessMessages, ConfirmationMessages } from './ui/messa
  * Handles backend-related commands.
  */
 export class BackendCommandHandler {
-	private facade: BackendFacadeInterface;
-	private displayNameStore: DisplayNameStore | undefined;
+	private readonly facade: BackendFacadeInterface;
+	private readonly displayNameStore: DisplayNameStore | undefined;
 	private lastManualSyncAt = 0;
 	private readonly MANUAL_SYNC_COOLDOWN_MS = 5000; // 5 seconds
 

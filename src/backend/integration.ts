@@ -237,6 +237,7 @@ export class BackendIntegration {
 
 	/**
 	 * Gets the VS Code extension context.
+	 * @returns Extension context, or undefined if not available
 	 */
 	getContext(): vscode.ExtensionContext | undefined {
 		return this.context;

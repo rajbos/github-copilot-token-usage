@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { safeJsonForInlineScript } from '../utils/html';
 import type { BackendConfigDraft } from './configurationFlow';
 
@@ -25,8 +26,10 @@ export interface BackendConfigPanelCallbacks {
 
 export class BackendConfigPanel implements vscode.Disposable {
 	private panel: vscode.WebviewPanel | undefined;
+	private readonly disposables: vscode.Disposable[] = [];
 	private disposed = false;
 	private dirty = false;
+	private operationInProgress = false;
 
 	constructor(private readonly extensionUri: vscode.Uri, private readonly callbacks: BackendConfigPanelCallbacks) {}
 
@@ -39,8 +42,11 @@ export class BackendConfigPanel implements vscode.Disposable {
 				{ viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
 				{ enableScripts: true, retainContextWhenHidden: false }
 			);
-			this.panel.onDidDispose(() => this.handleDispose());
-			this.panel.webview.onDidReceiveMessage(async (message) => this.handleMessage(message));
+			// Track all event listeners in disposables array for proper cleanup
+			this.disposables.push(
+				this.panel.onDidDispose(() => this.handleDispose()),
+				this.panel.webview.onDidReceiveMessage(async (message) => this.handleMessage(message))
+			);
 		}
 		this.panel.webview.html = this.renderHtml(this.panel.webview, state);
 		this.panel.reveal();
@@ -57,8 +63,31 @@ export class BackendConfigPanel implements vscode.Disposable {
 	}
 
 	public dispose(): void {
+		// Dispose all tracked event listeners
+		for (const disposable of this.disposables) {
+			disposable.dispose();
+		}
+		this.disposables.length = 0;
+		
+		// Dispose the panel itself
 		if (this.panel) {
 			this.panel.dispose();
+			this.panel = undefined;
+		}
+	}
+
+	/**
+	 * Execute an async operation with locking to prevent concurrent state updates.
+	 */
+	private async withLock<T>(operation: () => Promise<T>): Promise<T> {
+		if (this.operationInProgress) {
+			throw new Error('Another operation is in progress. Please wait.');
+		}
+		this.operationInProgress = true;
+		try {
+			return await operation();
+		} finally {
+			this.operationInProgress = false;
 		}
 	}
 
@@ -93,9 +122,11 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 	private async handleSave(draft: BackendConfigDraft): Promise<void> {
 		try {
-			const result = await this.callbacks.onSave(draft);
-			this.dirty = false;
-			this.postState(result.state, result.errors, result.message);
+			await this.withLock(async () => {
+				const result = await this.callbacks.onSave(draft);
+				this.dirty = false;
+				this.postState(result.state, result.errors, result.message);
+			});
 		} catch (error: any) {
 			vscode.window.showErrorMessage(`Failed to save backend settings: ${error?.message || String(error)}`);
 		}
@@ -148,7 +179,8 @@ export class BackendConfigPanel implements vscode.Disposable {
 	}
 
 	private renderHtml(webview: vscode.Webview, state: BackendConfigPanelState): string {
-		const nonce = Math.random().toString(36).slice(2);
+		// Use cryptographically secure random for CSP nonce
+		const nonce = crypto.randomBytes(16).toString('base64');
 		const toolkitUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js'));
 		const initialState = safeJsonForInlineScript(state);
  		return `<!DOCTYPE html>
@@ -204,8 +236,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 			<vscode-button appearance="secondary" class="nav-btn" data-target="review" aria-label="Navigate to Review and Apply section">Review & Apply</vscode-button>
 		</aside>
 		<main class="main">
-			<section id="overview" class="section active">
-				<div class="card">
+			<section id="overview" class="section active">			<p class="helper">Enable backend to sync token usage to Azure. Choose "Stay Local" to keep all data on this device only.</p>				<div class="card">
 					<h3>Why use backend sync?</h3>
 					<p class="helper"><strong>Team visibility & insights:</strong> Share Copilot usage across your team to identify patterns, optimize costs, and track adoption. Perfect for managers, platform teams, and anyone managing Copilot licenses.</p>
 					<p class="helper"><strong>Multi-device sync:</strong> Work on multiple machines? Backend keeps your token usage history synced across all devices automatically.</p>
@@ -216,7 +247,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<h3>Current status</h3>
 					<div class="pill-row">
 						<span class="badge" id="backendStateBadge"></span>
-						<span class="badge" id="privacyBadgeWithLabel"></span>
+					<span class="badge" id="privacyBadge"></span>
 						<span class="badge" id="authBadge"></span>
 					</div>
 					<div class="status-line" id="overviewSummary"></div>
@@ -343,7 +374,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<div class="status-line" id="testResult" role="status" aria-live="polite"></div>
 				</div>
 				<div class="card">
-					<h3>Azure settings</h3>
+				<h3>Azure resource IDs</h3>
 					<p class="helper">Azure Storage connection details. Use the guided wizard to auto-fill these fields.</p>
 					<div class="grid-2">
 						<div class="field"><label for="subscriptionId">Subscription ID</label><vscode-text-field id="subscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" aria-describedby="subscriptionId-error"></vscode-text-field><div id="subscriptionId-error" class="error" role="alert" data-error-for="subscriptionId"></div></div>
@@ -419,7 +450,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('userIdentityMode').value = state.draft.userIdentityMode;
 			byId('userId').value = state.draft.userId || '';
 			updateUserIdPlaceholder();
-			byId('privacyBadgeWithLabel').innerText = 'Privacy: ' + state.privacyBadge;
+			byId('privacyBadge').innerText = 'Privacy: ' + state.privacyBadge;
 			byId('authBadge').innerText = state.authStatus;
 			byId('backendStateBadge').innerText = state.draft.enabled ? 'Backend: Enabled' : 'Backend: Disabled';
 			byId('overviewSummary').textContent = state.draft.enabled
