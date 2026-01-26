@@ -1,3 +1,12 @@
+---
+title: Accessibility Audit Report
+description: WCAG 2.1 AA compliance audit for backend configuration panel
+lastUpdated: 2026-01-26
+status: passed
+standard: WCAG 2.1 AA
+component: Backend Configuration Panel
+---
+
 # Accessibility Audit Report
 
 **Date:** 2026-01-23  

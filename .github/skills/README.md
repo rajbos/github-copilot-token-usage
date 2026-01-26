@@ -1,3 +1,9 @@
+---
+title: GitHub Copilot Agent Skills
+description: Overview of agent skills for GitHub Copilot Token Tracker extension
+lastUpdated: 2026-01-26
+---
+
 # GitHub Copilot Agent Skills
 
 This directory contains Agent Skills for GitHub Copilot and other compatible AI agents. Agent Skills are used to teach agents specialized tasks and provide domain-specific knowledge.

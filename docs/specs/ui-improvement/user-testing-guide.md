@@ -1,3 +1,12 @@
+---
+title: User Testing Guide
+description: Beta testing guide for backend configuration UI improvements
+lastUpdated: 2026-01-26
+version: 1.0
+status: ready-for-testing
+project: ui-improvement
+---
+
 # User Testing Guide: Backend Configuration
 
 **Version:** 1.0  

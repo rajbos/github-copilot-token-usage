@@ -36,7 +36,7 @@ import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import { BackendIntegration } from './backend/integration';
 import { computeBackendSharingPolicy } from './backend/sharingProfile';
-import type { ModelUsage } from './backend/types';
+import type { ModelUsage, SessionFileCache } from './backend/types';
 
 // Re-export for backward compatibility with tests
 export { shouldPromptToSetSharedKey } from './backend/settings';
@@ -111,13 +111,6 @@ interface DailyTokenStats {
 	interactions: number;
 	modelUsage: ModelUsage;
 	editorUsage: EditorUsage;
-}
-
-interface SessionFileCache {
-	tokens: number;
-	interactions: number;
-	modelUsage: ModelUsage;
-	mtime: number; // file modification time as timestamp
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -289,7 +282,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			co2AbsorptionPerTreePerYear: this.co2AbsorptionPerTreePerYear,
 			getCopilotSessionFiles: async () => await this.getCopilotSessionFiles(),
 			estimateTokensFromText: (text, model) => this.estimateTokensFromText(text, model),
-			getModelFromRequest: (request) => this.getModelFromRequest(request)
+			getModelFromRequest: (request) => this.getModelFromRequest(request),
+			// Provide cache integration for backend sync performance
+			getSessionFileDataCached: async (filePath, mtime) => await this.getSessionFileDataCached(filePath, mtime)
 		});
 
 		this.backendIntegration = new BackendIntegration({
@@ -3353,6 +3348,11 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.commands.setSharingProfile();
 	});
 
+	const clearAzureSettingsCommand = vscode.commands.registerCommand('copilot-token-tracker.clearAzureSettings', async () => {
+		tokenTracker.log('Clear Azure settings command called');
+		await tokenTracker.commands.clearAzureSettings();
+	});
+
 	// Add to subscriptions for proper cleanup
 	context.subscriptions.push(
 		refreshCommand,
@@ -3369,6 +3369,7 @@ export function activate(context: vscode.ExtensionContext) {
 		disableTeamSharingCommand,
 		toggleBackendWorkspaceMachineNameSyncCommand,
 		setSharingProfileCommand,
+		clearAzureSettingsCommand,
 		tokenTracker
 	);
 

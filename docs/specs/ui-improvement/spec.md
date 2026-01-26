@@ -1,3 +1,10 @@
+---
+title: UI and Language Improvements
+description: Specification for improving UI clarity and user-facing language in backend features
+lastUpdated: 2026-01-26
+status: complete
+---
+
 # UI and Language Improvements for Backend Features
 
 ## Overview

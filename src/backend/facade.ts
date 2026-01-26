@@ -4,7 +4,7 @@ import { safeStringifyError } from '../utils/errors';
 import type { BackendAggDailyEntityLike } from './storageTables';
 import type { BackendQueryFilters, BackendSettings } from './settings';
 import { getBackendSettings, isBackendConfigured } from './settings';
-import type { SessionStats, ModelUsage, ChatRequest } from './types';
+import type { SessionStats, ModelUsage, ChatRequest, SessionFileCache } from './types';
 import { computeBackendSharingPolicy } from './sharingProfile';
 import { CredentialService } from './services/credentialService';
 import { AzureResourceService } from './services/azureResourceService';
@@ -32,6 +32,8 @@ export interface BackendFacadeDeps {
 	getCopilotSessionFiles: () => Promise<string[]>;
 	estimateTokensFromText: (text: string, model: string) => number;
 	getModelFromRequest: (request: ChatRequest) => string;
+	// Cache integration for performance
+	getSessionFileDataCached?: (sessionFilePath: string, mtime: number) => Promise<SessionFileCache>;
 }
 
 export class BackendFacade {
@@ -72,7 +74,8 @@ export class BackendFacade {
 				warn: deps.warn,
 				getCopilotSessionFiles: deps.getCopilotSessionFiles,
 				estimateTokensFromText: deps.estimateTokensFromText,
-				getModelFromRequest: deps.getModelFromRequest
+				getModelFromRequest: deps.getModelFromRequest,
+				getSessionFileDataCached: deps.getSessionFileDataCached
 			},
 			this.credentialService,
 			this.dataPlaneService,
@@ -359,14 +362,24 @@ export class BackendFacade {
 					onStayLocal: () => this.disableBackend(),
 					onTestConnection: async (draft) => this.testConnectionFromDraft(draft),
 					onUpdateSharedKey: async (storageAccount, draft) => this.updateSharedKey(storageAccount, draft),
-					onLaunchWizard: async () => this.launchConfigureWizardFromPanel()
+					onLaunchWizard: async () => this.launchConfigureWizardFromPanel(),
+					onClearAzureSettings: async () => this.clearAzureSettings()
 				});
 		}
 		await this.configPanel.show();
 	}
 
 	private async launchConfigureWizardFromPanel(): Promise<BackendConfigPanelState> {
-		await this.azureResourceService.configureBackendWizard();
+		await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Notification,
+				title: 'Launching Azure backend configuration wizard...',
+				cancellable: false
+			},
+			async () => {
+				await this.azureResourceService.configureBackendWizard();
+			}
+		);
 		this.startTimerIfEnabled();
 		this.deps.updateTokenStats?.();
 		this.clearQueryCache();
@@ -376,6 +389,54 @@ export class BackendFacade {
 	private async disableBackend(): Promise<BackendConfigPanelState> {
 		const settings = this.getSettings();
 		const draft: BackendConfigDraft = { ...toDraft(settings), enabled: false, sharingProfile: 'off', shareWorkspaceMachineNames: false, includeMachineBreakdown: false };
+		const next = applyDraftToSettings(settings, draft, undefined);
+		await this.updateConfiguration(next);
+		this.startTimerIfEnabled();
+		this.deps.updateTokenStats?.();
+		this.clearQueryCache();
+		return this.getConfigPanelState(draft);
+	}
+
+	private async clearAzureSettings(): Promise<BackendConfigPanelState> {
+		const conf = ConfirmationMessages.clearKey();
+		const confirmed = await vscode.window.showWarningMessage(
+			'Clear all Azure settings?',
+			{ modal: true, detail: 'This will remove all Azure resource IDs, credentials, and backend configuration. You will need to reconfigure the backend to use it again.' },
+			'Clear Settings'
+		);
+		if (confirmed !== 'Clear Settings') {
+			return this.getConfigPanelState();
+		}
+		
+		const settings = this.getSettings();
+		// Clear shared key if exists
+		if (settings.storageAccount) {
+			try {
+				await this.credentialService.clearStoredStorageSharedKey(settings.storageAccount);
+			} catch (e) {
+				// Continue even if key clear fails
+			}
+		}
+		
+		// Create a draft with empty Azure settings
+		const draft: BackendConfigDraft = {
+			enabled: false,
+			authMode: 'entraId',
+			sharingProfile: 'off',
+			shareWorkspaceMachineNames: false,
+			includeMachineBreakdown: false,
+			datasetId: 'default',
+			lookbackDays: 30,
+			subscriptionId: '',
+			resourceGroup: '',
+			storageAccount: '',
+			aggTable: 'usageAggDaily',
+			eventsTable: 'usageEvents',
+			rawContainer: 'raw-usage',
+			userIdentityMode: 'pseudonymous',
+			userId: ''
+		};
+		
 		const next = applyDraftToSettings(settings, draft, undefined);
 		await this.updateConfiguration(next);
 		this.startTimerIfEnabled();
@@ -414,32 +475,45 @@ export class BackendFacade {
 	}
 
 	private async testConnectionFromDraft(draft: BackendConfigDraft): Promise<{ ok: boolean; message: string }> {
+		if (!draft.enabled) {
+			return { ok: false, message: 'Backend is disabled. Enable it to test the connection.' };
+		}
 		const validation = validateDraft(draft);
 		if (!validation.valid) {
 			return { ok: false, message: 'Fix validation errors first.' };
 		}
 		const prev = this.getSettings();
 		const settings = applyDraftToSettings(prev, draft, prev.shareConsentAt);
-		try {
-			const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
-			if (!creds) {
-				return { ok: false, message: ErrorMessages.auth('Shared Key required for this auth mode') };
+		
+		return await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Notification,
+				title: 'Testing connection to Azure Storage...',
+				cancellable: false
+			},
+			async () => {
+				try {
+					const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
+					if (!creds) {
+						return { ok: false, message: ErrorMessages.auth('Shared Key required for this auth mode') };
+					}
+					await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
+					return { ok: true, message: SuccessMessages.connected() };
+				} catch (error: any) {
+					const details = error?.message || String(error);
+					if (details.includes('403') || details.includes('Forbidden')) {
+						return { ok: false, message: ErrorMessages.auth('Check storage account permissions') };
+					}
+					if (details.includes('404') || details.includes('NotFound')) {
+						return { ok: false, message: 'Storage account or table not found. Verify resource names.' };
+					}
+					if (details.includes('ENOTFOUND') || details.includes('ETIMEDOUT')) {
+						return { ok: false, message: ErrorMessages.connection('Check network and storage account name') };
+					}
+					return { ok: false, message: details };
+				}
 			}
-			await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
-			return { ok: true, message: SuccessMessages.connected() };
-		} catch (error: any) {
-			const details = error?.message || String(error);
-			if (details.includes('403') || details.includes('Forbidden')) {
-				return { ok: false, message: ErrorMessages.auth('Check storage account permissions') };
-			}
-			if (details.includes('404') || details.includes('NotFound')) {
-				return { ok: false, message: 'Storage account or table not found. Verify resource names.' };
-			}
-			if (details.includes('ENOTFOUND') || details.includes('ETIMEDOUT')) {
-				return { ok: false, message: ErrorMessages.connection('Check network and storage account name') };
-			}
-			return { ok: false, message: details };
-		}
+		);
 	}
 
 	private async updateSharedKey(storageAccount: string, draft?: BackendConfigDraft): Promise<{ ok: boolean; message: string; state?: BackendConfigPanelState }> {
@@ -459,6 +533,41 @@ export class BackendFacade {
 
 	public async configureBackendWizard(): Promise<void> {
 		await this.showConfigPanel();
+	}
+
+	public async clearAzureSettingsCommand(): Promise<void> {
+		const settings = this.getSettings();
+		// Clear shared key if exists
+		if (settings.storageAccount) {
+			try {
+				await this.credentialService.clearStoredStorageSharedKey(settings.storageAccount);
+			} catch (e) {
+				// Continue even if key clear fails
+			}
+		}
+
+		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		await Promise.all([
+			config.update('backend.enabled', false, vscode.ConfigurationTarget.Global),
+			config.update('backend.authMode', 'entraId', vscode.ConfigurationTarget.Global),
+			config.update('backend.sharingProfile', 'off', vscode.ConfigurationTarget.Global),
+			config.update('backend.shareWithTeam', false, vscode.ConfigurationTarget.Global),
+			config.update('backend.shareWorkspaceMachineNames', false, vscode.ConfigurationTarget.Global),
+			config.update('backend.shareConsentAt', '', vscode.ConfigurationTarget.Global),
+			config.update('backend.subscriptionId', '', vscode.ConfigurationTarget.Global),
+			config.update('backend.resourceGroup', '', vscode.ConfigurationTarget.Global),
+			config.update('backend.storageAccount', '', vscode.ConfigurationTarget.Global),
+			config.update('backend.aggTable', 'usageAggDaily', vscode.ConfigurationTarget.Global),
+			config.update('backend.eventsTable', 'usageEvents', vscode.ConfigurationTarget.Global),
+			config.update('backend.rawContainer', 'raw-usage', vscode.ConfigurationTarget.Global),
+			config.update('backend.userId', '', vscode.ConfigurationTarget.Global),
+		]);
+
+		this.startTimerIfEnabled();
+		this.deps.updateTokenStats?.();
+		this.clearQueryCache();
+		
+		vscode.window.showInformationMessage('Azure settings cleared successfully.');
 	}
 
 	public async setSharingProfileCommand(): Promise<void> {

@@ -1,3 +1,11 @@
+---
+title: UI Language Quick Reference
+description: Standards and patterns for consistent user-facing messaging
+lastUpdated: 2026-01-26
+status: current
+project: ui-improvement
+---
+
 # UI Language Quick Reference
 
 Quick reference for consistent messaging across the extension.

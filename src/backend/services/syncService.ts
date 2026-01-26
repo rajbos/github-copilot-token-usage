@@ -12,7 +12,7 @@ import type { DailyRollupKey } from '../rollups';
 import { upsertDailyRollup } from '../rollups';
 import type { BackendSettings } from '../settings';
 import { BACKEND_SYNC_MIN_INTERVAL_MS } from '../constants';
-import type { DailyRollupValue, ChatRequest } from '../types';
+import type { DailyRollupValue, ChatRequest, SessionFileCache } from '../types';
 import { resolveUserIdentityForSync, type BackendUserIdentityMode } from '../identity';
 import { computeBackendSharingPolicy, hashMachineIdForTeam, hashWorkspaceIdForTeam } from '../sharingProfile';
 import { createDailyAggEntity } from '../storageTables';
@@ -58,6 +58,8 @@ export interface SyncServiceDeps {
 	getCopilotSessionFiles: () => Promise<string[]>;
 	estimateTokensFromText: (text: string, model: string) => number;
 	getModelFromRequest: (request: ChatRequest) => string;
+	// Cache integration for performance
+	getSessionFileDataCached?: (sessionFilePath: string, mtime: number) => Promise<SessionFileCache>;
 }
 
 /**
@@ -138,6 +140,111 @@ export class SyncService {
 	}
 
 	/**
+	 * Process a session file using cached data.
+	 * Returns true if successful, false if cache miss (caller should parse file).
+	 * Validates all cached data at runtime to prevent injection/corruption.
+	 */
+	private async processCachedSessionFile(
+		sessionFile: string,
+		fileMtimeMs: number,
+		workspaceId: string,
+		machineId: string,
+		userId: string | undefined,
+		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>
+	): Promise<boolean> {
+		try {
+			const cachedData = await this.deps.getSessionFileDataCached!(sessionFile, fileMtimeMs);
+			
+			// Validate cached data structure to prevent injection/corruption
+			if (!cachedData || typeof cachedData !== 'object') {
+				this.deps.warn(`Backend sync: invalid cached data structure for ${sessionFile}`);
+				return false;
+			}
+			if (typeof cachedData.modelUsage !== 'object' || cachedData.modelUsage === null) {
+				this.deps.warn(`Backend sync: invalid modelUsage in cached data for ${sessionFile}`);
+				return false;
+			}
+			if (!Number.isFinite(cachedData.interactions) || cachedData.interactions < 0) {
+				this.deps.warn(`Backend sync: invalid interactions count in cached data for ${sessionFile}`);
+				return false;
+			}
+			
+			// Expand cached modelUsage into rollups
+			const dayKey = this.utility.toUtcDayKey(new Date(fileMtimeMs));
+			
+			// CRITICAL FIX: Only assign interactions to first model to prevent inflation
+			// When a file has multiple models, interactions should be counted once, not per-model
+			let interactionsAssigned = false;
+			
+			for (const [model, usage] of Object.entries(cachedData.modelUsage)) {
+				// Validate usage object structure
+				if (!usage || typeof usage !== 'object') {
+					this.deps.warn(`Backend sync: invalid usage object for model ${model} in ${sessionFile}`);
+					continue;
+				}
+				if (!Number.isFinite(usage.inputTokens) || usage.inputTokens < 0) {
+					this.deps.warn(`Backend sync: invalid inputTokens for model ${model} in ${sessionFile}`);
+					continue;
+				}
+				if (!Number.isFinite(usage.outputTokens) || usage.outputTokens < 0) {
+					this.deps.warn(`Backend sync: invalid outputTokens for model ${model} in ${sessionFile}`);
+					continue;
+				}
+				
+				const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+				// Only assign interactions to the first valid model to prevent inflation
+				const interactionsForThisModel = interactionsAssigned ? 0 : cachedData.interactions;
+				interactionsAssigned = true;
+				
+				upsertDailyRollup(rollups, key, {
+					inputTokens: usage.inputTokens,
+					outputTokens: usage.outputTokens,
+					interactions: interactionsForThisModel
+				});
+			}
+			return true;
+		} catch (e) {
+			// Differentiate between cache miss (expected) and errors (unexpected)
+			const errorMessage = e instanceof Error ? e.message : String(e);
+			if (errorMessage.includes('ENOENT') || errorMessage.includes('not found')) {
+				// Expected cache miss - file doesn't exist or not cached yet
+				return false;
+			} else {
+				// Unexpected error - log as warning
+				this.deps.warn(`Backend sync: cache error for ${sessionFile}: ${errorMessage}`);
+				return false;
+			}
+		}
+	}
+
+	/**
+	 * Resolve workspace name from session path if not already resolved.
+	 */
+	private async ensureWorkspaceNameResolved(
+		workspaceId: string,
+		sessionFile: string,
+		workspaceNamesById: Record<string, string>
+	): Promise<void> {
+		if (!workspaceNamesById[workspaceId]) {
+			const resolved = await this.utility.tryResolveWorkspaceNameFromSessionPath(sessionFile);
+			if (resolved) {
+				workspaceNamesById[workspaceId] = resolved;
+			}
+		}
+	}
+
+	/**
+	 * Log cache performance statistics.
+	 */
+	private logCachePerformance(cacheHits: number, cacheMisses: number): void {
+		const totalFiles = cacheHits + cacheMisses;
+		if (totalFiles === 0) {return;}
+		
+		const hitRate = ((cacheHits / totalFiles) * 100).toFixed(1);
+		this.deps.log(`Backend sync: Cache performance - Hits: ${cacheHits}, Misses: ${cacheMisses}, Hit Rate: ${hitRate}%`);
+	}
+
+	/**
 	 * Resolve the effective user identity for sync.
 	 */
 	private async resolveEffectiveUserIdentityForSync(settings: BackendSettings, includeUserDimension: boolean): Promise<{ userId?: string; userKeyType?: BackendUserIdentityMode }> {
@@ -163,6 +270,7 @@ export class SyncService {
 
 	/**
 	 * Compute daily rollups from local session files.
+	 * Uses cached session data when available to avoid re-parsing files.
 	 */
 	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
@@ -188,24 +296,55 @@ export class SyncService {
 		}
 
 		const sessionFiles = await this.deps.getCopilotSessionFiles();
+		const useCachedData = !!this.deps.getSessionFileDataCached;
+		let cacheHits = 0;
+		let cacheMisses = 0;
+
 		for (const sessionFile of sessionFiles) {
-			let content: string;
 			let fileMtimeMs: number | undefined;
+			
 			try {
-				const stats = await fs.promises.stat(sessionFile);
-				fileMtimeMs = stats.mtimeMs;
-				content = await fs.promises.readFile(sessionFile, 'utf8');
+				const fileStat = await fs.promises.stat(sessionFile);
+				fileMtimeMs = fileStat.mtimeMs;
+				
+				// Skip files older than lookback period
+				if (fileMtimeMs < startMs) {
+					continue;
+				}
 			} catch (e) {
-				this.deps.warn(`Backend sync: failed to read session file ${sessionFile}: ${e}`);
+				this.deps.warn(`Backend sync: failed to stat session file ${sessionFile}: ${e}`);
 				continue;
 			}
 
 			const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
-			if (!workspaceNamesById[workspaceId]) {
-				const resolved = await this.utility.tryResolveWorkspaceNameFromSessionPath(sessionFile);
-				if (resolved) {
-					workspaceNamesById[workspaceId] = resolved;
+			await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
+
+			// Try to use cached data first (much faster than parsing)
+			if (useCachedData) {
+				const cacheSuccess = await this.processCachedSessionFile(
+					sessionFile,
+					fileMtimeMs,
+					workspaceId,
+					machineId,
+					userId,
+					rollups
+				);
+				
+				if (cacheSuccess) {
+					cacheHits++;
+					continue;
+				} else {
+					cacheMisses++;
 				}
+			}
+
+			// Fallback: parse file directly (legacy path or cache unavailable)
+			let content: string;
+			try {
+				content = await fs.promises.readFile(sessionFile, 'utf8');
+			} catch (e) {
+				this.deps.warn(`Backend sync: failed to read session file ${sessionFile}: ${e}`);
+				continue;
 			}
 			// JSONL (Copilot CLI)
 			if (sessionFile.endsWith('.jsonl')) {
@@ -303,6 +442,11 @@ export class SyncService {
 					this.deps.warn(`Backend sync: failed to process request in ${sessionFile}: ${e}`);
 				}
 			}
+		}
+
+		// Log cache performance statistics
+		if (useCachedData) {
+			this.logCachePerformance(cacheHits, cacheMisses);
 		}
 
 		return { rollups, workspaceNamesById, machineNamesById };

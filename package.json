@@ -88,6 +88,11 @@
         "command": "copilot-token-tracker.setSharingProfile",
         "title": "Set Sharing Profile",
         "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.clearAzureSettings",
+        "title": "Clear Azure Settings",
+        "category": "Copilot Token Tracker"
       }
     ],
     "configuration": {

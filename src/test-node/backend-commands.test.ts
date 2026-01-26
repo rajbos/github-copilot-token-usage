@@ -25,6 +25,7 @@ function createMockFacade(overrides: Partial<BackendFacadeInterface> = {}): Back
 		setBackendSharedKey: async () => {},
 		rotateBackendSharedKey: async () => {},
 		clearBackendSharedKey: async () => {},
+		clearAzureSettingsCommand: async () => {},
 		toggleBackendWorkspaceMachineNameSync: async () => {},
 		setSharingProfileCommand: async () => {},
 		...overrides

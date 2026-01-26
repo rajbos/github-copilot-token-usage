@@ -113,5 +113,6 @@ test('BackendFacade computes daily rollups from JSONL and JSON sessions (and ski
 	assert.equal(vscodeEntry.value.outputTokens, 'def'.length);
 
 	assert.ok(warnings.some((w) => w.includes('failed to parse JSON session file')));
-	assert.ok(warnings.some((w) => w.includes('failed to read session file')));
+	// After cache integration, missing files are caught at stat stage
+	assert.ok(warnings.some((w) => w.includes('failed to stat session file') || w.includes('failed to read session file')));
 });

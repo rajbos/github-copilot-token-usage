@@ -100,6 +100,10 @@ export class BackendCommandHandler {
 		return this.handleSetSharingProfile();
 	}
 
+	async clearAzureSettings(): Promise<void> {
+		return this.handleClearAzureSettings();
+	}
+
 	async handleSetSharingProfile(): Promise<void> {
 		try {
 			await this.facade.setSharingProfileCommand();
@@ -301,6 +305,28 @@ export class BackendCommandHandler {
 		} catch (error) {
 			const details = error instanceof Error ? error.message : String(error);
 			showBackendError(ErrorMessages.unable('disable team sharing', `Check settings. Details: ${details}`));
+		}
+	}
+
+	/**
+	 * Handles the "Clear Azure Settings" command.
+	 */
+	async handleClearAzureSettings(): Promise<void> {
+		const conf = ConfirmationMessages.clearKey();
+		const confirmed = await vscode.window.showWarningMessage(
+			'Clear all Azure settings?',
+			{ modal: true, detail: 'This will remove all Azure resource IDs, credentials, and backend configuration. You will need to reconfigure the backend to use it again.' },
+			'Clear Settings'
+		);
+		if (confirmed !== 'Clear Settings') {
+			return;
+		}
+
+		try {
+			await this.facade.clearAzureSettingsCommand();
+		} catch (error) {
+			const details = error instanceof Error ? error.message : String(error);
+			showBackendError(ErrorMessages.unable('clear Azure settings', `Try again. Details: ${details}`));
 		}
 	}
 

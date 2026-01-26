@@ -3,6 +3,18 @@
  */
 
 /**
+ * Session file cache entry (pre-computed session data).
+ * This data is validated at runtime before use to prevent injection attacks.
+ * Validation checks: structure, modelUsage object, numeric bounds on all fields.
+ */
+export interface SessionFileCache {
+	tokens: number;
+	interactions: number;
+	modelUsage: ModelUsage;
+	mtime: number;
+}
+
+/**
  * Model usage statistics (tokens per model).
  */
 export interface ModelUsage {
@@ -128,6 +140,7 @@ export interface BackendFacadeInterface {
 	setBackendSharedKey(): Promise<void>;
 	rotateBackendSharedKey(): Promise<void>;
 	clearBackendSharedKey(): Promise<void>;
+	clearAzureSettingsCommand(): Promise<void>;
 	toggleBackendWorkspaceMachineNameSync(): Promise<void>;
 	setSharingProfileCommand(): Promise<void>;
 }

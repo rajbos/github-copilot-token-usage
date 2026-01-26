@@ -282,7 +282,8 @@ test('BackendConfigPanel routes webview messages to callbacks', async () => {
 		onStayLocal: async () => ({ ...baseState, draft: { ...baseState.draft, enabled: false } }),
 		onTestConnection: async () => ({ ok: true, message: 'ok' }),
 		onUpdateSharedKey: async () => ({ ok: true, message: 'key-set', state: baseState }),
-		onLaunchWizard: async () => baseState
+		onLaunchWizard: async () => baseState,
+		onClearAzureSettings: async () => baseState
 	});
 
 	await panel.show();
@@ -309,7 +310,8 @@ test('config panel HTML marks offline state and disables test button when offlin
 		onStayLocal: async () => state,
 		onTestConnection: async () => ({ ok: true, message: 'ok' }),
 		onUpdateSharedKey: async () => ({ ok: true, message: 'updated', state }),
-		onLaunchWizard: async () => state
+		onLaunchWizard: async () => state,
+		onClearAzureSettings: async () => state
 	});
 
 	const webview = {
@@ -355,7 +357,8 @@ test('config panel HTML toggles shared-key controls, keeps enable-first layout, 
 		onStayLocal: async () => state,
 		onTestConnection: async () => ({ ok: true, message: 'ok' }),
 		onUpdateSharedKey: async () => ({ ok: true, message: 'updated', state }),
-		onLaunchWizard: async () => state
+		onLaunchWizard: async () => state,
+		onClearAzureSettings: async () => state
 	});
 
 	const webview = { cspSource: 'vscode-resource://', asWebviewUri: () => 'toolkit.js' };
