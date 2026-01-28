@@ -207,7 +207,6 @@ export class BackendConfigPanel implements vscode.Disposable {
 			.field small { color: #999; }
 			.field .error { color: #f48771; font-size: 11px; }
 			.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
-			.badge { display: inline-flex; align-items: center; padding: 4px 8px; background: #2b3a4a; border-radius: 12px; font-size: 12px; }
 			.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 			.inline { display: flex; align-items: center; gap: 10px; }
 			.helper { color: #b3b3b3; font-size: 12px; line-height: 1.4; }
@@ -246,9 +245,9 @@ export class BackendConfigPanel implements vscode.Disposable {
 				<div class="card">
 					<h3>Current status</h3>
 					<div class="pill-row">
-						<span class="badge" id="backendStateBadge"></span>
-					<span class="badge" id="privacyBadge"></span>
-						<span class="badge" id="authBadge"></span>
+						<vscode-badge id="backendStateBadge"></vscode-badge>
+					<vscode-badge id="privacyBadge"></vscode-badge>
+						<vscode-badge id="authBadge"></vscode-badge>
 					</div>
 					<div class="status-line" id="overviewSummary"></div>
 					<div class="helper" id="statusMessage"></div>
@@ -425,7 +424,10 @@ export class BackendConfigPanel implements vscode.Disposable {
 			</section>
 		</main>
 	</div>
-	<script type="module" nonce="${nonce}" src="${toolkitUri}"></script>
+	<script type="module" nonce="${nonce}">
+		const { provideVSCodeDesignSystem, vsCodeButton, vsCodeBadge } = await import('${toolkitUri}');
+		provideVSCodeDesignSystem().register(vsCodeButton(), vsCodeBadge());
+	</script>
 		<script nonce="${nonce}">
 		const vscodeApi = acquireVsCodeApi();
 		const initial = ${initialState};
