@@ -4,7 +4,8 @@ import { safeStringifyError } from '../utils/errors';
 import type { BackendAggDailyEntityLike } from './storageTables';
 import type { BackendQueryFilters, BackendSettings } from './settings';
 import { getBackendSettings, isBackendConfigured } from './settings';
-import type { SessionStats, ModelUsage, ChatRequest, SessionFileCache } from './types';
+import type { SessionStats, ModelUsage, ChatRequest, SessionFileCache, DailyRollupValue } from './types';
+import type { DailyRollupKey } from './rollups';
 import { computeBackendSharingPolicy } from './sharingProfile';
 import { CredentialService } from './services/credentialService';
 import { AzureResourceService } from './services/azureResourceService';
@@ -157,32 +158,40 @@ export class BackendFacade {
 		return this.syncService.getSyncQueue();
 	}
 
-	// Cache state exposed for testing
+	// Cache state exposed for testing via QueryService accessors
 	public get backendLastQueryResult(): BackendQueryResultLike | undefined {
 		return this.queryService.getLastQueryResult();
 	}
 
 	public set backendLastQueryResult(value: BackendQueryResultLike | undefined) {
-		(this.queryService as any).backendLastQueryResult = value;
+		this.queryService.setCacheState(value, this.queryService.getCacheKey(), this.queryService.getCacheTimestamp());
 	}
 
 	public get backendLastQueryCacheKey(): string | undefined {
-		return (this.queryService as any).backendLastQueryCacheKey;
+		return this.queryService.getCacheKey();
 	}
 
 	public set backendLastQueryCacheKey(value: string | undefined) {
-		(this.queryService as any).backendLastQueryCacheKey = value;
+		// Query service manages cache key internally; use setCacheState() for full control
+		this.queryService.setCacheState(this.backendLastQueryResult, value, this.queryService.getCacheTimestamp());
 	}
 
 	public get backendLastQueryCacheAt(): number | undefined {
-		return (this.queryService as any).backendLastQueryCacheAt;
+		return this.queryService.getCacheTimestamp();
 	}
 
 	public set backendLastQueryCacheAt(value: number | undefined) {
-		(this.queryService as any).backendLastQueryCacheAt = value;
+		// Query service manages cache timestamp internally; use setCacheState() for full control
+		this.queryService.setCacheState(this.backendLastQueryResult, this.queryService.getCacheKey(), value);
 	}
 
-	public async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string }): Promise<{ rollups: Map<string, { key: any; value: any }>; displayNames?: { workspaces: Map<string, string>; machines: Map<string, string> } }> {
+	/**
+	 * Compute daily rollups from local session files.
+	 * Public wrapper for test access to sync service's private method.
+	 * @param args - Lookback period and optional user ID for filtering
+	 * @returns Map of rollups with workspace/machine display names
+	 */
+	public async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string }): Promise<{ rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>; displayNames?: { workspaces: Map<string, string>; machines: Map<string, string> } }> {
 		// Delegate to syncService which already has the implementation
 		const result = await (this.syncService as any).computeDailyRollupsFromLocalSessions(args);
 		// The syncService returns:

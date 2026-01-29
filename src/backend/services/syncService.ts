@@ -414,7 +414,7 @@ export class SyncService {
 			}
 
 			// JSON (VS Code Copilot Chat)
-			let sessionJson: any;
+			let sessionJson: unknown;
 			try {
 				sessionJson = JSON.parse(content);
 				if (!sessionJson || typeof sessionJson !== 'object') {
@@ -425,31 +425,34 @@ export class SyncService {
 				this.deps.warn(`Backend sync: failed to parse JSON session file ${sessionFile}: ${e}`);
 				continue;
 			}
+			const sessionObj = sessionJson as Record<string, unknown>; // Safe due to check above
 
-			const requests = Array.isArray(sessionJson.requests) ? sessionJson.requests : [];
+			const requests = Array.isArray(sessionObj.requests) ? (sessionObj.requests as unknown[]) : [];
 			for (const request of requests) {
 				try {
+					// Cast to ChatRequest since it comes from validated JSON object
+					const req = request as ChatRequest;
 					const normalizedTs = this.utility.normalizeTimestampToMs(
-						typeof request.timestamp !== 'undefined' ? request.timestamp : sessionJson.lastMessageDate
+						typeof req.timestamp !== 'undefined' ? req.timestamp : (sessionObj.lastMessageDate as unknown)
 					);
 					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
 					if (!eventMs || eventMs < startMs) {
 						continue;
 					}
 					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-					const model = this.deps.getModelFromRequest(request);
+					const model = this.deps.getModelFromRequest(req);
 
 					let inputTokens = 0;
 					let outputTokens = 0;
-					if (request.message && request.message.parts) {
-						for (const part of request.message.parts) {
+					if (req.message && req.message.parts) {
+						for (const part of req.message.parts) {
 							if (part?.text) {
 								inputTokens += this.deps.estimateTokensFromText(part.text, model);
 							}
 						}
 					}
-					if (request.response && Array.isArray(request.response)) {
-						for (const responseItem of request.response) {
+					if (req.response && Array.isArray(req.response)) {
+						for (const responseItem of req.response) {
 							if (typeof responseItem?.value === 'string') {
 								outputTokens += this.deps.estimateTokensFromText(responseItem.value, model);
 							}

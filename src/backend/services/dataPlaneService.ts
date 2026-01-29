@@ -22,14 +22,19 @@ import { AZURE_SDK_QUERY_TIMEOUT_MS } from '../constants';
  * @returns Promise that rejects if timeout is exceeded
  */
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+	let timeoutHandle: NodeJS.Timeout | undefined;
 	return Promise.race([
-		promise,
-		new Promise<never>((_, reject) =>
-			setTimeout(
+		promise.finally(() => {
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+			}
+		}),
+		new Promise<never>((_, reject) => {
+			timeoutHandle = setTimeout(
 				() => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
 				timeoutMs
-			)
-		)
+			);
+		})
 	]);
 }
 

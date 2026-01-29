@@ -5,7 +5,7 @@
 
 import type { BackendQueryFilters, BackendSettings } from '../settings';
 import { QUERY_CACHE_TTL_MS, MAX_UI_LIST_ITEMS, MIN_LOOKBACK_DAYS, MAX_LOOKBACK_DAYS, DEFAULT_LOOKBACK_DAYS } from '../constants';
-import type { ModelUsage, SessionStats } from '../types';
+import type { ModelUsage, SessionStats, StatsForPeriod } from '../types';
 import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
@@ -108,8 +108,16 @@ export class QueryService {
 
 	/**
 	 * Build a cache key for a backend query.
+	 * Validates that required fields are present to ensure cache hits are reliable.
 	 */
 	private buildBackendCacheKey(settings: BackendSettings, filters: BackendQueryFilters, startDayKey: string, endDayKey: string): string {
+		// Validate required fields are non-empty to prevent spurious cache misses
+		if (!settings.storageAccount || !settings.storageAccount.trim()) {
+			throw new Error('Storage account is required to build cache key');
+		}
+		if (!settings.aggTable || !settings.aggTable.trim()) {
+			throw new Error('Aggregate table is required to build cache key');
+		}
 		return JSON.stringify({
 			account: settings.storageAccount,
 			table: settings.aggTable,
@@ -208,7 +216,7 @@ export class QueryService {
 		const co2 = (totalTokens / 1000) * this.deps.co2Per1kTokens;
 		const waterUsage = (totalTokens / 1000) * this.deps.waterUsagePer1kTokens;
 
-		const statsForRange: any = {
+		const statsForRange: StatsForPeriod = {
 			tokens: totalTokens,
 			sessions: totalInteractions, // best-effort: backend store is interaction-focused
 			avgInteractionsPerSession: totalInteractions > 0 ? 1 : 0,
