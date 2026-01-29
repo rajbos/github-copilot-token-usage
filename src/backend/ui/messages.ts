@@ -221,14 +221,6 @@ export const HelpText = {
 		}
 		return 'Uses Storage Account Shared Key. Stored securely in VS Code on this device only.';
 	},
-
-	/**
-	 * Backend overview helper (simplified).
-	 */
-	backendOverview: (): string => {
-		return 'Enable backend to sync token usage to Azure. Choose "Stay Local" to keep all data on this device only.';
-	},
-
 	/**
 	 * Test connection helper.
 	 */

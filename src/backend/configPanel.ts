@@ -236,7 +236,13 @@ export class BackendConfigPanel implements vscode.Disposable {
 		</aside>
 		<main class="main">
 			<section id="overview" class="section active">
-				<p class="helper">Enable backend to sync token usage to Azure. Choose "Stay Local" to keep all data on this device only.</p>
+				<div class="card">
+					<h3>Why use backend sync?</h3>
+					<p class="helper"><strong>Team visibility & insights:</strong> Share Copilot usage across your team to identify patterns, optimize costs, and track adoption. Perfect for managers, platform teams, and anyone managing Copilot licenses.</p>
+					<p class="helper"><strong>Multi-device sync:</strong> Work on multiple machines? Backend keeps your token usage history synced across all devices automatically.</p>
+					<p class="helper"><strong>Long-term tracking:</strong> Local data lives in VS Code session files that can be cleaned up. Backend provides durable, queryable storage for trend analysis and compliance reporting.</p>
+					<p class="helper"><strong>Privacy-first:</strong> Choose your sharing level from Solo (just you) to Team Identified (full analytics). You control what's shared and how you're identified.</p>
+				</div>
 				<div class="card">
 					<h3>Current status</h3>
 					<div class="pill-row">
@@ -251,8 +257,17 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<span id="overviewDataset" style="color: #e5e5e5;"></span>
 				</div>
 				<div class="helper" id="statusMessage" style="margin-top: 12px;"></div>
-				</div>
-			<section id="sharing" class="section">
+			</div>
+			<div class="card">
+				<h3>How it works</h3>
+				<p class="helper"><strong>1. Azure Storage setup:</strong> Your usage data syncs to Azure Table Storage. Daily aggregates (tokens, interactions, model) are stored per workspace/machine/day. You own the data, you control access.</p>
+				<p class="helper"><strong>2. Authentication:</strong> Use Entra ID (role-based, recommended) or Storage Shared Key. Your credentials stay local and secure.</p>
+				<p class="helper"><strong>3. Automatic sync:</strong> Every 5 minutes, the extension calculates token usage from session files and pushes aggregates to Azure. Configurable lookback window (7-90 days).</p>
+				<p class="helper"><strong>4. Query & analyze:</strong> Use Azure Storage Explorer, Power BI, or custom tools to query your Table Storage data.</p>
+				<p class="helper">Need help? <vscode-link id="launchWizardLink" href="#">Launch the guided Azure setup walkthrough</vscode-link> to configure subscription, resource group, storage account, and auth mode step-by-step.</p>
+			</div>
+		</section>
+		<section id="sharing" class="section">
 				<div class="card">
 					<h3>Sharing profile</h3>
 					<div class="field">
@@ -432,8 +447,6 @@ export class BackendConfigPanel implements vscode.Disposable {
 		function setFieldValues(state) {
 			byId('enabledToggle').checked = !!state.draft.enabled;
 			byId('sharingProfile').value = state.draft.sharingProfile;
-			byId('shareNames').checked = !!state.draft.shareWorkspaceMachineNames;
-			byId('includeMachineBreakdown').checked = !!state.draft.includeMachineBreakdown;
 			byId('authMode').value = state.draft.authMode;
 			byId('subscriptionId').value = state.draft.subscriptionId || '';
 			byId('resourceGroup').value = state.draft.resourceGroup || '';
@@ -490,12 +503,15 @@ export class BackendConfigPanel implements vscode.Disposable {
 		}
 
 		function readDraft() {
+			const profile = byId('sharingProfile').value;
+			// Derive shareWorkspaceMachineNames from profile
+			const shareWorkspaceMachineNames = profile === 'soloFull' || profile === 'teamPseudonymous' || profile === 'teamIdentified';
 			return {
 				enabled: byId('enabledToggle').checked,
 				authMode: byId('authMode').value,
-				sharingProfile: byId('sharingProfile').value,
-				shareWorkspaceMachineNames: byId('shareNames').checked,
-				includeMachineBreakdown: byId('includeMachineBreakdown').checked,
+				sharingProfile: profile,
+				shareWorkspaceMachineNames,
+				includeMachineBreakdown: true, // Always enabled
 				datasetId: byId('datasetId').value,
 				lookbackDays: Number(byId('lookbackDays').value),
 				subscriptionId: byId('subscriptionId').value,
@@ -621,8 +637,11 @@ export class BackendConfigPanel implements vscode.Disposable {
 					'teamIdentified': 'Team Identified'
 				};
 				const profileLabel = profileLabels[draft.sharingProfile] || draft.sharingProfile;
-				const nameSync = draft.shareWorkspaceMachineNames ? 'Yes (readable names)' : 'No (hashed IDs)';
-				html += '<div class="change-item"><div class="change-label">Privacy & Sharing</div><div class="change-value">Profile: ' + profileLabel + '<br>Workspace/Machine Names: ' + nameSync + '</div></div>';
+				let nameSync = 'Hashed IDs';
+				if (draft.sharingProfile === 'soloFull' || draft.sharingProfile === 'teamPseudonymous' || draft.sharingProfile === 'teamIdentified') {
+					nameSync = 'Readable names';
+				}
+				html += '<div class="change-item"><div class="change-label">Privacy & Sharing</div><div class="change-value">Profile: ' + profileLabel + '<br>Workspace/Machine Names: ' + nameSync + '<br>Per-machine breakdown: Always enabled</div></div>';
 				
 				if (draft.sharingProfile === 'teamIdentified' && draft.userId) {
 					html += '<div class="change-item"><div class="change-label">User Identity</div><div class="change-value">' + draft.userId + ' (' + (draft.userIdentityMode === 'entraObjectId' ? 'Entra Object ID' : 'Team Alias') + ')</div></div>';
@@ -682,7 +701,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 		function bindActions() {
 			const markDirty = () => vscodeApi.postMessage({ command: 'markDirty' });
-			const trackIds = ['sharingProfile','shareNames','includeMachineBreakdown','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId'];
+			const trackIds = ['sharingProfile','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId'];
 			trackIds.forEach(id => {
 				const el = byId(id);
 				if (!el) return;
@@ -734,4 +753,23 @@ export class BackendConfigPanel implements vscode.Disposable {
 </body>
 </html>`;
 	}
+}
+
+/**
+ * Export renderHtml for testing purposes.
+ * This allows integration tests to verify the HTML structure and JavaScript functionality.
+ */
+export function renderBackendConfigHtml(webview: vscode.Webview, state: BackendConfigPanelState): string {
+	const nonce = crypto.randomBytes(16).toString('base64');
+	const panel = new BackendConfigPanel(vscode.Uri.file('/test'), {
+		getState: async () => state,
+		onSave: async () => ({ state, errors: {} }),
+		onDiscard: async () => state,
+		onStayLocal: async () => state,
+		onTestConnection: async () => ({ ok: true, message: 'Test' }),
+		onUpdateSharedKey: async () => ({ ok: true, message: 'Test' }),
+		onLaunchWizard: async () => state,
+		onClearAzureSettings: async () => state
+	});
+	return (panel as any).renderHtml(webview, state);
 }
