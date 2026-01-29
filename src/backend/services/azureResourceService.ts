@@ -297,22 +297,22 @@ export class AzureResourceService {
 			[
 				{
 					label: 'Solo / Full Fidelity (personal dataset)',
-					description: 'Your private storage with full workspace/machine names',
+					description: 'Your private storage with real workspace and machine names',
 					profile: 'soloFull' as const
 				},
 				{
 					label: 'Team / Anonymized (recommended)',
-					description: 'Hashed IDs only, no user identifier, no names',
+					description: 'Hashed IDs only, no user identifier, no workspace/machine names',
 					profile: 'teamAnonymized' as const
 				},
 				{
 					label: 'Team / Pseudonymous',
-					description: 'Stable user key from Entra, hashed IDs, no names by default',
+					description: 'Derived user key (privacy-preserving hash), hashed IDs, no workspace/machine names by default',
 					profile: 'teamPseudonymous' as const
 				},
 				{
 					label: 'Team / Identified (explicit)',
-					description: 'Explicit identity (alias/Entra OID), hashed IDs, no names by default',
+					description: 'Visible user identity (your alias or Entra ID), hashed IDs, no workspace/machine names by default',
 					profile: 'teamIdentified' as const
 				}
 			],
@@ -510,28 +510,28 @@ export class AzureResourceService {
 			},
 			{
 				label: 'Team / Anonymized',
-				description: 'Recommended for teams. Usage + hashed IDs; no user key, no names.',
+				description: 'Recommended for teams. Usage + hashed IDs; no user key, no workspace/machine names.',
 				detail: 'What leaves: day keys, model IDs, token counts, hashed workspace/machine IDs.',
 				profile: 'teamAnonymized' as const,
 				sharingLevel: 1
 			},
 			{
 				label: 'Team / Pseudonymous',
-				description: 'Usage + stable per-user key (Entra-derived); hashed IDs; no names by default.',
+				description: 'Usage + derived user key (privacy-preserving hash); hashed IDs; no workspace/machine names by default.',
 				detail: 'What leaves: same as Anonymized + a stable user key (reversible only within this dataset).',
 				profile: 'teamPseudonymous' as const,
 				sharingLevel: 2
 			},
 			{
 				label: 'Team / Identified',
-				description: 'Explicit identity (alias/Entra OID); hashed IDs; no names by default.',
+				description: 'Usage + visible user identity (your alias or Entra ID); hashed IDs; no workspace/machine names by default.',
 				detail: 'What leaves: same as Pseudonymous + explicit user identifier (visible to dataset viewers).',
 				profile: 'teamIdentified' as const,
 				sharingLevel: 3
 			},
 			{
 				label: 'Solo / Full Fidelity',
-				description: 'Personal dataset. Raw IDs + names.',
+				description: 'Personal dataset. Raw IDs + real workspace/machine names.',
 				detail: 'What leaves: usage + raw workspace/machine IDs + workspace/machine names.',
 				profile: 'soloFull' as const,
 				sharingLevel: 4

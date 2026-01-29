@@ -235,32 +235,23 @@ export class BackendConfigPanel implements vscode.Disposable {
 			<vscode-button appearance="secondary" class="nav-btn" data-target="review" aria-label="Navigate to Review and Apply section">Review & Apply</vscode-button>
 		</aside>
 		<main class="main">
-			<section id="overview" class="section active">			<p class="helper">Enable backend to sync token usage to Azure. Choose "Stay Local" to keep all data on this device only.</p>				<div class="card">
-					<h3>Why use backend sync?</h3>
-					<p class="helper"><strong>Team visibility & insights:</strong> Share Copilot usage across your team to identify patterns, optimize costs, and track adoption. Perfect for managers, platform teams, and anyone managing Copilot licenses.</p>
-					<p class="helper"><strong>Multi-device sync:</strong> Work on multiple machines? Backend keeps your token usage history synced across all devices automatically.</p>
-					<p class="helper"><strong>Long-term tracking:</strong> Local data lives in VS Code session files that can be cleaned up. Backend provides durable, queryable storage for trend analysis and compliance reporting.</p>
-					<p class="helper"><strong>Privacy-first:</strong> Choose your sharing level from Solo (just you) to Team Identified (full analytics). You control what's shared and how you're identified.</p>
-				</div>
+			<section id="overview" class="section active">
+				<p class="helper">Enable backend to sync token usage to Azure. Choose "Stay Local" to keep all data on this device only.</p>
 				<div class="card">
 					<h3>Current status</h3>
 					<div class="pill-row">
 						<vscode-badge id="backendStateBadge"></vscode-badge>
 					<vscode-badge id="privacyBadge"></vscode-badge>
-						<vscode-badge id="authBadge"></vscode-badge>
-					</div>
-					<div class="status-line" id="overviewSummary"></div>
-					<div class="helper" id="statusMessage"></div>
+					<vscode-badge id="authBadge"></vscode-badge>
 				</div>
-				<div class="card">
-					<h3>How it works</h3>
-					<p class="helper"><strong>1. Azure Storage setup:</strong> Your usage data syncs to Azure Table Storage. Daily aggregates (tokens, interactions, model) are stored per workspace/machine/day. You own the data, you control access.</p>
-					<p class="helper"><strong>2. Authentication:</strong> Use Entra ID (role-based, recommended) or Storage Shared Key. Your credentials stay local and secure.</p>
-					<p class="helper"><strong>3. Automatic sync:</strong> Every 5 minutes, the extension calculates token usage from session files and pushes aggregates to Azure. Configurable lookback window (7-90 days).</p>
-					<p class="helper"><strong>4. Query & analyze:</strong> Use Azure Storage Explorer, Power BI, or custom tools to query your Table Storage data.</p>
-					<p class="helper">Need help? <vscode-link id="launchWizardLink" href="#">Launch the guided Azure setup walkthrough</vscode-link> to configure subscription, resource group, storage account, and auth mode step-by-step.</p>
+				<div id="overviewDetails" style="margin-top: 12px; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; font-size: 12px;">
+					<span style="color: #999;">Profile:</span>
+					<span id="overviewProfile" style="color: #e5e5e5;"></span>
+					<span style="color: #999;">Dataset:</span>
+					<span id="overviewDataset" style="color: #e5e5e5;"></span>
 				</div>
-			</section>
+				<div class="helper" id="statusMessage" style="margin-top: 12px;"></div>
+				</div>
 			<section id="sharing" class="section">
 				<div class="card">
 					<h3>Sharing profile</h3>
@@ -332,14 +323,16 @@ export class BackendConfigPanel implements vscode.Disposable {
 							</div>
 						</details>
 					</div>
-					<div class="field inline">
-						<vscode-checkbox id="shareNames" aria-describedby="shareNames-help">Store readable workspace & machine names</vscode-checkbox>
+					<div id="nameStorageControl" style="margin-top: 16px;">
+						<div class="field inline">
+							<vscode-checkbox id="shareNames" aria-describedby="shareNames-help">Store readable workspace & machine names</vscode-checkbox>
+							<div id="shareNames-help" class="helper" style="margin-left: 24px;">Applies when using Team Pseudonymous or Team Identified. Solo always includes names; Team Anonymized always uses hashed IDs.</div>
+						</div>
 					</div>
-					<div id="shareNames-help" class="helper">Stores names like "frontend-monorepo" instead of hashed IDs. Team members with storage access can see these names.</div>
-					<div class="field inline">
-						<vscode-checkbox id="includeMachineBreakdown" aria-describedby="includeMachineBreakdown-help">Include machine breakdown</vscode-checkbox>
+					<div class="field inline" style="margin-top: 12px;">
+						<vscode-checkbox id="includeMachineBreakdown" aria-describedby="includeMachineBreakdown-help">Include per-machine breakdown</vscode-checkbox>
+						<div id="includeMachineBreakdown-help" class="helper" style="margin-left: 24px;">Separate rows per machine. Disable to merge into workspace totals only.</div>
 					</div>
-					<div id="includeMachineBreakdown-help" class="helper">Includes per-machine usage rows. Disable to merge into workspace totals only.</div>
 				</div>
 				<div class="card" id="identityCard" style="display:none;">
 					<h3>Identity (Team Identified)</h3>
@@ -373,7 +366,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<div class="status-line" id="testResult" role="status" aria-live="polite"></div>
 				</div>
 				<div class="card">
-				<h3>Azure resource IDs</h3>
+				<h3>Azure Settings</h3>
 					<p class="helper">Azure Storage connection details. Use the guided wizard to auto-fill these fields.</p>
 					<div class="grid-2">
 						<div class="field"><label for="subscriptionId">Subscription ID</label><vscode-text-field id="subscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" aria-describedby="subscriptionId-error"></vscode-text-field><div id="subscriptionId-error" class="error" role="alert" data-error-for="subscriptionId"></div></div>
@@ -455,9 +448,18 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('privacyBadge').innerText = 'Privacy: ' + state.privacyBadge;
 			byId('authBadge').innerText = state.authStatus;
 			byId('backendStateBadge').innerText = state.draft.enabled ? 'Backend: Enabled' : 'Backend: Disabled';
-			byId('overviewSummary').textContent = state.draft.enabled
-				? 'Sharing profile: ' + state.draft.sharingProfile + '. Auth: ' + state.authStatus + '. Dataset: ' + (state.draft.datasetId || 'not set') + '.'
-				: 'Backend is off. New data stays local; no Azure writes.';
+			
+			// Update overview details
+			const detailsDiv = byId('overviewDetails');
+			if (state.draft.enabled) {
+				detailsDiv.style.display = 'grid';
+				byId('overviewProfile').textContent = state.draft.sharingProfile;
+				byId('overviewDataset').textContent = state.draft.datasetId || 'not set';
+				byId('statusMessage').textContent = state.message || '';
+			} else {
+				detailsDiv.style.display = 'none';
+				byId('statusMessage').textContent = state.message || 'Backend is off. All data stays local; no Azure writes.';
+			}
 			byId('sharedKeyStatus').textContent = state.draft.authMode === 'sharedKey'
 				? (hasSharedKey() ? 'Shared key stored securely for this storage account.' : 'Shared key not stored yet. Add it to enable connection testing.')
 				: 'Uses your signed-in identity. No secret stored.';
