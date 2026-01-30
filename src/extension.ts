@@ -24,6 +24,8 @@ interface ModelPricing {
 	inputCostPerMillion: number;
 	outputCostPerMillion: number;
 	category?: string;
+	tier?: 'standard' | 'premium' | 'unknown';
+	multiplier?: number;
 }
 
 interface EditorUsage {
@@ -84,6 +86,13 @@ interface SessionUsageAnalysis {
 	modeUsage: ModeUsage;
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
+	modelSwitching: {
+		uniqueModels: string[];
+		modelCount: number;
+		switchCount: number;
+		tiers: { standard: string[]; premium: string[]; unknown: string[] };
+		hasMixedTiers: boolean;
+	};
 }
 
 interface ToolCallUsage {
@@ -113,6 +122,19 @@ interface McpToolUsage {
 	byTool: { [toolName: string]: number };
 }
 
+interface ModelSwitchingAnalysis {
+	modelsPerSession: number[];  // Array of unique model counts per session
+	totalSessions: number;
+	averageModelsPerSession: number;
+	maxModelsPerSession: number;
+	minModelsPerSession: number;
+	switchingFrequency: number;  // % of sessions with >1 model
+	standardModels: string[];    // Unique standard models used
+	premiumModels: string[];     // Unique premium models used
+	unknownModels: string[];     // Unique models with unknown tier
+	mixedTierSessions: number;   // Sessions using both standard and premium
+}
+
 interface UsageAnalysisStats {
 	today: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
@@ -125,6 +147,7 @@ interface UsageAnalysisPeriod {
 	modeUsage: ModeUsage;
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
+	modelSwitching: ModelSwitchingAnalysis;
 }
 
 // Detailed session file information for diagnostics view
@@ -174,6 +197,9 @@ interface SessionLogData {
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
+	// Cache version - increment this when making changes that require cache invalidation
+	private static readonly CACHE_VERSION = 7; // Fix JSONL model extraction for Today data (2026-01-30)
+	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	private logViewerPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
@@ -195,13 +221,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
 	private waterUsagePer1kTokens = 0.3; // liters of water per 1000 tokens, based on data center usage estimates
+	private _modelDebugFileCount = 0; // Counter for debug logging
+	private _cacheHits = 0; // Counter for cache hits during usage analysis
+	private _cacheMisses = 0; // Counter for cache misses during usage analysis
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
 	// Reference: Anthropic Claude Pricing (https://www.anthropic.com/pricing) - Standard rates
 	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
 	// These are reference prices for cost estimation purposes only
-	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing;
+	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
@@ -333,6 +362,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Persistent cache storage methods
 	private loadCacheFromStorage(): void {
 		try {
+			// Check cache version first
+			const storedVersion = this.context.globalState.get<number>('sessionFileCacheVersion');
+			if (storedVersion !== CopilotTokenTracker.CACHE_VERSION) {
+				this.log(`Cache version mismatch (stored: ${storedVersion}, current: ${CopilotTokenTracker.CACHE_VERSION}). Clearing cache.`);
+				this.sessionFileCache = new Map();
+				return;
+			}
+			
 			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
 			if (cacheData) {
 				this.sessionFileCache = new Map(Object.entries(cacheData));
@@ -352,7 +389,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Convert Map to plain object for storage
 			const cacheData = Object.fromEntries(this.sessionFileCache);
 			await this.context.globalState.update('sessionFileCache', cacheData);
-			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage`);
+			await this.context.globalState.update('sessionFileCacheVersion', CopilotTokenTracker.CACHE_VERSION);
+			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage (version ${CopilotTokenTracker.CACHE_VERSION})`);
 		} catch (error) {
 			this.error('Error saving cache to storage:', error);
 		}
@@ -839,6 +877,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+		this.log('🔍 [Usage Analysis] Starting calculation...');
+		this._modelDebugFileCount = 0; // Reset debug counter
+		this._cacheHits = 0; // Reset cache hit counter
+		this._cacheMisses = 0; // Reset cache miss counter
+
 		const emptyPeriod = (): UsageAnalysisPeriod => ({
 			sessions: 0,
 			toolCalls: { total: 0, byTool: {} },
@@ -852,7 +895,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 				terminal: 0,
 				vscode: 0
 			},
-			mcpTools: { total: 0, byServer: {}, byTool: {} }
+			mcpTools: { total: 0, byServer: {}, byTool: {} },
+			modelSwitching: {
+				modelsPerSession: [],
+				totalSessions: 0,
+				averageModelsPerSession: 0,
+				maxModelsPerSession: 0,
+				minModelsPerSession: 0,
+				switchingFrequency: 0,
+				standardModels: [],
+				premiumModels: [],
+				unknownModels: [],
+				mixedTierSessions: 0
+			}
 		});
 
 		const todayStats = emptyPeriod();
@@ -860,8 +915,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			const sessionFiles = await this.getCopilotSessionFiles();
-			this.log(`Processing ${sessionFiles.length} session files for usage analysis`);
+			this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
 
+			let processed = 0;
+			const progressInterval = Math.max(1, Math.floor(sessionFiles.length / 20)); // Log every 5%
+			
 			for (const sessionFile of sessionFiles) {
 				try {
 					const fileStats = fs.statSync(sessionFile);
@@ -876,15 +934,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Add to today stats if modified today
 						if (fileStats.mtime >= todayStart) {
 							todayStats.sessions++;
+							// Debug: log today session model data
+							const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
+							const modelCount = analysis.modelSwitching?.modelCount || 0;
+							if (todayStats.sessions <= 10) {
+								this.log(`[DEBUG Today] Session #${todayStats.sessions}: ${fileName}, modelCount=${modelCount}, models=[${analysis.modelSwitching?.uniqueModels?.join(', ') || 'none'}]`);
+							}
 							this.mergeUsageAnalysis(todayStats, analysis);
 						}
 					}
+					
+					processed++;
+					if (processed % progressInterval === 0) {
+						this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed/sessionFiles.length*100)}%)`);
+					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+					processed++;
 				}
 			}
 		} catch (error) {
 			this.error('Error calculating usage analysis stats:', error);
+		}
+
+		// Log cache statistics
+		this.log(`🔍 [Usage Analysis] Cache stats: ${this._cacheHits} hits, ${this._cacheMisses} misses`);
+
+		// Log model switching statistics for debugging (always log Today to debug the issue)
+		this.logModelSwitchingStats('Today', todayStats.modelSwitching);
+		if (monthStats.modelSwitching.totalSessions > 0) {
+			this.logModelSwitchingStats('This Month', monthStats.modelSwitching);
 		}
 
 		return {
@@ -926,14 +1005,73 @@ class CopilotTokenTracker implements vscode.Disposable {
 		for (const [tool, count] of Object.entries(analysis.mcpTools.byTool)) {
 			period.mcpTools.byTool[tool] = (period.mcpTools.byTool[tool] || 0) + count;
 		}
+
+		// Merge model switching data
+		// Ensure modelSwitching exists (backward compatibility with old cache)
+		if (!analysis.modelSwitching) {
+			analysis.modelSwitching = {
+				uniqueModels: [],
+				modelCount: 0,
+				switchCount: 0,
+				tiers: { standard: [], premium: [], unknown: [] },
+				hasMixedTiers: false
+			};
+		}
+		
+		period.modelSwitching.totalSessions++;
+		period.modelSwitching.modelsPerSession.push(analysis.modelSwitching.modelCount);
+		
+		// Track unique models by tier
+		for (const model of analysis.modelSwitching.tiers.standard) {
+			if (!period.modelSwitching.standardModels.includes(model)) {
+				period.modelSwitching.standardModels.push(model);
+			}
+		}
+		for (const model of analysis.modelSwitching.tiers.premium) {
+			if (!period.modelSwitching.premiumModels.includes(model)) {
+				period.modelSwitching.premiumModels.push(model);
+			}
+		}
+		for (const model of analysis.modelSwitching.tiers.unknown) {
+			if (!period.modelSwitching.unknownModels.includes(model)) {
+				period.modelSwitching.unknownModels.push(model);
+			}
+		}
+		
+		// Count sessions with mixed tiers
+		if (analysis.modelSwitching.hasMixedTiers) {
+			period.modelSwitching.mixedTierSessions++;
+		}
+		
+		// Calculate aggregate statistics
+		if (period.modelSwitching.modelsPerSession.length > 0) {
+			const counts = period.modelSwitching.modelsPerSession;
+			period.modelSwitching.averageModelsPerSession = counts.reduce((a, b) => a + b, 0) / counts.length;
+			period.modelSwitching.maxModelsPerSession = Math.max(...counts);
+			period.modelSwitching.minModelsPerSession = Math.min(...counts);
+			period.modelSwitching.switchingFrequency = (counts.filter(c => c > 1).length / counts.length) * 100;
+		}
+	}
+
+	private logModelSwitchingStats(label: string, stats: ModelSwitchingAnalysis): void {
+		this.log(`[${label}] Model Switching Summary:`);
+		this.log(`  - Total Sessions: ${stats.totalSessions}`);
+		this.log(`  - Avg Models/Session: ${stats.averageModelsPerSession.toFixed(2)}`);
+		this.log(`  - Max Models: ${stats.maxModelsPerSession}`);
+		this.log(`  - Switching Freq: ${stats.switchingFrequency.toFixed(1)}%`);
+		this.log(`  - Standard Models (${stats.standardModels.length}): ${stats.standardModels.join(', ') || 'none'}`);
+		this.log(`  - Premium Models (${stats.premiumModels.length}): ${stats.premiumModels.join(', ') || 'none'}`);
+		this.log(`  - Unknown Models (${stats.unknownModels.length}): ${stats.unknownModels.join(', ') || 'none'}`);
+		this.log(`  - Mixed Tier Sessions: ${stats.mixedTierSessions}`);
 	}
 
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
-			if (sessionFile.endsWith('.jsonl')) {
+			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
 				let interactions = 0;
 				for (const line of lines) {
@@ -977,12 +1115,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async getModelUsageFromSession(sessionFile: string): Promise<ModelUsage> {
 		const modelUsage: ModelUsage = {};
+		const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
+		
+		// Debug: log every file processed (only log first 5 files to avoid noise)
+		if (!this._modelDebugFileCount) { this._modelDebugFileCount = 0; }
+		this._modelDebugFileCount++;
+		const shouldLogDebug = this._modelDebugFileCount <= 5;
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
-			if (sessionFile.endsWith('.jsonl')) {
+			// Detect JSONL content: either by extension or by content analysis
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			
+			if (shouldLogDebug) {
+				this.log(`[DEBUG Model] Processing file ${this._modelDebugFileCount}: ${fileName}, isJsonl: ${isJsonlContent}, size: ${fileContent.length} bytes`);
+			}
+			
+			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
+			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
 				// Default model for CLI sessions - they may not specify the model per event
 				let defaultModel = 'gpt-4o';
@@ -992,14 +1143,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 					try {
 						const event = JSON.parse(line);
 						
-						// Handle VS Code incremental format - extract model from session header
-						if (event.kind === 0 && event.v?.inputState?.selectedModel?.metadata?.id) {
-							defaultModel = event.v.inputState.selectedModel.metadata.id;
+						// Handle VS Code incremental format - extract model from session header (kind: 0)
+						// The schema has v.selectedModel.identifier or v.selectedModel.metadata.id
+						if (event.kind === 0) {
+							const modelId = event.v?.selectedModel?.identifier || 
+								event.v?.selectedModel?.metadata?.id ||
+								event.v?.inputState?.selectedModel?.metadata?.id; // Legacy fallback
+							if (modelId) {
+								defaultModel = modelId.replace(/^copilot\//, '');
+							}
 						}
 						
-						// Handle model changes (kind: 1 with selectedModel update)
-						if (event.kind === 1 && event.k?.includes('selectedModel') && event.v?.metadata?.id) {
-							defaultModel = event.v.metadata.id;
+						// Handle model changes (kind: 2 with selectedModel update, NOT kind: 1 which is delete)
+						if (event.kind === 2 && event.k?.[0] === 'selectedModel') {
+							const modelId = event.v?.identifier || event.v?.metadata?.id;
+							if (modelId) {
+								defaultModel = modelId.replace(/^copilot\//, '');
+							}
 						}
 						
 						const model = event.model || defaultModel;
@@ -1021,8 +1181,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Handle VS Code incremental format (kind: 2 with requests)
 						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
 							for (const request of event.v) {
+								// Extract request-level modelId if available
+								let requestModel = model;
+								if (request.modelId) {
+									requestModel = request.modelId.replace(/^copilot\//, '');
+								} else if (request.result?.metadata?.modelId) {
+									requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
+								} else if (request.result?.details) {
+									// Parse model from details string like "Claude Opus 4.5 • 3x"
+									requestModel = this.getModelFromRequest(request);
+								}
+								
+								if (!modelUsage[requestModel]) {
+									modelUsage[requestModel] = { inputTokens: 0, outputTokens: 0 };
+								}
+								
 								if (request.message?.text) {
-									modelUsage[model].inputTokens += this.estimateTokensFromText(request.message.text, model);
+									modelUsage[requestModel].inputTokens += this.estimateTokensFromText(request.message.text, requestModel);
+								}
+								// Also process message.parts if available
+								if (request.message?.parts && Array.isArray(request.message.parts)) {
+									for (const part of request.message.parts) {
+										if (part.text && part.text !== request.message?.text) {
+											modelUsage[requestModel].inputTokens += this.estimateTokensFromText(part.text, requestModel);
+										}
+									}
+								}
+								// Process response items if present in the request
+								if (request.response && Array.isArray(request.response)) {
+									for (const responseItem of request.response) {
+										if (responseItem.value) {
+											modelUsage[requestModel].outputTokens += this.estimateTokensFromText(responseItem.value, requestModel);
+										}
+									}
 								}
 							}
 						}
@@ -1041,13 +1232,34 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Skip malformed lines
 					}
 				}
+				// Debug: log JSONL model extraction results
+				if (shouldLogDebug) {
+					const models = Object.keys(modelUsage);
+					this.log(`[DEBUG Model] JSONL file ${fileName}: found ${models.length} models: ${models.join(', ') || 'none'}, defaultModel=${defaultModel}`);
+				}
 				return modelUsage;
 			}
 			
 			// Handle regular .json files
 			const sessionContent = JSON.parse(fileContent);
+			
+			// Debug: log JSON structure for first few files
+			if (shouldLogDebug) {
+				const hasRequests = Array.isArray(sessionContent.requests);
+				const requestCount = hasRequests ? sessionContent.requests.length : 0;
+				const topLevelKeys = Object.keys(sessionContent).slice(0, 5).join(', ');
+				this.log(`[DEBUG Model] JSON file ${fileName}: hasRequests=${hasRequests}, requestCount=${requestCount}, keys=[${topLevelKeys}]`);
+			}
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				// Debug: log first request to understand structure
+				if (sessionContent.requests.length > 0 && shouldLogDebug) {
+					const firstReq = sessionContent.requests[0];
+					const model = this.getModelFromRequest(firstReq);
+					const reqKeys = Object.keys(firstReq).slice(0, 5).join(', ');
+					this.log(`[DEBUG Model] First request keys: [${reqKeys}], modelId=${firstReq.modelId}, result.metadata.modelId=${firstReq.result?.metadata?.modelId}, detected=${model}`);
+				}
+				
 				for (const request of sessionContent.requests) {
 					// Get model for this request
 					const model = this.getModelFromRequest(request);
@@ -1101,14 +1313,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 				terminal: 0,
 				vscode: 0
 			},
-			mcpTools: { total: 0, byServer: {}, byTool: {} }
+			mcpTools: { total: 0, byServer: {}, byTool: {} },
+			modelSwitching: {
+				uniqueModels: [],
+				modelCount: 0,
+				switchCount: 0,
+				tiers: { standard: [], premium: [], unknown: [] },
+				hasMixedTiers: false
+			}
 		};
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
-			if (sessionFile.endsWith('.jsonl')) {
+			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
 				let sessionMode = 'ask'; // Default mode
 				
@@ -1199,6 +1419,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Skip malformed lines
 					}
 				}
+				// Calculate model switching for JSONL files before returning
+				await this.calculateModelSwitching(sessionFile, analysis);
 				return analysis;
 			}
 			
@@ -1320,7 +1542,81 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
 		}
 
+		// Calculate model switching statistics from session
+		await this.calculateModelSwitching(sessionFile, analysis);
+
 		return analysis;
+	}
+
+	/**
+	 * Calculate model switching statistics for a session file.
+	 * This method updates the analysis.modelSwitching field in place.
+	 */
+	private async calculateModelSwitching(sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
+		try {
+			// Use non-cached method to avoid circular dependency
+			// (getSessionFileDataCached -> analyzeSessionUsage -> getModelUsageFromSessionCached -> getSessionFileDataCached)
+			const modelUsage = await this.getModelUsageFromSession(sessionFile);
+			const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
+			
+			// Debug: log model extraction results for first few files (regardless of success)
+			const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
+			if (this._modelDebugFileCount <= 10) {
+				this.log(`[DEBUG analyzeSession] File #${this._modelDebugFileCount}: ${fileName}, models found: ${modelCount}${modelCount > 0 ? ` (${Object.keys(modelUsage).join(', ')})` : ''}`);
+			}
+			
+			// Skip if modelUsage is undefined or empty (not a valid session file)
+			if (!modelUsage || modelCount === 0) {
+				return;
+			}
+			
+			// Get unique models from this session
+			const uniqueModels = Object.keys(modelUsage);
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			
+			// Classify models by tier
+			const standardModels: string[] = [];
+			const premiumModels: string[] = [];
+			const unknownModels: string[] = [];
+			
+			for (const model of uniqueModels) {
+				const tier = this.getModelTier(model);
+				if (tier === 'standard') {
+					standardModels.push(model);
+				} else if (tier === 'premium') {
+					premiumModels.push(model);
+				} else {
+					unknownModels.push(model);
+				}
+			}
+			
+			analysis.modelSwitching.tiers = { standard: standardModels, premium: premiumModels, unknown: unknownModels };
+			analysis.modelSwitching.hasMixedTiers = standardModels.length > 0 && premiumModels.length > 0;
+			
+			// Count model switches by examining request sequence (for JSON files only - not JSONL)
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (!isJsonlContent) {
+				const sessionContent = JSON.parse(fileContent);
+				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+					let previousModel: string | null = null;
+					let switchCount = 0;
+					
+					for (const request of sessionContent.requests) {
+						const currentModel = this.getModelFromRequest(request);
+						if (previousModel && currentModel !== previousModel) {
+							switchCount++;
+						}
+						previousModel = currentModel;
+					}
+					
+					analysis.modelSwitching.switchCount = switchCount;
+				}
+			}
+		} catch (error) {
+			this.warn(`Error calculating model switching for ${sessionFile}: ${error}`);
+		}
 	}
 
 	/**
@@ -1375,9 +1671,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Check if we have valid cached data
 		const cached = this.getCachedSessionData(sessionFilePath);
 		if (cached && cached.mtime === mtime) {
+			this._cacheHits++;
 			return cached;
 		}
 
+		this._cacheMisses++;
 		// Cache miss - read and process the file once to get all data
 		const tokens = await this.estimateTokensFromSession(sessionFilePath);
 		const interactions = await this.countInteractionsInSession(sessionFilePath);
@@ -1413,7 +1711,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async getUsageAnalysisFromSessionCached(sessionFile: string, mtime: number): Promise<SessionUsageAnalysis> {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime);
-		return sessionData.usageAnalysis || {
+		const analysis = sessionData.usageAnalysis || {
 			toolCalls: { total: 0, byTool: {} },
 			modeUsage: { ask: 0, edit: 0, agent: 0 },
 			contextReferences: {
@@ -1425,8 +1723,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 				terminal: 0,
 				vscode: 0
 			},
-			mcpTools: { total: 0, byServer: {}, byTool: {} }
+			mcpTools: { total: 0, byServer: {}, byTool: {} },
+			modelSwitching: {
+				uniqueModels: [],
+				modelCount: 0,
+				switchCount: 0,
+				tiers: { standard: [], premium: [], unknown: [] },
+				hasMixedTiers: false
+			}
 		};
+		
+		// Ensure modelSwitching field exists for backward compatibility with old cache
+		if (!analysis.modelSwitching) {
+			analysis.modelSwitching = {
+				uniqueModels: [],
+				modelCount: 0,
+				switchCount: 0,
+				tiers: { standard: [], premium: [], unknown: [] },
+				hasMixedTiers: false
+			};
+		}
+		
+		return analysis;
 	}
 
 	/**
@@ -1468,8 +1786,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// Handle .jsonl files (Copilot CLI format and VS Code incremental format)
-			if (sessionFile.endsWith('.jsonl')) {
+			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
 				const timestamps: number[] = [];
 				
@@ -2167,6 +2486,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (entry.isDirectory()) {
 					this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
 				} else if (entry.name.endsWith('.json') || entry.name.endsWith('.jsonl')) {
+					// Skip known non-session files (embeddings, indexes, etc.)
+					if (this.isNonSessionFile(entry.name)) {
+						continue;
+					}
 					// Only add files that look like session files (have reasonable content)
 					try {
 						const stats = fs.statSync(fullPath);
@@ -2183,12 +2506,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Check if a filename is a known non-session file that should be excluded
+	 */
+	private isNonSessionFile(filename: string): boolean {
+		const nonSessionFilePatterns = [
+			'embeddings', // commandEmbeddings.json, settingEmbeddings.json
+			'index',      // index files
+			'cache',      // cache files
+			'preferences',
+			'settings',
+			'config'
+		];
+		const lowerFilename = filename.toLowerCase();
+		return nonSessionFilePatterns.some(pattern => lowerFilename.includes(pattern));
+	}
+
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 			
-			// Handle .jsonl files (each line is a separate JSON object)
-			if (sessionFilePath.endsWith('.jsonl')) {
+			// Handle .jsonl files OR .json files with JSONL content (each line is a separate JSON object)
+			const isJsonlContent = sessionFilePath.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
 				return this.estimateTokensFromJsonlSession(fileContent);
 			}
 			
@@ -2279,10 +2619,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private getModelFromRequest(request: any): string {
-		// Try to determine model from request metadata
-		if (request.result && request.result.metadata && request.result.metadata.modelId) {
-			return request.result.metadata.modelId;
+		// Try to determine model from request metadata (most reliable source)
+		// First check the top-level modelId field (VS Code format)
+		if (request.modelId) {
+			// Remove "copilot/" prefix if present
+			return request.modelId.replace(/^copilot\//, '');
 		}
+		
+		if (request.result && request.result.metadata && request.result.metadata.modelId) {
+			return request.result.metadata.modelId.replace(/^copilot\//, '');
+		}
+		
 		if (request.result && request.result.details) {
 			if (request.result.details.includes('Claude Sonnet 3.5')) { return 'claude-sonnet-3.5'; }
 			if (request.result.details.includes('Claude Sonnet 3.7')) { return 'claude-sonnet-3.7'; }
@@ -2300,6 +2647,59 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (request.result.details.includes('o4-mini')) { return 'o4-mini'; }
 		}
 		return 'gpt-4'; // default
+	}
+
+	/**
+	 * Detect if file content is JSONL format (multiple JSON objects, one per line)
+	 * This handles cases where .json files actually contain JSONL content
+	 */
+	private isJsonlContent(content: string): boolean {
+		const trimmed = content.trim();
+		// JSONL typically has multiple lines, each starting with { and ending with }
+		if (!trimmed.includes('\n')) {
+			return false; // Single line - not JSONL
+		}
+		const lines = trimmed.split('\n').filter(l => l.trim());
+		if (lines.length < 2) {
+			return false; // Need multiple lines for JSONL
+		}
+		// Check if first two non-empty lines look like separate JSON objects
+		const firstLine = lines[0].trim();
+		const secondLine = lines[1].trim();
+		return firstLine.startsWith('{') && firstLine.endsWith('}') &&
+		       secondLine.startsWith('{') && secondLine.endsWith('}');
+	}
+
+	private getModelTier(modelId: string): 'standard' | 'premium' | 'unknown' {
+		// Determine tier based on multiplier: 0 = standard, >0 = premium
+		// Look up from modelPricing.json
+		const pricingInfo = this.modelPricing[modelId];
+		if (pricingInfo && typeof pricingInfo.multiplier === 'number') {
+			return pricingInfo.multiplier === 0 ? 'standard' : 'premium';
+		}
+		
+		// Fallback: try to match partial model names
+		for (const [key, value] of Object.entries(this.modelPricing)) {
+			if (modelId.includes(key) || key.includes(modelId)) {
+				if (typeof value.multiplier === 'number') {
+					return value.multiplier === 0 ? 'standard' : 'premium';
+				}
+			}
+		}
+		
+		return 'unknown';
+	}
+
+	private extractModelTierFromTooltip(tooltip: string): 'standard' | 'premium' | 'unknown' {
+		// Standard models have text like "does not count towards your premium request limit"
+		if (tooltip && tooltip.toLowerCase().includes('does not count towards your premium request limit')) {
+			return 'standard';
+		}
+		// Premium models may have multiplier text like "3x" or "counted at a"
+		if (tooltip && (tooltip.includes('•') || tooltip.toLowerCase().includes('counted at'))) {
+			return 'premium';
+		}
+		return 'unknown';
 	}
 
 	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
@@ -2439,15 +2839,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 	public async showUsageAnalysis(): Promise<void> {
 		this.log('📊 Opening Usage Analysis dashboard');
 		
-		// If panel already exists, just reveal it
+		// If panel already exists, dispose it and recreate with fresh data
 		if (this.analysisPanel) {
-			this.analysisPanel.reveal();
-			this.log('📊 Usage Analysis dashboard revealed (already exists)');
-			return;
+			this.log('📊 Closing existing panel to refresh data...');
+			this.analysisPanel.dispose();
+			this.analysisPanel = undefined;
 		}
 
 		// Get usage analysis stats
 		const analysisStats = await this.calculateUsageAnalysisStats();
+		
+		// Log the data being sent to webview for debugging
+		this.log('[DEBUG] Usage Analysis Data:');
+		this.log(JSON.stringify({
+			today: {
+				sessions: analysisStats.today.sessions,
+				modelSwitching: analysisStats.today.modelSwitching
+			},
+			month: {
+				sessions: analysisStats.month.sessions,
+				modelSwitching: analysisStats.month.modelSwitching
+			}
+		}, null, 2));
 
 		// Create webview panel
 		this.analysisPanel = vscode.window.createWebviewPanel(
