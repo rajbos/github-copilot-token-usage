@@ -103,6 +103,13 @@ function formatFileSize(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function sanitizeNumber(value: number | undefined | null): string {
+	if (value === undefined || value === null) {
+		return '0';
+	}
+	return value.toString();
+}
+
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
 	return refs.file + refs.selection + refs.symbol + refs.codebase +
 		refs.workspace + refs.terminal + refs.vscode;

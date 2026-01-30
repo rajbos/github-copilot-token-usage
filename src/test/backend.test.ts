@@ -1,8 +1,6 @@
 import * as assert from 'assert';
 
-import {
-	shouldPromptToSetSharedKey
-} from '../extension';
+import { shouldPromptToSetSharedKey } from '../backend/settings';
 
 import { buildBackendConfigClipboardPayload } from '../backend/copyConfig';
 import { isBackendConfigured } from '../backend/settings';

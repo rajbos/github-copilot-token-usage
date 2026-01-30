@@ -1,0 +1,81 @@
+name: Validate Skills
+
+on:
+  push:
+    paths:
+      - "*"
+      - ".github/skills/**"
+      - ".github/workflows/validate-skills.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/skills/**"
+      - ".github/workflows/validate-skills.yml"
+
+concurrency:
+  group: validate-skills-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft != true && github.actor != 'dependabot[bot]'
+    outputs:
+      skills: ${{ steps.changed-skills.outputs.skills }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Get changed skills
+        id: changed-skills
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+            HEAD=${{ github.event.pull_request.head.sha }}
+          else
+            BASE=${{ github.event.before }}
+            HEAD=${{ github.event.after }}
+          fi
+
+          # Find changed files in .github/skills and extract skill directories
+          SKILLS=$(git diff --name-only $BASE $HEAD | \
+            grep '^\.github/skills/' | \
+            grep -v '^\.github/skills/README\.md$' | \
+            cut -d'/' -f1-3 | \
+            sort -u | \
+            jq -R -s -c 'split("\n") | map(select(length > 0))')
+
+          echo "skills=$SKILLS" >> $GITHUB_OUTPUT
+          echo "Changed skills: $SKILLS"
+
+  validate:
+    needs: detect-changes
+    #if: needs.detect-changes.outputs.skills != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: ${{ fromJson(needs.detect-changes.outputs.skills) }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate ${{ matrix.skill }}
+        uses: Flash-Brew-Digital/validate-skill@39c9da973b7ce3fd4d9632672a0c355bdd733d89  # v1.0.0
+        with:
+          path: ${{ matrix.skill }}

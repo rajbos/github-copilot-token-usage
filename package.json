@@ -2,7 +2,7 @@
   "name": "copilot-token-tracker",
   "displayName": "Copilot Token Tracker",
   "description": "Shows daily and monthly (estimated) GitHub Copilot token usage stats in VS Code status bar",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "publisher": "RobBos",
   "engines": {
     "vscode": "^1.108.0"
@@ -92,6 +92,11 @@
       {
         "command": "copilot-token-tracker.clearAzureSettings",
         "title": "Clear Azure Settings",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.clearCache",
+        "title": "Clear Cache",
         "category": "Copilot Token Tracker"
       }
     ],
@@ -238,7 +243,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "25.x",
     "@types/vscode": "^1.108.1",
-    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.42.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
@@ -249,8 +254,15 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@azure/arm-resources": "^7.0.0",
+    "@azure/arm-storage": "^19.1.0",
+    "@azure/arm-subscriptions": "^5.1.1",
+    "@azure/data-tables": "^13.3.2",
+    "@azure/identity": "^4.13.0",
+    "@azure/storage-blob": "^12.30.0",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "chart.js": "^4.4.1",
+    "html-escape": "^2.0.0",
     "jsdom": "^27.4.0"
   }
 }

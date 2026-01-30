@@ -432,52 +432,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (extensionsExistButInactive) {
 			// Use shorter delay for testing in Codespaces
 			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
-			this.log(`Copilot extensions found but not active yet - delaying initial update by ${delaySeconds} seconds to allow extensions to load`);
-			this.log(`Setting timeout for ${new Date(Date.now() + (delaySeconds * 1000)).toLocaleTimeString()}`);
+			this.log(`⏳ Waiting for Copilot Extension to start (${delaySeconds}s delay)`);
 
 			this.initialDelayTimeout = setTimeout(() => {
 				try {
-					this.log('🚀 Delayed initial update starting now...');
+					this.log('🚀 Starting token usage analysis...');
 					this.recheckCopilotExtensionsAfterDelay();
 					this.updateTokenStats();
 				} catch (error) {
 					this.error('Error in delayed initial update:', error);
 				}
 			}, delaySeconds * 1000);
-
-			this.log(`Timeout ID: ${this.initialDelayTimeout} set successfully`);
-
-			// Add a heartbeat to prove the timeout mechanism is working
-			setTimeout(() => {
-				this.log('💓 Heartbeat: 2 seconds elapsed, timeout still pending...');
-			}, 2 * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
-			this.log('No Copilot extensions found - starting immediate update');
+			this.log('⚠️ No Copilot extensions found - starting analysis anyway');
 			setTimeout(() => this.updateTokenStats(), 100);
 		} else {
-			this.log('Copilot extensions are active - starting immediate update');
+			this.log('✅ Copilot extensions are active - starting token analysis');
 			setTimeout(() => this.updateTokenStats(), 100);
 		}
 	}
 
 	private recheckCopilotExtensionsAfterDelay(): void {
-		this.log('Re-checking Copilot extensions after delay...');
-
 		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
 		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
 
-		if (copilotExtension) {
-			this.log(`GitHub Copilot extension: ${copilotExtension.isActive ? 'NOW ACTIVE' : 'STILL INACTIVE'}`);
-		}
+		const copilotActive = copilotExtension?.isActive;
+		const chatActive = copilotChatExtension?.isActive;
 
-		if (copilotChatExtension) {
-			this.log(`GitHub Copilot Chat extension: ${copilotChatExtension.isActive ? 'NOW ACTIVE' : 'STILL INACTIVE'}`);
-		}
-
-		// If still not active, provide guidance
-		if ((copilotExtension && !copilotExtension.isActive) || (copilotChatExtension && !copilotChatExtension.isActive)) {
-			this.warn('Some Copilot extensions are still not active after 60-second delay');
-			this.log('This may be normal in Codespaces - extensions might need manual activation or authentication');
+		if (copilotActive && chatActive) {
+			this.log('✅ Copilot extensions are now active');
+		} else {
+			this.warn('⚠️ Some Copilot extensions still inactive after delay');
 		}
 	}
 
@@ -491,28 +476,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.month.tokens.toLocaleString()}`;
 
-			// Create detailed tooltip with markdown support
+			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
-			tooltip.appendMarkdown('## 🤖 GitHub Copilot Token Usage\n\n');
-			tooltip.appendMarkdown('### 📅 Today\n');
-			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.today.tokens.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.today.estimatedCost.toFixed(4)}\n\n`);
-			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.today.co2.toFixed(2)}g\n\n`);
-			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.today.waterUsage.toFixed(3)}L\n\n`);
-			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.today.sessions}\n\n`);
-			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.today.avgInteractionsPerSession}\n\n`);
-			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.today.avgTokensPerSession.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown('### 📊 This Month\n');
-			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.month.tokens.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.month.estimatedCost.toFixed(4)}\n\n`);
-			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.month.co2.toFixed(2)}g\n\n`);
-			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.month.waterUsage.toFixed(3)}L\n\n`);
-			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.month.sessions}\n\n`);
-			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.month.avgInteractionsPerSession}\n\n`);
-			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.month.avgTokensPerSession.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown('---\n\n');
-			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios*\n\n');
-			tooltip.appendMarkdown('*Updates automatically every 5 minutes*');
+			tooltip.isTrusted = false;
+			// Title
+			tooltip.appendMarkdown('#### 🤖 GitHub Copilot Token Usage');
+			tooltip.appendMarkdown('\n---\n');
+			// Table layout for Today
+			tooltip.appendMarkdown(`📅 Today  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :     | ${detailedStats.today.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.today.avgTokensPerSession.toLocaleString()} |\n`);
+
+			tooltip.appendMarkdown('\n---\n');
+
+			// Table layout for This Month
+			tooltip.appendMarkdown(`📊 This month  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.month.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.month.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.month.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.month.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.month.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :      | ${detailedStats.month.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.month.avgTokensPerSession.toLocaleString()} |\n`);
+			// Footer
+			tooltip.appendMarkdown('\n---\n');
+			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
+			tooltip.appendMarkdown('*Updates automatically every 5 minutes.*');
 
 			this.statusBarItem.tooltip = tooltip;
 
@@ -597,14 +593,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.clearExpiredCache();
 			
 			const sessionFiles = await this.getCopilotSessionFiles();
-			this.log(`Processing ${sessionFiles.length} session files for detailed stats`);
+			this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
 
 			if (sessionFiles.length === 0) {
-				this.warn('No session files found - this might indicate an issue in GitHub Codespaces or different VS Code configuration');
+				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
 			}
 
 			let cacheHits = 0;
 			let cacheMisses = 0;
+			let skippedFiles = 0;
 
 			for (let i = 0; i < sessionFiles.length; i++) {
 				const sessionFile = sessionFiles[i];
@@ -631,8 +628,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 						} else {
 							cacheMisses++;
 						}
-
-						this.log(`Session ${path.basename(sessionFile)}: ${tokens} tokens, ${interactions} interactions, editor: ${editorType}`);
 
 						monthStats.tokens += tokens;
 						monthStats.sessions += 1;
@@ -676,12 +671,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+					else {
+						// File is too old, skip it
+						skippedFiles++;
+					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
 				}
 			}
 
-			this.log(`Cache performance - Hits: ${cacheHits}, Misses: ${cacheMisses}, Hit Rate: ${sessionFiles.length > 0 ? ((cacheHits / sessionFiles.length) * 100).toFixed(1) : 0}%`);
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
+			if (skippedFiles > 0) {
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+			}
+			const totalCacheAccesses = cacheHits + cacheMisses;
+			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
 		} catch (error) {
 			this.error('Error calculating detailed stats:', error);
 		}
@@ -723,9 +727,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastUpdated: now
 		};
 
-		this.log(`Today: ${todayStats.interactions} total interactions / ${todayStats.sessions} sessions = ${result.today.avgInteractionsPerSession} avg`);
-		this.log(`Month: ${monthStats.interactions} total interactions / ${monthStats.sessions} sessions = ${result.month.avgInteractionsPerSession} avg`);
-
 		return result;
 	}
 
@@ -742,7 +743,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		try {
 			const sessionFiles = await this.getCopilotSessionFiles();
-			this.log(`Processing ${sessionFiles.length} session files for daily chart stats`);
+			this.log(`📈 Preparing chart data from ${sessionFiles.length} session file(s)...`);
 			
 			for (const sessionFile of sessionFiles) {
 				try {
@@ -1992,60 +1993,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private checkCopilotExtension(): void {
-		this.log('Checking GitHub Copilot extension status');
-
 		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
 		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
 
-		this.log(`GitHub Copilot extension: ${copilotExtension ? 'FOUND' : 'NOT FOUND'}`);
-		if (copilotExtension) {
-			this.log(`  - Active: ${copilotExtension.isActive}`);
-			this.log(`  - Version: ${copilotExtension.packageJSON.version}`);
-			if (!copilotExtension.isActive) {
-				this.log(`  - Status: Extension found but not yet activated (likely still loading)`);
-			}
-		}
-
-		this.log(`GitHub Copilot Chat extension: ${copilotChatExtension ? 'FOUND' : 'NOT FOUND'}`);
-		if (copilotChatExtension) {
-			this.log(`  - Active: ${copilotChatExtension.isActive}`);
-			this.log(`  - Version: ${copilotChatExtension.packageJSON.version}`);
-			if (!copilotChatExtension.isActive) {
-				this.log(`  - Status: Extension found but not yet activated (likely still loading)`);
-			}
+		if (!copilotExtension && !copilotChatExtension) {
+			this.log('⚠️ GitHub Copilot extensions not found');
+		} else {
+			const copilotStatus = copilotExtension ? (copilotExtension.isActive ? '✅ Active' : '⏳ Loading') : '❌ Not found';
+			const chatStatus = copilotChatExtension ? (copilotChatExtension.isActive ? '✅ Active' : '⏳ Loading') : '❌ Not found';
+			this.log(`GitHub Copilot: ${copilotStatus}, Chat: ${chatStatus}`);
 		}
 
 		// Check if we're in GitHub Codespaces
 		const isCodespaces = process.env.CODESPACES === 'true';
-		const isVSCodeServer = process.env.VSCODE_IPC_HOOK_CLI || process.env.VSCODE_SERVER;
-
-		this.log(`Environment detection:`);
-		this.log(`  - GitHub Codespaces: ${isCodespaces}`);
-		this.log(`  - VS Code Server: ${!!isVSCodeServer}`);
-		this.log(`  - Remote Name: ${vscode.env.remoteName || 'local'}`);
-		this.log(`  - VS Code Machine ID: ${vscode.env.machineId}`);
-		this.log(`  - VS Code Session ID: ${vscode.env.sessionId}`);
-
-		// Enhanced analysis for Codespaces
-		if (isCodespaces) {
-			if (!copilotExtension || !copilotChatExtension) {
-				this.warn('Running in GitHub Codespaces but Copilot extension(s) not found - this may explain why no session files are located');
-			} else if (!copilotExtension.isActive || !copilotChatExtension.isActive) {
-				this.warn('Copilot extensions found but NOT ACTIVE in Codespaces - this is likely why no chat sessions exist');
-				this.log('Possible reasons:');
-				this.log('  1. Extensions may not be pre-activated in Codespaces');
-				this.log('  2. User may need to manually activate Copilot');
-				this.log('  3. Copilot may not be configured for this workspace');
-				this.log('  4. Authentication issues with GitHub Copilot in Codespaces');
-			} else {
-				this.log('Copilot extensions are active in Codespaces - investigating session storage...');
-			}
+		if (isCodespaces && (!copilotExtension?.isActive || !copilotChatExtension?.isActive)) {
+			this.warn('⚠️ Running in Codespaces with inactive Copilot extensions');
 		}
 	}
 
 	/**
 	 * Get all possible VS Code user data paths for all VS Code variants
 	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
+	 * 
+	 * NOTE: The canonical JavaScript implementation is in:
+	 * .github/skills/copilot-log-analysis/session-file-discovery.js
+	 * This TypeScript implementation should mirror that logic.
 	 */
 	private getVSCodeUserPaths(): string[] {
 		const platform = os.platform();
@@ -2092,47 +2064,48 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return paths;
 	}
 
+	/**
+	 * NOTE: The canonical JavaScript implementation is in:
+	 * .github/skills/copilot-log-analysis/session-file-discovery.js
+	 * This TypeScript implementation should mirror that logic.
+	 */
 	private async getCopilotSessionFiles(): Promise<string[]> {
 		const sessionFiles: string[] = [];
 
 		const platform = os.platform();
 		const homedir = os.homedir();
 
-		// Debug environment information
-		this.log('Debugging getCopilotSessionFiles');
-		this.log(`Platform: ${platform}`);
-		this.log(`Home directory: ${homedir}`);
-		this.log(`Environment variables:`);
-		this.log(`  APPDATA: ${process.env.APPDATA}`);
-		this.log(`  HOME: ${process.env.HOME}`);
-		this.log(`  XDG_CONFIG_HOME: ${process.env.XDG_CONFIG_HOME}`);
-		this.log(`  VSCODE_PORTABLE: ${process.env.VSCODE_PORTABLE}`);
-		this.log(`  CODESPACES: ${process.env.CODESPACES}`);
-		this.log(`  GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
+		this.log(`🔍 Searching for Copilot session files on ${platform}`);
 
 		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
 		const allVSCodePaths = this.getVSCodeUserPaths();
-		this.log(`Checking ${allVSCodePaths.length} VS Code path variants`);
+		this.log(`📂 Reading local folders [0/${allVSCodePaths.length}]`);
 
 		// Track which paths we actually found
 		const foundPaths: string[] = [];
-		for (const codeUserPath of allVSCodePaths) {
+		for (let i = 0; i < allVSCodePaths.length; i++) {
+			const codeUserPath = allVSCodePaths[i];
 			if (fs.existsSync(codeUserPath)) {
 				foundPaths.push(codeUserPath);
-				this.log(`Found VS Code path: ${codeUserPath}`);
+			}
+			// Update progress
+			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
+				this.log(`📂 Reading local folders [${i + 1}/${allVSCodePaths.length}]`);
 			}
 		}
 
+		this.log(`✅ Found ${foundPaths.length} VS Code installation(s)`);
+
 		try {
 			// Scan all found VS Code paths for session files
-			for (const codeUserPath of foundPaths) {
-				this.log(`Scanning VS Code path: ${codeUserPath}`);
+			for (let i = 0; i < foundPaths.length; i++) {
+				const codeUserPath = foundPaths[i];
+				const pathName = path.basename(path.dirname(codeUserPath));
 
 				// Workspace storage sessions
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 				if (fs.existsSync(workspaceStoragePath)) {
 					const workspaceDirs = fs.readdirSync(workspaceStoragePath);
-					this.log(`Found ${workspaceDirs.length} workspace directories in ${path.basename(path.dirname(codeUserPath))}`);
 
 					for (const workspaceDir of workspaceDirs) {
 						const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
@@ -2141,7 +2114,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 								.map(file => path.join(chatSessionsPath, file));
 							if (sessionFiles2.length > 0) {
-								this.log(`Found ${sessionFiles2.length} session files in ${workspaceDir}`);
+								this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
 								sessionFiles.push(...sessionFiles2);
 							}
 						}
@@ -2155,7 +2128,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 						.map(file => path.join(globalStoragePath, file));
 					if (globalSessionFiles.length > 0) {
-						this.log(`Found ${globalSessionFiles.length} global session files`);
+						this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
 						sessionFiles.push(...globalSessionFiles);
 					}
 				}
@@ -2163,42 +2136,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// GitHub Copilot Chat extension global storage
 				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
 				if (fs.existsSync(copilotChatGlobalPath)) {
-					this.log(`Found github.copilot-chat global storage: ${copilotChatGlobalPath}`);
+					this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
 					this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
 				}
 			}
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			this.log(`Checking Copilot CLI session-state path: ${copilotCliSessionPath}`);
 			if (fs.existsSync(copilotCliSessionPath)) {
-				this.log(`Found Copilot CLI session-state directory`);
 				const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
 					.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 					.map(file => path.join(copilotCliSessionPath, file));
 				if (cliSessionFiles.length > 0) {
-					this.log(`Found ${cliSessionFiles.length} Copilot CLI session files`);
+					this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
 					sessionFiles.push(...cliSessionFiles);
 				}
 			}
 
 			// Log summary
-			this.log(`Total session files found: ${sessionFiles.length}`);
-			if (sessionFiles.length > 0) {
-				this.log('Session file paths:');
-				sessionFiles.slice(0, 20).forEach((file, index) => {
-					this.log(`  ${index + 1}: ${file}`);
-				});
-				if (sessionFiles.length > 20) {
-					this.log(`  ... and ${sessionFiles.length - 20} more files`);
-				}
-			} else {
-				this.warn('No GitHub Copilot session files found. This could be because:');
-				this.log('  1. Copilot extensions are not active');
-				this.log('  2. No Copilot Chat conversations have been initiated yet');
-				this.log('  3. Sessions are stored in a different location not yet supported');
-				this.log('  4. User needs to authenticate with GitHub Copilot first');
-				this.log('  Run: node scripts/diagnose-session-files.js for detailed diagnostics');
+			this.log(`✨ Total: ${sessionFiles.length} session file(s) discovered`);
+			if (sessionFiles.length === 0) {
+				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
 			}
 		} catch (error) {
 			this.error('Error getting session files:', error);
@@ -2209,6 +2167,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Recursively scan a directory for session files (.json and .jsonl)
+	 * 
+	 * NOTE: Mirrors logic in .github/skills/copilot-log-analysis/session-file-discovery.js
 	 */
 	private scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
 		try {
@@ -2369,9 +2329,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async showDetails(): Promise<void> {
+		this.log('📊 Opening Details panel');
+		
 		// If panel already exists, just reveal it
 		if (this.detailsPanel) {
 			this.detailsPanel.reveal();
+			this.log('📊 Details panel revealed (already exists)');
 			return;
 		}
 
@@ -2396,6 +2359,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		);
 
+		this.log('✅ Details panel created successfully');
+
 		// Set the HTML content
 		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 
@@ -2419,14 +2384,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.detailsPanel.onDidDispose(() => {
+			this.log('📊 Details panel closed');
 			this.detailsPanel = undefined;
 		});
 	}
 
 	public async showChart(): Promise<void> {
+		this.log('📈 Opening Chart view');
+		
 		// If panel already exists, just reveal it
 		if (this.chartPanel) {
 			this.chartPanel.reveal();
+			this.log('📈 Chart view revealed (already exists)');
 			return;
 		}
 
@@ -2447,6 +2416,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
+
+		this.log('✅ Chart view created successfully');
 
 		// Set the HTML content
 		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
@@ -2471,14 +2442,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.chartPanel.onDidDispose(() => {
+			this.log('📈 Chart view closed');
 			this.chartPanel = undefined;
 		});
 	}
 
 	public async showUsageAnalysis(): Promise<void> {
+		this.log('📊 Opening Usage Analysis dashboard');
+		
 		// If panel already exists, just reveal it
 		if (this.analysisPanel) {
 			this.analysisPanel.reveal();
+			this.log('📊 Usage Analysis dashboard revealed (already exists)');
 			return;
 		}
 
@@ -2499,6 +2474,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
+
+		this.log('✅ Usage Analysis dashboard created successfully');
 
 		// Set the HTML content
 		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
@@ -2523,6 +2500,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.analysisPanel.onDidDispose(() => {
+			this.log('📊 Usage Analysis dashboard closed');
 			this.analysisPanel = undefined;
 		});
 	}
@@ -2727,10 +2705,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
+		this.log('🔄 Refreshing Details panel');
 		// Update token stats and refresh the webview content
 		const stats = await this.updateTokenStats();
 		if (stats) {
 			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+			this.log('✅ Details panel refreshed');
 		}
 	}
 
@@ -2739,8 +2719,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
+		this.log('🔄 Refreshing Chart view');
 		// Refresh all stats so the status bar and tooltip stay in sync
 		await this.updateTokenStats();
+		this.log('✅ Chart view refreshed');
 	}
 
 	private async refreshAnalysisPanel(): Promise<void> {
@@ -2748,8 +2730,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
+		this.log('🔄 Refreshing Usage Analysis dashboard');
 		// Refresh all stats so the status bar and tooltip stay in sync
 		await this.updateTokenStats();
+		this.log('✅ Usage Analysis dashboard refreshed');
 	}
 
 	private getNonce(): string {
@@ -3012,11 +2996,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async showDiagnosticReport(): Promise<void> {
-		this.log('Showing diagnostic report...');
+		this.log('🔍 Opening Diagnostic Report');
 
 		// If panel already exists, just reveal it and update content
 		if (this.diagnosticsPanel) {
 			this.diagnosticsPanel.reveal();
+			this.log('🔍 Diagnostic Report revealed (already exists)');
 			// Optionally, refresh content if needed
 			const report = await this.generateDiagnosticReport();
 			const sessionFiles = await this.getCopilotSessionFiles();
@@ -3109,6 +3094,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		);
 
+		this.log('✅ Diagnostic Report created successfully');
+
 		// Set the HTML content immediately with empty session files (shows loading state)
 		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
 
@@ -3192,6 +3179,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle panel disposal
 		this.diagnosticsPanel.onDidDispose(() => {
+			this.log('🔍 Diagnostic Report closed');
 			this.diagnosticsPanel = undefined;
 		});
 

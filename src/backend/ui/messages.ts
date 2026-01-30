@@ -221,6 +221,14 @@ export const HelpText = {
 		}
 		return 'Uses Storage Account Shared Key. Stored securely in VS Code on this device only.';
 	},
+
+	/**
+	 * Backend overview helper.
+	 */
+	backendOverview: (): string => {
+		return 'Enable backend to sync your token usage to Azure Table Storage for cross-device access, team analytics, and long-term persistence. Stay Local to keep all data on this machine only.';
+	},
+
 	/**
 	 * Test connection helper.
 	 */
