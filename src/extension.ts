@@ -24,6 +24,7 @@ interface ModelPricing {
 	inputCostPerMillion: number;
 	outputCostPerMillion: number;
 	category?: string;
+	displayNames?: string[];
 }
 
 interface EditorUsage {
@@ -2294,22 +2295,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (request.result && request.result.metadata && request.result.metadata.modelId) {
 			return request.result.metadata.modelId;
 		}
+		
+		// Build a lookup map from display names to model IDs from modelPricing.json
 		if (request.result && request.result.details) {
-			if (request.result.details.includes('Claude Sonnet 3.5')) { return 'claude-sonnet-3.5'; }
-			if (request.result.details.includes('Claude Sonnet 3.7')) { return 'claude-sonnet-3.7'; }
-			if (request.result.details.includes('Claude Sonnet 4')) { return 'claude-sonnet-4'; }
-			if (request.result.details.includes('Gemini 2.5 Pro')) { return 'gemini-2.5-pro'; }
-			if (request.result.details.includes('Gemini 3 Pro (Preview)')) { return 'gemini-3-pro-preview'; }
-			if (request.result.details.includes('Gemini 3 Pro')) { return 'gemini-3-pro'; }
-			if (request.result.details.includes('GPT-4.1')) { return 'gpt-4.1'; }
-			if (request.result.details.includes('GPT-4o-mini')) { return 'gpt-4o-mini'; }
-			if (request.result.details.includes('GPT-4o')) { return 'gpt-4o'; }
-			if (request.result.details.includes('GPT-4')) { return 'gpt-4'; }
-			if (request.result.details.includes('GPT-5')) { return 'gpt-5'; }
-			if (request.result.details.includes('GPT-3.5-Turbo')) { return 'gpt-3.5-turbo'; }
-			if (request.result.details.includes('o3-mini')) { return 'o3-mini'; }
-			if (request.result.details.includes('o4-mini')) { return 'o4-mini'; }
+			// Create reverse lookup: displayName -> modelId
+			const displayNameToModelId: { [displayName: string]: string } = {};
+			for (const [modelId, pricing] of Object.entries(this.modelPricing)) {
+				if (pricing.displayNames) {
+					for (const displayName of pricing.displayNames) {
+						displayNameToModelId[displayName] = modelId;
+					}
+				}
+			}
+			
+			// Check which display name appears in the details
+			// Sort by length descending to match longer names first (e.g., "Gemini 3 Pro (Preview)" before "Gemini 3 Pro")
+			const sortedDisplayNames = Object.keys(displayNameToModelId).sort((a, b) => b.length - a.length);
+			for (const displayName of sortedDisplayNames) {
+				if (request.result.details.includes(displayName)) {
+					return displayNameToModelId[displayName];
+				}
+			}
 		}
+		
 		return 'gpt-4'; // default
 	}
 

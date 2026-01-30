@@ -32,7 +32,8 @@
     "gpt-5": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "displayNames": ["GPT-5"]
     },
     "gpt-5-codex": {
       "inputCostPerMillion": 1.25,
@@ -82,12 +83,14 @@
     "gpt-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 12.0,
-      "category": "GPT-4 models"
+      "category": "GPT-4 models",
+      "displayNames": ["GPT-4"]
     },
     "gpt-4.1": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 12.0,
-      "category": "GPT-4 models"
+      "category": "GPT-4 models",
+      "displayNames": ["GPT-4.1"]
     },
     "gpt-4.1-mini": {
       "inputCostPerMillion": 0.8,
@@ -102,27 +105,32 @@
     "gpt-4o": {
       "inputCostPerMillion": 2.5,
       "outputCostPerMillion": 10.0,
-      "category": "GPT-4 models"
+      "category": "GPT-4 models",
+      "displayNames": ["GPT-4o"]
     },
     "gpt-4o-mini": {
       "inputCostPerMillion": 0.15,
       "outputCostPerMillion": 0.6,
-      "category": "GPT-4 models"
+      "category": "GPT-4 models",
+      "displayNames": ["GPT-4o-mini", "GPT-4o Mini"]
     },
     "claude-sonnet-3.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "displayNames": ["Claude Sonnet 3.5"]
     },
     "claude-sonnet-3.7": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "displayNames": ["Claude Sonnet 3.7"]
     },
     "claude-sonnet-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "displayNames": ["Claude Sonnet 4"]
     },
     "claude-sonnet-4.5": {
       "inputCostPerMillion": 3.0,
@@ -152,22 +160,26 @@
     "o3-mini": {
       "inputCostPerMillion": 4.0,
       "outputCostPerMillion": 16.0,
-      "category": "OpenAI reasoning models"
+      "category": "OpenAI reasoning models",
+      "displayNames": ["o3-mini"]
     },
     "o4-mini": {
       "inputCostPerMillion": 4.0,
       "outputCostPerMillion": 16.0,
-      "category": "OpenAI reasoning models"
+      "category": "OpenAI reasoning models",
+      "displayNames": ["o4-mini"]
     },
     "gpt-3.5-turbo": {
       "inputCostPerMillion": 0.5,
       "outputCostPerMillion": 1.5,
-      "category": "Legacy models"
+      "category": "Legacy models",
+      "displayNames": ["GPT-3.5-Turbo", "GPT-3.5 Turbo"]
     },
     "gemini-2.5-pro": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "displayNames": ["Gemini 2.5 Pro"]
     },
     "gemini-2.5-flash": {
       "inputCostPerMillion": 0.30,
@@ -197,12 +209,14 @@
     "gemini-3-pro": {
       "inputCostPerMillion": 2.0,
       "outputCostPerMillion": 12.0,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "displayNames": ["Gemini 3 Pro"]
     },
     "gemini-3-pro-preview": {
       "inputCostPerMillion": 2.0,
       "outputCostPerMillion": 12.0,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "displayNames": ["Gemini 3 Pro (Preview)"]
     },
     "grok-code-fast-1": {
       "inputCostPerMillion": 0.20,
