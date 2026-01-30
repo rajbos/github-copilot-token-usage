@@ -39,7 +39,11 @@ type DiagnosticsData = {
 	cacheInfo?: CacheInfo;
 };
 
-declare function acquireVsCodeApi<TState = unknown>(): {
+type DiagnosticsViewState = {
+	activeTab?: string;
+};
+
+declare function acquireVsCodeApi<TState = DiagnosticsViewState>(): {
 	postMessage: (message: unknown) => void;
 	setState: (newState: TState) => void;
 	getState: () => TState | undefined;
@@ -49,7 +53,7 @@ declare global {
 	interface Window { __INITIAL_DIAGNOSTICS__?: DiagnosticsData; }
 }
 
-const vscode = acquireVsCodeApi();
+const vscode = acquireVsCodeApi<DiagnosticsViewState>();
 const initialData = window.__INITIAL_DIAGNOSTICS__;
 
 // Sorting and filtering state
@@ -783,6 +787,11 @@ function renderLayout(data: DiagnosticsData): void {
 			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 			const content = document.getElementById(`tab-${tabId}`);
 			if (content) { content.classList.add('active'); }
+			
+			// Save the active tab state
+			if (tabId) {
+				vscode.setState({ activeTab: tabId });
+			}
 		});
 	});
 
@@ -934,6 +943,23 @@ function renderLayout(data: DiagnosticsData): void {
 	setupSortHandlers();
 	setupEditorFilterHandlers();
 	setupFileLinks();
+	
+	// Restore active tab from saved state
+	const savedState = vscode.getState();
+	if (savedState?.activeTab) {
+		const tabToActivate = document.querySelector(`.tab[data-tab="${savedState.activeTab}"]`);
+		const contentToActivate = document.getElementById(`tab-${savedState.activeTab}`);
+		
+		if (tabToActivate && contentToActivate) {
+			// Remove active class from all tabs and contents
+			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+			
+			// Activate the saved tab
+			tabToActivate.classList.add('active');
+			contentToActivate.classList.add('active');
+		}
+	}
 }
 
 async function bootstrap(): Promise<void> {
