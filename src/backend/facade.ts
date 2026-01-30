@@ -409,7 +409,6 @@ export class BackendFacade {
 	}
 
 	private async clearAzureSettings(): Promise<BackendConfigPanelState> {
-		const conf = ConfirmationMessages.clearKey();
 		const confirmed = await vscode.window.showWarningMessage(
 			'Clear all Azure settings?',
 			{ modal: true, detail: 'This will remove all Azure resource IDs, credentials, and backend configuration. You will need to reconfigure the backend to use it again.' },
