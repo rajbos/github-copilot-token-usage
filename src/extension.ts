@@ -3214,15 +3214,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		// Sort files by modification time (most recent first) before taking first 500
 		// This ensures we prioritize recent sessions regardless of their folder location
-		const sortedFiles = sessionFiles
-			.map(file => {
+		const fileStats = await Promise.all(
+			sessionFiles.map(async (file) => {
 				try {
-					const stat = fs.statSync(file);
+					const stat = await fs.promises.stat(file);
 					return { file, mtime: stat.mtime.getTime() };
 				} catch {
 					return { file, mtime: 0 };
 				}
 			})
+		);
+
+		const sortedFiles = fileStats
 			.sort((a, b) => b.mtime - a.mtime)
 			.map(item => item.file);
 		
