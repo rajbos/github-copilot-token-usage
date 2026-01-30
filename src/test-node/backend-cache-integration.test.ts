@@ -36,7 +36,6 @@ test('Backend cache integration: uses cached data when available', async () => {
 	);
 
 	let cacheHitCount = 0;
-	let cacheMissCount = 0;
 
 	const facade: any = new BackendFacade({
 		context: undefined,
