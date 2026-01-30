@@ -7,3 +7,6 @@ node_modules
 .github/scripts/models.txt
 .github/scripts/scraper.log
 .github/scripts/scraped-models.json
+
+# Devcontainer config (local-only)
+.devcontainer/
