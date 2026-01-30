@@ -160,8 +160,8 @@ function renderTurnCard(turn: ChatTurn): string {
 			<table class="tools-table">
 				<thead>
 					<tr>
-						<th>Tool Name</th>
-						<th>Action</th>
+						<th scope="col">Tool Name</th>
+						<th scope="col">Action</th>
 					</tr>
 				</thead>
 				<tbody>
