@@ -157,18 +157,28 @@ function renderTurnCard(turn: ChatTurn): string {
 	const toolCallsHtml = hasToolCalls ? `
 		<div class="turn-tools">
 			<div class="tools-header">🔧 Tool Calls (${turn.toolCalls.length})</div>
-			<div class="tools-list">
-				${turn.toolCalls.map((tc, idx) => `
-					<div class="tool-item">
-						<div class="tool-item-header">
-							<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
-							<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
-						</div>
-						${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
-						${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
-					</div>
-				`).join('')}
-			</div>
+			<table class="tools-table">
+				<thead>
+					<tr>
+						<th>Tool Name</th>
+						<th>Action</th>
+					</tr>
+				</thead>
+				<tbody>
+					${turn.toolCalls.map((tc, idx) => `
+						<tr class="tool-row">
+							<td class="tool-name-cell">
+								<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
+								${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
+								${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
+							</td>
+							<td class="tool-action-cell">
+								<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
+							</td>
+						</tr>
+					`).join('')}
+				</tbody>
+			</table>
 		</div>
 	` : '';
 	
@@ -542,7 +552,40 @@ function renderLayout(data: SessionLogData): void {
 				font-weight: 700;
 				color: #fff;
 				margin-bottom: 10px;
-				text-t2px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.tools-table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 13px;
+			}
+			.tools-table thead th {
+				text-align: left;
+				padding: 8px 12px;
+				background: #1a1a22;
+				border-bottom: 2px solid #4a4a5a;
+				color: #94a3b8;
+				font-weight: 600;
+				font-size: 12px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.tools-table tbody .tool-row {
+				border-bottom: 1px solid #3a3a44;
+			}
+			.tools-table tbody .tool-row:last-child {
+				border-bottom: none;
+			}
+			.tool-name-cell {
+				padding: 10px 12px;
+				vertical-align: top;
+			}
+			.tool-action-cell {
+				padding: 10px 12px;
+				text-align: right;
+				vertical-align: top;
+				width: 100px;
 			}
 			.tool-name {
 				font-weight: 700;
@@ -554,6 +597,7 @@ function renderLayout(data: SessionLogData): void {
 				color: #34d399;
 				font-size: 12px;
 				text-decoration: underline;
+				white-space: nowrap;
 			}
 			.tool-call-pretty:hover {
 				color: #6ee7b7;
