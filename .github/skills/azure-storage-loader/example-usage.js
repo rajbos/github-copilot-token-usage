@@ -21,6 +21,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -40,7 +41,7 @@ console.log('Step 1: Loading data from Azure Storage...');
 console.log(`  Storage Account: ${storageAccount}`);
 console.log(`  Date Range: ${startDate} to ${endDate}\n`);
 
-const tempFile = path.join('/tmp', `usage-data-${Date.now()}.json`);
+const tempFile = path.join(os.tmpdir(), `usage-data-${Date.now()}.json`);
 
 try {
 	execSync(

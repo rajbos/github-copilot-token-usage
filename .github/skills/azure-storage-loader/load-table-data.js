@@ -40,46 +40,90 @@ function parseArgs() {
 
 		switch (arg) {
 			case '--storageAccount':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --storageAccount requires a value');
+					process.exit(1);
+				}
 				args.storageAccount = nextArg;
 				i++;
 				break;
 			case '--tableName':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --tableName requires a value');
+					process.exit(1);
+				}
 				args.tableName = nextArg;
 				i++;
 				break;
 			case '--datasetId':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --datasetId requires a value');
+					process.exit(1);
+				}
 				args.datasetId = nextArg;
 				i++;
 				break;
 			case '--startDate':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --startDate requires a value');
+					process.exit(1);
+				}
 				args.startDate = nextArg;
 				i++;
 				break;
 			case '--endDate':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --endDate requires a value');
+					process.exit(1);
+				}
 				args.endDate = nextArg;
 				i++;
 				break;
 			case '--model':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --model requires a value');
+					process.exit(1);
+				}
 				args.model = nextArg;
 				i++;
 				break;
 			case '--workspaceId':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --workspaceId requires a value');
+					process.exit(1);
+				}
 				args.workspaceId = nextArg;
 				i++;
 				break;
 			case '--userId':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --userId requires a value');
+					process.exit(1);
+				}
 				args.userId = nextArg;
 				i++;
 				break;
 			case '--sharedKey':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --sharedKey requires a value');
+					process.exit(1);
+				}
 				args.sharedKey = nextArg;
 				i++;
 				break;
 			case '--output':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --output requires a value');
+					process.exit(1);
+				}
 				args.output = nextArg;
 				i++;
 				break;
 			case '--format':
+				if (!nextArg || nextArg.startsWith('--')) {
+					console.error('Error: --format requires a value');
+					process.exit(1);
+				}
 				args.format = nextArg;
 				i++;
 				break;
@@ -87,6 +131,10 @@ function parseArgs() {
 			case '-h':
 				args.help = true;
 				break;
+			default:
+				console.error(`Unknown argument: ${arg}`);
+				console.error('Use --help for usage information');
+				process.exit(1);
 		}
 	}
 
@@ -170,6 +218,9 @@ function getDayKeysInclusive(startDate, endDate) {
 }
 
 // Sanitize table key (replaces forbidden characters)
+// Azure Tables disallow: / \ # ?
+// Note: In JavaScript regex, forward slash doesn't need backslash escaping in strings
+// but we keep the pattern consistent for all forbidden characters
 function sanitizeTableKey(value) {
 	if (!value) {
 		return value;
@@ -177,7 +228,9 @@ function sanitizeTableKey(value) {
 	let result = value;
 	const forbiddenChars = ['/', '\\', '#', '?'];
 	for (const char of forbiddenChars) {
-		result = result.replace(new RegExp(`\\${char}`, 'g'), '_');
+		// For backslash, we need to escape it in both the regex pattern and replacement
+		const escaped = char === '\\' ? '\\\\' : `\\${char}`;
+		result = result.replace(new RegExp(escaped, 'g'), '_');
 	}
 	// Replace control characters
 	result = result.replace(/[\x00-\x1F\x7F-\x9F]/g, '_');
@@ -218,17 +271,30 @@ async function fetchEntities(tableClient, datasetId, startDate, endDate, filters
 		console.error(`  Querying partition: ${partitionKey}`);
 
 		try {
-			// Build OData filter
-			let filter = `PartitionKey eq '${partitionKey.replace(/'/g, "''")}'`;
+			// Build OData filter with input validation
+			// Note: Azure Table Storage has limited SQL injection risk, but we still validate inputs
+			const escapeODataValue = (value) => {
+				if (!value || typeof value !== 'string') {
+					throw new Error('Filter value must be a non-empty string');
+				}
+				// Validate that value doesn't contain logical operators or newlines
+				if (/\b(and|or|not)\b/i.test(value) || /[\n\r]/.test(value)) {
+					throw new Error('Filter value contains invalid characters or operators');
+				}
+				// Escape single quotes per OData spec
+				return value.replace(/'/g, "''");
+			};
+
+			let filter = `PartitionKey eq '${escapeODataValue(partitionKey)}'`;
 
 			if (filters.model) {
-				filter += ` and model eq '${filters.model.replace(/'/g, "''")}'`;
+				filter += ` and model eq '${escapeODataValue(filters.model)}'`;
 			}
 			if (filters.workspaceId) {
-				filter += ` and workspaceId eq '${filters.workspaceId.replace(/'/g, "''")}'`;
+				filter += ` and workspaceId eq '${escapeODataValue(filters.workspaceId)}'`;
 			}
 			if (filters.userId) {
-				filter += ` and userId eq '${filters.userId.replace(/'/g, "''")}'`;
+				filter += ` and userId eq '${escapeODataValue(filters.userId)}'`;
 			}
 
 			const queryOptions = {

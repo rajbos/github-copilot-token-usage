@@ -184,8 +184,8 @@ JSON array of entities:
 
 CSV format (when `--format csv` is used):
 ```csv
-day,model,workspaceId,workspaceName,machineId,machineName,userId,inputTokens,outputTokens,interactions
-2026-01-16,gpt-4o,workspace123,MyProject,machine456,MyLaptop,user789,1500,800,25
+day,model,workspaceId,workspaceName,machineId,machineName,userId,userKeyType,inputTokens,outputTokens,interactions,updatedAt
+2026-01-16,gpt-4o,workspace123,MyProject,machine456,MyLaptop,user789,pseudonymous,1500,800,25,2026-01-16T23:59:59.999Z
 ```
 
 ## Usage Examples
@@ -320,7 +320,7 @@ Key extension modules referenced:
 
 ## Additional Resources
 
-- [Azure Table Storage Documentation](https://docs.microsoft.com/azure/storage/tables/)
+- [Azure Table Storage Documentation](https://learn.microsoft.com/azure/storage/tables/)
 - [Azure SDK for JavaScript](https://github.com/Azure/azure-sdk-for-js)
-- [DefaultAzureCredential](https://docs.microsoft.com/javascript/api/@azure/identity/defaultazurecredential)
+- [DefaultAzureCredential](https://learn.microsoft.com/javascript/api/@azure/identity/defaultazurecredential)
 - [VS Code Extension Settings](../../../README.md#backend-configuration)
