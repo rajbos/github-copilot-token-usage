@@ -1,6 +1,10 @@
 # GitHub Copilot Token Tracker
 
-A VS Code extension that shows your daily and monthly GitHub Copilot estimated token usage in the status bar. This uses the information from the log files of the GitHub Copilot Chat extension.
+A VS Code extension that shows your daily and monthly GitHub Copilot estimated token usage in the status bar. It reads GitHub Copilot Chat session logs and computes local aggregates.
+
+Optionally, you can enable an **opt-in Azure Storage backend** to sync aggregates from all your VS Code instances (across machines, profiles, and windows) into **your own Azure Storage account** for cross-device reporting.
+
+You can also use a **shared Azure Storage account** (a “shared storage server” for the team) so that multiple developers sync into the same dataset and a team lead can view aggregated usage across the team (with explicit per-user consent).
 
 ## Features
 
@@ -11,6 +15,28 @@ A VS Code extension that shows your daily and monthly GitHub Copilot estimated t
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
 - **Intelligent Caching**: Caches processed session files to speed up subsequent updates when files haven't changed
 - **Diagnostic Reporting**: Generate comprehensive diagnostic reports to help troubleshoot issues
+
+### Cloud Backend (Opt-in)
+
+- **Cross-device analytics**: Syncs daily aggregates from all machines into a user-owned Azure Storage account
+- **Azure Storage Tables backend**: Stores/query pre-aggregated rollups (not raw prompts)
+- **Secure by default**: Uses **Microsoft Entra ID (Azure RBAC)** via `DefaultAzureCredential` (no secrets in settings)
+- **Advanced auth option**: Optional Storage **Shared Key** mode stored in VS Code SecretStorage (never in Settings Sync)
+- **Graceful fallback**: If Azure is unavailable or permissions are missing, local-only mode keeps working
+
+### Reporting & Filtering
+
+- **Details view filters**: Lookback window + Model + Workspace + Machine + (optional) User filters
+- **Export**: Export the current filtered view as JSON (for spreadsheets / dashboards / scripts)
+- **Status bar scope selector** *(Planned)*: Toggle **All machines** | **This machine** | **Current workspace**
+
+### Team / Multi-user (Optional)
+
+- **Shared storage for teams**: Multiple developers can write to the same Azure Storage account/dataset for centralized reporting
+- **Explicit consent gating**: No per-user identifier is written unless you explicitly enable team sharing
+- **Governed identity modes**: Pseudonymous hashing, validated team aliases, or Entra object IDs
+- **User filtering**: When enabled, aggregates can be filtered by user in the details view
+
 
 ## Status Bar Display
 
@@ -47,6 +73,76 @@ The extension uses intelligent caching to improve performance:
 - **Cache Statistics**: Logs cache hit/miss rates to help monitor performance improvements
 
 This caching significantly reduces the time needed for periodic updates, especially when you have many chat session files.
+
+## Cloud Backend (Azure Storage)
+
+The cloud backend is **disabled by default**. When enabled, the extension periodically uploads daily aggregates to Azure Storage Tables and queries them for cross-device reporting.
+
+### Authentication
+
+- **Recommended**: Entra ID (Azure RBAC) using `DefaultAzureCredential` (Azure CLI / VS Code Azure Account / Managed Identity)
+- **Advanced**: Storage Shared Key (stored in VS Code SecretStorage, per-machine, does not sync)
+
+### Required Azure Roles (Typical)
+
+Data-plane (tables):
+- **Storage Table Data Contributor** (sync/write)
+- **Storage Table Data Reader** (read-only reporting)
+
+Management-plane (wizard/provisioning):
+- **Contributor** (or a more scoped role) at subscription or resource group scope
+
+Important: management roles do not automatically grant data-plane access.
+
+### Team Sharing with a Shared Storage Account
+
+To share usage with team members, configure all participants to point at the same Azure Storage account and `datasetId`.
+
+- **Team lead / admins**: typically provision the storage account and tables, and grant data-plane roles.
+- **Contributors (writers)**: need **Storage Table Data Contributor** to upload aggregates.
+- **Readers (reporting)**: can be granted **Storage Table Data Reader** for read-only reporting.
+- **Privacy guardrail**: per-user identity is only included when the developer has explicitly enabled team sharing; otherwise their aggregates are stored without a user identifier.
+
+### Commands
+
+- `Copilot Token Tracker: Configure Backend` — guided setup wizard for Azure resources and settings
+- `Copilot Token Tracker: Copy Backend Config` — copies shareable config without secrets
+- `Copilot Token Tracker: Export Current View` — exports filtered backend/local view as JSON
+
+Shared Key management (only if using shared-key auth):
+- `Copilot Token Tracker: Set Backend Shared Key`
+- `Copilot Token Tracker: Rotate Backend Shared Key`
+- `Copilot Token Tracker: Clear Backend Shared Key`
+
+Ask:
+- `Copilot Token Tracker: Ask About Usage`
+
+### Backend settings configurator
+
+Use **Copilot Token Tracker: Configure Backend** to open the settings panel with five sections: Overview, Sharing, Azure, Advanced, and Review & Apply.
+
+**Privacy profiles** (Sharing section):
+- **Off** – All data stays local; nothing syncs to Azure
+- **Solo** – Private cloud storage; only you can access your data
+- **Team Anonymized** – Hashed workspace/machine IDs; no names stored; suitable for privacy-first team analytics
+- **Team Pseudonymous** – Stable alias (e.g., "dev-001") with hashed IDs; no real names
+- **Team Identified** – Team alias or Entra object ID included; full workspace names available
+
+**Guided setup workflow**:
+1. Run **Copilot Token Tracker: Configure Backend** command
+2. Navigate to Sharing section to choose your privacy profile
+3. Go to Azure section, enable backend, and use **Open configure walkthrough** to provision Azure resources
+4. Advanced section sets dataset ID (default examples: "my-team-copilot") and lookback days (7/30/90)
+5. Review & Apply confirms your changes with explicit consent for privacy upgrades
+6. Click **Save & Apply** to enable backend sync
+
+**Privacy gates**: Upgrading to a more permissive profile or enabling workspace/machine names triggers an explicit consent dialog. All settings are validated before saving (dataset/table names use alphanumeric rules, lookback days must be 1–90).
+
+**Authentication**: Supports **Entra ID** (role-based access, no secrets stored) or **Storage Shared Key** (stored securely in VS Code SecretStorage, never synced). Test Connection verifies credentials (disabled when offline).
+
+**Offline support**: You can edit and save settings locally when offline. Shared Key storage is per-machine only and never leaves the device.
+
+**Accessibility**: The configurator includes ARIA labels on all interactive elements, proper heading hierarchy, keyboard navigation support, and screen-reader-friendly status updates. All form fields have clear labels and error messages are programmatically associated with inputs.
 
 ## Diagnostic Reporting
 
@@ -96,16 +192,17 @@ The dashboard provides insights into your prompting patterns and helps you optim
 
 ## Known Issues
 
-- The numbers shown are based on the logs that are available on your local machine. If you use multiple machines or the web version of Copilot, the numbers may not be accurate.
+- The numbers shown are **estimates**, computed from Copilot Chat session logs.
+- If you use multiple machines (or multiple VS Code profiles/windows), local-only mode will only reflect what’s on the current machine.
+- The cloud backend improves cross-device coverage, but it still depends on what Copilot logs exist on each machine.
 - Premium Requests are not tracked and shown in this extension
 - The numbers are based on the amount of text in the chat sessions, not the actual tokens used. This is an estimation and may not be 100% accurate. We use an average character-to-token ratio for each model to estimate the token count, which is visible in the detail panel when you click on the status bar item.
 - Same for the information on amount of trees that are needed to compensate your usage.
-
 - When debugging in a Dev Container, the session log files cannot be found (they live outside the container). Token tracking will not work inside the container; however, you can still use the devcontainer to run AI in YOLO.
 
 > **⚠️ Warning**
 >
-> This extension has only been tested on **Windows**. Other operating systems may not be supported or may require adjustments. PR's or test results for that are most welcome!
+> Some discovery paths for session logs can vary by OS and editor variant. If you run into missing session files on your platform, please open an issue with a diagnostic report.
 
 ## Contributing
 

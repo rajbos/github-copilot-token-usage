@@ -50,11 +50,176 @@
         "category": "Copilot Token Tracker"
       },
       {
+        "command": "copilot-token-tracker.configureBackend",
+        "title": "Configure Backend",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.copyBackendConfig",
+        "title": "Copy Backend Config (No Secrets)",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.exportCurrentView",
+        "title": "Export Current View (JSON)",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.setBackendSharedKey",
+        "title": "Set Backend Storage Shared Key",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.rotateBackendSharedKey",
+        "title": "Rotate Backend Storage Shared Key",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.clearBackendSharedKey",
+        "title": "Clear Backend Storage Shared Key",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.toggleBackendWorkspaceMachineNameSync",
+        "title": "Backend: Toggle Workspace/Machine Name Sync",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.setSharingProfile",
+        "title": "Set Sharing Profile",
+        "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.clearAzureSettings",
+        "title": "Clear Azure Settings",
+        "category": "Copilot Token Tracker"
+      },
+      {
         "command": "copilot-token-tracker.clearCache",
         "title": "Clear Cache",
         "category": "Copilot Token Tracker"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Copilot Token Tracker",
+      "properties": {
+        "copilotTokenTracker.backend.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables)."
+        },
+        "copilotTokenTracker.backend.backend": {
+          "type": "string",
+          "enum": [
+            "storageTables"
+          ],
+          "default": "storageTables",
+          "description": "Backend sync backend. MVP supports Azure Storage Tables."
+        },
+        "copilotTokenTracker.backend.authMode": {
+          "type": "string",
+          "enum": [
+            "entraId",
+            "sharedKey"
+          ],
+          "default": "entraId",
+          "description": "Authentication mode for backend sync data-plane access. Default is Entra ID RBAC (DefaultAzureCredential). Shared Key uses VS Code SecretStorage and does not sync across devices."
+        },
+        "copilotTokenTracker.backend.datasetId": {
+          "type": "string",
+          "default": "default",
+          "description": "Logical dataset identifier to avoid accidental mixing when sharing a backend."
+        },
+        "copilotTokenTracker.backend.sharingProfile": {
+          "type": "string",
+          "enum": [
+            "off",
+            "soloFull",
+            "teamAnonymized",
+            "teamPseudonymous",
+            "teamIdentified"
+          ],
+          "default": "off",
+          "description": "Sharing Profile (single source of truth): off (no cloud sync), soloFull (personal full fidelity), teamAnonymized (no per-user key), teamPseudonymous (stable per-user key), teamIdentified (explicit identity)."
+        },
+        "copilotTokenTracker.backend.userId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional user identifier to enable team-wide reporting with per-user filtering. Empty disables the user dimension."
+        },
+        "copilotTokenTracker.backend.shareWithTeam": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicit consent flag. When false, no per-user identifier is written to the backend store."
+        },
+        "copilotTokenTracker.backend.shareWorkspaceMachineNames": {
+          "type": "boolean",
+          "default": false,
+          "description": "When team sharing is enabled, also write workspace and machine display names to the backend store (may contain sensitive information)."
+        },
+        "copilotTokenTracker.backend.shareConsentAt": {
+          "type": "string",
+          "default": "",
+          "description": "ISO timestamp when team sharing was enabled (consent recorded)."
+        },
+        "copilotTokenTracker.backend.userIdentityMode": {
+          "type": "string",
+          "enum": [
+            "pseudonymous",
+            "teamAlias",
+            "entraObjectId"
+          ],
+          "default": "pseudonymous",
+          "description": "How the per-user dimension is derived when team sharing is enabled. pseudonymous hashes Entra claims scoped to datasetId; teamAlias uses backend.userId (validated); entraObjectId stores a GUID (advanced)."
+        },
+        "copilotTokenTracker.backend.userIdMode": {
+          "type": "string",
+          "enum": [
+            "alias",
+            "custom"
+          ],
+          "default": "alias",
+          "description": "How the user identifier is intended to be used. 'alias' is recommended; 'custom' may contain personal data (PII)."
+        },
+        "copilotTokenTracker.backend.subscriptionId": {
+          "type": "string",
+          "default": "",
+          "description": "Azure subscription ID used for provisioning (wizard-managed)."
+        },
+        "copilotTokenTracker.backend.resourceGroup": {
+          "type": "string",
+          "default": "",
+          "description": "Azure resource group name for the Storage account (wizard-managed)."
+        },
+        "copilotTokenTracker.backend.storageAccount": {
+          "type": "string",
+          "default": "",
+          "description": "Azure Storage account name for backend sync (wizard-managed)."
+        },
+        "copilotTokenTracker.backend.aggTable": {
+          "type": "string",
+          "default": "usageAggDaily",
+          "description": "Azure Table name for daily rollups."
+        },
+        "copilotTokenTracker.backend.eventsTable": {
+          "type": "string",
+          "default": "usageEvents",
+          "description": "Azure Table name for optional raw events (not required for MVP reporting)."
+        },
+        "copilotTokenTracker.backend.lookbackDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 90,
+          "description": "Default backfill/lookback window (days) for syncing local usage to the backend store."
+        },
+        "copilotTokenTracker.backend.includeMachineBreakdown": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -63,12 +228,14 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "compile-tests": "node -e \"const fs = require('fs'); fs.mkdirSync('out/test', { recursive: true }); fs.cpSync('package.json', 'out/package.json', { force: true }); fs.cpSync('package.json', 'out/test/package.json', { force: true });\" && tsc -p tsconfig.tests.json",
+    "watch-tests": "tsc -p tsconfig.tests.json -w",
+    "pretest": "npm run compile && npm run compile-tests && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:node": "npm run compile-tests && node --test out/test/test-node/backend-identity.test.js",
+    "test:coverage": "npm run compile-tests && node --require ./out/test/test-node/vscode-shim-register.js --experimental-test-coverage --test --test-coverage-lines=60 --test-coverage-functions=60 --test-coverage-branches=60 --test-coverage-include=out/test/backend/**/*.js --test-coverage-include=out/test/utils/**/*.js out/test/test-node/backend-identity.test.js out/test/test-node/utils-errors.test.js out/test/test-node/backend-settings.test.js out/test/test-node/backend-copyConfig.test.js out/test/test-node/backend-integration.test.js out/test/test-node/backend-commands.test.js out/test/test-node/backend-facade-helpers.test.js out/test/test-node/backend-facade-rollups.test.js out/test/test-node/backend-facade-query.test.js",
     "sync-changelog": "node scripts/sync-changelog.js",
     "sync-changelog:test": "node scripts/sync-changelog.js --test"
   },
@@ -78,7 +245,7 @@
     "@types/vscode": "^1.108.1",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.42.0",
-    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
@@ -87,8 +254,15 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@azure/arm-resources": "^7.0.0",
+    "@azure/arm-storage": "^19.1.0",
+    "@azure/arm-subscriptions": "^5.1.1",
+    "@azure/data-tables": "^13.3.2",
+    "@azure/identity": "^4.13.0",
+    "@azure/storage-blob": "^12.30.0",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "chart.js": "^4.4.1",
+    "html-escape": "^2.0.0",
     "jsdom": "^27.4.0"
   }
 }
