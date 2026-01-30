@@ -3239,8 +3239,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
-				// Include all sessions (even empty ones) to show complete session history in diagnostics
-				// Filter: only include sessions with activity in the last 14 days based on lastInteraction
+				// Include sessions (including empty ones) in diagnostics, but only if they have activity
+				// (based on lastInteraction or modified time) within the last 14 days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
 					: new Date(details.modified);
