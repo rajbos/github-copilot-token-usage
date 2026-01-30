@@ -615,33 +615,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const fileStats = fs.statSync(sessionFile);
 					
 					// Skip files modified before the current month (quick filter)
+					// This is the main performance optimization - filters out old sessions without reading file content
 					if (fileStats.mtime < monthStart) {
 						skippedFiles++;
 						continue;
 					}
 					
-					// Get session file details to access lastInteraction timestamp
-					const details = await this.getSessionFileDetails(sessionFile);
+					// For files within current month, check if data is cached to avoid redundant reads
+					const mtime = fileStats.mtime.getTime();
+					const wasCached = this.isCacheValid(sessionFile, mtime);
+					
+					// Get interactions count (uses cache if available)
+					const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime);
 					
 					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
-					if (details.interactions === 0) {
+					if (interactions === 0) {
 						skippedFiles++;
 						continue;
 					}
 					
-					// Use lastInteraction date (fallback to modified date) for consistency with Diagnostic view
+					// Get remaining data (all use cache if available)
+					const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime);
+					const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime);
+					const editorType = this.getEditorTypeFromPath(sessionFile);
+					
+					// For date filtering, get lastInteraction from session details
+					const details = await this.getSessionFileDetails(sessionFile);
 					const lastActivity = details.lastInteraction 
 						? new Date(details.lastInteraction) 
 						: new Date(details.modified);
 
 					if (lastActivity >= monthStart) {
-						// Check if data is cached before making calls
-						const wasCached = this.isCacheValid(sessionFile, fileStats.mtime.getTime());
-						
-						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
-						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
-						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
-						const editorType = this.getEditorTypeFromPath(sessionFile);
 
 						// Update cache statistics
 						if (wasCached) {
