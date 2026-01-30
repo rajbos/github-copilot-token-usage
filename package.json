@@ -2,7 +2,7 @@
   "name": "copilot-token-tracker",
   "displayName": "Copilot Token Tracker",
   "description": "Shows daily and monthly (estimated) GitHub Copilot token usage stats in VS Code status bar",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "publisher": "RobBos",
   "engines": {
     "vscode": "^1.108.0"
@@ -76,9 +76,9 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "25.x",
     "@types/vscode": "^1.108.1",
-    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.42.0",
-    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
