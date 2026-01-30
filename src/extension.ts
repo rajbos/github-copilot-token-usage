@@ -611,6 +611,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				try {
+					// Fast check: Get file stats first to avoid processing old files
+					const fileStats = fs.statSync(sessionFile);
+					
+					// Skip files modified before the current month (quick filter)
+					if (fileStats.mtime < monthStart) {
+						skippedFiles++;
+						continue;
+					}
+					
 					// Get session file details to access lastInteraction timestamp
 					const details = await this.getSessionFileDetails(sessionFile);
 					
@@ -624,8 +633,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const lastActivity = details.lastInteraction 
 						? new Date(details.lastInteraction) 
 						: new Date(details.modified);
-					
-					const fileStats = fs.statSync(sessionFile);
 
 					if (lastActivity >= monthStart) {
 						// Check if data is cached before making calls
