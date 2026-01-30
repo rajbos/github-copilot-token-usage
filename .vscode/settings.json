@@ -26,6 +26,7 @@
         "/^node esbuild\\.js 2>&1$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "git fetch": true
     }
 }

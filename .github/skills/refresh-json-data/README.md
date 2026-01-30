@@ -1,3 +1,9 @@
+---
+title: Refresh JSON Data Skill
+description: Instructions for refreshing token estimator and model pricing data
+lastUpdated: 2026-01-26
+---
+
 # Refresh JSON Data Skill
 
 This is a GitHub Copilot Agent Skill that provides instructions for refreshing the token estimator and model pricing data in the Copilot Token Tracker extension.
