@@ -357,6 +357,15 @@ function renderLayout(data: SessionLogData): void {
 				transform: translateY(-2px);
 				box-shadow: 0 6px 16px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.2);
 			}
+			.filename-link {
+				cursor: pointer;
+				color: #60a5fa;
+				text-decoration: underline;
+				transition: color 0.2s;
+			}
+			.filename-link:hover {
+				color: #93c5fd;
+			}
 			.summary-label { 
 				font-size: 14px; 
 				color: #b8b8c0; 
@@ -678,6 +687,36 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${usageContextTotal}</div>
 					<div class="summary-sub">#file ${usageContextRefs.file || 0} · @vscode ${usageContextRefs.vscode || 0} · @workspace ${usageContextRefs.workspace || 0}</div>
 				</div>
+				<div class="summary-card">
+					<div class="summary-label">📁 File Name</div>
+					<div class="summary-value" style="font-size: 16px;"><span class="filename-link" id="open-file-link">${escapeHtml(getFileName(data.file))}</span></div>
+					<div class="summary-sub">Click to open in editor</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">💻 Editor</div>
+					<div class="summary-value" style="font-size: 20px;">${escapeHtml(data.editorName)}</div>
+					<div class="summary-sub">Source editor</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">📦 File Size</div>
+					<div class="summary-value">${formatFileSize(data.size)}</div>
+					<div class="summary-sub">Total size on disk</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">🕒 Modified</div>
+					<div class="summary-value" style="font-size: 14px;">${formatDate(data.modified)}</div>
+					<div class="summary-sub">Last file modification</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">▶️ First Interaction</div>
+					<div class="summary-value" style="font-size: 14px;">${formatDate(data.firstInteraction)}</div>
+					<div class="summary-sub">Session started</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">⏹️ Last Interaction</div>
+					<div class="summary-value" style="font-size: 14px;">${formatDate(data.lastInteraction)}</div>
+					<div class="summary-sub">Most recent activity</div>
+				</div>
 			</div>
 			
 			<div class="turns-header">
@@ -711,6 +750,9 @@ function renderLayout(data: SessionLogData): void {
 	});
 	document.getElementById('file-link')?.addEventListener('click', (e) => {
 		e.preventDefault();
+		vscode.postMessage({ command: 'openRawFile' });
+	});
+	document.getElementById('open-file-link')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'openRawFile' });
 	});
 
