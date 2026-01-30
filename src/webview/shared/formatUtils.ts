@@ -54,5 +54,5 @@ export function formatNumber(value: number): string {
  * Formats a number as a USD cost with 4 decimal places.
  */
 export function formatCost(value: number): string {
-	return `$${value.toFixed(4)}`;
+	return `$ ${value.toFixed(4)}`;
 }
