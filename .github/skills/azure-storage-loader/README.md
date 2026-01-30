@@ -31,6 +31,7 @@ node load-table-data.js --help
 
 - **SKILL.md**: Complete skill documentation with examples and troubleshooting
 - **load-table-data.js**: Helper script to fetch data from Azure Storage Tables
+- **example-usage.js**: Example script demonstrating data loading and analysis
 - **package.json**: Node.js dependencies
 
 ## Authentication
