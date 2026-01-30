@@ -217,13 +217,13 @@ function buildMetricsSection(
 	const tbody = document.createElement('tbody');
 	const rows: Array<{ label: string; icon: string; color?: string; today: string; month: string; projected: string }> = [
 		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), month: formatNumber(stats.month.tokens), projected: formatNumber(projections.projectedTokens) },
-		{ label: 'Est. Cost (USD)', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), month: formatCost(stats.month.estimatedCost), projected: formatCost(projections.projectedCost) },
+		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), month: formatCost(stats.month.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), month: formatNumber(stats.month.sessions), projected: formatNumber(projections.projectedSessions) },
-		{ label: 'Avg Interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
-		{ label: 'Avg Tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
-		{ label: 'Est. CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, month: `${formatFixed(stats.month.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
-		{ label: 'Est. Water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, month: `${formatFixed(stats.month.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
-		{ label: 'Tree Equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), month: stats.month.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
+		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
+		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
+		{ label: 'Estimated CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, month: `${formatFixed(stats.month.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
+		{ label: 'Estimated water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, month: `${formatFixed(stats.month.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
+		{ label: 'Tree equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), month: stats.month.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
 	];
 
 	rows.forEach(row => {
