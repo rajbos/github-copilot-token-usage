@@ -953,10 +953,11 @@ function renderLayout(data: DiagnosticsData): void {
 	setupEditorFilterHandlers();
 	setupFileLinks();
 	
-	// Restore active tab from saved state
+	// Restore active tab from saved state, with fallback to default
 	const savedState = vscode.getState();
-	if (savedState?.activeTab) {
-		activateTab(savedState.activeTab);
+	if (savedState?.activeTab && !activateTab(savedState.activeTab)) {
+		// If saved tab doesn't exist (e.g., structure changed), activate default "report" tab
+		activateTab('report');
 	}
 }
 
