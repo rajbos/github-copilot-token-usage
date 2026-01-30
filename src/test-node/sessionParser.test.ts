@@ -161,7 +161,7 @@ test('delta-based JSONL: blocks prototype pollution in array append operations',
 		JSON.stringify({ kind: 2, k: ['__proto__'], v: [{ polluted: 'yes' }] })
 	].join('\n');
 
-	const result = parseSessionFileContent(filePath, content, estimateTokensByLength);
+	const _ = parseSessionFileContent(filePath, content, estimateTokensByLength);
 	assert.equal(({} as any).polluted, undefined);
 	assert.equal((Object.prototype as any).polluted, undefined);
 });
