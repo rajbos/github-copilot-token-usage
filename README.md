@@ -101,7 +101,7 @@ The dashboard provides insights into your prompting patterns and helps you optim
 - The numbers are based on the amount of text in the chat sessions, not the actual tokens used. This is an estimation and may not be 100% accurate. We use an average character-to-token ratio for each model to estimate the token count, which is visible in the detail panel when you click on the status bar item.
 - Same for the information on amount of trees that are needed to compensate your usage.
 
-- Dev Containers: Copilot Chat session logs are written to the host machine's user profile (outside the container). On Linux, this is typically under `~/.config/Code/` (or the editor variant) within the host, not the container. The extension currently does not read from host paths, so token tracking will not work inside a devcontainer. If needed, run VS Code locally (outside the container) or mount the host user data directories into the container at the expected locations. PRs to add native host-path support are welcome.
+- Dev Containers: Copilot Chat session logs are written to the host machine's user profile (outside the container). On Linux, this is typically under `~/.config/Code/` (or the editor variant) within the host, not the container. The extension currently does not read from host paths, so token tracking will not work inside a Dev Container. If needed, run VS Code locally (outside the container) or mount the host user data directories into the container at the expected locations. PRs to add native host-path support are welcome.
 
 > **⚠️ Warning**
 >
