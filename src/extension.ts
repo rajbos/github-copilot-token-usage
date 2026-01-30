@@ -3121,7 +3121,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
 			}
 			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
-			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
+			const backendStorageInfo = await this.getBackendStorageInfo();
+			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders, backendStorageInfo);
 			this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
 			return;
 		}
@@ -3160,6 +3161,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
 
+		const backendStorageInfo = await this.getBackendStorageInfo();
+
 		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
 			'Diagnostic Report',
@@ -3177,7 +3180,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Diagnostic Report created successfully');
 
 		// Set the HTML content immediately with empty session files (shows loading state)
-		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
+		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders, backendStorageInfo);
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
@@ -3253,6 +3256,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// This will trigger a rebuild with fresh data
 						await this.showDiagnosticReport();
 					}
+					break;
+				case 'configureBackend':
+					this.log('[DEBUG] configureBackend message received from diagnostics webview');
+					// Execute the configureBackend command if it exists
+					try {
+						await vscode.commands.executeCommand('copilot-token-tracker.configureBackend');
+					} catch (err) {
+						// If command is not registered, show settings
+						vscode.window.showInformationMessage(
+							'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
+							'Open Settings'
+						).then(choice => {
+							if (choice === 'Open Settings') {
+								vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
+							}
+						});
+					}
+					break;
+				case 'openSettings':
+					this.log('[DEBUG] openSettings message received from diagnostics webview');
+					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
 					break;
 			}
 		});
@@ -3330,12 +3354,67 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Get backend storage information for diagnostics
+	 */
+	private async getBackendStorageInfo(): Promise<any> {
+		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const enabled = config.get<boolean>('backend.enabled', false);
+		const storageAccount = config.get<string>('backend.storageAccount', '');
+		const subscriptionId = config.get<string>('backend.subscriptionId', '');
+		const resourceGroup = config.get<string>('backend.resourceGroup', '');
+		const aggTable = config.get<string>('backend.aggTable', 'usageAggDaily');
+		const eventsTable = config.get<string>('backend.eventsTable', 'usageEvents');
+		const authMode = config.get<string>('backend.authMode', 'entraId');
+		const sharingProfile = config.get<string>('backend.sharingProfile', 'off');
+		
+		// Get last sync time from global state
+		const lastSyncAt = this.context.globalState.get<number>('backend.lastSyncAt');
+		const lastSyncTime = lastSyncAt ? new Date(lastSyncAt).toISOString() : null;
+		
+		// Check if backend is configured (has required settings)
+		const isConfigured = enabled && storageAccount && subscriptionId && resourceGroup;
+		
+		// Get unique device count from session files (estimate based on unique workspace roots)
+		const sessionFiles = await this.getCopilotSessionFiles();
+		const workspaceIds = new Set<string>();
+		const pathModule = require('path');
+		
+		for (const file of sessionFiles) {
+			const parts = file.split(/[\\\/]/);
+			const workspaceStorageIdx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+			if (workspaceStorageIdx >= 0 && workspaceStorageIdx < parts.length - 1) {
+				const workspaceId = parts[workspaceStorageIdx + 1];
+				if (workspaceId && workspaceId.length > 10) {
+					workspaceIds.add(workspaceId);
+				}
+			}
+		}
+		
+		return {
+			enabled,
+			isConfigured,
+			storageAccount,
+			subscriptionId: subscriptionId ? subscriptionId.substring(0, 8) + '...' : '',
+			resourceGroup,
+			aggTable,
+			eventsTable,
+			authMode,
+			sharingProfile,
+			lastSyncTime,
+			deviceCount: workspaceIds.size,
+			sessionCount: sessionFiles.length,
+			recordCount: null // Will be populated from Azure if configured
+		};
+	}
+
 	private getDiagnosticReportHtml(
 		webview: vscode.Webview, 
 		report: string, 
 		sessionFiles: { file: string; size: number; modified: string }[],
 		detailedSessionFiles: SessionFileDetails[],
-		sessionFolders: { dir: string; count: number }[] = []
+		sessionFolders: { dir: string; count: number }[] = [],
+		backendStorageInfo: any = null
 	): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'diagnostics.js'));
@@ -3366,7 +3445,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			location: 'VS Code Global State - extension.globalState.get sessionFileCache'
 		};
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo }).replace(/</g, '\\u003c');
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
