@@ -654,6 +654,21 @@ function renderLayout(data: SessionLogData): void {
 				padding: 40px 20px;
 				color: #888;
 			}
+			
+			/* File card link button */
+			.file-link-btn {
+				background: linear-gradient(180deg, #2563eb 0%, #0b5cff 100%);
+				color: #fff;
+				padding: 8px 16px;
+				border-radius: 8px;
+				border: none;
+				cursor: pointer;
+				font-weight: 700;
+				font-size: 12px;
+				box-shadow: 0 2px 6px rgba(11,92,255,0.2);
+				margin-top: 8px;
+			}
+			.file-link-btn:hover { filter: brightness(1.1); }
 		</style>
 		
 		<div class="container">
@@ -677,6 +692,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-label">🔗 Context Refs</div>
 					<div class="summary-value">${usageContextTotal}</div>
 					<div class="summary-sub">#file ${usageContextRefs.file || 0} · @vscode ${usageContextRefs.vscode || 0} · @workspace ${usageContextRefs.workspace || 0}</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">📄 Session File</div>
+					<div class="summary-value" style="font-size: 16px; margin-bottom: 4px;">${escapeHtml(data.title || getFileName(data.file))}</div>
+					<div class="summary-sub" style="margin-bottom: 8px;">${formatFileSize(data.size)} · Modified: ${formatDate(data.modified)}</div>
+					<button id="file-link" class="file-link-btn">Open in Editor</button>
 				</div>
 			</div>
 			
