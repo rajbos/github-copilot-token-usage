@@ -35,7 +35,7 @@
       "outputCostPerMillion": 10.0,
       "category": "GPT-5 models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["GPT-5"]
     },
     "gpt-5-codex": {
@@ -106,7 +106,7 @@
       "outputCostPerMillion": 12.0,
       "category": "GPT-4 models",
       "tier": "unknown",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["GPT-4"]
     },
     "gpt-4.1": {
@@ -114,7 +114,7 @@
       "outputCostPerMillion": 12.0,
       "category": "GPT-4 models",
       "tier": "standard",
-      "multiplier": 0
+      "multiplier": 0,
       "displayNames": ["GPT-4.1"]
     },
     "gpt-4.1-mini": {
@@ -136,7 +136,7 @@
       "outputCostPerMillion": 10.0,
       "category": "GPT-4 models",
       "tier": "standard",
-      "multiplier": 0
+      "multiplier": 0,
       "displayNames": ["GPT-4o"]
     },
     "gpt-4o-mini": {
@@ -144,7 +144,7 @@
       "outputCostPerMillion": 0.6,
       "category": "GPT-4 models",
       "tier": "standard",
-      "multiplier": 0
+      "multiplier": 0,
       "displayNames": ["GPT-4o-mini", "GPT-4o Mini"]
     },
     "claude-sonnet-3.5": {
@@ -152,7 +152,7 @@
       "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
       "tier": "unknown",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["Claude Sonnet 3.5"]
     },
     "claude-sonnet-3.7": {
@@ -160,7 +160,7 @@
       "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
       "tier": "unknown",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["Claude Sonnet 3.7"]
     },
     "claude-sonnet-4": {
@@ -168,7 +168,7 @@
       "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["Claude Sonnet 4"]
     },
     "claude-sonnet-4.5": {
@@ -211,7 +211,7 @@
       "outputCostPerMillion": 16.0,
       "category": "OpenAI reasoning models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["o3-mini"]
     },
     "o4-mini": {
@@ -219,7 +219,7 @@
       "outputCostPerMillion": 16.0,
       "category": "OpenAI reasoning models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["o4-mini"]
     },
     "gpt-3.5-turbo": {
@@ -227,7 +227,7 @@
       "outputCostPerMillion": 1.5,
       "category": "Legacy models",
       "tier": "standard",
-      "multiplier": 0
+      "multiplier": 0,
       "displayNames": ["GPT-3.5-Turbo", "GPT-3.5 Turbo"]
     },
     "gemini-2.5-pro": {
@@ -235,7 +235,7 @@
       "outputCostPerMillion": 10.0,
       "category": "Google Gemini models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["Gemini 2.5 Pro"]
     },
     "gemini-2.5-flash": {
@@ -278,7 +278,7 @@
       "outputCostPerMillion": 12.0,
       "category": "Google Gemini models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["Gemini 3 Pro"]
     },
     "gemini-3-pro-preview": {
@@ -286,7 +286,7 @@
       "outputCostPerMillion": 12.0,
       "category": "Google Gemini models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
       "displayNames": ["Gemini 3 Pro (Preview)"]
     },
     "grok-code-fast-1": {
