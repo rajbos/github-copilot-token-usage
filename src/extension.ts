@@ -3250,9 +3250,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
-				// Consider all session files (including those without interactions) for diagnostics.
-				// Sessions are only included if their last activity is within the last 14 days, where
-				// "activity" is based on lastInteraction when present, or the file's modified time otherwise.
+				// Only include sessions with activity (lastInteraction or file modified time) within the last 14 days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
 					: new Date(details.modified);
