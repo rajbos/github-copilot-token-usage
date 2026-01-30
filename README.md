@@ -101,6 +101,8 @@ The dashboard provides insights into your prompting patterns and helps you optim
 - The numbers are based on the amount of text in the chat sessions, not the actual tokens used. This is an estimation and may not be 100% accurate. We use an average character-to-token ratio for each model to estimate the token count, which is visible in the detail panel when you click on the status bar item.
 - Same for the information on amount of trees that are needed to compensate your usage.
 
+- When debugging in a Dev Container, the session log files cannot be found (they live outside the container). Token tracking will not work inside the container; however, you can still use the devcontainer to run AI in YOLO.
+
 > **⚠️ Warning**
 >
 > This extension has only been tested on **Windows**. Other operating systems may not be supported or may require adjustments. PR's or test results for that are most welcome!
