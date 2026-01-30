@@ -476,28 +476,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.month.tokens.toLocaleString()}`;
 
-			// Create detailed tooltip with markdown support
+			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
-			tooltip.appendMarkdown('## 🤖 GitHub Copilot Token Usage\n\n');
-			tooltip.appendMarkdown('### 📅 Today\n');
-			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.today.tokens.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.today.estimatedCost.toFixed(4)}\n\n`);
-			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.today.co2.toFixed(2)}g\n\n`);
-			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.today.waterUsage.toFixed(3)}L\n\n`);
-			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.today.sessions}\n\n`);
-			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.today.avgInteractionsPerSession}\n\n`);
-			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.today.avgTokensPerSession.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown('### 📊 This Month\n');
-			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.month.tokens.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.month.estimatedCost.toFixed(4)}\n\n`);
-			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.month.co2.toFixed(2)}g\n\n`);
-			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.month.waterUsage.toFixed(3)}L\n\n`);
-			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.month.sessions}\n\n`);
-			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.month.avgInteractionsPerSession}\n\n`);
-			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.month.avgTokensPerSession.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown('---\n\n');
-			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios*\n\n');
-			tooltip.appendMarkdown('*Updates automatically every 5 minutes*');
+			tooltip.isTrusted = false;
+			// Title
+			tooltip.appendMarkdown('#### 🤖 GitHub Copilot Token Usage');
+			tooltip.appendMarkdown('\n---\n');
+			// Table layout for Today
+			tooltip.appendMarkdown(`📅 Today  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :     | ${detailedStats.today.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.today.avgTokensPerSession.toLocaleString()} |\n`);
+
+			tooltip.appendMarkdown('\n---\n');
+
+			// Table layout for This Month
+			tooltip.appendMarkdown(`📊 This month  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.month.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.month.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.month.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.month.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.month.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :      | ${detailedStats.month.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.month.avgTokensPerSession.toLocaleString()} |\n`);
+			// Footer
+			tooltip.appendMarkdown('\n---\n');
+			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
+			tooltip.appendMarkdown('*Updates automatically every 5 minutes.*');
 
 			this.statusBarItem.tooltip = tooltip;
 
