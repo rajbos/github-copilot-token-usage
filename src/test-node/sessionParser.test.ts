@@ -147,7 +147,7 @@ test('delta-based JSONL: blocks nested prototype pollution attempts', () => {
 		JSON.stringify({ kind: 1, k: ['requests', '__proto__', 'polluted'], v: 'yes' })
 	].join('\n');
 
-	const result = parseSessionFileContent(filePath, content, estimateTokensByLength);
+	const _ = parseSessionFileContent(filePath, content, estimateTokensByLength);
 	assert.equal(({} as any).polluted, undefined);
 	assert.equal((Object.prototype as any).polluted, undefined);
 });
