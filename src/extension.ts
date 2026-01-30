@@ -218,6 +218,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private analysisPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
+	private lastDetailedStats: DetailedStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
@@ -454,7 +455,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Update every 5 minutes and save cache
 		this.updateInterval = setInterval(() => {
-			this.updateTokenStats();
+			this.updateTokenStats(true); // Silent update from timer
 			this.saveCacheToStorage();
 		}, 5 * 60 * 1000);
 	}
@@ -505,10 +506,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	public async updateTokenStats(): Promise<DetailedStats | undefined> {
+	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const detailedStats = await this.calculateDetailedStats((completed, total) => {
+			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
 				const percentage = Math.round((completed / total) * 100);
 				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
 			});
@@ -569,6 +570,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
+			// Store the stats for reuse without recalculation
+			this.lastDetailedStats = detailedStats;
 			return detailedStats;
 		} catch (error) {
 			this.error('Error updating token stats:', error);
@@ -2432,8 +2435,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const foundPaths: string[] = [];
 		for (let i = 0; i < allVSCodePaths.length; i++) {
 			const codeUserPath = allVSCodePaths[i];
-			if (fs.existsSync(codeUserPath)) {
-				foundPaths.push(codeUserPath);
+			try {
+				if (fs.existsSync(codeUserPath)) {
+					foundPaths.push(codeUserPath);
+				}
+			} catch (checkError) {
+				this.warn(`Could not check path ${codeUserPath}: ${checkError}`);
 			}
 			// Update progress
 			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
@@ -2451,53 +2458,89 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				// Workspace storage sessions
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
-				if (fs.existsSync(workspaceStoragePath)) {
-					const workspaceDirs = fs.readdirSync(workspaceStoragePath);
+				try {
+					if (fs.existsSync(workspaceStoragePath)) {
+						try {
+							const workspaceDirs = fs.readdirSync(workspaceStoragePath);
 
-					for (const workspaceDir of workspaceDirs) {
-						const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-						if (fs.existsSync(chatSessionsPath)) {
-							const sessionFiles2 = fs.readdirSync(chatSessionsPath)
-								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-								.map(file => path.join(chatSessionsPath, file));
-							if (sessionFiles2.length > 0) {
-								this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
-								sessionFiles.push(...sessionFiles2);
+							for (const workspaceDir of workspaceDirs) {
+								const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
+								try {
+									if (fs.existsSync(chatSessionsPath)) {
+										try {
+											const sessionFiles2 = fs.readdirSync(chatSessionsPath)
+												.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+												.map(file => path.join(chatSessionsPath, file));
+											if (sessionFiles2.length > 0) {
+												this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
+												sessionFiles.push(...sessionFiles2);
+											}
+										} catch (readError) {
+											this.warn(`Could not read chat sessions in ${chatSessionsPath}: ${readError}`);
+										}
+									}
+								} catch (checkError) {
+									this.warn(`Could not check chat sessions path ${chatSessionsPath}: ${checkError}`);
+								}
 							}
+						} catch (readError) {
+							this.warn(`Could not read workspace storage in ${workspaceStoragePath}: ${readError}`);
 						}
 					}
+				} catch (checkError) {
+					this.warn(`Could not check workspace storage path ${workspaceStoragePath}: ${checkError}`);
 				}
 
 				// Global storage sessions (legacy emptyWindowChatSessions)
 				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
-				if (fs.existsSync(globalStoragePath)) {
-					const globalSessionFiles = fs.readdirSync(globalStoragePath)
-						.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-						.map(file => path.join(globalStoragePath, file));
-					if (globalSessionFiles.length > 0) {
-						this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
-						sessionFiles.push(...globalSessionFiles);
+				try {
+					if (fs.existsSync(globalStoragePath)) {
+						try {
+							const globalSessionFiles = fs.readdirSync(globalStoragePath)
+								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+								.map(file => path.join(globalStoragePath, file));
+							if (globalSessionFiles.length > 0) {
+								this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
+								sessionFiles.push(...globalSessionFiles);
+							}
+						} catch (readError) {
+							this.warn(`Could not read global storage in ${globalStoragePath}: ${readError}`);
+						}
 					}
+				} catch (checkError) {
+					this.warn(`Could not check global storage path ${globalStoragePath}: ${checkError}`);
 				}
 
 				// GitHub Copilot Chat extension global storage
 				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
-				if (fs.existsSync(copilotChatGlobalPath)) {
-					this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
-					this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+				try {
+					if (fs.existsSync(copilotChatGlobalPath)) {
+						this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
+						this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+					}
+				} catch (checkError) {
+					this.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
 				}
 			}
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			if (fs.existsSync(copilotCliSessionPath)) {
-				const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
-					.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-					.map(file => path.join(copilotCliSessionPath, file));
-				if (cliSessionFiles.length > 0) {
-					this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
-					sessionFiles.push(...cliSessionFiles);
+			try {
+				if (fs.existsSync(copilotCliSessionPath)) {
+					try {
+						const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
+							.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+							.map(file => path.join(copilotCliSessionPath, file));
+						if (cliSessionFiles.length > 0) {
+							this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
+							sessionFiles.push(...cliSessionFiles);
+						}
+					} catch (readError) {
+						this.warn(`Could not read Copilot CLI session path in ${copilotCliSessionPath}: ${readError}`);
+					}
 				}
+			} catch (checkError) {
+				this.warn(`Could not check Copilot CLI session path ${copilotCliSessionPath}: ${checkError}`);
 			}
 
 			// Log summary
@@ -2760,10 +2803,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Get detailed stats (with progress in status bar)
-		const stats = await this.updateTokenStats();
+		// Use cached stats if available, otherwise calculate
+		let stats = this.lastDetailedStats;
 		if (!stats) {
-			return;
+			this.log('No cached stats available, calculating...');
+			stats = await this.updateTokenStats();
+			if (!stats) {
+				return;
+			}
 		}
 
 		// Create a small webview panel
