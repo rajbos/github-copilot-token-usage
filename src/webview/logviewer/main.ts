@@ -571,6 +571,9 @@ function renderLayout(data: SessionLogData): void {
 				text-transform: uppercase;
 				letter-spacing: 0.5px;
 			}
+			.tools-table thead th:nth-child(2) {
+				text-align: right;
+			}
 			.tools-table tbody .tool-row {
 				border-bottom: 1px solid #3a3a44;
 			}
