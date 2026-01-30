@@ -1185,7 +1185,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.kind === 0) {
 							const modelId = event.v?.selectedModel?.identifier || 
 								event.v?.selectedModel?.metadata?.id ||
-								event.v?.inputState?.selectedModel?.metadata?.id; // Legacy fallback
+								// Legacy fallback: older Copilot Chat session logs stored selectedModel under v.inputState.
+								// This is kept for backward compatibility so we can still read existing logs from those versions.
+								event.v?.inputState?.selectedModel?.metadata?.id;
 							if (modelId) {
 								defaultModel = modelId.replace(/^copilot\//, '');
 							}
