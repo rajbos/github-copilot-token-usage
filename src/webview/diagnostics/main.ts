@@ -774,22 +774,31 @@ function renderLayout(data: DiagnosticsData): void {
 		}
 	});
 
+	// Helper function to activate a tab by its ID
+	function activateTab(tabId: string): boolean {
+		const tabButton = document.querySelector(`.tab[data-tab="${tabId}"]`);
+		const tabContent = document.getElementById(`tab-${tabId}`);
+		
+		if (tabButton && tabContent) {
+			// Remove active class from all tabs and contents
+			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+			
+			// Activate the specified tab
+			tabButton.classList.add('active');
+			tabContent.classList.add('active');
+			return true;
+		}
+		return false;
+	}
+
 	// Wire up tab switching
 	document.querySelectorAll('.tab').forEach(tab => {
 		tab.addEventListener('click', () => {
 			const tabId = (tab as HTMLElement).getAttribute('data-tab');
 			
-			// Update active tab
-			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-			tab.classList.add('active');
-			
-			// Update active content
-			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-			const content = document.getElementById(`tab-${tabId}`);
-			if (content) { content.classList.add('active'); }
-			
-			// Save the active tab state
-			if (tabId) {
+			if (tabId && activateTab(tabId)) {
+				// Save the active tab state
 				vscode.setState({ activeTab: tabId });
 			}
 		});
@@ -947,18 +956,7 @@ function renderLayout(data: DiagnosticsData): void {
 	// Restore active tab from saved state
 	const savedState = vscode.getState();
 	if (savedState?.activeTab) {
-		const tabToActivate = document.querySelector(`.tab[data-tab="${savedState.activeTab}"]`);
-		const contentToActivate = document.getElementById(`tab-${savedState.activeTab}`);
-		
-		if (tabToActivate && contentToActivate) {
-			// Remove active class from all tabs and contents
-			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-			
-			// Activate the saved tab
-			tabToActivate.classList.add('active');
-			contentToActivate.classList.add('active');
-		}
+		activateTab(savedState.activeTab);
 	}
 }
 
