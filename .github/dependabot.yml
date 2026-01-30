@@ -57,3 +57,11 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    # Group minor and patch updates to reduce PR noise
+    groups:
+      minor-and-patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

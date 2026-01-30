@@ -271,8 +271,8 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title)}</a>` : '<span style="color: #666;">—</span>'}
 							</td>
 							<td>${formatFileSize(sf.size)}</td>
-							<td>${sf.interactions}</td>
-							<td title="${getContextRefsSummary(sf.contextReferences)}">${getTotalContextRefs(sf.contextReferences)}</td>
+							<td>${sanitizeNumber(sf.interactions)}</td>
+							<td title="${getContextRefsSummary(sf.contextReferences)}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
 							<td>${formatDate(sf.firstInteraction)}</td>
 							<td>${formatDate(sf.lastInteraction)}</td>
 						</tr>
