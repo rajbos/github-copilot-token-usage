@@ -35,4 +35,4 @@ For comprehensive documentation about Copilot session log file schemas, see:
 Get-Content docs\logFilesSchema\session-file-schema-analysis.json | ConvertFrom-Json
 ```
 
-See [logFilesSchema/schema-analysis.md](logFilesSchema/schema-analysis.md) for more information.
+See [logFilesSchema/SCHEMA-ANALYSIS.md](logFilesSchema/SCHEMA-ANALYSIS.md) for more information.
