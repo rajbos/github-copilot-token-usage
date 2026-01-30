@@ -611,9 +611,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				try {
+					// Get session file details to access lastInteraction timestamp
+					const details = await this.getSessionFileDetails(sessionFile);
+					
+					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
+					if (details.interactions === 0) {
+						skippedFiles++;
+						continue;
+					}
+					
+					// Use lastInteraction date (fallback to modified date) for consistency with Diagnostic view
+					const lastActivity = details.lastInteraction 
+						? new Date(details.lastInteraction) 
+						: new Date(details.modified);
+					
 					const fileStats = fs.statSync(sessionFile);
 
-					if (fileStats.mtime >= monthStart) {
+					if (lastActivity >= monthStart) {
 						// Check if data is cached before making calls
 						const wasCached = this.isCacheValid(sessionFile, fileStats.mtime.getTime());
 						
@@ -649,7 +663,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							monthStats.modelUsage[model].outputTokens += usage.outputTokens;
 						}
 
-						if (fileStats.mtime >= todayStart) {
+						if (lastActivity >= todayStart) {
 							todayStats.tokens += tokens;
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
@@ -672,7 +686,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					else {
-						// File is too old, skip it
+						// Session is too old (no activity in current month), skip it
 						skippedFiles++;
 					}
 				} catch (fileError) {
@@ -682,7 +696,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
-				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in current month)`);
 			}
 			const totalCacheAccesses = cacheHits + cacheMisses;
 			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
@@ -3198,7 +3212,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 		const detailedSessionFiles: SessionFileDetails[] = [];
 		
-		for (const file of sessionFiles.slice(0, 500)) {
+		// Sort files by modification time (most recent first) before taking first 500
+		// This ensures we prioritize recent sessions regardless of their folder location
+		const sortedFiles = sessionFiles
+			.map(file => {
+				try {
+					const stat = fs.statSync(file);
+					return { file, mtime: stat.mtime.getTime() };
+				} catch {
+					return { file, mtime: 0 };
+				}
+			})
+			.sort((a, b) => b.mtime - a.mtime)
+			.map(item => item.file);
+		
+		// Process up to 500 most recent session files
+		for (const file of sortedFiles.slice(0, 500)) {
 			// Check if panel was disposed
 			if (!panel.visible && panel.viewColumn === undefined) {
 				this.log('Diagnostic panel closed, stopping background load');
@@ -3207,11 +3236,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
-				// Filter: skip empty sessions (no interactions = just opened chat panel, no messages sent)
-				if (details.interactions === 0) {
-					continue;
-				}
-				// Filter: only include sessions with activity in the last 14 days
+				// Include all sessions (even empty ones) to show complete session history in diagnostics
+				// Filter: only include sessions with activity in the last 14 days based on lastInteraction
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
 					: new Date(details.modified);
