@@ -371,7 +371,6 @@ suite('Backend Config Panel Webview Integration Tests', () => {
 
 		test('REGRESSION: Message handler must be registered', (done) => {
 			setTimeout(() => {
-				let handlerCalled = false;
 
 				const originalInnerText = document.getElementById('backendStateBadge')?.textContent;
 
