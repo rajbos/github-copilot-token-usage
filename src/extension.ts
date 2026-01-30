@@ -192,6 +192,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private analysisPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
+	private lastDetailedStats: DetailedStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
@@ -416,7 +417,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Update every 5 minutes and save cache
 		this.updateInterval = setInterval(() => {
-			this.updateTokenStats();
+			this.updateTokenStats(true); // Silent update from timer
 			this.saveCacheToStorage();
 		}, 5 * 60 * 1000);
 	}
@@ -467,10 +468,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	public async updateTokenStats(): Promise<DetailedStats | undefined> {
+	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const detailedStats = await this.calculateDetailedStats((completed, total) => {
+			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
 				const percentage = Math.round((completed / total) * 100);
 				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
 			});
@@ -531,6 +532,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
+			// Store the stats for reuse without recalculation
+			this.lastDetailedStats = detailedStats;
 			return detailedStats;
 		} catch (error) {
 			this.error('Error updating token stats:', error);
@@ -2371,10 +2374,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Get detailed stats (with progress in status bar)
-		const stats = await this.updateTokenStats();
+		// Use cached stats if available, otherwise calculate
+		let stats = this.lastDetailedStats;
 		if (!stats) {
-			return;
+			this.log('No cached stats available, calculating...');
+			stats = await this.updateTokenStats();
+			if (!stats) {
+				return;
+			}
 		}
 
 		// Create a small webview panel
