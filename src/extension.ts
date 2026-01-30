@@ -2733,18 +2733,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return 'unknown';
 	}
 
-	private extractModelTierFromTooltip(tooltip: string): 'standard' | 'premium' | 'unknown' {
-		// Standard models have text like "does not count towards your premium request limit"
-		if (tooltip && tooltip.toLowerCase().includes('does not count towards your premium request limit')) {
-			return 'standard';
-		}
-		// Premium models may have multiplier text like "3x" or "counted at a"
-		if (tooltip && (tooltip.includes('•') || tooltip.toLowerCase().includes('counted at'))) {
-			return 'premium';
-		}
-		return 'unknown';
-	}
-
 	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
 		// Token estimation based on character count and model
 		let tokensPerChar = 0.25; // default
