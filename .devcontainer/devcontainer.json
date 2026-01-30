@@ -11,7 +11,7 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "ms-vscode.extension-test-runner",
-        "amodio.tsl-problem-matcher",
+        "amodio.tsc-problem-matcher",
         "github.copilot",
         "github.copilot-chat"
       ],
