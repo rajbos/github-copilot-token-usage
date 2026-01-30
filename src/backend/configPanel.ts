@@ -760,7 +760,7 @@ export class BackendConfigPanel implements vscode.Disposable {
  * This allows integration tests to verify the HTML structure and JavaScript functionality.
  */
 export function renderBackendConfigHtml(webview: vscode.Webview, state: BackendConfigPanelState): string {
-	const nonce = crypto.randomBytes(16).toString('base64');
+
 	const panel = new BackendConfigPanel(vscode.Uri.file('/test'), {
 		getState: async () => state,
 		onSave: async () => ({ state, errors: {} }),

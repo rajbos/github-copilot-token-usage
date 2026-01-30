@@ -223,7 +223,7 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "compile-tests": "node -e \"const fs = require('fs'); fs.cpSync('package.json', 'out/package.json', {force: true}); fs.cpSync('package.json', 'out/test/package.json', {force: true})\" && tsc -p tsconfig.tests.json",
+    "compile-tests": "node -e \"const fs = require('fs'); fs.mkdirSync('out/test', { recursive: true }); fs.cpSync('package.json', 'out/package.json', { force: true }); fs.cpSync('package.json', 'out/test/package.json', { force: true });\" && tsc -p tsconfig.tests.json",
     "watch-tests": "tsc -p tsconfig.tests.json -w",
     "pretest": "npm run compile && npm run compile-tests && npm run lint",
     "check-types": "tsc --noEmit",

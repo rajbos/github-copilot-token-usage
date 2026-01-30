@@ -4,11 +4,11 @@
  */
 
 import * as vscode from 'vscode';
-import * as os from 'os';
+
 import type { BackendFacade } from './facade';
 import { copyBackendConfigToClipboard } from './copyConfig';
 import { computeBackendSharingPolicy } from './sharingProfile';
-import { showBackendError, showBackendSuccess, confirmAction } from './integration';
+import { showBackendError, showBackendSuccess } from './integration';
 import type { DisplayNameStore } from './displayNames';
 import { writeClipboardText } from '../utils/clipboard';
 import type { BackendFacadeInterface } from './types';
@@ -312,7 +312,7 @@ export class BackendCommandHandler {
 	 * Handles the "Clear Azure Settings" command.
 	 */
 	async handleClearAzureSettings(): Promise<void> {
-		const conf = ConfirmationMessages.clearKey();
+
 		const confirmed = await vscode.window.showWarningMessage(
 			'Clear all Azure settings?',
 			{ modal: true, detail: 'This will remove all Azure resource IDs, credentials, and backend configuration. You will need to reconfigure the backend to use it again.' },

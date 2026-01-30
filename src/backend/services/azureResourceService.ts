@@ -327,8 +327,8 @@ export class AzureResourceService {
 		let shareConsentAt = '';
 		let userIdentityMode = config.get<BackendUserIdentityMode>('backend.userIdentityMode', 'pseudonymous');
 		let userId = '';
-		let userIdMode: 'alias' | 'custom' = 'alias';
-		let shareWorkspaceMachineNames = config.get<boolean>('backend.shareWorkspaceMachineNames', false);
+		let userIdMode: 'alias' | 'custom';
+		let shareWorkspaceMachineNames: boolean;
 
 		if (sharingProfile === 'soloFull') {
 			// Personal dataset: include workspace/machine names by default.
