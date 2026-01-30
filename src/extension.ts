@@ -612,16 +612,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				try {
+					// Fast check: Get file stats first to avoid processing old files
 					const fileStats = fs.statSync(sessionFile);
+					
+					// Skip files modified before the current month (quick filter)
+					// This is the main performance optimization - filters out old sessions without reading file content
+					if (fileStats.mtime < monthStart) {
+						skippedFiles++;
+						continue;
+					}
+					
+					// For files within current month, check if data is cached to avoid redundant reads
+					const mtime = fileStats.mtime.getTime();
+					const wasCached = this.isCacheValid(sessionFile, mtime);
+					
+					// Get interactions count (uses cache if available)
+					const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime);
+					
+					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
+					if (interactions === 0) {
+						skippedFiles++;
+						continue;
+					}
+					
+					// Get remaining data (all use cache if available)
+					const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime);
+					const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime);
+					const editorType = this.getEditorTypeFromPath(sessionFile);
+					
+					// For date filtering, get lastInteraction from session details
+					const details = await this.getSessionFileDetails(sessionFile);
+					const lastActivity = details.lastInteraction 
+						? new Date(details.lastInteraction) 
+						: new Date(details.modified);
 
-					if (fileStats.mtime >= monthStart) {
-						// Check if data is cached before making calls
-						const wasCached = this.isCacheValid(sessionFile, fileStats.mtime.getTime());
-						
-						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
-						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
-						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
-						const editorType = this.getEditorTypeFromPath(sessionFile);
+					if (lastActivity >= monthStart) {
 
 						// Update cache statistics
 						if (wasCached) {
@@ -650,7 +675,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							monthStats.modelUsage[model].outputTokens += usage.outputTokens;
 						}
 
-						if (fileStats.mtime >= todayStart) {
+						if (lastActivity >= todayStart) {
 							todayStats.tokens += tokens;
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
@@ -673,7 +698,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					else {
-						// File is too old, skip it
+						// Session is too old (no activity in current month), skip it
 						skippedFiles++;
 					}
 				} catch (fileError) {
@@ -683,7 +708,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
-				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in current month)`);
 			}
 			const totalCacheAccesses = cacheHits + cacheMisses;
 			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
@@ -3206,7 +3231,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 		const detailedSessionFiles: SessionFileDetails[] = [];
 		
-		for (const file of sessionFiles.slice(0, 500)) {
+		// Sort files by modification time (most recent first) before taking first 500
+		// This ensures we prioritize recent sessions regardless of their folder location
+		const fileStats = await Promise.all(
+			sessionFiles.map(async (file) => {
+				try {
+					const stat = await fs.promises.stat(file);
+					return { file, mtime: stat.mtime.getTime() };
+				} catch {
+					return { file, mtime: 0 };
+				}
+			})
+		);
+
+		const sortedFiles = fileStats
+			.sort((a, b) => b.mtime - a.mtime)
+			.map(item => item.file);
+		
+		// Process up to 500 most recent session files
+		for (const file of sortedFiles.slice(0, 500)) {
 			// Check if panel was disposed
 			if (!panel.visible && panel.viewColumn === undefined) {
 				this.log('Diagnostic panel closed, stopping background load');
@@ -3215,11 +3258,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
-				// Filter: skip empty sessions (no interactions = just opened chat panel, no messages sent)
-				if (details.interactions === 0) {
-					continue;
-				}
-				// Filter: only include sessions with activity in the last 14 days
+				// Only include sessions with activity (lastInteraction or file modified time) within the last 14 days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
 					: new Date(details.modified);
