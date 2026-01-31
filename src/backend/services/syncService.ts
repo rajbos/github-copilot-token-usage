@@ -60,6 +60,8 @@ export interface SyncServiceDeps {
 	getModelFromRequest: (request: ChatRequest) => string;
 	// Cache integration for performance
 	getSessionFileDataCached?: (sessionFilePath: string, mtime: number) => Promise<SessionFileCache>;
+	// UI refresh callback after successful sync
+	updateTokenStats?: () => Promise<void>;
 }
 
 /**
@@ -128,8 +130,8 @@ export class SyncService {
 					}
 				});
 			}, intervalMs);
-			// Immediate initial sync
-			this.syncToBackendStore(false, settings, isConfigured).catch((e) => {
+			// Immediate initial sync (forced to ensure settings changes take effect)
+			this.syncToBackendStore(true, settings, isConfigured).catch((e) => {
 				this.deps.warn(`Backend sync initial sync failed: ${e?.message ?? e}`);
 			});
 		} catch (e) {
@@ -163,9 +165,13 @@ export class SyncService {
 	}
 
 	/**
-	 * Process a session file using cached data.
+	 * Process a session file using cached data for token counts but extracting accurate timestamps.
 	 * Returns true if successful, false if cache miss (caller should parse file).
 	 * Validates all cached data at runtime to prevent injection/corruption.
+	 * 
+	 * CRITICAL: We parse the file to extract actual interaction timestamps and create per-day
+	 * rollups, but use cached token counts for performance. This ensures accurate day assignment
+	 * while still benefiting from cached calculations.
 	 */
 	private async processCachedSessionFile(
 		sessionFile: string,
@@ -173,7 +179,9 @@ export class SyncService {
 		workspaceId: string,
 		machineId: string,
 		userId: string | undefined,
-		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>
+		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>,
+		startMs: number,
+		now: Date
 	): Promise<boolean> {
 		try {
 			const cachedData = await this.deps.getSessionFileDataCached!(sessionFile, fileMtimeMs);
@@ -192,39 +200,120 @@ export class SyncService {
 				return false;
 			}
 			
-			// Expand cached modelUsage into rollups
-			const dayKey = this.utility.toUtcDayKey(new Date(fileMtimeMs));
+			// Parse the session file to get actual request timestamps and create per-day rollups
+			// This ensures accurate day assignment while using cached token counts
+			const content = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			// CRITICAL FIX: Only assign interactions to first model to prevent inflation
-			// When a file has multiple models, interactions should be counted once, not per-model
-			let interactionsAssigned = false;
+			// Map to track per-day per-model interactions for proper distribution
+			const dayModelInteractions = new Map<string, Map<string, number>>();
 			
-			for (const [model, usage] of Object.entries(cachedData.modelUsage)) {
-				// Validate usage object structure
-				if (!usage || typeof usage !== 'object') {
-					this.deps.warn(`Backend sync: invalid usage object for model ${model} in ${sessionFile}`);
-					continue;
+			// Handle JSONL format (Copilot CLI)
+			if (sessionFile.endsWith('.jsonl')) {
+				const lines = content.trim().split('\n');
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (!event || typeof event !== 'object') { continue; }
+						
+						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
+						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+						if (!eventMs || eventMs < startMs) { continue; }
+						
+						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+						const model = (event.model || 'gpt-4o').toString();
+						
+						// Log first few interactions from today's files for debugging
+						if (isFileFromToday && processedLines < 3) {
+							this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} line ${lineCount}: eventMs=${new Date(eventMs).toISOString()}, dayKey=${dayKey}, type=${event.type}`);
+							processedLines++;
+						}
+						
+						// Track interaction for this day+model (count all events, not just user.message)
+						if (!dayModelInteractions.has(dayKey)) {
+							dayModelInteractions.set(dayKey, new Map());
+						}
+						const dayMap = dayModelInteractions.get(dayKey)!;
+						dayMap.set(model, (dayMap.get(model) || 0) + 1);
+					} catch {
+						// skip malformed line
+					}
 				}
-				if (!Number.isFinite(usage.inputTokens) || usage.inputTokens < 0) {
-					this.deps.warn(`Backend sync: invalid inputTokens for model ${model} in ${sessionFile}`);
-					continue;
+			} else {
+				// Handle JSON format (VS Code Copilot Chat)
+				try {
+					const sessionJson = JSON.parse(content);
+					if (!sessionJson || typeof sessionJson !== 'object') {
+						return false;
+					}
+					const sessionObj = sessionJson as Record<string, unknown>;
+					const requests = Array.isArray(sessionObj.requests) ? (sessionObj.requests as unknown[]) : [];
+					
+					for (const request of requests) {
+						const req = request as ChatRequest;
+						const normalizedTs = this.utility.normalizeTimestampToMs(
+							typeof req.timestamp !== 'undefined' ? req.timestamp : (sessionObj.lastMessageDate as unknown)
+						);
+						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+						if (!eventMs || eventMs < startMs) { continue; }
+						
+						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+						const model = this.deps.getModelFromRequest(req);
+						
+
+						// Track interaction for this day+model
+						if (!dayModelInteractions.has(dayKey)) {
+							dayModelInteractions.set(dayKey, new Map());
+						}
+						const dayMap = dayModelInteractions.get(dayKey)!;
+						dayMap.set(model, (dayMap.get(model) || 0) + 1);
+					}
+				} catch (e) {
+					this.deps.warn(`Backend sync: failed to parse JSON for ${sessionFile}: ${e}`);
+					return false;
 				}
-				if (!Number.isFinite(usage.outputTokens) || usage.outputTokens < 0) {
-					this.deps.warn(`Backend sync: invalid outputTokens for model ${model} in ${sessionFile}`);
-					continue;
-				}
-				
-				const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
-				// Only assign interactions to the first valid model to prevent inflation
-				const interactionsForThisModel = interactionsAssigned ? 0 : cachedData.interactions;
-				interactionsAssigned = true;
-				
-				upsertDailyRollup(rollups, key, {
-					inputTokens: usage.inputTokens,
-					outputTokens: usage.outputTokens,
-					interactions: interactionsForThisModel
-				});
 			}
+			
+			// Now distribute cached token counts proportionally across day+model combinations
+			// based on the actual interaction distribution we just calculated
+			for (const [dayKey, modelMap] of dayModelInteractions) {
+				for (const [model, interactions] of modelMap) {
+					const cachedUsage = cachedData.modelUsage[model];
+					if (!cachedUsage) { continue; }
+					
+					// Validate usage object structure
+					if (!Number.isFinite(cachedUsage.inputTokens) || cachedUsage.inputTokens < 0) {
+						this.deps.warn(`Backend sync: invalid inputTokens for model ${model}`);
+						continue;
+					}
+					if (!Number.isFinite(cachedUsage.outputTokens) || cachedUsage.outputTokens < 0) {
+						this.deps.warn(`Backend sync: invalid outputTokens for model ${model}`);
+						continue;
+					}
+					
+					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+					
+					// For simplicity, if a file spans multiple days, distribute tokens proportionally
+					// In practice, most session files are from a single day, so this is accurate
+					const totalInteractionsForModel = Array.from(dayModelInteractions.values())
+						.reduce((sum, m) => sum + (m.get(model) || 0), 0);
+					
+					const tokenRatio = totalInteractionsForModel > 0 ? interactions / totalInteractionsForModel : 1;
+					
+					upsertDailyRollup(rollups, key, {
+						inputTokens: Math.round(cachedUsage.inputTokens * tokenRatio),
+						outputTokens: Math.round(cachedUsage.outputTokens * tokenRatio),
+						interactions: interactions
+					});
+				}
+			}
+			
+			// Log if this file had data for multiple days (for debugging)
+			if (dayModelInteractions.size > 1) {
+				const days = Array.from(dayModelInteractions.keys()).sort();
+				this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} spans ${days.length} days: ${days.join(', ')}`);
+			}
+			
 			return true;
 		} catch (e) {
 			// Differentiate between cache miss (expected) and errors (unexpected)
@@ -308,6 +397,11 @@ export class SyncService {
 		start.setUTCHours(0, 0, 0, 0);
 		start.setUTCDate(start.getUTCDate() - (lookbackDays - 1));
 		const startMs = start.getTime();
+		
+		// Log the date range being processed
+		const todayKey = this.utility.toUtcDayKey(now);
+		const startKey = this.utility.toUtcDayKey(start);
+		this.deps.log(`Backend sync: processing sessions from ${startKey} to ${todayKey} (lookback ${lookbackDays} days)`);
 
 		const machineId = vscode.env.machineId;
 		const rollups = new Map<string, { key: DailyRollupKey; value: DailyRollupValue }>();
@@ -322,6 +416,10 @@ export class SyncService {
 		const useCachedData = !!this.deps.getSessionFileDataCached;
 		let cacheHits = 0;
 		let cacheMisses = 0;
+		let filesSkipped = 0;
+		let filesProcessed = 0;
+		
+		this.deps.log(`Backend sync: analyzing ${sessionFiles.length} session files`);
 
 		for (const sessionFile of sessionFiles) {
 			let fileMtimeMs: number | undefined;
@@ -330,10 +428,13 @@ export class SyncService {
 				const fileStat = await fs.promises.stat(sessionFile);
 				fileMtimeMs = fileStat.mtimeMs;
 				
+
 				// Skip files older than lookback period
 				if (fileMtimeMs < startMs) {
+					filesSkipped++;
 					continue;
 				}
+				filesProcessed++;
 			} catch (e) {
 				this.deps.warn(`Backend sync: failed to stat session file ${sessionFile}: ${e}`);
 				continue;
@@ -342,7 +443,9 @@ export class SyncService {
 			const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
 			await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
 
-			// Try to use cached data first (much faster than parsing)
+			// Try to use cached data first (faster than full recomputation)
+			// Note: We still parse the file to get accurate day keys from timestamps,
+			// but use cached token counts for performance
 			if (useCachedData) {
 				const cacheSuccess = await this.processCachedSessionFile(
 					sessionFile,
@@ -350,7 +453,9 @@ export class SyncService {
 					workspaceId,
 					machineId,
 					userId,
-					rollups
+					rollups,
+					startMs,
+					now
 				);
 				
 				if (cacheSuccess) {
@@ -474,6 +579,8 @@ export class SyncService {
 		if (useCachedData) {
 			this.logCachePerformance(cacheHits, cacheMisses);
 		}
+		
+		this.deps.log(`Backend sync: processed ${filesProcessed} files, skipped ${filesSkipped} files outside lookback period`);
 
 		return { rollups, workspaceNamesById, machineNamesById };
 	}
@@ -502,6 +609,8 @@ export class SyncService {
 			// Avoid excessive syncing when UI refreshes frequently.
 			const lastSyncAt = this.deps.context?.globalState.get<number>('backend.lastSyncAt');
 			if (!force && lastSyncAt && Date.now() - lastSyncAt < BACKEND_SYNC_MIN_INTERVAL_MS) {
+				const secondsSinceLastSync = Math.round((Date.now() - lastSyncAt) / 1000);
+				this.deps.log(`Backend sync: skipping (last sync was ${secondsSinceLastSync}s ago, minimum interval is ${BACKEND_SYNC_MIN_INTERVAL_MS / 1000}s)`);
 				return;
 			}
 
@@ -518,6 +627,17 @@ export class SyncService {
 
 				const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(settings, sharingPolicy.includeUserDimension);
 				const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({ lookbackDays: settings.lookbackDays, userId: resolvedIdentity.userId });
+				
+				// Log day keys being synced for better visibility
+				const dayKeys = new Set<string>();
+				for (const { key } of rollups.values()) {
+					dayKeys.add(key.day);
+				}
+				const sortedDays = Array.from(dayKeys).sort();
+				if (sortedDays.length > 0) {
+					this.deps.log(`Backend sync: processing data for ${sortedDays.length} days: ${sortedDays.join(', ')}`);
+				}
+				
 				this.deps.log(`Backend sync: upserting ${rollups.size} rollup entities (lookback ${settings.lookbackDays} days)`);
 
 				const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
@@ -570,6 +690,13 @@ export class SyncService {
 				}
 				
 				this.deps.log('Backend sync: completed');
+				
+				// Trigger UI refresh to update status bar and panels with latest sync data
+				try {
+					await this.deps.updateTokenStats?.();
+				} catch (e) {
+					this.deps.warn(`Backend sync: failed to update UI: ${e}`);
+				}
 			} catch (e: any) {
 				// Keep local mode functional.
 				const secretsToRedact = await this.credentialService.getBackendSecretsToRedactForError(settings);

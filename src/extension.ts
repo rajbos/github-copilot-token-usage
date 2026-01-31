@@ -368,8 +368,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	public async clearCache(): Promise<void> {
 		   try {
-			   // Show the output channel so users can see what's happening
-			   this.outputChannel.show(true);
 			   this.log('[DEBUG] clearCache() called');
 			   this.log('Clearing session file cache...');
 			   
@@ -388,7 +386,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			   await this.updateTokenStats();
 			   this.log('Token statistics reloaded successfully.');
 		   } catch (error) {
-			   this.outputChannel.show(true);
 			   this.error('Error clearing cache:', error);
 			   vscode.window.showErrorMessage('Failed to clear cache: ' + error);
 		   }
@@ -3088,8 +3085,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	public async showDiagnosticReport(): Promise<void> {
 		this.log('🔍 Opening Diagnostic Report');
-		// Keep the output channel visible to prevent VS Code from switching to other channels
-		this.outputChannel.show(true);
 
 		// If panel already exists, just reveal it and update content
 		if (this.diagnosticsPanel) {
@@ -3197,7 +3192,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
-			this.log(`[DEBUG] Diagnostics webview message: ${JSON.stringify(message)}`);
+			this.log(`Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
