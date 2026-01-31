@@ -30,6 +30,7 @@ type CacheInfo = {
 	sizeInMB: number;
 	lastUpdated: string | null;
 	location: string;
+	storagePath?: string | null;
 };
 
 type DiagnosticsData = {
@@ -673,6 +674,7 @@ function renderLayout(data: DiagnosticsData): void {
 						<h4>Storage Location</h4>
 						<div class="location-box">
 							<code>${escapeHtml(data.cacheInfo?.location || 'VS Code Global State')}</code>
+							${data.cacheInfo?.storagePath ? ` <a href="#" class="open-storage-link" data-path="${encodeURIComponent(data.cacheInfo.storagePath)}">Open storage location</a>` : ''}
 						</div>
 						<p style="color: #999; font-size: 12px; margin-top: 8px;">
 							Cache is stored in VS Code's global state (extension storage) and includes:
@@ -773,6 +775,19 @@ function renderLayout(data: DiagnosticsData): void {
 			}
 		}
 	});
+
+// Handle open storage link clicks
+function setupStorageLinkHandlers(): void {
+	document.querySelectorAll('.open-storage-link').forEach(link => {
+		link.addEventListener('click', (e) => {
+			e.preventDefault();
+			const path = decodeURIComponent((link as HTMLElement).getAttribute('data-path') || '');
+			if (path) {
+				vscode.postMessage({ command: 'revealPath', path });
+			}
+		});
+	});
+}
 
 	// Helper function to activate a tab by its ID
 	function activateTab(tabId: string): boolean {
@@ -952,6 +967,7 @@ function renderLayout(data: DiagnosticsData): void {
 	setupSortHandlers();
 	setupEditorFilterHandlers();
 	setupFileLinks();
+	setupStorageLinkHandlers();
 	
 	// Restore active tab from saved state, with fallback to default
 	const savedState = vscode.getState();
