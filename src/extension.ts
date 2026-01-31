@@ -813,7 +813,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
 		const now = new Date();
-		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		// Use last 30 days instead of current month for better chart visibility
+		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
 		
 		// Map to store daily stats by date string (YYYY-MM-DD)
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
@@ -826,8 +827,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				try {
 					const fileStats = fs.statSync(sessionFile);
 					
-					// Only process files modified in the current month
-					if (fileStats.mtime >= monthStart) {
+					// Only process files modified in the last 30 days
+					if (fileStats.mtime >= thirtyDaysAgo) {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
@@ -880,41 +881,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Convert map to array and sort by date
 		let dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 		
-		// Fill in missing dates between the first date and today
-		if (dailyStatsArray.length > 0) {
-			const firstDate = new Date(dailyStatsArray[0].date);
-			const today = new Date();
-			
-			// Create a set of existing dates for quick lookup
-			const existingDates = new Set(dailyStatsArray.map(s => s.date));
-			
-			// Generate all dates from first date to today
-			const allDates: string[] = [];
-			const currentDate = new Date(firstDate);
-			
-			while (currentDate <= today) {
-				const dateKey = this.formatDateKey(currentDate);
-				allDates.push(dateKey);
-				currentDate.setDate(currentDate.getDate() + 1);
-			}
-			
-			// Add missing dates with zero values
-			for (const dateKey of allDates) {
-				if (!existingDates.has(dateKey)) {
-					dailyStatsMap.set(dateKey, {
-						date: dateKey,
-						tokens: 0,
-						sessions: 0,
-						interactions: 0,
-						modelUsage: {},
-						editorUsage: {}
-					});
-				}
-			}
-			
-			// Re-convert map to array and sort by date
-			dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		// Always fill in all 30 days to show complete chart
+		const today = new Date();
+		
+		// Create a set of existing dates for quick lookup
+		const existingDates = new Set(dailyStatsArray.map(s => s.date));
+		
+		// Generate all dates from 30 days ago to today
+		const allDates: string[] = [];
+		const currentDate = new Date(thirtyDaysAgo);
+		
+		while (currentDate <= today) {
+			const dateKey = this.formatDateKey(currentDate);
+			allDates.push(dateKey);
+			currentDate.setDate(currentDate.getDate() + 1);
 		}
+		
+		// Add missing dates with zero values
+		for (const dateKey of allDates) {
+			if (!existingDates.has(dateKey)) {
+				dailyStatsMap.set(dateKey, {
+					date: dateKey,
+					tokens: 0,
+					sessions: 0,
+					interactions: 0,
+					modelUsage: {},
+					editorUsage: {}
+				});
+			}
+		}
+		
+		// Re-convert map to array and sort by date
+		dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 		
 		return dailyStatsArray;
 	}
