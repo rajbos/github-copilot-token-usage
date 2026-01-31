@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
+import { BackendFacade } from './backend/facade';
+import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
 import {getModelDisplayName} from './webview/shared/modelUtils';
 
@@ -397,6 +399,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
+		// CRITICAL: Add output channel to context.subscriptions so VS Code doesn't dispose it
+		context.subscriptions.push(this.outputChannel);
 		this.log('Constructor called');
 
 		// Load persisted cache from storage
@@ -3084,6 +3088,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	public async showDiagnosticReport(): Promise<void> {
 		this.log('🔍 Opening Diagnostic Report');
+		// Keep the output channel visible to prevent VS Code from switching to other channels
+		this.outputChannel.show(true);
 
 		// If panel already exists, just reveal it and update content
 		if (this.diagnosticsPanel) {
@@ -3265,7 +3271,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 					break;
 				case 'configureBackend':
-					this.log('[DEBUG] configureBackend message received from diagnostics webview');
 					// Execute the configureBackend command if it exists
 					try {
 						await vscode.commands.executeCommand('copilot-token-tracker.configureBackend');
@@ -3692,6 +3697,53 @@ class CopilotTokenTracker implements vscode.Disposable {
 export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
 	const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+
+	// Wire up backend facade and commands so the diagnostics webview can launch the
+	// configuration wizard. Uses tokenTracker logging and helpers via casting to any.
+	try {
+		const backendFacade = new BackendFacade({
+			context,
+			log: (m: string) => (tokenTracker as any).log(m),
+			warn: (m: string) => (tokenTracker as any).warn(m),
+			updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
+			calculateEstimatedCost: (modelUsage: any) => {
+				let total = 0;
+				const pricing = (modelPricingData as any).pricing || {};
+				for (const [model, usage] of Object.entries(modelUsage || {})) {
+					const p = pricing[model] || pricing['gpt-4o-mini'];
+					if (!p) { continue; }
+					const usageData = usage as { inputTokens?: number; outputTokens?: number };
+					total += ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
+					total += ((usageData.outputTokens || 0) / 1_000_000) * p.outputCostPerMillion;
+				}
+				return total;
+			},
+			co2Per1kTokens: 0.2,
+			waterUsagePer1kTokens: 0.3,
+			co2AbsorptionPerTreePerYear: 21000,
+			getCopilotSessionFiles: () => (tokenTracker as any).getCopilotSessionFiles(),
+			estimateTokensFromText: (text: string, model?: string) => (tokenTracker as any).estimateTokensFromText(text, model),
+			getModelFromRequest: (req: any) => (tokenTracker as any).getModelFromRequest(req),
+			getSessionFileDataCached: (p: string, m: number) => (tokenTracker as any).getSessionFileDataCached(p, m)
+		});
+
+		const backendHandler = new BackendCommandHandler({
+			facade: backendFacade as any,
+			integration: undefined,
+			calculateEstimatedCost: (mu: any) => 0,
+			warn: (m: string) => (tokenTracker as any).warn(m),
+			log: (m: string) => (tokenTracker as any).log(m)
+		});
+
+		const configureBackendCommand = vscode.commands.registerCommand('copilot-token-tracker.configureBackend', async () => {
+			await backendHandler.handleConfigureBackend();
+		});
+
+		context.subscriptions.push(configureBackendCommand);
+	} catch (err) {
+		// If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
+		(tokenTracker as any).warn('Failed to wire backend commands: ' + String(err));
+	}
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
