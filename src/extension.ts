@@ -6,6 +6,11 @@ import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import * as packageJson from '../package.json';
 import {getModelDisplayName} from './webview/shared/modelUtils';
+import { DetailsView } from './views/detailsView';
+import { ChartView } from './views/chartView';
+import { UsageAnalysisView } from './views/usageAnalysisView';
+import { LogViewerView } from './views/logViewerView';
+import { DiagnosticsView } from './views/diagnosticsView';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -184,6 +189,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 	private readonly context: vscode.ExtensionContext;
+
+	// View handlers
+	private detailsView: DetailsView;
+	private chartView: ChartView;
+	private usageAnalysisView: UsageAnalysisView;
+	private logViewerView: LogViewerView;
+	private diagnosticsView: DiagnosticsView;
 
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
@@ -395,6 +407,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
 		this.extensionUri = extensionUri;
 		this.context = context;
+		
+		// Initialize view handlers
+		this.detailsView = new DetailsView(extensionUri);
+		this.chartView = new ChartView(extensionUri);
+		this.usageAnalysisView = new UsageAnalysisView(extensionUri);
+		this.logViewerView = new LogViewerView(extensionUri);
+		this.diagnosticsView = new DiagnosticsView(extensionUri);
+		
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
 		this.log('Constructor called');
@@ -523,19 +543,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the details panel is open, update its content
 			if (this.detailsPanel) {
-				this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, detailedStats);
+				this.detailsPanel.webview.html = this.detailsView.getDetailsHtml(this.detailsPanel.webview, detailedStats);
 			}
 
 			// If the chart panel is open, update its content
 			if (this.chartPanel) {
 				const dailyStats = await this.calculateDailyStats();
-				this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+				this.chartPanel.webview.html = this.chartView.getChartHtml(this.chartPanel.webview, dailyStats);
 			}
 
 			// If the analysis panel is open, update its content
 			if (this.analysisPanel) {
 				const analysisStats = await this.calculateUsageAnalysisStats();
-				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+				this.analysisPanel.webview.html = this.usageAnalysisView.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
@@ -2449,7 +2469,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Details panel created successfully');
 
 		// Set the HTML content
-		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+		this.detailsPanel.webview.html = this.detailsView.getDetailsHtml(this.detailsPanel.webview, stats);
 
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
@@ -2507,7 +2527,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Chart view created successfully');
 
 		// Set the HTML content
-		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+		this.chartPanel.webview.html = this.chartView.getChartHtml(this.chartPanel.webview, dailyStats);
 
 		// Handle messages from the webview
 		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
@@ -2565,7 +2585,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Usage Analysis dashboard created successfully');
 
 		// Set the HTML content
-		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+		this.analysisPanel.webview.html = this.usageAnalysisView.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
 
 		// Handle messages from the webview
 		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
@@ -2618,7 +2638,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		);
 
 		// Set the HTML content
-		this.logViewerPanel.webview.html = this.getLogViewerHtml(this.logViewerPanel.webview, logData);
+		this.logViewerPanel.webview.html = this.logViewerView.getLogViewerHtml(this.logViewerPanel.webview, logData);
 
 		// Handle messages from the webview
 		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
@@ -2758,33 +2778,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private getLogViewerHtml(webview: vscode.Webview, logData: SessionLogData): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'logviewer.js'));
-
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
-
-		const initialData = JSON.stringify(logData).replace(/</g, '\\u003c');
-
-		return `<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Session Log Viewer</title>
-		</head>
-		<body>
-			<div id="root"></div>
-			<script nonce="${nonce}">window.__INITIAL_LOGDATA__ = ${initialData};</script>
-			<script nonce="${nonce}" src="${scriptUri}"></script>
-		</body>
-		</html>`;
+		return this.logViewerView.getLogViewerHtml(webview, logData);
 	}
 
 	private async refreshDetailsPanel(): Promise<void> {
@@ -2796,7 +2790,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Update token stats and refresh the webview content
 		const stats = await this.updateTokenStats();
 		if (stats) {
-			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+			this.detailsPanel.webview.html = this.detailsView.getDetailsHtml(this.detailsPanel.webview, stats);
 			this.log('✅ Details panel refreshed');
 		}
 	}
@@ -2823,45 +2817,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Usage Analysis dashboard refreshed');
 	}
 
-	private getNonce(): string {
-		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-		let text = '';
-		for (let i = 0; i < 32; i++) {
-			text += possible.charAt(Math.floor(Math.random() * possible.length));
-		}
-		return text;
-	}
 
 	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(
-			vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js')
-		);
-
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
-
-		const initialData = JSON.stringify(stats).replace(/</g, '\\u003c');
-
-		return `<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Copilot Token Usage</title>
-		</head>
-		<body>
-			<div id="root"></div>
-			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
-			<script nonce="${nonce}" src="${scriptUri}"></script>
-		</body>
-		</html>`;
+		return this.detailsView.getDetailsHtml(webview, stats);
 	}
 
 
@@ -3375,24 +3333,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	private getDiagnosticReportHtml(
-		webview: vscode.Webview, 
-		report: string, 
-		sessionFiles: { file: string; size: number; modified: string }[],
-		detailedSessionFiles: SessionFileDetails[],
-		sessionFolders: { dir: string; count: number }[] = []
-	): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'diagnostics.js'));
-
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
-
+	private getCacheInfo() {
 		// Get cache information
 		let cacheSizeInMB = 0;
 		try {
@@ -3441,168 +3382,32 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// ignore
 		}
 
-		const cacheInfo = {
+		return {
 			size: this.sessionFileCache.size,
 			sizeInMB: cacheSizeInMB,
 			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
 			location: persistedCacheSummary,
 			storagePath: storageFilePath
 		};
+	}
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo }).replace(/</g, '\\u003c');
-
-		return `<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Diagnostic Report</title>
-		</head>
-		<body>
-			<div id="root"></div>
-			<script nonce="${nonce}">window.__INITIAL_DIAGNOSTICS__ = ${initialData};</script>
-			<script nonce="${nonce}" src="${scriptUri}"></script>
-		</body>
-		</html>`;
+	private getDiagnosticReportHtml(
+		webview: vscode.Webview, 
+		report: string, 
+		sessionFiles: { file: string; size: number; modified: string }[],
+		detailedSessionFiles: SessionFileDetails[],
+		sessionFolders: { dir: string; count: number; editorName: string }[] = []
+	): string {
+		const cacheInfo = this.getCacheInfo();
+		return this.diagnosticsView.getDiagnosticReportHtml(webview, report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo);
 	}
 
 	private getChartHtml(webview: vscode.Webview, dailyStats: DailyTokenStats[]): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'chart.js'));
-
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
-
-		// Transform dailyStats into the structure expected by the webview
-		const labels = dailyStats.map(d => d.date);
-		const tokensData = dailyStats.map(d => d.tokens);
-		const sessionsData = dailyStats.map(d => d.sessions);
-
-		// Aggregate model usage across all days
-		const allModels = new Set<string>();
-		dailyStats.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
-
-		const modelColors = [
-			{ bg: 'rgba(54, 162, 235, 0.6)', border: 'rgba(54, 162, 235, 1)' },
-			{ bg: 'rgba(255, 99, 132, 0.6)', border: 'rgba(255, 99, 132, 1)' },
-			{ bg: 'rgba(75, 192, 192, 0.6)', border: 'rgba(75, 192, 192, 1)' },
-			{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
-			{ bg: 'rgba(255, 159, 64, 0.6)', border: 'rgba(255, 159, 64, 1)' },
-			{ bg: 'rgba(255, 205, 86, 0.6)', border: 'rgba(255, 205, 86, 1)' },
-			{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
-			{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' }
-		];
-
-		const modelDatasets = Array.from(allModels).map((model, idx) => {
-			const color = modelColors[idx % modelColors.length];
-			return {
-				label: getModelDisplayName(model),
-				data: dailyStats.map(d => {
-					const usage = d.modelUsage[model];
-					return usage ? usage.inputTokens + usage.outputTokens : 0;
-				}),
-				backgroundColor: color.bg,
-				borderColor: color.border,
-				borderWidth: 1
-			};
-		});
-
-		// Aggregate editor usage across all days
-		const allEditors = new Set<string>();
-		dailyStats.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
-
-		const editorDatasets = Array.from(allEditors).map((editor, idx) => {
-			const color = modelColors[idx % modelColors.length];
-			return {
-				label: editor,
-				data: dailyStats.map(d => d.editorUsage[editor]?.tokens || 0),
-				backgroundColor: color.bg,
-				borderColor: color.border,
-				borderWidth: 1
-			};
-		});
-
-		// Calculate editor totals for summary cards
-		const editorTotalsMap: Record<string, number> = {};
-		dailyStats.forEach(d => {
-			Object.entries(d.editorUsage).forEach(([editor, usage]) => {
-				editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
-			});
-		});
-
-		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
-		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
-
-		const chartData = {
-			labels,
-			tokensData,
-			sessionsData,
-			modelDatasets,
-			editorDatasets,
-			editorTotalsMap,
-			dailyCount: dailyStats.length,
-			totalTokens,
-			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
-			totalSessions,
-			lastUpdated: new Date().toISOString()
-		};
-
-		const initialData = JSON.stringify(chartData).replace(/</g, '\\u003c');
-
-		return `<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Copilot Token Usage Chart</title>
-		</head>
-		<body>
-			<div id="root"></div>
-			<script nonce="${nonce}">window.__INITIAL_CHART__ = ${initialData};</script>
-			<script nonce="${nonce}" src="${scriptUri}"></script>
-		</body>
-		</html>`;
+		return this.chartView.getChartHtml(webview, dailyStats);
 	}
 
 	private getUsageAnalysisHtml(webview: vscode.Webview, stats: UsageAnalysisStats): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'usage.js'));
-
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
-
-		const initialData = JSON.stringify({
-			today: stats.today,
-			month: stats.month,
-			lastUpdated: stats.lastUpdated.toISOString()
-		}).replace(/</g, '\\u003c');
-
-		return `<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Usage Analysis</title>
-		</head>
-		<body>
-			<div id="root"></div>
-			<script nonce="${nonce}">window.__INITIAL_USAGE__ = ${initialData};</script>
-			<script nonce="${nonce}" src="${scriptUri}"></script>
-		</body>
-		</html>`;
+		return this.usageAnalysisView.getUsageAnalysisHtml(webview, stats);
 	}
 
 	public dispose(): void {
