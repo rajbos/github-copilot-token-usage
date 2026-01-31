@@ -20,14 +20,39 @@ node .github/skills/load-cache-data/load-cache-data.js --help
 
 ## What This Skill Does
 
-1. **Demonstrates cache structure** - Shows the format and content of cached session data
-2. **Provides access patterns** - Example code for reading cache from VS Code globalState
-3. **Helps debugging** - Understand what's being cached and when
+1. **Reads actual cache data** - Loads real cache data from export files on disk
+2. **Multiple search locations** - Checks VS Code globalStorage, temp directory, and current directory
+3. **Helps debugging** - Inspect what's being cached and when
 4. **Supports development** - Iterate with real data structures when building features
+
+## Cache File Locations
+
+The script searches for cache export files in these locations (in order):
+
+**Windows:**
+- `%APPDATA%\Code\User\globalStorage\rajbos.copilot-token-tracker\cache.json`
+- `%TEMP%\copilot-token-tracker-cache.json`
+- `.\cache-export.json`
+
+**macOS:**
+- `~/Library/Application Support/Code/User/globalStorage/rajbos.copilot-token-tracker/cache.json`
+- `/tmp/copilot-token-tracker-cache.json`
+- `./cache-export.json`
+
+**Linux:**
+- `~/.config/Code/User/globalStorage/rajbos.copilot-token-tracker/cache.json`
+- `/tmp/copilot-token-tracker-cache.json`
+- `./cache-export.json`
+
+*Note: Also checks other VS Code variants (Insiders, Cursor, VSCodium, Code - Exploration)*
 
 ## Important Note
 
-The cache is stored in VS Code's internal database (`state.vscdb`) and is only directly accessible through the extension's API at runtime. This script generates example data that matches the real cache structure.
+The extension stores its cache in VS Code's internal globalState (SQLite database `state.vscdb`), which is not directly accessible from external scripts. To use this skill with real data:
+
+1. **Export from extension**: Add functionality to export cache to disk
+2. **Export from tests**: Test code can write cache data to one of the expected locations
+3. **Manual export**: Extract cache from globalState and save to disk
 
 To access real cache data, use the extension's API:
 

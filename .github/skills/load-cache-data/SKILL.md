@@ -1,9 +1,11 @@
 ---
 name: load-cache-data
-description: Load and inspect the last 10 rows from the local session file cache to iterate with real data. Use when you need to understand cached session statistics, debug cache behavior, or work with actual cached data.
+description: Load and display the last 10 cache entries as raw JSON output. DO NOT create extra files or pretty-print the data - output raw JSON only. Use when you need to understand cached session statistics, debug cache behavior, or work with actual cached data.
 ---
 
 # Load Cache Data Skill
+
+**IMPORTANT: Always output raw JSON only. Do not create extra files for displaying data.**
 
 This skill helps you access and inspect the GitHub Copilot Token Tracker's local session file cache. The cache stores pre-computed statistics for session files to avoid re-processing unchanged files.
 
@@ -24,6 +26,14 @@ Use this skill when you need to:
 - Understand what data is being cached
 - Work with real cached data for testing or development
 - Iterate on features that rely on cached statistics
+
+## Output Requirements
+
+**CRITICAL**: When using this skill:
+- **ALWAYS** use the `--json` flag to output raw JSON
+- **NEVER** create extra files just for displaying data
+- **DO NOT** pretty-print or format the output in human-readable text
+- Simply run the script with `--json` and display the raw JSON output
 
 ## Cache Structure
 
@@ -92,35 +102,52 @@ for (const [filePath, cacheEntry] of last10) {
 
 ### Using the Provided Script
 
-This skill includes an executable script that demonstrates the cache structure and provides example data:
+This skill includes an executable script that loads and displays actual cache data from disk:
 
 **Location**: `.github/skills/load-cache-data/load-cache-data.js`
 
 **Usage:**
 ```bash
-# Show last 10 cache entries (default)
-node .github/skills/load-cache-data/load-cache-data.js
-
-# Show last 5 entries
-node .github/skills/load-cache-data/load-cache-data.js --last 5
-
-# Output as JSON
+# RECOMMENDED: Always use --json for raw JSON output
 node .github/skills/load-cache-data/load-cache-data.js --json
 
-# Show last 3 entries as JSON
-node .github/skills/load-cache-data/load-cache-data.js --last 3 --json
+# Show last N entries as JSON (default is 10)
+node .github/skills/load-cache-data/load-cache-data.js --last 5 --json
 
 # Show help
 node .github/skills/load-cache-data/load-cache-data.js --help
 ```
 
-**What it does:**
-- Finds VS Code installation paths on the current system
-- Demonstrates the cache data structure with example entries
-- Shows how cache entries are formatted and sorted
-- Provides code examples for accessing real cache data
+**Note**: The script supports human-readable output without `--json`, but for LLM skills, always use `--json` to get structured data.
 
-**Note**: The script generates example data because VS Code's internal database is only accessible through the extension's API at runtime. Use the extension's API (shown above) to access real cache data.
+**What it does:**
+- Searches for cache export files in known locations
+- Reads actual cache data if a file exists
+- Displays cache entries sorted by most recent modification
+- Shows detailed token counts, model usage, and usage analysis
+
+**Cache File Locations:**
+
+The script searches for cache export files in these locations:
+
+1. **VS Code globalStorage**: `%APPDATA%\Code\User\globalStorage\rajbos.copilot-token-tracker\cache.json` (Windows)
+   - Also checks other VS Code variants (Insiders, Cursor, VSCodium, etc.)
+2. **Temp directory**: `%TEMP%\copilot-token-tracker-cache.json`
+3. **Current directory**: `./cache-export.json`
+
+**Creating Cache Export Files:**
+
+Since the extension stores cache in VS Code's globalState (internal SQLite database), the cache data must be explicitly exported to one of the above locations for this script to access it. This can be done:
+
+1. **Via Extension**: The extension can be enhanced to export cache on demand
+2. **Via Tests**: Test code can write cache data to disk for inspection
+3. **Manually**: Copy cache data from extension's globalState and save to one of the expected locations
+
+**Exit Codes:**
+- `0`: Cache file found and displayed successfully
+- `1`: No cache file found
+
+**Note**: If no cache file is found, the script will display the searched locations and instructions for exporting cache data.
 
 ## Cache Management Methods
 

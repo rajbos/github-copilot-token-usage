@@ -2,14 +2,12 @@
 /**
  * Load Cache Data Script
  * 
- * This script demonstrates how to access the GitHub Copilot Token Tracker's
- * local cache data. The cache stores pre-computed session file statistics
- * to avoid re-processing unchanged files.
+ * This script loads and displays the GitHub Copilot Token Tracker's local cache data.
+ * The cache stores pre-computed session file statistics to avoid re-processing unchanged files.
  * 
- * The cache is stored in VS Code's globalState (extension storage) and is
- * only directly accessible when the extension is running. This script provides
- * utilities and examples for understanding the cache structure and accessing
- * the data through the extension's API.
+ * The extension's cache is stored in VS Code's globalState, which is persisted in a SQLite
+ * database (state.vscdb). This script looks for a cache export file that the extension or
+ * tests may write to disk in a known location for inspection.
  * 
  * Usage:
  *   node .github/skills/load-cache-data/load-cache-data.js [--last N] [--json]
@@ -40,8 +38,8 @@ if (showHelp) {
     console.log(`
 Load Cache Data Script
 
-This script provides utilities for accessing the GitHub Copilot Token Tracker's
-local cache data. The cache contains pre-computed statistics for session files.
+This script loads and displays the GitHub Copilot Token Tracker's local cache data.
+The cache contains pre-computed statistics for session files.
 
 CACHE STRUCTURE:
   The cache is stored in VS Code's globalState under the key 'sessionFileCache'.
@@ -52,10 +50,14 @@ CACHE STRUCTURE:
   - mtime: file modification time (for cache validation)
   - usageAnalysis: detailed usage statistics (optional)
 
-ACCESSING THE CACHE:
-  Since the cache is stored in VS Code's internal database, it can only be
-  accessed through the extension's API at runtime. This script demonstrates
-  the cache structure and provides example code.
+CACHE FILE LOCATIONS:
+  This script looks for cache export files in the following locations:
+  1. VS Code globalStorage: %APPDATA%\\Code\\User\\globalStorage\\rajbos.copilot-token-tracker\\cache.json
+  2. Temp directory: %TEMP%\\copilot-token-tracker-cache.json
+  3. Current directory: ./cache-export.json
+
+  To create a cache export for testing or inspection, the extension or tests
+  can write the cache data to one of these locations.
 
 USAGE:
   node .github/skills/load-cache-data/load-cache-data.js [--last N] [--json]
@@ -102,94 +104,88 @@ FOR DEVELOPERS:
 }
 
 /**
- * Try to find and read the VS Code state database
- * This is a simplified approach and may not work in all cases
+ * Get possible cache file locations
+ * Returns array of paths where cache export files might be located
  */
-function findVSCodeStatePaths() {
+function getCacheFilePaths() {
     const platform = os.platform();
     const homedir = os.homedir();
     const paths = [];
 
+    // VS Code variants to check
     const vscodeVariants = ['Code', 'Code - Insiders', 'Code - Exploration', 'VSCodium', 'Cursor'];
+    // Support both the original author id and the machine-specific id (robbos)
+    const extensionId = 'robbos.copilot-token-tracker';
+    // Candidate cache file names to look for (include session-cache.json used on the user's machine)
+    const candidateFiles = ['session-cache.json'];
 
     if (platform === 'win32') {
+        // Windows: %APPDATA%\Code\User\globalStorage\<extensionId>\<cacheFile>
         const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
         for (const variant of vscodeVariants) {
-            paths.push(path.join(appDataPath, variant, 'User'));
+            for (const fileName of candidateFiles) {
+                paths.push(path.join(appDataPath, variant, 'User', 'globalStorage', extensionId, fileName));
+            }
         }
+        // Also check temp directory for common export names
+        const tempPath = process.env.TEMP || process.env.TMP || path.join(homedir, 'AppData', 'Local', 'Temp');
+        paths.push(path.join(tempPath, 'copilot-token-tracker-cache.json'));
+        paths.push(path.join(tempPath, 'session-cache.json'));
     } else if (platform === 'darwin') {
+        // macOS: ~/Library/Application Support/<variant>/User/globalStorage/<extensionId>/<cacheFile>
         for (const variant of vscodeVariants) {
-            paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User'));
+            for (const fileName of candidateFiles) {
+                paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User', 'globalStorage', extensionId, fileName));
+            }
         }
+        // Also check temp directory
+        paths.push(path.join(os.tmpdir(), 'copilot-token-tracker-cache.json'));
+        paths.push(path.join(os.tmpdir(), 'session-cache.json'));
     } else {
+        // Linux: ~/.config/Code/User/globalStorage/extensionId/cache.json
         const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
         for (const variant of vscodeVariants) {
-            paths.push(path.join(xdgConfigHome, variant, 'User'));
+            for (const fileName of candidateFiles) {
+                paths.push(path.join(xdgConfigHome, variant, 'User', 'globalStorage', extensionId, fileName));
+            }
         }
+        // Also check temp directory
+        paths.push(path.join(os.tmpdir(), 'copilot-token-tracker-cache.json'));
+        paths.push(path.join(os.tmpdir(), 'session-cache.json'));
     }
 
-    return paths.filter(p => fs.existsSync(p));
+    // Also check current directory and common export names
+    paths.push(path.join(process.cwd(), 'cache-export.json'));
+    paths.push(path.join(process.cwd(), 'session-cache.json'));
+    
+    return paths;
 }
 
 /**
- * Generate example cache data for demonstration
- * This simulates what real cache data would look like
+ * Try to find and read the cache file
+ * Returns { success: boolean, data?: any, filePath?: string, error?: string }
  */
-function generateExampleCacheData(count = 10) {
-    const exampleData = {};
-    const now = Date.now();
-    const models = ['gpt-4o', 'gpt-4o-mini', 'claude-3.5-sonnet', 'o3-mini'];
-    const editors = ['VS Code', 'VS Code Insiders', 'Cursor'];
+function readCacheFile() {
+    const possiblePaths = getCacheFilePaths();
     
-    for (let i = 0; i < count; i++) {
-        const model = models[i % models.length];
-        const editor = editors[i % editors.length];
-        const filePath = `/home/user/.config/${editor}/User/workspaceStorage/abc123/chatSessions/session-${i}.json`;
-        const mtime = now - (i * 3600000); // Each entry 1 hour older
-        
-        exampleData[filePath] = {
-            tokens: Math.floor(Math.random() * 10000) + 1000,
-            interactions: Math.floor(Math.random() * 50) + 1,
-            modelUsage: {
-                [model]: {
-                    inputTokens: Math.floor(Math.random() * 5000) + 500,
-                    outputTokens: Math.floor(Math.random() * 5000) + 500
-                }
-            },
-            mtime: mtime,
-            usageAnalysis: {
-                toolCalls: {
-                    total: Math.floor(Math.random() * 10),
-                    byTool: {
-                        'view': Math.floor(Math.random() * 5),
-                        'edit': Math.floor(Math.random() * 3),
-                        'bash': Math.floor(Math.random() * 4)
-                    }
-                },
-                modeUsage: {
-                    ask: Math.floor(Math.random() * 20) + 5,
-                    edit: Math.floor(Math.random() * 10),
-                    agent: Math.floor(Math.random() * 5)
-                },
-                contextReferences: {
-                    file: Math.floor(Math.random() * 8),
-                    selection: Math.floor(Math.random() * 5),
-                    symbol: Math.floor(Math.random() * 3),
-                    codebase: Math.floor(Math.random() * 2),
-                    workspace: Math.floor(Math.random() * 4),
-                    terminal: Math.floor(Math.random() * 1),
-                    vscode: Math.floor(Math.random() * 1)
-                },
-                mcpTools: {
-                    total: Math.floor(Math.random() * 5),
-                    byServer: { 'mcp-server': Math.floor(Math.random() * 3) },
-                    byTool: { 'tool-name': Math.floor(Math.random() * 2) }
-                }
+    for (const filePath of possiblePaths) {
+        try {
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, 'utf8');
+                const data = JSON.parse(content);
+                return { success: true, data, filePath };
             }
-        };
+        } catch (error) {
+            // Continue to next path if this one fails
+            continue;
+        }
     }
     
-    return exampleData;
+    return { 
+        success: false, 
+        error: 'No cache file found',
+        searchedPaths: possiblePaths 
+    };
 }
 
 /**
@@ -218,11 +214,17 @@ function formatCacheEntries(cacheData, limit = 10) {
 /**
  * Display cache entries in human-readable format
  */
-function displayCacheEntries(entries) {
+function displayCacheEntries(entries, sourceFile) {
     console.log('='.repeat(80));
     console.log('GitHub Copilot Token Tracker - Local Cache Data');
     console.log('='.repeat(80));
     console.log('');
+    
+    if (sourceFile) {
+        console.log(`Cache file: ${sourceFile}`);
+        console.log('');
+    }
+    
     console.log(`Showing ${entries.length} cache entries (sorted by most recent):`);
     console.log('');
     
@@ -253,58 +255,62 @@ function displayCacheEntries(entries) {
     });
     
     console.log('='.repeat(80));
+}
+
+/**
+ * Display message when no cache file is found
+ */
+function displayNoCacheFound(searchedPaths) {
+    console.log('='.repeat(80));
+    console.log('GitHub Copilot Token Tracker - Local Cache Data');
+    console.log('='.repeat(80));
     console.log('');
-    console.log('NOTE: This is example/demonstration data.');
-    console.log('To access real cache data, use the extension\'s API at runtime.');
-    console.log('See --help for more information.');
+    console.log('NO CACHE FILE FOUND');
+    console.log('');
+    console.log('This script looks for cache export files in the following locations:');
+    searchedPaths.forEach(p => console.log(`  - ${p}`));
+    console.log('');
+    console.log('The extension stores its cache in VS Code\'s internal globalState,');
+    console.log('which is not directly accessible from external scripts.');
+    console.log('');
+    console.log('To export cache data for inspection:');
+    console.log('  1. The extension can be modified to write cache to disk');
+    console.log('  2. Tests can export cache data to one of the above locations');
+    console.log('  3. Use the extension\'s API to access cache at runtime');
+    console.log('');
+    console.log('See --help for more information on cache structure and access patterns.');
+    console.log('='.repeat(80));
 }
 
 // Main execution
 (function main() {
-    console.log('');
-    console.log('Copilot Token Tracker - Cache Data Viewer');
-    console.log('Platform:', os.platform());
-    console.log('Home directory:', os.homedir());
-    console.log('');
-    
-    // Try to find VS Code installations
-    const vscodePaths = findVSCodeStatePaths();
-    if (vscodePaths.length > 0) {
-        console.log('VS Code installations found:');
-        vscodePaths.forEach(p => console.log('  ' + p));
-        console.log('');
-    } else {
-        console.log('No VS Code installations found.');
-        console.log('');
-    }
-    
-    // Since we can't directly access VS Code's internal database without
-    // special libraries, we'll show example data with a notice
-    console.log(`NOTE: The cache is stored in VS Code's internal database (state.vscdb)`);
-    console.log('      and is only accessible through the extension\'s API at runtime.');
-    console.log('      Below is example data demonstrating the cache structure:');
-    console.log('');
-    
-    // Generate example cache data
-    const exampleCache = generateExampleCacheData(lastCount);
-    const formattedEntries = formatCacheEntries(exampleCache, lastCount);
-    
-    if (jsonOutput) {
-        // JSON output
-        console.log(JSON.stringify({
-            platform: os.platform(),
-            homeDirectory: os.homedir(),
-            vscodePathsFound: vscodePaths,
-            cacheEntriesShown: formattedEntries.length,
+    // Try to read actual cache file
+    const cacheResult = readCacheFile();
+
+    if (cacheResult.success) {
+        // Return raw cache data (limit to last N entries) as JSON only
+        const entries = Object.entries(cacheResult.data || {});
+        entries.sort((a, b) => (b[1].mtime || 0) - (a[1].mtime || 0));
+        const limited = entries.slice(0, lastCount);
+        const limitedObj = Object.fromEntries(limited);
+
+        const output = {
+            cacheFile: cacheResult.filePath,
             requestedCount: lastCount,
-            isExampleData: true,
-            entries: formattedEntries
-        }, null, 2));
-    } else {
-        // Human-readable output
-        displayCacheEntries(formattedEntries);
+            totalCacheEntries: Object.keys(cacheResult.data || {}).length,
+            entries: limitedObj
+        };
+
+        console.log(JSON.stringify(output));
+        return;
     }
-    
-    console.log('For more information, run with --help');
-    console.log('');
+
+    // No cache found: output JSON error
+    const errorOut = {
+        cacheFound: false,
+        error: cacheResult.error,
+        searchedPaths: cacheResult.searchedPaths
+    };
+    console.log(JSON.stringify(errorOut));
+    process.exit(1);
 })();
