@@ -14,6 +14,25 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 ## Available Skills
 
+### azure-storage-loader
+
+**Purpose**: Load token usage data from Azure Table Storage for faster iteration and analysis.
+
+**Use this skill when:**
+- Analyzing actual usage data without manual export
+- Testing query logic against real backend data
+- Debugging backend sync issues with live data
+- Performing ad-hoc team analytics
+- Quickly iterating on data analysis tasks in chat
+
+**Contents:**
+- Helper script to fetch data from Azure Storage Tables
+- Support for both Entra ID and Shared Key authentication
+- Flexible filtering by date, model, workspace, or user
+- JSON and CSV output formats
+- Azure Table Storage schema documentation
+- Authentication and troubleshooting guides
+
 ### copilot-log-analysis
 
 **Purpose**: Comprehensive guide for analyzing GitHub Copilot session log files.
@@ -31,6 +50,16 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - JSON and JSONL format parsing details
 - Schema documentation references
 - Usage examples and troubleshooting guides
+
+### refresh-json-data
+
+**Purpose**: Update token estimator and model pricing JSON files with latest data.
+
+**Use this skill when:**
+- Adding support for new AI models
+- Updating token estimation ratios
+- Refreshing pricing information from provider APIs
+- Keeping model data current with latest releases
 
 ### load-cache-data
 
