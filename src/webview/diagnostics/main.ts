@@ -548,6 +548,7 @@ function renderLayout(data: DiagnosticsData): void {
 			.session-file-link, .reveal-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
 			.session-file-link:hover, .reveal-link:hover { color: #81D4FA; }
 			.empty-session-link { color: #999; }
+			.empty-session-link:hover { color: #aaa; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 			.button {
 				background: #202024;
