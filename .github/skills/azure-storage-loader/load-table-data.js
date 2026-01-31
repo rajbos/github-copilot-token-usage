@@ -394,40 +394,32 @@ async function main() {
 	// Show help if requested
 	if (args.help) {
 		showHelp();
-		process.exit(0);
+		return null;
 	}
 
-	// Validate required arguments
+	// Validation (throw errors so callers can handle them)
 	if (!args.storageAccount) {
-		console.error('Error: --storageAccount is required');
-		console.error('Use --help for usage information');
-		process.exit(1);
+		throw new Error('--storageAccount is required');
 	}
 
 	if (!args.startDate || !args.endDate) {
-		console.error('Error: --startDate and --endDate are required');
-		console.error('Use --help for usage information');
-		process.exit(1);
+		throw new Error('--startDate and --endDate are required');
 	}
 
 	if (!isValidDate(args.startDate)) {
-		console.error('Error: --startDate must be in YYYY-MM-DD format');
-		process.exit(1);
+		throw new Error('--startDate must be in YYYY-MM-DD format');
 	}
 
 	if (!isValidDate(args.endDate)) {
-		console.error('Error: --endDate must be in YYYY-MM-DD format');
-		process.exit(1);
+		throw new Error('--endDate must be in YYYY-MM-DD format');
 	}
 
 	if (new Date(args.startDate) > new Date(args.endDate)) {
-		console.error('Error: --startDate must be before or equal to --endDate');
-		process.exit(1);
+		throw new Error('--startDate must be before or equal to --endDate');
 	}
 
 	if (args.format !== 'json' && args.format !== 'csv') {
-		console.error('Error: --format must be either "json" or "csv"');
-		process.exit(1);
+		throw new Error('--format must be either "json" or "csv"');
 	}
 
 	console.error('Azure Storage Table Data Loader');
@@ -447,83 +439,86 @@ async function main() {
 	}
 	console.error('');
 
-	try {
-		// Create table client
-		const tableClient = createTableClient(
-			args.storageAccount,
-			args.tableName,
-			args.sharedKey
-		);
+	// Main execution
+	// Instead of writing output to a file or printing it unconditionally,
+	// produce the result and attach it to `module.exports.tresult` and return it.
+	// Callers can require this module and read `tresult`.
+	// Writing to disk has been intentionally removed per request.
+	// Note: logs (console.error) are preserved for progress info.
 
-		// Fetch entities
-		const entities = await fetchEntities(
-			tableClient,
-			args.datasetId,
-			args.startDate,
-			args.endDate,
-			{
-				model: args.model,
-				workspaceId: args.workspaceId,
-				userId: args.userId
-			}
-		);
+	// Create table client
+	const tableClient = createTableClient(
+		args.storageAccount,
+		args.tableName,
+		args.sharedKey
+	);
 
-		console.error('');
-		console.error(`Total entities fetched: ${entities.length}`);
-
-		// Calculate totals
-		const totals = entities.reduce(
-			(acc, entity) => {
-				acc.inputTokens += entity.inputTokens;
-				acc.outputTokens += entity.outputTokens;
-				acc.interactions += entity.interactions;
-				return acc;
-			},
-			{ inputTokens: 0, outputTokens: 0, interactions: 0 }
-		);
-
-		console.error('');
-		console.error('Totals:');
-		console.error(`  Input Tokens: ${totals.inputTokens.toLocaleString()}`);
-		console.error(`  Output Tokens: ${totals.outputTokens.toLocaleString()}`);
-		console.error(`  Total Tokens: ${(totals.inputTokens + totals.outputTokens).toLocaleString()}`);
-		console.error(`  Interactions: ${totals.interactions.toLocaleString()}`);
-		console.error('');
-
-		// Format output
-		let output;
-		if (args.format === 'csv') {
-			output = formatAsCSV(entities);
-		} else {
-			output = formatAsJSON(entities);
+	// Fetch entities
+	const entities = await fetchEntities(
+		tableClient,
+		args.datasetId,
+		args.startDate,
+		args.endDate,
+		{
+			model: args.model,
+			workspaceId: args.workspaceId,
+			userId: args.userId
 		}
+	);
 
-		// Write to file or stdout
-		if (args.output) {
-			fs.writeFileSync(args.output, output, 'utf8');
-			console.error(`Output written to: ${args.output}`);
-		} else {
-			// Write to stdout (actual data output)
-			console.log(output);
-		}
+	console.error('');
+	console.error(`Total entities fetched: ${entities.length}`);
 
-		process.exit(0);
-	} catch (error) {
-		console.error('');
-		console.error('Error:', error.message);
-		if (error.stack) {
-			console.error('Stack trace:', error.stack);
-		}
-		process.exit(1);
+	// Calculate totals
+	const totals = entities.reduce(
+		(acc, entity) => {
+			acc.inputTokens += entity.inputTokens;
+			acc.outputTokens += entity.outputTokens;
+			acc.interactions += entity.interactions;
+			return acc;
+		},
+		{ inputTokens: 0, outputTokens: 0, interactions: 0 }
+	);
+
+	console.error('');
+	console.error('Totals:');
+	console.error(`  Input Tokens: ${totals.inputTokens.toLocaleString()}`);
+	console.error(`  Output Tokens: ${totals.outputTokens.toLocaleString()}`);
+	console.error(`  Total Tokens: ${(totals.inputTokens + totals.outputTokens).toLocaleString()}`);
+	console.error(`  Interactions: ${totals.interactions.toLocaleString()}`);
+	console.error('');
+
+	// Format output
+	let output;
+	if (args.format === 'csv') {
+		output = formatAsCSV(entities);
+	} else {
+		output = formatAsJSON(entities);
 	}
+
+	// Attach result to module.exports and return it
+	module.exports.tresult = output;
+	return output;
 }
 
 // Run if executed directly
 if (require.main === module) {
-	main().catch(error => {
-		console.error('Unhandled error:', error);
-		process.exit(1);
-	});
+	main()
+		.then(result => {
+			// When executed as CLI, print the result to stdout for visibility.
+			if (result !== null && result !== undefined) {
+				console.log(result);
+			}
+			process.exit(0);
+		})
+		.catch(error => {
+			console.error('');
+			console.error('Error:', error.message || error);
+			if (error.stack) {
+				console.error('Stack trace:', error.stack);
+			}
+			process.exit(1);
+		});
 }
 
 module.exports = {
@@ -535,5 +530,7 @@ module.exports = {
 	createTableClient,
 	fetchEntities,
 	formatAsJSON,
-	formatAsCSV
+	formatAsCSV,
+	// `tresult` will hold the final output (JSON or CSV string) after `main()` runs
+	tresult: null
 };
