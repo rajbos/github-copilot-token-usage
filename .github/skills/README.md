@@ -61,6 +61,24 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Refreshing pricing information from provider APIs
 - Keeping model data current with latest releases
 
+### load-cache-data
+
+**Purpose**: Load and inspect the last 10 rows from the local session file cache to iterate with real data.
+
+**Use this skill when:**
+- Inspecting cached session file data
+- Debugging cache behavior or validation logic
+- Understanding what data is being cached
+- Working with real cached data for testing or development
+- Iterating on features that rely on cached statistics
+
+**Contents:**
+- Cache structure and storage location (VS Code globalState)
+- Methods for accessing and managing the cache
+- Example scripts demonstrating cache data access
+- Cache validation and lifecycle documentation
+- Integration with the extension's token tracking
+
 ## Using Agent Skills
 
 ### In VS Code
