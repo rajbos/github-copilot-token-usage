@@ -265,8 +265,8 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 						<tr>
 							<td>${idx + 1}</td>
 							<td><span class="editor-badge" title="${escapeHtml(sf.editorSource)}">${escapeHtml(sf.editorName || sf.editorSource)}</span></td>
-							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : ''}">
-								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title)}</a>` : '<span style="color: #666;">—</span>'}
+							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : 'Empty session'}">
+								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title)}</a>` : `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="Empty session" style="color: #999;">(Empty session)</a>`}
 							</td>
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sanitizeNumber(sf.interactions)}</td>
