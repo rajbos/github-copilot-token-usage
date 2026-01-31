@@ -30,6 +30,7 @@ type CacheInfo = {
 	sizeInMB: number;
 	lastUpdated: string | null;
 	location: string;
+	storagePath?: string | null;
 };
 
 type DiagnosticsData = {
@@ -39,7 +40,11 @@ type DiagnosticsData = {
 	cacheInfo?: CacheInfo;
 };
 
-declare function acquireVsCodeApi<TState = unknown>(): {
+type DiagnosticsViewState = {
+	activeTab?: string;
+};
+
+declare function acquireVsCodeApi<TState = DiagnosticsViewState>(): {
 	postMessage: (message: unknown) => void;
 	setState: (newState: TState) => void;
 	getState: () => TState | undefined;
@@ -49,7 +54,7 @@ declare global {
 	interface Window { __INITIAL_DIAGNOSTICS__?: DiagnosticsData; }
 }
 
-const vscode = acquireVsCodeApi();
+const vscode = acquireVsCodeApi<DiagnosticsViewState>();
 const initialData = window.__INITIAL_DIAGNOSTICS__;
 
 // Sorting and filtering state
@@ -669,6 +674,7 @@ function renderLayout(data: DiagnosticsData): void {
 						<h4>Storage Location</h4>
 						<div class="location-box">
 							<code>${escapeHtml(data.cacheInfo?.location || 'VS Code Global State')}</code>
+							${data.cacheInfo?.storagePath ? ` <a href="#" class="open-storage-link" data-path="${encodeURIComponent(data.cacheInfo.storagePath)}">Open storage location</a>` : ''}
 						</div>
 						<p style="color: #999; font-size: 12px; margin-top: 8px;">
 							Cache is stored in VS Code's global state (extension storage) and includes:
@@ -770,19 +776,46 @@ function renderLayout(data: DiagnosticsData): void {
 		}
 	});
 
+// Handle open storage link clicks
+function setupStorageLinkHandlers(): void {
+	document.querySelectorAll('.open-storage-link').forEach(link => {
+		link.addEventListener('click', (e) => {
+			e.preventDefault();
+			const path = decodeURIComponent((link as HTMLElement).getAttribute('data-path') || '');
+			if (path) {
+				vscode.postMessage({ command: 'revealPath', path });
+			}
+		});
+	});
+}
+
+	// Helper function to activate a tab by its ID
+	function activateTab(tabId: string): boolean {
+		const tabButton = document.querySelector(`.tab[data-tab="${tabId}"]`);
+		const tabContent = document.getElementById(`tab-${tabId}`);
+		
+		if (tabButton && tabContent) {
+			// Remove active class from all tabs and contents
+			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+			
+			// Activate the specified tab
+			tabButton.classList.add('active');
+			tabContent.classList.add('active');
+			return true;
+		}
+		return false;
+	}
+
 	// Wire up tab switching
 	document.querySelectorAll('.tab').forEach(tab => {
 		tab.addEventListener('click', () => {
 			const tabId = (tab as HTMLElement).getAttribute('data-tab');
 			
-			// Update active tab
-			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-			tab.classList.add('active');
-			
-			// Update active content
-			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-			const content = document.getElementById(`tab-${tabId}`);
-			if (content) { content.classList.add('active'); }
+			if (tabId && activateTab(tabId)) {
+				// Save the active tab state
+				vscode.setState({ activeTab: tabId });
+			}
 		});
 	});
 
@@ -934,6 +967,14 @@ function renderLayout(data: DiagnosticsData): void {
 	setupSortHandlers();
 	setupEditorFilterHandlers();
 	setupFileLinks();
+	setupStorageLinkHandlers();
+	
+	// Restore active tab from saved state, with fallback to default
+	const savedState = vscode.getState();
+	if (savedState?.activeTab && !activateTab(savedState.activeTab)) {
+		// If saved tab doesn't exist (e.g., structure changed), activate default "report" tab
+		activateTab('report');
+	}
 }
 
 async function bootstrap(): Promise<void> {
