@@ -176,6 +176,10 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	private diagnosticsPanel?: vscode.WebviewPanel;
+	// Tracks whether the diagnostics panel has already received its session files
+	private diagnosticsHasLoadedFiles: boolean = false;
+	// Cache of the last loaded detailed session files for diagnostics view
+	private diagnosticsCachedFiles: SessionFileDetails[] = [];
 	private logViewerPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
@@ -370,7 +374,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			   const cacheSize = this.sessionFileCache.size;
 			   this.sessionFileCache.clear();
 			   await this.context.globalState.update('sessionFileCache', undefined);
-			   
+			   // Reset diagnostics loaded flag so the diagnostics view will reload files
+			this.diagnosticsHasLoadedFiles = false;
+			this.diagnosticsCachedFiles = [];
+               
 			   this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
 			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
 			   
@@ -3172,7 +3179,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false, // Match other panels to avoid output channel issues
+				retainContextWhenHidden: true, // Keep webview context to avoid reloading session files
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
@@ -3343,11 +3350,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		// Send the loaded data to the webview
 		try {
+			// Cache the loaded session files so we can re-send if the webview is recreated
+			if (panel === this.diagnosticsPanel) {
+				this.diagnosticsCachedFiles = detailedSessionFiles;
+			}
 			await panel.webview.postMessage({
 				command: 'sessionFilesLoaded',
 				detailedSessionFiles
 			});
 			this.log(`Loaded ${detailedSessionFiles.length} session files in background`);
+			// Mark diagnostics as loaded so we don't reload unnecessarily
+			if (panel === this.diagnosticsPanel) {
+				this.diagnosticsHasLoadedFiles = true;
+			}
 		} catch (err) {
 			// Panel may have been disposed
 			this.log('Could not send session files to panel (may be closed)');
@@ -3438,11 +3453,49 @@ class CopilotTokenTracker implements vscode.Disposable {
 			cacheSizeInMB = 0;
 		}
 		
+		// Try to read the persisted cache from VS Code global state to show its actual storage status
+		let persistedCacheSummary = 'Not found in VS Code Global State';
+		try {
+			const persisted = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
+			if (persisted && typeof persisted === 'object') {
+				const count = Object.keys(persisted).length;
+				persistedCacheSummary = `VS Code Global State - sessionFileCache (${count} entr${count === 1 ? 'y' : 'ies'})`;
+			}
+		} catch (e) {
+			persistedCacheSummary = 'Error reading VS Code Global State';
+		}
+
+		// Try to locate the actual storage file (state DB) for the extension global state
+		let storageFilePath: string | null = null;
+		try {
+			const extensionId = 'RobBos.copilot-token-tracker';
+			const userPaths = this.getVSCodeUserPaths();
+			for (const userPath of userPaths) {
+				try {
+					const candidate = path.join(userPath, 'globalStorage', extensionId);
+					if (fs.existsSync(candidate)) {
+						const files = fs.readdirSync(candidate);
+						// Look for likely state files
+						const match = files.find(f => f.includes('state') || f.endsWith('.vscdb') || f.endsWith('.json'));
+						if (match) {
+							storageFilePath = path.join(candidate, match);
+							break;
+						}
+					}
+				} catch (e) {
+					// ignore path access errors
+				}
+			}
+		} catch (e) {
+			// ignore
+		}
+
 		const cacheInfo = {
 			size: this.sessionFileCache.size,
 			sizeInMB: cacheSizeInMB,
 			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
-			location: 'VS Code Global State - extension.globalState.get sessionFileCache'
+			location: persistedCacheSummary,
+			storagePath: storageFilePath
 		};
 
 		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo }).replace(/</g, '\\u003c');
