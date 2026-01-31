@@ -34,31 +34,23 @@ interface EditorUsage {
 	};
 }
 
+interface PeriodStats {
+	tokens: number;
+	sessions: number;
+	avgInteractionsPerSession: number;
+	avgTokensPerSession: number;
+	modelUsage: ModelUsage;
+	editorUsage: EditorUsage;
+	co2: number;
+	treesEquivalent: number;
+	waterUsage: number;
+	estimatedCost: number;
+}
+
 interface DetailedStats {
-	today: {
-		tokens: number;
-		sessions: number;
-		avgInteractionsPerSession: number;
-		avgTokensPerSession: number;
-		modelUsage: ModelUsage;
-		editorUsage: EditorUsage;
-		co2: number;
-		treesEquivalent: number;
-		waterUsage: number;
-		estimatedCost: number;
-	};
-	month: {
-		tokens: number;
-		sessions: number;
-		avgInteractionsPerSession: number;
-		avgTokensPerSession: number;
-		modelUsage: ModelUsage;
-		editorUsage: EditorUsage;
-		co2: number;
-		treesEquivalent: number;
-		waterUsage: number;
-		estimatedCost: number;
-	};
+	today: PeriodStats;
+	month: PeriodStats;
+	lastMonth: PeriodStats;
 	lastUpdated: Date;
 }
 
@@ -368,7 +360,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		   try {
 			   // Show the output channel so users can see what's happening
 			   this.outputChannel.show(true);
-			   this.log('[DEBUG] clearCache() called');
+			   this.log('DEBUG clearCache() called');
 			   this.log('Clearing session file cache...');
 			   
 			   const cacheSize = this.sessionFileCache.size;
@@ -377,6 +369,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			   // Reset diagnostics loaded flag so the diagnostics view will reload files
 			this.diagnosticsHasLoadedFiles = false;
 			this.diagnosticsCachedFiles = [];
+			// Clear cached computed stats so details panel doesn't show stale data
+			this.lastDetailedStats = undefined;
                
 			   this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
 			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
@@ -595,9 +589,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const now = new Date();
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		// Calculate last month boundaries
+		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
+		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
 
 		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const lastMonthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -625,9 +623,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Fast check: Get file stats first to avoid processing old files
 					const fileStats = fs.statSync(sessionFile);
 					
-					// Skip files modified before the current month (quick filter)
+					// Skip files modified before last month (quick filter)
 					// This is the main performance optimization - filters out old sessions without reading file content
-					if (fileStats.mtime < monthStart) {
+					if (fileStats.mtime < lastMonthStart) {
 						skippedFiles++;
 						continue;
 					}
@@ -707,8 +705,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
+						// Session is from last month - only track lastMonth stats
+						if (wasCached) {
+							cacheHits++;
+						} else {
+							cacheMisses++;
+						}
+
+						lastMonthStats.tokens += tokens;
+						lastMonthStats.sessions += 1;
+						lastMonthStats.interactions += interactions;
+
+						// Add editor usage to last month stats
+						if (!lastMonthStats.editorUsage[editorType]) {
+							lastMonthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						lastMonthStats.editorUsage[editorType].tokens += tokens;
+						lastMonthStats.editorUsage[editorType].sessions += 1;
+
+						// Add model usage to last month stats
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!lastMonthStats.modelUsage[model]) {
+								lastMonthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							lastMonthStats.modelUsage[model].inputTokens += usage.inputTokens;
+							lastMonthStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+					}
 					else {
-						// Session is too old (no activity in current month), skip it
+						// Session is too old (no activity in current or last month), skip it
 						skippedFiles++;
 					}
 				} catch (fileError) {
@@ -716,9 +742,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
-				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in current month)`);
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
 			}
 			const totalCacheAccesses = cacheHits + cacheMisses;
 			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
@@ -728,12 +754,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
+		const lastMonthCo2 = (lastMonthStats.tokens / 1000) * this.co2Per1kTokens;
 		
 		const todayWater = (todayStats.tokens / 1000) * this.waterUsagePer1kTokens;
 		const monthWater = (monthStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const lastMonthWater = (lastMonthStats.tokens / 1000) * this.waterUsagePer1kTokens;
 
 		const todayCost = this.calculateEstimatedCost(todayStats.modelUsage);
 		const monthCost = this.calculateEstimatedCost(monthStats.modelUsage);
+		const lastMonthCost = this.calculateEstimatedCost(lastMonthStats.modelUsage);
 
 		const result: DetailedStats = {
 			today: {
@@ -759,6 +788,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: monthWater,
 				estimatedCost: monthCost
+			},
+			lastMonth: {
+				tokens: lastMonthStats.tokens,
+				sessions: lastMonthStats.sessions,
+				avgInteractionsPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.interactions / lastMonthStats.sessions) : 0,
+				avgTokensPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.tokens / lastMonthStats.sessions) : 0,
+				modelUsage: lastMonthStats.modelUsage,
+				editorUsage: lastMonthStats.editorUsage,
+				co2: lastMonthCo2,
+				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: lastMonthWater,
+				estimatedCost: lastMonthCost
 			},
 			lastUpdated: now
 		};
@@ -3218,7 +3259,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
-			this.log(`[DEBUG] Diagnostics webview message: ${JSON.stringify(message)}`);
+			this.log(`DEBUG Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -3278,7 +3319,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.showUsageAnalysis();
 					break;
 				case 'clearCache':
-					this.log('[DEBUG] clearCache message received from diagnostics webview');
+					this.log('DEBUG clearCache message received from diagnostics webview');
 					await this.clearCache();
 					// After clearing cache, refresh the diagnostic report if it's open
 					if (this.diagnosticsPanel) {
