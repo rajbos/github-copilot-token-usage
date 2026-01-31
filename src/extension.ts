@@ -24,6 +24,7 @@ interface ModelPricing {
 	inputCostPerMillion: number;
 	outputCostPerMillion: number;
 	category?: string;
+	displayNames?: string[];
 }
 
 interface EditorUsage {
@@ -191,6 +192,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private analysisPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
+	private lastDetailedStats: DetailedStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
@@ -415,7 +417,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Update every 5 minutes and save cache
 		this.updateInterval = setInterval(() => {
-			this.updateTokenStats();
+			this.updateTokenStats(true); // Silent update from timer
 			this.saveCacheToStorage();
 		}, 5 * 60 * 1000);
 	}
@@ -466,38 +468,49 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	public async updateTokenStats(): Promise<DetailedStats | undefined> {
+	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const detailedStats = await this.calculateDetailedStats((completed, total) => {
+			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
 				const percentage = Math.round((completed / total) * 100);
 				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
 			});
 
 			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.month.tokens.toLocaleString()}`;
 
-			// Create detailed tooltip with markdown support
+			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
-			tooltip.appendMarkdown('## 🤖 GitHub Copilot Token Usage\n\n');
-			tooltip.appendMarkdown('### 📅 Today\n');
-			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.today.tokens.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.today.estimatedCost.toFixed(4)}\n\n`);
-			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.today.co2.toFixed(2)}g\n\n`);
-			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.today.waterUsage.toFixed(3)}L\n\n`);
-			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.today.sessions}\n\n`);
-			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.today.avgInteractionsPerSession}\n\n`);
-			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.today.avgTokensPerSession.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown('### 📊 This Month\n');
-			tooltip.appendMarkdown(`**Tokens:** ${detailedStats.month.tokens.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown(`**Est. Cost:** $${detailedStats.month.estimatedCost.toFixed(4)}\n\n`);
-			tooltip.appendMarkdown(`**CO₂ Est.:** ${detailedStats.month.co2.toFixed(2)}g\n\n`);
-			tooltip.appendMarkdown(`**Water Est.:** ${detailedStats.month.waterUsage.toFixed(3)}L\n\n`);
-			tooltip.appendMarkdown(`**Sessions:** ${detailedStats.month.sessions}\n\n`);
-			tooltip.appendMarkdown(`**Avg Interactions/Session:** ${detailedStats.month.avgInteractionsPerSession}\n\n`);
-			tooltip.appendMarkdown(`**Avg Tokens/Session:** ${detailedStats.month.avgTokensPerSession.toLocaleString()}\n\n`);
-			tooltip.appendMarkdown('---\n\n');
-			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios*\n\n');
-			tooltip.appendMarkdown('*Updates automatically every 5 minutes*');
+			tooltip.isTrusted = false;
+			// Title
+			tooltip.appendMarkdown('#### 🤖 GitHub Copilot Token Usage');
+			tooltip.appendMarkdown('\n---\n');
+			// Table layout for Today
+			tooltip.appendMarkdown(`📅 Today  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :     | ${detailedStats.today.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.today.avgTokensPerSession.toLocaleString()} |\n`);
+
+			tooltip.appendMarkdown('\n---\n');
+
+			// Table layout for This Month
+			tooltip.appendMarkdown(`📊 This month  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.month.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.month.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.month.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.month.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.month.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :      | ${detailedStats.month.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.month.avgTokensPerSession.toLocaleString()} |\n`);
+			// Footer
+			tooltip.appendMarkdown('\n---\n');
+			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
+			tooltip.appendMarkdown('*Updates automatically every 5 minutes.*');
 
 			this.statusBarItem.tooltip = tooltip;
 
@@ -519,6 +532,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
+			// Store the stats for reuse without recalculation
+			this.lastDetailedStats = detailedStats;
 			return detailedStats;
 		} catch (error) {
 			this.error('Error updating token stats:', error);
@@ -600,16 +615,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				try {
+					// Fast check: Get file stats first to avoid processing old files
 					const fileStats = fs.statSync(sessionFile);
+					
+					// Skip files modified before the current month (quick filter)
+					// This is the main performance optimization - filters out old sessions without reading file content
+					if (fileStats.mtime < monthStart) {
+						skippedFiles++;
+						continue;
+					}
+					
+					// For files within current month, check if data is cached to avoid redundant reads
+					const mtime = fileStats.mtime.getTime();
+					const wasCached = this.isCacheValid(sessionFile, mtime);
+					
+					// Get interactions count (uses cache if available)
+					const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime);
+					
+					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
+					if (interactions === 0) {
+						skippedFiles++;
+						continue;
+					}
+					
+					// Get remaining data (all use cache if available)
+					const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime);
+					const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime);
+					const editorType = this.getEditorTypeFromPath(sessionFile);
+					
+					// For date filtering, get lastInteraction from session details
+					const details = await this.getSessionFileDetails(sessionFile);
+					const lastActivity = details.lastInteraction 
+						? new Date(details.lastInteraction) 
+						: new Date(details.modified);
 
-					if (fileStats.mtime >= monthStart) {
-						// Check if data is cached before making calls
-						const wasCached = this.isCacheValid(sessionFile, fileStats.mtime.getTime());
-						
-						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
-						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
-						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
-						const editorType = this.getEditorTypeFromPath(sessionFile);
+					if (lastActivity >= monthStart) {
 
 						// Update cache statistics
 						if (wasCached) {
@@ -638,7 +678,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							monthStats.modelUsage[model].outputTokens += usage.outputTokens;
 						}
 
-						if (fileStats.mtime >= todayStart) {
+						if (lastActivity >= todayStart) {
 							todayStats.tokens += tokens;
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
@@ -661,7 +701,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					else {
-						// File is too old, skip it
+						// Session is too old (no activity in current month), skip it
 						skippedFiles++;
 					}
 				} catch (fileError) {
@@ -671,7 +711,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
-				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (too old, not in current month)`);
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in current month)`);
 			}
 			const totalCacheAccesses = cacheHits + cacheMisses;
 			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
@@ -2074,8 +2114,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const foundPaths: string[] = [];
 		for (let i = 0; i < allVSCodePaths.length; i++) {
 			const codeUserPath = allVSCodePaths[i];
-			if (fs.existsSync(codeUserPath)) {
-				foundPaths.push(codeUserPath);
+			try {
+				if (fs.existsSync(codeUserPath)) {
+					foundPaths.push(codeUserPath);
+				}
+			} catch (checkError) {
+				this.warn(`Could not check path ${codeUserPath}: ${checkError}`);
 			}
 			// Update progress
 			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
@@ -2093,53 +2137,89 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				// Workspace storage sessions
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
-				if (fs.existsSync(workspaceStoragePath)) {
-					const workspaceDirs = fs.readdirSync(workspaceStoragePath);
+				try {
+					if (fs.existsSync(workspaceStoragePath)) {
+						try {
+							const workspaceDirs = fs.readdirSync(workspaceStoragePath);
 
-					for (const workspaceDir of workspaceDirs) {
-						const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-						if (fs.existsSync(chatSessionsPath)) {
-							const sessionFiles2 = fs.readdirSync(chatSessionsPath)
-								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-								.map(file => path.join(chatSessionsPath, file));
-							if (sessionFiles2.length > 0) {
-								this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
-								sessionFiles.push(...sessionFiles2);
+							for (const workspaceDir of workspaceDirs) {
+								const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
+								try {
+									if (fs.existsSync(chatSessionsPath)) {
+										try {
+											const sessionFiles2 = fs.readdirSync(chatSessionsPath)
+												.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+												.map(file => path.join(chatSessionsPath, file));
+											if (sessionFiles2.length > 0) {
+												this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
+												sessionFiles.push(...sessionFiles2);
+											}
+										} catch (readError) {
+											this.warn(`Could not read chat sessions in ${chatSessionsPath}: ${readError}`);
+										}
+									}
+								} catch (checkError) {
+									this.warn(`Could not check chat sessions path ${chatSessionsPath}: ${checkError}`);
+								}
 							}
+						} catch (readError) {
+							this.warn(`Could not read workspace storage in ${workspaceStoragePath}: ${readError}`);
 						}
 					}
+				} catch (checkError) {
+					this.warn(`Could not check workspace storage path ${workspaceStoragePath}: ${checkError}`);
 				}
 
 				// Global storage sessions (legacy emptyWindowChatSessions)
 				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
-				if (fs.existsSync(globalStoragePath)) {
-					const globalSessionFiles = fs.readdirSync(globalStoragePath)
-						.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-						.map(file => path.join(globalStoragePath, file));
-					if (globalSessionFiles.length > 0) {
-						this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
-						sessionFiles.push(...globalSessionFiles);
+				try {
+					if (fs.existsSync(globalStoragePath)) {
+						try {
+							const globalSessionFiles = fs.readdirSync(globalStoragePath)
+								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+								.map(file => path.join(globalStoragePath, file));
+							if (globalSessionFiles.length > 0) {
+								this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
+								sessionFiles.push(...globalSessionFiles);
+							}
+						} catch (readError) {
+							this.warn(`Could not read global storage in ${globalStoragePath}: ${readError}`);
+						}
 					}
+				} catch (checkError) {
+					this.warn(`Could not check global storage path ${globalStoragePath}: ${checkError}`);
 				}
 
 				// GitHub Copilot Chat extension global storage
 				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
-				if (fs.existsSync(copilotChatGlobalPath)) {
-					this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
-					this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+				try {
+					if (fs.existsSync(copilotChatGlobalPath)) {
+						this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
+						this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+					}
+				} catch (checkError) {
+					this.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
 				}
 			}
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			if (fs.existsSync(copilotCliSessionPath)) {
-				const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
-					.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-					.map(file => path.join(copilotCliSessionPath, file));
-				if (cliSessionFiles.length > 0) {
-					this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
-					sessionFiles.push(...cliSessionFiles);
+			try {
+				if (fs.existsSync(copilotCliSessionPath)) {
+					try {
+						const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
+							.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+							.map(file => path.join(copilotCliSessionPath, file));
+						if (cliSessionFiles.length > 0) {
+							this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
+							sessionFiles.push(...cliSessionFiles);
+						}
+					} catch (readError) {
+						this.warn(`Could not read Copilot CLI session path in ${copilotCliSessionPath}: ${readError}`);
+					}
 				}
+			} catch (checkError) {
+				this.warn(`Could not check Copilot CLI session path ${copilotCliSessionPath}: ${checkError}`);
 			}
 
 			// Log summary
@@ -2283,22 +2363,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (request.result && request.result.metadata && request.result.metadata.modelId) {
 			return request.result.metadata.modelId;
 		}
+		
+		// Build a lookup map from display names to model IDs from modelPricing.json
 		if (request.result && request.result.details) {
-			if (request.result.details.includes('Claude Sonnet 3.5')) { return 'claude-sonnet-3.5'; }
-			if (request.result.details.includes('Claude Sonnet 3.7')) { return 'claude-sonnet-3.7'; }
-			if (request.result.details.includes('Claude Sonnet 4')) { return 'claude-sonnet-4'; }
-			if (request.result.details.includes('Gemini 2.5 Pro')) { return 'gemini-2.5-pro'; }
-			if (request.result.details.includes('Gemini 3 Pro (Preview)')) { return 'gemini-3-pro-preview'; }
-			if (request.result.details.includes('Gemini 3 Pro')) { return 'gemini-3-pro'; }
-			if (request.result.details.includes('GPT-4.1')) { return 'gpt-4.1'; }
-			if (request.result.details.includes('GPT-4o-mini')) { return 'gpt-4o-mini'; }
-			if (request.result.details.includes('GPT-4o')) { return 'gpt-4o'; }
-			if (request.result.details.includes('GPT-4')) { return 'gpt-4'; }
-			if (request.result.details.includes('GPT-5')) { return 'gpt-5'; }
-			if (request.result.details.includes('GPT-3.5-Turbo')) { return 'gpt-3.5-turbo'; }
-			if (request.result.details.includes('o3-mini')) { return 'o3-mini'; }
-			if (request.result.details.includes('o4-mini')) { return 'o4-mini'; }
+			// Create reverse lookup: displayName -> modelId
+			const displayNameToModelId: { [displayName: string]: string } = {};
+			for (const [modelId, pricing] of Object.entries(this.modelPricing)) {
+				if (pricing.displayNames) {
+					for (const displayName of pricing.displayNames) {
+						displayNameToModelId[displayName] = modelId;
+					}
+				}
+			}
+			
+			// Check which display name appears in the details
+			// Sort by length descending to match longer names first (e.g., "Gemini 3 Pro (Preview)" before "Gemini 3 Pro")
+			const sortedDisplayNames = Object.keys(displayNameToModelId).sort((a, b) => b.length - a.length);
+			for (const displayName of sortedDisplayNames) {
+				if (request.result.details.includes(displayName)) {
+					return displayNameToModelId[displayName];
+				}
+			}
 		}
+		
 		return 'gpt-4'; // default
 	}
 
@@ -2327,10 +2414,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Get detailed stats (with progress in status bar)
-		const stats = await this.updateTokenStats();
+		// Use cached stats if available, otherwise calculate
+		let stats = this.lastDetailedStats;
 		if (!stats) {
-			return;
+			this.log('No cached stats available, calculating...');
+			stats = await this.updateTokenStats();
+			if (!stats) {
+				return;
+			}
 		}
 
 		// Create a small webview panel
@@ -3187,7 +3278,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 		const detailedSessionFiles: SessionFileDetails[] = [];
 		
-		for (const file of sessionFiles.slice(0, 500)) {
+		// Sort files by modification time (most recent first) before taking first 500
+		// This ensures we prioritize recent sessions regardless of their folder location
+		const fileStats = await Promise.all(
+			sessionFiles.map(async (file) => {
+				try {
+					const stat = await fs.promises.stat(file);
+					return { file, mtime: stat.mtime.getTime() };
+				} catch {
+					return { file, mtime: 0 };
+				}
+			})
+		);
+
+		const sortedFiles = fileStats
+			.sort((a, b) => b.mtime - a.mtime)
+			.map(item => item.file);
+		
+		// Process up to 500 most recent session files
+		for (const file of sortedFiles.slice(0, 500)) {
 			// Check if panel was disposed
 			if (!panel.visible && panel.viewColumn === undefined) {
 				this.log('Diagnostic panel closed, stopping background load');
@@ -3196,11 +3305,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
-				// Filter: skip empty sessions (no interactions = just opened chat panel, no messages sent)
-				if (details.interactions === 0) {
-					continue;
-				}
-				// Filter: only include sessions with activity in the last 14 days
+				// Only include sessions with activity (lastInteraction or file modified time) within the last 14 days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
 					: new Date(details.modified);

@@ -1,14 +1,53 @@
+# Build and development
+.vscode
 .vscode/**
+.vscode-test
 .vscode-test/**
-out/**
-node_modules/**
+.vscode-test.mjs
+src
 src/**
+out
+out/**
+test
+test/**
+test-node
+test-node/**
+node_modules
+node_modules/**
+.github
+.github/**
+.devx
+.devx/**
+scripts
+scripts/**
+*.vsix
 .gitignore
-.yarnrc
+.gitattributes
+.editorconfig
+.eslintrc.json
+eslint.config.mjs
+tsconfig.json
+tsconfig.tests.json
 esbuild.js
-vsc-extension-quickstart.md
-**/tsconfig.json
-**/eslint.config.mjs
+build.ps1
+publish.ps1
+
+# Test files
+**/*.test.ts
+**/*.test.js
 **/*.map
-**/*.ts
-**/.vscode-test.*
+
+# Large documentation schema files (6MB+)
+docs/logFilesSchema
+docs/logFilesSchema/**
+
+# Lock and config files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+.npmrc
+.yarnrc
+
+# OS files
+.DS_Store
+Thumbs.db

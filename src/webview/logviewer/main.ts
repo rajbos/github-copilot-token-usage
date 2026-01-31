@@ -157,18 +157,28 @@ function renderTurnCard(turn: ChatTurn): string {
 	const toolCallsHtml = hasToolCalls ? `
 		<div class="turn-tools">
 			<div class="tools-header">🔧 Tool Calls (${turn.toolCalls.length})</div>
-			<div class="tools-list">
-				${turn.toolCalls.map((tc, idx) => `
-					<div class="tool-item">
-						<div class="tool-item-header">
-							<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
-							<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
-						</div>
-						${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
-						${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
-					</div>
-				`).join('')}
-			</div>
+			<table class="tools-table">
+				<thead>
+					<tr>
+						<th scope="col">Tool Name</th>
+						<th scope="col">Action</th>
+					</tr>
+				</thead>
+				<tbody>
+					${turn.toolCalls.map((tc, idx) => `
+						<tr class="tool-row">
+							<td class="tool-name-cell">
+								<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
+								${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
+								${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
+							</td>
+							<td class="tool-action-cell">
+								<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
+							</td>
+						</tr>
+					`).join('')}
+				</tbody>
+			</table>
 		</div>
 	` : '';
 	
@@ -357,6 +367,15 @@ function renderLayout(data: SessionLogData): void {
 				transform: translateY(-2px);
 				box-shadow: 0 6px 16px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.2);
 			}
+			.filename-link {
+				cursor: pointer;
+				color: #60a5fa;
+				text-decoration: underline;
+				transition: color 0.2s;
+			}
+			.filename-link:hover {
+				color: #93c5fd;
+			}
 			.summary-label { 
 				font-size: 14px; 
 				color: #b8b8c0; 
@@ -533,7 +552,43 @@ function renderLayout(data: SessionLogData): void {
 				font-weight: 700;
 				color: #fff;
 				margin-bottom: 10px;
-				text-t2px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.tools-table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 13px;
+			}
+			.tools-table thead th {
+				text-align: left;
+				padding: 8px 12px;
+				background: #1a1a22;
+				border-bottom: 2px solid #4a4a5a;
+				color: #94a3b8;
+				font-weight: 600;
+				font-size: 12px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.tools-table thead th:nth-child(2) {
+				text-align: right;
+			}
+			.tools-table tbody .tool-row {
+				border-bottom: 1px solid #3a3a44;
+			}
+			.tools-table tbody .tool-row:last-child {
+				border-bottom: none;
+			}
+			.tool-name-cell {
+				padding: 10px 12px;
+				vertical-align: top;
+			}
+			.tool-action-cell {
+				padding: 10px 12px;
+				text-align: right;
+				vertical-align: top;
+				width: 100px;
 			}
 			.tool-name {
 				font-weight: 700;
@@ -545,6 +600,7 @@ function renderLayout(data: SessionLogData): void {
 				color: #34d399;
 				font-size: 12px;
 				text-decoration: underline;
+				white-space: nowrap;
 			}
 			.tool-call-pretty:hover {
 				color: #6ee7b7;
@@ -654,21 +710,6 @@ function renderLayout(data: SessionLogData): void {
 				padding: 40px 20px;
 				color: #888;
 			}
-			
-			/* File card link button */
-			.file-link-btn {
-				background: linear-gradient(180deg, #2563eb 0%, #0b5cff 100%);
-				color: #fff;
-				padding: 8px 16px;
-				border-radius: 8px;
-				border: none;
-				cursor: pointer;
-				font-weight: 700;
-				font-size: 12px;
-				box-shadow: 0 2px 6px rgba(11,92,255,0.2);
-				margin-top: 8px;
-			}
-			.file-link-btn:hover { filter: brightness(1.1); }
 		</style>
 		
 		<div class="container">
@@ -694,10 +735,34 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-sub">#file ${usageContextRefs.file || 0} · @vscode ${usageContextRefs.vscode || 0} · @workspace ${usageContextRefs.workspace || 0}</div>
 				</div>
 				<div class="summary-card">
-					<div class="summary-label">📄 Session File</div>
-					<div class="summary-value" style="font-size: 16px; margin-bottom: 4px;">${escapeHtml(data.title || getFileName(data.file))}</div>
-					<div class="summary-sub" style="margin-bottom: 8px;">${formatFileSize(data.size)} · Modified: ${formatDate(data.modified)}</div>
-					<button id="file-link" class="file-link-btn">Open in Editor</button>
+					<div class="summary-label">📁 File Name</div>
+					<div class="summary-value" style="font-size: 16px;"><span class="filename-link" id="open-file-link">${escapeHtml(getFileName(data.file))}</span></div>
+					<div class="summary-sub">Click to open in editor</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">💻 Editor</div>
+					<div class="summary-value" style="font-size: 20px;">${escapeHtml(data.editorName)}</div>
+					<div class="summary-sub">Source editor</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">📦 File Size</div>
+					<div class="summary-value">${formatFileSize(data.size)}</div>
+					<div class="summary-sub">Total size on disk</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">🕒 Modified</div>
+					<div class="summary-value" style="font-size: 14px;">${formatDate(data.modified)}</div>
+					<div class="summary-sub">Last file modification</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">▶️ First Interaction</div>
+					<div class="summary-value" style="font-size: 14px;">${formatDate(data.firstInteraction)}</div>
+					<div class="summary-sub">Session started</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">⏹️ Last Interaction</div>
+					<div class="summary-value" style="font-size: 14px;">${formatDate(data.lastInteraction)}</div>
+					<div class="summary-sub">Most recent activity</div>
 				</div>
 			</div>
 			
@@ -732,6 +797,9 @@ function renderLayout(data: SessionLogData): void {
 	});
 	document.getElementById('file-link')?.addEventListener('click', (e) => {
 		e.preventDefault();
+		vscode.postMessage({ command: 'openRawFile' });
+	});
+	document.getElementById('open-file-link')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'openRawFile' });
 	});
 

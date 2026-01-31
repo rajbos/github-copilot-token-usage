@@ -1,6 +1,6 @@
 ---
 name: copilot-log-analysis
-description: Analyzing GitHub Copilot session log files to extract token usage, model info, and interaction data. Use when working with session files or debugging token tracking.
+description: Analyzing GitHub Copilot session log files to extract token usage, model information, and interaction data. Use when working with session files, understanding the extension's log analysis methods, or debugging token tracking issues.
 ---
 
 # Copilot Log Analysis Skill
@@ -16,8 +16,8 @@ The extension analyzes two types of log files:
 ## Session File Discovery
 
 ### Key Method: `getCopilotSessionFiles()`
-**Location**: `src/extension.ts` (lines 905-1017)
-**Helper Methods**: `getVSCodeUserPaths()` (lines 860-903), `scanDirectoryForSessionFiles()` (lines 1020-1045)
+**Location**: `src/extension.ts` (lines 975-1073)
+**Helper Methods**: `getVSCodeUserPaths()` (lines 934-972), `scanDirectoryForSessionFiles()` (lines 1078-1110)
 
 This method discovers session files across all VS Code variants and locations:
 
@@ -43,99 +43,36 @@ This method discovers session files across all VS Code variants and locations:
 - **Remote/Server**: `~/.vscode-server/data/User`, `~/.vscode-server-insiders/data/User`
 
 ### Helper Method: `getVSCodeUserPaths()`
-**Location**: `src/extension.ts` (lines 860-903)
+**Location**: `src/extension.ts` (lines 934-972)
 
 Returns all possible VS Code user data paths for different variants and platforms.
 
 ### Helper Method: `scanDirectoryForSessionFiles()`
-**Location**: `src/extension.ts` (lines 1020-1045)
+**Location**: `src/extension.ts` (lines 1078-1110)
 
 Recursively scans directories for `.json` and `.jsonl` session files.
 
 ## Field Extraction Methods
 
-### 1. Token Estimation: `estimateTokensFromSession()`
-**Location**: `src/extension.ts` (lines 1047-1088)
+### Parsing and Token Accounting: `parseSessionFileContent()`
+**Location**: `src/sessionParser.ts` (lines 184-347)
 
-**Purpose**: Estimates total tokens used in a session by analyzing message content.
-
-**How it works:**
-1. Reads session file content
-2. Dispatches to format-specific handler:
-   - `.jsonl` files → `estimateTokensFromJsonlSession()` (lines 1094-1121)
-   - `.json` files → analyzes `requests` array
-
-**For JSON files:**
-- **Input tokens**: Extracted from `requests[].message.parts[].text`
-- **Output tokens**: Extracted from `requests[].response[].value`
-- Uses model-specific character-to-token ratios from `tokenEstimators.json`
-
-**For JSONL files:**
-- Processes line-by-line JSON events
-- **Copilot CLI format** (uses `type` field):
-  - **User messages**: `type: 'user.message'`, field: `data.content`
-  - **Assistant messages**: `type: 'assistant.message'`, field: `data.content`
-  - **Tool results**: `type: 'tool.result'`, field: `data.output`
-- **VS Code Incremental format** (uses `kind` field):
-  - **User requests**: `kind: 1`, field: `request.message.parts[].text`
-  - **Assistant responses**: `kind: 2`, field: `response[].value`, `model`
-
-### 2. Interaction Counting: `countInteractionsInSession()`
-**Location**: `src/extension.ts` (lines 615-651)
-
-**Purpose**: Counts the number of user interactions in a session.
+**Purpose**: Parses session files and returns tokens, interactions, model usage, and editor type-safe model IDs.
 
 **How it works:**
+1. Accepts raw file content along with callbacks for token estimation and model detection.
+2. Supports both `.json` (Copilot Chat) and `.jsonl` (CLI/agent) formats, including delta-based JSONL streams.
+3. Counts interactions (user messages), input tokens, and output tokens while grouping by model.
+4. Uses `estimateTokensFromText()` (lines 1139-1155 in `src/extension.ts`) for character-to-token estimation.
 
-**For JSON files:**
-- Counts items in `requests` array
-- Each request = one user interaction
-
-**For JSONL files:**
-- **Copilot CLI format**: Counts events with `type: 'user.message'`
-- **VS Code Incremental format**: Counts events with `kind: 1`
-- Processes line-by-line, skipping malformed lines
-- **Note**: Sessions with 0 interactions (empty `requests: []` or no `kind: 1` entries) are filtered out in diagnostics view
-
-### 3. Model Usage Extraction: `getModelUsageFromSession()`
-**Location**: `src/extension.ts` (lines 653-729)
-
-**Purpose**: Extracts per-model token usage (input vs output).
-
-**How it works:**
-
-**For JSON files:**
-- Iterates through `requests` array
-- Determines model using `getModelFromRequest()` helper (lines 1123-1145)
-- Tracks input tokens from `message.parts[].text`
-- Tracks output tokens from `response[].value`
-
-**For JSONL files (Copilot CLI format):**
-- Default model: `gpt-4o` (for CLI sessions)
-- Reads `event.model` if specified
-- Categorizes by event type:
-  - `user.message` → input tokens
-  - `assistant.message` → output tokens
-  - `tool.result` → input tokens (context)
-
-**For JSONL files (VS Code Incremental format):**
-- Reads `model` field from `kind: 2` response entries
-- Categorizes by kind:
-  - `kind: 1` → input tokens (from `request.message.parts[].text`)
-  - `kind: 2` → output tokens (from `response[].value`)
-
-**Model Detection Logic**: `getModelFromRequest()`
+### Model Detection Logic: `getModelFromRequest()`
+**Location**: `src/extension.ts` (lines 1102-1134)
 - Primary: `request.result.metadata.modelId`
-- Fallback: Parse `request.result.details` string for model names
-- Detected patterns (defined in code lines 1129-1143):
-  - OpenAI: GPT-3.5-Turbo, GPT-4, GPT-4.1, GPT-4o, GPT-4o-mini, GPT-5, o3-mini, o4-mini
-  - Anthropic: Claude Sonnet 3.5, Claude Sonnet 3.7, Claude Sonnet 4
-  - Google: Gemini 2.5 Pro, Gemini 3 Pro (Preview), Gemini 3 Pro
-  - Default fallback: gpt-4
+- Fallback: parses `request.result.details` for known model patterns
+- Detected patterns: GPT-3.5-Turbo, GPT-4 family (4, 4.1, 4o, 4o-mini, 5, o3-mini, o4-mini), Claude Sonnet (3.5, 3.7, 4), Gemini (2.5 Pro, 3 Pro, 3 Pro Preview); defaults to `gpt-4`
+- Display name mapping in `getModelDisplayName()` (lines 1778-1811) adds variants such as GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, and Raptor when present in `metadata.modelId`.
 
-**Note**: The display name mapping in `getModelDisplayName()` includes additional model variants (GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, Raptor) that may appear if specified via `metadata.modelId` but are not pattern-matched from `result.details`.
-
-### 4. Editor Type Detection: `getEditorTypeFromPath()`
+### Editor Type Detection: `getEditorTypeFromPath()`
 **Location**: `src/extension.ts` (lines 111-143)
 
 **Purpose**: Determines which VS Code variant created the session file.
@@ -151,31 +88,10 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 - Contains `/code/` → `'VS Code'`
 - Default → `'Unknown'`
 
-### 5. Session Title Extraction
-**Location**: `src/extension.ts` in `getSessionFileDetails()` method
-
-**Purpose**: Extracts the session title for display in diagnostics.
-
-**How it works:**
-
-**For JSON files:**
-1. Primary: `customTitle` field from root of session object
-2. Fallback: `generatedTitle` from response items (e.g., thinking blocks, tool invocations)
-   - Iterates through `requests[].response[]` looking for `generatedTitle`
-
-**For JSONL files (Incremental format):**
-1. Primary: `customTitle` from the `kind: 0` header entry
-2. Fallback: `generatedTitle` from `kind: 2` response entries
-
-**For JSONL files (CLI format):**
-- Not available (CLI sessions don't have titles)
-
-**Note**: `customTitle` is user-defined (when they rename the session). `generatedTitle` is AI-generated summary text found in thinking blocks or tool results.
-
 ## Token Estimation Algorithm
 
 ### Character-to-Token Conversion: `estimateTokensFromText()`
-**Location**: `src/extension.ts` (lines 1147-1160)
+**Location**: `src/extension.ts` (lines 1139-1155)
 
 **Approach**: Uses model-specific character-to-token ratios
 - Default ratio: 0.25 (4 characters per token)
@@ -191,31 +107,14 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 ### Cache Structure: `SessionFileCache`
 **Location**: `src/extension.ts` (lines 72-77)
 
-Stores pre-calculated data to avoid re-processing unchanged files:
-```typescript
-{
-  tokens: number,
-  interactions: number,
-  modelUsage: ModelUsage,
-  mtime: number  // file modification timestamp
-}
-```
+Stores pre-calculated tokens, interactions, model usage, and file mtime to avoid re-processing unchanged files.
 
 ### Cache Methods:
-- **`isCacheValid()`** (lines 165-168): Checks if cache is valid for file
-- **`getCachedSessionData()`** (lines 170-172): Retrieves cached data
-- **`setCachedSessionData()`** (lines 174-186): Stores data with size limit (1000 files max)
-- **`clearExpiredCache()`** (lines 188-201): Removes cache for deleted files
-
-### Cached Wrapper Methods:
-- `estimateTokensFromSessionCached()` (lines 755-758)
-- `countInteractionsInSessionCached()` (lines 760-763)
-- `getModelUsageFromSessionCached()` (lines 765-768)
-
-All use `getSessionFileDataCached()` (lines 732-753) which:
-1. Checks cache validity using file mtime
-2. Returns cached data if valid
-3. Otherwise reads file and caches result
+- `isCacheValid()` (lines 227-230): Validates cached entry by mtime
+- `getCachedSessionData()` (lines 232-234): Retrieves cached data
+- `setCachedSessionData()` (lines 236-254): Stores data with FIFO eviction after 1000 files
+- `clearExpiredCache()` (lines 250-264): Drops cache entries for missing files
+- `getSessionFileDataCached()` (lines 811-845): Reads session content, parses via `parseSessionFileContent()`, and caches results
 
 ## Schema Documentation
 
@@ -229,10 +128,10 @@ All use `getSessionFileDataCached()` (lines 732-753) which:
 4. **`SCHEMA-ANALYSIS.md`**: Quick reference guide
 5. **`VSCODE-VARIANTS.md`**: VS Code variant detection documentation
 
-**Note**: The analysis JSON file is auto-generated and may not exist in fresh clones. It's created by running the schema analysis script documented in the README.
+**Note**: The analysis JSON file is auto-generated and may not exist in fresh clones. It is created by running the schema analysis script documented below.
 
 ### Schema Analysis
-See the **Executable Scripts** section above for three available scripts:
+See the **Executable Scripts** section for available utilities:
 1. `get-session-files.js` - Quick session file discovery
 2. `diagnose-session-files.js` - Detailed diagnostics
 3. `analyze-session-schema.ps1` - PowerShell schema analysis
@@ -287,45 +186,6 @@ See the **Executable Scripts** section above for three available scripts:
 - Assistant output: `data.content` (when `type: 'assistant.message'`)
 - Tool output: `data.output` (when `type: 'tool.result'`)
 - Model: `model` (optional, defaults to `gpt-4o`)
-
-## JSONL File Structure (VS Code Incremental)
-
-**Introduced in**: VS Code Insiders ~0.25+ (April 2025)
-
-This is a newer incremental format used by VS Code Insiders that logs session data progressively. Unlike the CLI format that uses `type`, this format uses `kind` to identify log entry types.
-
-**Entry kinds:**
-
-```jsonl
-{"kind": 0, "sessionId": "...", "customTitle": "Session Title", "mode": "agent", "version": 1}
-{"kind": 1, "requestId": "...", "request": {"message": {"parts": [{"text": "user prompt"}]}}}
-{"kind": 2, "requestId": "...", "response": [{"value": "assistant reply"}], "model": "claude-3.5-sonnet"}
-```
-
-**Kind values:**
-- `kind: 0` - Session header (contains `sessionId`, `customTitle`, `mode`, `version`)
-- `kind: 1` - User request (contains `requestId`, `request.message.parts[].text`)
-- `kind: 2` - Assistant response (contains `requestId`, `response[].value`, `model`)
-
-**Key fields:**
-- Session title: `customTitle` (when `kind: 0`)
-- User input: `request.message.parts[].text` (when `kind: 1`)
-- Assistant output: `response[].value` (when `kind: 2`)
-- Model: `model` (when `kind: 2`, e.g., `claude-3.5-sonnet`)
-
-**Format detection:**
-```javascript
-// Read first line of JSONL file
-const firstLine = JSON.parse(lines[0]);
-if ('kind' in firstLine) {
-    // VS Code Incremental format
-} else if ('type' in firstLine) {
-    // Copilot CLI format
-}
-```
-
-**Official source reference**: 
-- `vscode-copilot-chat/src/vs/workbench/contrib/chat/common/chatSessionsProvider.d.ts`
 
 ## Pricing and Cost Calculation
 
@@ -471,7 +331,6 @@ pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputPath 
 - Documents field types, occurrences, and variations
 
 **Note**: This script generates the `session-file-schema-analysis.json` file referenced in the Schema Documentation section below.
-
 ## Usage Examples
 
 ### Example 1: Finding all session files
@@ -485,17 +344,18 @@ console.log(`Found ${sessionFiles.length} session files`);
 const filePath = '/path/to/session.json';
 const stats = fs.statSync(filePath);
 const mtime = stats.mtime.getTime();
+const content = await fs.promises.readFile(filePath, 'utf8');
 
-// Get all data (cached if unchanged)
-const tokens = await estimateTokensFromSessionCached(filePath, mtime);
-const interactions = await countInteractionsInSessionCached(filePath, mtime);
-const modelUsage = await getModelUsageFromSessionCached(filePath, mtime);
+const estimate = (text: string, model = 'gpt-4o') => Math.ceil(text.length * 0.25);
+const detectModel = (req: any) => req?.result?.metadata?.modelId ?? 'gpt-4o';
+
+const parsed = parseSessionFileContent(filePath, content, estimate, detectModel);
 const editorType = getEditorTypeFromPath(filePath);
 
-console.log(`Tokens: ${tokens}`);
-console.log(`Interactions: ${interactions}`);
+console.log(`Tokens: ${parsed.tokens}`);
+console.log(`Interactions: ${parsed.interactions}`);
 console.log(`Editor: ${editorType}`);
-console.log(`Models:`, modelUsage);
+console.log(`Models:`, parsed.modelUsage);
 ```
 
 ### Example 3: Processing daily statistics
@@ -503,12 +363,16 @@ console.log(`Models:`, modelUsage);
 const now = new Date();
 const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 const sessionFiles = await getCopilotSessionFiles();
+const estimate = (text: string, model = 'gpt-4o') => Math.ceil(text.length * 0.25);
+const detectModel = (req: any) => req?.result?.metadata?.modelId ?? 'gpt-4o';
 
 let todayTokens = 0;
 for (const file of sessionFiles) {
   const stats = fs.statSync(file);
   if (stats.mtime >= todayStart) {
-    todayTokens += await estimateTokensFromSessionCached(file, stats.mtime.getTime());
+    const content = await fs.promises.readFile(file, 'utf8');
+    const parsed = parseSessionFileContent(file, content, estimate, detectModel);
+    todayTokens += parsed.tokens;
   }
 }
 ```

@@ -11,19 +11,16 @@
     // Turn off tsc task auto detection since we have the necessary tasks as npm scripts
     "typescript.tsc.autoDetect": "off",
     "chat.tools.terminal.autoApprove": {
-        "/^cd c:/Users/RobBos/code/repos/rajbos/github-copilot-token-usage; git show HEAD:src/extension\\.ts \\| powershell -Command \"\\$input \\| Select-Object -First 120\"$/": {
-            "approve": true,
-            "matchCommandLine": true
-        },
-        "/^cd c:/Users/RobBos/code/repos/rajbos/github-copilot-token-usage; powershell -Command \"git show HEAD:src/extension\\.ts \\| Select-Object -First 120\"$/": {
-            "approve": true,
-            "matchCommandLine": true
-        },
         "/^npx tsc --noEmit 2>&1$/": {
             "approve": true,
             "matchCommandLine": true
         },
         "/^node esbuild\\.js 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "git fetch": true,
+        "/^node \\.github/skills/load-cache-data/load-cache-data\\.js(?: --last \\d+)?(?: --json)?$/": {
             "approve": true,
             "matchCommandLine": true
         }
