@@ -11,6 +11,11 @@ import { ChartView } from './views/chartView';
 import { UsageAnalysisView } from './views/usageAnalysisView';
 import { LogViewerView } from './views/logViewerView';
 import { DiagnosticsView } from './views/diagnosticsView';
+import { SessionFileDiscovery } from './utils/sessionFileDiscovery';
+import { TokenEstimator } from './utils/tokenEstimator';
+import { SessionCacheManager } from './utils/sessionCacheManager';
+import { Logger } from './utils/logger';
+import { EditorTypeDetector } from './utils/editorTypeDetector';
 
 interface TokenUsageStats {
 	todayTokens: number;
@@ -197,6 +202,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private logViewerView: LogViewerView;
 	private diagnosticsView: DiagnosticsView;
 
+	// Utility classes
+	private logger: Logger;
+	private sessionFileDiscovery: SessionFileDiscovery;
+	private tokenEstimator: TokenEstimator;
+	private cacheManager: SessionCacheManager;
+
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
 		return Object.values(modelUsage).reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0);
@@ -207,7 +218,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private chartPanel: vscode.WebviewPanel | undefined;
 	private analysisPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
-	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
@@ -232,34 +242,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Returns: 'VS Code', 'VS Code Insiders', 'VSCodium', 'Cursor', 'Copilot CLI', or 'Unknown'
 	 */
 	private getEditorTypeFromPath(filePath: string): string {
-		const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
-		
-		if (normalizedPath.includes('/.copilot/session-state/')) {
-			return 'Copilot CLI';
-		}
-		if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
-			return 'VS Code Insiders';
-		}
-		if (normalizedPath.includes('/code - exploration/') || normalizedPath.includes('/code%20-%20exploration/')) {
-			return 'VS Code Exploration';
-		}
-		if (normalizedPath.includes('/vscodium/')) {
-			return 'VSCodium';
-		}
-		if (normalizedPath.includes('/cursor/')) {
-			return 'Cursor';
-		}
-		if (normalizedPath.includes('.vscode-server-insiders/')) {
-			return 'VS Code Server (Insiders)';
-		}
-		if (normalizedPath.includes('.vscode-server/') || normalizedPath.includes('.vscode-remote/')) {
-			return 'VS Code Server';
-		}
-		if (normalizedPath.includes('/code/')) {
-			return 'VS Code';
-		}
-		
-		return 'Unknown';
+		return EditorTypeDetector.getEditorTypeFromPath(filePath);
 	}
 
 	/**
@@ -267,113 +250,46 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * e.g. 'C:\...\AppData\Roaming\Code' -> 'VS Code'
 	 */
 	private getEditorNameFromRoot(rootPath: string): string {
-		if (!rootPath) { return 'Unknown'; }
-		const lower = rootPath.toLowerCase();
-		// Check obvious markers first
-		if (lower.includes('.copilot') || lower.includes('copilot')) { return 'Copilot CLI'; }
-		if (lower.includes('code - insiders') || lower.includes('code-insiders') || lower.includes('insiders')) { return 'VS Code Insiders'; }
-		if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
-		if (lower.includes('vscodium')) { return 'VSCodium'; }
-		if (lower.includes('cursor')) { return 'Cursor'; }
-		// Generic 'code' match (catch AppData\Roaming\Code)
-		if (lower.endsWith('code') || lower.includes(path.sep + 'code' + path.sep) || lower.includes('/code/')) { return 'VS Code'; }
-		return 'Unknown';
+		return EditorTypeDetector.getEditorNameFromRoot(rootPath);
 	}
 
 	// Logging methods
 	public log(message: string): void {
-		const timestamp = new Date().toLocaleTimeString();
-		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+		this.logger.log(message);
 	}
 
 	private warn(message: string): void {
-		const timestamp = new Date().toLocaleTimeString();
-		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
+		this.logger.warn(message);
 	}
 
 	private error(message: string, error?: any): void {
-		const timestamp = new Date().toLocaleTimeString();
-		this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
-		if (error) {
-			this.outputChannel.appendLine(`[${timestamp}] ${error}`);
-		}
+		this.logger.error(message, error);
 	}
 
-	// Cache management methods
+	// Cache management methods - delegate to cache manager
 	private isCacheValid(filePath: string, currentMtime: number): boolean {
-		const cached = this.sessionFileCache.get(filePath);
-		return cached !== undefined && cached.mtime === currentMtime;
+		return this.cacheManager.isCacheValid(filePath, currentMtime);
 	}
 
 	private getCachedSessionData(filePath: string): SessionFileCache | undefined {
-		return this.sessionFileCache.get(filePath);
+		return this.cacheManager.getCachedSessionData(filePath);
 	}
 
 	private setCachedSessionData(filePath: string, data: SessionFileCache): void {
-		this.sessionFileCache.set(filePath, data);
-		
-		// Limit cache size to prevent memory issues (keep last 1000 files)
-		// Only trigger cleanup when size exceeds limit by 100 to avoid frequent operations
-		if (this.sessionFileCache.size > 1100) {
-			// Remove 100 oldest entries to bring size back to 1000
-			// Maps maintain insertion order, so the first entries are the oldest
-			const keysToDelete: string[] = [];
-			let count = 0;
-			for (const key of this.sessionFileCache.keys()) {
-				keysToDelete.push(key);
-				count++;
-				if (count >= 100) {
-					break;
-				}
-			}
-			for (const key of keysToDelete) {
-				this.sessionFileCache.delete(key);
-			}
-			this.log(`Cache size limit reached, removed ${keysToDelete.length} oldest entries. Current size: ${this.sessionFileCache.size}`);
-		}
+		this.cacheManager.setCachedSessionData(filePath, data);
 	}
 
 	private clearExpiredCache(): void {
-		// Remove cache entries for files that no longer exist
-		const filesToCheck = Array.from(this.sessionFileCache.keys());
-		for (const filePath of filesToCheck) {
-			try {
-				if (!fs.existsSync(filePath)) {
-					this.sessionFileCache.delete(filePath);
-				}
-			} catch (error) {
-				// File access error, remove from cache
-				this.sessionFileCache.delete(filePath);
-			}
-		}
+		this.cacheManager.clearExpiredCache();
 	}
 
-	// Persistent cache storage methods
+	// Persistent cache storage methods - delegate to cache manager
 	private loadCacheFromStorage(): void {
-		try {
-			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
-			if (cacheData) {
-				this.sessionFileCache = new Map(Object.entries(cacheData));
-				this.log(`Loaded ${this.sessionFileCache.size} cached session files from storage`);
-			} else {
-				this.log('No cached session files found in storage');
-			}
-		} catch (error) {
-			this.error('Error loading cache from storage:', error);
-			// Start with empty cache on error
-			this.sessionFileCache = new Map();
-		}
+		this.cacheManager.loadCacheFromStorage();
 	}
 
 	private async saveCacheToStorage(): Promise<void> {
-		try {
-			// Convert Map to plain object for storage
-			const cacheData = Object.fromEntries(this.sessionFileCache);
-			await this.context.globalState.update('sessionFileCache', cacheData);
-			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage`);
-		} catch (error) {
-			this.error('Error saving cache to storage:', error);
-		}
+		await this.cacheManager.saveCacheToStorage();
 	}
 
 	public async clearCache(): Promise<void> {
@@ -383,9 +299,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			   this.log('[DEBUG] clearCache() called');
 			   this.log('Clearing session file cache...');
 			   
-			   const cacheSize = this.sessionFileCache.size;
-			   this.sessionFileCache.clear();
-			   await this.context.globalState.update('sessionFileCache', undefined);
+			   const cacheSize = this.cacheManager.getCacheSize();
+			   await this.cacheManager.clearCache();
 			   // Reset diagnostics loaded flag so the diagnostics view will reload files
 			this.diagnosticsHasLoadedFiles = false;
 			this.diagnosticsCachedFiles = [];
@@ -408,6 +323,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.extensionUri = extensionUri;
 		this.context = context;
 		
+		// Create output channel for extension logs (needed by utility classes)
+		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
+		
+		// Initialize utility classes
+		this.logger = new Logger(this.outputChannel);
+		this.cacheManager = new SessionCacheManager(context, this.log.bind(this), this.error.bind(this));
+		this.sessionFileDiscovery = new SessionFileDiscovery(this.log.bind(this), this.warn.bind(this));
+		this.tokenEstimator = new TokenEstimator(tokenEstimatorsData.estimators, modelPricingData.pricing, this.warn.bind(this));
+		
 		// Initialize view handlers
 		this.detailsView = new DetailsView(extensionUri);
 		this.chartView = new ChartView(extensionUri);
@@ -415,8 +339,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.logViewerView = new LogViewerView(extensionUri);
 		this.diagnosticsView = new DiagnosticsView(extensionUri);
 		
-		// Create output channel for extension logs
-		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
 		this.log('Constructor called');
 
 		// Load persisted cache from storage
@@ -2076,48 +1998,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * This TypeScript implementation should mirror that logic.
 	 */
 	private getVSCodeUserPaths(): string[] {
-		const platform = os.platform();
-		const homedir = os.homedir();
-		const paths: string[] = [];
-
-		// VS Code variants to check
-		const vscodeVariants = [
-			'Code',               // Stable
-			'Code - Insiders',    // Insiders
-			'Code - Exploration', // Exploration builds
-			'VSCodium',           // VSCodium
-			'Cursor'              // Cursor editor
-		];
-
-		if (platform === 'win32') {
-			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
-			for (const variant of vscodeVariants) {
-				paths.push(path.join(appDataPath, variant, 'User'));
-			}
-		} else if (platform === 'darwin') {
-			for (const variant of vscodeVariants) {
-				paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User'));
-			}
-		} else {
-			// Linux and other Unix-like systems
-			const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
-			for (const variant of vscodeVariants) {
-				paths.push(path.join(xdgConfigHome, variant, 'User'));
-			}
-		}
-
-		// Remote/Server paths (used in Codespaces, WSL, SSH remotes)
-		const remotePaths = [
-			path.join(homedir, '.vscode-server', 'data', 'User'),
-			path.join(homedir, '.vscode-server-insiders', 'data', 'User'),
-			path.join(homedir, '.vscode-remote', 'data', 'User'),
-			path.join('/tmp', '.vscode-server', 'data', 'User'),
-			path.join('/workspace', '.vscode-server', 'data', 'User')
-		];
-
-		paths.push(...remotePaths);
-
-		return paths;
+		return this.sessionFileDiscovery.getVSCodeUserPaths();
 	}
 
 	/**
@@ -2126,309 +2007,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * This TypeScript implementation should mirror that logic.
 	 */
 	private async getCopilotSessionFiles(): Promise<string[]> {
-		const sessionFiles: string[] = [];
-
-		const platform = os.platform();
-		const homedir = os.homedir();
-
-		this.log(`🔍 Searching for Copilot session files on ${platform}`);
-
-		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
-		const allVSCodePaths = this.getVSCodeUserPaths();
-		this.log(`📂 Reading local folders [0/${allVSCodePaths.length}]`);
-
-		// Track which paths we actually found
-		const foundPaths: string[] = [];
-		for (let i = 0; i < allVSCodePaths.length; i++) {
-			const codeUserPath = allVSCodePaths[i];
-			try {
-				if (fs.existsSync(codeUserPath)) {
-					foundPaths.push(codeUserPath);
-				}
-			} catch (checkError) {
-				this.warn(`Could not check path ${codeUserPath}: ${checkError}`);
-			}
-			// Update progress
-			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
-				this.log(`📂 Reading local folders [${i + 1}/${allVSCodePaths.length}]`);
-			}
-		}
-
-		this.log(`✅ Found ${foundPaths.length} VS Code installation(s)`);
-
-		try {
-			// Scan all found VS Code paths for session files
-			for (let i = 0; i < foundPaths.length; i++) {
-				const codeUserPath = foundPaths[i];
-				const pathName = path.basename(path.dirname(codeUserPath));
-
-				// Workspace storage sessions
-				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
-				try {
-					if (fs.existsSync(workspaceStoragePath)) {
-						try {
-							const workspaceDirs = fs.readdirSync(workspaceStoragePath);
-
-							for (const workspaceDir of workspaceDirs) {
-								const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-								try {
-									if (fs.existsSync(chatSessionsPath)) {
-										try {
-											const sessionFiles2 = fs.readdirSync(chatSessionsPath)
-												.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-												.map(file => path.join(chatSessionsPath, file));
-											if (sessionFiles2.length > 0) {
-												this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
-												sessionFiles.push(...sessionFiles2);
-											}
-										} catch (readError) {
-											this.warn(`Could not read chat sessions in ${chatSessionsPath}: ${readError}`);
-										}
-									}
-								} catch (checkError) {
-									this.warn(`Could not check chat sessions path ${chatSessionsPath}: ${checkError}`);
-								}
-							}
-						} catch (readError) {
-							this.warn(`Could not read workspace storage in ${workspaceStoragePath}: ${readError}`);
-						}
-					}
-				} catch (checkError) {
-					this.warn(`Could not check workspace storage path ${workspaceStoragePath}: ${checkError}`);
-				}
-
-				// Global storage sessions (legacy emptyWindowChatSessions)
-				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
-				try {
-					if (fs.existsSync(globalStoragePath)) {
-						try {
-							const globalSessionFiles = fs.readdirSync(globalStoragePath)
-								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-								.map(file => path.join(globalStoragePath, file));
-							if (globalSessionFiles.length > 0) {
-								this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
-								sessionFiles.push(...globalSessionFiles);
-							}
-						} catch (readError) {
-							this.warn(`Could not read global storage in ${globalStoragePath}: ${readError}`);
-						}
-					}
-				} catch (checkError) {
-					this.warn(`Could not check global storage path ${globalStoragePath}: ${checkError}`);
-				}
-
-				// GitHub Copilot Chat extension global storage
-				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
-				try {
-					if (fs.existsSync(copilotChatGlobalPath)) {
-						this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
-						this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
-					}
-				} catch (checkError) {
-					this.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
-				}
-			}
-
-			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
-			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			try {
-				if (fs.existsSync(copilotCliSessionPath)) {
-					try {
-						const cliSessionFiles = fs.readdirSync(copilotCliSessionPath)
-							.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-							.map(file => path.join(copilotCliSessionPath, file));
-						if (cliSessionFiles.length > 0) {
-							this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
-							sessionFiles.push(...cliSessionFiles);
-						}
-					} catch (readError) {
-						this.warn(`Could not read Copilot CLI session path in ${copilotCliSessionPath}: ${readError}`);
-					}
-				}
-			} catch (checkError) {
-				this.warn(`Could not check Copilot CLI session path ${copilotCliSessionPath}: ${checkError}`);
-			}
-
-			// Log summary
-			this.log(`✨ Total: ${sessionFiles.length} session file(s) discovered`);
-			if (sessionFiles.length === 0) {
-				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
-			}
-		} catch (error) {
-			this.error('Error getting session files:', error);
-		}
-
-		return sessionFiles;
-	}
-
-	/**
-	 * Recursively scan a directory for session files (.json and .jsonl)
-	 * 
-	 * NOTE: Mirrors logic in .github/skills/copilot-log-analysis/session-file-discovery.js
-	 */
-	private scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
-		try {
-			const entries = fs.readdirSync(dir, { withFileTypes: true });
-			for (const entry of entries) {
-				const fullPath = path.join(dir, entry.name);
-				if (entry.isDirectory()) {
-					this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
-				} else if (entry.name.endsWith('.json') || entry.name.endsWith('.jsonl')) {
-					// Only add files that look like session files (have reasonable content)
-					try {
-						const stats = fs.statSync(fullPath);
-						if (stats.size > 0) {
-							sessionFiles.push(fullPath);
-						}
-					} catch (e) {
-						// Ignore file access errors
-					}
-				}
-			}
-		} catch (error) {
-			this.warn(`Could not scan directory ${dir}: ${error}`);
-		}
+		return await this.sessionFileDiscovery.getCopilotSessionFiles();
 	}
 
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
-		try {
-			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
-			
-			// Handle .jsonl files (each line is a separate JSON object)
-			if (sessionFilePath.endsWith('.jsonl')) {
-				return this.estimateTokensFromJsonlSession(fileContent);
-			}
-			
-			// Handle regular .json files
-			const sessionContent = JSON.parse(fileContent);
-			let totalInputTokens = 0;
-			let totalOutputTokens = 0;
-
-			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-				for (const request of sessionContent.requests) {
-					// Estimate tokens from user message (input)
-					if (request.message && request.message.parts) {
-						for (const part of request.message.parts) {
-							if (part.text) {
-								totalInputTokens += this.estimateTokensFromText(part.text);
-							}
-						}
-					}
-
-					// Estimate tokens from assistant response (output)
-					if (request.response && Array.isArray(request.response)) {
-						for (const responseItem of request.response) {
-							if (responseItem.value) {
-								totalOutputTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
-							}
-						}
-					}
-				}
-			}
-
-			return totalInputTokens + totalOutputTokens;
-		} catch (error) {
-			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
-			return 0;
-		}
-	}
-
-	/**
-	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
-	 * Each line is a separate JSON object representing an event in the session
-	 */
-	private estimateTokensFromJsonlSession(fileContent: string): number {
-		let totalTokens = 0;
-		const lines = fileContent.trim().split('\n');
-		
-		for (const line of lines) {
-			if (!line.trim()) { continue; }
-			
-			try {
-				const event = JSON.parse(line);
-				
-				// Handle Copilot CLI event types
-				if (event.type === 'user.message' && event.data?.content) {
-					totalTokens += this.estimateTokensFromText(event.data.content);
-				} else if (event.type === 'assistant.message' && event.data?.content) {
-					totalTokens += this.estimateTokensFromText(event.data.content);
-				} else if (event.type === 'tool.result' && event.data?.output) {
-					totalTokens += this.estimateTokensFromText(event.data.output);
-				} else if (event.content) {
-					// Fallback for other formats that might have content
-					totalTokens += this.estimateTokensFromText(event.content);
-				}
-				
-				// Handle VS Code incremental format (kind: 2 with requests or response)
-				if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-					for (const request of event.v) {
-						if (request.message?.text) {
-							totalTokens += this.estimateTokensFromText(request.message.text);
-						}
-					}
-				}
-				
-				if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-					for (const responseItem of event.v) {
-						if (responseItem.value) {
-							totalTokens += this.estimateTokensFromText(responseItem.value);
-						} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
-							totalTokens += this.estimateTokensFromText(responseItem.content.value);
-						}
-					}
-				}
-			} catch (e) {
-				// Skip malformed lines
-			}
-		}
-		
-		return totalTokens;
+		return await this.tokenEstimator.estimateTokensFromSession(sessionFilePath);
 	}
 
 	private getModelFromRequest(request: any): string {
-		// Try to determine model from request metadata
-		if (request.result && request.result.metadata && request.result.metadata.modelId) {
-			return request.result.metadata.modelId;
-		}
-		
-		// Build a lookup map from display names to model IDs from modelPricing.json
-		if (request.result && request.result.details) {
-			// Create reverse lookup: displayName -> modelId
-			const displayNameToModelId: { [displayName: string]: string } = {};
-			for (const [modelId, pricing] of Object.entries(this.modelPricing)) {
-				if (pricing.displayNames) {
-					for (const displayName of pricing.displayNames) {
-						displayNameToModelId[displayName] = modelId;
-					}
-				}
-			}
-			
-			// Check which display name appears in the details
-			// Sort by length descending to match longer names first (e.g., "Gemini 3 Pro (Preview)" before "Gemini 3 Pro")
-			const sortedDisplayNames = Object.keys(displayNameToModelId).sort((a, b) => b.length - a.length);
-			for (const displayName of sortedDisplayNames) {
-				if (request.result.details.includes(displayName)) {
-					return displayNameToModelId[displayName];
-				}
-			}
-		}
-		
-		return 'gpt-4'; // default
+		return this.tokenEstimator.getModelFromRequest(request);
 	}
 
 	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
-		// Token estimation based on character count and model
-		let tokensPerChar = 0.25; // default
-
-		// Find matching model
-		for (const [modelKey, ratio] of Object.entries(this.tokenEstimators)) {
-			if (model.includes(modelKey) || model.includes(modelKey.replace('-', ''))) {
-				tokensPerChar = ratio;
-				break;
-			}
-		}
-
-		return Math.ceil(text.length * tokensPerChar);
+		return this.tokenEstimator.estimateTokensFromText(text, model);
 	}
 
 	public async showDetails(): Promise<void> {
@@ -2949,7 +2540,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		// Cache Statistics
 		report.push('## Cache Statistics');
-		report.push(`Cached Session Files: ${this.sessionFileCache.size}`);
+		report.push(`Cached Session Files: ${this.cacheManager.getCacheSize()}`);
 		report.push(`Cache Storage: Extension Global State`);
 		report.push('');
 		report.push('Cache provides faster loading by storing parsed session data with file modification timestamps.');
@@ -3336,11 +2927,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private getCacheInfo() {
 		// Get cache information
 		let cacheSizeInMB = 0;
+		const cacheSize = this.cacheManager.getCacheSize();
 		try {
-			// Estimate cache size by serializing to JSON
-			const cacheData = Object.fromEntries(this.sessionFileCache);
-			const jsonString = JSON.stringify(cacheData);
-			cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
+			// Estimate cache size - rough approximation based on cache size
+			// Each cache entry is roughly 1KB (this is a simplification)
+			cacheSizeInMB = (cacheSize * 1024) / (1024 * 1024);
 		} catch {
 			cacheSizeInMB = 0;
 		}
@@ -3383,9 +2974,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		return {
-			size: this.sessionFileCache.size,
+			size: cacheSize,
 			sizeInMB: cacheSizeInMB,
-			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
+			lastUpdated: cacheSize > 0 ? new Date().toISOString() : null,
 			location: persistedCacheSummary,
 			storagePath: storageFilePath
 		};
