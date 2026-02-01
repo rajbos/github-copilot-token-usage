@@ -92,7 +92,7 @@ function renderLayout(data: InitialChartData): void {
 	const header = el('div', 'header');
 	const headerLeft = el('div', 'header-left');
 	const icon = el('span', 'header-icon', '📈');
-	const title = el('span', 'header-title', 'Token Usage Over Time');
+	const title = el('span', 'header-title', 'Token Usage - Last 30 Days');
 	headerLeft.append(icon, title);
 	const buttons = el('div', 'button-row');
 	buttons.append(
@@ -140,7 +140,7 @@ function renderLayout(data: InitialChartData): void {
 	chartShell.append(toggles, canvasWrap);
 	chartSection.append(chartShell);
 
-	const footer = el('div', 'footer', `Day-by-day token usage for the current month\nLast updated: ${new Date(data.lastUpdated).toLocaleString()}\nUpdates automatically every 5 minutes.`);
+	const footer = el('div', 'footer', `Day-by-day token usage for the last 30 days\nLast updated: ${new Date(data.lastUpdated).toLocaleString()}\nUpdates automatically every 5 minutes.`);
 
 	container.append(header, summarySection, chartSection, footer);
 	root.append(style, container);
