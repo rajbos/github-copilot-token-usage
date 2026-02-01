@@ -36,6 +36,21 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **Focused Modifications**: Make surgical, precise changes that address the specific requirements without affecting other functionality.
 - **Preserve Existing Structure**: Maintain the existing code organization and file structure. Don't refactor or reorganize code unless it's essential for the task.
 
+## Logging Best Practices
+
+**CRITICAL**: Do NOT add debug logging statements like `log('[DEBUG] message')` for troubleshooting during development. This approach has been found to interfere with the output channel and can hide existing log messages from appearing.
+
+- **Use Existing Logs**: The extension already has comprehensive logging throughout. Review existing log statements to understand what's being tracked.
+- **Minimal Logging**: Only add logging if absolutely necessary for a new feature. Keep messages concise and informative.
+- **Remove Debug Logs**: Any temporary debug logging added during development MUST be removed before committing code.
+- **Log Methods**: Use the appropriate method for the severity:
+  - `log(message)` - Standard informational messages
+  - `warn(message)` - Warnings or recoverable errors
+  - `error(message)` - Critical errors
+- **No Debug Prefixes**: Avoid prefixing messages with `[DEBUG]` or similar markers. The log output is already timestamped and categorized.
+
+If you need to troubleshoot execution flow, prefer using VS Code's debugger with breakpoints rather than adding log statements.
+
 ## Key Files & Conventions
 
 - **`src/extension.ts`**: The single source file containing all logic.

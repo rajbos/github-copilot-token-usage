@@ -33,11 +33,28 @@ type CacheInfo = {
 	storagePath?: string | null;
 };
 
+type BackendStorageInfo = {
+	enabled: boolean;
+	isConfigured: boolean;
+	storageAccount: string;
+	subscriptionId: string;
+	resourceGroup: string;
+	aggTable: string;
+	eventsTable: string;
+	authMode: string;
+	sharingProfile: string;
+	lastSyncTime: string | null;
+	deviceCount: number;
+	sessionCount: number;
+	recordCount: number | null;
+};
+
 type DiagnosticsData = {
 	report: string;
 	sessionFiles: { file: string; size: number; modified: string }[];
 	detailedSessionFiles?: SessionFileDetails[];
 	cacheInfo?: CacheInfo;
+	backendStorageInfo?: BackendStorageInfo;
 };
 
 type DiagnosticsViewState = {
@@ -282,6 +299,149 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 					`).join('')}
 				</tbody>
 			</table>
+		</div>
+	`;
+}
+
+function renderBackendStoragePanel(backendInfo: BackendStorageInfo | undefined): string {
+	if (!backendInfo) {
+		return `
+			<div class="info-box">
+				<div class="info-box-title">☁️ Azure Storage Backend</div>
+				<div>
+					Backend storage information is not available. This may be a temporary issue.
+				</div>
+			</div>
+		`;
+	}
+	
+	const statusColor = backendInfo.isConfigured ? '#2d6a4f' : (backendInfo.enabled ? '#d97706' : '#666');
+	const statusIcon = backendInfo.isConfigured ? '✅' : (backendInfo.enabled ? '⚠️' : '⚪');
+	const statusText = backendInfo.isConfigured ? 'Configured & Enabled' : (backendInfo.enabled ? 'Enabled but Not Configured' : 'Disabled');
+	
+	const configButtonText = backendInfo.isConfigured ? '⚙️ Manage Backend' : '🔧 Configure Backend';
+	const configButtonStyle = backendInfo.isConfigured ? 'secondary' : '';
+	
+	return `
+		<div class="info-box">
+			<div class="info-box-title">☁️ Azure Storage Backend</div>
+			<div>
+				Sync your token usage data to Azure Storage Tables for team-wide reporting and multi-device access.
+				Configure Azure resources and authentication settings to enable cloud synchronization.
+			</div>
+		</div>
+		
+		<div class="summary-cards">
+			<div class="summary-card" style="border-left: 4px solid ${statusColor};">
+				<div class="summary-label">${statusIcon} Backend Status</div>
+				<div class="summary-value" style="font-size: 16px; color: ${statusColor};">${statusText}</div>
+			</div>
+			<div class="summary-card">
+				<div class="summary-label">🔐 Auth Mode</div>
+				<div class="summary-value" style="font-size: 16px;">${backendInfo.authMode === 'entraId' ? 'Entra ID' : 'Shared Key'}</div>
+			</div>
+			<div class="summary-card">
+				<div class="summary-label">👥 Sharing Profile</div>
+				<div class="summary-value" style="font-size: 14px;">${escapeHtml(backendInfo.sharingProfile)}</div>
+			</div>
+			<div class="summary-card">
+				<div class="summary-label">🕒 Last Sync</div>
+				<div class="summary-value" style="font-size: 14px;">${backendInfo.lastSyncTime ? getTimeSince(backendInfo.lastSyncTime) : 'Never'}</div>
+			</div>
+		</div>
+		
+		${backendInfo.isConfigured ? `
+			<div style="margin-top: 24px;">
+				<h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📊 Configuration Details</h4>
+				<table class="session-table">
+					<tbody>
+						<tr>
+							<td style="font-weight: 600; width: 200px;">Storage Account</td>
+							<td>${escapeHtml(backendInfo.storageAccount)}</td>
+						</tr>
+						<tr>
+							<td style="font-weight: 600;">Subscription ID</td>
+							<td>${escapeHtml(backendInfo.subscriptionId)}</td>
+						</tr>
+						<tr>
+							<td style="font-weight: 600;">Resource Group</td>
+							<td>${escapeHtml(backendInfo.resourceGroup)}</td>
+						</tr>
+						<tr>
+							<td style="font-weight: 600;">Aggregation Table</td>
+							<td>${escapeHtml(backendInfo.aggTable)}</td>
+						</tr>
+						<tr>
+							<td style="font-weight: 600;">Events Table</td>
+							<td>${escapeHtml(backendInfo.eventsTable)}</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+			
+			<div style="margin-top: 24px;">
+				<h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">📈 Local Session Statistics</h4>
+				<div class="summary-cards">
+					<div class="summary-card">
+						<div class="summary-label">💻 Unique Devices</div>
+						<div class="summary-value">${backendInfo.deviceCount}</div>
+						<div style="font-size: 11px; color: #999; margin-top: 4px;">Based on workspace IDs</div>
+					</div>
+					<div class="summary-card">
+						<div class="summary-label">📁 Total Sessions</div>
+						<div class="summary-value">${backendInfo.sessionCount}</div>
+						<div style="font-size: 11px; color: #999; margin-top: 4px;">Local session files</div>
+					</div>
+					<div class="summary-card">
+						<div class="summary-label">☁️ Cloud Records</div>
+						<div class="summary-value">${backendInfo.recordCount !== null ? backendInfo.recordCount : '—'}</div>
+						<div style="font-size: 11px; color: #999; margin-top: 4px;">Azure Storage records</div>
+					</div>
+					<div class="summary-card">
+						<div class="summary-label">🔄 Sync Status</div>
+						<div class="summary-value" style="font-size: 14px;">${backendInfo.lastSyncTime ? formatDate(backendInfo.lastSyncTime) : 'Never'}</div>
+					</div>
+				</div>
+			</div>
+			
+			<div style="margin-top: 24px;">
+				<h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">ℹ️ About Azure Storage Backend</h4>
+				<p style="color: #999; font-size: 12px; margin-bottom: 8px;">
+					The Azure Storage backend enables:
+				</p>
+				<ul style="margin: 8px 0 0 20px; color: #999; font-size: 12px;">
+					<li>Team-wide token usage reporting and analytics</li>
+					<li>Multi-device synchronization of your usage data</li>
+					<li>Long-term storage and historical analysis</li>
+					<li>Configurable privacy levels (anonymous, pseudonymous, or identified)</li>
+				</ul>
+			</div>
+		` : `
+			<div style="margin-top: 24px;">
+				<h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">🚀 Get Started with Azure Storage</h4>
+				<p style="color: #999; font-size: 12px; margin-bottom: 16px;">
+					To enable cloud synchronization, you'll need to configure an Azure Storage account.
+					The setup wizard will guide you through the process.
+				</p>
+				<ul style="margin: 8px 0 16px 20px; color: #999; font-size: 12px;">
+					<li>Azure subscription with Storage Account access</li>
+					<li>Appropriate permissions (Storage Table Data Contributor or Storage Account Key)</li>
+					<li>VS Code signed in with your Azure account (for Entra ID auth)</li>
+				</ul>
+			</div>
+		`}
+		
+		<div class="button-group">
+			<button class="button ${configButtonStyle}" id="btn-configure-backend">
+				<span>${configButtonText.split(' ')[0]}</span>
+				<span>${configButtonText.substring(configButtonText.indexOf(' ') + 1)}</span>
+			</button>
+			${backendInfo.isConfigured ? `
+				<button class="button secondary" id="btn-open-settings">
+					<span>⚙️</span>
+					<span>Open Backend Settings</span>
+				</button>
+			` : ''}
 		</div>
 	`;
 }
@@ -612,6 +772,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<button class="tab active" data-tab="report">📋 Report</button>
 				<button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
 				<button class="tab" data-tab="cache">💾 Cache</button>
+				<button class="tab" data-tab="backend">☁️ Azure Storage</button>
 			</div>
 			
 			<div id="tab-report" class="tab-content active">
@@ -696,6 +857,10 @@ function renderLayout(data: DiagnosticsData): void {
 						<button class="button secondary" id="btn-clear-cache-tab"><span>🗑️</span><span>Clear Cache</span></button>
 					</div>
 				</div>
+			</div>
+			
+			<div id="tab-backend" class="tab-content">
+				${renderBackendStoragePanel(data.backendStorageInfo)}
 			</div>
 		</div>
 	`;
@@ -963,6 +1128,17 @@ function setupStorageLinkHandlers(): void {
 	document.getElementById('btn-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
 	document.getElementById('btn-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
 	document.getElementById('btn-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+
+	// Backend configuration buttons
+	document.getElementById('btn-configure-backend')?.addEventListener('click', () => {
+		console.log('[DEBUG] Configure backend button clicked');
+		vscode.postMessage({ command: 'configureBackend' });
+	});
+	
+	document.getElementById('btn-open-settings')?.addEventListener('click', () => {
+		console.log('[DEBUG] Open settings button clicked');
+		vscode.postMessage({ command: 'openSettings' });
+	});
 
 	setupSortHandlers();
 	setupEditorFilterHandlers();
