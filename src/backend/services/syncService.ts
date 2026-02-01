@@ -210,21 +210,24 @@ export class SyncService {
 			// Handle JSONL format (Copilot CLI)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = content.trim().split('\n');
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
-					try {
-						const event = JSON.parse(line);
-						if (!event || typeof event !== 'object') { continue; }
-						
-						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
-						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-						if (!eventMs || eventMs < startMs) { continue; }
-						
-						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-						const model = (event.model || 'gpt-4o').toString();
-						
-						// Log first few interactions from today's files for debugging
-						if (isFileFromToday && processedLines < 3) {
+			const todayKey = this.utility.toUtcDayKey(now);
+			let lineCount = 0;
+			let processedLines = 0;
+			
+			for (const line of lines) {
+				lineCount++;
+				if (!line.trim()) { continue; }
+				try {
+					const event = JSON.parse(line);
+					if (!event || typeof event !== 'object') { continue; }
+					
+					const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
+					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+					if (!eventMs || eventMs < startMs) { continue; }
+					
+					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+					const model = (event.model || 'gpt-4o').toString();
+					const isFileFromToday = dayKey === todayKey;
 							this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} line ${lineCount}: eventMs=${new Date(eventMs).toISOString()}, dayKey=${dayKey}, type=${event.type}`);
 							processedLines++;
 						}
