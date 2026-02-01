@@ -228,10 +228,10 @@ export class SyncService {
 					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 					const model = (event.model || 'gpt-4o').toString();
 					const isFileFromToday = dayKey === todayKey;
-							this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} line ${lineCount}: eventMs=${new Date(eventMs).toISOString()}, dayKey=${dayKey}, type=${event.type}`);
-							processedLines++;
-						}
-						
+					if (isFileFromToday && processedLines < 3) {
+					this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} line ${lineCount}: eventMs=${new Date(eventMs).toISOString()}, dayKey=${dayKey}, type=${event.type}`);
+					processedLines++;
+				}
 						// Track interaction for this day+model (count all events, not just user.message)
 						if (!dayModelInteractions.has(dayKey)) {
 							dayModelInteractions.set(dayKey, new Map());
