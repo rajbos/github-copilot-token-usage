@@ -47,6 +47,11 @@ The diagnostics view now loads progressively:
 
 #### Test 5: Multiple Session Files (Performance)
 1. If you have many GitHub Copilot session files (50+ files in `chatSessions` folders)
+   - Typical locations:
+     - Windows: `%APPDATA%\Code\User\workspaceStorage\*/chatSessions`
+     - macOS: `~/Library/Application Support/Code/User/workspaceStorage/*/chatSessions`
+     - Linux: `~/.config/Code/User/workspaceStorage/*/chatSessions`
+   - You can check file count in the diagnostics report after it loads
 2. Open the diagnostics report
 3. **Expected Result**: 
    - Panel appears immediately
