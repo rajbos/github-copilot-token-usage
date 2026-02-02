@@ -3156,6 +3156,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Diagnostic Report panel created');
 
 		// Set the HTML content immediately with loading state
+		// Note: "Loading..." is the agreed contract between backend and frontend
+		// The webview checks for this value to show a loading indicator
 		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
 			this.diagnosticsPanel.webview,
 			'Loading...', // Placeholder report

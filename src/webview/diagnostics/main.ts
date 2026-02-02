@@ -2,6 +2,7 @@
 import { buttonHtml } from '../shared/buttonConfig';
 
 // Constants
+const LOADING_PLACEHOLDER = 'Loading...';
 const SESSION_FILES_SECTION_REGEX = /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/;
 const LOADING_MESSAGE = `⏳ Loading diagnostic data...
 
@@ -93,6 +94,10 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
+}
+
+function removeSessionFilesSection(reportText: string): string {
+	return reportText.replace(SESSION_FILES_SECTION_REGEX, '');
 }
 
 function formatDate(isoString: string | null): string {
@@ -504,14 +509,11 @@ function renderLayout(data: DiagnosticsData): void {
 	let escapedReport = escapeHtml(data.report);
 	
 	// Check if we're in loading state for the report
-	const reportIsLoading = data.report === 'Loading...';
+	const reportIsLoading = data.report === LOADING_PLACEHOLDER;
 	
 	if (!reportIsLoading) {
 		// Remove the old session files list from the report text if present
-		const sessionMatch = escapedReport.match(SESSION_FILES_SECTION_REGEX);
-		if (sessionMatch) {
-			escapedReport = escapedReport.replace(sessionMatch[0], '');
-		}
+		escapedReport = removeSessionFilesSection(escapedReport);
 	} else {
 		// Show a better loading message
 		escapedReport = LOADING_MESSAGE.trim();
@@ -898,7 +900,7 @@ function renderLayout(data: DiagnosticsData): void {
 				const reportTabContent = document.getElementById('tab-report');
 				if (reportTabContent) {
 					// Process the report text to remove session files section
-					const processedReport = message.report.replace(SESSION_FILES_SECTION_REGEX, '');
+					const processedReport = removeSessionFilesSection(message.report);
 					const reportPre = reportTabContent.querySelector('.report-content');
 					if (reportPre) {
 						reportPre.textContent = processedReport;
