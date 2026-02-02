@@ -913,19 +913,39 @@ function renderLayout(data: DiagnosticsData): void {
 				const reportTabContent = document.getElementById('tab-report');
 				if (reportTabContent) {
 					const sorted = [...message.sessionFolders].sort((a: any, b: any) => b.count - a.count);
-					let sessionFilesHtml = `
-						<div class="session-folders-table">
-							<h4>Main Session Folders (by editor root):</h4>
-							<table class="session-table">
-								<thead>
-									<tr>
-										<th>Folder</th>
-										<th>Editor</th>
-										<th># of Sessions</th>
-										<th>Open</th>
-									</tr>
-								</thead>
-								<tbody>`;
+
+					// Build the session folders table using DOM APIs to avoid HTML injection
+					let container = reportTabContent.querySelector('.session-folders-table') as HTMLElement | null;
+					if (!container) {
+						container = document.createElement('div');
+						container.className = 'session-folders-table';
+					} else {
+						// Clear existing content so we can rebuild safely
+						while (container.firstChild) {
+							container.removeChild(container.firstChild);
+						}
+					}
+
+					const heading = document.createElement('h4');
+					heading.textContent = 'Main Session Folders (by editor root):';
+					container.appendChild(heading);
+
+					const table = document.createElement('table');
+					table.className = 'session-table';
+					container.appendChild(table);
+
+					const thead = document.createElement('thead');
+					const headerRow = document.createElement('tr');
+					const headers = ['Folder', 'Editor', '# of Sessions', 'Open'];
+					headers.forEach((text) => {
+						const th = document.createElement('th');
+						th.textContent = text;
+						headerRow.appendChild(th);
+					});
+					thead.appendChild(headerRow);
+					table.appendChild(thead);
+
+					const tbody = document.createElement('tbody');
 					sorted.forEach((sf: any) => {
 						let display = sf.dir;
 						const home = (window as any).process?.env?.HOME || (window as any).process?.env?.USERPROFILE || '';
@@ -933,31 +953,56 @@ function renderLayout(data: DiagnosticsData): void {
 							display = display.replace(home, '~');
 						}
 						const editorName = sf.editorName || 'Unknown';
-						sessionFilesHtml += `
-							<tr>
-								<td title="${escapeHtml(sf.dir)}">${escapeHtml(display)}</td>
-								<td><span class="editor-badge">${escapeHtml(editorName)}</span></td>
-								<td>${sf.count}</td>
-								<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a></td>
-							</tr>`;
+
+						const row = document.createElement('tr');
+
+						// Folder cell
+						const folderCell = document.createElement('td');
+						folderCell.setAttribute('title', escapeHtml(sf.dir));
+						folderCell.textContent = escapeHtml(display);
+						row.appendChild(folderCell);
+
+						// Editor cell
+						const editorCell = document.createElement('td');
+						const editorBadge = document.createElement('span');
+						editorBadge.className = 'editor-badge';
+						editorBadge.textContent = escapeHtml(editorName);
+						editorCell.appendChild(editorBadge);
+						row.appendChild(editorCell);
+
+						// Count cell
+						const countCell = document.createElement('td');
+						countCell.textContent = String(sf.count);
+						row.appendChild(countCell);
+
+						// Open link cell
+						const openCell = document.createElement('td');
+						const openLink = document.createElement('a');
+						openLink.href = '#';
+						openLink.className = 'reveal-link';
+						openLink.setAttribute('data-path', encodeURIComponent(sf.dir));
+						openLink.textContent = 'Open directory';
+						openCell.appendChild(openLink);
+						row.appendChild(openCell);
+
+						tbody.appendChild(row);
 					});
-					sessionFilesHtml += `
-							</tbody>
-						</table>
-					</div>`;
-					
+					table.appendChild(tbody);
+
 					// Find where to insert or replace the session folders table
 					// It should be inserted after the report-content div but before the button-group
 					const existingTable = reportTabContent.querySelector('.session-folders-table');
-					if (existingTable) {
-						existingTable.outerHTML = sessionFilesHtml;
-					} else {
+					if (!existingTable) {
 						// Insert after the report-content div
 						const reportContent = reportTabContent.querySelector('.report-content');
 						if (reportContent) {
-							reportContent.insertAdjacentHTML('afterend', sessionFilesHtml);
+							reportContent.insertAdjacentElement('afterend', container);
+						} else {
+							// Fallback: append to the tab content if report-content is missing
+							reportTabContent.appendChild(container);
 						}
 					}
+
 					setupStorageLinkHandlers();
 				}
 			}
