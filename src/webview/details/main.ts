@@ -10,31 +10,23 @@ import tokenEstimatorsJson from '../../tokenEstimators.json';
 type ModelUsage = Record<string, { inputTokens: number; outputTokens: number }>;
 type EditorUsage = Record<string, { tokens: number; sessions: number }>;
 
+type PeriodStats = {
+	tokens: number;
+	sessions: number;
+	avgInteractionsPerSession: number;
+	avgTokensPerSession: number;
+	modelUsage: ModelUsage;
+	editorUsage: EditorUsage;
+	co2: number;
+	treesEquivalent: number;
+	waterUsage: number;
+	estimatedCost: number;
+};
+
 type DetailedStats = {
-	today: {
-		tokens: number;
-		sessions: number;
-		avgInteractionsPerSession: number;
-		avgTokensPerSession: number;
-		modelUsage: ModelUsage;
-		editorUsage: EditorUsage;
-		co2: number;
-		treesEquivalent: number;
-		waterUsage: number;
-		estimatedCost: number;
-	};
-	month: {
-		tokens: number;
-		sessions: number;
-		avgInteractionsPerSession: number;
-		avgTokensPerSession: number;
-		modelUsage: ModelUsage;
-		editorUsage: EditorUsage;
-		co2: number;
-		treesEquivalent: number;
-		waterUsage: number;
-		estimatedCost: number;
-	};
+	today: PeriodStats;
+	month: PeriodStats;
+	lastMonth: PeriodStats;
 	lastUpdated: string | Date;
 };
 
@@ -200,6 +192,7 @@ function buildMetricsSection(
 		{ icon: '📊', text: 'Metric' },
 		{ icon: '📅', text: 'Today' },
 		{ icon: '📈', text: 'This Month' },
+		{ icon: '📆', text: 'Last Month' },
 		{ icon: '🌍', text: 'Projected Year' }
 	];
 	headers.forEach((h, idx) => {
@@ -215,15 +208,15 @@ function buildMetricsSection(
 	table.append(thead);
 
 	const tbody = document.createElement('tbody');
-	const rows: Array<{ label: string; icon: string; color?: string; today: string; month: string; projected: string }> = [
-		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), month: formatNumber(stats.month.tokens), projected: formatNumber(projections.projectedTokens) },
-		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), month: formatCost(stats.month.estimatedCost), projected: formatCost(projections.projectedCost) },
-		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), month: formatNumber(stats.month.sessions), projected: formatNumber(projections.projectedSessions) },
-		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), projected: '—' },
-		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), projected: '—' },
-		{ label: 'Estimated CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, month: `${formatFixed(stats.month.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
-		{ label: 'Estimated water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, month: `${formatFixed(stats.month.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
-		{ label: 'Tree equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), month: stats.month.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
+	const rows: Array<{ label: string; icon: string; color?: string; today: string; month: string; lastMonth: string; projected: string }> = [
+		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), month: formatNumber(stats.month.tokens), lastMonth: formatNumber(stats.lastMonth.tokens), projected: formatNumber(projections.projectedTokens) },
+		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), month: formatCost(stats.month.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
+		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), month: formatNumber(stats.month.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
+		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), month: formatNumber(stats.month.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },
+		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), month: formatNumber(stats.month.avgTokensPerSession), lastMonth: formatNumber(stats.lastMonth.avgTokensPerSession), projected: '—' },
+		{ label: 'Estimated CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, month: `${formatFixed(stats.month.co2, 2)} g`, lastMonth: `${formatFixed(stats.lastMonth.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
+		{ label: 'Estimated water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, month: `${formatFixed(stats.month.waterUsage, 3)} L`, lastMonth: `${formatFixed(stats.lastMonth.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
+		{ label: 'Tree equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), month: stats.month.treesEquivalent.toFixed(6), lastMonth: stats.lastMonth.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
 	];
 
 	rows.forEach(row => {
@@ -247,11 +240,15 @@ function buildMetricsSection(
 		monthTd.className = 'value-right align-right';
 		monthTd.textContent = row.month;
 
+		const lastMonthTd = document.createElement('td');
+		lastMonthTd.className = 'value-right align-right';
+		lastMonthTd.textContent = row.lastMonth;
+
 		const projTd = document.createElement('td');
 		projTd.className = 'value-right align-right';
 		projTd.textContent = row.projected;
 
-		tr.append(labelTd, todayTd, monthTd, projTd);
+		tr.append(labelTd, todayTd, monthTd, lastMonthTd, projTd);
 		tbody.append(tr);
 	});
 
@@ -263,7 +260,8 @@ function buildMetricsSection(
 function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	const allEditors = new Set([
 		...Object.keys(stats.today.editorUsage),
-		...Object.keys(stats.month.editorUsage)
+		...Object.keys(stats.month.editorUsage),
+		...Object.keys(stats.lastMonth.editorUsage)
 	]);
 
 	if (allEditors.size === 0) {
@@ -272,6 +270,7 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 
 	const todayTotal = Object.values(stats.today.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
 	const monthTotal = Object.values(stats.month.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
+	const lastMonthTotal = Object.values(stats.lastMonth.editorUsage).reduce((sum, e) => sum + e.tokens, 0);
 
 	const section = el('div', 'section');
 	const heading = el('h3');
@@ -287,6 +286,7 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		{ icon: '📝', text: 'Editor' },
 		{ icon: '📅', text: 'Today' },
 		{ icon: '📈', text: 'This Month' },
+		{ icon: '📆', text: 'Last Month' },
 		{ icon: '🌍', text: 'Projected Year' }
 	];
 	headers.forEach((h, idx) => {
@@ -306,8 +306,10 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	Array.from(allEditors).sort().forEach(editor => {
 		const todayUsage = stats.today.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
+		const lastMonthUsage = stats.lastMonth.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const todayPercent = todayTotal > 0 ? (todayUsage.tokens / todayTotal) * 100 : 0;
 		const monthPercent = monthTotal > 0 ? (monthUsage.tokens / monthTotal) * 100 : 0;
+		const lastMonthPercent = lastMonthTotal > 0 ? (lastMonthUsage.tokens / lastMonthTotal) * 100 : 0;
 		const projectedTokens = Math.round(calculateProjection(monthUsage.tokens));
 		const projectedSessions = Math.round(calculateProjection(monthUsage.sessions));
 
@@ -330,13 +332,19 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		const monthSub = el('div', 'muted', `${formatPercent(monthPercent)} · ${monthUsage.sessions} sessions`);
 		monthTd.append(monthSub);
 
+		const lastMonthTd = document.createElement('td');
+		lastMonthTd.className = 'value-right align-right';
+		lastMonthTd.textContent = formatNumber(lastMonthUsage.tokens);
+		const lastMonthSub = el('div', 'muted', `${formatPercent(lastMonthPercent)} · ${lastMonthUsage.sessions} sessions`);
+		lastMonthTd.append(lastMonthSub);
+
 		const projTd = document.createElement('td');
 		projTd.className = 'value-right align-right';
 		projTd.textContent = formatNumber(projectedTokens);
 		const projSub = el('div', 'muted', `${projectedSessions} sessions`);
 		projTd.append(projSub);
 
-		tr.append(labelTd, todayTd, monthTd, projTd);
+		tr.append(labelTd, todayTd, monthTd, lastMonthTd, projTd);
 		tbody.append(tr);
 	});
 
@@ -348,7 +356,8 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 	const allModels = new Set([
 		...Object.keys(stats.today.modelUsage),
-		...Object.keys(stats.month.modelUsage)
+		...Object.keys(stats.month.modelUsage),
+		...Object.keys(stats.lastMonth.modelUsage)
 	]);
 
 	if (allModels.size === 0) {
@@ -369,6 +378,7 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 		{ icon: '🧠', text: 'Model' },
 		{ icon: '📅', text: 'Today' },
 		{ icon: '📈', text: 'This Month' },
+		{ icon: '📆', text: 'Last Month' },
 		{ icon: '🌍', text: 'Projected Year' }
 	];
 	headers.forEach((h, idx) => {
@@ -388,13 +398,17 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 	Array.from(allModels).forEach(model => {
 		const todayUsage = stats.today.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const monthUsage = stats.month.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
+		const lastMonthUsage = stats.lastMonth.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const todayTotal = todayUsage.inputTokens + todayUsage.outputTokens;
 		const monthTotal = monthUsage.inputTokens + monthUsage.outputTokens;
+		const lastMonthTotal = lastMonthUsage.inputTokens + lastMonthUsage.outputTokens;
 		const projected = Math.round(calculateProjection(monthTotal));
 		const todayInputPct = todayTotal > 0 ? (todayUsage.inputTokens / todayTotal) * 100 : 0;
 		const todayOutputPct = todayTotal > 0 ? (todayUsage.outputTokens / todayTotal) * 100 : 0;
 		const monthInputPct = monthTotal > 0 ? (monthUsage.inputTokens / monthTotal) * 100 : 0;
 		const monthOutputPct = monthTotal > 0 ? (monthUsage.outputTokens / monthTotal) * 100 : 0;
+		const lastMonthInputPct = lastMonthTotal > 0 ? (lastMonthUsage.inputTokens / lastMonthTotal) * 100 : 0;
+		const lastMonthOutputPct = lastMonthTotal > 0 ? (lastMonthUsage.outputTokens / lastMonthTotal) * 100 : 0;
 		const charsPerToken = getCharsPerToken(model);
 
 		const tr = document.createElement('tr');
@@ -416,11 +430,17 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 		const monthSub = el('div', 'muted', `↑${formatPercent(monthInputPct)} ↓${formatPercent(monthOutputPct)}`);
 		monthTd.append(monthSub);
 
+		const lastMonthTd = document.createElement('td');
+		lastMonthTd.className = 'value-right align-right';
+		lastMonthTd.textContent = formatNumber(lastMonthTotal);
+		const lastMonthSub = el('div', 'muted', `↑${formatPercent(lastMonthInputPct)} ↓${formatPercent(lastMonthOutputPct)}`);
+		lastMonthTd.append(lastMonthSub);
+
 		const projTd = document.createElement('td');
 		projTd.className = 'value-right align-right';
 		projTd.textContent = formatNumber(projected);
 
-		tr.append(labelTd, todayTd, monthTd, projTd);
+		tr.append(labelTd, todayTd, monthTd, lastMonthTd, projTd);
 		tbody.append(tr);
 	});
 

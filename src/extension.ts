@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
+import { BackendFacade } from './backend/facade';
+import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
 import {getModelDisplayName} from './webview/shared/modelUtils';
 
@@ -36,31 +38,23 @@ interface EditorUsage {
 	};
 }
 
+interface PeriodStats {
+	tokens: number;
+	sessions: number;
+	avgInteractionsPerSession: number;
+	avgTokensPerSession: number;
+	modelUsage: ModelUsage;
+	editorUsage: EditorUsage;
+	co2: number;
+	treesEquivalent: number;
+	waterUsage: number;
+	estimatedCost: number;
+}
+
 interface DetailedStats {
-	today: {
-		tokens: number;
-		sessions: number;
-		avgInteractionsPerSession: number;
-		avgTokensPerSession: number;
-		modelUsage: ModelUsage;
-		editorUsage: EditorUsage;
-		co2: number;
-		treesEquivalent: number;
-		waterUsage: number;
-		estimatedCost: number;
-	};
-	month: {
-		tokens: number;
-		sessions: number;
-		avgInteractionsPerSession: number;
-		avgTokensPerSession: number;
-		modelUsage: ModelUsage;
-		editorUsage: EditorUsage;
-		co2: number;
-		treesEquivalent: number;
-		waterUsage: number;
-		estimatedCost: number;
-	};
+	today: PeriodStats;
+	month: PeriodStats;
+	lastMonth: PeriodStats;
 	lastUpdated: Date;
 }
 
@@ -202,6 +196,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private static readonly CACHE_VERSION = 7; // Fix JSONL model extraction for Today data (2026-01-30)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
+	// Tracks whether the diagnostics panel has already received its session files
+	private diagnosticsHasLoadedFiles: boolean = false;
+	// Cache of the last loaded detailed session files for diagnostics view
+	private diagnosticsCachedFiles: SessionFileDetails[] = [];
 	private logViewerPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
@@ -402,13 +400,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 		   try {
 			   // Show the output channel so users can see what's happening
 			   this.outputChannel.show(true);
-			   this.log('[DEBUG] clearCache() called');
+			   this.log('DEBUG clearCache() called');
 			   this.log('Clearing session file cache...');
 			   
 			   const cacheSize = this.sessionFileCache.size;
 			   this.sessionFileCache.clear();
 			   await this.context.globalState.update('sessionFileCache', undefined);
-			   
+			   // Reset diagnostics loaded flag so the diagnostics view will reload files
+			this.diagnosticsHasLoadedFiles = false;
+			this.diagnosticsCachedFiles = [];
+			// Clear cached computed stats so details panel doesn't show stale data
+			this.lastDetailedStats = undefined;
+               
 			   this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
 			   vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
 			   
@@ -417,7 +420,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			   await this.updateTokenStats();
 			   this.log('Token statistics reloaded successfully.');
 		   } catch (error) {
-			   this.outputChannel.show(true);
 			   this.error('Error clearing cache:', error);
 			   vscode.window.showErrorMessage('Failed to clear cache: ' + error);
 		   }
@@ -428,6 +430,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
+		// CRITICAL: Add output channel to context.subscriptions so VS Code doesn't dispose it
+		context.subscriptions.push(this.outputChannel);
 		this.log('Constructor called');
 
 		// Load persisted cache from storage
@@ -626,9 +630,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const now = new Date();
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		// Calculate last month boundaries
+		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
+		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
 
 		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const lastMonthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -656,9 +664,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Fast check: Get file stats first to avoid processing old files
 					const fileStats = fs.statSync(sessionFile);
 					
-					// Skip files modified before the current month (quick filter)
+					// Skip files modified before last month (quick filter)
 					// This is the main performance optimization - filters out old sessions without reading file content
-					if (fileStats.mtime < monthStart) {
+					if (fileStats.mtime < lastMonthStart) {
 						skippedFiles++;
 						continue;
 					}
@@ -738,8 +746,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
+						// Session is from last month - only track lastMonth stats
+						if (wasCached) {
+							cacheHits++;
+						} else {
+							cacheMisses++;
+						}
+
+						lastMonthStats.tokens += tokens;
+						lastMonthStats.sessions += 1;
+						lastMonthStats.interactions += interactions;
+
+						// Add editor usage to last month stats
+						if (!lastMonthStats.editorUsage[editorType]) {
+							lastMonthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						lastMonthStats.editorUsage[editorType].tokens += tokens;
+						lastMonthStats.editorUsage[editorType].sessions += 1;
+
+						// Add model usage to last month stats
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!lastMonthStats.modelUsage[model]) {
+								lastMonthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							lastMonthStats.modelUsage[model].inputTokens += usage.inputTokens;
+							lastMonthStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+					}
 					else {
-						// Session is too old (no activity in current month), skip it
+						// Session is too old (no activity in current or last month), skip it
 						skippedFiles++;
 					}
 				} catch (fileError) {
@@ -747,9 +783,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions`);
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
-				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in current month)`);
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
 			}
 			const totalCacheAccesses = cacheHits + cacheMisses;
 			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
@@ -759,12 +795,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
+		const lastMonthCo2 = (lastMonthStats.tokens / 1000) * this.co2Per1kTokens;
 		
 		const todayWater = (todayStats.tokens / 1000) * this.waterUsagePer1kTokens;
 		const monthWater = (monthStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const lastMonthWater = (lastMonthStats.tokens / 1000) * this.waterUsagePer1kTokens;
 
 		const todayCost = this.calculateEstimatedCost(todayStats.modelUsage);
 		const monthCost = this.calculateEstimatedCost(monthStats.modelUsage);
+		const lastMonthCost = this.calculateEstimatedCost(lastMonthStats.modelUsage);
 
 		const result: DetailedStats = {
 			today: {
@@ -791,6 +830,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 				waterUsage: monthWater,
 				estimatedCost: monthCost
 			},
+			lastMonth: {
+				tokens: lastMonthStats.tokens,
+				sessions: lastMonthStats.sessions,
+				avgInteractionsPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.interactions / lastMonthStats.sessions) : 0,
+				avgTokensPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.tokens / lastMonthStats.sessions) : 0,
+				modelUsage: lastMonthStats.modelUsage,
+				editorUsage: lastMonthStats.editorUsage,
+				co2: lastMonthCo2,
+				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: lastMonthWater,
+				estimatedCost: lastMonthCost
+			},
 			lastUpdated: now
 		};
 
@@ -803,7 +854,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
 		const now = new Date();
-		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		// Use last 30 days instead of current month for better chart visibility
+		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
 		
 		// Map to store daily stats by date string (YYYY-MM-DD)
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
@@ -816,8 +868,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				try {
 					const fileStats = fs.statSync(sessionFile);
 					
-					// Only process files modified in the current month
-					if (fileStats.mtime >= monthStart) {
+					// Only process files modified in the last 30 days
+					if (fileStats.mtime >= thirtyDaysAgo) {
 						const tokens = await this.estimateTokensFromSessionCached(sessionFile, fileStats.mtime.getTime());
 						const interactions = await this.countInteractionsInSessionCached(sessionFile, fileStats.mtime.getTime());
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, fileStats.mtime.getTime());
@@ -870,41 +922,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Convert map to array and sort by date
 		let dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 		
-		// Fill in missing dates between the first date and today
-		if (dailyStatsArray.length > 0) {
-			const firstDate = new Date(dailyStatsArray[0].date);
-			const today = new Date();
-			
-			// Create a set of existing dates for quick lookup
-			const existingDates = new Set(dailyStatsArray.map(s => s.date));
-			
-			// Generate all dates from first date to today
-			const allDates: string[] = [];
-			const currentDate = new Date(firstDate);
-			
-			while (currentDate <= today) {
-				const dateKey = this.formatDateKey(currentDate);
-				allDates.push(dateKey);
-				currentDate.setDate(currentDate.getDate() + 1);
-			}
-			
-			// Add missing dates with zero values
-			for (const dateKey of allDates) {
-				if (!existingDates.has(dateKey)) {
-					dailyStatsMap.set(dateKey, {
-						date: dateKey,
-						tokens: 0,
-						sessions: 0,
-						interactions: 0,
-						modelUsage: {},
-						editorUsage: {}
-					});
-				}
-			}
-			
-			// Re-convert map to array and sort by date
-			dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		// Always fill in all 30 days to show complete chart
+		const today = new Date();
+		
+		// Create a set of existing dates for quick lookup
+		const existingDates = new Set(dailyStatsArray.map(s => s.date));
+		
+		// Generate all dates from 30 days ago to today
+		const allDates: string[] = [];
+		const currentDate = new Date(thirtyDaysAgo);
+		
+		while (currentDate <= today) {
+			const dateKey = this.formatDateKey(currentDate);
+			allDates.push(dateKey);
+			currentDate.setDate(currentDate.getDate() + 1);
 		}
+		
+		// Add missing dates with zero values
+		for (const dateKey of allDates) {
+			if (!existingDates.has(dateKey)) {
+				dailyStatsMap.set(dateKey, {
+					date: dateKey,
+					tokens: 0,
+					sessions: 0,
+					interactions: 0,
+					modelUsage: {},
+					editorUsage: {}
+				});
+			}
+		}
+		
+		// Re-convert map to array and sort by date
+		dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 		
 		return dailyStatsArray;
 	}
@@ -3523,7 +3572,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
 			}
 			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
-			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
+			const backendStorageInfo = await this.getBackendStorageInfo();
+			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders, backendStorageInfo);
 			this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
 			return;
 		}
@@ -3562,6 +3612,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
 
+		const backendStorageInfo = await this.getBackendStorageInfo();
+
 		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
 			'Diagnostic Report',
@@ -3571,7 +3623,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false, // Match other panels to avoid output channel issues
+				retainContextWhenHidden: true, // Keep webview context to avoid reloading session files
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
@@ -3579,11 +3631,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('✅ Diagnostic Report created successfully');
 
 		// Set the HTML content immediately with empty session files (shows loading state)
-		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders);
+		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders, backendStorageInfo);
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
-			this.log(`[DEBUG] Diagnostics webview message: ${JSON.stringify(message)}`);
+			this.log(`DEBUG Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(report);
@@ -3643,7 +3695,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.showUsageAnalysis();
 					break;
 				case 'clearCache':
-					this.log('[DEBUG] clearCache message received from diagnostics webview');
+					this.log('DEBUG clearCache message received from diagnostics webview');
 					await this.clearCache();
 					// After clearing cache, refresh the diagnostic report if it's open
 					if (this.diagnosticsPanel) {
@@ -3655,6 +3707,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// This will trigger a rebuild with fresh data
 						await this.showDiagnosticReport();
 					}
+					break;
+				case 'configureBackend':
+					// Execute the configureBackend command if it exists
+					try {
+						await vscode.commands.executeCommand('copilot-token-tracker.configureBackend');
+					} catch (err) {
+						// If command is not registered, show settings
+						vscode.window.showInformationMessage(
+							'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
+							'Open Settings'
+						).then(choice => {
+							if (choice === 'Open Settings') {
+								vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
+							}
+						});
+					}
+					break;
+				case 'openSettings':
+					this.log('[DEBUG] openSettings message received from diagnostics webview');
+					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
 					break;
 			}
 		});
@@ -3721,15 +3793,77 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		// Send the loaded data to the webview
 		try {
+			// Cache the loaded session files so we can re-send if the webview is recreated
+			if (panel === this.diagnosticsPanel) {
+				this.diagnosticsCachedFiles = detailedSessionFiles;
+			}
 			await panel.webview.postMessage({
 				command: 'sessionFilesLoaded',
 				detailedSessionFiles
 			});
 			this.log(`Loaded ${detailedSessionFiles.length} session files in background`);
+			// Mark diagnostics as loaded so we don't reload unnecessarily
+			if (panel === this.diagnosticsPanel) {
+				this.diagnosticsHasLoadedFiles = true;
+			}
 		} catch (err) {
 			// Panel may have been disposed
 			this.log('Could not send session files to panel (may be closed)');
 		}
+	}
+
+	/**
+	 * Get backend storage information for diagnostics
+	 */
+	private async getBackendStorageInfo(): Promise<any> {
+		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const enabled = config.get<boolean>('backend.enabled', false);
+		const storageAccount = config.get<string>('backend.storageAccount', '');
+		const subscriptionId = config.get<string>('backend.subscriptionId', '');
+		const resourceGroup = config.get<string>('backend.resourceGroup', '');
+		const aggTable = config.get<string>('backend.aggTable', 'usageAggDaily');
+		const eventsTable = config.get<string>('backend.eventsTable', 'usageEvents');
+		const authMode = config.get<string>('backend.authMode', 'entraId');
+		const sharingProfile = config.get<string>('backend.sharingProfile', 'off');
+		
+		// Get last sync time from global state
+		const lastSyncAt = this.context.globalState.get<number>('backend.lastSyncAt');
+		const lastSyncTime = lastSyncAt ? new Date(lastSyncAt).toISOString() : null;
+		
+		// Check if backend is configured (has required settings)
+		const isConfigured = enabled && storageAccount && subscriptionId && resourceGroup;
+		
+		// Get unique device count from session files (estimate based on unique workspace roots)
+		const sessionFiles = await this.getCopilotSessionFiles();
+		const workspaceIds = new Set<string>();
+		const pathModule = require('path');
+		
+		for (const file of sessionFiles) {
+			const parts = file.split(/[\\\/]/);
+			const workspaceStorageIdx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+			if (workspaceStorageIdx >= 0 && workspaceStorageIdx < parts.length - 1) {
+				const workspaceId = parts[workspaceStorageIdx + 1];
+				if (workspaceId && workspaceId.length > 10) {
+					workspaceIds.add(workspaceId);
+				}
+			}
+		}
+		
+		return {
+			enabled,
+			isConfigured,
+			storageAccount,
+			subscriptionId: subscriptionId ? subscriptionId.substring(0, 8) + '...' : '',
+			resourceGroup,
+			aggTable,
+			eventsTable,
+			authMode,
+			sharingProfile,
+			lastSyncTime,
+			deviceCount: workspaceIds.size,
+			sessionCount: sessionFiles.length,
+			recordCount: null // Will be populated from Azure if configured
+		};
 	}
 
 	private getDiagnosticReportHtml(
@@ -3737,7 +3871,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		report: string, 
 		sessionFiles: { file: string; size: number; modified: string }[],
 		detailedSessionFiles: SessionFileDetails[],
-		sessionFolders: { dir: string; count: number }[] = []
+		sessionFolders: { dir: string; count: number }[] = [],
+		backendStorageInfo: any = null
 	): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'diagnostics.js'));
@@ -3761,14 +3896,52 @@ class CopilotTokenTracker implements vscode.Disposable {
 			cacheSizeInMB = 0;
 		}
 		
+		// Try to read the persisted cache from VS Code global state to show its actual storage status
+		let persistedCacheSummary = 'Not found in VS Code Global State';
+		try {
+			const persisted = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
+			if (persisted && typeof persisted === 'object') {
+				const count = Object.keys(persisted).length;
+				persistedCacheSummary = `VS Code Global State - sessionFileCache (${count} entr${count === 1 ? 'y' : 'ies'})`;
+			}
+		} catch (e) {
+			persistedCacheSummary = 'Error reading VS Code Global State';
+		}
+
+		// Try to locate the actual storage file (state DB) for the extension global state
+		let storageFilePath: string | null = null;
+		try {
+			const extensionId = 'RobBos.copilot-token-tracker';
+			const userPaths = this.getVSCodeUserPaths();
+			for (const userPath of userPaths) {
+				try {
+					const candidate = path.join(userPath, 'globalStorage', extensionId);
+					if (fs.existsSync(candidate)) {
+						const files = fs.readdirSync(candidate);
+						// Look for likely state files
+						const match = files.find(f => f.includes('state') || f.endsWith('.vscdb') || f.endsWith('.json'));
+						if (match) {
+							storageFilePath = path.join(candidate, match);
+							break;
+						}
+					}
+				} catch (e) {
+					// ignore path access errors
+				}
+			}
+		} catch (e) {
+			// ignore
+		}
+
 		const cacheInfo = {
 			size: this.sessionFileCache.size,
 			sizeInMB: cacheSizeInMB,
 			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
-			location: 'VS Code Global State - extension.globalState.get sessionFileCache'
+			location: persistedCacheSummary,
+			storagePath: storageFilePath
 		};
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo }).replace(/</g, '\\u003c');
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -3962,6 +4135,53 @@ class CopilotTokenTracker implements vscode.Disposable {
 export function activate(context: vscode.ExtensionContext) {
 	// Create the token tracker
 	const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+
+	// Wire up backend facade and commands so the diagnostics webview can launch the
+	// configuration wizard. Uses tokenTracker logging and helpers via casting to any.
+	try {
+		const backendFacade = new BackendFacade({
+			context,
+			log: (m: string) => (tokenTracker as any).log(m),
+			warn: (m: string) => (tokenTracker as any).warn(m),
+			updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
+			calculateEstimatedCost: (modelUsage: any) => {
+				let total = 0;
+				const pricing = (modelPricingData as any).pricing || {};
+				for (const [model, usage] of Object.entries(modelUsage || {})) {
+					const p = pricing[model] || pricing['gpt-4o-mini'];
+					if (!p) { continue; }
+					const usageData = usage as { inputTokens?: number; outputTokens?: number };
+					total += ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
+					total += ((usageData.outputTokens || 0) / 1_000_000) * p.outputCostPerMillion;
+				}
+				return total;
+			},
+			co2Per1kTokens: 0.2,
+			waterUsagePer1kTokens: 0.3,
+			co2AbsorptionPerTreePerYear: 21000,
+			getCopilotSessionFiles: () => (tokenTracker as any).getCopilotSessionFiles(),
+			estimateTokensFromText: (text: string, model?: string) => (tokenTracker as any).estimateTokensFromText(text, model),
+			getModelFromRequest: (req: any) => (tokenTracker as any).getModelFromRequest(req),
+			getSessionFileDataCached: (p: string, m: number) => (tokenTracker as any).getSessionFileDataCached(p, m)
+		});
+
+		const backendHandler = new BackendCommandHandler({
+			facade: backendFacade as any,
+			integration: undefined,
+			calculateEstimatedCost: (mu: any) => 0,
+			warn: (m: string) => (tokenTracker as any).warn(m),
+			log: (m: string) => (tokenTracker as any).log(m)
+		});
+
+		const configureBackendCommand = vscode.commands.registerCommand('copilot-token-tracker.configureBackend', async () => {
+			await backendHandler.handleConfigureBackend();
+		});
+
+		context.subscriptions.push(configureBackendCommand);
+	} catch (err) {
+		// If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
+		(tokenTracker as any).warn('Failed to wire backend commands: ' + String(err));
+	}
 
 	// Register the refresh command
 	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
