@@ -280,6 +280,7 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 						<th>Context Refs</th>
 						<th class="sortable" data-sort="firstInteraction">First Interaction${getSortIndicator('firstInteraction')}</th>
 						<th class="sortable" data-sort="lastInteraction">Last Interaction${getSortIndicator('lastInteraction')}</th>
+						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -295,6 +296,9 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 							<td title="${getContextRefsSummary(sf.contextReferences)}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
 							<td>${formatDate(sf.firstInteraction)}</td>
 							<td>${formatDate(sf.lastInteraction)}</td>
+							<td>
+								<a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>
+							</td>
 						</tr>
 					`).join('')}
 				</tbody>
@@ -710,8 +714,8 @@ function renderLayout(data: DiagnosticsData): void {
 				color: #9aa0a6;
 				margin-top: 4px;
 			}
-			.session-file-link, .reveal-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
-			.session-file-link:hover, .reveal-link:hover { color: #81D4FA; }
+			.session-file-link, .reveal-link, .view-formatted-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
+			.session-file-link:hover, .reveal-link:hover, .view-formatted-link:hover { color: #81D4FA; }
 			.empty-session-link { color: #999; }
 			.empty-session-link:hover { color: #aaa; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
@@ -1040,6 +1044,15 @@ function setupStorageLinkHandlers(): void {
 				e.preventDefault();
 				const file = decodeURIComponent((link as HTMLElement).getAttribute('data-file') || '');
 				vscode.postMessage({ command: 'openSessionFile', file });
+			});
+		});
+
+		// View formatted JSONL link handlers
+		document.querySelectorAll('.view-formatted-link').forEach(link => {
+			link.addEventListener('click', (e) => {
+				e.preventDefault();
+				const file = decodeURIComponent((link as HTMLElement).getAttribute('data-file') || '');
+				vscode.postMessage({ command: 'openFormattedJsonlFile', file });
 			});
 		});
 

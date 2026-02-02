@@ -3141,6 +3141,61 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 	}
 
+	/**
+	 * Opens a JSONL file in a formatted view with array brackets and commas.
+	 * Does not modify the original file.
+	 */
+	public async showFormattedJsonlFile(sessionFilePath: string): Promise<void> {
+		try {
+			// Read the file content
+			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf-8');
+			
+			// Parse JSONL into array of objects
+			const lines = fileContent.trim().split('\n').filter(line => line.trim().length > 0);
+			const jsonObjects: any[] = [];
+			
+			for (const line of lines) {
+				try {
+					const obj = JSON.parse(line);
+					jsonObjects.push(obj);
+				} catch (e) {
+					// Skip malformed lines
+					this.warn(`Skipping malformed line in ${sessionFilePath}: ${e}`);
+				}
+			}
+			
+			// Format as JSON array
+			const formattedJson = JSON.stringify(jsonObjects, null, 2);
+			
+			// Create an untitled document with the formatted content
+			const fileName = path.basename(sessionFilePath, path.extname(sessionFilePath));
+			const prettyUri = vscode.Uri.parse(`untitled:${fileName}-formatted.json`);
+			
+			// Check if this document is already open
+			const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === prettyUri.toString());
+			if (openDoc) {
+				await vscode.window.showTextDocument(openDoc, { preview: true });
+				return;
+			}
+			
+			// Create and open the document
+			const doc = await vscode.workspace.openTextDocument(prettyUri);
+			const editor = await vscode.window.showTextDocument(doc, { preview: true });
+			
+			// Insert the formatted JSON
+			await editor.edit((editBuilder) => {
+				editBuilder.insert(new vscode.Position(0, 0), formattedJson);
+			});
+			
+			// Set language mode to JSON for syntax highlighting
+			await vscode.languages.setTextDocumentLanguage(doc, 'json');
+			
+		} catch (error) {
+			this.error(`Error formatting JSONL file ${sessionFilePath}:`, error);
+			throw error;
+		}
+	}
+
 	private getLogViewerHtml(webview: vscode.Webview, logData: SessionLogData): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'logviewer.js'));
@@ -3595,6 +3650,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 							await this.showLogViewer(message.file);
 						} catch (err) {
 							vscode.window.showErrorMessage('Could not open log viewer: ' + message.file);
+						}
+					}
+					break;
+
+				case 'openFormattedJsonlFile':
+					if (message.file) {
+						try {
+							await this.showFormattedJsonlFile(message.file);
+						} catch (err) {
+							vscode.window.showErrorMessage('Could not open formatted file: ' + message.file);
 						}
 					}
 					break;
