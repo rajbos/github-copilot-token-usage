@@ -3152,15 +3152,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			// Parse JSONL into array of objects
 			const lines = fileContent.trim().split('\n').filter(line => line.trim().length > 0);
-			const jsonObjects: any[] = [];
+			const jsonObjects: unknown[] = [];
 			
-			for (const line of lines) {
+			for (let i = 0; i < lines.length; i++) {
 				try {
-					const obj = JSON.parse(line);
+					const obj = JSON.parse(lines[i]);
 					jsonObjects.push(obj);
 				} catch (e) {
-					// Skip malformed lines
-					this.warn(`Skipping malformed line in ${sessionFilePath}: ${e}`);
+					// Skip malformed lines with detailed warning
+					this.warn(`Skipping malformed line ${i + 1} in ${sessionFilePath}: ${e}`);
 				}
 			}
 			
@@ -3171,11 +3171,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileName = path.basename(sessionFilePath, path.extname(sessionFilePath));
 			const prettyUri = vscode.Uri.parse(`untitled:${fileName}-formatted.json`);
 			
-			// Check if this document is already open
+			// Check if this document is already open and close it to refresh
 			const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === prettyUri.toString());
 			if (openDoc) {
-				await vscode.window.showTextDocument(openDoc, { preview: true });
-				return;
+				// Close the existing document so we can create a fresh one with updated content
+				const editor = vscode.window.visibleTextEditors.find(e => e.document === openDoc);
+				if (editor) {
+					await vscode.window.showTextDocument(openDoc, editor.viewColumn);
+					await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+				}
 			}
 			
 			// Create and open the document
@@ -3659,7 +3663,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						try {
 							await this.showFormattedJsonlFile(message.file);
 						} catch (err) {
-							vscode.window.showErrorMessage('Could not open formatted file: ' + message.file);
+							const errorMsg = err instanceof Error ? err.message : String(err);
+							vscode.window.showErrorMessage('Could not open formatted file: ' + message.file + ' (' + errorMsg + ')');
 						}
 					}
 					break;
