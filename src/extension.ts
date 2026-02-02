@@ -201,6 +201,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private diagnosticsHasLoadedFiles: boolean = false;
 	// Cache of the last loaded detailed session files for diagnostics view
 	private diagnosticsCachedFiles: SessionFileDetails[] = [];
+	// Cache of the last diagnostic report text for copy/issue operations
+	private lastDiagnosticReport: string = '';
 	private logViewerPanel?: vscode.WebviewPanel;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
@@ -3469,91 +3471,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 	public async showDiagnosticReport(): Promise<void> {
 		this.log('🔍 Opening Diagnostic Report');
 
-		// If panel already exists, just reveal it and update content
+		// If panel already exists, just reveal it and trigger a refresh in the background
 		if (this.diagnosticsPanel) {
 			this.diagnosticsPanel.reveal();
 			this.log('🔍 Diagnostic Report revealed (already exists)');
-			// Optionally, refresh content if needed
-			const report = await this.generateDiagnosticReport();
-			const sessionFiles = await this.getCopilotSessionFiles();
-			const sessionFileData: { file: string; size: number; modified: string }[] = [];
-			for (const file of sessionFiles.slice(0, 20)) {
-				try {
-					const stat = await fs.promises.stat(file);
-					sessionFileData.push({
-						file,
-						size: stat.size,
-						modified: stat.mtime.toISOString()
-					});
-				} catch {
-					// Skip inaccessible files
-				}
-			}
-			// Build folder counts grouped by top-level VS Code user folder (editor roots)
-			const dirCounts = new Map<string, number>();
-			const pathModule = require('path');
-			for (const file of sessionFiles) {
-				// Walk up the path to find the 'User' directory which is the canonical editor folder root
-				const parts = file.split(/[\\\/]/);
-				// Find index of 'User' folder in path parts (case-insensitive)
-				const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
-				let editorRoot = '';
-				if (userIdx > 0) {
-					// Reconstruct path including 'User' and the next folder (e.g., .../Roaming/Code/User/workspaceStorage)
-					// Include two extra levels after the 'User' segment so we can distinguish
-					// between 'User\\workspaceStorage' and 'User\\globalStorage'.
-					const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
-					editorRoot = pathModule.join(...rootParts);
-				} else {
-					// Fallback: use parent dir of the file
-					editorRoot = pathModule.dirname(file);
-				}
-
-				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-			}
-			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorTypeFromPath(dir) }));
-			const backendStorageInfo = await this.getBackendStorageInfo();
-			this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders, backendStorageInfo);
-			this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
+			// Load data in background and update the webview
+			this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
 			return;
 		}
 
-		const report = await this.generateDiagnosticReport();
-		const sessionFiles = await this.getCopilotSessionFiles();
-		const sessionFileData: { file: string; size: number; modified: string }[] = [];
-		for (const file of sessionFiles.slice(0, 20)) {
-			try {
-				const stat = await fs.promises.stat(file);
-				sessionFileData.push({
-					file,
-					size: stat.size,
-					modified: stat.mtime.toISOString()
-				});
-			} catch {
-				// Skip inaccessible files
-			}
-		}
-
-		// Build folder counts grouped by top-level VS Code user folder (editor roots)
-		const dirCounts = new Map<string, number>();
-		const pathModule = require('path');
-		for (const file of sessionFiles) {
-			const parts = file.split(/[\\\/]/);
-			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
-			let editorRoot = '';
-			if (userIdx > 0) {
-				// Include 'User' plus one following folder (e.g., 'User\\workspaceStorage' or 'User\\globalStorage')
-				const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
-				editorRoot = pathModule.join(...rootParts);
-			} else {
-				editorRoot = pathModule.dirname(file);
-			}
-			dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-		}
-		const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ dir, count, editorName: this.getEditorNameFromRoot(dir) }));
-
-		const backendStorageInfo = await this.getBackendStorageInfo();
-
+		// Create the panel immediately with loading state
 		this.diagnosticsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDiagnostics',
 			'Diagnostic Report',
@@ -3568,21 +3495,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		);
 
-		this.log('✅ Diagnostic Report created successfully');
+		this.log('✅ Diagnostic Report panel created');
 
-		// Set the HTML content immediately with empty session files (shows loading state)
-		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(this.diagnosticsPanel.webview, report, sessionFileData, [], sessionFolders, backendStorageInfo);
+		// Set the HTML content immediately with loading state
+		// Note: "Loading..." is the agreed contract between backend and frontend
+		// The webview checks for this value to show a loading indicator
+		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
+			this.diagnosticsPanel.webview,
+			'Loading...', // Placeholder report
+			[], // Empty session files
+			[], // Empty detailed session files
+			[], // Empty session folders
+			null // No backend info yet
+		);
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
 			this.log(`DEBUG Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
-					await vscode.env.clipboard.writeText(report);
+					await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
 					break;
 				case 'openIssue':
-					await vscode.env.clipboard.writeText(report);
+					await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
 					vscode.window.showInformationMessage('Diagnostic report copied to clipboard. Please paste it into the GitHub issue.');
 					const shortBody = encodeURIComponent('The diagnostic report has been copied to the clipboard. Please paste it below.');
 					const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
@@ -3676,8 +3612,100 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.diagnosticsPanel = undefined;
 		});
 
-		// Load detailed session files in the background and send to webview when ready
-		this.loadSessionFilesInBackground(this.diagnosticsPanel, sessionFiles);
+		// Load data in background and update the webview when ready
+		this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+	}
+
+	/**
+	 * Load all diagnostic data in the background and update the webview progressively.
+	 */
+	private async loadDiagnosticDataInBackground(panel: vscode.WebviewPanel): Promise<void> {
+		try {
+			this.log('🔄 Loading diagnostic data in background...');
+
+			// Load the diagnostic report
+			const report = await this.generateDiagnosticReport();
+			this.lastDiagnosticReport = report;
+
+			// Get session files
+			const sessionFiles = await this.getCopilotSessionFiles();
+
+			// Get first 20 session files with stats (quick preview)
+			const sessionFileData: { file: string; size: number; modified: string }[] = [];
+			for (const file of sessionFiles.slice(0, 20)) {
+				try {
+					const stat = await fs.promises.stat(file);
+					sessionFileData.push({
+						file,
+						size: stat.size,
+						modified: stat.mtime.toISOString()
+					});
+				} catch {
+					// Skip inaccessible files
+				}
+			}
+
+			// Build folder counts grouped by top-level VS Code user folder (editor roots)
+			const dirCounts = new Map<string, number>();
+			const pathModule = require('path');
+			for (const file of sessionFiles) {
+				const parts = file.split(/[\\\/]/);
+				const userIdx = parts.findIndex((p: string) => p.toLowerCase() === 'user');
+				let editorRoot = '';
+				if (userIdx > 0) {
+					const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
+					editorRoot = pathModule.join(...rootParts);
+				} else {
+					editorRoot = pathModule.dirname(file);
+				}
+				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+			}
+			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({ 
+				dir, 
+				count, 
+				editorName: this.getEditorNameFromRoot(dir) 
+			}));
+
+			// Get backend storage info
+			const backendStorageInfo = await this.getBackendStorageInfo();
+
+			// Check if panel is still open before updating
+			if (!this.isPanelOpen(panel)) {
+				this.log('Diagnostic panel closed during data load, aborting update');
+				return;
+			}
+
+			// Send the loaded data to the webview
+			panel.webview.postMessage({
+				command: 'diagnosticDataLoaded',
+				report,
+				sessionFiles: sessionFileData,
+				sessionFolders,
+				backendStorageInfo
+			});
+
+			this.log('✅ Diagnostic data loaded and sent to webview');
+
+			// Now load detailed session files in the background
+			this.loadSessionFilesInBackground(panel, sessionFiles);
+		} catch (error) {
+			this.error(`Failed to load diagnostic data: ${error}`);
+			// Send error to webview if panel is still open
+			if (this.isPanelOpen(panel)) {
+				panel.webview.postMessage({
+					command: 'diagnosticDataError',
+					error: String(error)
+				});
+			}
+		}
+	}
+
+	/**
+	 * Check if a webview panel is still open and accessible.
+	 * A panel is considered open if its viewColumn is defined.
+	 */
+	private isPanelOpen(panel: vscode.WebviewPanel): boolean {
+		return panel.viewColumn !== undefined;
 	}
 
 	/**
@@ -3711,7 +3739,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Process up to 500 most recent session files
 		for (const file of sortedFiles.slice(0, 500)) {
 			// Check if panel was disposed
-			if (!panel.visible && panel.viewColumn === undefined) {
+			if (!this.isPanelOpen(panel)) {
 				this.log('Diagnostic panel closed, stopping background load');
 				return;
 			}
