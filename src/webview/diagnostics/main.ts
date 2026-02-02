@@ -1,6 +1,14 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from '../shared/buttonConfig';
 
+// Constants
+const LOADING_PLACEHOLDER = 'Loading...';
+const SESSION_FILES_SECTION_REGEX = /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/;
+const LOADING_MESSAGE = `⏳ Loading diagnostic data...
+
+This may take a few moments depending on the number of session files.
+The view will automatically update when data is ready.`;
+
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
@@ -86,6 +94,10 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
+}
+
+function removeSessionFilesSection(reportText: string): string {
+	return reportText.replace(SESSION_FILES_SECTION_REGEX, '');
 }
 
 function formatDate(isoString: string | null): string {
@@ -495,10 +507,16 @@ function renderLayout(data: DiagnosticsData): void {
 
 	// Remove session files section from report text (it's shown separately as clickable links)
 	let escapedReport = escapeHtml(data.report);
-	// Remove the old session files list from the report text if present
-	const sessionMatch = escapedReport.match(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/);
-	if (sessionMatch) {
-		escapedReport = escapedReport.replace(sessionMatch[0], '');
+	
+	// Check if we're in loading state for the report
+	const reportIsLoading = data.report === LOADING_PLACEHOLDER;
+	
+	if (!reportIsLoading) {
+		// Remove the old session files list from the report text if present
+		escapedReport = removeSessionFilesSection(escapedReport);
+	} else {
+		// Show a better loading message
+		escapedReport = LOADING_MESSAGE.trim();
 	}
 
 	// Build detailed session files table
@@ -874,7 +892,91 @@ function renderLayout(data: DiagnosticsData): void {
 	// Listen for messages from the extension (background loading)
 	window.addEventListener('message', (event) => {
 		const message = event.data;
-		if (message.command === 'sessionFilesLoaded' && message.detailedSessionFiles) {
+		if (message.command === 'diagnosticDataLoaded') {
+			// Initial diagnostic data has loaded (report, session folders, backend info)
+			// Update the report text and folders
+			if (message.report) {
+				// Update the report tab content
+				const reportTabContent = document.getElementById('tab-report');
+				if (reportTabContent) {
+					// Process the report text to remove session files section
+					const processedReport = removeSessionFilesSection(message.report);
+					const reportPre = reportTabContent.querySelector('.report-content');
+					if (reportPre) {
+						reportPre.textContent = processedReport;
+					}
+				}
+			}
+
+			// Update session folders if provided
+			if (message.sessionFolders && message.sessionFolders.length > 0) {
+				const reportTabContent = document.getElementById('tab-report');
+				if (reportTabContent) {
+					const sorted = [...message.sessionFolders].sort((a: any, b: any) => b.count - a.count);
+					let sessionFilesHtml = `
+						<div class="session-folders-table">
+							<h4>Main Session Folders (by editor root):</h4>
+							<table class="session-table">
+								<thead>
+									<tr>
+										<th>Folder</th>
+										<th>Editor</th>
+										<th># of Sessions</th>
+										<th>Open</th>
+									</tr>
+								</thead>
+								<tbody>`;
+					sorted.forEach((sf: any) => {
+						let display = sf.dir;
+						const home = (window as any).process?.env?.HOME || (window as any).process?.env?.USERPROFILE || '';
+						if (home && display.startsWith(home)) {
+							display = display.replace(home, '~');
+						}
+						const editorName = sf.editorName || 'Unknown';
+						sessionFilesHtml += `
+							<tr>
+								<td title="${escapeHtml(sf.dir)}">${escapeHtml(display)}</td>
+								<td><span class="editor-badge">${escapeHtml(editorName)}</span></td>
+								<td>${sf.count}</td>
+								<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a></td>
+							</tr>`;
+					});
+					sessionFilesHtml += `
+							</tbody>
+						</table>
+					</div>`;
+					
+					// Find where to insert or replace the session folders table
+					// It should be inserted after the report-content div but before the button-group
+					const existingTable = reportTabContent.querySelector('.session-folders-table');
+					if (existingTable) {
+						existingTable.outerHTML = sessionFilesHtml;
+					} else {
+						// Insert after the report-content div
+						const reportContent = reportTabContent.querySelector('.report-content');
+						if (reportContent) {
+							reportContent.insertAdjacentHTML('afterend', sessionFilesHtml);
+						}
+					}
+					setupStorageLinkHandlers();
+				}
+			}
+
+			// Diagnostic data loaded successfully - no console needed as this is normal operation
+		} else if (message.command === 'diagnosticDataError') {
+			// Show error message
+			console.error('Error loading diagnostic data:', message.error);
+			const root = document.getElementById('root');
+			if (root) {
+				const errorDiv = document.createElement('div');
+				errorDiv.style.cssText = 'color: #ff6b6b; padding: 20px; text-align: center;';
+				errorDiv.innerHTML = `
+					<h3>⚠️ Error Loading Diagnostic Data</h3>
+					<p>${escapeHtml(message.error || 'Unknown error')}</p>
+				`;
+				root.insertBefore(errorDiv, root.firstChild);
+			}
+		} else if (message.command === 'sessionFilesLoaded' && message.detailedSessionFiles) {
 			storedDetailedFiles = message.detailedSessionFiles;
 			isLoading = false;
 			
