@@ -194,7 +194,7 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 7; // Fix JSONL model extraction for Today data (2026-01-30)
+	private static readonly CACHE_VERSION = 8; // Skip sessions with 0 models in avg calculation (2026-02-02)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -1104,38 +1104,42 @@ class CopilotTokenTracker implements vscode.Disposable {
 			};
 		}
 		
-		period.modelSwitching.totalSessions++;
-		period.modelSwitching.modelsPerSession.push(analysis.modelSwitching.modelCount);
-		
-		// Track unique models by tier
-		for (const model of analysis.modelSwitching.tiers.standard) {
-			if (!period.modelSwitching.standardModels.includes(model)) {
-				period.modelSwitching.standardModels.push(model);
+		// Only count sessions with at least 1 model detected for model switching stats
+		// Sessions without detected models (modelCount === 0) should not affect the average
+		if (analysis.modelSwitching.modelCount > 0) {
+			period.modelSwitching.totalSessions++;
+			period.modelSwitching.modelsPerSession.push(analysis.modelSwitching.modelCount);
+			
+			// Track unique models by tier
+			for (const model of analysis.modelSwitching.tiers.standard) {
+				if (!period.modelSwitching.standardModels.includes(model)) {
+					period.modelSwitching.standardModels.push(model);
+				}
 			}
-		}
-		for (const model of analysis.modelSwitching.tiers.premium) {
-			if (!period.modelSwitching.premiumModels.includes(model)) {
-				period.modelSwitching.premiumModels.push(model);
+			for (const model of analysis.modelSwitching.tiers.premium) {
+				if (!period.modelSwitching.premiumModels.includes(model)) {
+					period.modelSwitching.premiumModels.push(model);
+				}
 			}
-		}
-		for (const model of analysis.modelSwitching.tiers.unknown) {
-			if (!period.modelSwitching.unknownModels.includes(model)) {
-				period.modelSwitching.unknownModels.push(model);
+			for (const model of analysis.modelSwitching.tiers.unknown) {
+				if (!period.modelSwitching.unknownModels.includes(model)) {
+					period.modelSwitching.unknownModels.push(model);
+				}
 			}
-		}
-		
-		// Count sessions with mixed tiers
-		if (analysis.modelSwitching.hasMixedTiers) {
-			period.modelSwitching.mixedTierSessions++;
-		}
-		
-		// Calculate aggregate statistics
-		if (period.modelSwitching.modelsPerSession.length > 0) {
-			const counts = period.modelSwitching.modelsPerSession;
-			period.modelSwitching.averageModelsPerSession = counts.reduce((a, b) => a + b, 0) / counts.length;
-			period.modelSwitching.maxModelsPerSession = Math.max(...counts);
-			period.modelSwitching.minModelsPerSession = Math.min(...counts);
-			period.modelSwitching.switchingFrequency = (counts.filter(c => c > 1).length / counts.length) * 100;
+			
+			// Count sessions with mixed tiers
+			if (analysis.modelSwitching.hasMixedTiers) {
+				period.modelSwitching.mixedTierSessions++;
+			}
+			
+			// Calculate aggregate statistics
+			if (period.modelSwitching.modelsPerSession.length > 0) {
+				const counts = period.modelSwitching.modelsPerSession;
+				period.modelSwitching.averageModelsPerSession = counts.reduce((a, b) => a + b, 0) / counts.length;
+				period.modelSwitching.maxModelsPerSession = Math.max(...counts);
+				period.modelSwitching.minModelsPerSession = Math.min(...counts);
+				period.modelSwitching.switchingFrequency = (counts.filter(c => c > 1).length / counts.length) * 100;
+			}
 		}
 	}
 
