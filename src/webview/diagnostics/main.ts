@@ -287,8 +287,8 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 						<tr>
 							<td>${idx + 1}</td>
 							<td><span class="editor-badge" title="${escapeHtml(sf.editorSource)}">${escapeHtml(sf.editorName || sf.editorSource)}</span></td>
-							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : ''}">
-								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title)}</a>` : '<span style="color: #666;">—</span>'}
+							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : 'Empty session'}">
+								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title)}</a>` : `<a href="#" class="session-file-link empty-session-link" data-file="${encodeURIComponent(sf.file)}" title="Empty session">(Empty session)</a>`}
 							</td>
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sanitizeNumber(sf.interactions)}</td>
@@ -712,6 +712,8 @@ function renderLayout(data: DiagnosticsData): void {
 			}
 			.session-file-link, .reveal-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
 			.session-file-link:hover, .reveal-link:hover { color: #81D4FA; }
+			.empty-session-link { color: #999; }
+			.empty-session-link:hover { color: #aaa; }
 			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 			.button {
 				background: #202024;
