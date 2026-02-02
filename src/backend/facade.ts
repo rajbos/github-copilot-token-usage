@@ -76,7 +76,8 @@ export class BackendFacade {
 				getCopilotSessionFiles: deps.getCopilotSessionFiles,
 				estimateTokensFromText: deps.estimateTokensFromText,
 				getModelFromRequest: deps.getModelFromRequest,
-				getSessionFileDataCached: deps.getSessionFileDataCached
+				getSessionFileDataCached: deps.getSessionFileDataCached,
+				updateTokenStats: deps.updateTokenStats
 			},
 			this.credentialService,
 			this.dataPlaneService,
@@ -226,6 +227,7 @@ export class BackendFacade {
 		const settings = this.getSettings();
 		const result = await this.syncService.syncToBackendStore(force, settings, this.isConfigured(settings));
 		this.clearQueryCache();
+		// UI update is now handled by syncService after successful completion
 		return result;
 	}
 
@@ -478,8 +480,8 @@ export class BackendFacade {
 		const next = applyDraftToSettings(previousSettings, draft, consentAt);
 		await this.updateConfiguration(next);
 		this.startTimerIfEnabled();
-		this.deps.updateTokenStats?.();
 		this.clearQueryCache();
+		// UI update happens automatically after sync completes via syncService callback
 		return { state: await this.getConfigPanelState(), message: 'Settings saved.' };
 	}
 

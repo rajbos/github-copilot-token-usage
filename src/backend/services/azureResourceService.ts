@@ -6,7 +6,7 @@
 import * as vscode from 'vscode';
 import { ResourceManagementClient } from '@azure/arm-resources';
 import { StorageManagementClient } from '@azure/arm-storage';
-import { SubscriptionClient } from '@azure/arm-subscriptions';
+import { SubscriptionClient } from '@azure/arm-resources-subscriptions';
 import { TableServiceClient } from '@azure/data-tables';
 import { safeStringifyError, isAzurePolicyDisallowedError, isStorageLocalAuthDisallowedByPolicyError } from '../../utils/errors';
 import type { BackendAuthMode, BackendSettings } from '../settings';
