@@ -34,7 +34,7 @@ export interface BackendFacadeDeps {
 	estimateTokensFromText: (text: string, model: string) => number;
 	getModelFromRequest: (request: ChatRequest) => string;
 	// Cache integration for performance
-	getSessionFileDataCached?: (sessionFilePath: string, mtime: number) => Promise<SessionFileCache>;
+	getSessionFileDataCached?: (sessionFilePath: string, mtime: number, fileSize: number) => Promise<SessionFileCache>;
 }
 
 export class BackendFacade {
