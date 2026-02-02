@@ -895,15 +895,11 @@ The view will automatically update when data is ready.
 				// Update the report tab content
 				const reportTabContent = document.getElementById('tab-report');
 				if (reportTabContent) {
-					let escapedReport = escapeHtml(message.report);
-					// Remove the old session files list from the report text if present
-					const sessionMatch = escapedReport.match(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/);
-					if (sessionMatch) {
-						escapedReport = escapedReport.replace(sessionMatch[0], '');
-					}
+					// Process the report text to remove session files section
+					let processedReport = message.report.replace(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/, '');
 					const reportPre = reportTabContent.querySelector('.report-content');
 					if (reportPre) {
-						reportPre.textContent = message.report.replace(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/, '');
+						reportPre.textContent = processedReport;
 					}
 				}
 			}
@@ -962,10 +958,10 @@ The view will automatically update when data is ready.
 				}
 			}
 
-			console.log('DEBUG Diagnostic data loaded');
+			// Diagnostic data loaded successfully - no console needed as this is normal operation
 		} else if (message.command === 'diagnosticDataError') {
 			// Show error message
-			console.error('DEBUG Error loading diagnostic data:', message.error);
+			console.error('Error loading diagnostic data:', message.error);
 			const root = document.getElementById('root');
 			if (root) {
 				const errorDiv = document.createElement('div');
