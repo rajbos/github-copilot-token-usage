@@ -3326,8 +3326,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
 
-			// Check if panel is still visible before updating
-			if (!panel.visible && panel.viewColumn === undefined) {
+			// Check if panel is still open before updating
+			if (!this.isPanelOpen(panel)) {
 				this.log('Diagnostic panel closed during data load, aborting update');
 				return;
 			}
@@ -3347,14 +3347,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.loadSessionFilesInBackground(panel, sessionFiles);
 		} catch (error) {
 			this.error(`Failed to load diagnostic data: ${error}`);
-			// Send error to webview
-			if (panel.visible || panel.viewColumn !== undefined) {
+			// Send error to webview if panel is still open
+			if (this.isPanelOpen(panel)) {
 				panel.webview.postMessage({
 					command: 'diagnosticDataError',
 					error: String(error)
 				});
 			}
 		}
+	}
+
+	/**
+	 * Check if a webview panel is still open and accessible.
+	 */
+	private isPanelOpen(panel: vscode.WebviewPanel): boolean {
+		// A panel is considered closed if:
+		// - It's not visible AND viewColumn is undefined (panel has been disposed)
+		// - OR viewColumn is undefined (regardless of visible state)
+		return panel.viewColumn !== undefined;
 	}
 
 	/**
@@ -3388,7 +3398,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Process up to 500 most recent session files
 		for (const file of sortedFiles.slice(0, 500)) {
 			// Check if panel was disposed
-			if (!panel.visible && panel.viewColumn === undefined) {
+			if (!this.isPanelOpen(panel)) {
 				this.log('Diagnostic panel closed, stopping background load');
 				return;
 			}

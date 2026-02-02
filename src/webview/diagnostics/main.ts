@@ -903,7 +903,7 @@ The view will automatically update when data is ready.
 					}
 					const reportPre = reportTabContent.querySelector('.report-content');
 					if (reportPre) {
-						reportPre.textContent = message.report;
+						reportPre.textContent = message.report.replace(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/, '');
 					}
 				}
 			}

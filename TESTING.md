@@ -46,7 +46,7 @@ The diagnostics view now loads progressively:
 6. **Expected Result**: Should copy the full diagnostic report
 
 #### Test 5: Multiple Session Files (Performance)
-1. If you have many GitHub Copilot session files (50+ files in chatSessions folders)
+1. If you have many GitHub Copilot session files (50+ files in `chatSessions` folders)
 2. Open the diagnostics report
 3. **Expected Result**: 
    - Panel appears immediately
