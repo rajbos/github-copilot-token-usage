@@ -42,7 +42,9 @@ Contains pricing information for AI models, including input and output token cos
     "model-name": {
       "inputCostPerMillion": 1.75,
       "outputCostPerMillion": 14.0,
-      "category": "Model category"
+      "category": "Model category",
+      "tier": "standard|premium|unknown",
+      "multiplier": 1
     }
   }
 }
