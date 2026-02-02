@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-01-16",
+    "lastUpdated": "2026-01-30",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -23,7 +23,8 @@
       {
         "name": "GitHub Copilot Supported Models",
         "url": "https://docs.github.com/en/copilot/reference/ai-models/supported-models",
-        "retrievedDate": "2026-01-16"
+        "retrievedDate": "2026-01-30",
+        "note": "Source for tier/multiplier data"
       }
     ],
     "disclaimer": "GitHub Copilot uses these models but pricing may differ from direct API usage. These are reference prices for cost estimation purposes only."
@@ -33,200 +34,274 @@
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
       "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["GPT-5"]
     },
     "gpt-5-codex": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-5-mini": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 2.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "standard",
+      "multiplier": 0
     },
     "gpt-5.1": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-5.1-codex": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-5.1-codex-max": {
       "inputCostPerMillion": 1.75,
       "outputCostPerMillion": 14.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-5.1-codex-mini": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 2.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 0.33
     },
     "gpt-5.2": {
       "inputCostPerMillion": 1.75,
       "outputCostPerMillion": 14.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-5.2-codex": {
       "inputCostPerMillion": 1.75,
       "outputCostPerMillion": 14.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-5.2-pro": {
       "inputCostPerMillion": 21.0,
       "outputCostPerMillion": 168.0,
-      "category": "GPT-5 models"
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "gpt-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 12.0,
       "category": "GPT-4 models",
+      "tier": "unknown",
+      "multiplier": 1,
       "displayNames": ["GPT-4"]
     },
     "gpt-4.1": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 12.0,
       "category": "GPT-4 models",
+      "tier": "standard",
+      "multiplier": 0,
       "displayNames": ["GPT-4.1"]
     },
     "gpt-4.1-mini": {
       "inputCostPerMillion": 0.8,
       "outputCostPerMillion": 3.2,
-      "category": "GPT-4 models"
+      "category": "GPT-4 models",
+      "tier": "standard",
+      "multiplier": 0
     },
     "gpt-4.1-nano": {
       "inputCostPerMillion": 0.2,
       "outputCostPerMillion": 0.8,
-      "category": "GPT-4 models"
+      "category": "GPT-4 models",
+      "tier": "standard",
+      "multiplier": 0
     },
     "gpt-4o": {
       "inputCostPerMillion": 2.5,
       "outputCostPerMillion": 10.0,
       "category": "GPT-4 models",
+      "tier": "standard",
+      "multiplier": 0,
       "displayNames": ["GPT-4o"]
     },
     "gpt-4o-mini": {
       "inputCostPerMillion": 0.15,
       "outputCostPerMillion": 0.6,
       "category": "GPT-4 models",
+      "tier": "standard",
+      "multiplier": 0,
       "displayNames": ["GPT-4o-mini", "GPT-4o Mini"]
     },
     "claude-sonnet-3.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
+      "tier": "unknown",
+      "multiplier": 1,
       "displayNames": ["Claude Sonnet 3.5"]
     },
     "claude-sonnet-3.7": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
+      "tier": "unknown",
+      "multiplier": 1,
       "displayNames": ["Claude Sonnet 3.7"]
     },
     "claude-sonnet-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["Claude Sonnet 4"]
     },
     "claude-sonnet-4.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "tier": "premium",
+      "multiplier": 1
     },
     "claude-haiku": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 1.25,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "tier": "standard",
+      "multiplier": 0
     },
     "claude-haiku-4.5": {
       "inputCostPerMillion": 1.0,
       "outputCostPerMillion": 5.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "tier": "premium",
+      "multiplier": 0.33
     },
     "claude-opus-4.1": {
       "inputCostPerMillion": 15.0,
       "outputCostPerMillion": 75.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "tier": "premium",
+      "multiplier": 10
     },
     "claude-opus-4.5": {
       "inputCostPerMillion": 5.0,
       "outputCostPerMillion": 25.0,
-      "category": "Claude models (Anthropic)"
+      "category": "Claude models (Anthropic)",
+      "tier": "premium",
+      "multiplier": 3
     },
     "o3-mini": {
       "inputCostPerMillion": 4.0,
       "outputCostPerMillion": 16.0,
       "category": "OpenAI reasoning models",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["o3-mini"]
     },
     "o4-mini": {
       "inputCostPerMillion": 4.0,
       "outputCostPerMillion": 16.0,
       "category": "OpenAI reasoning models",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["o4-mini"]
     },
     "gpt-3.5-turbo": {
       "inputCostPerMillion": 0.5,
       "outputCostPerMillion": 1.5,
       "category": "Legacy models",
+      "tier": "standard",
+      "multiplier": 0,
       "displayNames": ["GPT-3.5-Turbo", "GPT-3.5 Turbo"]
     },
     "gemini-2.5-pro": {
       "inputCostPerMillion": 1.25,
       "outputCostPerMillion": 10.0,
       "category": "Google Gemini models",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["Gemini 2.5 Pro"]
     },
     "gemini-2.5-flash": {
       "inputCostPerMillion": 0.30,
       "outputCostPerMillion": 2.5,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "tier": "unknown",
+      "multiplier": 1
     },
     "gemini-2.5-flash-lite": {
       "inputCostPerMillion": 0.10,
       "outputCostPerMillion": 0.40,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "tier": "unknown",
+      "multiplier": 1
     },
     "gemini-2.0-flash": {
       "inputCostPerMillion": 0.10,
       "outputCostPerMillion": 0.40,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "tier": "standard",
+      "multiplier": 0
     },
     "gemini-2.0-flash-lite": {
       "inputCostPerMillion": 0.075,
       "outputCostPerMillion": 0.30,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "tier": "standard",
+      "multiplier": 0
     },
     "gemini-3-flash": {
       "inputCostPerMillion": 0.50,
       "outputCostPerMillion": 3.0,
-      "category": "Google Gemini models"
+      "category": "Google Gemini models",
+      "tier": "premium",
+      "multiplier": 0.33
     },
     "gemini-3-pro": {
       "inputCostPerMillion": 2.0,
       "outputCostPerMillion": 12.0,
       "category": "Google Gemini models",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["Gemini 3 Pro"]
     },
     "gemini-3-pro-preview": {
       "inputCostPerMillion": 2.0,
       "outputCostPerMillion": 12.0,
       "category": "Google Gemini models",
+      "tier": "premium",
+      "multiplier": 1,
       "displayNames": ["Gemini 3 Pro (Preview)"]
     },
     "grok-code-fast-1": {
       "inputCostPerMillion": 0.20,
       "outputCostPerMillion": 1.50,
-      "category": "xAI Grok models"
+      "category": "xAI Grok models",
+      "tier": "premium",
+      "multiplier": 0.25
     },
     "raptor-mini": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 2.0,
-      "category": "GitHub Copilot fine-tuned models"
+      "category": "GitHub Copilot fine-tuned models",
+      "tier": "standard",
+      "multiplier": 0
     }
   }
 }

@@ -15,16 +15,31 @@ type ContextReferenceUsage = {
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 
+type ModelSwitchingAnalysis = {
+	modelsPerSession: number[];
+	totalSessions: number;
+	averageModelsPerSession: number;
+	maxModelsPerSession: number;
+	minModelsPerSession: number;
+	switchingFrequency: number;
+	standardModels: string[];
+	premiumModels: string[];
+	unknownModels: string[];
+	mixedTierSessions: number;
+};
+
 type UsageAnalysisPeriod = {
 	sessions: number;
 	toolCalls: ToolCallUsage;
 	modeUsage: ModeUsage;
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
+	modelSwitching: ModelSwitchingAnalysis;
 };
 
 type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
+	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
 	lastUpdated: string;
 };
@@ -212,6 +227,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			.list ul { list-style: none; padding: 0; }
 			.list li { padding: 4px 0; font-size: 13px; }
 			.two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+			.three-column { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
 			.info-box {
 				background: #1b1b1e;
 				border: 1px solid #2a2a30;
@@ -230,7 +246,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				font-size: 11px;
 				color: #a0a0a0;
 			}
-			@media (max-width: 768px) { .two-column { grid-template-columns: 1fr; } }
+			@media (max-width: 768px) { .two-column { grid-template-columns: 1fr; } .three-column { grid-template-columns: 1fr; } }
 		</style>
 		<div class="container">
 			<div class="header">
@@ -317,7 +333,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			<div class="section">
 				<div class="section-title"><span>🔧</span><span>Tool Usage</span></div>
 				<div class="section-subtitle">Functions and tools invoked by Copilot during interactions</div>
-				<div class="two-column">
+				<div class="three-column">
 					<div>
 						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 						<div class="list">
@@ -332,6 +348,13 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
 						</div>
 					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total Tool Calls: ${stats.last30Days.toolCalls.total}</div>
+							${renderToolsTable(stats.last30Days.toolCalls.byTool, 10)}
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -339,7 +362,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			<div class="section">
 				<div class="section-title"><span>🔌</span><span>MCP Tools</span></div>
 				<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
-				<div class="two-column">
+				<div class="three-column">
 					<div>
 						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 						<div class="list">
@@ -360,6 +383,156 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px;">Total MCP Calls: ${stats.last30Days.mcpTools.total}</div>
+							${stats.last30Days.mcpTools.total > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8)}</div></div>
+							` : '<div style="color: #999; margin-top: 8px;">No MCP tools used yet</div>'}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Multi-Model Usage Section -->
+			<div class="section">
+				<div class="section-title"><span>🔀</span><span>Multi-Model Usage</span></div>
+				<div class="section-subtitle">Track model diversity and switching patterns in your conversations</div>
+				<div class="three-column">
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+						<div class="stats-grid" style="grid-template-columns: 1fr;">
+							<div class="stat-card">
+								<div class="stat-label">📊 Avg Models per Conversation</div>
+								<div class="stat-value">${stats.today.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">🔄 Switching Frequency</div>
+								<div class="stat-value">${stats.today.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div style="font-size: 10px; color: #999; margin-top: 4px;">Sessions with >1 model</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">📈 Max Models in Session</div>
+								<div class="stat-value">${stats.today.modelSwitching.maxModelsPerSession || 0}</div>
+							</div>
+						</div>
+						<div style="margin-top: 12px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+							<div style="font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 8px;">Models by Tier:</div>
+							${stats.today.modelSwitching.standardModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #60a5fa;">🔵 Standard:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.today.modelSwitching.standardModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.today.modelSwitching.premiumModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #fbbf24;">⭐ Premium:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.today.modelSwitching.premiumModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.today.modelSwitching.unknownModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #9ca3af;">❓ Unknown:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.today.modelSwitching.unknownModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.today.modelSwitching.mixedTierSessions > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<span style="font-size: 11px; color: #e0a0ff;">🔀 Mixed tier sessions: ${stats.today.modelSwitching.mixedTierSessions}</span>
+								</div>
+							` : ''}
+						</div>
+					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">� This Month</h4>
+						<div class="stats-grid" style="grid-template-columns: 1fr;">
+							<div class="stat-card">
+								<div class="stat-label">📊 Avg Models per Conversation</div>
+								<div class="stat-value">${stats.month.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">🔄 Switching Frequency</div>
+								<div class="stat-value">${stats.month.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div style="font-size: 10px; color: #999; margin-top: 4px;">Sessions with >1 model</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">📈 Max Models in Session</div>
+								<div class="stat-value">${stats.month.modelSwitching.maxModelsPerSession || 0}</div>
+							</div>
+						</div>
+						<div style="margin-top: 12px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+							<div style="font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 8px;">Models by Tier:</div>
+							${stats.month.modelSwitching.standardModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #60a5fa;">🔵 Standard:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.month.modelSwitching.standardModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.month.modelSwitching.premiumModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #fbbf24;">⭐ Premium:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.month.modelSwitching.premiumModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.month.modelSwitching.unknownModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #9ca3af;">❓ Unknown:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.month.modelSwitching.unknownModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.month.modelSwitching.mixedTierSessions > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<span style="font-size: 11px; color: #e0a0ff;">🔀 Mixed tier sessions: ${stats.month.modelSwitching.mixedTierSessions}</span>
+								</div>
+							` : ''}
+						</div>
+					</div>
+					<div>
+						<h4 style="color: #fff; font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
+						<div class="stats-grid" style="grid-template-columns: 1fr;">
+							<div class="stat-card">
+								<div class="stat-label">📊 Avg Models per Conversation</div>
+								<div class="stat-value">${stats.last30Days.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">🔄 Switching Frequency</div>
+								<div class="stat-value">${stats.last30Days.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div style="font-size: 10px; color: #999; margin-top: 4px;">Sessions with >1 model</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">📈 Max Models in Session</div>
+								<div class="stat-value">${stats.last30Days.modelSwitching.maxModelsPerSession || 0}</div>
+							</div>
+						</div>
+						<div style="margin-top: 12px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+							<div style="font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 8px;">Models by Tier:</div>
+							${stats.last30Days.modelSwitching.standardModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #60a5fa;">🔵 Standard:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.last30Days.modelSwitching.standardModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.last30Days.modelSwitching.premiumModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #fbbf24;">⭐ Premium:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.last30Days.modelSwitching.premiumModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.last30Days.modelSwitching.unknownModels.length > 0 ? `
+								<div style="margin-bottom: 6px;">
+									<span style="color: #9ca3af;">❓ Unknown:</span>
+									<span style="font-size: 11px; color: #d0d0d0;">${stats.last30Days.modelSwitching.unknownModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.last30Days.modelSwitching.mixedTierSessions > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<span style="font-size: 11px; color: #e0a0ff;">🔀 Mixed tier sessions: ${stats.last30Days.modelSwitching.mixedTierSessions}</span>
+								</div>
+							` : ''}
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -368,7 +541,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<div class="section-title"><span>📈</span><span>Sessions Summary</span></div>
 				<div class="stats-grid">
 					<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${stats.today.sessions}</div></div>
-					<div class="stat-card"><div class="stat-label">📊 Month Sessions</div><div class="stat-value">${stats.month.sessions}</div></div>
+					<div class="stat-card"><div class="stat-label">� This Month Sessions</div><div class="stat-value">${stats.month.sessions}</div></div>
+					<div class="stat-card"><div class="stat-label">📆 Last 30 Days Sessions</div><div class="stat-value">${stats.last30Days.sessions}</div></div>
 				</div>
 			</div>
 
