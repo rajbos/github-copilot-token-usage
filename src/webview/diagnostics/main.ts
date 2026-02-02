@@ -1,6 +1,13 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from '../shared/buttonConfig';
 
+// Constants
+const SESSION_FILES_SECTION_REGEX = /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/;
+const LOADING_MESSAGE = `⏳ Loading diagnostic data...
+
+This may take a few moments depending on the number of session files.
+The view will automatically update when data is ready.`;
+
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
@@ -501,18 +508,13 @@ function renderLayout(data: DiagnosticsData): void {
 	
 	if (!reportIsLoading) {
 		// Remove the old session files list from the report text if present
-		const sessionMatch = escapedReport.match(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/);
+		const sessionMatch = escapedReport.match(SESSION_FILES_SECTION_REGEX);
 		if (sessionMatch) {
 			escapedReport = escapedReport.replace(sessionMatch[0], '');
 		}
 	} else {
 		// Show a better loading message
-		escapedReport = `
-⏳ Loading diagnostic data...
-
-This may take a few moments depending on the number of session files.
-The view will automatically update when data is ready.
-		`.trim();
+		escapedReport = LOADING_MESSAGE.trim();
 	}
 
 	// Build detailed session files table
@@ -896,7 +898,7 @@ The view will automatically update when data is ready.
 				const reportTabContent = document.getElementById('tab-report');
 				if (reportTabContent) {
 					// Process the report text to remove session files section
-					let processedReport = message.report.replace(/Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/, '');
+					const processedReport = message.report.replace(SESSION_FILES_SECTION_REGEX, '');
 					const reportPre = reportTabContent.querySelector('.report-content');
 					if (reportPre) {
 						reportPre.textContent = processedReport;

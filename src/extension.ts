@@ -3359,11 +3359,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Check if a webview panel is still open and accessible.
+	 * A panel is considered open if its viewColumn is defined.
 	 */
 	private isPanelOpen(panel: vscode.WebviewPanel): boolean {
-		// A panel is considered closed if:
-		// - It's not visible AND viewColumn is undefined (panel has been disposed)
-		// - OR viewColumn is undefined (regardless of visible state)
 		return panel.viewColumn !== undefined;
 	}
 
