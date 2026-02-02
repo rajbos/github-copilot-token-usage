@@ -910,8 +910,8 @@ The view will automatically update when data is ready.
 
 			// Update session folders if provided
 			if (message.sessionFolders && message.sessionFolders.length > 0) {
-				const overviewTabContent = document.getElementById('tab-overview');
-				if (overviewTabContent) {
+				const reportTabContent = document.getElementById('tab-report');
+				if (reportTabContent) {
 					const sorted = [...message.sessionFolders].sort((a: any, b: any) => b.count - a.count);
 					let sessionFilesHtml = `
 						<div class="session-folders-table">
@@ -947,14 +947,15 @@ The view will automatically update when data is ready.
 					</div>`;
 					
 					// Find where to insert or replace the session folders table
-					const existingTable = overviewTabContent.querySelector('.session-folders-table');
+					// It should be inserted after the report-content div but before the button-group
+					const existingTable = reportTabContent.querySelector('.session-folders-table');
 					if (existingTable) {
 						existingTable.outerHTML = sessionFilesHtml;
 					} else {
-						// Insert after the first section in overview
-						const firstSection = overviewTabContent.querySelector('.section');
-						if (firstSection && firstSection.nextElementSibling) {
-							firstSection.insertAdjacentHTML('afterend', sessionFilesHtml);
+						// Insert after the report-content div
+						const reportContent = reportTabContent.querySelector('.report-content');
+						if (reportContent) {
+							reportContent.insertAdjacentHTML('afterend', sessionFilesHtml);
 						}
 					}
 					setupStorageLinkHandlers();
