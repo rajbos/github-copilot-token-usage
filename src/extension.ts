@@ -103,13 +103,14 @@ interface ModeUsage {
 }
 
 interface ContextReferenceUsage {
-	file: number;        // #file references
-	selection: number;   // #selection references
-	symbol: number;      // #symbol references
-	codebase: number;    // #codebase references
-	workspace: number;   // @workspace references
-	terminal: number;    // @terminal references
-	vscode: number;      // @vscode references
+	file: number;              // #file references
+	selection: number;         // #selection references
+	implicitSelection: number; // Implicit selections via inputState.selections
+	symbol: number;            // #symbol references
+	codebase: number;          // #codebase references
+	workspace: number;         // @workspace references
+	terminal: number;          // @terminal references
+	vscode: number;            // @vscode references
 }
 
 interface McpToolUsage {
@@ -195,7 +196,7 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 9; // Add file size to cache for faster validation (2026-02-02)
+	private static readonly CACHE_VERSION = 10; // Add file size to cache for faster validation (2026-02-02)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -1005,6 +1006,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			contextReferences: {
 				file: 0,
 				selection: 0,
+				implicitSelection: 0,
 				symbol: 0,
 				codebase: 0,
 				workspace: 0,
@@ -1106,6 +1108,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Merge context references
 		period.contextReferences.file += analysis.contextReferences.file;
 		period.contextReferences.selection += analysis.contextReferences.selection;
+		period.contextReferences.implicitSelection += analysis.contextReferences.implicitSelection || 0;
 		period.contextReferences.symbol += analysis.contextReferences.symbol;
 		period.contextReferences.codebase += analysis.contextReferences.codebase;
 		period.contextReferences.workspace += analysis.contextReferences.workspace;
@@ -1386,6 +1389,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			contextReferences: {
 				file: 0,
 				selection: 0,
+				implicitSelection: 0,
 				symbol: 0,
 				codebase: 0,
 				workspace: 0,
@@ -1419,11 +1423,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Handle VS Code incremental format - detect mode from session header
 						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
 							sessionMode = event.v.inputState.mode.kind;
+							
+							// Detect implicit selections in initial state
+							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections) && event.v.inputState.selections.length > 0) {
+								analysis.contextReferences.implicitSelection++;
+							}
 						}
 						
 						// Handle mode changes (kind: 1 with mode update)
 						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
 							sessionMode = event.v.kind;
+						}
+						
+						// Detect implicit selections in updates to inputState.selections
+						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v) && event.v.length > 0) {
+							analysis.contextReferences.implicitSelection++;
 						}
 						
 						// Handle VS Code incremental format - count requests as interactions
@@ -1790,6 +1804,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			contextReferences: {
 				file: 0,
 				selection: 0,
+				implicitSelection: 0,
 				symbol: 0,
 				codebase: 0,
 				workspace: 0,
@@ -1832,7 +1847,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			modified: stat.mtime.toISOString(),
 			interactions: 0,
 			contextReferences: {
-				file: 0, selection: 0, symbol: 0, codebase: 0,
+				file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 				workspace: 0, terminal: 0, vscode: 0
 			},
 			firstInteraction: null,
@@ -2293,7 +2308,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private createEmptyContextRefs(): ContextReferenceUsage {
 		return {
-			file: 0, selection: 0, symbol: 0, codebase: 0,
+			file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 			workspace: 0, terminal: 0, vscode: 0
 		};
 	}
