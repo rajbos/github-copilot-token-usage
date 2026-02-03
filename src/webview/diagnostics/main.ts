@@ -926,8 +926,16 @@ function renderLayout(data: DiagnosticsData): void {
 					const sorted = [...message.sessionFolders].sort((a: any, b: any) => b.count - a.count);
 
 					// Build the session folders table using DOM APIs to avoid HTML injection
-					const container = document.createElement('div');
-					container.className = 'session-folders-table';
+					let container = reportTabContent.querySelector('.session-folders-table') as HTMLElement | null;
+					if (!container) {
+						container = document.createElement('div');
+						container.className = 'session-folders-table';
+					} else {
+						// Clear existing content so we can rebuild safely
+						while (container.firstChild) {
+							container.removeChild(container.firstChild);
+						}
+					}
 
 					const heading = document.createElement('h4');
 					heading.textContent = 'Main Session Folders (by editor root):';
@@ -983,12 +991,12 @@ function renderLayout(data: DiagnosticsData): void {
 
 						// Open link cell
 						const openCell = document.createElement('td');
-						const link = document.createElement('a');
-						link.href = '#';
-						link.className = 'reveal-link';
-						link.setAttribute('data-path', encodeURIComponent(sf.dir));
-						link.textContent = 'Open directory';
-						openCell.appendChild(link);
+						const openLink = document.createElement('a');
+						openLink.href = '#';
+						openLink.className = 'reveal-link';
+						openLink.setAttribute('data-path', encodeURIComponent(sf.dir));
+						openLink.textContent = 'Open directory';
+						openCell.appendChild(openLink);
 						row.appendChild(openCell);
 
 						tbody.appendChild(row);
@@ -997,19 +1005,17 @@ function renderLayout(data: DiagnosticsData): void {
 					// Find where to insert or replace the session folders table
 					// It should be inserted after the report-content div but before the button-group
 					const existingTable = reportTabContent.querySelector('.session-folders-table');
-					if (existingTable && existingTable.parentNode) {
-						existingTable.parentNode.replaceChild(container, existingTable);
-					} else {
+					if (!existingTable) {
 						// Insert after the report-content div
 						const reportContent = reportTabContent.querySelector('.report-content');
-						if (reportContent && reportContent.parentNode) {
-							if (reportContent.nextSibling) {
-								reportContent.parentNode.insertBefore(container, reportContent.nextSibling);
-							} else {
-								reportContent.parentNode.appendChild(container);
-							}
+						if (reportContent) {
+							reportContent.insertAdjacentElement('afterend', container);
+						} else {
+							// Fallback: append to the tab content if report-content is missing
+							reportTabContent.appendChild(container);
 						}
 					}
+
 					setupStorageLinkHandlers();
 				}
 			}
