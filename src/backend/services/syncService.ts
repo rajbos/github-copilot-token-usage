@@ -59,7 +59,7 @@ export interface SyncServiceDeps {
 	estimateTokensFromText: (text: string, model: string) => number;
 	getModelFromRequest: (request: ChatRequest) => string;
 	// Cache integration for performance
-	getSessionFileDataCached?: (sessionFilePath: string, mtime: number) => Promise<SessionFileCache>;
+	getSessionFileDataCached?: (sessionFilePath: string, mtime: number, fileSize: number) => Promise<SessionFileCache>;
 	// UI refresh callback after successful sync
 	updateTokenStats?: () => Promise<void>;
 }
@@ -176,6 +176,7 @@ export class SyncService {
 	private async processCachedSessionFile(
 		sessionFile: string,
 		fileMtimeMs: number,
+		fileSize: number,
 		workspaceId: string,
 		machineId: string,
 		userId: string | undefined,
@@ -184,7 +185,7 @@ export class SyncService {
 		now: Date
 	): Promise<boolean> {
 		try {
-			const cachedData = await this.deps.getSessionFileDataCached!(sessionFile, fileMtimeMs);
+			const cachedData = await this.deps.getSessionFileDataCached!(sessionFile, fileMtimeMs, fileSize);
 			
 			// Validate cached data structure to prevent injection/corruption
 			if (!cachedData || typeof cachedData !== 'object') {
@@ -450,9 +451,11 @@ export class SyncService {
 			// Note: We still parse the file to get accurate day keys from timestamps,
 			// but use cached token counts for performance
 			if (useCachedData) {
+				const fileStat = await fs.promises.stat(sessionFile);
 				const cacheSuccess = await this.processCachedSessionFile(
 					sessionFile,
 					fileMtimeMs,
+					fileStat.size,
 					workspaceId,
 					machineId,
 					userId,

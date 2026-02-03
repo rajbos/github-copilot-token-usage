@@ -209,6 +209,17 @@ function getEditorStats(files: SessionFileDetails[]): { [key: string]: { count: 
 	return stats;
 }
 
+function safeText(value: unknown): string {
+	if (value === null || value === undefined) {
+		return '';
+	}
+	if (typeof value === 'string') {
+		// Use existing HTML escaping to avoid XSS when inserting into innerHTML.
+		return escapeHtml(value);
+	}
+	return String(value);
+}
+
 function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: boolean = false): string {
 	if (isLoading) {
 		return `
@@ -234,7 +245,7 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 		: detailedFiles;
 	
 	// Summary stats for filtered files
-	const totalInteractions = filteredFiles.reduce((sum, sf) => sum + sf.interactions, 0);
+	const totalInteractions = filteredFiles.reduce((sum, sf) => sum + Number(sf.interactions || 0), 0);
 	const totalContextRefs = filteredFiles.reduce((sum, sf) => sum + getTotalContextRefs(sf.contextReferences), 0);
 	
 	// Sort filtered files
@@ -935,17 +946,20 @@ function renderLayout(data: DiagnosticsData): void {
 					container.appendChild(table);
 
 					const thead = document.createElement('thead');
+					table.appendChild(thead);
 					const headerRow = document.createElement('tr');
+					thead.appendChild(headerRow);
+
 					const headers = ['Folder', 'Editor', '# of Sessions', 'Open'];
 					headers.forEach((text) => {
 						const th = document.createElement('th');
 						th.textContent = text;
 						headerRow.appendChild(th);
 					});
-					thead.appendChild(headerRow);
-					table.appendChild(thead);
 
 					const tbody = document.createElement('tbody');
+					table.appendChild(tbody);
+
 					sorted.forEach((sf: any) => {
 						let display = sf.dir;
 						const home = (window as any).process?.env?.HOME || (window as any).process?.env?.USERPROFILE || '';
@@ -987,7 +1001,6 @@ function renderLayout(data: DiagnosticsData): void {
 
 						tbody.appendChild(row);
 					});
-					table.appendChild(tbody);
 
 					// Find where to insert or replace the session folders table
 					// It should be inserted after the report-content div but before the button-group
