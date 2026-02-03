@@ -6,6 +6,7 @@ type ModeUsage = { ask: number; edit: number; agent: number };
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
+	implicitSelection: number;
 	symbol: number;
 	codebase: number;
 	workspace: number;
@@ -67,7 +68,7 @@ function escapeHtml(text: string): string {
 }
 
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.symbol + refs.codebase +
+	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
 		refs.workspace + refs.terminal + refs.vscode;
 }
 
@@ -205,6 +206,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				padding: 12px;
 				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 			}
+			.stat-card[title] { cursor: help; }
 			.stat-label { font-size: 11px; color: #b8b8b8; margin-bottom: 4px; }
 			.stat-value { font-size: 20px; font-weight: 700; color: #f6f6f6; }
 			.bar-chart {
@@ -320,6 +322,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<div class="stats-grid">
 					<div class="stat-card"><div class="stat-label">📄 #file</div><div class="stat-value">${stats.month.contextReferences.file}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.file}</div></div>
 					<div class="stat-card"><div class="stat-label">✂️ #selection</div><div class="stat-value">${stats.month.contextReferences.selection}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.selection}</div></div>
+					<div class="stat-card" title="Text selected in your editor providing passive context to Copilot"><div class="stat-label">✨ Implicit Selection</div><div class="stat-value">${stats.month.contextReferences.implicitSelection}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.implicitSelection}</div></div>
 					<div class="stat-card"><div class="stat-label">🔤 #symbol</div><div class="stat-value">${stats.month.contextReferences.symbol}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.symbol}</div></div>
 					<div class="stat-card"><div class="stat-label">🗂️ #codebase</div><div class="stat-value">${stats.month.contextReferences.codebase}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.codebase}</div></div>
 					<div class="stat-card"><div class="stat-label">📁 @workspace</div><div class="stat-value">${stats.month.contextReferences.workspace}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.workspace}</div></div>
