@@ -2,11 +2,16 @@
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
+	implicitSelection: number;
 	symbol: number;
 	codebase: number;
 	workspace: number;
 	terminal: number;
 	vscode: number;
+	byKind: { [kind: string]: number };
+	copilotInstructions: number;
+	agentsMd: number;
+	byPath: { [path: string]: number };
 };
 
 type ChatTurn = {
@@ -97,19 +102,22 @@ function formatFileSize(bytes: number): string {
 }
 
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode;
+	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
+		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd;
 }
 
 function getContextRefsSummary(refs: ContextReferenceUsage): string {
 	const parts: string[] = [];
 	if (refs.file > 0) { parts.push(`#file: ${refs.file}`); }
 	if (refs.selection > 0) { parts.push(`#selection: ${refs.selection}`); }
+	if (refs.implicitSelection > 0) { parts.push(`implicit: ${refs.implicitSelection}`); }
 	if (refs.symbol > 0) { parts.push(`#symbol: ${refs.symbol}`); }
 	if (refs.codebase > 0) { parts.push(`#codebase: ${refs.codebase}`); }
 	if (refs.workspace > 0) { parts.push(`@workspace: ${refs.workspace}`); }
 	if (refs.terminal > 0) { parts.push(`@terminal: ${refs.terminal}`); }
 	if (refs.vscode > 0) { parts.push(`@vscode: ${refs.vscode}`); }
+	if (refs.copilotInstructions > 0) { parts.push(`📋 instructions: ${refs.copilotInstructions}`); }
+	if (refs.agentsMd > 0) { parts.push(`🤖 agents: ${refs.agentsMd}`); }
 	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
@@ -195,8 +203,19 @@ function renderTurnCard(turn: ChatTurn): string {
 	
 	const contextRefsHtml = totalRefs > 0 ? `
 		<div class="turn-context">
-			<span class="context-label">🔗 Context:</span>
-			<span class="context-value">${escapeHtml(getContextRefsSummary(turn.contextReferences))}</span>
+			<span class="context-label">🔗 Context (${totalRefs}):</span>
+			<div class="context-value">
+				${turn.contextReferences.file > 0 ? `<div>#file: ${turn.contextReferences.file}</div>` : ''}
+				${turn.contextReferences.selection > 0 ? `<div>#selection: ${turn.contextReferences.selection}</div>` : ''}
+				${turn.contextReferences.implicitSelection > 0 ? `<div>implicit: ${turn.contextReferences.implicitSelection}</div>` : ''}
+				${turn.contextReferences.symbol > 0 ? `<div>#symbol: ${turn.contextReferences.symbol}</div>` : ''}
+				${turn.contextReferences.codebase > 0 ? `<div>#codebase: ${turn.contextReferences.codebase}</div>` : ''}
+				${turn.contextReferences.workspace > 0 ? `<div>@workspace: ${turn.contextReferences.workspace}</div>` : ''}
+				${turn.contextReferences.terminal > 0 ? `<div>@terminal: ${turn.contextReferences.terminal}</div>` : ''}
+				${turn.contextReferences.vscode > 0 ? `<div>@vscode: ${turn.contextReferences.vscode}</div>` : ''}
+				${turn.contextReferences.copilotInstructions > 0 ? `<div>📋 instructions: ${turn.contextReferences.copilotInstructions}</div>` : ''}
+				${turn.contextReferences.agentsMd > 0 ? `<div>🤖 agents: ${turn.contextReferences.agentsMd}</div>` : ''}
+			</div>
 		</div>
 	` : '';
 	
@@ -250,7 +269,7 @@ function renderLayout(data: SessionLogData): void {
 
 	const formatTopList = (entries: { key: string; value: number }[], mapper?: (k: string) => string) => {
 		if (!entries.length) { return 'None'; }
-		return entries.map(e => `${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}`).join(', ');
+		return entries.map(e => `<div>${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}</div>`).join('');
 	};
 	
 	// Mode usage summary
@@ -529,21 +548,28 @@ function renderLayout(data: SessionLogData): void {
 				border-radius: 8px;
 				font-size: 13px;
 			}
-			.context-label {
-				color: #94a3b8;
-				margin-right: 8px;
-				font-weight: 600;
-			}
-			.context-value {
-				color: #cbd5e1;
-			}
-			
-			/* Tool calls */
-			.turn-tools {
-				margin-bottom: 14px;
-				background: linear-gradient(135deg, #221e2e 0%, #252030 100%);
-				border: 1px solid #4a4a5a;
-				border-radius: 8px;
+		
+		/* Context references */
+		.turn-context {
+			margin-bottom: 14px;
+			padding: 12px 14px;
+			background: linear-gradient(135deg, #2a2a35 0%, #25252f 100%);
+			border: 1px solid #3a3a44;
+			border-radius: 8px;
+			font-size: 13px;
+		}
+		.context-label {
+			color: #94a3b8;
+			font-weight: 600;
+			display: block;
+			margin-bottom: 6px;
+		}
+		.context-value {
+			color: #cbd5e1;
+		}
+		.context-value div {
+			padding: 2px 0;
+			font-size: 12px;
 				padding: 14px;
 				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 			}
@@ -720,7 +746,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
 				<div class="summary-card">
-					<div class="summary-label">🔧 Tool Calls</div>
+					<div class="summary-label">� Total Tokens</div>
+					<div class="summary-value">${totalTokens.toLocaleString()}</div>
+					<div class="summary-sub">Input + Output tokens across all turns</div>
+				</div>
+				<div class="summary-card">
+					<div class="summary-label">�🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
 					<div class="summary-sub">Top: ${formatTopList(usageTopTools, lookupToolName)}</div>
 				</div>
@@ -732,7 +763,15 @@ function renderLayout(data: SessionLogData): void {
 				<div class="summary-card">
 					<div class="summary-label">🔗 Context Refs</div>
 					<div class="summary-value">${usageContextTotal}</div>
-					<div class="summary-sub">#file ${usageContextRefs.file || 0} · @vscode ${usageContextRefs.vscode || 0} · @workspace ${usageContextRefs.workspace || 0}</div>
+				<div class="summary-sub">
+				${usageContextTotal === 0 ? 'None' : ''}
+				${usageContextRefs.file > 0 ? `<div>#file ${usageContextRefs.file}</div>` : ''}
+				${usageContextRefs.implicitSelection > 0 ? `<div>implicit ${usageContextRefs.implicitSelection}</div>` : ''}
+				${usageContextRefs.copilotInstructions > 0 ? `<div>📋 instructions ${usageContextRefs.copilotInstructions}</div>` : ''}
+				${usageContextRefs.agentsMd > 0 ? `<div>🤖 agents ${usageContextRefs.agentsMd}</div>` : ''}
+				${usageContextRefs.workspace > 0 ? `<div>@workspace ${usageContextRefs.workspace}</div>` : ''}
+				${usageContextRefs.vscode > 0 ? `<div>@vscode ${usageContextRefs.vscode}</div>` : ''}
+				</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">📁 File Name</div>
