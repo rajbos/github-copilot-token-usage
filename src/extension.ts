@@ -1807,24 +1807,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const fsPath = reference.fsPath || reference.path;
 				if (typeof fsPath === 'string') {
 					// Normalize path separators for pattern matching
-				const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
-				
-				// Track specific patterns
-				if (normalizedPath.endsWith('/.github/copilot-instructions.md') || 
-				    normalizedPath.includes('.github/copilot-instructions.md')) {
-					refs.copilotInstructions++;
+					const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
+					
+					// Track specific patterns
+					if (normalizedPath.endsWith('/.github/copilot-instructions.md') || 
+					    normalizedPath.includes('.github/copilot-instructions.md')) {
+						refs.copilotInstructions++;
+					}
+					
+					if (normalizedPath.endsWith('/agents.md') || 
+					    normalizedPath.match(/\/agents\.md$/i)) {
+						refs.agentsMd++;
+					}
+					
+					// Track by full path (limit to last 100 chars for display)
+					const pathKey = fsPath.length > 100 ? '...' + fsPath.substring(fsPath.length - 97) : fsPath;
+					refs.byPath[pathKey] = (refs.byPath[pathKey] || 0) + 1;
 				}
-				
-				if (normalizedPath.endsWith('/agents.md') || 
-				    normalizedPath.match(/\/agents\.md$/i)) {
-			refs.agentsMd++;
-		}
-		
-		// Track by full path (limit to last 100 chars for display)
-		const pathKey = fsPath.length > 100 ? '...' + fsPath.substring(fsPath.length - 97) : fsPath;
-		refs.byPath[pathKey] = (refs.byPath[pathKey] || 0) + 1;
-	}
-}
+			}
 }
 }
 

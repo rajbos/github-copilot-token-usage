@@ -121,6 +121,66 @@ function getContextRefsSummary(refs: ContextReferenceUsage): string {
 	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
+function renderContextReferencesDetailed(refs: ContextReferenceUsage): string {
+	const sections: string[] = [];
+	
+	// Variable-based references
+	const varRefs: string[] = [];
+	if (refs.file > 0) { varRefs.push(`#file: ${refs.file}`); }
+	if (refs.selection > 0) { varRefs.push(`#selection: ${refs.selection}`); }
+	if (refs.implicitSelection > 0) { varRefs.push(`implicit: ${refs.implicitSelection}`); }
+	if (refs.symbol > 0) { varRefs.push(`#symbol: ${refs.symbol}`); }
+	if (refs.codebase > 0) { varRefs.push(`#codebase: ${refs.codebase}`); }
+	if (refs.workspace > 0) { varRefs.push(`@workspace: ${refs.workspace}`); }
+	if (refs.terminal > 0) { varRefs.push(`@terminal: ${refs.terminal}`); }
+	if (refs.vscode > 0) { varRefs.push(`@vscode: ${refs.vscode}`); }
+	
+	if (varRefs.length > 0) {
+		sections.push(`<div class="context-section"><strong>Chat Variables:</strong> ${varRefs.join(', ')}</div>`);
+	}
+	
+	// ContentReferences from session logs
+	if (refs.copilotInstructions > 0 || refs.agentsMd > 0 || (refs.byPath && Object.keys(refs.byPath).length > 0)) {
+		const contentRefs: string[] = [];
+		if (refs.copilotInstructions > 0) {
+			contentRefs.push(`📋 copilot-instructions.md: ${refs.copilotInstructions}`);
+		}
+		if (refs.agentsMd > 0) {
+			contentRefs.push(`🤖 agents.md: ${refs.agentsMd}`);
+		}
+		
+		if (contentRefs.length > 0) {
+			sections.push(`<div class="context-section"><strong>Known Files:</strong> ${contentRefs.join(', ')}</div>`);
+		}
+		
+		// Show additional file paths (excluding the known ones we already displayed)
+		if (refs.byPath && Object.keys(refs.byPath).length > 0) {
+			const otherPaths = Object.entries(refs.byPath)
+				.filter(([path]) => {
+					const normalized = path.toLowerCase().replace(/\\/g, '/');
+					return !(normalized.includes('copilot-instructions.md') || normalized.endsWith('/agents.md'));
+				});
+			
+			if (otherPaths.length > 0) {
+				const pathList = otherPaths
+					.map(([path, count]) => `<div class="context-path" title="${escapeHtml(path)}">📄 ${escapeHtml(getFileName(path))}: ${count}</div>`)
+					.join('');
+				sections.push(`<div class="context-section"><strong>Other Files:</strong>${pathList}</div>`);
+			}
+		}
+	}
+	
+	// Show byKind breakdown if present
+	if (refs.byKind && Object.keys(refs.byKind).length > 0) {
+		const kindList = Object.entries(refs.byKind)
+			.map(([kind, count]) => `${kind}: ${count}`)
+			.join(', ');
+		sections.push(`<div class="context-section"><strong>By Kind:</strong> ${kindList}</div>`);
+	}
+	
+	return sections.length > 0 ? sections.join('') : '<div class="context-section">No context references</div>';
+}
+
 function getTopEntries(map: { [key: string]: number } = {}, limit = 3): { key: string; value: number }[] {
 	return Object.entries(map)
 		.sort((a, b) => b[1] - a[1])
@@ -162,12 +222,29 @@ function renderTurnCard(turn: ChatTurn): string {
 	const hasMcpTools = turn.mcpTools.length > 0;
 	const totalRefs = getTotalContextRefs(turn.contextReferences);
 	
-	// Compact context for header
-	const contextHeaderHtml = totalRefs > 0 ? `
-		<span class="turn-context-compact" title="${escapeHtml(getContextRefsSummary(turn.contextReferences))}">
-			🔗 Context: ${totalRefs}
-		</span>
-	` : '';
+	// Build context file badges for header
+	const contextFileBadges: string[] = [];
+	if (turn.contextReferences.copilotInstructions > 0) {
+		contextFileBadges.push(`<span class="context-badge">📋 copilot-instructions.md</span>`);
+	}
+	if (turn.contextReferences.agentsMd > 0) {
+		contextFileBadges.push(`<span class="context-badge">🤖 agents.md</span>`);
+	}
+	// Add other file references
+	if (turn.contextReferences.byPath && Object.keys(turn.contextReferences.byPath).length > 0) {
+		const otherPaths = Object.entries(turn.contextReferences.byPath)
+			.filter(([path]) => {
+				const normalized = path.toLowerCase().replace(/\\/g, '/');
+				return !(normalized.includes('copilot-instructions.md') || normalized.endsWith('/agents.md'));
+			});
+		
+		otherPaths.forEach(([path]) => {
+			contextFileBadges.push(`<span class="context-badge" title="${escapeHtml(path)}">📄 ${escapeHtml(getFileName(path))}</span>`);
+		});
+	}
+	
+	const contextHeaderHtml = contextFileBadges.length > 0 ? contextFileBadges.join('') : '';
+
 	
 	const toolCallsHtml = hasToolCalls ? `
 		<div class="turn-tools">
@@ -215,9 +292,14 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
-					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>			${contextHeaderHtml}				</div>
+					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+					${contextHeaderHtml}
+				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
 			</div>
+			
+			${toolCallsHtml}
+			${mcpToolsHtml}
 			
 			<div class="turn-content">
 				<div class="message user-message">
@@ -225,7 +307,8 @@ function renderTurnCard(turn: ChatTurn): string {
 					<div class="message-text">${escapeHtml(turn.userMessage) || '<em>No message</em>'}</div>
 				</div>
 				
-
+				<div class="message assistant-message">
+					<div class="message-label">🤖 Assistant</div>
 					<div class="message-text">${escapeHtml(turn.assistantResponse) || '<em>No response</em>'}</div>
 				</div>
 			</div>
@@ -488,23 +571,18 @@ function renderLayout(data: SessionLogData): void {
 				flex-shrink: 0;
 				white-space: nowrap;
 			}
-			.turn-context-compact {
+			.context-badge {
 				font-size: 12px;
-				color: #94a3b8;
-				background: #2a2a35;
+				color: #e0e7ff;
+				background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%);
 				padding: 4px 10px;
 				border-radius: 6px;
 				font-weight: 600;
-				border: 1px solid #3a3a44;
+				border: 1px solid #6d28d9;
 				flex-shrink: 0;
 				white-space: nowrap;
-			}
-			.turn-time {
-				font-size: 12px;
-				color: #71717a;
-				font-weight: 500;
-				white-space: nowrap;
-				flex-shrink: 0;
+				margin-left: 4px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 			}
 			
 			/* Messages */
@@ -653,7 +731,48 @@ function renderLayout(data: SessionLogData): void {
 				margin-bottom: 10px;
 				text-transform: uppercase;
 				letter-spacing: 0.5px;
+			}ex-wrap: wrap;
+				gap: 6px;
 			}
+			
+			/* Context References */
+			.turn-context-details {
+				margin-bottom: 14px;
+				background: linear-gradient(135deg, #2a2535 0%, #252530 100%);
+				border: 1px solid #4a4a5a;
+				border-radius: 8px;
+				padding: 14px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+			}
+			.context-header {
+				font-size: 13px;
+				font-weight: 700;
+				color: #fff;
+				margin-bottom: 10px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.context-section {
+				font-size: 13px;
+				color: #cbd5e1;
+				margin-bottom: 8px;
+				line-height: 1.6;
+			}
+			.context-section:last-child {
+				margin-bottom: 0;
+			}
+			.context-section strong {
+				color: #94a3b8;
+				font-weight: 600;
+			}
+			.context-path {
+				padding-left: 10px;
+				color: #9ca3af;
+				font-size: 12px;
+				margin-top: 4px;
+			}
+			
+			/* 
 			.mcp-list {
 				display: flex;
 				flEmpty state */
