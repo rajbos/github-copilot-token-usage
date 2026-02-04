@@ -162,6 +162,13 @@ function renderTurnCard(turn: ChatTurn): string {
 	const hasMcpTools = turn.mcpTools.length > 0;
 	const totalRefs = getTotalContextRefs(turn.contextReferences);
 	
+	// Compact context for header
+	const contextHeaderHtml = totalRefs > 0 ? `
+		<span class="turn-context-compact" title="${escapeHtml(getContextRefsSummary(turn.contextReferences))}">
+			🔗 Context: ${totalRefs}
+		</span>
+	` : '';
+	
 	const toolCallsHtml = hasToolCalls ? `
 		<div class="turn-tools">
 			<div class="tools-header">🔧 Tool Calls (${turn.toolCalls.length})</div>
@@ -201,24 +208,6 @@ function renderTurnCard(turn: ChatTurn): string {
 		</div>
 	` : '';
 	
-	const contextRefsHtml = totalRefs > 0 ? `
-		<div class="turn-context">
-			<span class="context-label">🔗 Context (${totalRefs}):</span>
-			<div class="context-value">
-				${turn.contextReferences.file > 0 ? `<div>#file: ${turn.contextReferences.file}</div>` : ''}
-				${turn.contextReferences.selection > 0 ? `<div>#selection: ${turn.contextReferences.selection}</div>` : ''}
-				${turn.contextReferences.implicitSelection > 0 ? `<div>implicit: ${turn.contextReferences.implicitSelection}</div>` : ''}
-				${turn.contextReferences.symbol > 0 ? `<div>#symbol: ${turn.contextReferences.symbol}</div>` : ''}
-				${turn.contextReferences.codebase > 0 ? `<div>#codebase: ${turn.contextReferences.codebase}</div>` : ''}
-				${turn.contextReferences.workspace > 0 ? `<div>@workspace: ${turn.contextReferences.workspace}</div>` : ''}
-				${turn.contextReferences.terminal > 0 ? `<div>@terminal: ${turn.contextReferences.terminal}</div>` : ''}
-				${turn.contextReferences.vscode > 0 ? `<div>@vscode: ${turn.contextReferences.vscode}</div>` : ''}
-				${turn.contextReferences.copilotInstructions > 0 ? `<div>📋 instructions: ${turn.contextReferences.copilotInstructions}</div>` : ''}
-				${turn.contextReferences.agentsMd > 0 ? `<div>🤖 agents: ${turn.contextReferences.agentsMd}</div>` : ''}
-			</div>
-		</div>
-	` : '';
-	
 	return `
 		<div class="turn-card" data-turn="${turn.turnNumber}">
 			<div class="turn-header">
@@ -226,8 +215,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
-					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
-				</div>
+					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>			${contextHeaderHtml}				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
 			</div>
 			
@@ -237,12 +225,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<div class="message-text">${escapeHtml(turn.userMessage) || '<em>No message</em>'}</div>
 				</div>
 				
-				${contextRefsHtml}
-				${toolCallsHtml}
-				${mcpToolsHtml}
-				
-				<div class="message assistant-message">
-					<div class="message-label">🤖 Assistant</div>
+
 					<div class="message-text">${escapeHtml(turn.assistantResponse) || '<em>No response</em>'}</div>
 				</div>
 			</div>
@@ -451,31 +434,18 @@ function renderLayout(data: SessionLogData): void {
 				padding: 14px 16px;
 				display: flex;
 				justify-content: space-between;
-				align-items: center;
-				flex-wrap: wrap;
+				align-items: flex-start;
 				gap: 10px;
 				border-bottom: 1px solid #3a3a44;
+				min-height: 48px;
 			}
 			.turn-meta {
 				display: flex;
 				align-items: center;
 				gap: 8px;
 				flex-wrap: wrap;
-			}
-			.turn-number {
-				font-weight: 700;
-				color: #fff;
-				font-size: 14px;
-			}
-			.turn-mode {
-				padding: 2px 8px;
-				border-radius: 12px;
-				font-size: 11px;
-				font-weight: 600;
-				color: #fff;
-			}
-			.turn-10px;
-				flex-wrap: wrap;
+				flex: 1;
+				min-width: 0;
 			}
 			.turn-number {
 				font-weight: 700;
@@ -507,11 +477,27 @@ function renderLayout(data: SessionLogData): void {
 				color: #94a3b8;
 				font-weight: 600;
 			}
+			.turn-context-compact {
+				font-size: 12px;
+				color: #94a3b8;
+				background: #2a2a35;
+				padding: 4px 10px;
+				border-radius: 6px;
+				font-weight: 600;
+				border: 1px solid #3a3a44;
+			}
 			.turn-time {
 				font-size: 12px;
 				color: #71717a;
 				font-weight: 500;
-			}4px;
+			}
+			
+			/* Messages */
+			.turn-content {
+				padding: 16px;
+			}
+			.message {
+				margin-bottom: 14px;
 			}
 			.message:last-child {
 				margin-bottom: 0;
@@ -541,36 +527,17 @@ function renderLayout(data: SessionLogData): void {
 				background: linear-gradient(135deg, #1e293b 0%, #22222a 100%);
 			}
 			.assistant-message .message-text {
-				border-left: 4px4px;
-				padding: 12px 14px;
+				border-left: 4px solid #7c3aed;
+				background: linear-gradient(135deg, #1e1e2a 0%, #22222a 100%);
+			}
+		
+			/* Tool calls */
+			.turn-tools {
+				margin-bottom: 14px;
 				background: linear-gradient(135deg, #2a2a35 0%, #25252f 100%);
 				border: 1px solid #3a3a44;
 				border-radius: 8px;
-				font-size: 13px;
-			}
-		
-		/* Context references */
-		.turn-context {
-			margin-bottom: 14px;
-			padding: 12px 14px;
-			background: linear-gradient(135deg, #2a2a35 0%, #25252f 100%);
-			border: 1px solid #3a3a44;
-			border-radius: 8px;
-			font-size: 13px;
-		}
-		.context-label {
-			color: #94a3b8;
-			font-weight: 600;
-			display: block;
-			margin-bottom: 6px;
-		}
-		.context-value {
-			color: #cbd5e1;
-		}
-		.context-value div {
-			padding: 2px 0;
-			font-size: 12px;
-				padding: 14px;
+				padding: 12px 14px;
 				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 			}
 			.tools-header {
