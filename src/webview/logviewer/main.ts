@@ -434,7 +434,7 @@ function renderLayout(data: SessionLogData): void {
 				padding: 14px 16px;
 				display: flex;
 				justify-content: space-between;
-				align-items: flex-start;
+				align-items: center;
 				gap: 10px;
 				border-bottom: 1px solid #3a3a44;
 				min-height: 48px;
@@ -443,9 +443,10 @@ function renderLayout(data: SessionLogData): void {
 				display: flex;
 				align-items: center;
 				gap: 8px;
-				flex-wrap: wrap;
+				flex-wrap: nowrap;
 				flex: 1;
 				min-width: 0;
+				overflow: hidden;
 			}
 			.turn-number {
 				font-weight: 700;
@@ -454,6 +455,7 @@ function renderLayout(data: SessionLogData): void {
 				background: #3a3a44;
 				padding: 4px 10px;
 				border-radius: 6px;
+				flex-shrink: 0;
 			}
 			.turn-mode {
 				padding: 4px 12px;
@@ -462,6 +464,8 @@ function renderLayout(data: SessionLogData): void {
 				font-weight: 700;
 				color: #fff;
 				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+				flex-shrink: 0;
+				white-space: nowrap;
 			}
 			.turn-model {
 				font-size: 12px;
@@ -471,11 +475,18 @@ function renderLayout(data: SessionLogData): void {
 				border-radius: 6px;
 				font-weight: 600;
 				border: 1px solid #3a3a44;
+				flex-shrink: 0;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				max-width: 200px;
 			}
 			.turn-tokens {
 				font-size: 12px;
 				color: #94a3b8;
 				font-weight: 600;
+				flex-shrink: 0;
+				white-space: nowrap;
 			}
 			.turn-context-compact {
 				font-size: 12px;
@@ -485,11 +496,15 @@ function renderLayout(data: SessionLogData): void {
 				border-radius: 6px;
 				font-weight: 600;
 				border: 1px solid #3a3a44;
+				flex-shrink: 0;
+				white-space: nowrap;
 			}
 			.turn-time {
 				font-size: 12px;
 				color: #71717a;
 				font-weight: 500;
+				white-space: nowrap;
+				flex-shrink: 0;
 			}
 			
 			/* Messages */
