@@ -1123,6 +1123,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 		period.contextReferences.workspace += analysis.contextReferences.workspace;
 		period.contextReferences.terminal += analysis.contextReferences.terminal;
 		period.contextReferences.vscode += analysis.contextReferences.vscode;
+		
+		// Merge contentReferences counts
+		period.contextReferences.copilotInstructions += analysis.contextReferences.copilotInstructions || 0;
+		period.contextReferences.agentsMd += analysis.contextReferences.agentsMd || 0;
+		
+		// Merge byKind tracking
+		for (const [kind, count] of Object.entries(analysis.contextReferences.byKind || {})) {
+			period.contextReferences.byKind[kind] = (period.contextReferences.byKind[kind] || 0) + count;
+		}
+		
+		// Merge byPath tracking
+		for (const [path, count] of Object.entries(analysis.contextReferences.byPath || {})) {
+			period.contextReferences.byPath[path] = (period.contextReferences.byPath[path] || 0) + count;
+		}
 
 		// Merge MCP tools
 		period.mcpTools.total += analysis.mcpTools.total;
@@ -2119,142 +2133,141 @@ private async getSessionFileDataCached(sessionFilePath: string, mtime: number, f
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			
-			if (sessionFile.endsWith('.jsonl')) {
-				// Handle JSONL formats (CLI and VS Code incremental)
-				const lines = fileContent.trim().split('\n');
-				let turnNumber = 0;
-				let sessionMode: 'ask' | 'edit' | 'agent' = 'ask';
-				let currentModel: string | null = null;
+			// Check for JSONL content (either by extension or content detection)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			
+			if (isJsonlContent) {
+				// Handle JSONL formats (CLI and VS Code incremental/delta-based)
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
 				
-				// For VS Code incremental format, we need to accumulate requests
-				const pendingRequests: Map<string, ChatTurn> = new Map();
-				
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
 					try {
-						const event = JSON.parse(line);
-						
-						// Handle VS Code incremental format - detect mode from session header
-						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
-							sessionMode = event.v.inputState.mode.kind as 'ask' | 'edit' | 'agent';
-							if (event.v.inputState.selectedModel?.metadata?.id) {
-								currentModel = event.v.inputState.selectedModel.metadata.id;
-							}
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
 						}
-						
-						// Handle mode changes
-						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
-							sessionMode = event.v.kind as 'ask' | 'edit' | 'agent';
-						}
-						
-						// Handle model changes
-						if (event.kind === 1 && event.k?.includes('selectedModel') && event.v?.metadata?.id) {
-							currentModel = event.v.metadata.id;
-						}
-						
-						// Handle VS Code incremental format - new requests
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							for (const request of event.v) {
-								if (request.requestId) {
-									turnNumber++;
-									const contextRefs = this.createEmptyContextRefs();
-									const userMessage = request.message?.text || '';
-									this.analyzeContextReferences(userMessage, contextRefs);
-									
-									const turn: ChatTurn = {
-										turnNumber,
-										timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
-										mode: sessionMode,
-										userMessage,
-										assistantResponse: '',
-										model: currentModel,
-										toolCalls: [],
-										contextReferences: contextRefs,
-										mcpTools: [],
-										inputTokensEstimate: this.estimateTokensFromText(userMessage, currentModel || 'gpt-4'),
-										outputTokensEstimate: 0
-									};
-									
-									// Process response if present
-									if (request.response && Array.isArray(request.response)) {
-										const { responseText, toolCalls, mcpTools } = this.extractResponseData(request.response);
-										turn.assistantResponse = responseText;
-										turn.toolCalls = toolCalls;
-										turn.mcpTools = mcpTools;
-										turn.outputTokensEstimate = this.estimateTokensFromText(responseText, currentModel || 'gpt-4');
-									}
-									
-									pendingRequests.set(request.requestId, turn);
-								}
-							}
-						}
-						
-						// Handle VS Code incremental format - response updates
-						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-							// Find the request this response belongs to
-							const requestIdPath = event.k?.find((k: string) => k.match(/^\d+$/));
-							if (requestIdPath !== undefined) {
-								// This is updating an existing request's response
-								for (const turn of pendingRequests.values()) {
-									const { responseText, toolCalls, mcpTools } = this.extractResponseData(event.v);
-									if (responseText) {
-										turn.assistantResponse += responseText;
-										turn.outputTokensEstimate = this.estimateTokensFromText(turn.assistantResponse, turn.model || 'gpt-4');
-									}
-									turn.toolCalls.push(...toolCalls);
-									turn.mcpTools.push(...mcpTools);
-									break;
-								}
-							}
-						}
-						
-						// Handle Copilot CLI format (type: 'user.message')
-						if (event.type === 'user.message' && event.data?.content) {
-							turnNumber++;
-							const contextRefs = this.createEmptyContextRefs();
-							const userMessage = event.data.content;
-							this.analyzeContextReferences(userMessage, contextRefs);
-							const turn: ChatTurn = {
-								turnNumber,
-								timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
-								mode: 'agent', // CLI is typically agent mode
-								userMessage,
-								assistantResponse: '',
-								model: event.model || 'gpt-4o',
-								toolCalls: [],
-								contextReferences: contextRefs,
-								mcpTools: [],
-								inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
-								outputTokensEstimate: 0
-							};
-							turns.push(turn);
-						}
-						
-						// Handle CLI assistant response
-						if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
-							const lastTurn = turns[turns.length - 1];
-							lastTurn.assistantResponse += event.data.content;
-							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
-						}
-						
-						// Handle CLI tool calls
-						if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
-							const lastTurn = turns[turns.length - 1];
-							const toolName = event.data?.toolName || event.toolName || 'unknown';
-							lastTurn.toolCalls.push({
-								toolName,
-								arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
-								result: event.type === 'tool.result' ? event.data?.output : undefined
-							});
-						}
-					} catch (e) {
-						// Skip malformed lines
+					} catch {
+						// Not delta format
 					}
 				}
 				
-				// Add pending requests to turns
-				turns.push(...pendingRequests.values());
-				turns.sort((a, b) => a.turnNumber - b.turnNumber);
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then extract turns
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract session-level info
+					let sessionMode: 'ask' | 'edit' | 'agent' = 'ask';
+					let currentModel: string | null = null;
+					
+					if (sessionState.inputState?.mode?.kind) {
+						sessionMode = sessionState.inputState.mode.kind as 'ask' | 'edit' | 'agent';
+					}
+					if (sessionState.inputState?.selectedModel?.metadata?.id) {
+						currentModel = sessionState.inputState.selectedModel.metadata.id;
+					}
+					
+					// Extract turns from reconstructed requests array
+					const requests = sessionState.requests || [];
+					for (let i = 0; i < requests.length; i++) {
+						const request = requests[i];
+						if (!request || !request.requestId) { continue; }
+						
+						const contextRefs = this.createEmptyContextRefs();
+						const userMessage = request.message?.text || '';
+						this.analyzeContextReferences(userMessage, contextRefs);
+						
+						// Analyze contentReferences from request
+						if (request.contentReferences && Array.isArray(request.contentReferences)) {
+							this.analyzeContentReferences(request.contentReferences, contextRefs);
+						}
+						
+						// Get model from request or fall back to session model
+						const requestModel = request.modelId || 
+						                     currentModel || 
+						                     this.getModelFromRequest(request) || 
+						                     'gpt-4';
+						
+						// Extract response data
+						const { responseText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
+						
+						const turn: ChatTurn = {
+							turnNumber: i + 1,
+							timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
+							mode: sessionMode,
+							userMessage,
+							assistantResponse: responseText,
+							model: requestModel,
+							toolCalls,
+							contextReferences: contextRefs,
+							mcpTools,
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
+							outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel)
+						};
+						
+						turns.push(turn);
+					}
+				} else {
+					// Non-delta JSONL (Copilot CLI format)
+					let turnNumber = 0;
+					
+					for (const line of lines) {
+						try {
+							const event = JSON.parse(line);
+						
+							// Handle Copilot CLI format (type: 'user.message')
+							if (event.type === 'user.message' && event.data?.content) {
+								turnNumber++;
+								const contextRefs = this.createEmptyContextRefs();
+								const userMessage = event.data.content;
+								this.analyzeContextReferences(userMessage, contextRefs);
+								const turn: ChatTurn = {
+									turnNumber,
+									timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
+									mode: 'agent', // CLI is typically agent mode
+									userMessage,
+									assistantResponse: '',
+									model: event.model || 'gpt-4o',
+									toolCalls: [],
+									contextReferences: contextRefs,
+									mcpTools: [],
+									inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
+									outputTokensEstimate: 0
+								};
+								turns.push(turn);
+							}
+							
+							// Handle CLI assistant response
+							if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
+								const lastTurn = turns[turns.length - 1];
+								lastTurn.assistantResponse += event.data.content;
+								lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+							}
+							
+							// Handle CLI tool calls
+							if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
+								const lastTurn = turns[turns.length - 1];
+								const toolName = event.data?.toolName || event.toolName || 'unknown';
+								lastTurn.toolCalls.push({
+									toolName,
+									arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+									result: event.type === 'tool.result' ? event.data?.output : undefined
+								});
+							}
+						} catch {
+							// Skip malformed lines
+						}
+					}
+				}
 				
 			} else {
 				// Handle regular .json files
@@ -2869,6 +2882,94 @@ private async getSessionFileDataCached(sessionFilePath: string, mtime: number, f
 		const secondLine = lines[1].trim();
 		return firstLine.startsWith('{') && firstLine.endsWith('}') &&
 		       secondLine.startsWith('{') && secondLine.endsWith('}');
+	}
+
+	/**
+	 * Apply a delta to reconstruct session state from delta-based JSONL format.
+	 * VS Code Insiders uses this format where:
+	 * - kind: 0 = initial state (full replacement)
+	 * - kind: 1 = update value at key path
+	 * - kind: 2 = append to array at key path
+	 * - k = key path (array of strings)
+	 * - v = value
+	 */
+	private applyDelta(state: any, delta: any): any {
+		if (typeof delta !== 'object' || delta === null) {
+			return state;
+		}
+
+		const { kind, k, v } = delta;
+
+		if (kind === 0) {
+			// Initial state - full replacement
+			return v;
+		}
+
+		if (!Array.isArray(k) || k.length === 0) {
+			return state;
+		}
+
+		const pathArr = k.map(String);
+		let root = typeof state === 'object' && state !== null ? state : {};
+		let current: any = root;
+
+		// Traverse to the parent of the target location
+		for (let i = 0; i < pathArr.length - 1; i++) {
+			const seg = pathArr[i];
+			const nextSeg = pathArr[i + 1];
+			const wantsArray = /^\d+$/.test(nextSeg);
+
+			if (Array.isArray(current)) {
+				const idx = Number(seg);
+				if (!current[idx] || typeof current[idx] !== 'object') {
+					current[idx] = wantsArray ? [] : {};
+				}
+				current = current[idx];
+			} else {
+				if (!current[seg] || typeof current[seg] !== 'object') {
+					current[seg] = wantsArray ? [] : {};
+				}
+				current = current[seg];
+			}
+		}
+
+		const lastSeg = pathArr[pathArr.length - 1];
+
+		if (kind === 1) {
+			// Set value at key path
+			if (Array.isArray(current)) {
+				current[Number(lastSeg)] = v;
+			} else {
+				current[lastSeg] = v;
+			}
+			return root;
+		}
+
+		if (kind === 2) {
+			// Append value(s) to array at key path
+			let target: any[];
+			if (Array.isArray(current)) {
+				const idx = Number(lastSeg);
+				if (!Array.isArray(current[idx])) {
+					current[idx] = [];
+				}
+				target = current[idx];
+			} else {
+				if (!Array.isArray(current[lastSeg])) {
+					current[lastSeg] = [];
+				}
+				target = current[lastSeg];
+			}
+
+			if (Array.isArray(v)) {
+				target.push(...v);
+			} else {
+				target.push(v);
+			}
+			return root;
+		}
+
+		return root;
 	}
 
 	private getModelTier(modelId: string): 'standard' | 'premium' | 'unknown' {
