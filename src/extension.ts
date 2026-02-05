@@ -3945,6 +3945,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 		const detailedSessionFiles: SessionFileDetails[] = [];
 		
+		// Track cache performance for this load operation
+		const initialCacheHits = this._cacheHits;
+		const initialCacheMisses = this._cacheMisses;
+		
 		// Sort files by modification time (most recent first) before taking first 500
 		// This ensures we prioritize recent sessions regardless of their folder location
 		const fileStats = await Promise.all(
@@ -3994,7 +3998,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				command: 'sessionFilesLoaded',
 				detailedSessionFiles
 			});
-			this.log(`Loaded ${detailedSessionFiles.length} session files in background`);
+			
+			// Calculate and log cache performance for this operation
+			const cacheHits = this._cacheHits - initialCacheHits;
+			const cacheMisses = this._cacheMisses - initialCacheMisses;
+			const totalAccesses = cacheHits + cacheMisses;
+			const hitRate = totalAccesses > 0 ? ((cacheHits / totalAccesses) * 100).toFixed(1) : '0';
+			
+			this.log(`Loaded ${detailedSessionFiles.length} session files in background (Cache: ${cacheHits} hits, ${cacheMisses} misses, ${hitRate}% hit rate)`);
+			
 			// Mark diagnostics as loaded so we don't reload unnecessarily
 			if (panel === this.diagnosticsPanel) {
 				this.diagnosticsHasLoadedFiles = true;
