@@ -356,6 +356,17 @@ function renderLayout(data: SessionLogData): void {
 		return entries.map(e => `<div>${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}</div>`).join('');
 	};
 	
+	const formatTopListWithOther = (entries: { key: string; value: number }[], total: number, mapper?: (k: string) => string) => {
+		if (!entries.length) { return 'None'; }
+		const lines = entries.map(e => `<div>${escapeHtml(mapper ? mapper(e.key) : e.key)}: ${e.value}</div>`);
+		const topSum = entries.reduce((sum, e) => sum + e.value, 0);
+		const other = total - topSum;
+		if (other > 0) {
+			lines.push(`<div>Other: ${other}</div>`);
+		}
+		return lines.join('');
+	};
+	
 	// Mode usage summary
 	const modeUsage = { ask: 0, edit: 0, agent: 0 };
 	const modelUsage: { [model: string]: number } = {};
@@ -933,12 +944,12 @@ function renderLayout(data: SessionLogData): void {
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
-					<div class="summary-sub">Top: ${formatTopList(usageTopTools, lookupToolName)}</div>
+					<div class="summary-sub">${formatTopListWithOther(usageTopTools, usageToolTotal, lookupToolName)}</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🔌 MCP Tools</div>
 					<div class="summary-value">${usageMcpTotal}</div>
-					<div class="summary-sub">Top: ${formatTopList(usageTopMcpTools)}</div>
+					<div class="summary-sub">${formatTopListWithOther(usageTopMcpTools, usageMcpTotal)}</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🔗 Context Refs</div>
