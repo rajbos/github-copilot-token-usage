@@ -1871,7 +1871,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		
 		// Check if cache has the required fields (for backward compatibility with old cache)
-		if (!cached.usageAnalysis?.contextReferences || typeof cached.interactions !== 'number') {
+		if (!cached.usageAnalysis?.contextReferences || typeof cached.interactions !== 'number' || cached.interactions < 0) {
 			return undefined;
 		}
 		
@@ -1916,7 +1916,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			usageAnalysis: existingCache?.usageAnalysis || {
 				toolCalls: { total: 0, byTool: {} },
 				modeUsage: { ask: 0, edit: 0, agent: 0 },
-				contextReferences: details.contextReferences,
+				contextReferences: {
+					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+					workspace: 0, terminal: 0, vscode: 0
+				},
 				mcpTools: { total: 0, byServer: {}, byTool: {} },
 				modelSwitching: {
 					uniqueModels: [],
@@ -1931,10 +1934,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			title: details.title
 		};
 		
-		// Update the contextReferences in usageAnalysis
-		if (cacheEntry.usageAnalysis) {
-			cacheEntry.usageAnalysis.contextReferences = details.contextReferences;
-		}
+		// Update the contextReferences in usageAnalysis with the current data
+		// usageAnalysis is guaranteed to exist here since we always initialize it above
+		cacheEntry.usageAnalysis!.contextReferences = details.contextReferences;
 		
 		this.setCachedSessionData(sessionFile, cacheEntry, stat.size);
 	}
