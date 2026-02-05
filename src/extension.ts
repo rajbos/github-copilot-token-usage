@@ -1840,8 +1840,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Add editor root and name information to session file details.
+	 * Enriches the details object with editorRoot and editorName properties.
 	 */
-	private addEditorInfoToDetails(sessionFile: string, details: SessionFileDetails): void {
+	private enrichDetailsWithEditorInfo(sessionFile: string, details: SessionFileDetails): void {
 		try {
 			const parts = sessionFile.split(/[/\\]/);
 			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
@@ -1870,7 +1871,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		
 		// Check if cache has the required fields (for backward compatibility with old cache)
-		if (!cached.usageAnalysis?.contextReferences) {
+		if (!cached.usageAnalysis?.contextReferences || typeof cached.interactions !== 'number') {
 			return undefined;
 		}
 		
@@ -1888,7 +1889,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 		
 		// Add editor root and name
-		this.addEditorInfoToDetails(sessionFile, details);
+		this.enrichDetailsWithEditorInfo(sessionFile, details);
 		
 		return details;
 	}
@@ -1970,7 +1971,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 
 		// Determine top-level editor root path for this session file (up to the folder before 'User')
-		this.addEditorInfoToDetails(sessionFile, details);
+		this.enrichDetailsWithEditorInfo(sessionFile, details);
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
@@ -3997,7 +3998,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const cacheHits = this._cacheHits - initialCacheHits;
 			const cacheMisses = this._cacheMisses - initialCacheMisses;
 			const totalAccesses = cacheHits + cacheMisses;
-			const hitRate = totalAccesses > 0 ? ((cacheHits / totalAccesses) * 100).toFixed(1) : '0';
+			const hitRate = totalAccesses > 0 ? ((cacheHits / totalAccesses) * 100).toFixed(1) : '0.0';
 			
 			this.log(`Loaded ${detailedSessionFiles.length} session files in background (Cache: ${cacheHits} hits, ${cacheMisses} misses, ${hitRate}% hit rate)`);
 			
