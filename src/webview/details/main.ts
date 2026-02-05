@@ -56,7 +56,7 @@ console.log('[CopilotTokenTracker] initialData:', initialData);
 function calculateProjection(last30DaysValue: number): number {
 	// Project annual value based on last 30 days average
 	// This gives better predictions at the beginning of the month
-	const daysInYear = 365.25; // Account for leap years
+	const daysInYear = 365.25; // Average days per year (accounting for leap year cycle)
 	return (last30DaysValue / 30) * daysInYear;
 }
 
