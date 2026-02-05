@@ -74,6 +74,9 @@ interface SessionFileCache {
 	mtime: number; // file modification time as timestamp
 	size?: number; // file size in bytes (optional for backward compatibility)
 	usageAnalysis?: SessionUsageAnalysis; // New analysis data
+	firstInteraction?: string | null; // ISO timestamp of first interaction
+	lastInteraction?: string | null; // ISO timestamp of last interaction
+	title?: string; // Session title (customTitle from session file)
 }
 
 // New interfaces for usage analysis
@@ -1836,11 +1839,115 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Reconstruct SessionFileDetails from cached data without reading the file.
+	 * Returns undefined if cache is not valid or doesn't have all required data.
+	 */
+	private async getSessionFileDetailsFromCache(sessionFile: string, stat: fs.Stats): Promise<SessionFileDetails | undefined> {
+		const cached = this.getCachedSessionData(sessionFile);
+		
+		// Validate cache against file stats
+		if (!cached || cached.mtime !== stat.mtime.getTime() || cached.size !== stat.size) {
+			return undefined;
+		}
+		
+		// Check if cache has the required fields (for backward compatibility with old cache)
+		if (!cached.usageAnalysis?.contextReferences) {
+			return undefined;
+		}
+		
+		// Reconstruct SessionFileDetails from cache
+		const details: SessionFileDetails = {
+			file: sessionFile,
+			size: cached.size || stat.size,
+			modified: stat.mtime.toISOString(),
+			interactions: cached.interactions,
+			contextReferences: cached.usageAnalysis.contextReferences,
+			firstInteraction: cached.firstInteraction || null,
+			lastInteraction: cached.lastInteraction || null,
+			editorSource: this.detectEditorSource(sessionFile),
+			title: cached.title
+		};
+		
+		// Add editor root and name
+		try {
+			const parts = sessionFile.split(/[/\\]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			if (userIdx > 0) {
+				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
+			} else {
+				details.editorRoot = require('path').dirname(sessionFile);
+			}
+			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
+		} catch (e) {
+			details.editorRoot = require('path').dirname(sessionFile);
+			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
+		}
+		
+		return details;
+	}
+
+	/**
+	 * Update or create cache entry with session file details.
+	 * Merges new detail fields with existing cached data if available.
+	 */
+	private async updateCacheWithSessionDetails(
+		sessionFile: string, 
+		stat: fs.Stats, 
+		details: SessionFileDetails
+	): Promise<void> {
+		// Get existing cache entry if available
+		const existingCache = this.getCachedSessionData(sessionFile);
+		
+		// Create or update cache entry
+		const cacheEntry: SessionFileCache = {
+			tokens: existingCache?.tokens || 0,
+			interactions: details.interactions,
+			modelUsage: existingCache?.modelUsage || {},
+			mtime: stat.mtime.getTime(),
+			size: stat.size,
+			usageAnalysis: existingCache?.usageAnalysis || {
+				toolCalls: { total: 0, byTool: {} },
+				modeUsage: { ask: 0, edit: 0, agent: 0 },
+				contextReferences: details.contextReferences,
+				mcpTools: { total: 0, byServer: {}, byTool: {} },
+				modelSwitching: {
+					uniqueModels: [],
+					modelCount: 0,
+					switchCount: 0,
+					tiers: { standard: [], premium: [], unknown: [] },
+					hasMixedTiers: false
+				}
+			},
+			firstInteraction: details.firstInteraction,
+			lastInteraction: details.lastInteraction,
+			title: details.title
+		};
+		
+		// Update the contextReferences in usageAnalysis
+		if (cacheEntry.usageAnalysis) {
+			cacheEntry.usageAnalysis.contextReferences = details.contextReferences;
+		}
+		
+		this.setCachedSessionData(sessionFile, cacheEntry, stat.size);
+	}
+
+	/**
 	 * Get detailed session file information for diagnostics view.
 	 * Analyzes session files to extract interactions, context references, and timestamps.
+	 * Uses cached data when available to avoid re-reading files.
 	 */
 	private async getSessionFileDetails(sessionFile: string): Promise<SessionFileDetails> {
 		const stat = await fs.promises.stat(sessionFile);
+		
+		// Try to get details from cache first
+		const cachedDetails = await this.getSessionFileDetailsFromCache(sessionFile, stat);
+		if (cachedDetails) {
+			this._cacheHits++;
+			return cachedDetails;
+		}
+		
+		this._cacheMisses++;
+		
 		const details: SessionFileDetails = {
 			file: sessionFile,
 			size: stat.size,
@@ -1955,6 +2062,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					details.firstInteraction = new Date(timestamps[0]).toISOString();
 					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 				}
+				
+				// Update cache with the details we just collected
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				
 				return details;
 			}
 			
@@ -2022,6 +2133,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					details.lastInteraction = stat.mtime.toISOString();
 				}
 			}
+			
+			// Update cache with the details we just collected
+			await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 		} catch (error) {
 			this.warn(`Error analyzing session file details for ${sessionFile}: ${error}`);
 		}
