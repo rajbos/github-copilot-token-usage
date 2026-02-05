@@ -12,4 +12,6 @@
   ,"copilot_listDirectory": "List Directory"
   ,"copilot_fetchWebPage": "Fetch Web Page"
   ,"copilot_getErrors": "Get Errors"
+  ,"copilot_multiReplaceString": "Multi Replace String"
+  ,"get_terminal_output": "Get Terminal Output"
 }
