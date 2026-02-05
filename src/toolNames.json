@@ -1,14 +1,15 @@
 {
   "unknown": "Unknown",
-  "copilot_readFile": "Copilot: Read File",
-  "copilot_applyPatch": "Copilot: Apply Patch",
-  "copilot_findTextInFiles": "Copilot: Find Text In Files",
+  "copilot_readFile": "Read File",
+  "copilot_applyPatch": "Apply Patch",
+  "copilot_findTextInFiles": "Find Text In Files",
   "run_in_terminal": "Run In Terminal",
   "mcp.io.github.git.assign_copilot_to_issue": "Assign Copilot to Issue",
   "mcp.io.github.git.create_or_update_file": "Git: Create/Update File"
   ,"manage_todo_list": "Manage TODO List"
-  ,"copilot_replaceString": "Copilot: Replace String"
-  ,"copilot_createFile": "Copilot: Create File"
-  ,"copilot_listDirectory": "Copilot: List Directory"
-  ,"copilot_fetchWebPage": "Copilot: Fetch Web Page"
+  ,"copilot_replaceString": "Replace String"
+  ,"copilot_createFile": "Create File"
+  ,"copilot_listDirectory": "List Directory"
+  ,"copilot_fetchWebPage": "Fetch Web Page"
+  ,"copilot_getErrors": "Get Errors"
 }

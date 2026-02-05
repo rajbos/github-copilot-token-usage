@@ -201,7 +201,7 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 10; // Add file size to cache for faster validation (2026-02-02)
+	private static readonly CACHE_VERSION = 11; // Fix toolId extraction for tool calls (2026-02-05)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -1487,19 +1487,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
 								}
 							
-							// Analyze contentReferences if present
-							if (request.contentReferences && Array.isArray(request.contentReferences)) {
-								this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
+								// Analyze contentReferences if present
+								if (request.contentReferences && Array.isArray(request.contentReferences)) {
+									this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
+								}
+								
+								// Extract tool calls from request.response array (when full request is added)
+								if (request.response && Array.isArray(request.response)) {
+									for (const responseItem of request.response) {
+										if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
+											analysis.toolCalls.total++;
+											const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+										}
+									}
+								}
 							}
 						}
-					}
 					
 					// Handle VS Code incremental format - tool invocations in responses
 					if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
 						for (const responseItem of event.v) {
 							if (responseItem.kind === 'toolInvocationSerialized') {
 								analysis.toolCalls.total++;
-								const toolName = responseItem.toolSpecificData?.kind || 'unknown';
+								const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
 								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
 							}
 						}
@@ -1626,7 +1637,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (responseItem.kind === 'toolInvocationSerialized' || 
 							    responseItem.kind === 'prepareToolInvocation') {
 								analysis.toolCalls.total++;
-								const toolName = responseItem.toolName || 
+								const toolName = responseItem.toolId ||
+								                responseItem.toolName || 
 								                responseItem.invocationMessage?.toolName || 
 								                'unknown';
 								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
@@ -2415,7 +2427,7 @@ private async getSessionFileDataCached(sessionFilePath: string, mtime: number, f
 			
 			// Extract tool invocations
 			if (item.kind === 'toolInvocationSerialized' || item.kind === 'prepareToolInvocation') {
-				const toolName = item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
+				const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
 				toolCalls.push({
 					toolName,
 					arguments: item.input ? JSON.stringify(item.input) : undefined,

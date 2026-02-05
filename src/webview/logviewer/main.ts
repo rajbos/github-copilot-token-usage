@@ -245,34 +245,52 @@ function renderTurnCard(turn: ChatTurn): string {
 	
 	const contextHeaderHtml = contextFileBadges.length > 0 ? contextFileBadges.join('') : '';
 
-	
-	const toolCallsHtml = hasToolCalls ? `
-		<div class="turn-tools">
-			<div class="tools-header">🔧 Tool Calls (${turn.toolCalls.length})</div>
-			<table class="tools-table">
-				<thead>
-					<tr>
-						<th scope="col">Tool Name</th>
-						<th scope="col">Action</th>
-					</tr>
-				</thead>
-				<tbody>
-					${turn.toolCalls.map((tc, idx) => `
-						<tr class="tool-row">
-							<td class="tool-name-cell">
-								<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
-								${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
-								${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
-							</td>
-							<td class="tool-action-cell">
-								<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
-							</td>
-						</tr>
-					`).join('')}
-				</tbody>
-			</table>
-		</div>
-	` : '';
+	// Build tool call summary
+	let toolCallsHtml = '';
+	if (hasToolCalls) {
+		const toolCounts: { [key: string]: number } = {};
+		turn.toolCalls.forEach(tc => {
+			const toolName = lookupToolName(tc.toolName);
+			toolCounts[toolName] = (toolCounts[toolName] || 0) + 1;
+		});
+		
+		const toolSummary = Object.entries(toolCounts)
+			.map(([name, count]) => `<span class="tool-summary-item">${escapeHtml(name)}: <strong>${count}</strong></span>`)
+			.join('');
+		
+		toolCallsHtml = `
+			<div class="turn-tools">
+				<details class="tool-calls-details">
+					<summary class="tool-calls-summary">
+						<span class="tools-header-inline">🔧 Tool Calls (${turn.toolCalls.length})</span>
+						<span class="tool-summary-text">${toolSummary}</span>
+					</summary>
+					<table class="tools-table">
+						<thead>
+							<tr>
+								<th scope="col">Tool Name</th>
+								<th scope="col">Action</th>
+							</tr>
+						</thead>
+						<tbody>
+							${turn.toolCalls.map((tc, idx) => `
+								<tr class="tool-row">
+									<td class="tool-name-cell">
+										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
+										${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
+										${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
+									</td>
+									<td class="tool-action-cell">
+										<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
+									</td>
+								</tr>
+							`).join('')}
+						</tbody>
+					</table>
+				</details>
+			</div>
+		`;
+	}
 	
 	const mcpToolsHtml = hasMcpTools ? `
 		<div class="turn-mcp">
@@ -633,6 +651,66 @@ function renderLayout(data: SessionLogData): void {
 				padding: 12px 14px;
 				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 			}
+			.tool-calls-details {
+				cursor: pointer;
+			}
+			.tool-calls-summary {
+				list-style: none;
+				cursor: pointer;
+				user-select: none;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 2px 0;
+			}
+			.tool-calls-summary::-webkit-details-marker {
+				display: none;
+			}
+			.tool-calls-summary::marker {
+				display: none;
+			}
+			.tool-calls-summary::before {
+				content: '▶';
+				display: inline-block;
+				width: 16px;
+				color: #94a3b8;
+				font-size: 10px;
+				transition: transform 0.2s;
+			}
+			.tool-calls-details[open] .tool-calls-summary::before {
+				transform: rotate(90deg);
+			}
+			.tool-calls-summary:hover {
+				color: #fff;
+			}
+			.tools-header-inline {
+				font-size: 13px;
+				font-weight: 700;
+				color: #fff;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.tool-summary-text {
+				font-size: 12px;
+				font-weight: 600;
+				color: #c084fc;
+				flex: 1;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				align-items: center;
+			}
+			.tool-summary-item {
+				background: rgba(192, 132, 252, 0.1);
+				border: 1px solid rgba(192, 132, 252, 0.3);
+				padding: 2px 8px;
+				border-radius: 4px;
+				white-space: nowrap;
+			}
+			.tool-summary-item strong {
+				color: #e9d5ff;
+				font-weight: 700;
+			}
 			.tools-header {
 				font-size: 13px;
 				font-weight: 700;
@@ -645,6 +723,7 @@ function renderLayout(data: SessionLogData): void {
 				width: 100%;
 				border-collapse: collapse;
 				font-size: 13px;
+				margin-top: 10px;
 			}
 			.tools-table thead th {
 				text-align: left;
@@ -847,12 +926,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
 				<div class="summary-card">
-					<div class="summary-label">� Total Tokens</div>
+					<div class="summary-label">📊 Total Tokens</div>
 					<div class="summary-value">${totalTokens.toLocaleString()}</div>
 					<div class="summary-sub">Input + Output tokens across all turns</div>
 				</div>
 				<div class="summary-card">
-					<div class="summary-label">�🔧 Tool Calls</div>
+					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
 					<div class="summary-sub">Top: ${formatTopList(usageTopTools, lookupToolName)}</div>
 				</div>
