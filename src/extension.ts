@@ -1839,6 +1839,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Add editor root and name information to session file details.
+	 */
+	private addEditorInfoToDetails(sessionFile: string, details: SessionFileDetails): void {
+		try {
+			const parts = sessionFile.split(/[/\\]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			if (userIdx > 0) {
+				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
+			} else {
+				details.editorRoot = require('path').dirname(sessionFile);
+			}
+			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
+		} catch (e) {
+			details.editorRoot = require('path').dirname(sessionFile);
+			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
+		}
+	}
+
+	/**
 	 * Reconstruct SessionFileDetails from cached data without reading the file.
 	 * Returns undefined if cache is not valid or doesn't have all required data.
 	 */
@@ -1869,19 +1888,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 		
 		// Add editor root and name
-		try {
-			const parts = sessionFile.split(/[/\\]/);
-			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
-			if (userIdx > 0) {
-				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
-			} else {
-				details.editorRoot = require('path').dirname(sessionFile);
-			}
-			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
-		} catch (e) {
-			details.editorRoot = require('path').dirname(sessionFile);
-			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
-		}
+		this.addEditorInfoToDetails(sessionFile, details);
 		
 		return details;
 	}
@@ -1963,20 +1970,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 
 		// Determine top-level editor root path for this session file (up to the folder before 'User')
-		try {
-			const parts = sessionFile.split(/[/\\\\]/);
-			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
-			if (userIdx > 0) {
-				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
-			} else {
-				details.editorRoot = require('path').dirname(sessionFile);
-			}
-			// Also populate a friendly editor name for this file
-			details['editorName'] = this.getEditorNameFromRoot(details.editorRoot || '');
-		} catch (e) {
-			details.editorRoot = require('path').dirname(sessionFile);
-			details['editorName'] = this.getEditorNameFromRoot(details.editorRoot || '');
-		}
+		this.addEditorInfoToDetails(sessionFile, details);
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
