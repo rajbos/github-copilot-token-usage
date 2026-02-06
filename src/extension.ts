@@ -1613,6 +1613,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					
 					// Analyze variableData for @workspace, @terminal, @vscode references
 					if (request.variableData) {
+						// Process variables array for prompt files and other context
+						this.analyzeVariableData(request.variableData, analysis.contextReferences);
+						
+						// Also check for @ references in variable names/values
 						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
 						if (varDataStr.includes('workspace')) {
 							analysis.contextReferences.workspace++;
@@ -1628,6 +1632,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Analyze contentReferences if present
 					if (request.contentReferences && Array.isArray(request.contentReferences)) {
 						this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
+					}
+					
+					// Analyze variableData if present
+					if (request.variableData) {
+						this.analyzeVariableData(request.variableData, analysis.contextReferences);
+					}
+					
+					// Analyze variableData if present
+					if (request.variableData) {
+						this.analyzeVariableData(request.variableData, analysis.contextReferences);
 					}
 					
 					// Analyze response for tool calls and MCP tools
@@ -1786,6 +1800,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Analyze contentReferences from session log data to track specific file attachments.
 	 * Looks for kind: "reference" entries and tracks by kind, path patterns.
+	 * Also increments specific category counters like refs.file when appropriate.
 	 */
 	private analyzeContentReferences(contentReferences: any[], refs: ContextReferenceUsage): void {
 		if (!Array.isArray(contentReferences)) {
@@ -1825,11 +1840,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (normalizedPath.endsWith('/.github/copilot-instructions.md') || 
 					    normalizedPath.includes('.github/copilot-instructions.md')) {
 						refs.copilotInstructions++;
-					}
-					
-					if (normalizedPath.endsWith('/agents.md') || 
-					    normalizedPath.match(/\/agents\.md$/i)) {
+					} else if (normalizedPath.endsWith('/agents.md') || 
+					           normalizedPath.match(/\/agents\.md$/i)) {
 						refs.agentsMd++;
+					} else {
+						// For other files, increment the general file counter
+						// This makes actual file attachments show up in context ref counts
+						refs.file++;
 					}
 					
 					// Track by full path (limit to last 100 chars for display)
@@ -1837,11 +1854,54 @@ class CopilotTokenTracker implements vscode.Disposable {
 					refs.byPath[pathKey] = (refs.byPath[pathKey] || 0) + 1;
 				}
 			}
-}
-}
+		}
+	}
 
-// Cached versions of session file reading methods
-private async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
+	/**
+	 * Analyze variableData to track prompt file attachments and other variable-based context.
+	 * This captures automatic attachments like copilot-instructions.md via variable system.
+	 */
+	private analyzeVariableData(variableData: any, refs: ContextReferenceUsage): void {
+		if (!variableData || !Array.isArray(variableData.variables)) {
+			return;
+		}
+
+		for (const variable of variableData.variables) {
+			if (!variable || typeof variable !== 'object') {
+				continue;
+			}
+
+			// Track by kind from variableData
+			const kind = variable.kind;
+			if (typeof kind === 'string') {
+				refs.byKind[kind] = (refs.byKind[kind] || 0) + 1;
+			}
+
+			// Process promptFile variables that contain file references
+			if (kind === 'promptFile' && variable.value) {
+				const value = variable.value;
+				const fsPath = value.fsPath || value.path || value.external;
+				
+				if (typeof fsPath === 'string') {
+					const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
+					
+					// Track specific patterns (but don't double-count if already in contentReferences)
+					if (normalizedPath.endsWith('/.github/copilot-instructions.md') || 
+					    normalizedPath.includes('.github/copilot-instructions.md')) {
+						// copilotInstructions - tracked via contentReferences, skip here to avoid double counting
+					} else if (normalizedPath.endsWith('/agents.md') || 
+					           normalizedPath.match(/\/agents\.md$/i)) {
+						// agents.md - tracked via contentReferences, skip here  to avoid double counting
+					}
+					// Note: We don't add to byPath here as these are automatic attachments,
+					// not explicit user file selections
+				}
+			}
+		}
+	}
+
+	// Cached versions of session file reading methods
+	private async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
 	// Check if we have valid cached data
 	const cached = this.getCachedSessionData(sessionFilePath);
 	if (cached && cached.mtime === mtime && cached.size === fileSize) {
@@ -2201,6 +2261,11 @@ private async getSessionFileDataCached(sessionFilePath: string, mtime: number, f
 						// Analyze contentReferences from request
 						if (request.contentReferences && Array.isArray(request.contentReferences)) {
 							this.analyzeContentReferences(request.contentReferences, contextRefs);
+						}
+						
+						// Analyze variableData from request
+						if (request.variableData) {
+							this.analyzeVariableData(request.variableData, contextRefs);
 						}
 						
 						// Get model from request or fall back to session model

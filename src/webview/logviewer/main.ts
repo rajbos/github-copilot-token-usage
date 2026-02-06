@@ -121,64 +121,39 @@ function getContextRefsSummary(refs: ContextReferenceUsage): string {
 	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
+function getContextRefBadges(refs: ContextReferenceUsage): string {
+	const badges: string[] = [];
+	if (refs.selection > 0) { badges.push(`<span class="context-ref-item">#selection: <strong>${refs.selection}</strong></span>`); }
+	if (refs.file > 0) { badges.push(`<span class="context-ref-item">#file: <strong>${refs.file}</strong></span>`); }
+	if (refs.symbol > 0) { badges.push(`<span class="context-ref-item">#symbol: <strong>${refs.symbol}</strong></span>`); }
+	if (refs.codebase > 0) { badges.push(`<span class="context-ref-item">#codebase: <strong>${refs.codebase}</strong></span>`); }
+	if (refs.workspace > 0) { badges.push(`<span class="context-ref-item">@workspace: <strong>${refs.workspace}</strong></span>`); }
+	if (refs.terminal > 0) { badges.push(`<span class="context-ref-item">@terminal: <strong>${refs.terminal}</strong></span>`); }
+	if (refs.vscode > 0) { badges.push(`<span class="context-ref-item">@vscode: <strong>${refs.vscode}</strong></span>`); }
+	if (refs.implicitSelection > 0) { badges.push(`<span class="context-ref-item context-ref-implicit">implicit: <strong>${refs.implicitSelection}</strong></span>`); }
+	return badges.join('');
+}
+
 function renderContextReferencesDetailed(refs: ContextReferenceUsage): string {
 	const sections: string[] = [];
 	
-	// Variable-based references
-	const varRefs: string[] = [];
-	if (refs.file > 0) { varRefs.push(`#file: ${refs.file}`); }
-	if (refs.selection > 0) { varRefs.push(`#selection: ${refs.selection}`); }
-	if (refs.implicitSelection > 0) { varRefs.push(`implicit: ${refs.implicitSelection}`); }
-	if (refs.symbol > 0) { varRefs.push(`#symbol: ${refs.symbol}`); }
-	if (refs.codebase > 0) { varRefs.push(`#codebase: ${refs.codebase}`); }
-	if (refs.workspace > 0) { varRefs.push(`@workspace: ${refs.workspace}`); }
-	if (refs.terminal > 0) { varRefs.push(`@terminal: ${refs.terminal}`); }
-	if (refs.vscode > 0) { varRefs.push(`@vscode: ${refs.vscode}`); }
-	
-	if (varRefs.length > 0) {
-		sections.push(`<div class="context-section"><strong>Chat Variables:</strong> ${varRefs.join(', ')}</div>`);
+	// Show instruction file references
+	if (refs.copilotInstructions > 0 || refs.agentsMd > 0) {
+		const instrRefs: string[] = [];
+		if (refs.copilotInstructions > 0) { instrRefs.push(`📋 copilot-instructions: ${refs.copilotInstructions}`); }
+		if (refs.agentsMd > 0) { instrRefs.push(`🤖 agents.md: ${refs.agentsMd}`); }
+		sections.push(`<div class="context-section"><strong>Instructions:</strong> ${instrRefs.join(', ')}</div>`);
 	}
 	
-	// ContentReferences from session logs
-	if (refs.copilotInstructions > 0 || refs.agentsMd > 0 || (refs.byPath && Object.keys(refs.byPath).length > 0)) {
-		const contentRefs: string[] = [];
-		if (refs.copilotInstructions > 0) {
-			contentRefs.push(`📋 copilot-instructions.md: ${refs.copilotInstructions}`);
-		}
-		if (refs.agentsMd > 0) {
-			contentRefs.push(`🤖 agents.md: ${refs.agentsMd}`);
-		}
-		
-		if (contentRefs.length > 0) {
-			sections.push(`<div class="context-section"><strong>Known Files:</strong> ${contentRefs.join(', ')}</div>`);
-		}
-		
-		// Show additional file paths (excluding the known ones we already displayed)
-		if (refs.byPath && Object.keys(refs.byPath).length > 0) {
-			const otherPaths = Object.entries(refs.byPath)
-				.filter(([path]) => {
-					const normalized = path.toLowerCase().replace(/\\/g, '/');
-					return !(normalized.includes('copilot-instructions.md') || normalized.endsWith('/agents.md'));
-				});
-			
-			if (otherPaths.length > 0) {
-				const pathList = otherPaths
-					.map(([path, count]) => `<div class="context-path" title="${escapeHtml(path)}">📄 ${escapeHtml(getFileName(path))}: ${count}</div>`)
-					.join('');
-				sections.push(`<div class="context-section"><strong>Other Files:</strong>${pathList}</div>`);
-			}
-		}
-	}
-	
-	// Show byKind breakdown if present
-	if (refs.byKind && Object.keys(refs.byKind).length > 0) {
-		const kindList = Object.entries(refs.byKind)
-			.map(([kind, count]) => `${kind}: ${count}`)
+	// Show file paths if any
+	if (refs.byPath && Object.keys(refs.byPath).length > 0) {
+		const pathList = Object.entries(refs.byPath)
+			.map(([path, count]) => `${getFileName(path)}: ${count}`)
 			.join(', ');
-		sections.push(`<div class="context-section"><strong>By Kind:</strong> ${kindList}</div>`);
+		sections.push(`<div class="context-section"><strong>Files:</strong> ${pathList}</div>`);
 	}
 	
-	return sections.length > 0 ? sections.join('') : '<div class="context-section">No context references</div>';
+	return sections.length > 0 ? sections.join('') : '<div class="context-section">No additional details</div>';
 }
 
 function getTopEntries(map: { [key: string]: number } = {}, limit = 3): { key: string; value: number }[] {
@@ -262,7 +237,8 @@ function renderTurnCard(turn: ChatTurn): string {
 			<div class="turn-tools">
 				<details class="tool-calls-details">
 					<summary class="tool-calls-summary">
-						<span class="tools-header-inline">🔧 Tool Calls (${turn.toolCalls.length})</span>
+						<span class="collapse-arrow">▶</span>
+						<span class="tools-header-inline">🔧 TOOL CALLS (${turn.toolCalls.length})</span>
 						<span class="tool-summary-text">${toolSummary}</span>
 					</summary>
 					<table class="tools-table">
@@ -303,6 +279,24 @@ function renderTurnCard(turn: ChatTurn): string {
 		</div>
 	` : '';
 	
+	// Build context references detail section
+	const hasContextRefs = totalRefs > 0;
+	const contextRefBadges = getContextRefBadges(turn.contextReferences);
+	const contextRefsHtml = hasContextRefs ? `
+		<div class="turn-context-refs">
+			<details class="context-refs-details">
+				<summary class="context-refs-summary">
+					<span class="collapse-arrow">▶</span>
+					<span class="context-refs-header-inline">🔗 CONTEXT REFERENCES (${totalRefs})</span>
+					<span class="context-ref-summary-text">${contextRefBadges}</span>
+				</summary>
+				<div class="context-refs-content">
+					${renderContextReferencesDetailed(turn.contextReferences)}
+				</div>
+			</details>
+		</div>
+	` : '';
+	
 	return `
 		<div class="turn-card" data-turn="${turn.turnNumber}">
 			<div class="turn-header">
@@ -318,6 +312,7 @@ function renderTurnCard(turn: ChatTurn): string {
 			
 			${toolCallsHtml}
 			${mcpToolsHtml}
+			${contextRefsHtml}
 			
 			<div class="turn-content">
 				<div class="message user-message">
@@ -652,6 +647,19 @@ function renderLayout(data: SessionLogData): void {
 				border-left: 4px solid #7c3aed;
 				background: linear-gradient(135deg, #1e1e2a 0%, #22222a 100%);
 			}
+			
+			/* Shared collapse arrow for details/summary panels */
+			.collapse-arrow {
+				display: inline-block;
+				width: 16px;
+				color: #94a3b8;
+				font-size: 10px;
+				transition: transform 0.2s;
+				flex-shrink: 0;
+			}
+			details[open] > summary .collapse-arrow {
+				transform: rotate(90deg);
+			}
 		
 			/* Tool calls */
 			.turn-tools {
@@ -664,6 +672,8 @@ function renderLayout(data: SessionLogData): void {
 			}
 			.tool-calls-details {
 				cursor: pointer;
+				margin: 0;
+				padding: 0;
 			}
 			.tool-calls-summary {
 				list-style: none;
@@ -673,23 +683,14 @@ function renderLayout(data: SessionLogData): void {
 				align-items: center;
 				gap: 10px;
 				padding: 2px 0;
+				padding-inline-start: 0;
+				margin: 0;
 			}
 			.tool-calls-summary::-webkit-details-marker {
 				display: none;
 			}
 			.tool-calls-summary::marker {
 				display: none;
-			}
-			.tool-calls-summary::before {
-				content: '▶';
-				display: inline-block;
-				width: 16px;
-				color: #94a3b8;
-				font-size: 10px;
-				transition: transform 0.2s;
-			}
-			.tool-calls-details[open] .tool-calls-summary::before {
-				transform: rotate(90deg);
 			}
 			.tool-calls-summary:hover {
 				color: #fff;
@@ -821,8 +822,23 @@ function renderLayout(data: SessionLogData): void {
 				margin-bottom: 10px;
 				text-transform: uppercase;
 				letter-spacing: 0.5px;
-			}ex-wrap: wrap;
+			}
+			.mcp-list {
+				display: flex;
+				flex-wrap: wrap;
 				gap: 6px;
+			}
+			.mcp-item {
+				background: rgba(34, 197, 94, 0.1);
+				border: 1px solid rgba(34, 197, 94, 0.3);
+				padding: 4px 10px;
+				border-radius: 4px;
+				font-size: 12px;
+				color: #cbd5e1;
+			}
+			.mcp-server {
+				font-weight: 600;
+				color: #22c55e;
 			}
 			
 			/* Context References */
@@ -862,10 +878,7 @@ function renderLayout(data: SessionLogData): void {
 				margin-top: 4px;
 			}
 			
-			/* 
-			.mcp-list {
-				display: flex;
-				flEmpty state */
+			/* Empty state */
 			.empty-state {
 				text-align: center;
 				padding: 60px 20px;
@@ -890,16 +903,84 @@ function renderLayout(data: SessionLogData): void {
 				border-radius: 5px;
 			}
 			::-webkit-scrollbar-thumb:hover {
-				background: #4a4a54{
+				background: #4a4a54;
+			}
+			}
+			
+			/* Context References */
+			.turn-context-refs {
+				margin-bottom: 14px;
+				background: linear-gradient(135deg, #2a2535 0%, #252530 100%);
+				border: 1px solid #4a4a5a;
+				border-radius: 8px;
+				padding: 12px 14px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+			}
+			.context-refs-details {
+				cursor: pointer;
+				margin: 0;
+				padding: 0;
+			}
+			.context-refs-summary {
+				list-style: none;
+				cursor: pointer;
+				user-select: none;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 2px 0;
+				padding-inline-start: 0;
+				margin: 0;
+			}
+			.context-refs-summary::-webkit-details-marker {
+				display: none;
+			}
+			.context-refs-summary::marker {
+				display: none;
+			}
+			.context-refs-summary:hover {
+				color: #fff;
+			}
+			.context-refs-header-inline {
+				font-size: 13px;
+				font-weight: 700;
+				color: #fff;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+			.context-ref-summary-text {
 				font-size: 12px;
 				font-weight: 600;
-				color: #fff;
-				margin-bottom: 8px;
-			}
-			.mcp-list {
+				color: #22d3ee;
+				flex: 1;
 				display: flex;
 				flex-wrap: wrap;
-				gap: 6px;
+				gap: 8px;
+				align-items: center;
+			}
+			.context-ref-item {
+				background: rgba(34, 211, 238, 0.1);
+				border: 1px solid rgba(34, 211, 238, 0.3);
+				padding: 2px 8px;
+				border-radius: 4px;
+				white-space: nowrap;
+			}
+			.context-ref-item strong {
+				color: #a5f3fc;
+				font-weight: 700;
+			}
+			.context-ref-implicit {
+				background: rgba(148, 163, 184, 0.1);
+				border: 1px solid rgba(148, 163, 184, 0.3);
+				color: #94a3b8;
+			}
+			.context-ref-implicit strong {
+				color: #cbd5e1;
+			}
+			.context-refs-content {
+				margin-top: 12px;
+				padding-top: 12px;
+				border-top: 1px solid rgba(255,255,255,0.1);
 			}
 			.mcp-item {
 				background: #243024;
