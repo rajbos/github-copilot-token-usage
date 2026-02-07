@@ -1154,8 +1154,6 @@ function renderLayout(data: DiagnosticsData): void {
 				btnTab.disabled = false;
 			}
 			
-			console.log('DEBUG Cache cleared confirmation received');
-			
 			// Re-enable buttons after a short delay and reset to original state
 			setTimeout(() => {
 				if (btnReport) {
@@ -1191,7 +1189,6 @@ function renderLayout(data: DiagnosticsData): void {
 						if (ageValue) { ageValue.textContent = '0 seconds ago'; }
 					}
 				}
-				console.log('DEBUG Cache refreshed with new data:', cacheInfo);
 			}
 		}
 	});
@@ -1346,7 +1343,6 @@ function setupStorageLinkHandlers(): void {
 	}
 
 	document.getElementById('btn-clear-cache')?.addEventListener('click', () => {
-		console.log('DEBUG Clear cache button clicked (report tab)');
 		const btn = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
 		if (btn) {
 			btn.style.background = '#d97706';
@@ -1359,7 +1355,6 @@ function setupStorageLinkHandlers(): void {
 	});
 
 	document.getElementById('btn-clear-cache-tab')?.addEventListener('click', () => {
-		console.log('DEBUG Clear cache button clicked (cache tab)');
 		const btn = document.getElementById('btn-clear-cache-tab') as HTMLButtonElement | null;
 		if (btn) {
 			btn.style.background = '#d97706';
@@ -1376,7 +1371,6 @@ function setupStorageLinkHandlers(): void {
 		const target = event.target as HTMLElement;
 		if (!target) { return; }
 		if (target.id === 'btn-clear-cache' || target.id === 'btn-clear-cache-tab') {
-			console.log('DEBUG Clear cache button clicked via delegated handler', target.id);
 			target.style.background = '#d97706';
 			target.innerHTML = '<span>⏳</span><span>Clearing...</span>';
 			if (target instanceof HTMLButtonElement) {
@@ -1395,12 +1389,10 @@ function setupStorageLinkHandlers(): void {
 
 	// Backend configuration buttons
 	document.getElementById('btn-configure-backend')?.addEventListener('click', () => {
-		console.log('[DEBUG] Configure backend button clicked');
 		vscode.postMessage({ command: 'configureBackend' });
 	});
 	
 	document.getElementById('btn-open-settings')?.addEventListener('click', () => {
-		console.log('[DEBUG] Open settings button clicked');
 		vscode.postMessage({ command: 'openSettings' });
 	});
 
