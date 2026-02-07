@@ -89,7 +89,7 @@ const vscode = acquireVsCodeApi<DiagnosticsViewState>();
 const initialData = window.__INITIAL_DIAGNOSTICS__;
 
 // Sorting and filtering state
-let currentSortColumn: 'firstInteraction' | 'lastInteraction' = 'lastInteraction';
+let currentSortColumn: 'lastInteraction' = 'lastInteraction';
 let currentSortDirection: 'asc' | 'desc' = 'desc';
 let currentEditorFilter: string | null = null; // null = show all
 
@@ -231,8 +231,8 @@ function getEditorIcon(editor: string): string {
 
 function sortSessionFiles(files: SessionFileDetails[]): SessionFileDetails[] {
 	return [...files].sort((a, b) => {
-		const aVal = currentSortColumn === 'firstInteraction' ? a.firstInteraction : a.lastInteraction;
-		const bVal = currentSortColumn === 'firstInteraction' ? b.firstInteraction : b.lastInteraction;
+		const aVal = a.lastInteraction;
+		const bVal = b.lastInteraction;
 		
 		// Handle null values - push them to the end
 		if (!aVal && !bVal) { return 0; }
@@ -246,7 +246,7 @@ function sortSessionFiles(files: SessionFileDetails[]): SessionFileDetails[] {
 	});
 }
 
-function getSortIndicator(column: 'firstInteraction' | 'lastInteraction'): string {
+function getSortIndicator(column: 'lastInteraction'): string {
 	if (currentSortColumn !== column) { return ''; }
 	return currentSortDirection === 'desc' ? ' ▼' : ' ▲';
 }
@@ -355,7 +355,6 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 						<th>Size</th>
 						<th>Interactions</th>
 						<th>Context Refs</th>
-						<th class="sortable" data-sort="firstInteraction">First Interaction${getSortIndicator('firstInteraction')}</th>
 						<th class="sortable" data-sort="lastInteraction">Last Interaction${getSortIndicator('lastInteraction')}</th>
 						<th>Actions</th>
 					</tr>
@@ -372,7 +371,6 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sanitizeNumber(sf.interactions)}</td>
 							<td title="${getContextRefsSummary(sf.contextReferences)}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
-							<td>${formatDate(sf.firstInteraction)}</td>
 							<td>${formatDate(sf.lastInteraction)}</td>
 							<td>
 								<a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>
@@ -1245,7 +1243,7 @@ function setupStorageLinkHandlers(): void {
 	function setupSortHandlers(): void {
 		document.querySelectorAll('.sortable').forEach(header => {
 			header.addEventListener('click', () => {
-				const sortColumn = (header as HTMLElement).getAttribute('data-sort') as 'firstInteraction' | 'lastInteraction';
+				const sortColumn = (header as HTMLElement).getAttribute('data-sort') as 'lastInteraction';
 				if (sortColumn) {
 					// Toggle direction if same column, otherwise default to desc
 					if (currentSortColumn === sortColumn) {
