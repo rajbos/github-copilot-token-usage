@@ -78,6 +78,7 @@ interface SessionFileCache {
 	firstInteraction?: string | null; // ISO timestamp of first interaction
 	lastInteraction?: string | null; // ISO timestamp of last interaction
 	title?: string; // Session title (customTitle from session file)
+	repository?: string; // Git remote origin URL for the session's workspace
 }
 
 // New interfaces for usage analysis
@@ -170,6 +171,7 @@ interface SessionFileDetails {
 	editorRoot?: string; // top-level editor root path (for display in diagnostics)
 	editorName?: string; // friendly editor name (e.g., 'VS Code')
 	title?: string; // session title (customTitle from session file)
+	repository?: string; // Git remote origin URL for the session's workspace
 }
 
 // Chat turn information for log viewer
@@ -1942,6 +1944,135 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Extract repository remote URL from file paths found in contentReferences.
+	 * Looks for .git/config file in the workspace root to get the origin remote URL.
+	 * @param contentReferences Array of content reference objects from session data
+	 * @returns The repository remote URL if found, undefined otherwise
+	 */
+	private async extractRepositoryFromContentReferences(contentReferences: any[]): Promise<string | undefined> {
+		if (!Array.isArray(contentReferences)) {
+			return undefined;
+		}
+
+		const filePaths: string[] = [];
+
+		// Collect all file paths from contentReferences
+		for (const contentRef of contentReferences) {
+			if (!contentRef || typeof contentRef !== 'object') {
+				continue;
+			}
+
+			let reference = null;
+			const kind = contentRef.kind;
+
+			if (kind === 'reference' && contentRef.reference) {
+				reference = contentRef.reference;
+			} else if (kind === 'inlineReference' && contentRef.inlineReference) {
+				reference = contentRef.inlineReference;
+			}
+
+			if (reference) {
+				// Prefer fsPath (native format) over path (URI format)
+				const rawPath = reference.fsPath || reference.path;
+				if (typeof rawPath === 'string' && rawPath.length > 0) {
+					// Convert VS Code URI path format to native path on Windows
+					// URI paths look like "/c:/Users/..." but should be "c:/Users/..." on Windows
+					let normalizedPath = rawPath;
+					if (process.platform === 'win32' && normalizedPath.match(/^\/[a-zA-Z]:/)) {
+						normalizedPath = normalizedPath.substring(1); // Remove leading slash
+					}
+					filePaths.push(normalizedPath);
+				}
+			}
+		}
+
+		if (filePaths.length === 0) {
+			return undefined;
+		}
+
+		// Find the most likely workspace root by looking for common parent directories
+		// Try each file path and look for a .git/config file in parent directories
+		const checkedRoots = new Set<string>();
+
+		for (const filePath of filePaths) {
+			// Normalize path separators to forward slashes for consistent splitting
+			const normalizedPath = filePath.replace(/\\/g, '/');
+			const pathParts = normalizedPath.split('/').filter(p => p.length > 0);
+
+			// Walk up the directory tree looking for .git/config
+			for (let i = pathParts.length - 1; i >= 1; i--) {
+				// Reconstruct path - on Windows, first part is drive letter (e.g., "c:")
+				let potentialRoot = pathParts.slice(0, i).join('/');
+				
+				// On Windows, ensure we have a valid absolute path
+				if (process.platform === 'win32' && pathParts[0].match(/^[a-zA-Z]:$/)) {
+					// Path starts with drive letter, already valid
+				} else if (process.platform !== 'win32' && !potentialRoot.startsWith('/')) {
+					// On Unix, prepend / for absolute path
+					potentialRoot = '/' + potentialRoot;
+				}
+				
+				// Skip if we've already checked this root
+				if (checkedRoots.has(potentialRoot)) {
+					continue;
+				}
+				checkedRoots.add(potentialRoot);
+
+				const gitConfigPath = path.join(potentialRoot, '.git', 'config');
+				try {
+					const gitConfig = await fs.promises.readFile(gitConfigPath, 'utf8');
+					const remoteUrl = this.parseGitRemoteUrl(gitConfig);
+					if (remoteUrl) {
+						return remoteUrl;
+					}
+				} catch {
+					// No .git/config at this level, continue up the tree
+				}
+			}
+		}
+
+		return undefined;
+	}
+
+	/**
+	 * Parse the remote origin URL from a .git/config file content.
+	 * Looks for [remote "origin"] section and extracts the url value.
+	 * @param gitConfigContent The content of a .git/config file
+	 * @returns The remote origin URL if found, undefined otherwise
+	 */
+	private parseGitRemoteUrl(gitConfigContent: string): string | undefined {
+		// Look for [remote "origin"] section and extract url
+		const lines = gitConfigContent.split('\n');
+		let inOriginSection = false;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			
+			// Check if we're entering the [remote "origin"] section
+			if (trimmed.match(/^\[remote\s+"origin"\]$/i)) {
+				inOriginSection = true;
+				continue;
+			}
+
+			// Check if we're leaving the section (new section starts)
+			if (inOriginSection && trimmed.startsWith('[')) {
+				inOriginSection = false;
+				continue;
+			}
+
+			// Look for url = ... in the origin section
+			if (inOriginSection) {
+				const urlMatch = trimmed.match(/^url\s*=\s*(.+)$/i);
+				if (urlMatch) {
+					return urlMatch[1].trim();
+				}
+			}
+		}
+
+		return undefined;
+	}
+
+	/**
 	 * Extract session metadata (title, timestamps) from a session file.
 	 * Used to populate cache with information needed for session file details.
 	 */
@@ -2181,7 +2312,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			firstInteraction: cached.firstInteraction || null,
 			lastInteraction: lastInteraction,
 			editorSource: this.detectEditorSource(sessionFile),
-			title: cached.title
+			title: cached.title,
+			repository: cached.repository
 		};
 		
 		// Add editor root and name
@@ -2229,7 +2361,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			firstInteraction: details.firstInteraction,
 			lastInteraction: details.lastInteraction,
-			title: details.title
+			title: details.title,
+			repository: details.repository
 		};
 		
 		// Update the contextReferences in usageAnalysis with the current data
@@ -2250,8 +2383,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Try to get details from cache first
 		const cachedDetails = await this.getSessionFileDetailsFromCache(sessionFile, stat);
 		if (cachedDetails) {
-			this._cacheHits++;
-			return cachedDetails;
+			// Invalidate cache if repository field is missing (needed for new repository extraction feature)
+			// Only re-parse JSONL files since they're likely to have contentReferences
+			if (cachedDetails.repository === undefined && sessionFile.endsWith('.jsonl')) {
+				// Fall through to re-parse
+			} else {
+				this._cacheHits++;
+				return cachedDetails;
+			}
 		}
 		
 		this._cacheMisses++;
@@ -2282,6 +2421,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
 				const timestamps: number[] = [];
+				const allContentReferences: any[] = []; // Collect for repository extraction
 				
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
@@ -2327,6 +2467,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 								if (request.message?.text) {
 									this.analyzeContextReferences(request.message.text, details.contextReferences);
 								}
+								// Collect contentReferences for repository extraction
+								if (request.contentReferences && Array.isArray(request.contentReferences)) {
+									allContentReferences.push(...request.contentReferences);
+								}
 								
 							}
 						}						
@@ -2354,6 +2498,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					details.lastInteraction = stat.mtime.toISOString();
 				}
 				
+				// Extract repository from collected contentReferences
+				if (allContentReferences.length > 0) {
+					details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
+				}
+				
 				// Update cache with the details we just collected
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				
@@ -2368,9 +2517,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				details.title = sessionContent.customTitle;
 			}			
 			
-			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+			const hasRequests = sessionContent.requests && Array.isArray(sessionContent.requests);
+			
+			if (hasRequests) {
 				details.interactions = sessionContent.requests.length;
 				const timestamps: number[] = [];
+				const allContentReferences: any[] = []; // Collect for repository extraction
 				
 				for (const request of sessionContent.requests) {
 					// Extract timestamps from requests
@@ -2389,6 +2541,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 								this.analyzeContextReferences(part.text, details.contextReferences);
 							}
 						}
+					}
+					
+					// Collect contentReferences for repository extraction
+					if (request.contentReferences && Array.isArray(request.contentReferences)) {
+						allContentReferences.push(...request.contentReferences);
 					}
 					
 					// Check variableData for @workspace, @terminal, @vscode references
@@ -2412,6 +2569,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				} else {
 					// Fallback to file modification time if no timestamps in content
 					details.lastInteraction = stat.mtime.toISOString();
+				}
+				
+				// Extract repository from collected contentReferences
+				if (allContentReferences.length > 0) {
+					details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
 				}
 			}
 			
@@ -4371,7 +4533,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			
 			try {
 				const details = await this.getSessionFileDetails(file);
-				// Only include sessions with activity (lastInteraction or file modified time) within the last 14 days
+				// Only include sessions with activity (lastInteraction or file modified time) within the last x days
 				const lastActivity = details.lastInteraction 
 					? new Date(details.lastInteraction) 
 					: new Date(details.modified);
@@ -4389,6 +4551,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (panel === this.diagnosticsPanel) {
 				this.diagnosticsCachedFiles = detailedSessionFiles;
 			}
+			// Log summary stats
+			const withRepo = detailedSessionFiles.filter(s => s.repository).length;
+			this.log(`📊 Sending ${detailedSessionFiles.length} sessions to diagnostics (${withRepo} with repository info)`);
 			await panel.webview.postMessage({
 				command: 'sessionFilesLoaded',
 				detailedSessionFiles
