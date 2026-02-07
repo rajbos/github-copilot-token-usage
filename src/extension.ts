@@ -1940,7 +1940,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (event.v.creationDate) { timestamps.push(event.v.creationDate); }
 							// Always update title - we want the LAST title in the file (matches VS Code UI)
 							if (event.v.customTitle) { title = event.v.customTitle; }
-						}						
+						}
+						
+						// Handle kind: 2 events (requests array with timestamps)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.timestamp) {
+									timestamps.push(request.timestamp);
+								}
+							}
+						}
 
 						// Check kind: 1 (value updates) for title changes
 						if (event.kind === 1 && event.k?.includes('customTitle') && event.v) {
@@ -1955,7 +1964,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				try {
 					const parsed = JSON.parse(fileContent);
 					if (parsed.customTitle) { title = parsed.customTitle; }
-					if (parsed.creationDate) { timestamps.push(parsed.creationDate); }					
+					if (parsed.creationDate) { timestamps.push(parsed.creationDate); }
+					// Extract timestamps from requests array (like getSessionFileDetails does)
+					if (parsed.requests && Array.isArray(parsed.requests)) {
+						for (const request of parsed.requests) {
+							if (request.timestamp || request.ts || request.result?.timestamp) {
+								const ts = request.timestamp || request.ts || request.result?.timestamp;
+								timestamps.push(new Date(ts).getTime());
+							}
+						}
+					}
 				} catch {
 					// Unable to parse
 				}
@@ -2105,6 +2123,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return undefined;
 		}
 		
+		// Determine lastInteraction: use the more recent of cached timestamp or file mtime
+		// This handles cases where file was modified but content timestamps are older
+		let lastInteraction: string | null = cached.lastInteraction || null;
+		if (lastInteraction) {
+			const cachedLastInteraction = new Date(lastInteraction);
+			if (stat.mtime > cachedLastInteraction) {
+				lastInteraction = stat.mtime.toISOString();
+			}
+		} else {
+			// No cached lastInteraction, use file mtime
+			lastInteraction = stat.mtime.toISOString();
+		}
+		
 		// Reconstruct SessionFileDetails from cache
 		const details: SessionFileDetails = {
 			file: sessionFile,
@@ -2113,7 +2144,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			interactions: cached.interactions,
 			contextReferences: cached.usageAnalysis.contextReferences,
 			firstInteraction: cached.firstInteraction || null,
-			lastInteraction: cached.lastInteraction || null,
+			lastInteraction: lastInteraction,
 			editorSource: this.detectEditorSource(sessionFile),
 			title: cached.title
 		};
@@ -2277,7 +2308,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (timestamps.length > 0) {
 					timestamps.sort((a, b) => a - b);
 					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+					// Use the more recent of: extracted last timestamp OR file modification time
+					// This handles cases where new requests are added without timestamp fields
+					const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+					details.lastInteraction = lastTimestamp > stat.mtime 
+						? lastTimestamp.toISOString() 
+						: stat.mtime.toISOString();
+				} else {
+					// Fallback to file modification time if no timestamps in content
+					details.lastInteraction = stat.mtime.toISOString();
 				}
 				
 				// Update cache with the details we just collected
@@ -2329,7 +2368,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (timestamps.length > 0) {
 					timestamps.sort((a, b) => a - b);
 					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+					// Use the more recent of: extracted last timestamp OR file modification time
+					// This handles cases where new requests are added without timestamp fields
+					const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+					details.lastInteraction = lastTimestamp > stat.mtime 
+						? lastTimestamp.toISOString() 
+						: stat.mtime.toISOString();
 				} else {
 					// Fallback to file modification time if no timestamps in content
 					details.lastInteraction = stat.mtime.toISOString();
