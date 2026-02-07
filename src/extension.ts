@@ -249,6 +249,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
 
+	// GitHub authentication session
+	private githubSession: vscode.AuthenticationSession | undefined;
+
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
 		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
@@ -470,6 +473,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Load persisted cache from storage
 		this.loadCacheFromStorage();
 
+		// Restore GitHub authentication session if previously authenticated
+		this.restoreGitHubSession();
+
 		// Check GitHub Copilot extension status
 		this.checkCopilotExtension();
 
@@ -528,6 +534,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Restore GitHub authentication session on extension startup
+	 * Attempts to silently retrieve an existing session if user was previously authenticated
+	 */
+	private async restoreGitHubSession(): Promise<void> {
+		try {
+			const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+			if (wasAuthenticated) {
+				this.log('Attempting to restore GitHub authentication session...');
+				// Try to get the existing session without prompting the user
+				// createIfNone: false ensures we don't prompt for authentication
+				const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+				if (session) {
+					this.githubSession = session;
+					this.log(`✅ GitHub session restored for ${session.account.label}`);
+					// Update the stored username in case it changed
+					await this.context.globalState.update('github.username', session.account.label);
+				} else {
+					// Session doesn't exist anymore - clear the authenticated state
+					this.log('GitHub session not found - clearing authenticated state');
+					await this.context.globalState.update('github.authenticated', false);
+					await this.context.globalState.update('github.username', undefined);
+				}
+			}
+		} catch (error) {
+			this.warn('Failed to restore GitHub session: ' + String(error));
+			// Clear authentication state on error
+			await this.context.globalState.update('github.authenticated', false);
+			await this.context.globalState.update('github.username', undefined);
+		}
+	}
+
 	private recheckCopilotExtensionsAfterDelay(): void {
 		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
 		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
@@ -540,6 +578,85 @@ class CopilotTokenTracker implements vscode.Disposable {
 		} else {
 			this.warn('⚠️ Some Copilot extensions still inactive after delay');
 		}
+	}
+
+	/**
+	 * Authenticate with GitHub using VS Code's authentication API
+	 * This creates a session that can be used for future GitHub-related features
+	 */
+	public async authenticateWithGitHub(): Promise<void> {
+		try {
+			this.log('Attempting GitHub authentication...');
+			
+			// Request authentication with GitHub
+			// Using 'read:user' scope as a minimal requirement
+			const session = await vscode.authentication.getSession(
+				'github',
+				['read:user'],
+				{ createIfNone: true }
+			);
+
+			if (session) {
+				this.githubSession = session;
+				this.log(`✅ Successfully authenticated as ${session.account.label}`);
+				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
+				
+				// Store authentication state
+				await this.context.globalState.update('github.authenticated', true);
+				await this.context.globalState.update('github.username', session.account.label);
+			}
+		} catch (error) {
+			this.error('GitHub authentication failed:', error);
+			vscode.window.showErrorMessage('Failed to authenticate with GitHub. Please try again.');
+		}
+	}
+
+	/**
+	 * Sign out from GitHub
+	 */
+	public async signOutFromGitHub(): Promise<void> {
+		try {
+			this.log('Signing out from GitHub...');
+			this.githubSession = undefined;
+			await this.context.globalState.update('github.authenticated', false);
+			await this.context.globalState.update('github.username', undefined);
+			this.log('✅ Successfully signed out from GitHub');
+			vscode.window.showInformationMessage('Signed out from GitHub successfully.');
+		} catch (error) {
+			this.error('Failed to sign out from GitHub:', error);
+			vscode.window.showErrorMessage('Failed to sign out from GitHub.');
+		}
+	}
+
+	/**
+	 * Get the current GitHub authentication status
+	 */
+	public getGitHubAuthStatus(): { authenticated: boolean; username?: string } {
+		const authenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+		const username = this.context.globalState.get<string>('github.username');
+		return { authenticated, username };
+	}
+
+	/**
+	 * Check if the user is authenticated with GitHub
+	 * Checks both in-memory session and persisted state for accuracy
+	 */
+	public isGitHubAuthenticated(): boolean {
+		// Primary check: in-memory session
+		if (this.githubSession !== undefined) {
+			return true;
+		}
+		// Fallback: check persisted state (session may not be restored yet)
+		// Note: This may be true even if the session is expired
+		// The restoreGitHubSession method will reconcile this on startup
+		return this.context.globalState.get<boolean>('github.authenticated', false);
+	}
+
+	/**
+	 * Get the current GitHub session (if authenticated)
+	 */
+	public getGitHubSession(): vscode.AuthenticationSession | undefined {
+		return this.githubSession;
 	}
 
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
@@ -4214,6 +4331,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'openSettings':
 					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
 					break;
+				case 'authenticateGitHub':
+					this.log('authenticateGitHub message received from diagnostics webview');
+					await this.authenticateWithGitHub();
+					// Refresh the diagnostics panel to show the updated auth status
+					if (this.diagnosticsPanel) {
+						await this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+					}
+					break;
+				case 'signOutGitHub':
+					this.log('signOutGitHub message received from diagnostics webview');
+					await this.signOutFromGitHub();
+					// Refresh the diagnostics panel to show the updated auth status
+					if (this.diagnosticsPanel) {
+						await this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+					}
+					break;
 			}
 		});
 
@@ -4290,6 +4423,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
 
+			// Get GitHub authentication status
+			const githubAuthStatus = this.getGitHubAuthStatus();
+
 			// Check if panel is still open before updating
 			if (!this.isPanelOpen(panel)) {
 				this.log('Diagnostic panel closed during data load, aborting update');
@@ -4302,7 +4438,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				report,
 				sessionFiles: sessionFileData,
 				sessionFolders,
-				backendStorageInfo
+				backendStorageInfo,
+				githubAuth: githubAuthStatus
 			});
 
 			this.log('✅ Diagnostic data loaded and sent to webview');
@@ -4821,8 +4958,20 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.clearCache();
 	});
 
+	// Register the GitHub authentication command
+	const authenticateGitHubCommand = vscode.commands.registerCommand('copilot-token-tracker.authenticateGitHub', async () => {
+		tokenTracker.log('GitHub authentication command called');
+		await tokenTracker.authenticateWithGitHub();
+	});
+
+	// Register the GitHub sign out command
+	const signOutGitHubCommand = vscode.commands.registerCommand('copilot-token-tracker.signOutGitHub', async () => {
+		tokenTracker.log('GitHub sign out command called');
+		await tokenTracker.signOutFromGitHub();
+	});
+
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, clearCacheCommand, authenticateGitHubCommand, signOutGitHubCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }

@@ -4,6 +4,14 @@ All notable changes to the "copilot-token-tracker" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+
+### Added
+- GitHub authentication support using VS Code's built-in authentication provider
+- New commands: "Authenticate with GitHub" and "Sign Out from GitHub"
+- GitHub Auth tab in Diagnostic Report panel showing authentication status
+- Foundation for future GitHub-specific features (repository tracking, team collaboration, advanced analytics)
+
 ## [0.0.8]
 
 ### Changed

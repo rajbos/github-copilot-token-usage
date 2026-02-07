@@ -15,6 +15,19 @@ You can also use a **shared Azure Storage account** (a â€œshared storage serverâ
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
 - **Intelligent Caching**: Caches processed session files to speed up subsequent updates when files haven't changed
 - **Diagnostic Reporting**: Generate comprehensive diagnostic reports to help troubleshoot issues
+- **GitHub Authentication**: Authenticate with your GitHub account to unlock future features
+
+### GitHub Authentication
+
+- **Opt-in Authentication**: Sign in with your configured GitHub account in VS Code
+- **Built-in VS Code Integration**: Uses VS Code's native authentication provider for GitHub
+- **Secure Storage**: Authentication state is securely stored in VS Code's global state
+- **Future Features**: Foundation for upcoming GitHub-specific features such as:
+  - Repository-specific usage tracking
+  - Team collaboration features
+  - Advanced analytics and insights
+
+To authenticate, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for "Copilot Token Tracker: Authenticate with GitHub", or access it through the Diagnostic Report's GitHub Auth tab.
 
 ### Cloud Backend (Opt-in)
 
