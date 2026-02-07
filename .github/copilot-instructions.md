@@ -40,6 +40,14 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 
 **CRITICAL**: Do NOT add debug logging statements like `log('[DEBUG] message')` for troubleshooting during development. This approach has been found to interfere with the output channel and can hide existing log messages from appearing.
 
+**Root Cause**: The issue occurs when webview code (diagnostics panel, etc.) uses `console.log` statements with DEBUG prefixes. These logs are written to the browser console (Developer Tools) of the webview, not to the extension's output channel. When clearing the cache or performing other operations, if there are DEBUG console.log statements in the webview code, they don't affect the output channel directly. However, the pattern of using DEBUG prefixes in webviews was removed to maintain consistency with the extension's logging guidelines and avoid confusion.
+
+**The Difference**:
+- **Extension logging** (`src/extension.ts`): Uses `this.outputChannel.appendLine()` to write to VS Code's Output Channel, which is visible in the Output panel.
+- **Webview logging** (`src/webview/*/main.ts`): Uses `console.log()` to write to the browser console, which is only visible when you open Developer Tools in the webview.
+
+When you clear the output channel using `outputChannel.clear()` or similar operations, it only affects the extension's output channel, not the webview's browser console. The two are separate logging systems.
+
 - **Use Existing Logs**: The extension already has comprehensive logging throughout. Review existing log statements to understand what's being tracked.
 - **Minimal Logging**: Only add logging if absolutely necessary for a new feature. Keep messages concise and informative.
 - **Remove Debug Logs**: Any temporary debug logging added during development MUST be removed before committing code.

@@ -1807,10 +1807,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			refs.selection += selectionMatches.length;
 		}
 		
-		// Count #symbol references
+		// Count #symbol and #sym references (both aliases)
 		const symbolMatches = text.match(/#symbol/gi);
+		const symMatches = text.match(/#sym\b/gi);  // \b ensures we don't match #symbol
 		if (symbolMatches) {
 			refs.symbol += symbolMatches.length;
+		}
+		if (symMatches) {
+			refs.symbol += symMatches.length;
 		}
 		
 		// Count #codebase references
@@ -1893,6 +1897,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Track by full path (limit to last 100 chars for display)
 					const pathKey = fsPath.length > 100 ? '...' + fsPath.substring(fsPath.length - 97) : fsPath;
 					refs.byPath[pathKey] = (refs.byPath[pathKey] || 0) + 1;
+				}
+				
+				// Handle symbol references (e.g., #sym:functionName)
+				// Symbol references have a 'name' field instead of fsPath
+				const symbolName = reference.name;
+				if (typeof symbolName === 'string' && kind === 'reference') {
+					// This is a symbol reference, track it
+					refs.symbol++;
+					// Track symbol by name for display (use 'name' as path)
+					const symbolKey = `#sym:${symbolName}`;
+					refs.byPath[symbolKey] = (refs.byPath[symbolKey] || 0) + 1;
 				}
 			}
 		}

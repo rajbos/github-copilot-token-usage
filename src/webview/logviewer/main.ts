@@ -147,10 +147,33 @@ function renderContextReferencesDetailed(refs: ContextReferenceUsage): string {
 	
 	// Show file paths if any
 	if (refs.byPath && Object.keys(refs.byPath).length > 0) {
-		const pathList = Object.entries(refs.byPath)
-			.map(([path, count]) => `${getFileName(path)}: ${count}`)
-			.join(', ');
-		sections.push(`<div class="context-section"><strong>Files:</strong> ${pathList}</div>`);
+		// Separate symbols from files
+		const symbols: [string, number][] = [];
+		const files: [string, number][] = [];
+		
+		Object.entries(refs.byPath).forEach(([path, count]) => {
+			if (path.startsWith('#sym:')) {
+				symbols.push([path.substring(5), count]); // Remove '#sym:' prefix
+			} else {
+				files.push([path, count]);
+			}
+		});
+		
+		// Show files
+		if (files.length > 0) {
+			const pathList = files
+				.map(([path, count]) => `${getFileName(path)}: ${count}`)
+				.join(', ');
+			sections.push(`<div class="context-section"><strong>Files:</strong> ${pathList}</div>`);
+		}
+		
+		// Show symbols
+		if (symbols.length > 0) {
+			const symbolList = symbols
+				.map(([symbolName, count]) => `${symbolName}: ${count}`)
+				.join(', ');
+			sections.push(`<div class="context-section"><strong>Symbols:</strong> ${symbolList}</div>`);
+		}
 	}
 	
 	return sections.length > 0 ? sections.join('') : '<div class="context-section">No additional details</div>';
@@ -214,7 +237,13 @@ function renderTurnCard(turn: ChatTurn): string {
 			});
 		
 		otherPaths.forEach(([path]) => {
-			contextFileBadges.push(`<span class="context-badge" title="${escapeHtml(path)}">📄 ${escapeHtml(getFileName(path))}</span>`);
+			// Check if this is a symbol reference
+			if (path.startsWith('#sym:')) {
+				const symbolName = path.substring(5); // Remove '#sym:' prefix
+				contextFileBadges.push(`<span class="context-badge" title="Symbol: ${escapeHtml(symbolName)}">🔤 ${escapeHtml(symbolName)}</span>`);
+			} else {
+				contextFileBadges.push(`<span class="context-badge" title="${escapeHtml(path)}">📄 ${escapeHtml(getFileName(path))}</span>`);
+			}
 		});
 	}
 	
