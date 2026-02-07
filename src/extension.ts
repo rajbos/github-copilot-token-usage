@@ -1574,12 +1574,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 						
 						// Detect tool calls from Copilot CLI
 						if (event.type === 'tool.call' || event.type === 'tool.result') {
-							analysis.toolCalls.total++;
 							const toolName = event.data?.toolName || event.toolName || 'unknown';
-							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							
+							// Check if this is an MCP tool by name pattern
+							if (this.isMcpTool(toolName)) {
+								// Count as MCP tool
+								analysis.mcpTools.total++;
+								// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
+								const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
+								const serverName = parts.length > 0 ? parts[0] : 'unknown';
+								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+								analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+							} else {
+								// Count as regular tool call
+								analysis.toolCalls.total++;
+								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							}
 						}
 						
-						// Detect MCP tools
+						// Detect MCP tools from explicit MCP events
 						if (event.type === 'mcp.tool.call' || (event.data?.mcpServer)) {
 							analysis.mcpTools.total++;
 							const serverName = event.data?.mcpServer || 'unknown';
@@ -1691,12 +1704,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 							// Detect tool invocations
 							if (responseItem.kind === 'toolInvocationSerialized' || 
 							    responseItem.kind === 'prepareToolInvocation') {
-								analysis.toolCalls.total++;
 								const toolName = responseItem.toolId ||
 								                responseItem.toolName || 
 								                responseItem.invocationMessage?.toolName || 
 								                'unknown';
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								
+								// Check if this is an MCP tool by name pattern
+								if (this.isMcpTool(toolName)) {
+									// Count as MCP tool
+									analysis.mcpTools.total++;
+									// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
+									const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
+									const serverName = parts.length > 0 ? parts[0] : 'unknown';
+									analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+									analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+								} else {
+									// Count as regular tool call
+									analysis.toolCalls.total++;
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
 							}
 							
 							// Detect MCP servers starting
@@ -1789,6 +1815,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		} catch (error) {
 			this.warn(`Error calculating model switching for ${sessionFile}: ${error}`);
 		}
+	}
+
+	/**
+	 * Check if a tool name indicates it's an MCP (Model Context Protocol) tool.
+	 * MCP tools are identified by names starting with "mcp." or "mcp_"
+	 */
+	private isMcpTool(toolName: string): boolean {
+		return toolName.startsWith('mcp.') || toolName.startsWith('mcp_');
 	}
 
 	/**
@@ -2577,11 +2611,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
 								const lastTurn = turns[turns.length - 1];
 								const toolName = event.data?.toolName || event.toolName || 'unknown';
-								lastTurn.toolCalls.push({
-									toolName,
-									arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
-									result: event.type === 'tool.result' ? event.data?.output : undefined
-								});
+								
+								// Check if this is an MCP tool by name pattern
+								if (this.isMcpTool(toolName)) {
+									// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
+									const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
+									const serverName = parts.length > 0 ? parts[0] : 'unknown';
+									lastTurn.mcpTools.push({ server: serverName, tool: toolName });
+								} else {
+									// Add to regular tool calls
+									lastTurn.toolCalls.push({
+										toolName,
+										arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+										result: event.type === 'tool.result' ? event.data?.output : undefined
+									});
+								}
+							}
+							
+							// Handle explicit MCP tool calls from CLI
+							if ((event.type === 'mcp.tool.call' || event.data?.mcpServer) && turns.length > 0) {
+								const lastTurn = turns[turns.length - 1];
+								const serverName = event.data?.mcpServer || 'unknown';
+								const toolName = event.data?.toolName || event.toolName || 'unknown';
+								lastTurn.mcpTools.push({ server: serverName, tool: toolName });
 							}
 						} catch {
 							// Skip malformed lines
@@ -2736,11 +2788,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Extract tool invocations
 			if (item.kind === 'toolInvocationSerialized' || item.kind === 'prepareToolInvocation') {
 				const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
-				toolCalls.push({
-					toolName,
-					arguments: item.input ? JSON.stringify(item.input) : undefined,
-					result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
-				});
+				
+				// Check if this is an MCP tool by name pattern
+				if (this.isMcpTool(toolName)) {
+					// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
+					const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
+					const serverName = parts.length > 0 ? parts[0] : 'unknown';
+					mcpTools.push({ server: serverName, tool: toolName });
+				} else {
+					// Add to regular tool calls
+					toolCalls.push({
+						toolName,
+						arguments: item.input ? JSON.stringify(item.input) : undefined,
+						result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+					});
+				}
 			}
 			
 			// Extract MCP tools
