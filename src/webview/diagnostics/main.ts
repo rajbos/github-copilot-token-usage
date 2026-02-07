@@ -12,11 +12,16 @@ The view will automatically update when data is ready.`;
 type ContextReferenceUsage = {
 	file: number;
 	selection: number;
+	implicitSelection: number;
 	symbol: number;
 	codebase: number;
 	workspace: number;
 	terminal: number;
 	vscode: number;
+	byKind: { [kind: string]: number };
+	copilotInstructions: number;
+	agentsMd: number;
+	byPath: { [path: string]: number };
 };
 
 type SessionFileDetails = {
@@ -145,19 +150,22 @@ function sanitizeNumber(value: number | undefined | null): string {
 }
 
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode;
+	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
+		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd;
 }
 
 function getContextRefsSummary(refs: ContextReferenceUsage): string {
 	const parts: string[] = [];
 	if (refs.file > 0) { parts.push(`#file: ${refs.file}`); }
 	if (refs.selection > 0) { parts.push(`#sel: ${refs.selection}`); }
+	if (refs.implicitSelection > 0) { parts.push(`impl: ${refs.implicitSelection}`); }
 	if (refs.symbol > 0) { parts.push(`#sym: ${refs.symbol}`); }
 	if (refs.codebase > 0) { parts.push(`#cb: ${refs.codebase}`); }
 	if (refs.workspace > 0) { parts.push(`@ws: ${refs.workspace}`); }
 	if (refs.terminal > 0) { parts.push(`@term: ${refs.terminal}`); }
 	if (refs.vscode > 0) { parts.push(`@vsc: ${refs.vscode}`); }
+	if (refs.copilotInstructions > 0) { parts.push(`📋 inst: ${refs.copilotInstructions}`); }
+	if (refs.agentsMd > 0) { parts.push(`🤖 ag: ${refs.agentsMd}`); }
 	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
