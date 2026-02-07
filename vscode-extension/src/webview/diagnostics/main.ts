@@ -65,6 +65,11 @@ type GlobalStateCounters = {
   unknownMcpDismissedVersion: string;
 };
 
+type GitHubAuthStatus = {
+  authenticated: boolean;
+  username?: string;
+};
+
 type DiagnosticsData = {
   report: string;
   sessionFiles: { file: string; size: number; modified: string }[];
@@ -74,6 +79,7 @@ type DiagnosticsData = {
   backendConfigured?: boolean;
   isDebugMode?: boolean;
   globalStateCounters?: GlobalStateCounters;
+  githubAuth?: GitHubAuthStatus;
 };
 
 type DiagnosticsViewState = {
@@ -711,6 +717,70 @@ function renderDebugTab(counters: GlobalStateCounters | undefined): string {
     </div>`;
 }
 
+function renderGitHubAuthPanel(githubAuth: GitHubAuthStatus | undefined): string {
+  const authenticated = githubAuth?.authenticated || false;
+  const username = githubAuth?.username || '';
+
+  const statusColor = authenticated ? '#2d6a4f' : '#666';
+  const statusIcon = authenticated ? '✅' : '⚪';
+  const statusText = authenticated ? 'Authenticated' : 'Not Authenticated';
+
+  return `
+<div class="info-box">
+  <div class="info-box-title">🔑 GitHub Authentication</div>
+  <div>
+    Authenticate with GitHub to unlock additional features in future releases.
+  </div>
+</div>
+
+<div class="summary-cards">
+  <div class="summary-card" style="border-left: 4px solid ${statusColor};">
+    <div class="summary-label">${statusIcon} Status</div>
+    <div class="summary-value" style="font-size: 16px; color: ${statusColor};">${statusText}</div>
+  </div>
+  ${authenticated ? `
+  <div class="summary-card">
+    <div class="summary-label">👤 Logged in as</div>
+    <div class="summary-value" style="font-size: 16px;">${escapeHtml(username)}</div>
+  </div>
+  ` : ''}
+</div>
+
+${authenticated ? `
+  <div style="margin-top: 24px;">
+    <p style="color: #999; font-size: 12px; margin-bottom: 16px;">
+      You are currently authenticated with GitHub. This enables future features such as:
+    </p>
+    <ul style="margin: 8px 0 16px 20px; color: #999; font-size: 12px;">
+      <li>Repository-specific usage tracking</li>
+      <li>Team collaboration features</li>
+      <li>Advanced analytics and insights</li>
+    </ul>
+  </div>
+` : `
+  <div style="margin-top: 24px;">
+    <p style="color: #999; font-size: 12px; margin-bottom: 16px;">
+      Sign in with your GitHub account to unlock future features. This uses VS Code's built-in authentication.
+    </p>
+  </div>
+`}
+
+<div class="button-group">
+  ${authenticated ? `
+    <button class="button secondary" id="btn-sign-out-github">
+      <span>🚪</span>
+      <span>Sign Out</span>
+    </button>
+  ` : `
+    <button class="button" id="btn-authenticate-github">
+      <span>🔑</span>
+      <span>Authenticate with GitHub</span>
+    </button>
+  `}
+</div>
+  `;
+}
+
 function renderBackendStoragePanel(
   backendInfo: BackendStorageInfo | undefined,
 ): string {
@@ -991,6 +1061,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
 				<button class="tab" data-tab="cache">💾 Cache</button>
 				<button class="tab" data-tab="backend">☁️ Azure Storage</button>
+				<button class="tab" data-tab="github">🔑 GitHub Auth</button>
 				<button class="tab" data-tab="display">⚙️ Settings</button>
 				${data.isDebugMode ? '<button class="tab" data-tab="debug">🐛 Debug</button>' : ''}
 			</div>
@@ -1081,6 +1152,10 @@ function renderLayout(data: DiagnosticsData): void {
 
 			<div id="tab-backend" class="tab-content">
 				${renderBackendStoragePanel(data.backendStorageInfo)}
+			</div>
+
+			<div id="tab-github" class="tab-content">
+				${renderGitHubAuthPanel(data.githubAuth)}
 			</div>
 			<div id="tab-display" class="tab-content">
 				<div class="info-box">
@@ -1412,6 +1487,16 @@ function renderLayout(data: DiagnosticsData): void {
           vscode.postMessage({ command: "revealPath", path });
         }
       });
+    });
+
+    document.getElementById('btn-authenticate-github')?.addEventListener('click', () => {
+      console.log('[DEBUG] Authenticate GitHub button clicked');
+      vscode.postMessage({ command: 'authenticateGitHub' });
+    });
+
+    document.getElementById('btn-sign-out-github')?.addEventListener('click', () => {
+      console.log('[DEBUG] Sign out GitHub button clicked');
+      vscode.postMessage({ command: 'signOutGitHub' });
     });
   }
 

@@ -7208,6 +7208,9 @@ ${hashtag}`;
         `Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`,
       );
 
+      // Get GitHub authentication status
+      const githubAuthStatus = this.getGitHubAuthStatus();
+
       // Check if panel is still open before updating
       if (!this.isPanelOpen(panel)) {
         this.log("Diagnostic panel closed during data load, aborting update");
@@ -7225,6 +7228,7 @@ ${hashtag}`;
         sessionFolders,
         candidatePaths,
         backendStorageInfo,
+        githubAuth: githubAuthStatus,
       });
 
       this.log("✅ Diagnostic data loaded and sent to webview");
