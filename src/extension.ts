@@ -1830,7 +1830,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
 		// Split on . or _ and take the first part
 		const parts = withoutPrefix.split(/[._]/);
-		return parts.length > 0 ? parts[0] : 'unknown';
+		// Return the first non-empty part, or 'unknown' if none exist
+		return parts.length > 0 && parts[0] ? parts[0] : 'unknown';
 	}
 
 	/**
