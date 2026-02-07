@@ -12,6 +12,12 @@ type ContextReferenceUsage = {
 	workspace: number;
 	terminal: number;
 	vscode: number;
+	terminalLastCommand: number;
+	terminalSelection: number;
+	clipboard: number;
+	changes: number;
+	outputPanel: number;
+	problemsPanel: number;
 	byKind: { [kind: string]: number };
 	copilotInstructions: number;
 	agentsMd: number;
@@ -73,7 +79,9 @@ function escapeHtml(text: string): string {
 
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
 	const basicRefs = refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode;
+		refs.workspace + refs.terminal + refs.vscode +
+		(refs.terminalLastCommand || 0) + (refs.terminalSelection || 0) + (refs.clipboard || 0) +
+		(refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0);
 	
 	// Add contentReferences counts
 	const contentRefs = refs.copilotInstructions + refs.agentsMd;
@@ -337,6 +345,12 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div class="stat-card"><div class="stat-label">📁 @workspace</div><div class="stat-value">${stats.month.contextReferences.workspace}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.workspace}</div></div>
 					<div class="stat-card"><div class="stat-label">💻 @terminal</div><div class="stat-value">${stats.month.contextReferences.terminal}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.terminal}</div></div>
 					<div class="stat-card"><div class="stat-label">🔧 @vscode</div><div class="stat-value">${stats.month.contextReferences.vscode}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.vscode}</div></div>
+					<div class="stat-card" title="Last command run in the terminal"><div class="stat-label">⌨️ #terminalLastCommand</div><div class="stat-value">${stats.month.contextReferences.terminalLastCommand || 0}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.terminalLastCommand || 0}</div></div>
+					<div class="stat-card" title="Selected terminal output"><div class="stat-label">🖱️ #terminalSelection</div><div class="stat-value">${stats.month.contextReferences.terminalSelection || 0}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.terminalSelection || 0}</div></div>
+					<div class="stat-card" title="Clipboard contents"><div class="stat-label">📋 #clipboard</div><div class="stat-value">${stats.month.contextReferences.clipboard || 0}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.clipboard || 0}</div></div>
+					<div class="stat-card" title="Uncommitted git changes"><div class="stat-label">📝 #changes</div><div class="stat-value">${stats.month.contextReferences.changes || 0}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.changes || 0}</div></div>
+					<div class="stat-card" title="Output panel contents"><div class="stat-label">📤 #outputPanel</div><div class="stat-value">${stats.month.contextReferences.outputPanel || 0}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.outputPanel || 0}</div></div>
+					<div class="stat-card" title="Problems panel contents"><div class="stat-label">⚠️ #problemsPanel</div><div class="stat-value">${stats.month.contextReferences.problemsPanel || 0}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.problemsPanel || 0}</div></div>
 					<div class="stat-card" title="copilot-instructions.md file references detected in session logs"><div class="stat-label">📋 Copilot Instructions</div><div class="stat-value">${stats.month.contextReferences.copilotInstructions}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.copilotInstructions}</div></div>
 					<div class="stat-card" title="agents.md file references detected in session logs"><div class="stat-label">🤖 Agents.md</div><div class="stat-value">${stats.month.contextReferences.agentsMd}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.agentsMd}</div></div>
 					<div class="stat-card" style="background: #4a3a5a;"><div class="stat-label">📊 Total References</div><div class="stat-value">${monthTotalRefs}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${todayTotalRefs}</div></div>

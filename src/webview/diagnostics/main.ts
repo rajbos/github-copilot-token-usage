@@ -18,6 +18,12 @@ type ContextReferenceUsage = {
 	workspace: number;
 	terminal: number;
 	vscode: number;
+	terminalLastCommand: number;
+	terminalSelection: number;
+	clipboard: number;
+	changes: number;
+	outputPanel: number;
+	problemsPanel: number;
 	byKind: { [kind: string]: number };
 	copilotInstructions: number;
 	agentsMd: number;
@@ -152,7 +158,9 @@ function sanitizeNumber(value: number | undefined | null): string {
 
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
 	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd;
+		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd +
+		(refs.terminalLastCommand || 0) + (refs.terminalSelection || 0) + (refs.clipboard || 0) +
+		(refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0);
 }
 
 function getContextRefsSummary(refs: ContextReferenceUsage): string {
@@ -165,6 +173,12 @@ function getContextRefsSummary(refs: ContextReferenceUsage): string {
 	if (refs.workspace > 0) { parts.push(`@ws: ${refs.workspace}`); }
 	if (refs.terminal > 0) { parts.push(`@term: ${refs.terminal}`); }
 	if (refs.vscode > 0) { parts.push(`@vsc: ${refs.vscode}`); }
+	if ((refs.terminalLastCommand || 0) > 0) { parts.push(`#termLC: ${refs.terminalLastCommand}`); }
+	if ((refs.terminalSelection || 0) > 0) { parts.push(`#termSel: ${refs.terminalSelection}`); }
+	if ((refs.clipboard || 0) > 0) { parts.push(`#clip: ${refs.clipboard}`); }
+	if ((refs.changes || 0) > 0) { parts.push(`#chg: ${refs.changes}`); }
+	if ((refs.outputPanel || 0) > 0) { parts.push(`#out: ${refs.outputPanel}`); }
+	if ((refs.problemsPanel || 0) > 0) { parts.push(`#prob: ${refs.problemsPanel}`); }
 	if (refs.copilotInstructions > 0) { parts.push(`📋 inst: ${refs.copilotInstructions}`); }
 	if (refs.agentsMd > 0) { parts.push(`🤖 ag: ${refs.agentsMd}`); }
 	return parts.length > 0 ? parts.join(', ') : 'None';
