@@ -244,6 +244,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
 
+	// GitHub authentication session
+	private githubSession: vscode.AuthenticationSession | undefined;
+
 	// Tool name mapping - loaded from toolNames.json for friendly display names
 	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
 
@@ -993,6 +996,71 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private setStatusBarText(text: string): void {
 		this.statusBarItem.text = this._devBranch ? `${text} [${this._devBranch}]` : text;
+	}
+
+	/**
+	 * Authenticate with GitHub using VS Code's authentication API.
+	 */
+	public async authenticateWithGitHub(): Promise<void> {
+		try {
+			this.log('Attempting GitHub authentication...');
+			const session = await vscode.authentication.getSession(
+				'github',
+				['read:user'],
+				{ createIfNone: true }
+			);
+			if (session) {
+				this.githubSession = session;
+				this.log(`✅ Successfully authenticated as ${session.account.label}`);
+				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
+				await this.context.globalState.update('github.authenticated', true);
+				await this.context.globalState.update('github.username', session.account.label);
+			}
+		} catch (error) {
+			this.error('GitHub authentication failed:', error);
+			vscode.window.showErrorMessage('Failed to authenticate with GitHub. Please try again.');
+		}
+	}
+
+	/**
+	 * Sign out from GitHub.
+	 */
+	public async signOutFromGitHub(): Promise<void> {
+		try {
+			this.log('Signing out from GitHub...');
+			this.githubSession = undefined;
+			await this.context.globalState.update('github.authenticated', false);
+			await this.context.globalState.update('github.username', undefined);
+			this.log('✅ Successfully signed out from GitHub');
+			vscode.window.showInformationMessage('Signed out from GitHub successfully.');
+		} catch (error) {
+			this.error('Failed to sign out from GitHub:', error);
+			vscode.window.showErrorMessage('Failed to sign out from GitHub.');
+		}
+	}
+
+	/**
+	 * Get the current GitHub authentication status.
+	 */
+	public getGitHubAuthStatus(): { authenticated: boolean; username?: string } {
+		const authenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+		const username = this.context.globalState.get<string>('github.username');
+		return { authenticated, username };
+	}
+
+	/**
+	 * Check if the user is authenticated with GitHub.
+	 */
+	public isGitHubAuthenticated(): boolean {
+		return this.githubSession !== undefined ||
+			this.context.globalState.get<boolean>('github.authenticated', false);
+	}
+
+	/**
+	 * Get the current GitHub session (if authenticated).
+	 */
+	public getGitHubSession(): vscode.AuthenticationSession | undefined {
+		return this.githubSession;
 	}
 
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
@@ -7908,6 +7976,24 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  // Register the GitHub authentication command
+  const authenticateGitHubCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.authenticateGitHub",
+    async () => {
+      tokenTracker.log("GitHub authentication command called");
+      await tokenTracker.authenticateWithGitHub();
+    },
+  );
+
+  // Register the GitHub sign out command
+  const signOutGitHubCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.signOutGitHub",
+    async () => {
+      tokenTracker.log("GitHub sign out command called");
+      await tokenTracker.signOutFromGitHub();
+    },
+  );
+
   // Add to subscriptions for proper cleanup
   context.subscriptions.push(
     refreshCommand,
@@ -7921,6 +8007,8 @@ export function activate(context: vscode.ExtensionContext) {
     showEnvironmentalCommand,
     generateDiagnosticReportCommand,
     clearCacheCommand,
+    authenticateGitHubCommand,
+    signOutGitHubCommand,
     tokenTracker,
   );
 

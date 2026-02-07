@@ -124,6 +124,16 @@
         "command": "copilot-token-tracker.showEnvironmental",
         "title": "Show Environmental Impact",
         "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.authenticateGitHub",
+        "title": "Authenticate with GitHub",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.signOutGitHub",
+        "title": "Sign Out from GitHub",
+        "category": "AI Engineering Fluency"
       }
     ],
     "configuration": {
