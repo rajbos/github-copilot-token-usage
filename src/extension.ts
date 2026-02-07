@@ -124,6 +124,12 @@ interface ContextReferenceUsage {
 	workspace: number;         // @workspace references
 	terminal: number;          // @terminal references
 	vscode: number;            // @vscode references
+	terminalLastCommand: number;  // #terminalLastCommand references
+	terminalSelection: number;    // #terminalSelection references
+	clipboard: number;            // #clipboard references
+	changes: number;              // #changes references
+	outputPanel: number;          // #outputPanel references
+	problemsPanel: number;        // #problemsPanel references
 	// contentReferences tracking from session logs
 	byKind: { [kind: string]: number };           // Count by reference kind
 	copilotInstructions: number;                  // .github/copilot-instructions.md
@@ -1124,6 +1130,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				workspace: 0,
 				terminal: 0,
 				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
 				byKind: {},
 				copilotInstructions: 0,
 				agentsMd: 0,
@@ -1230,6 +1242,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		period.contextReferences.workspace += analysis.contextReferences.workspace;
 		period.contextReferences.terminal += analysis.contextReferences.terminal;
 		period.contextReferences.vscode += analysis.contextReferences.vscode;
+		period.contextReferences.terminalLastCommand += analysis.contextReferences.terminalLastCommand || 0;
+		period.contextReferences.terminalSelection += analysis.contextReferences.terminalSelection || 0;
+		period.contextReferences.clipboard += analysis.contextReferences.clipboard || 0;
+		period.contextReferences.changes += analysis.contextReferences.changes || 0;
+		period.contextReferences.outputPanel += analysis.contextReferences.outputPanel || 0;
+		period.contextReferences.problemsPanel += analysis.contextReferences.problemsPanel || 0;
 		
 		// Merge contentReferences counts
 		period.contextReferences.copilotInstructions += analysis.contextReferences.copilotInstructions || 0;
@@ -1525,6 +1543,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				workspace: 0,
 				terminal: 0,
 				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
 				byKind: {},
 				copilotInstructions: 0,
 				agentsMd: 0,
@@ -1941,6 +1965,42 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const codebaseMatches = text.match(/#codebase/gi);
 		if (codebaseMatches) {
 			refs.codebase += codebaseMatches.length;
+		}
+		
+		// Count #terminalLastCommand references
+		const terminalLastCommandMatches = text.match(/#terminalLastCommand/gi);
+		if (terminalLastCommandMatches) {
+			refs.terminalLastCommand += terminalLastCommandMatches.length;
+		}
+		
+		// Count #terminalSelection references
+		const terminalSelectionMatches = text.match(/#terminalSelection/gi);
+		if (terminalSelectionMatches) {
+			refs.terminalSelection += terminalSelectionMatches.length;
+		}
+		
+		// Count #clipboard references
+		const clipboardMatches = text.match(/#clipboard/gi);
+		if (clipboardMatches) {
+			refs.clipboard += clipboardMatches.length;
+		}
+		
+		// Count #changes references
+		const changesMatches = text.match(/#changes/gi);
+		if (changesMatches) {
+			refs.changes += changesMatches.length;
+		}
+		
+		// Count #outputPanel references
+		const outputPanelMatches = text.match(/#outputPanel/gi);
+		if (outputPanelMatches) {
+			refs.outputPanel += outputPanelMatches.length;
+		}
+		
+		// Count #problemsPanel references
+		const problemsPanelMatches = text.match(/#problemsPanel/gi);
+		if (problemsPanelMatches) {
+			refs.problemsPanel += problemsPanelMatches.length;
 		}
 		
 		// Count @workspace references
@@ -2370,6 +2430,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				workspace: 0,
 				terminal: 0,
 				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
 				byKind: {},
 				copilotInstructions: 0,
 				agentsMd: 0,
@@ -2494,6 +2560,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				contextReferences: {
 					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 					workspace: 0, terminal: 0, vscode: 0,
+					terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
 					// Extended fields expected by SessionUsageAnalysis in the webview
 					byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 				},
@@ -2550,6 +2617,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			contextReferences: {
 				file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 				workspace: 0, terminal: 0, vscode: 0,
+				terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
 				byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 			},
 			firstInteraction: null,
@@ -3058,6 +3126,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return {
 			file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 			workspace: 0, terminal: 0, vscode: 0,
+			terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
 			byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 		};
 	}

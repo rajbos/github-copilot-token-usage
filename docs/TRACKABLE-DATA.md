@@ -114,6 +114,12 @@ References detected via regex:
 - `#selection` - Selected code/text references
 - `#symbol` - Code symbol references (functions, classes, variables)
 - `#codebase` - Entire codebase references
+- `#terminalLastCommand` - Last command run in terminal
+- `#terminalSelection` - Selected terminal output
+- `#clipboard` - Clipboard contents
+- `#changes` - Uncommitted git changes
+- `#outputPanel` - Output panel contents
+- `#problemsPanel` - Problems panel contents
 - `@workspace` - Workspace-wide context
 - `@terminal` - Terminal/command-line context
 - `@vscode` - VS Code settings/environment
