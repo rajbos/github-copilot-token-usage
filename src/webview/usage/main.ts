@@ -12,6 +12,10 @@ type ContextReferenceUsage = {
 	workspace: number;
 	terminal: number;
 	vscode: number;
+	byKind: { [kind: string]: number };
+	copilotInstructions: number;
+	agentsMd: number;
+	byPath: { [path: string]: number };
 };
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
@@ -68,8 +72,13 @@ function escapeHtml(text: string): string {
 }
 
 function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
+	const basicRefs = refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
 		refs.workspace + refs.terminal + refs.vscode;
+	
+	// Add contentReferences counts
+	const contentRefs = refs.copilotInstructions + refs.agentsMd;
+	
+	return basicRefs + contentRefs;
 }
 
 import toolNames from '../../toolNames.json';
@@ -328,8 +337,34 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div class="stat-card"><div class="stat-label">📁 @workspace</div><div class="stat-value">${stats.month.contextReferences.workspace}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.workspace}</div></div>
 					<div class="stat-card"><div class="stat-label">💻 @terminal</div><div class="stat-value">${stats.month.contextReferences.terminal}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.terminal}</div></div>
 					<div class="stat-card"><div class="stat-label">🔧 @vscode</div><div class="stat-value">${stats.month.contextReferences.vscode}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.vscode}</div></div>
+					<div class="stat-card" title="copilot-instructions.md file references detected in session logs"><div class="stat-label">📋 Copilot Instructions</div><div class="stat-value">${stats.month.contextReferences.copilotInstructions}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.copilotInstructions}</div></div>
+					<div class="stat-card" title="agents.md file references detected in session logs"><div class="stat-label">🤖 Agents.md</div><div class="stat-value">${stats.month.contextReferences.agentsMd}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${stats.today.contextReferences.agentsMd}</div></div>
 					<div class="stat-card" style="background: #4a3a5a;"><div class="stat-label">📊 Total References</div><div class="stat-value">${monthTotalRefs}</div><div style="font-size: 10px; color: #999; margin-top: 4px;">Today: ${todayTotalRefs}</div></div>
 				</div>
+				${Object.keys(stats.month.contextReferences.byKind).length > 0 ? `
+					<div style="margin-top: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+						<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">📎 Attached Files by Type (This Month)</div>
+						<div style="font-size: 12px; color: #d0d0d0;">
+							${Object.entries(stats.month.contextReferences.byKind)
+								.sort(([, a], [, b]) => (b as number) - (a as number))
+								.slice(0, 5)
+								.map(([kind, count]) => `<div style="margin-bottom: 4px;"><span style="color: #60a5fa;">${escapeHtml(kind)}:</span> ${count}</div>`)
+								.join('')}
+						</div>
+					</div>
+				` : ''}
+				${Object.keys(stats.month.contextReferences.byPath).length > 0 ? `
+					<div style="margin-top: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+						<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">📁 Most Referenced Files (This Month)</div>
+						<div style="font-size: 11px; color: #d0d0d0;">
+							${Object.entries(stats.month.contextReferences.byPath)
+								.sort(([, a], [, b]) => (b as number) - (a as number))
+								.slice(0, 10)
+								.map(([path, count]) => `<div style="margin-bottom: 4px; font-family: 'Courier New', monospace;"><span style="color: #60a5fa;">${count}×</span> ${escapeHtml(path)}</div>`)
+								.join('')}
+						</div>
+					</div>
+				` : ''}
 			</div>
 
 			<!-- Tool Calls Section -->
