@@ -336,7 +336,7 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">🔗 Context References</div>
-				<div class="summary-value">${totalContextRefs}</div>
+				<div class="summary-value">${safeText(totalContextRefs)}</div>
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">📅 Time Range</div>
