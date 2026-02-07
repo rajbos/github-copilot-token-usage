@@ -4289,6 +4289,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'openSettings':
 					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
 					break;
+				case 'authenticateGitHub':
+					this.log('authenticateGitHub message received from diagnostics webview');
+					await this.authenticateWithGitHub();
+					// Refresh the diagnostics panel to show the updated auth status
+					if (this.diagnosticsPanel) {
+						await this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+					}
+					break;
+				case 'signOutGitHub':
+					this.log('signOutGitHub message received from diagnostics webview');
+					await this.signOutFromGitHub();
+					// Refresh the diagnostics panel to show the updated auth status
+					if (this.diagnosticsPanel) {
+						await this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+					}
+					break;
 			}
 		});
 
@@ -4365,6 +4381,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
 
+			// Get GitHub authentication status
+			const githubAuthStatus = this.getGitHubAuthStatus();
+
 			// Check if panel is still open before updating
 			if (!this.isPanelOpen(panel)) {
 				this.log('Diagnostic panel closed during data load, aborting update');
@@ -4377,7 +4396,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				report,
 				sessionFiles: sessionFileData,
 				sessionFolders,
-				backendStorageInfo
+				backendStorageInfo,
+				githubAuth: githubAuthStatus
 			});
 
 			this.log('✅ Diagnostic data loaded and sent to webview');
