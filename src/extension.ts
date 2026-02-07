@@ -204,7 +204,7 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 11; // Fix toolId extraction for tool calls (2026-02-05)
+	private static readonly CACHE_VERSION = 14; // Comprehensive title extraction: all response item types + kind:1 updates (2026-02-07)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -433,7 +433,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		   try {
 			   // Show the output channel so users can see what's happening
 			   this.outputChannel.show(true);
-			   this.log('DEBUG clearCache() called');
 			   this.log('Clearing session file cache...');
 			   
 			   const cacheSize = this.sessionFileCache.size;
@@ -1903,8 +1902,77 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Note: We don't add to byPath here as these are automatic attachments,
 					// not explicit user file selections
 				}
-			}
+				}
 		}
+	}
+
+	/**
+	 * Extract session metadata (title, timestamps) from a session file.
+	 * Used to populate cache with information needed for session file details.
+	 */
+	private async extractSessionMetadata(sessionFile: string): Promise<{
+		title: string | undefined;
+		firstInteraction: string | null;
+		lastInteraction: string | null;
+	}> {
+		let title: string | undefined;
+		const timestamps: number[] = [];
+
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+
+			if (isJsonlContent) {
+				const lines = fileContent.trim().split('\n');
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+
+						// Handle Copilot CLI format
+						if (event.type === 'user.message') {
+							const ts = event.timestamp || event.ts || event.data?.timestamp;
+							if (ts) { timestamps.push(new Date(ts).getTime()); }
+						}
+
+						// Handle VS Code incremental .jsonl format
+						if (event.kind === 0 && event.v) {
+							if (event.v.creationDate) { timestamps.push(event.v.creationDate); }
+							// Always update title - we want the LAST title in the file (matches VS Code UI)
+							if (event.v.customTitle) { title = event.v.customTitle; }
+						}						
+
+						// Check kind: 1 (value updates) for title changes
+						if (event.kind === 1 && event.k?.includes('customTitle') && event.v) {
+							title = event.v;
+						}
+					} catch {
+						// Skip malformed lines
+					}
+				}
+			} else {
+				// JSON format - try to parse
+				try {
+					const parsed = JSON.parse(fileContent);
+					if (parsed.customTitle) { title = parsed.customTitle; }
+					if (parsed.creationDate) { timestamps.push(parsed.creationDate); }					
+				} catch {
+					// Unable to parse
+				}
+			}
+		} catch {
+			// File read error
+		}
+
+		let firstInteraction: string | null = null;
+		let lastInteraction: string | null = null;
+		if (timestamps.length > 0) {
+			timestamps.sort((a, b) => a - b);
+			firstInteraction = new Date(timestamps[0]).toISOString();
+			lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+		}
+
+		return { title, firstInteraction, lastInteraction };
 	}
 
 	// Cached versions of session file reading methods
@@ -1923,12 +1991,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const modelUsage = await this.getModelUsageFromSession(sessionFilePath);
 		const usageAnalysis = await this.analyzeSessionUsage(sessionFilePath);
 		
+		// Extract title and timestamps from the session file
+		const sessionMeta = await this.extractSessionMetadata(sessionFilePath);
+		
 		const sessionData: SessionFileCache = {
 			tokens,
 			interactions,
 			modelUsage,
 			mtime,
-			usageAnalysis
+			size: fileSize,
+			usageAnalysis,
+			title: sessionMeta.title,
+			firstInteraction: sessionMeta.firstInteraction,
+			lastInteraction: sessionMeta.lastInteraction
 		};
 
 		this.setCachedSessionData(sessionFilePath, sessionData, fileSize);
@@ -2167,8 +2242,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (event.v.creationDate) {
 								timestamps.push(event.v.creationDate);
 							}
-							// Session title
-							if (event.v.customTitle && !details.title) {
+							// Session title - always update to get LAST title (matches VS Code UI)
+							if (event.v.customTitle) {
 								details.title = event.v.customTitle;
 							}
 						}
@@ -2186,26 +2261,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 								if (request.message?.text) {
 									this.analyzeContextReferences(request.message.text, details.contextReferences);
 								}
-								// Fallback: look for generatedTitle in response items
-								if (!details.title && request.response && Array.isArray(request.response)) {
-									for (const responseItem of request.response) {
-										if (responseItem.generatedTitle) {
-											details.title = responseItem.generatedTitle;
-											break;
-										}
-									}
-								}
+								
 							}
-						}
-						
-						// Also check kind: 2 events that update response arrays directly
-						if (!details.title && event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-							for (const responseItem of event.v) {
-								if (responseItem.generatedTitle) {
-									details.title = responseItem.generatedTitle;
-									break;
-								}
-							}
+						}						
+
+						// Check kind: 1 (value updates) for title changes
+						if (event.kind === 1 && event.k?.includes('customTitle') && event.v) {
+							details.title = event.v;
 						}
 					} catch {
 						// Skip malformed lines
@@ -2230,22 +2292,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Extract session title if available
 			if (sessionContent.customTitle) {
 				details.title = sessionContent.customTitle;
-			}
-			
-			// Fallback: look for generatedTitle in responses if no customTitle
-			if (!details.title && sessionContent.requests && Array.isArray(sessionContent.requests)) {
-				for (const request of sessionContent.requests) {
-					if (details.title) { break; }
-					if (request.response && Array.isArray(request.response)) {
-						for (const responseItem of request.response) {
-							if (responseItem.generatedTitle) {
-								details.title = responseItem.generatedTitle;
-								break;
-							}
-						}
-					}
-				}
-			}
+			}			
 			
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				details.interactions = sessionContent.requests.length;
@@ -4056,7 +4103,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.showUsageAnalysis();
 					break;
 				case 'clearCache':
-					this.log('DEBUG clearCache message received from diagnostics webview');
+					this.log('clearCache message received from diagnostics webview');
 					await this.clearCache();
 					// After clearing cache, refresh the diagnostic report if it's open
 					if (this.diagnosticsPanel) {
