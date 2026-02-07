@@ -36,6 +36,7 @@ type SessionFileDetails = {
 	editorRoot?: string;
 	editorName?: string;
 	title?: string;
+	repository?: string;
 };
 
 type CacheInfo = {
@@ -88,7 +89,7 @@ const vscode = acquireVsCodeApi<DiagnosticsViewState>();
 const initialData = window.__INITIAL_DIAGNOSTICS__;
 
 // Sorting and filtering state
-let currentSortColumn: 'firstInteraction' | 'lastInteraction' = 'lastInteraction';
+let currentSortColumn: 'lastInteraction' = 'lastInteraction';
 let currentSortDirection: 'asc' | 'desc' = 'desc';
 let currentEditorFilter: string | null = null; // null = show all
 
@@ -174,6 +175,50 @@ function getFileName(filePath: string): string {
 	return parts[parts.length - 1];
 }
 
+/**
+ * Extract a friendly display name from a repository URL.
+ * Supports HTTPS, SSH, and git:// URLs.
+ * @param repoUrl The full repository URL
+ * @returns A shortened display name like "owner/repo"
+ */
+function getRepoDisplayName(repoUrl: string): string {
+	if (!repoUrl) { return ''; }
+	
+	// Remove .git suffix if present
+	let url = repoUrl.replace(/\.git$/, '');
+	
+	// Handle SSH URLs like git@github.com:owner/repo
+	if (url.includes('@') && url.includes(':')) {
+		const colonIndex = url.lastIndexOf(':');
+		const atIndex = url.lastIndexOf('@');
+		if (colonIndex > atIndex) {
+			return url.substring(colonIndex + 1);
+		}
+	}
+	
+	// Handle HTTPS/git URLs - extract path after the host
+	try {
+		// Handle URLs with explicit protocol
+		if (url.includes('://')) {
+			const urlObj = new URL(url);
+			const pathParts = urlObj.pathname.split('/').filter(p => p);
+			if (pathParts.length >= 2) {
+				return `${pathParts[pathParts.length - 2]}/${pathParts[pathParts.length - 1]}`;
+			}
+			return urlObj.pathname.replace(/^\//, '');
+		}
+	} catch {
+		// URL parsing failed, return as-is
+	}
+	
+	// Fallback: return the last part of the path
+	const parts = url.split('/').filter(p => p);
+	if (parts.length >= 2) {
+		return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+	}
+	return url;
+}
+
 function getEditorIcon(editor: string): string {
 	const lower = editor.toLowerCase();
 	if (lower.includes('cursor')) { return '🖱️'; }
@@ -186,8 +231,8 @@ function getEditorIcon(editor: string): string {
 
 function sortSessionFiles(files: SessionFileDetails[]): SessionFileDetails[] {
 	return [...files].sort((a, b) => {
-		const aVal = currentSortColumn === 'firstInteraction' ? a.firstInteraction : a.lastInteraction;
-		const bVal = currentSortColumn === 'firstInteraction' ? b.firstInteraction : b.lastInteraction;
+		const aVal = a.lastInteraction;
+		const bVal = b.lastInteraction;
 		
 		// Handle null values - push them to the end
 		if (!aVal && !bVal) { return 0; }
@@ -201,7 +246,7 @@ function sortSessionFiles(files: SessionFileDetails[]): SessionFileDetails[] {
 	});
 }
 
-function getSortIndicator(column: 'firstInteraction' | 'lastInteraction'): string {
+function getSortIndicator(column: 'lastInteraction'): string {
 	if (currentSortColumn !== column) { return ''; }
 	return currentSortDirection === 'desc' ? ' ▼' : ' ▲';
 }
@@ -306,10 +351,10 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 						<th>#</th>
 						<th>Editor</th>
 						<th>Title</th>
+						<th>Repository</th>
 						<th>Size</th>
 						<th>Interactions</th>
 						<th>Context Refs</th>
-						<th class="sortable" data-sort="firstInteraction">First Interaction${getSortIndicator('firstInteraction')}</th>
 						<th class="sortable" data-sort="lastInteraction">Last Interaction${getSortIndicator('lastInteraction')}</th>
 						<th>Actions</th>
 					</tr>
@@ -322,10 +367,10 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : 'Empty session'}">
 								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + '...' : sf.title)}</a>` : `<a href="#" class="session-file-link empty-session-link" data-file="${encodeURIComponent(sf.file)}" title="Empty session">(Empty session)</a>`}
 							</td>
+							<td class="repository-cell" title="${sf.repository ? escapeHtml(sf.repository) : 'No repository detected'}">${sf.repository ? escapeHtml(getRepoDisplayName(sf.repository)) : '<span style="color: #666;">—</span>'}</td>
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sanitizeNumber(sf.interactions)}</td>
 							<td title="${getContextRefsSummary(sf.contextReferences)}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
-							<td>${formatDate(sf.firstInteraction)}</td>
 							<td>${formatDate(sf.lastInteraction)}</td>
 							<td>
 								<a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>
@@ -1195,7 +1240,7 @@ function setupStorageLinkHandlers(): void {
 	function setupSortHandlers(): void {
 		document.querySelectorAll('.sortable').forEach(header => {
 			header.addEventListener('click', () => {
-				const sortColumn = (header as HTMLElement).getAttribute('data-sort') as 'firstInteraction' | 'lastInteraction';
+				const sortColumn = (header as HTMLElement).getAttribute('data-sort') as 'lastInteraction';
 				if (sortColumn) {
 					// Toggle direction if same column, otherwise default to desc
 					if (currentSortColumn === sortColumn) {

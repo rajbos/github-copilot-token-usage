@@ -4,6 +4,8 @@
   ,"mcp.io.github.git.assign_copilot_to_issue": "GitHub MCP: Assign Copilot to Issue"
   ,"mcp.io.github.git.create_or_update_file": "GitHub MCP: Create/Update File"
   ,"mcp_io_github_git_pull_request_read": "GitHub MCP: Pull Request Read"
+  ,"mcp_io_github_git_issue_read": "GitHub MCP: Issue Read"
+  ,"mcp_io_github_git_issue_write": "GitHub MCP: Issue Write"
   ,"manage_todo_list": "Manage TODO List"
   ,"copilot_readFile": "Read File"
   ,"copilot_applyPatch": "Apply Patch"
@@ -17,5 +19,8 @@
   ,"copilot_searchCodebase": "Search Codebase"
   ,"get_terminal_output": "Get Terminal Output"
   ,"run_task": "Run Task: Investigate"
-  ,"await_terminal": "Await Terminal command" 
+  ,"await_terminal": "Await Terminal command"
+  ,"github.copilot.editsAgent": "GitHub Copilot Edits Agent"
+  ,"todoList": "TODO List"
+  ,"terminal": "Terminal"
 }
