@@ -38,6 +38,13 @@ interface EditorUsage {
 	};
 }
 
+interface RepositoryUsage {
+	[repository: string]: {
+		tokens: number;
+		sessions: number;
+	};
+}
+
 interface PeriodStats {
 	tokens: number;
 	sessions: number;
@@ -66,6 +73,7 @@ interface DailyTokenStats {
 	interactions: number;
 	modelUsage: ModelUsage;
 	editorUsage: EditorUsage;
+	repositoryUsage: RepositoryUsage;
 }
 
 interface SessionFileCache {
@@ -308,6 +316,49 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Generic 'code' match (catch AppData\Roaming\Code)
 		if (lower.endsWith('code') || lower.includes(path.sep + 'code' + path.sep) || lower.includes('/code/')) { return 'VS Code'; }
 		return 'Unknown';
+	}
+
+	/**
+	 * Extract a friendly display name from a repository URL.
+	 * Supports HTTPS, SSH, and git:// URLs.
+	 * @param repoUrl The full repository URL
+	 * @returns A shortened display name like "owner/repo"
+	 */
+	private getRepoDisplayName(repoUrl: string): string {
+		if (!repoUrl || repoUrl === 'Unknown') { return 'Unknown'; }
+		
+		// Remove .git suffix if present
+		let url = repoUrl.replace(/\.git$/, '');
+		
+		// Handle SSH URLs like git@github.com:owner/repo
+		if (url.includes('@') && url.includes(':')) {
+			const colonIndex = url.lastIndexOf(':');
+			const atIndex = url.lastIndexOf('@');
+			if (colonIndex > atIndex) {
+				return url.substring(colonIndex + 1);
+			}
+		}
+		
+		// Handle HTTPS/git URLs - extract path after the host
+		try {
+			if (url.includes('://')) {
+				const urlObj = new URL(url);
+				const pathParts = urlObj.pathname.split('/').filter(p => p);
+				if (pathParts.length >= 2) {
+					return `${pathParts[pathParts.length - 2]}/${pathParts[pathParts.length - 1]}`;
+				}
+				return urlObj.pathname.replace(/^\//, '');
+			}
+		} catch {
+			// URL parsing failed, continue to fallback
+		}
+		
+		// Fallback: return the last part of the path
+		const parts = url.split('/').filter(p => p);
+		if (parts.length >= 2) {
+			return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+		}
+		return url;
 	}
 
 	// Logging methods
@@ -951,6 +1002,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime, fileSize);
 						const editorType = this.getEditorTypeFromPath(sessionFile);
 						
+						// Get repository from cache if available
+						const cached = this.getCachedSessionData(sessionFile);
+						const repository = cached?.repository || 'Unknown';
+						
 						// Get the date in YYYY-MM-DD format
 						const dateKey = this.formatDateKey(new Date(fileStats.mtime));
 						
@@ -962,7 +1017,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 								sessions: 0,
 								interactions: 0,
 								modelUsage: {},
-								editorUsage: {}
+								editorUsage: {},
+								repositoryUsage: {}
 							});
 						}
 						
@@ -977,6 +1033,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 						dailyStats.editorUsage[editorType].tokens += tokens;
 						dailyStats.editorUsage[editorType].sessions += 1;
+						
+						// Merge repository usage
+						if (!dailyStats.repositoryUsage[repository]) {
+							dailyStats.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
+						}
+						dailyStats.repositoryUsage[repository].tokens += tokens;
+						dailyStats.repositoryUsage[repository].sessions += 1;
 						
 						// Merge model usage
 						for (const [model, usage] of Object.entries(modelUsage)) {
@@ -1023,7 +1086,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					sessions: 0,
 					interactions: 0,
 					modelUsage: {},
-					editorUsage: {}
+					editorUsage: {},
+					repositoryUsage: {}
 				});
 			}
 		}
@@ -4785,6 +4849,33 @@ class CopilotTokenTracker implements vscode.Disposable {
 			};
 		});
 
+		// Aggregate repository usage across all days
+		const allRepositories = new Set<string>();
+		dailyStats.forEach(d => Object.keys(d.repositoryUsage).forEach(r => allRepositories.add(r)));
+
+		const repositoryDatasets = Array.from(allRepositories).map((repo, idx) => {
+			const color = modelColors[idx % modelColors.length];
+			// Shorten repository URL for display (e.g., "owner/repo")
+			const label = this.getRepoDisplayName(repo);
+			return {
+				label,
+				fullRepo: repo,
+				data: dailyStats.map(d => d.repositoryUsage[repo]?.tokens || 0),
+				backgroundColor: color.bg,
+				borderColor: color.border,
+				borderWidth: 1
+			};
+		});
+
+		// Calculate repository totals for summary
+		const repositoryTotalsMap: Record<string, number> = {};
+		dailyStats.forEach(d => {
+			Object.entries(d.repositoryUsage).forEach(([repo, usage]) => {
+				const displayName = this.getRepoDisplayName(repo);
+				repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+			});
+		});
+
 		// Calculate editor totals for summary cards
 		const editorTotalsMap: Record<string, number> = {};
 		dailyStats.forEach(d => {
@@ -4803,6 +4894,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			modelDatasets,
 			editorDatasets,
 			editorTotalsMap,
+			repositoryDatasets,
+			repositoryTotalsMap,
 			dailyCount: dailyStats.length,
 			totalTokens,
 			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,

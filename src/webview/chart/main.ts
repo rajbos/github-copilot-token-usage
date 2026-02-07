@@ -9,6 +9,7 @@ type ChartConfig = import('chart.js').ChartConfiguration<'bar' | 'line', number[
 
 type ModelDataset = { label: string; data: number[]; backgroundColor: string; borderColor: string; borderWidth: number };
 type EditorDataset = ModelDataset;
+type RepositoryDataset = ModelDataset & { fullRepo?: string };
 
 type InitialChartData = {
 	labels: string[];
@@ -16,7 +17,9 @@ type InitialChartData = {
 	sessionsData: number[];
 	modelDatasets: ModelDataset[];
 	editorDatasets: EditorDataset[];
+	repositoryDatasets: RepositoryDataset[];
 	editorTotalsMap: Record<string, number>;
+	repositoryTotalsMap: Record<string, number>;
 	dailyCount: number;
 	totalTokens: number;
 	avgTokensPerDay: number;
@@ -50,7 +53,7 @@ async function loadChartModule(): Promise<void> {
 	const mod = await import('chart.js/auto');
 	Chart = mod.default;
 }
-let currentView: 'total' | 'model' | 'editor' = 'total';
+let currentView: 'total' | 'model' | 'editor' | 'repository' = 'total';
 
 function renderLayout(data: InitialChartData): void {
 	const root = document.getElementById('root');
@@ -130,7 +133,9 @@ function renderLayout(data: InitialChartData): void {
 	modelBtn.id = 'view-model';
 	const editorBtn = el('button', 'toggle', 'By Editor');
 	editorBtn.id = 'view-editor';
-	toggles.append(totalBtn, modelBtn, editorBtn);
+	const repoBtn = el('button', 'toggle', 'By Repository');
+	repoBtn.id = 'view-repository';
+	toggles.append(totalBtn, modelBtn, editorBtn, repoBtn);
 
 	const canvasWrap = el('div', 'canvas-wrap');
 	const canvas = document.createElement('canvas');
@@ -184,6 +189,7 @@ function wireInteractions(data: InitialChartData): void {
 		{ id: 'view-total', view: 'total' as const },
 		{ id: 'view-model', view: 'model' as const },
 		{ id: 'view-editor', view: 'editor' as const },
+		{ id: 'view-repository', view: 'repository' as const },
 	];
 
 	viewButtons.forEach(({ id, view }) => {
@@ -204,7 +210,7 @@ async function setupChart(canvas: HTMLCanvasElement, data: InitialChartData): Pr
 	chart = new Chart(ctx, createConfig('total', data));
 }
 
-async function switchView(view: 'total' | 'model' | 'editor', data: InitialChartData): Promise<void> {
+async function switchView(view: 'total' | 'model' | 'editor' | 'repository', data: InitialChartData): Promise<void> {
 	if (currentView === view) {
 		return;
 	}
@@ -229,8 +235,8 @@ async function switchView(view: 'total' | 'model' | 'editor', data: InitialChart
 	chart = new Chart(ctx, createConfig(view, data));
 }
 
-function setActive(view: 'total' | 'model' | 'editor'): void {
-	['view-total', 'view-model', 'view-editor'].forEach(id => {
+function setActive(view: 'total' | 'model' | 'editor' | 'repository'): void {
+	['view-total', 'view-model', 'view-editor', 'view-repository'].forEach(id => {
 		const btn = document.getElementById(id);
 		if (!btn) {
 			return;
@@ -239,7 +245,7 @@ function setActive(view: 'total' | 'model' | 'editor'): void {
 	});
 }
 
-function createConfig(view: 'total' | 'model' | 'editor', data: InitialChartData): ChartConfig {
+function createConfig(view: 'total' | 'model' | 'editor' | 'repository', data: InitialChartData): ChartConfig {
 	const baseOptions = {
 		responsive: true,
 		maintainAspectRatio: false,
@@ -311,10 +317,23 @@ function createConfig(view: 'total' | 'model' | 'editor', data: InitialChartData
 		};
 	}
 
-	const datasets = view === 'model' ? data.modelDatasets : data.editorDatasets;
+	const datasets = view === 'model' ? data.modelDatasets : view === 'repository' ? data.repositoryDatasets : data.editorDatasets;
+	
+	// Add sessions line as an overlay on all stacked views
+	const sessionsDataset = {
+		label: 'Sessions',
+		data: data.sessionsData,
+		backgroundColor: 'rgba(255, 99, 132, 0.6)',
+		borderColor: 'rgba(255, 99, 132, 1)',
+		borderWidth: 2,
+		type: 'line' as const,
+		yAxisID: 'y1',
+		stack: undefined // Don't stack the line
+	};
+	
 	return {
 		type: 'bar' as const,
-		data: { labels: data.labels, datasets },
+		data: { labels: data.labels, datasets: [...datasets, sessionsDataset] },
 		options: {
 			...baseOptions,
 			plugins: {
@@ -323,8 +342,21 @@ function createConfig(view: 'total' | 'model' | 'editor', data: InitialChartData
 			},
 			scales: {
 				...baseOptions.scales,
-				y: { stacked: true, grid: { color: '#2d2d33' }, ticks: { color: '#c8c8c8', font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() } },
-				x: { stacked: true, grid: { color: '#2d2d33' }, ticks: { color: '#c8c8c8', font: { size: 11 } } }
+				y: { 
+					stacked: true, 
+					grid: { color: '#2d2d33' }, 
+					ticks: { color: '#c8c8c8', font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() },
+					title: { display: true, text: 'Tokens', color: '#d0d0d0', font: { size: 12, weight: 'bold' } }
+				},
+				x: { stacked: true, grid: { color: '#2d2d33' }, ticks: { color: '#c8c8c8', font: { size: 11 } } },
+				y1: {
+					type: 'linear' as const,
+					display: true,
+					position: 'right' as const,
+					grid: { drawOnChartArea: false },
+					ticks: { color: '#c8c8c8', font: { size: 11 } },
+					title: { display: true, text: 'Sessions', color: '#d0d0d0', font: { size: 12, weight: 'bold' } }
+				}
 			}
 		}
 	};
