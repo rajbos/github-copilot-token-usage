@@ -1580,9 +1580,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (this.isMcpTool(toolName)) {
 								// Count as MCP tool
 								analysis.mcpTools.total++;
-								// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
-								const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
-								const serverName = parts.length > 0 ? parts[0] : 'unknown';
+								const serverName = this.extractMcpServerName(toolName);
 								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
 								analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
 							} else {
@@ -1713,9 +1711,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 								if (this.isMcpTool(toolName)) {
 									// Count as MCP tool
 									analysis.mcpTools.total++;
-									// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
-									const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
-									const serverName = parts.length > 0 ? parts[0] : 'unknown';
+									const serverName = this.extractMcpServerName(toolName);
 									analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
 									analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
 								} else {
@@ -1823,6 +1819,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private isMcpTool(toolName: string): boolean {
 		return toolName.startsWith('mcp.') || toolName.startsWith('mcp_');
+	}
+
+	/**
+	 * Extract server name from an MCP tool name.
+	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
+	 */
+	private extractMcpServerName(toolName: string): string {
+		// Remove the mcp. or mcp_ prefix
+		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
+		// Split on . or _ and take the first part
+		const parts = withoutPrefix.split(/[._]/);
+		return parts.length > 0 ? parts[0] : 'unknown';
 	}
 
 	/**
@@ -2614,9 +2622,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 								
 								// Check if this is an MCP tool by name pattern
 								if (this.isMcpTool(toolName)) {
-									// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
-									const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
-									const serverName = parts.length > 0 ? parts[0] : 'unknown';
+									const serverName = this.extractMcpServerName(toolName);
 									lastTurn.mcpTools.push({ server: serverName, tool: toolName });
 								} else {
 									// Add to regular tool calls
@@ -2791,9 +2797,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				
 				// Check if this is an MCP tool by name pattern
 				if (this.isMcpTool(toolName)) {
-					// Extract server name from tool name (format: mcp.server.tool or mcp_server_tool)
-					const parts = toolName.replace(/^mcp[._]/, '').split(/[._]/);
-					const serverName = parts.length > 0 ? parts[0] : 'unknown';
+					const serverName = this.extractMcpServerName(toolName);
 					mcpTools.push({ server: serverName, tool: toolName });
 				} else {
 					// Add to regular tool calls
