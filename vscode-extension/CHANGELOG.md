@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### ✨ Features & Improvements
+- Added GitHub authentication support using VS Code's built-in authentication provider
+- New commands: "Authenticate with GitHub" and "Sign Out from GitHub"
+- GitHub Auth tab in Diagnostic Report panel showing authentication status
+- Foundation for future GitHub-specific features (repository tracking, team collaboration, advanced analytics)
+
 ## [0.0.27] - 2026-04-07
 
 ### ✨ Features & Improvements
