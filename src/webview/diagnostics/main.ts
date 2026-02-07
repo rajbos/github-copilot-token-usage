@@ -506,6 +506,9 @@ function renderLayout(data: DiagnosticsData): void {
 						</tr>
 					</thead>
 					<tbody>`;
+		const totalSessions = sorted.reduce((sum, sf) => sum + sf.count, 0);
+		console.log('[Diagnostics] Total sessions calculated:', totalSessions, 'from', sorted.length, 'folders');
+		
 		sorted.forEach((sf: { dir: string; count: number; editorName?: string }) => {
 			// Shorten common user paths for readability
 			let display = sf.dir;
@@ -522,6 +525,16 @@ function renderLayout(data: DiagnosticsData): void {
 					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a></td>
 				</tr>`;
 		});
+		
+		// Add total row
+		sessionFilesHtml += `
+				<tr style="border-top: 2px solid #5a5a5a; font-weight: 600; background: rgba(255, 255, 255, 0.05);">
+					<td colspan="2" style="text-align: right; padding-right: 16px;">Total:</td>
+					<td>${totalSessions}</td>
+					<td></td>
+				</tr>`;
+		console.log('[Diagnostics] Total row HTML added to sessionFilesHtml');
+		
 		sessionFilesHtml += `
 					</tbody>
 				</table>
@@ -1014,7 +1027,30 @@ function renderLayout(data: DiagnosticsData): void {
 						tbody.appendChild(row);
 					});
 
-					// Find where to insert or replace the session folders table
+					// Add total row
+				const totalSessions = sorted.reduce((sum, sf) => sum + sf.count, 0);
+				const totalRow = document.createElement('tr');
+				totalRow.style.borderTop = '2px solid var(--vscode-panel-border)';
+				totalRow.style.fontWeight = 'bold';
+				totalRow.style.background = 'rgba(255, 255, 255, 0.05)';
+				
+				const totalLabelCell = document.createElement('td');
+				totalLabelCell.setAttribute('colspan', '2');
+				totalLabelCell.style.textAlign = 'right';
+				totalLabelCell.style.paddingRight = '16px';
+				totalLabelCell.textContent = 'Total:';
+				totalRow.appendChild(totalLabelCell);
+				
+				const totalCountCell = document.createElement('td');
+				totalCountCell.textContent = totalSessions.toString();
+				totalRow.appendChild(totalCountCell);
+				
+				const totalEmptyCell = document.createElement('td');
+				totalRow.appendChild(totalEmptyCell);
+				
+				tbody.appendChild(totalRow);
+
+				// Find where to insert or replace the session folders table
 					// It should be inserted after the report-content div but before the button-group
 					const existingTable = reportTabContent.querySelector('.session-folders-table');
 					if (!existingTable) {

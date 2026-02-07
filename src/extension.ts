@@ -236,6 +236,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private waterUsagePer1kTokens = 0.3; // liters of water per 1000 tokens, based on data center usage estimates
 	private _cacheHits = 0; // Counter for cache hits during usage analysis
 	private _cacheMisses = 0; // Counter for cache misses during usage analysis
+	// Short-term cache to avoid rescanning filesystem during rapid successive calls (e.g., diagnostics load)
+	private _sessionFilesCache: string[] | null = null;
+	private _sessionFilesCacheTime: number = 0;
+	private static readonly SESSION_FILES_CACHE_TTL = 60000; // Cache for 60 seconds
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
@@ -2069,7 +2073,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modeUsage: { ask: 0, edit: 0, agent: 0 },
 				contextReferences: {
 					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
-					workspace: 0, terminal: 0, vscode: 0
+					workspace: 0, terminal: 0, vscode: 0,
+					// Extended fields expected by SessionUsageAnalysis in the webview
+					byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 				},
 				mcpTools: { total: 0, byServer: {}, byTool: {} },
 				modelSwitching: {
@@ -2734,6 +2740,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * This TypeScript implementation should mirror that logic.
 	 */
 	private async getCopilotSessionFiles(): Promise<string[]> {
+		// Check short-term cache to avoid expensive filesystem scans during rapid successive calls
+		const now = Date.now();
+		if (this._sessionFilesCache && (now - this._sessionFilesCacheTime) < CopilotTokenTracker.SESSION_FILES_CACHE_TTL) {
+			this.log(`💨 Using cached session files list (${this._sessionFilesCache.length} files, cached ${Math.round((now - this._sessionFilesCacheTime) / 1000)}s ago)`);
+			return this._sessionFilesCache;
+		}
+		
 		const sessionFiles: string[] = [];
 
 		const platform = os.platform();
@@ -2862,6 +2875,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (sessionFiles.length === 0) {
 				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
 			}
+			
+			// Update short-term cache
+			this._sessionFilesCache = sessionFiles;
+			this._sessionFilesCacheTime = Date.now();
 		} catch (error) {
 			this.error('Error getting session files:', error);
 		}
@@ -4090,6 +4107,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async loadDiagnosticDataInBackground(panel: vscode.WebviewPanel): Promise<void> {
 		try {
 			this.log('🔄 Loading diagnostic data in background...');
+
+			// CRITICAL: Ensure stats have been calculated at least once to populate cache
+			// If this is the first diagnostic panel open and no stats exist yet,
+			// force an update now so the cache is populated before we load session files.
+			// This dramatically improves performance on first load (near 100% cache hit rate).
+			if (!this.lastDetailedStats) {
+				this.log('⚡ No cached stats found - forcing initial stats calculation to populate cache...');
+				await this.updateTokenStats(true);
+				this.log('✅ Cache populated, proceeding with diagnostics load');
+			}
 
 			// Load the diagnostic report
 			const report = await this.generateDiagnosticReport();
