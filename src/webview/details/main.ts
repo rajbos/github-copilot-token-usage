@@ -27,6 +27,7 @@ type DetailedStats = {
 	today: PeriodStats;
 	month: PeriodStats;
 	lastMonth: PeriodStats;
+	last30Days: PeriodStats;
 	lastUpdated: string | Date;
 };
 
@@ -52,25 +53,23 @@ console.log('[CopilotTokenTracker] details webview loaded');
 console.log('[CopilotTokenTracker] window.__INITIAL_DETAILS__:', window.__INITIAL_DETAILS__);
 console.log('[CopilotTokenTracker] initialData:', initialData);
 
-function calculateProjection(monthValue: number): number {
-	const now = new Date();
-	const day = now.getDate();
-	const isLeap = (now.getFullYear() % 4 === 0 && now.getFullYear() % 100 !== 0) || now.getFullYear() % 400 === 0;
-	const daysInYear = isLeap ? 366 : 365;
-	if (day === 0) { return 0; }
-	return (monthValue / day) * daysInYear;
+function calculateProjection(last30DaysValue: number): number {
+	// Project annual value based on last 30 days average
+	// This gives better predictions at the beginning of the month
+	const daysInYear = 365.25; // Average days per year (accounting for leap year cycle)
+	return (last30DaysValue / 30) * daysInYear;
 }
 
 function render(stats: DetailedStats): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 
-	const projectedTokens = Math.round(calculateProjection(stats.month.tokens));
-	const projectedSessions = Math.round(calculateProjection(stats.month.sessions));
-	const projectedCo2 = calculateProjection(stats.month.co2);
-	const projectedWater = calculateProjection(stats.month.waterUsage);
-	const projectedCost = calculateProjection(stats.month.estimatedCost);
-	const projectedTrees = calculateProjection(stats.month.treesEquivalent);
+	const projectedTokens = Math.round(calculateProjection(stats.last30Days.tokens));
+	const projectedSessions = Math.round(calculateProjection(stats.last30Days.sessions));
+	const projectedCo2 = calculateProjection(stats.last30Days.co2);
+	const projectedWater = calculateProjection(stats.last30Days.waterUsage);
+	const projectedCost = calculateProjection(stats.last30Days.estimatedCost);
+	const projectedTrees = calculateProjection(stats.last30Days.treesEquivalent);
 
 	renderShell(root, stats, {
 		projectedTokens,
@@ -307,11 +306,12 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		const todayUsage = stats.today.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const monthUsage = stats.month.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const lastMonthUsage = stats.lastMonth.editorUsage[editor] || { tokens: 0, sessions: 0 };
+		const last30DaysUsage = stats.last30Days.editorUsage[editor] || { tokens: 0, sessions: 0 };
 		const todayPercent = todayTotal > 0 ? (todayUsage.tokens / todayTotal) * 100 : 0;
 		const monthPercent = monthTotal > 0 ? (monthUsage.tokens / monthTotal) * 100 : 0;
 		const lastMonthPercent = lastMonthTotal > 0 ? (lastMonthUsage.tokens / lastMonthTotal) * 100 : 0;
-		const projectedTokens = Math.round(calculateProjection(monthUsage.tokens));
-		const projectedSessions = Math.round(calculateProjection(monthUsage.sessions));
+		const projectedTokens = Math.round(calculateProjection(last30DaysUsage.tokens));
+		const projectedSessions = Math.round(calculateProjection(last30DaysUsage.sessions));
 
 		const tr = document.createElement('tr');
 		const labelTd = document.createElement('td');
@@ -399,10 +399,12 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 		const todayUsage = stats.today.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const monthUsage = stats.month.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const lastMonthUsage = stats.lastMonth.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
+		const last30DaysUsage = stats.last30Days.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const todayTotal = todayUsage.inputTokens + todayUsage.outputTokens;
 		const monthTotal = monthUsage.inputTokens + monthUsage.outputTokens;
 		const lastMonthTotal = lastMonthUsage.inputTokens + lastMonthUsage.outputTokens;
-		const projected = Math.round(calculateProjection(monthTotal));
+		const last30DaysTotal = last30DaysUsage.inputTokens + last30DaysUsage.outputTokens;
+		const projected = Math.round(calculateProjection(last30DaysTotal));
 		const todayInputPct = todayTotal > 0 ? (todayUsage.inputTokens / todayTotal) * 100 : 0;
 		const todayOutputPct = todayTotal > 0 ? (todayUsage.outputTokens / todayTotal) * 100 : 0;
 		const monthInputPct = monthTotal > 0 ? (monthUsage.inputTokens / monthTotal) * 100 : 0;

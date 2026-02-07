@@ -55,6 +55,7 @@ interface DetailedStats {
 	today: PeriodStats;
 	month: PeriodStats;
 	lastMonth: PeriodStats;
+	last30Days: PeriodStats;
 	lastUpdated: Date;
 }
 
@@ -670,10 +671,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Calculate last month boundaries
 		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
 		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
+		// Calculate last 30 days boundary
+		const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
 		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const lastMonthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const last30DaysStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -701,14 +705,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Fast check: Get file stats first to avoid processing old files
 					const fileStats = fs.statSync(sessionFile);
 					
-					// Skip files modified before last month (quick filter)
+					// Skip files modified before last 30 days (quick filter)
 					// This is the main performance optimization - filters out old sessions without reading file content
-					if (fileStats.mtime < lastMonthStart) {
+					if (fileStats.mtime < last30DaysStart) {
 						skippedFiles++;
 						continue;
 					}
 					
-					// For files within current month, check if data is cached to avoid redundant reads
+					// For files within last 30 days, check if data is cached to avoid redundant reads
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 					const wasCached = this.isCacheValid(sessionFile, mtime, fileSize);
@@ -732,15 +736,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 						? new Date(details.lastInteraction) 
 						: new Date(details.modified);
 
-					if (lastActivity >= monthStart) {
+					// Update cache statistics (do this once per file)
+					if (wasCached) {
+						cacheHits++;
+					} else {
+						cacheMisses++;
+					}
 
-						// Update cache statistics
-						if (wasCached) {
-							cacheHits++;
-						} else {
-							cacheMisses++;
+					// Check if activity is within last 30 days
+					if (lastActivity >= last30DaysStart) {
+						last30DaysStats.tokens += tokens;
+						last30DaysStats.sessions += 1;
+						last30DaysStats.interactions += interactions;
+
+						// Add editor usage to last 30 days stats
+						if (!last30DaysStats.editorUsage[editorType]) {
+							last30DaysStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
 						}
+						last30DaysStats.editorUsage[editorType].tokens += tokens;
+						last30DaysStats.editorUsage[editorType].sessions += 1;
 
+						// Add model usage to last 30 days stats
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!last30DaysStats.modelUsage[model]) {
+								last30DaysStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							last30DaysStats.modelUsage[model].inputTokens += usage.inputTokens;
+							last30DaysStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+					}
+
+					if (lastActivity >= monthStart) {
 						monthStats.tokens += tokens;
 						monthStats.sessions += 1;
 						monthStats.interactions += interactions;
@@ -785,12 +811,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
 						// Session is from last month - only track lastMonth stats
-						if (wasCached) {
-							cacheHits++;
-						} else {
-							cacheMisses++;
-						}
-
 						lastMonthStats.tokens += tokens;
 						lastMonthStats.sessions += 1;
 						lastMonthStats.interactions += interactions;
@@ -812,7 +832,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					else {
-						// Session is too old (no activity in current or last month), skip it
+						// Session is too old (no activity in last 30 days), skip it
 						skippedFiles++;
 					}
 				} catch (fileError) {
@@ -820,7 +840,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last Month ${lastMonthStats.sessions} sessions`);
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Last Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
 				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
 			}
@@ -833,14 +853,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
 		const lastMonthCo2 = (lastMonthStats.tokens / 1000) * this.co2Per1kTokens;
+		const last30DaysCo2 = (last30DaysStats.tokens / 1000) * this.co2Per1kTokens;
 		
 		const todayWater = (todayStats.tokens / 1000) * this.waterUsagePer1kTokens;
 		const monthWater = (monthStats.tokens / 1000) * this.waterUsagePer1kTokens;
 		const lastMonthWater = (lastMonthStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const last30DaysWater = (last30DaysStats.tokens / 1000) * this.waterUsagePer1kTokens;
 
 		const todayCost = this.calculateEstimatedCost(todayStats.modelUsage);
 		const monthCost = this.calculateEstimatedCost(monthStats.modelUsage);
 		const lastMonthCost = this.calculateEstimatedCost(lastMonthStats.modelUsage);
+		const last30DaysCost = this.calculateEstimatedCost(last30DaysStats.modelUsage);
 
 		const result: DetailedStats = {
 			today: {
@@ -878,6 +901,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: lastMonthWater,
 				estimatedCost: lastMonthCost
+			},
+			last30Days: {
+				tokens: last30DaysStats.tokens,
+				sessions: last30DaysStats.sessions,
+				avgInteractionsPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.interactions / last30DaysStats.sessions) : 0,
+				avgTokensPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.tokens / last30DaysStats.sessions) : 0,
+				modelUsage: last30DaysStats.modelUsage,
+				editorUsage: last30DaysStats.editorUsage,
+				co2: last30DaysCo2,
+				treesEquivalent: last30DaysCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: last30DaysWater,
+				estimatedCost: last30DaysCost
 			},
 			lastUpdated: now
 		};
