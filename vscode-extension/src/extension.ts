@@ -847,6 +847,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Load persisted cache from storage
 		this.cacheManager.loadCacheFromStorage();
 
+		// Restore GitHub authentication session if previously authenticated
+		this.restoreGitHubSession();
+
 		// Check GitHub Copilot extension status
 		this.sessionDiscovery.checkCopilotExtension();
 
@@ -1052,8 +1055,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Check if the user is authenticated with GitHub.
 	 */
 	public isGitHubAuthenticated(): boolean {
-		return this.githubSession !== undefined ||
-			this.context.globalState.get<boolean>('github.authenticated', false);
+		// Primary check: in-memory session
+		if (this.githubSession !== undefined) {
+			return true;
+		}
+		// Fallback: check persisted state (session may not be restored yet)
+		// Note: This may be true even if the session is expired
+		// The restoreGitHubSession method will reconcile this on startup
+		return this.context.globalState.get<boolean>('github.authenticated', false);
 	}
 
 	/**
@@ -1061,6 +1070,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	public getGitHubSession(): vscode.AuthenticationSession | undefined {
 		return this.githubSession;
+	}
+
+	/**
+	 * Restore GitHub authentication session on extension startup.
+	 * Attempts to silently retrieve an existing session if user was previously authenticated.
+	 */
+	private async restoreGitHubSession(): Promise<void> {
+		try {
+			const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+			if (wasAuthenticated) {
+				this.log('Attempting to restore GitHub authentication session...');
+				// Try to get the existing session without prompting the user
+				// createIfNone: false ensures we don't prompt for authentication
+				const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+				if (session) {
+					this.githubSession = session;
+					this.log(`✅ GitHub session restored for ${session.account.label}`);
+					// Update the stored username in case it changed
+					await this.context.globalState.update('github.username', session.account.label);
+				} else {
+					// Session doesn't exist anymore - clear the authenticated state
+					this.log('GitHub session not found - clearing authenticated state');
+					await this.context.globalState.update('github.authenticated', false);
+					await this.context.globalState.update('github.username', undefined);
+				}
+			}
+		} catch (error) {
+			this.warn('Failed to restore GitHub session: ' + String(error));
+			// Clear authentication state on error
+			await this.context.globalState.update('github.authenticated', false);
+			await this.context.globalState.update('github.username', undefined);
+		}
 	}
 
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
