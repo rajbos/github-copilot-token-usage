@@ -1546,104 +1546,97 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			if (isJsonlContent) {
-				const lines = fileContent.trim().split('\n');
-				let sessionMode = 'ask'; // Default mode
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
 				
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+				
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then process
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract session mode from reconstructed state
+					let sessionMode = 'ask';
+					if (sessionState.inputState?.mode?.kind) {
+						sessionMode = sessionState.inputState.mode.kind;
+					}
+					
+					// Detect implicit selections
+					if (sessionState.inputState?.selections && Array.isArray(sessionState.inputState.selections)) {
+						for (const sel of sessionState.inputState.selections) {
+							if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+								analysis.contextReferences.implicitSelection++;
+								break;
+							}
+						}
+					}
+					
+					// Process reconstructed requests array
+					const requests = sessionState.requests || [];
+					for (const request of requests) {
+						if (!request || !request.requestId) { continue; }
+						
+						// Count by mode
+						if (sessionMode === 'agent') {
+							analysis.modeUsage.agent++;
+						} else if (sessionMode === 'edit') {
+							analysis.modeUsage.edit++;
+						} else {
+							analysis.modeUsage.ask++;
+						}
+						
+						// Check for agent in request
+						if (request.agent?.id) {
+							const toolName = request.agent.id;
+							analysis.toolCalls.total++;
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+						
+						// Analyze all context references from this request
+						this.analyzeRequestContext(request, analysis.contextReferences);
+						
+						// Extract tool calls from request.response array
+						if (request.response && Array.isArray(request.response)) {
+							for (const responseItem of request.response) {
+								if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
+									analysis.toolCalls.total++;
+									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+					}
+					
+					// Calculate model switching for delta-based JSONL files
+					await this.calculateModelSwitching(sessionFile, analysis);
+					return analysis;
+				}
+				
+				// Non-delta JSONL (Copilot CLI format) - process line-by-line
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
 						
-						// Handle VS Code incremental format - detect mode from session header
-						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
-							sessionMode = event.v.inputState.mode.kind;
-							
-							// Detect implicit selections in initial state (only if there's an actual range)
-							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections)) {
-								for (const sel of event.v.inputState.selections) {
-									// Only count if it's an actual selection (not just a cursor position)
-									if (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn) {
-										analysis.contextReferences.implicitSelection++;
-										break; // Count once per session
-									}
-								}
-							}
-						}
-						
-						// Handle mode changes (kind: 1 with mode update)
-						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
-							sessionMode = event.v.kind;
-						}
-						
-						// Detect implicit selections in updates to inputState.selections
-						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v)) {
-							for (const sel of event.v) {
-								// Only count if it's an actual selection (not just a cursor position)
-								if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
-									analysis.contextReferences.implicitSelection++;
-									break; // Count once per update
-								}
-							}
-						}
-						
-						// Handle contentReferences updates (kind: 1 with contentReferences update)
-						if (event.kind === 1 && event.k?.includes('contentReferences') && Array.isArray(event.v)) {
-							this.analyzeContentReferences(event.v, analysis.contextReferences);
-						}
-						
-						// Handle variableData updates (kind: 1 with variableData update)
-						if (event.kind === 1 && event.k?.includes('variableData') && event.v) {
-							this.analyzeVariableData(event.v, analysis.contextReferences);
-						}
-						
-						// Handle VS Code incremental format - count requests as interactions
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							for (const request of event.v) {
-								if (request.requestId) {
-									// Count by mode
-									if (sessionMode === 'agent') {
-										analysis.modeUsage.agent++;
-									} else if (sessionMode === 'edit') {
-										analysis.modeUsage.edit++;
-									} else {
-										analysis.modeUsage.ask++;
-									}
-								}
-								// Check for agent in request
-								if (request.agent?.id) {
-									const toolName = request.agent.id;
-									analysis.toolCalls.total++;
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-								}
-							
-								// Analyze all context references from this request
-								this.analyzeRequestContext(request, analysis.contextReferences);
-								
-								// Extract tool calls from request.response array (when full request is added)
-								if (request.response && Array.isArray(request.response)) {
-									for (const responseItem of request.response) {
-										if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
-											analysis.toolCalls.total++;
-											const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-										}
-									}
-								}
-							}
-						}
-					
-					// Handle VS Code incremental format - tool invocations in responses
-					if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-						for (const responseItem of event.v) {
-							if (responseItem.kind === 'toolInvocationSerialized') {
-								analysis.toolCalls.total++;
-								const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-					}
-					
-					// Handle Copilot CLI format
+						// Handle Copilot CLI format
 						// Detect mode from event type - CLI can be chat or agent mode
 						if (event.type === 'user.message') {
 							analysis.modeUsage.ask++;
@@ -2519,10 +2512,86 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			if (isJsonlContent) {
-				const lines = fileContent.trim().split('\n');
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
 				const timestamps: number[] = [];
 				const allContentReferences: any[] = []; // Collect for repository extraction
 				
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+				
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then extract details
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract session metadata from reconstructed state
+					if (sessionState.creationDate) {
+						timestamps.push(sessionState.creationDate);
+					}
+					if (sessionState.customTitle) {
+						details.title = sessionState.customTitle;
+					}
+					
+					// Process reconstructed requests array
+					const requests = sessionState.requests || [];
+					details.interactions = requests.length;
+					
+					for (const request of requests) {
+						if (!request) { continue; }
+						
+						if (request.timestamp) {
+							timestamps.push(request.timestamp);
+						}
+						
+						// Analyze all context references from this request (unified method)
+						this.analyzeRequestContext(request, details.contextReferences);
+						
+						// Collect contentReferences for repository extraction
+						if (request.contentReferences && Array.isArray(request.contentReferences)) {
+							allContentReferences.push(...request.contentReferences);
+						}
+					}
+					
+					if (timestamps.length > 0) {
+						timestamps.sort((a, b) => a - b);
+						details.firstInteraction = new Date(timestamps[0]).toISOString();
+						const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+						details.lastInteraction = lastTimestamp > stat.mtime 
+							? lastTimestamp.toISOString() 
+							: stat.mtime.toISOString();
+					} else {
+						details.lastInteraction = stat.mtime.toISOString();
+					}
+					
+					// Extract repository from collected contentReferences
+					if (allContentReferences.length > 0) {
+						details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
+					}
+					
+					// Update cache with the details we just collected
+					await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+					
+					return details;
+				}
+				
+				// Non-delta JSONL (Copilot CLI format) - process line-by-line
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
@@ -2538,46 +2607,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (event.data?.content) {
 								this.analyzeContextReferences(event.data.content, details.contextReferences);
 							}
-						}
-						
-						// Handle VS Code incremental .jsonl format (kind: 0, 1, 2)
-						// kind: 0 = session header with creationDate
-						// kind: 2 = requests array with timestamps
-						if (event.kind === 0 && event.v) {
-							// Session creation timestamp
-							if (event.v.creationDate) {
-								timestamps.push(event.v.creationDate);
-							}
-							// Session title - always update to get LAST title (matches VS Code UI)
-							if (event.v.customTitle) {
-								details.title = event.v.customTitle;
-							}
-						}
-						
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							// New requests being added - count interactions and extract timestamps
-							for (const request of event.v) {
-								if (request.requestId) {
-									details.interactions++;
-								}
-								if (request.timestamp) {
-									timestamps.push(request.timestamp);
-								}
-								// Analyze context references in request message
-								if (request.message?.text) {
-									this.analyzeContextReferences(request.message.text, details.contextReferences);
-								}
-								// Collect contentReferences for repository extraction
-								if (request.contentReferences && Array.isArray(request.contentReferences)) {
-									allContentReferences.push(...request.contentReferences);
-								}
-								
-							}
-						}						
-
-						// Check kind: 1 (value updates) for title changes
-						if (event.kind === 1 && event.k?.includes('customTitle') && event.v) {
-							details.title = event.v;
 						}
 					} catch {
 						// Skip malformed lines
