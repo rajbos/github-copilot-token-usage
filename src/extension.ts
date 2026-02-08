@@ -215,7 +215,7 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 14; // Comprehensive title extraction: all response item types + kind:1 updates (2026-02-07)
+	private static readonly CACHE_VERSION = 15; // Fix MCP tools detection in delta-based JSONL session analysis (2026-02-08)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -1613,13 +1613,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Analyze all context references from this request
 						this.analyzeRequestContext(request, analysis.contextReferences);
 						
-						// Extract tool calls from request.response array
+						// Extract tool calls and MCP tools from request.response array
 						if (request.response && Array.isArray(request.response)) {
 							for (const responseItem of request.response) {
 								if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
-									analysis.toolCalls.total++;
 									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+									
+									// Check if this is an MCP tool by name pattern
+									if (this.isMcpTool(toolName)) {
+										analysis.mcpTools.total++;
+										const serverName = this.extractMcpServerName(toolName);
+										analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+										analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+									} else {
+										analysis.toolCalls.total++;
+										analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+									}
 								}
 							}
 						}
