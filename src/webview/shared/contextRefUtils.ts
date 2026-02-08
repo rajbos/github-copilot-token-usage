@@ -44,7 +44,8 @@ export function getImplicitContextRefs(refs: ContextReferenceUsage): number {
 
 /**
  * Calculate the count of explicit (user-initiated) context references.
- * Explicit refs are user-initiated: #file, #selection, #symbol, #codebase, @workspace, @terminal, @vscode, etc.
+ * Explicit refs are user-initiated: #file, #selection, #symbol, #codebase, @workspace, @terminal, @vscode,
+ * #terminalLastCommand, #terminalSelection, #clipboard, #changes, #outputPanel, #problemsPanel
  */
 export function getExplicitContextRefs(refs: ContextReferenceUsage): number {
 	return refs.file + refs.selection + refs.symbol + refs.codebase +
