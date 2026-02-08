@@ -1859,11 +1859,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Extract server name from an MCP tool name.
 	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
+	 * For example: "mcp.io.github.git" → "io", "mcp_io_github_git" → "io"
+	 * Note: Splits on both '.' and '_' to handle various naming conventions
 	 */
 	private extractMcpServerName(toolName: string): string {
 		// Remove the mcp. or mcp_ prefix
 		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
-		// Split on . or _ and take the first part
+		// Split on . or _ and take the first part (server identifier)
 		const parts = withoutPrefix.split(/[._]/);
 		// Return the first non-empty part, or 'unknown' if none exist
 		return parts[0] || 'unknown';
