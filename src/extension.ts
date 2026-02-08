@@ -1668,6 +1668,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				
 				// Non-delta JSONL (Copilot CLI format) - process line-by-line
+				let sessionMode = 'ask';
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
