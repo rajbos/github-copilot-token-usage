@@ -140,6 +140,7 @@ If you prefer not to use the devcontainer, you can set up the extension locally:
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 18.x or 20.x
+- [npm](https://www.npmjs.com/) (comes with Node.js)
 - [Visual Studio Code](https://code.visualstudio.com/)
 - [Git](https://git-scm.com/)
 
@@ -157,6 +158,8 @@ If you prefer not to use the devcontainer, you can set up the extension locally:
    ```bash
    npm install
    ```
+
+   **Note:** The project uses `package-lock.json` for reproducible builds. The `.npmrc` file ensures consistent behavior across different npm versions and environments. CI/CD workflows use `npm ci` to ensure exact dependency versions are installed.
 
 3. **Build the extension:**
 
@@ -238,6 +241,70 @@ npx vsce package
 - `npm run watch:esbuild` - esbuild bundler in watch mode
 - `npm test` - Run tests (requires VS Code)
 - `npm run watch-tests` - Run tests in watch mode
+
+## NPM and Dependency Management
+
+The project uses **`package-lock.json`** for reproducible builds and dependency consistency across all environments.
+
+### Key Files
+
+- **`.npmrc`**: Configures npm behavior (use `save-exact=true`, etc.)
+- **`package-lock.json`**: Lockfile that pins exact dependency versions (committed to the repository)
+- **`package.json`**: Defines project dependencies and scripts
+
+### Installation Commands
+
+**RECOMMENDED for day-to-day development:**
+
+- **`npm ci`**: Clean install from lockfile
+  - Requires `package-lock.json` to exist
+  - Installs exact versions from the lockfile (no modifications)
+  - Deletes `node_modules` before installing
+  - **Use this after pulling changes** to avoid lockfile churn
+  - **Used in all CI/CD workflows** for reproducible builds
+  - Faster and more reliable than `npm install`
+
+**Only when adding/updating dependencies:**
+
+- **`npm install`**: Install/update dependencies
+  - Respects `package-lock.json` and may update it
+  - Use when adding new dependencies: `npm install <package>`
+  - Use when updating dependencies: `npm install <package>@latest`
+  - **After adding dependencies, commit both `package.json` and `package-lock.json`**
+
+### Best Practices
+
+1. **Use `npm ci` for routine development** - This prevents accidental lockfile changes and ensures you have the exact dependency versions
+2. **Only use `npm install` when intentionally changing dependencies** - This makes dependency updates explicit and trackable
+3. **Always commit both files together** - When you modify dependencies, commit both `package.json` and `package-lock.json` in the same commit
+4. **Don't manually edit `package-lock.json`** - Let npm manage it automatically
+
+### Why We Use package-lock.json
+
+1. **Reproducible Builds**: Ensures all developers and CI/CD get identical dependency versions
+2. **Consistency**: Prevents "works on my machine" issues caused by different dependency versions
+3. **Security**: Locks down transitive dependencies to prevent supply chain attacks
+4. **Performance**: CI/CD can cache dependencies more effectively with a lockfile
+
+### About Peer Dependencies and "peer": true
+
+Different npm versions (7+) may add or remove `"peer": true` properties in `package-lock.json` when running `npm install`. This is expected behavior for peer dependencies that aren't satisfied.
+
+Some dependencies (like `@vscode/webview-ui-toolkit`) declare peer dependencies (e.g., `react`) that we don't use directly. You may see entries like this in `package-lock.json`:
+
+```json
+"node_modules/react": {
+  "version": "19.2.3",
+  "peer": true,
+  ...
+}
+```
+
+**This is normal and doesn't affect functionality.** To avoid lockfile churn from these changes:
+
+- **Use `npm ci` for routine development** (doesn't modify the lockfile)
+- Only use `npm install` when you're intentionally adding or updating dependencies
+- If you accidentally modify the lockfile, run `git checkout package-lock.json` to restore it
 
 ## Code Guidelines
 
