@@ -6,6 +6,10 @@
   ,"mcp_io_github_git_pull_request_read": "GitHub MCP: Pull Request Read"
   ,"mcp_io_github_git_issue_read": "GitHub MCP: Issue Read"
   ,"mcp_io_github_git_issue_write": "GitHub MCP: Issue Write"
+  ,"mcp_io_github_git_get_file_contents": "GitHub MCP: Get File Contents"
+  ,"mcp_io_github_git_search_code": "GitHub MCP: Search Code"
+  ,"mcp_io_github_git_search_pull_requests": "GitHub MCP: Search Pull Requests"
+  ,"mcp_com_microsoft_get_bestpractices": "GitHub MCP: Get Best Practices"
   ,"manage_todo_list": "Manage TODO List"
   ,"copilot_readFile": "Read File"
   ,"copilot_applyPatch": "Apply Patch"
@@ -23,4 +27,5 @@
   ,"github.copilot.editsAgent": "GitHub Copilot Edits Agent"
   ,"todoList": "TODO List"
   ,"terminal": "Terminal"
+  ,"terminal_last_command": "Terminal Last Command"
 }
