@@ -59,6 +59,7 @@ async function main() {
 		external: ['vscode'],
 		logLevel: 'silent',
 		plugins: [esbuildProblemMatcherPlugin],
+		loader: { '.css': 'text' },
 	});
 
 	if (watch) {
