@@ -1,18 +1,5 @@
 // Log Viewer webview - displays session file details and chat turns
-type ContextReferenceUsage = {
-	file: number;
-	selection: number;
-	implicitSelection: number;
-	symbol: number;
-	codebase: number;
-	workspace: number;
-	terminal: number;
-	vscode: number;
-	byKind: { [kind: string]: number };
-	copilotInstructions: number;
-	agentsMd: number;
-	byPath: { [path: string]: number };
-};
+import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 
 type ChatTurn = {
 	turnNumber: number;
@@ -99,26 +86,6 @@ function formatFileSize(bytes: number): string {
 	if (bytes < 1024) { return `${bytes} B`; }
 	if (bytes < 1024 * 1024) { return `${(bytes / 1024).toFixed(1)} KB`; }
 	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd;
-}
-
-function getContextRefsSummary(refs: ContextReferenceUsage): string {
-	const parts: string[] = [];
-	if (refs.file > 0) { parts.push(`#file: ${refs.file}`); }
-	if (refs.selection > 0) { parts.push(`#selection: ${refs.selection}`); }
-	if (refs.implicitSelection > 0) { parts.push(`implicit: ${refs.implicitSelection}`); }
-	if (refs.symbol > 0) { parts.push(`#symbol: ${refs.symbol}`); }
-	if (refs.codebase > 0) { parts.push(`#codebase: ${refs.codebase}`); }
-	if (refs.workspace > 0) { parts.push(`@workspace: ${refs.workspace}`); }
-	if (refs.terminal > 0) { parts.push(`@terminal: ${refs.terminal}`); }
-	if (refs.vscode > 0) { parts.push(`@vscode: ${refs.vscode}`); }
-	if (refs.copilotInstructions > 0) { parts.push(`📋 instructions: ${refs.copilotInstructions}`); }
-	if (refs.agentsMd > 0) { parts.push(`🤖 agents: ${refs.agentsMd}`); }
-	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
 function getContextRefBadges(refs: ContextReferenceUsage): string {
@@ -374,6 +341,8 @@ function renderLayout(data: SessionLogData): void {
 	const usageTopMcpTools = usage ? getTopEntries(usage.mcpTools.byTool, 3) : [];
 	const usageContextRefs = usage?.contextReferences || data.contextReferences;
 	const usageContextTotal = getTotalContextRefs(usageContextRefs);
+	const usageContextImplicit = getImplicitContextRefs(usageContextRefs);
+	const usageContextExplicit = getExplicitContextRefs(usageContextRefs);
 
 	const formatTopList = (entries: { key: string; value: number }[], mapper?: (k: string) => string) => {
 		if (!entries.length) { return 'None'; }
@@ -1065,13 +1034,7 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-label">🔗 Context Refs</div>
 					<div class="summary-value">${usageContextTotal}</div>
 				<div class="summary-sub">
-				${usageContextTotal === 0 ? 'None' : ''}
-				${usageContextRefs.file > 0 ? `<div>#file ${usageContextRefs.file}</div>` : ''}
-				${usageContextRefs.implicitSelection > 0 ? `<div>implicit ${usageContextRefs.implicitSelection}</div>` : ''}
-				${usageContextRefs.copilotInstructions > 0 ? `<div>📋 instructions ${usageContextRefs.copilotInstructions}</div>` : ''}
-				${usageContextRefs.agentsMd > 0 ? `<div>🤖 agents ${usageContextRefs.agentsMd}</div>` : ''}
-				${usageContextRefs.workspace > 0 ? `<div>@workspace ${usageContextRefs.workspace}</div>` : ''}
-				${usageContextRefs.vscode > 0 ? `<div>@vscode ${usageContextRefs.vscode}</div>` : ''}
+				${usageContextTotal === 0 ? 'None' : `implicit ${usageContextImplicit}, explicit ${usageContextExplicit}`}
 				</div>
 				</div>
 				<div class="summary-card">

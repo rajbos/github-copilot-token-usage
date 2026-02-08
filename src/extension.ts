@@ -1558,9 +1558,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
 							sessionMode = event.v.inputState.mode.kind;
 							
-							// Detect implicit selections in initial state
-							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections) && event.v.inputState.selections.length > 0) {
-								analysis.contextReferences.implicitSelection++;
+							// Detect implicit selections in initial state (only if there's an actual range)
+							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections)) {
+								for (const sel of event.v.inputState.selections) {
+									// Only count if it's an actual selection (not just a cursor position)
+									if (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn) {
+										analysis.contextReferences.implicitSelection++;
+										break; // Count once per session
+									}
+								}
 							}
 						}
 						
@@ -1570,8 +1576,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 						
 						// Detect implicit selections in updates to inputState.selections
-						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v) && event.v.length > 0) {
-							analysis.contextReferences.implicitSelection++;
+						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v)) {
+							for (const sel of event.v) {
+								// Only count if it's an actual selection (not just a cursor position)
+								if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+									analysis.contextReferences.implicitSelection++;
+									break; // Count once per update
+								}
+							}
+						}
+						
+						// Handle contentReferences updates (kind: 1 with contentReferences update)
+						if (event.kind === 1 && event.k?.includes('contentReferences') && Array.isArray(event.v)) {
+							this.analyzeContentReferences(event.v, analysis.contextReferences);
+						}
+						
+						// Handle variableData updates (kind: 1 with variableData update)
+						if (event.kind === 1 && event.k?.includes('variableData') && event.v) {
+							this.analyzeVariableData(event.v, analysis.contextReferences);
 						}
 						
 						// Handle VS Code incremental format - count requests as interactions
@@ -1594,10 +1616,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
 								}
 							
-								// Analyze contentReferences if present
-								if (request.contentReferences && Array.isArray(request.contentReferences)) {
-									this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
-								}
+								// Analyze all context references from this request
+								this.analyzeRequestContext(request, analysis.contextReferences);
 								
 								// Extract tool calls from request.response array (when full request is added)
 								if (request.response && Array.isArray(request.response)) {
@@ -1704,52 +1724,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						analysis.modeUsage.ask++;
 					}
 					
-					// Analyze user message for context references
-					if (request.message) {
-						if (request.message.text) {
-							this.analyzeContextReferences(request.message.text, analysis.contextReferences);
-						}
-						if (request.message.parts) {
-							for (const part of request.message.parts) {
-								if (part.text) {
-									this.analyzeContextReferences(part.text, analysis.contextReferences);
-								}
-							}
-						}
-					}
-					
-					// Analyze variableData for @workspace, @terminal, @vscode references
-					if (request.variableData) {
-						// Process variables array for prompt files and other context
-						this.analyzeVariableData(request.variableData, analysis.contextReferences);
-						
-						// Also check for @ references in variable names/values
-						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
-						if (varDataStr.includes('workspace')) {
-							analysis.contextReferences.workspace++;
-						}
-						if (varDataStr.includes('terminal')) {
-							analysis.contextReferences.terminal++;
-						}
-						if (varDataStr.includes('vscode')) {
-							analysis.contextReferences.vscode++;
-						}
-					}
-					
-					// Analyze contentReferences if present
-					if (request.contentReferences && Array.isArray(request.contentReferences)) {
-						this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
-					}
-					
-					// Analyze variableData if present
-					if (request.variableData) {
-						this.analyzeVariableData(request.variableData, analysis.contextReferences);
-					}
-					
-					// Analyze variableData if present
-					if (request.variableData) {
-						this.analyzeVariableData(request.variableData, analysis.contextReferences);
-					}
+					// Analyze all context references from this request
+					this.analyzeRequestContext(request, analysis.contextReferences);
 					
 					// Analyze response for tool calls and MCP tools
 					if (request.response && Array.isArray(request.response)) {
@@ -1858,6 +1834,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Analyze a request object for all context references.
+	 * This is the unified method that processes text, contentReferences, and variableData.
+	 */
+	private analyzeRequestContext(request: any, refs: ContextReferenceUsage): void {
+		// Analyze user message text for context references
+		if (request.message) {
+			if (request.message.text) {
+				this.analyzeContextReferences(request.message.text, refs);
+			}
+			if (request.message.parts) {
+				for (const part of request.message.parts) {
+					if (part.text) {
+						this.analyzeContextReferences(part.text, refs);
+					}
+				}
+			}
+		}
+		
+		// Analyze contentReferences if present
+		if (request.contentReferences && Array.isArray(request.contentReferences)) {
+			this.analyzeContentReferences(request.contentReferences, refs);
+		}
+		
+		// Analyze variableData if present
+		if (request.variableData) {
+			this.analyzeVariableData(request.variableData, refs);
+		}
+	}
+
+	/**
 	 * Analyze text for context references like #file, #selection, @workspace
 	 */
 	private analyzeContextReferences(text: string, refs: ContextReferenceUsage): void {
@@ -1874,8 +1880,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		
 		// Count #symbol and #sym references (both aliases)
+		// Note: #sym:symbolName format is handled via variableData, not text matching
 		const symbolMatches = text.match(/#symbol/gi);
-		const symMatches = text.match(/#sym\b/gi);  // \b ensures we don't match #symbol
+		const symMatches = text.match(/#sym(?![:\w])/gi);  // Negative lookahead: don't match #symbol or #sym:
 		if (symbolMatches) {
 			refs.symbol += symbolMatches.length;
 		}
@@ -1947,13 +1954,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Normalize path separators for pattern matching
 					const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
 					
-					// Track specific patterns
+					// Track specific patterns - these are auto-attached, not user-explicit #file refs
 					if (normalizedPath.endsWith('/.github/copilot-instructions.md') || 
 					    normalizedPath.includes('.github/copilot-instructions.md')) {
 						refs.copilotInstructions++;
 					} else if (normalizedPath.endsWith('/agents.md') || 
 					           normalizedPath.match(/\/agents\.md$/i)) {
 						refs.agentsMd++;
+					} else if (normalizedPath.endsWith('.instructions.md') ||
+					           normalizedPath.includes('.instructions.md')) {
+						// Other instruction files (e.g., github-actions.instructions.md) are auto-attached
+						// Track as copilotInstructions since they're part of the instructions system
+						refs.copilotInstructions++;
 					} else {
 						// For other files, increment the general file counter
 						// This makes actual file attachments show up in context ref counts
@@ -1997,6 +2009,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const kind = variable.kind;
 			if (typeof kind === 'string') {
 				refs.byKind[kind] = (refs.byKind[kind] || 0) + 1;
+			}
+
+			// Handle symbol references (e.g., #sym:functionName)
+			// These appear as kind="generic" with name starting with "sym:"
+			if (kind === 'generic' && typeof variable.name === 'string' && variable.name.startsWith('sym:')) {
+				refs.symbol++;
+				// Track symbol by name for display
+				const symbolKey = `#${variable.name}`;
+				refs.byPath[symbolKey] = (refs.byPath[symbolKey] || 0) + 1;
 			}
 
 			// Process promptFile variables that contain file references
@@ -2610,6 +2631,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						timestamps.push(new Date(ts).getTime());
 					}
 					
+					// Analyze all context references from this request
+					this.analyzeRequestContext(request, details.contextReferences);
 					// Analyze context references
 					if (request.message?.text) {
 						this.analyzeContextReferences(request.message.text, details.contextReferences);
@@ -2740,17 +2763,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						
 						const contextRefs = this.createEmptyContextRefs();
 						const userMessage = request.message?.text || '';
-						this.analyzeContextReferences(userMessage, contextRefs);
 						
-						// Analyze contentReferences from request
-						if (request.contentReferences && Array.isArray(request.contentReferences)) {
-							this.analyzeContentReferences(request.contentReferences, contextRefs);
-						}
-						
-						// Analyze variableData from request
-						if (request.variableData) {
-							this.analyzeVariableData(request.variableData, contextRefs);
-						}
+						// Analyze all context references from this request
+						this.analyzeRequestContext(request, contextRefs);
 						
 						// Get model from request or fall back to session model
 						const requestModel = request.modelId || 
@@ -2874,13 +2889,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						
 						// Analyze context references
 						const contextRefs = this.createEmptyContextRefs();
-						this.analyzeContextReferences(userMessage, contextRefs);
-						if (request.variableData) {
-							const varDataStr = JSON.stringify(request.variableData).toLowerCase();
-							if (varDataStr.includes('workspace')) { contextRefs.workspace++; }
-							if (varDataStr.includes('terminal')) { contextRefs.terminal++; }
-							if (varDataStr.includes('vscode')) { contextRefs.vscode++; }
-						}
+						this.analyzeRequestContext(request, contextRefs);
 						
 						// Extract model
 						const model = this.getModelFromRequest(request);

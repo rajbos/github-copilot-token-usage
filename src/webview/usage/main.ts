@@ -1,22 +1,9 @@
 // Usage Analysis webview
 import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
+import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
 
 type ModeUsage = { ask: number; edit: number; agent: number };
-type ContextReferenceUsage = {
-	file: number;
-	selection: number;
-	implicitSelection: number;
-	symbol: number;
-	codebase: number;
-	workspace: number;
-	terminal: number;
-	vscode: number;
-	byKind: { [kind: string]: number };
-	copilotInstructions: number;
-	agentsMd: number;
-	byPath: { [path: string]: number };
-};
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 
@@ -69,16 +56,6 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
-}
-
-function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	const basicRefs = refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode;
-	
-	// Add contentReferences counts
-	const contentRefs = refs.copilotInstructions + refs.agentsMd;
-	
-	return basicRefs + contentRefs;
 }
 
 import toolNames from '../../toolNames.json';

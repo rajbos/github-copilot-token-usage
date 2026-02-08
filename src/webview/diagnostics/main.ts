@@ -9,20 +9,7 @@ const LOADING_MESSAGE = `⏳ Loading diagnostic data...
 This may take a few moments depending on the number of session files.
 The view will automatically update when data is ready.`;
 
-type ContextReferenceUsage = {
-	file: number;
-	selection: number;
-	implicitSelection: number;
-	symbol: number;
-	codebase: number;
-	workspace: number;
-	terminal: number;
-	vscode: number;
-	byKind: { [kind: string]: number };
-	copilotInstructions: number;
-	agentsMd: number;
-	byPath: { [path: string]: number };
-};
+import { ContextReferenceUsage, getTotalContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 
 type SessionFileDetails = {
 	file: string;
@@ -92,6 +79,7 @@ const initialData = window.__INITIAL_DIAGNOSTICS__;
 let currentSortColumn: 'lastInteraction' = 'lastInteraction';
 let currentSortDirection: 'asc' | 'desc' = 'desc';
 let currentEditorFilter: string | null = null; // null = show all
+let currentContextRefFilter: keyof ContextReferenceUsage | null = null; // null = show all
 
 function escapeHtml(text: string): string {
 	return text
@@ -148,26 +136,6 @@ function sanitizeNumber(value: number | undefined | null): string {
 		return '0';
 	}
 	return value.toString();
-}
-
-function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd;
-}
-
-function getContextRefsSummary(refs: ContextReferenceUsage): string {
-	const parts: string[] = [];
-	if (refs.file > 0) { parts.push(`#file: ${refs.file}`); }
-	if (refs.selection > 0) { parts.push(`#sel: ${refs.selection}`); }
-	if (refs.implicitSelection > 0) { parts.push(`impl: ${refs.implicitSelection}`); }
-	if (refs.symbol > 0) { parts.push(`#sym: ${refs.symbol}`); }
-	if (refs.codebase > 0) { parts.push(`#cb: ${refs.codebase}`); }
-	if (refs.workspace > 0) { parts.push(`@ws: ${refs.workspace}`); }
-	if (refs.terminal > 0) { parts.push(`@term: ${refs.terminal}`); }
-	if (refs.vscode > 0) { parts.push(`@vsc: ${refs.vscode}`); }
-	if (refs.copilotInstructions > 0) { parts.push(`📋 inst: ${refs.copilotInstructions}`); }
-	if (refs.agentsMd > 0) { parts.push(`🤖 ag: ${refs.agentsMd}`); }
-	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
 function getFileName(filePath: string): string {
@@ -293,13 +261,38 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 	const editors = Object.keys(editorStats).sort();
 	
 	// Apply editor filter
-	const filteredFiles = currentEditorFilter 
+	let filteredFiles = currentEditorFilter 
 		? detailedFiles.filter(sf => sf.editorSource === currentEditorFilter)
 		: detailedFiles;
+	
+	// Apply context ref filter
+	if (currentContextRefFilter) {
+		filteredFiles = filteredFiles.filter(sf => {
+			const refType = currentContextRefFilter!; // Assert non-null since we're inside the if block
+			const value = sf.contextReferences[refType];
+			return typeof value === 'number' && value > 0;
+		});
+	}
 	
 	// Summary stats for filtered files
 	const totalInteractions = filteredFiles.reduce((sum, sf) => sum + Number(sf.interactions || 0), 0);
 	const totalContextRefs = filteredFiles.reduce((sum, sf) => sum + getTotalContextRefs(sf.contextReferences), 0);
+	
+	// Aggregate context ref breakdown
+	const aggContextRefs = filteredFiles.reduce((agg, sf) => {
+		const r = sf.contextReferences;
+		agg.file += r.file;
+		agg.symbol += r.symbol;
+		agg.selection += r.selection;
+		agg.implicitSelection += r.implicitSelection;
+		agg.codebase += r.codebase;
+		agg.workspace += r.workspace;
+		agg.terminal += r.terminal;
+		agg.vscode += r.vscode;
+		agg.copilotInstructions += r.copilotInstructions;
+		agg.agentsMd += r.agentsMd;
+		return agg;
+	}, { file: 0, symbol: 0, selection: 0, implicitSelection: 0, codebase: 0, workspace: 0, terminal: 0, vscode: 0, copilotInstructions: 0, agentsMd: 0 });
 	
 	// Sort filtered files
 	const sortedFiles = sortSessionFiles(filteredFiles);
@@ -337,6 +330,16 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 			<div class="summary-card">
 				<div class="summary-label">🔗 Context References</div>
 				<div class="summary-value">${safeText(totalContextRefs)}</div>
+				<div class="summary-sub">
+				${totalContextRefs === 0 ? 'None' : ''}
+				${aggContextRefs.file > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'file' ? 'active' : ''}" data-ref-type="file">#file ${aggContextRefs.file}</div>` : ''}
+				${aggContextRefs.symbol > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'symbol' ? 'active' : ''}" data-ref-type="symbol">#sym ${aggContextRefs.symbol}</div>` : ''}
+				${aggContextRefs.implicitSelection > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'implicitSelection' ? 'active' : ''}" data-ref-type="implicitSelection">implicit ${aggContextRefs.implicitSelection}</div>` : ''}
+				${aggContextRefs.copilotInstructions > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'copilotInstructions' ? 'active' : ''}" data-ref-type="copilotInstructions">📋 instructions ${aggContextRefs.copilotInstructions}</div>` : ''}
+				${aggContextRefs.agentsMd > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'agentsMd' ? 'active' : ''}" data-ref-type="agentsMd">🤖 agents ${aggContextRefs.agentsMd}</div>` : ''}
+				${aggContextRefs.workspace > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'workspace' ? 'active' : ''}" data-ref-type="workspace">@workspace ${aggContextRefs.workspace}</div>` : ''}
+				${aggContextRefs.vscode > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'vscode' ? 'active' : ''}" data-ref-type="vscode">@vscode ${aggContextRefs.vscode}</div>` : ''}
+				</div>
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">📅 Time Range</div>
@@ -742,6 +745,23 @@ function renderLayout(data: DiagnosticsData): void {
 			}
 			.summary-label { font-size: 11px; color: #b3b3b3; margin-bottom: 4px; }
 			.summary-value { font-size: 18px; font-weight: 600; color: #fff; }
+			.summary-sub { font-size: 10px; color: #94a3b8; text-align: left; margin-top: 6px; }
+			.context-ref-filter {
+				cursor: pointer;
+				padding: 2px 6px;
+				border-radius: 3px;
+				margin: 2px 0;
+				transition: all 0.2s;
+			}
+			.context-ref-filter:hover {
+				background: rgba(79, 195, 247, 0.2);
+				color: #4FC3F7;
+			}
+			.context-ref-filter.active {
+				background: rgba(79, 195, 247, 0.3);
+				color: #4FC3F7;
+				font-weight: 600;
+			}
 			
 			/* Table styles */
 			.table-container {
@@ -1269,6 +1289,25 @@ function setupStorageLinkHandlers(): void {
 			});
 		});
 	}
+	
+	// Wire up context ref filter handlers
+	function setupContextRefFilterHandlers(): void {
+		document.querySelectorAll('.context-ref-filter').forEach(filter => {
+			filter.addEventListener('click', () => {
+				const refType = (filter as HTMLElement).getAttribute('data-ref-type') as keyof ContextReferenceUsage | null;
+				
+				// Toggle: if clicking the same filter, clear it
+				if (currentContextRefFilter === refType) {
+					currentContextRefFilter = null;
+				} else {
+					currentContextRefFilter = refType;
+				}
+				
+				// Re-render table
+				reRenderTable();
+			});
+		});
+	}
 
 	// Re-render the session table with current filter/sort state
 	function reRenderTable(): void {
@@ -1278,6 +1317,7 @@ function setupStorageLinkHandlers(): void {
 			if (!isLoading) {
 				setupSortHandlers();
 				setupEditorFilterHandlers();
+				setupContextRefFilterHandlers();
 				setupFileLinks();
 			}
 		}
@@ -1398,6 +1438,7 @@ function setupStorageLinkHandlers(): void {
 
 	setupSortHandlers();
 	setupEditorFilterHandlers();
+	setupContextRefFilterHandlers();
 	setupFileLinks();
 	setupStorageLinkHandlers();
 	
