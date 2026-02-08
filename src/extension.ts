@@ -1669,6 +1669,95 @@ class CopilotTokenTracker implements vscode.Disposable {
 					try {
 						const event = JSON.parse(line);
 						
+						// Handle VS Code incremental format - detect mode from session header
+						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
+							sessionMode = event.v.inputState.mode.kind;
+							
+							// Detect implicit selections in initial state (only if there's an actual range)
+							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections)) {
+								for (const sel of event.v.inputState.selections) {
+									// Only count if it's an actual selection (not just a cursor position)
+									if (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn) {
+										analysis.contextReferences.implicitSelection++;
+										break; // Count once per session
+									}
+								}
+							}
+						}
+						
+						// Handle mode changes (kind: 1 with mode update)
+						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
+							sessionMode = event.v.kind;
+						}
+						
+						// Detect implicit selections in updates to inputState.selections
+						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v)) {
+							for (const sel of event.v) {
+								// Only count if it's an actual selection (not just a cursor position)
+								if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+									analysis.contextReferences.implicitSelection++;
+									break; // Count once per update
+								}
+							}
+						}
+						
+						// Handle contentReferences updates (kind: 1 with contentReferences update)
+						if (event.kind === 1 && event.k?.includes('contentReferences') && Array.isArray(event.v)) {
+							this.analyzeContentReferences(event.v, analysis.contextReferences);
+						}
+						
+						// Handle variableData updates (kind: 1 with variableData update)
+						if (event.kind === 1 && event.k?.includes('variableData') && event.v) {
+							this.analyzeVariableData(event.v, analysis.contextReferences);
+						}
+						
+						// Handle VS Code incremental format - count requests as interactions
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									// Count by mode
+									if (sessionMode === 'agent') {
+										analysis.modeUsage.agent++;
+									} else if (sessionMode === 'edit') {
+										analysis.modeUsage.edit++;
+									} else {
+										analysis.modeUsage.ask++;
+									}
+								}
+								// Check for agent in request
+								if (request.agent?.id) {
+									const toolName = request.agent.id;
+									analysis.toolCalls.total++;
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							
+								// Analyze all context references from this request
+								this.analyzeRequestContext(request, analysis.contextReferences);
+								
+								// Extract tool calls from request.response array (when full request is added)
+								if (request.response && Array.isArray(request.response)) {
+									for (const responseItem of request.response) {
+										if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
+											analysis.toolCalls.total++;
+											const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+										}
+									}
+								}
+							}
+						}
+					
+						// Handle VS Code incremental format - tool invocations in responses
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.kind === 'toolInvocationSerialized') {
+									analysis.toolCalls.total++;
+									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+					
 						// Handle Copilot CLI format
 						// Detect mode from event type - CLI can be chat or agent mode
 						if (event.type === 'user.message') {
