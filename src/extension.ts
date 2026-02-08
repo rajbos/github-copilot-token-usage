@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
+import toolNamesData from './toolNames.json';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
@@ -124,6 +125,12 @@ interface ContextReferenceUsage {
 	workspace: number;         // @workspace references
 	terminal: number;          // @terminal references
 	vscode: number;            // @vscode references
+	terminalLastCommand: number;  // #terminalLastCommand references
+	terminalSelection: number;    // #terminalSelection references
+	clipboard: number;            // #clipboard references
+	changes: number;              // #changes references
+	outputPanel: number;          // #outputPanel references
+	problemsPanel: number;        // #problemsPanel references
 	// contentReferences tracking from session logs
 	byKind: { [kind: string]: number };           // Count by reference kind
 	copilotInstructions: number;                  // .github/copilot-instructions.md
@@ -258,6 +265,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
+
+	// Tool name mapping - loaded from toolNames.json for friendly display names
+	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
@@ -1124,6 +1134,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				workspace: 0,
 				terminal: 0,
 				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
 				byKind: {},
 				copilotInstructions: 0,
 				agentsMd: 0,
@@ -1230,6 +1246,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		period.contextReferences.workspace += analysis.contextReferences.workspace;
 		period.contextReferences.terminal += analysis.contextReferences.terminal;
 		period.contextReferences.vscode += analysis.contextReferences.vscode;
+		period.contextReferences.terminalLastCommand += analysis.contextReferences.terminalLastCommand || 0;
+		period.contextReferences.terminalSelection += analysis.contextReferences.terminalSelection || 0;
+		period.contextReferences.clipboard += analysis.contextReferences.clipboard || 0;
+		period.contextReferences.changes += analysis.contextReferences.changes || 0;
+		period.contextReferences.outputPanel += analysis.contextReferences.outputPanel || 0;
+		period.contextReferences.problemsPanel += analysis.contextReferences.problemsPanel || 0;
 		
 		// Merge contentReferences counts
 		period.contextReferences.copilotInstructions += analysis.contextReferences.copilotInstructions || 0;
@@ -1525,6 +1547,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				workspace: 0,
 				terminal: 0,
 				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
 				byKind: {},
 				copilotInstructions: 0,
 				agentsMd: 0,
@@ -1640,11 +1668,101 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				
 				// Non-delta JSONL (Copilot CLI format) - process line-by-line
+				let sessionMode = 'ask';
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
 						
+						// Handle VS Code incremental format - detect mode from session header
+						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
+							sessionMode = event.v.inputState.mode.kind;
+							
+							// Detect implicit selections in initial state (only if there's an actual range)
+							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections)) {
+								for (const sel of event.v.inputState.selections) {
+									// Only count if it's an actual selection (not just a cursor position)
+									if (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn) {
+										analysis.contextReferences.implicitSelection++;
+										break; // Count once per session
+									}
+								}
+							}
+						}
+						
+						// Handle mode changes (kind: 1 with mode update)
+						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
+							sessionMode = event.v.kind;
+						}
+						
+						// Detect implicit selections in updates to inputState.selections
+						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v)) {
+							for (const sel of event.v) {
+								// Only count if it's an actual selection (not just a cursor position)
+								if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+									analysis.contextReferences.implicitSelection++;
+									break; // Count once per update
+								}
+							}
+						}
+						
+						// Handle contentReferences updates (kind: 1 with contentReferences update)
+						if (event.kind === 1 && event.k?.includes('contentReferences') && Array.isArray(event.v)) {
+							this.analyzeContentReferences(event.v, analysis.contextReferences);
+						}
+						
+						// Handle variableData updates (kind: 1 with variableData update)
+						if (event.kind === 1 && event.k?.includes('variableData') && event.v) {
+							this.analyzeVariableData(event.v, analysis.contextReferences);
+						}
+						
+						// Handle VS Code incremental format - count requests as interactions
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									// Count by mode
+									if (sessionMode === 'agent') {
+										analysis.modeUsage.agent++;
+									} else if (sessionMode === 'edit') {
+										analysis.modeUsage.edit++;
+									} else {
+										analysis.modeUsage.ask++;
+									}
+								}
+								// Check for agent in request
+								if (request.agent?.id) {
+									const toolName = request.agent.id;
+									analysis.toolCalls.total++;
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							
+								// Analyze all context references from this request
+								this.analyzeRequestContext(request, analysis.contextReferences);
+								
+								// Extract tool calls from request.response array (when full request is added)
+								if (request.response && Array.isArray(request.response)) {
+									for (const responseItem of request.response) {
+										if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
+											analysis.toolCalls.total++;
+											const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+										}
+									}
+								}
+							}
+						}
+					
+						// Handle VS Code incremental format - tool invocations in responses
+						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
+							for (const responseItem of event.v) {
+								if (responseItem.kind === 'toolInvocationSerialized') {
+									analysis.toolCalls.total++;
+									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+					
 						// Handle Copilot CLI format
 						// Detect mode from event type - CLI can be chat or agent mode
 						if (event.type === 'user.message') {
@@ -1868,10 +1986,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Extract server name from an MCP tool name.
 	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
-	 * For example: "mcp.io.github.git" → "io", "mcp_io_github_git" → "io"
-	 * Note: Splits on both '.' and '_' to handle various naming conventions
+	 * For example: "mcp.io.github.git.assign_copilot_to_issue" → "GitHub MCP"
+	 * Uses the display name from toolNames.json (the part before the colon).
+	 * Falls back to extracting the second segment if no mapping exists.
 	 */
 	private extractMcpServerName(toolName: string): string {
+		// First, try to get the display name from toolNames.json and extract the server part
+		const displayName = this.toolNameMap[toolName];
+		if (displayName && displayName.includes(':')) {
+			// Extract the part before the colon (e.g., "GitHub MCP" from "GitHub MCP: Issue Read")
+			return displayName.split(':')[0].trim();
+		}
+		
+		// Fallback: extract from tool name structure
 		// Remove the mcp. or mcp_ prefix
 		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
 		// Split on . or _ and take the first part (server identifier)
@@ -1941,6 +2068,42 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const codebaseMatches = text.match(/#codebase/gi);
 		if (codebaseMatches) {
 			refs.codebase += codebaseMatches.length;
+		}
+		
+		// Count #terminalLastCommand references
+		const terminalLastCommandMatches = text.match(/#terminalLastCommand/gi);
+		if (terminalLastCommandMatches) {
+			refs.terminalLastCommand += terminalLastCommandMatches.length;
+		}
+		
+		// Count #terminalSelection references
+		const terminalSelectionMatches = text.match(/#terminalSelection/gi);
+		if (terminalSelectionMatches) {
+			refs.terminalSelection += terminalSelectionMatches.length;
+		}
+		
+		// Count #clipboard references
+		const clipboardMatches = text.match(/#clipboard/gi);
+		if (clipboardMatches) {
+			refs.clipboard += clipboardMatches.length;
+		}
+		
+		// Count #changes references
+		const changesMatches = text.match(/#changes/gi);
+		if (changesMatches) {
+			refs.changes += changesMatches.length;
+		}
+		
+		// Count #outputPanel references
+		const outputPanelMatches = text.match(/#outputPanel/gi);
+		if (outputPanelMatches) {
+			refs.outputPanel += outputPanelMatches.length;
+		}
+		
+		// Count #problemsPanel references
+		const problemsPanelMatches = text.match(/#problemsPanel/gi);
+		if (problemsPanelMatches) {
+			refs.problemsPanel += problemsPanelMatches.length;
 		}
 		
 		// Count @workspace references
@@ -2370,6 +2533,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				workspace: 0,
 				terminal: 0,
 				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
 				byKind: {},
 				copilotInstructions: 0,
 				agentsMd: 0,
@@ -2494,6 +2663,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				contextReferences: {
 					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 					workspace: 0, terminal: 0, vscode: 0,
+					terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
 					// Extended fields expected by SessionUsageAnalysis in the webview
 					byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 				},
@@ -2550,6 +2720,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			contextReferences: {
 				file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 				workspace: 0, terminal: 0, vscode: 0,
+				terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
 				byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 			},
 			firstInteraction: null,
@@ -3058,6 +3229,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return {
 			file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 			workspace: 0, terminal: 0, vscode: 0,
+			terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
 			byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
 		};
 	}
