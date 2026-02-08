@@ -102,48 +102,95 @@ function getContextRefBadges(refs: ContextReferenceUsage): string {
 }
 
 function renderContextReferencesDetailed(refs: ContextReferenceUsage): string {
-	const sections: string[] = [];
+	const rows: { category: string; name: string; count: number; type: 'implicit' | 'explicit' }[] = [];
 	
-	// Show instruction file references
-	if (refs.copilotInstructions > 0 || refs.agentsMd > 0) {
-		const instrRefs: string[] = [];
-		if (refs.copilotInstructions > 0) { instrRefs.push(`📋 copilot-instructions: ${refs.copilotInstructions}`); }
-		if (refs.agentsMd > 0) { instrRefs.push(`🤖 agents.md: ${refs.agentsMd}`); }
-		sections.push(`<div class="context-section"><strong>Instructions:</strong> ${instrRefs.join(', ')}</div>`);
+	// Implicit selections (implicit)
+	if (refs.implicitSelection > 0) {
+		rows.push({ category: '📝 Selection', name: 'editor selection', count: refs.implicitSelection, type: 'implicit' });
 	}
 	
-	// Show file paths if any
+	// File paths and symbols from byPath
 	if (refs.byPath && Object.keys(refs.byPath).length > 0) {
-		// Separate symbols from files
-		const symbols: [string, number][] = [];
-		const files: [string, number][] = [];
-		
 		Object.entries(refs.byPath).forEach(([path, count]) => {
 			if (path.startsWith('#sym:')) {
-				symbols.push([path.substring(5), count]); // Remove '#sym:' prefix
+				// Symbols are explicit user references
+				rows.push({ category: '🔣 Symbol', name: path.substring(5), count, type: 'explicit' });
 			} else {
-				files.push([path, count]);
+				// Check if this is an instruction file (implicit) or regular file (explicit)
+				const normalizedPath = path.replace(/\\/g, '/').toLowerCase();
+				const isInstructionFile = normalizedPath.includes('copilot-instructions.md') || 
+				                          normalizedPath.endsWith('.instructions.md') ||
+				                          normalizedPath.endsWith('/agents.md');
+				if (isInstructionFile) {
+					rows.push({ category: '📋 Instructions', name: getFileName(path), count, type: 'implicit' });
+				} else {
+					// Regular file references are explicit
+					rows.push({ category: '📁 File', name: getFileName(path), count, type: 'explicit' });
+				}
 			}
 		});
-		
-		// Show files
-		if (files.length > 0) {
-			const pathList = files
-				.map(([path, count]) => `${getFileName(path)}: ${count}`)
-				.join(', ');
-			sections.push(`<div class="context-section"><strong>Files:</strong> ${pathList}</div>`);
+	}
+	
+	// Instruction counters that aren't in byPath (fallback)
+	// Only show if we haven't already added instruction files from byPath
+	const hasInstructionFiles = rows.some(r => r.category === '📋 Instructions');
+	if (!hasInstructionFiles) {
+		if (refs.copilotInstructions > 0) {
+			rows.push({ category: '📋 Instructions', name: 'copilot-instructions', count: refs.copilotInstructions, type: 'implicit' });
 		}
-		
-		// Show symbols
-		if (symbols.length > 0) {
-			const symbolList = symbols
-				.map(([symbolName, count]) => `${symbolName}: ${count}`)
-				.join(', ');
-			sections.push(`<div class="context-section"><strong>Symbols:</strong> ${symbolList}</div>`);
+		if (refs.agentsMd > 0) {
+			rows.push({ category: '🤖 Agents', name: 'agents.md', count: refs.agentsMd, type: 'implicit' });
 		}
 	}
 	
-	return sections.length > 0 ? sections.join('') : '<div class="context-section">No additional details</div>';
+	// Explicit @ references
+	if (refs.workspace > 0) {
+		rows.push({ category: '🌐 Workspace', name: '@workspace', count: refs.workspace, type: 'explicit' });
+	}
+	if (refs.terminal > 0) {
+		rows.push({ category: '💻 Terminal', name: '@terminal', count: refs.terminal, type: 'explicit' });
+	}
+	if (refs.vscode > 0) {
+		rows.push({ category: '⚙️ VS Code', name: '@vscode', count: refs.vscode, type: 'explicit' });
+	}
+	if (refs.codebase > 0) {
+		rows.push({ category: '📚 Codebase', name: '#codebase', count: refs.codebase, type: 'explicit' });
+	}
+	if (refs.selection > 0) {
+		rows.push({ category: '✂️ Selection', name: '#selection', count: refs.selection, type: 'explicit' });
+	}
+	
+	if (rows.length === 0) {
+		return '<div class="context-section">No context references</div>';
+	}
+	
+	// Build table
+	const tableRows = rows.map(row => {
+		const typeClass = row.type === 'implicit' ? 'context-type-implicit' : 'context-type-explicit';
+		const typeLabel = row.type === 'implicit' ? '🔒 implicit' : '👤 explicit';
+		return `<tr>
+			<td>${row.category}</td>
+			<td>${escapeHtml(row.name)}</td>
+			<td class="count-cell">${row.count}</td>
+			<td class="${typeClass}">${typeLabel}</td>
+		</tr>`;
+	}).join('');
+	
+	return `
+		<table class="context-refs-table">
+			<thead>
+				<tr>
+					<th>Category</th>
+					<th>Reference</th>
+					<th>Count</th>
+					<th>Type</th>
+				</tr>
+			</thead>
+			<tbody>
+				${tableRows}
+			</tbody>
+		</table>
+	`;
 }
 
 function getTopEntries(map: { [key: string]: number } = {}, limit = 3): { key: string; value: number }[] {
@@ -868,6 +915,45 @@ function renderLayout(data: SessionLogData): void {
 			.context-section strong {
 				color: #94a3b8;
 				font-weight: 600;
+			}
+			.context-refs-table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 13px;
+				margin-top: 8px;
+			}
+			.context-refs-table th,
+			.context-refs-table td {
+				padding: 8px 12px;
+				text-align: left;
+				border-bottom: 1px solid #334155;
+			}
+			.context-refs-table th {
+				color: #94a3b8;
+				font-weight: 600;
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+				background: #1e293b;
+			}
+			.context-refs-table td {
+				color: #cbd5e1;
+			}
+			.context-refs-table tbody tr:hover {
+				background: #1e293b;
+			}
+			.context-refs-table .count-cell {
+				text-align: center;
+				font-weight: 600;
+				color: #60a5fa;
+			}
+			.context-type-implicit {
+				color: #94a3b8;
+				font-size: 12px;
+			}
+			.context-type-explicit {
+				color: #4ade80;
+				font-size: 12px;
 			}
 			.context-path {
 				padding-left: 10px;
