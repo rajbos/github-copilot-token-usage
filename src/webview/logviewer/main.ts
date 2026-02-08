@@ -989,11 +989,10 @@ function renderLayout(data: SessionLogData): void {
 			::-webkit-scrollbar-thumb:hover {
 				background: #4a4a54;
 			}
-			}
 			
 			/* Context References */
 			.turn-context-refs {
-				margin-bottom: 14px;
+				margin: 0 16px 14px 16px;
 				background: linear-gradient(135deg, #2a2535 0%, #252530 100%);
 				border: 1px solid #4a4a5a;
 				border-radius: 8px;
