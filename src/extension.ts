@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
+import toolNamesData from './toolNames.json';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
@@ -264,6 +265,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
+
+	// Tool name mapping - loaded from toolNames.json for friendly display names
+	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
@@ -1981,10 +1985,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Extract server name from an MCP tool name.
 	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
-	 * For example: "mcp.io.github.git" → "io", "mcp_io_github_git" → "io"
-	 * Note: Splits on both '.' and '_' to handle various naming conventions
+	 * For example: "mcp.io.github.git.assign_copilot_to_issue" → "GitHub MCP"
+	 * Uses the display name from toolNames.json (the part before the colon).
+	 * Falls back to extracting the second segment if no mapping exists.
 	 */
 	private extractMcpServerName(toolName: string): string {
+		// First, try to get the display name from toolNames.json and extract the server part
+		const displayName = this.toolNameMap[toolName];
+		if (displayName && displayName.includes(':')) {
+			// Extract the part before the colon (e.g., "GitHub MCP" from "GitHub MCP: Issue Read")
+			return displayName.split(':')[0].trim();
+		}
+		
+		// Fallback: extract from tool name structure
 		// Remove the mcp. or mcp_ prefix
 		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
 		// Split on . or _ and take the first part (server identifier)
