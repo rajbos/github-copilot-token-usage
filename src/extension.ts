@@ -4390,7 +4390,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
-			this.log(`DEBUG Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
