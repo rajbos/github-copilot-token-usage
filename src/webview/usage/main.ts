@@ -1,22 +1,11 @@
 // Usage Analysis webview
 import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
+import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
+// CSS imported as text via esbuild
+import styles from './styles.css';
 
 type ModeUsage = { ask: number; edit: number; agent: number };
-type ContextReferenceUsage = {
-	file: number;
-	selection: number;
-	implicitSelection: number;
-	symbol: number;
-	codebase: number;
-	workspace: number;
-	terminal: number;
-	vscode: number;
-	byKind: { [kind: string]: number };
-	copilotInstructions: number;
-	agentsMd: number;
-	byPath: { [path: string]: number };
-};
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 
@@ -69,16 +58,6 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
-}
-
-function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	const basicRefs = refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode;
-	
-	// Add contentReferences counts
-	const contentRefs = refs.copilotInstructions + refs.agentsMd;
-	
-	return basicRefs + contentRefs;
 }
 
 import toolNames from '../../toolNames.json';
@@ -139,126 +118,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const monthTotalModes = stats.month.modeUsage.ask + stats.month.modeUsage.edit + stats.month.modeUsage.agent;
 
 	root.innerHTML = `
-		<style>
-			* { margin: 0; padding: 0; box-sizing: border-box; }
-			body {
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-				background: #0e0e0f;
-				color: #e7e7e7;
-				padding: 16px;
-				line-height: 1.5;
-				min-width: 320px;
-			}
-			.container {
-				background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%);
-				border: 1px solid #2e2e34;
-				border-radius: 10px;
-				padding: 16px;
-				box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
-				max-width: 1200px;
-				margin: 0 auto;
-			}
-			.header {
-				display: flex;
-				justify-content: space-between;
-				align-items: center;
-				gap: 12px;
-				margin-bottom: 14px;
-				padding-bottom: 4px;
-			}
-			.header-left { display: flex; align-items: center; gap: 8px; }
-			.header-icon { font-size: 20px; }
-			.header-title { font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.2px; }
-			.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
-			.nav-button {
-				background: #202024;
-				border: 1px solid #2d2d33;
-				color: #e7e7e7;
-				padding: 8px 12px;
-				border-radius: 6px;
-				font-size: 12px;
-				cursor: pointer;
-				transition: all 0.15s ease;
-			}
-			.nav-button:hover { background: #2a2a30; }
-			.nav-button.primary { background: #0e639c; border-color: #1177bb; color: #fff; }
-			.nav-button.primary:hover { background: #1177bb; }
-			.section { 
-				background: #1b1b1e;
-				border: 1px solid #2a2a30;
-				border-radius: 8px;
-				padding: 12px;
-				margin-bottom: 16px;
-				box-shadow: 0 2px 6px rgba(0,0,0,0.24);
-			}
-			.section-title {
-				font-size: 14px;
-				font-weight: 700;
-				color: #ffffff;
-				margin-bottom: 10px;
-				display: flex;
-				align-items: center;
-				gap: 6px;
-				letter-spacing: 0.2px;
-			}
-			.section-subtitle { font-size: 12px; color: #b8b8b8; margin-bottom: 12px; }
-			.stats-grid {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-				gap: 12px;
-				margin-bottom: 16px;
-			}
-			.stat-card {
-				background: #18181b;
-				border: 1px solid #2a2a30;
-				border-radius: 6px;
-				padding: 12px;
-				box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-			}
-			.stat-card[title] { cursor: help; }
-			.stat-label { font-size: 11px; color: #b8b8b8; margin-bottom: 4px; }
-			.stat-value { font-size: 20px; font-weight: 700; color: #f6f6f6; }
-			.bar-chart {
-				background: #18181b;
-				border: 1px solid #2a2a30;
-				border-radius: 6px;
-				padding: 12px;
-				margin-bottom: 12px;
-			}
-			.bar-item { margin-bottom: 8px; }
-			.bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #d0d0d0; }
-			.bar-track { background: #242429; height: 8px; border-radius: 4px; overflow: hidden; }
-			.bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
-			.list {
-				background: #18181b;
-				border: 1px solid #2a2a30;
-				border-radius: 6px;
-				padding: 12px 16px;
-			}
-			.list ul { list-style: none; padding: 0; }
-			.list li { padding: 4px 0; font-size: 13px; }
-			.two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-			.three-column { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
-			.info-box {
-				background: #1b1b1e;
-				border: 1px solid #2a2a30;
-				border-radius: 6px;
-				padding: 12px;
-				margin-bottom: 16px;
-				font-size: 12px;
-				color: #c8c8c8;
-			}
-			.info-box-title { font-weight: 600; color: #ffffff; margin-bottom: 6px; }
-			.footer {
-				margin-top: 6px;
-				padding-top: 12px;
-				border-top: 1px solid #2a2a30;
-				text-align: left;
-				font-size: 11px;
-				color: #a0a0a0;
-			}
-			@media (max-width: 768px) { .two-column { grid-template-columns: 1fr; } .three-column { grid-template-columns: 1fr; } }
-		</style>
+		<style>${styles}</style>
 		<div class="container">
 			<div class="header">
 				<div class="header-left">

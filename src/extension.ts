@@ -1546,84 +1546,97 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			if (isJsonlContent) {
-				const lines = fileContent.trim().split('\n');
-				let sessionMode = 'ask'; // Default mode
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
 				
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+				
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then process
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract session mode from reconstructed state
+					let sessionMode = 'ask';
+					if (sessionState.inputState?.mode?.kind) {
+						sessionMode = sessionState.inputState.mode.kind;
+					}
+					
+					// Detect implicit selections
+					if (sessionState.inputState?.selections && Array.isArray(sessionState.inputState.selections)) {
+						for (const sel of sessionState.inputState.selections) {
+							if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+								analysis.contextReferences.implicitSelection++;
+								break;
+							}
+						}
+					}
+					
+					// Process reconstructed requests array
+					const requests = sessionState.requests || [];
+					for (const request of requests) {
+						if (!request || !request.requestId) { continue; }
+						
+						// Count by mode
+						if (sessionMode === 'agent') {
+							analysis.modeUsage.agent++;
+						} else if (sessionMode === 'edit') {
+							analysis.modeUsage.edit++;
+						} else {
+							analysis.modeUsage.ask++;
+						}
+						
+						// Check for agent in request
+						if (request.agent?.id) {
+							const toolName = request.agent.id;
+							analysis.toolCalls.total++;
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+						
+						// Analyze all context references from this request
+						this.analyzeRequestContext(request, analysis.contextReferences);
+						
+						// Extract tool calls from request.response array
+						if (request.response && Array.isArray(request.response)) {
+							for (const responseItem of request.response) {
+								if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
+									analysis.toolCalls.total++;
+									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+					}
+					
+					// Calculate model switching for delta-based JSONL files
+					await this.calculateModelSwitching(sessionFile, analysis);
+					return analysis;
+				}
+				
+				// Non-delta JSONL (Copilot CLI format) - process line-by-line
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
 						
-						// Handle VS Code incremental format - detect mode from session header
-						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
-							sessionMode = event.v.inputState.mode.kind;
-							
-							// Detect implicit selections in initial state
-							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections) && event.v.inputState.selections.length > 0) {
-								analysis.contextReferences.implicitSelection++;
-							}
-						}
-						
-						// Handle mode changes (kind: 1 with mode update)
-						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
-							sessionMode = event.v.kind;
-						}
-						
-						// Detect implicit selections in updates to inputState.selections
-						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v) && event.v.length > 0) {
-							analysis.contextReferences.implicitSelection++;
-						}
-						
-						// Handle VS Code incremental format - count requests as interactions
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							for (const request of event.v) {
-								if (request.requestId) {
-									// Count by mode
-									if (sessionMode === 'agent') {
-										analysis.modeUsage.agent++;
-									} else if (sessionMode === 'edit') {
-										analysis.modeUsage.edit++;
-									} else {
-										analysis.modeUsage.ask++;
-									}
-								}
-								// Check for agent in request
-								if (request.agent?.id) {
-									const toolName = request.agent.id;
-									analysis.toolCalls.total++;
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-								}
-							
-								// Analyze contentReferences if present
-								if (request.contentReferences && Array.isArray(request.contentReferences)) {
-									this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
-								}
-								
-								// Extract tool calls from request.response array (when full request is added)
-								if (request.response && Array.isArray(request.response)) {
-									for (const responseItem of request.response) {
-										if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
-											analysis.toolCalls.total++;
-											const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-										}
-									}
-								}
-							}
-						}
-					
-					// Handle VS Code incremental format - tool invocations in responses
-					if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-						for (const responseItem of event.v) {
-							if (responseItem.kind === 'toolInvocationSerialized') {
-								analysis.toolCalls.total++;
-								const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-					}
-					
-					// Handle Copilot CLI format
+						// Handle Copilot CLI format
 						// Detect mode from event type - CLI can be chat or agent mode
 						if (event.type === 'user.message') {
 							analysis.modeUsage.ask++;
@@ -1704,52 +1717,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						analysis.modeUsage.ask++;
 					}
 					
-					// Analyze user message for context references
-					if (request.message) {
-						if (request.message.text) {
-							this.analyzeContextReferences(request.message.text, analysis.contextReferences);
-						}
-						if (request.message.parts) {
-							for (const part of request.message.parts) {
-								if (part.text) {
-									this.analyzeContextReferences(part.text, analysis.contextReferences);
-								}
-							}
-						}
-					}
-					
-					// Analyze variableData for @workspace, @terminal, @vscode references
-					if (request.variableData) {
-						// Process variables array for prompt files and other context
-						this.analyzeVariableData(request.variableData, analysis.contextReferences);
-						
-						// Also check for @ references in variable names/values
-						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
-						if (varDataStr.includes('workspace')) {
-							analysis.contextReferences.workspace++;
-						}
-						if (varDataStr.includes('terminal')) {
-							analysis.contextReferences.terminal++;
-						}
-						if (varDataStr.includes('vscode')) {
-							analysis.contextReferences.vscode++;
-						}
-					}
-					
-					// Analyze contentReferences if present
-					if (request.contentReferences && Array.isArray(request.contentReferences)) {
-						this.analyzeContentReferences(request.contentReferences, analysis.contextReferences);
-					}
-					
-					// Analyze variableData if present
-					if (request.variableData) {
-						this.analyzeVariableData(request.variableData, analysis.contextReferences);
-					}
-					
-					// Analyze variableData if present
-					if (request.variableData) {
-						this.analyzeVariableData(request.variableData, analysis.contextReferences);
-					}
+					// Analyze all context references from this request
+					this.analyzeRequestContext(request, analysis.contextReferences);
 					
 					// Analyze response for tool calls and MCP tools
 					if (request.response && Array.isArray(request.response)) {
@@ -1858,6 +1827,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Analyze a request object for all context references.
+	 * This is the unified method that processes text, contentReferences, and variableData.
+	 */
+	private analyzeRequestContext(request: any, refs: ContextReferenceUsage): void {
+		// Analyze user message text for context references
+		if (request.message) {
+			if (request.message.text) {
+				this.analyzeContextReferences(request.message.text, refs);
+			}
+			if (request.message.parts) {
+				for (const part of request.message.parts) {
+					if (part.text) {
+						this.analyzeContextReferences(part.text, refs);
+					}
+				}
+			}
+		}
+		
+		// Analyze contentReferences if present
+		if (request.contentReferences && Array.isArray(request.contentReferences)) {
+			this.analyzeContentReferences(request.contentReferences, refs);
+		}
+		
+		// Analyze variableData if present
+		if (request.variableData) {
+			this.analyzeVariableData(request.variableData, refs);
+		}
+	}
+
+	/**
 	 * Analyze text for context references like #file, #selection, @workspace
 	 */
 	private analyzeContextReferences(text: string, refs: ContextReferenceUsage): void {
@@ -1873,10 +1872,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			refs.selection += selectionMatches.length;
 		}
 		
-		// Count #symbol references
+		// Count #symbol and #sym references (both aliases)
+		// Note: #sym:symbolName format is handled via variableData, not text matching
 		const symbolMatches = text.match(/#symbol/gi);
+		const symMatches = text.match(/#sym(?![:\w])/gi);  // Negative lookahead: don't match #symbol or #sym:
 		if (symbolMatches) {
 			refs.symbol += symbolMatches.length;
+		}
+		if (symMatches) {
+			refs.symbol += symMatches.length;
 		}
 		
 		// Count #codebase references
@@ -1943,13 +1947,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Normalize path separators for pattern matching
 					const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
 					
-					// Track specific patterns
+					// Track specific patterns - these are auto-attached, not user-explicit #file refs
 					if (normalizedPath.endsWith('/.github/copilot-instructions.md') || 
 					    normalizedPath.includes('.github/copilot-instructions.md')) {
 						refs.copilotInstructions++;
 					} else if (normalizedPath.endsWith('/agents.md') || 
 					           normalizedPath.match(/\/agents\.md$/i)) {
 						refs.agentsMd++;
+					} else if (normalizedPath.endsWith('.instructions.md') ||
+					           normalizedPath.includes('.instructions.md')) {
+						// Other instruction files (e.g., github-actions.instructions.md) are auto-attached
+						// Track as copilotInstructions since they're part of the instructions system
+						refs.copilotInstructions++;
 					} else {
 						// For other files, increment the general file counter
 						// This makes actual file attachments show up in context ref counts
@@ -1959,6 +1968,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Track by full path (limit to last 100 chars for display)
 					const pathKey = fsPath.length > 100 ? '...' + fsPath.substring(fsPath.length - 97) : fsPath;
 					refs.byPath[pathKey] = (refs.byPath[pathKey] || 0) + 1;
+				}
+				
+				// Handle symbol references (e.g., #sym:functionName)
+				// Symbol references have a 'name' field instead of fsPath
+				const symbolName = reference.name;
+				if (typeof symbolName === 'string' && kind === 'reference') {
+					// This is a symbol reference, track it
+					refs.symbol++;
+					// Track symbol by name for display (use 'name' as path)
+					const symbolKey = `#sym:${symbolName}`;
+					refs.byPath[symbolKey] = (refs.byPath[symbolKey] || 0) + 1;
 				}
 			}
 		}
@@ -1982,6 +2002,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const kind = variable.kind;
 			if (typeof kind === 'string') {
 				refs.byKind[kind] = (refs.byKind[kind] || 0) + 1;
+			}
+
+			// Handle symbol references (e.g., #sym:functionName)
+			// These appear as kind="generic" with name starting with "sym:"
+			if (kind === 'generic' && typeof variable.name === 'string' && variable.name.startsWith('sym:')) {
+				refs.symbol++;
+				// Track symbol by name for display
+				const symbolKey = `#${variable.name}`;
+				refs.byPath[symbolKey] = (refs.byPath[symbolKey] || 0) + 1;
 			}
 
 			// Process promptFile variables that contain file references
@@ -2483,10 +2512,86 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			if (isJsonlContent) {
-				const lines = fileContent.trim().split('\n');
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
 				const timestamps: number[] = [];
 				const allContentReferences: any[] = []; // Collect for repository extraction
 				
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+				
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then extract details
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract session metadata from reconstructed state
+					if (sessionState.creationDate) {
+						timestamps.push(sessionState.creationDate);
+					}
+					if (sessionState.customTitle) {
+						details.title = sessionState.customTitle;
+					}
+					
+					// Process reconstructed requests array
+					const requests = sessionState.requests || [];
+					details.interactions = requests.length;
+					
+					for (const request of requests) {
+						if (!request) { continue; }
+						
+						if (request.timestamp) {
+							timestamps.push(request.timestamp);
+						}
+						
+						// Analyze all context references from this request (unified method)
+						this.analyzeRequestContext(request, details.contextReferences);
+						
+						// Collect contentReferences for repository extraction
+						if (request.contentReferences && Array.isArray(request.contentReferences)) {
+							allContentReferences.push(...request.contentReferences);
+						}
+					}
+					
+					if (timestamps.length > 0) {
+						timestamps.sort((a, b) => a - b);
+						details.firstInteraction = new Date(timestamps[0]).toISOString();
+						const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+						details.lastInteraction = lastTimestamp > stat.mtime 
+							? lastTimestamp.toISOString() 
+							: stat.mtime.toISOString();
+					} else {
+						details.lastInteraction = stat.mtime.toISOString();
+					}
+					
+					// Extract repository from collected contentReferences
+					if (allContentReferences.length > 0) {
+						details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
+					}
+					
+					// Update cache with the details we just collected
+					await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+					
+					return details;
+				}
+				
+				// Non-delta JSONL (Copilot CLI format) - process line-by-line
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
@@ -2502,46 +2607,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (event.data?.content) {
 								this.analyzeContextReferences(event.data.content, details.contextReferences);
 							}
-						}
-						
-						// Handle VS Code incremental .jsonl format (kind: 0, 1, 2)
-						// kind: 0 = session header with creationDate
-						// kind: 2 = requests array with timestamps
-						if (event.kind === 0 && event.v) {
-							// Session creation timestamp
-							if (event.v.creationDate) {
-								timestamps.push(event.v.creationDate);
-							}
-							// Session title - always update to get LAST title (matches VS Code UI)
-							if (event.v.customTitle) {
-								details.title = event.v.customTitle;
-							}
-						}
-						
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							// New requests being added - count interactions and extract timestamps
-							for (const request of event.v) {
-								if (request.requestId) {
-									details.interactions++;
-								}
-								if (request.timestamp) {
-									timestamps.push(request.timestamp);
-								}
-								// Analyze context references in request message
-								if (request.message?.text) {
-									this.analyzeContextReferences(request.message.text, details.contextReferences);
-								}
-								// Collect contentReferences for repository extraction
-								if (request.contentReferences && Array.isArray(request.contentReferences)) {
-									allContentReferences.push(...request.contentReferences);
-								}
-								
-							}
-						}						
-
-						// Check kind: 1 (value updates) for title changes
-						if (event.kind === 1 && event.k?.includes('customTitle') && event.v) {
-							details.title = event.v;
 						}
 					} catch {
 						// Skip malformed lines
@@ -2595,6 +2660,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						timestamps.push(new Date(ts).getTime());
 					}
 					
+					// Analyze all context references from this request
+					this.analyzeRequestContext(request, details.contextReferences);
 					// Analyze context references
 					if (request.message?.text) {
 						this.analyzeContextReferences(request.message.text, details.contextReferences);
@@ -2725,17 +2792,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						
 						const contextRefs = this.createEmptyContextRefs();
 						const userMessage = request.message?.text || '';
-						this.analyzeContextReferences(userMessage, contextRefs);
 						
-						// Analyze contentReferences from request
-						if (request.contentReferences && Array.isArray(request.contentReferences)) {
-							this.analyzeContentReferences(request.contentReferences, contextRefs);
-						}
-						
-						// Analyze variableData from request
-						if (request.variableData) {
-							this.analyzeVariableData(request.variableData, contextRefs);
-						}
+						// Analyze all context references from this request
+						this.analyzeRequestContext(request, contextRefs);
 						
 						// Get model from request or fall back to session model
 						const requestModel = request.modelId || 
@@ -2859,13 +2918,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						
 						// Analyze context references
 						const contextRefs = this.createEmptyContextRefs();
-						this.analyzeContextReferences(userMessage, contextRefs);
-						if (request.variableData) {
-							const varDataStr = JSON.stringify(request.variableData).toLowerCase();
-							if (varDataStr.includes('workspace')) { contextRefs.workspace++; }
-							if (varDataStr.includes('terminal')) { contextRefs.terminal++; }
-							if (varDataStr.includes('vscode')) { contextRefs.vscode++; }
-						}
+						this.analyzeRequestContext(request, contextRefs);
 						
 						// Extract model
 						const model = this.getModelFromRequest(request);
@@ -4337,7 +4390,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
-			this.log(`DEBUG Diagnostics webview message: ${JSON.stringify(message)}`);
 			switch (message.command) {
 				case 'copyReport':
 					await vscode.env.clipboard.writeText(this.lastDiagnosticReport);

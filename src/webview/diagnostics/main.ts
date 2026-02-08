@@ -1,5 +1,7 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from '../shared/buttonConfig';
+// CSS imported as text via esbuild
+import styles from './styles.css';
 
 // Constants
 const LOADING_PLACEHOLDER = 'Loading...';
@@ -9,20 +11,7 @@ const LOADING_MESSAGE = `⏳ Loading diagnostic data...
 This may take a few moments depending on the number of session files.
 The view will automatically update when data is ready.`;
 
-type ContextReferenceUsage = {
-	file: number;
-	selection: number;
-	implicitSelection: number;
-	symbol: number;
-	codebase: number;
-	workspace: number;
-	terminal: number;
-	vscode: number;
-	byKind: { [kind: string]: number };
-	copilotInstructions: number;
-	agentsMd: number;
-	byPath: { [path: string]: number };
-};
+import { ContextReferenceUsage, getTotalContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 
 type SessionFileDetails = {
 	file: string;
@@ -92,6 +81,7 @@ const initialData = window.__INITIAL_DIAGNOSTICS__;
 let currentSortColumn: 'lastInteraction' = 'lastInteraction';
 let currentSortDirection: 'asc' | 'desc' = 'desc';
 let currentEditorFilter: string | null = null; // null = show all
+let currentContextRefFilter: keyof ContextReferenceUsage | null = null; // null = show all
 
 function escapeHtml(text: string): string {
 	return text
@@ -148,26 +138,6 @@ function sanitizeNumber(value: number | undefined | null): string {
 		return '0';
 	}
 	return value.toString();
-}
-
-function getTotalContextRefs(refs: ContextReferenceUsage): number {
-	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
-		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd;
-}
-
-function getContextRefsSummary(refs: ContextReferenceUsage): string {
-	const parts: string[] = [];
-	if (refs.file > 0) { parts.push(`#file: ${refs.file}`); }
-	if (refs.selection > 0) { parts.push(`#sel: ${refs.selection}`); }
-	if (refs.implicitSelection > 0) { parts.push(`impl: ${refs.implicitSelection}`); }
-	if (refs.symbol > 0) { parts.push(`#sym: ${refs.symbol}`); }
-	if (refs.codebase > 0) { parts.push(`#cb: ${refs.codebase}`); }
-	if (refs.workspace > 0) { parts.push(`@ws: ${refs.workspace}`); }
-	if (refs.terminal > 0) { parts.push(`@term: ${refs.terminal}`); }
-	if (refs.vscode > 0) { parts.push(`@vsc: ${refs.vscode}`); }
-	if (refs.copilotInstructions > 0) { parts.push(`📋 inst: ${refs.copilotInstructions}`); }
-	if (refs.agentsMd > 0) { parts.push(`🤖 ag: ${refs.agentsMd}`); }
-	return parts.length > 0 ? parts.join(', ') : 'None';
 }
 
 function getFileName(filePath: string): string {
@@ -293,13 +263,38 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 	const editors = Object.keys(editorStats).sort();
 	
 	// Apply editor filter
-	const filteredFiles = currentEditorFilter 
+	let filteredFiles = currentEditorFilter 
 		? detailedFiles.filter(sf => sf.editorSource === currentEditorFilter)
 		: detailedFiles;
+	
+	// Apply context ref filter
+	if (currentContextRefFilter) {
+		filteredFiles = filteredFiles.filter(sf => {
+			const refType = currentContextRefFilter!; // Assert non-null since we're inside the if block
+			const value = sf.contextReferences[refType];
+			return typeof value === 'number' && value > 0;
+		});
+	}
 	
 	// Summary stats for filtered files
 	const totalInteractions = filteredFiles.reduce((sum, sf) => sum + Number(sf.interactions || 0), 0);
 	const totalContextRefs = filteredFiles.reduce((sum, sf) => sum + getTotalContextRefs(sf.contextReferences), 0);
+	
+	// Aggregate context ref breakdown
+	const aggContextRefs = filteredFiles.reduce((agg, sf) => {
+		const r = sf.contextReferences;
+		agg.file += r.file;
+		agg.symbol += r.symbol;
+		agg.selection += r.selection;
+		agg.implicitSelection += r.implicitSelection;
+		agg.codebase += r.codebase;
+		agg.workspace += r.workspace;
+		agg.terminal += r.terminal;
+		agg.vscode += r.vscode;
+		agg.copilotInstructions += r.copilotInstructions;
+		agg.agentsMd += r.agentsMd;
+		return agg;
+	}, { file: 0, symbol: 0, selection: 0, implicitSelection: 0, codebase: 0, workspace: 0, terminal: 0, vscode: 0, copilotInstructions: 0, agentsMd: 0 });
 	
 	// Sort filtered files
 	const sortedFiles = sortSessionFiles(filteredFiles);
@@ -337,6 +332,16 @@ function renderSessionTable(detailedFiles: SessionFileDetails[], isLoading: bool
 			<div class="summary-card">
 				<div class="summary-label">🔗 Context References</div>
 				<div class="summary-value">${safeText(totalContextRefs)}</div>
+				<div class="summary-sub">
+				${totalContextRefs === 0 ? 'None' : ''}
+				${aggContextRefs.file > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'file' ? 'active' : ''}" data-ref-type="file">#file ${aggContextRefs.file}</div>` : ''}
+				${aggContextRefs.symbol > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'symbol' ? 'active' : ''}" data-ref-type="symbol">#sym ${aggContextRefs.symbol}</div>` : ''}
+				${aggContextRefs.implicitSelection > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'implicitSelection' ? 'active' : ''}" data-ref-type="implicitSelection">implicit ${aggContextRefs.implicitSelection}</div>` : ''}
+				${aggContextRefs.copilotInstructions > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'copilotInstructions' ? 'active' : ''}" data-ref-type="copilotInstructions">📋 instructions ${aggContextRefs.copilotInstructions}</div>` : ''}
+				${aggContextRefs.agentsMd > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'agentsMd' ? 'active' : ''}" data-ref-type="agentsMd">🤖 agents ${aggContextRefs.agentsMd}</div>` : ''}
+				${aggContextRefs.workspace > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'workspace' ? 'active' : ''}" data-ref-type="workspace">@workspace ${aggContextRefs.workspace}</div>` : ''}
+				${aggContextRefs.vscode > 0 ? `<div class="context-ref-filter ${currentContextRefFilter === 'vscode' ? 'active' : ''}" data-ref-type="vscode">@vscode ${aggContextRefs.vscode}</div>` : ''}
+				</div>
 			</div>
 			<div class="summary-card">
 				<div class="summary-label">📅 Time Range</div>
@@ -604,258 +609,7 @@ function renderLayout(data: DiagnosticsData): void {
 	const detailedFiles = data.detailedSessionFiles || [];
 
 	root.innerHTML = `
-		<style>
-			* { margin: 0; padding: 0; box-sizing: border-box; }
-			body {
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-				background: #0e0e0f;
-				color: #e7e7e7;
-				padding: 16px;
-				line-height: 1.5;
-				min-width: 320px;
-			}
-			.container {
-				background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%);
-				border: 1px solid #2e2e34;
-				border-radius: 10px;
-				padding: 16px;
-				box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
-				max-width: 1200px;
-				margin: 0 auto;
-			}
-			.header {
-				display: flex;
-				justify-content: space-between;
-				align-items: center;
-				gap: 12px;
-				margin-bottom: 16px;
-				padding-bottom: 4px;
-			}
-			.header-left { display: flex; align-items: center; gap: 8px; }
-			.header-icon { font-size: 20px; }
-			.header-title { font-size: 16px; font-weight: 700; color: #fff; }
-			.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
-			
-			/* Tab styles */
-			.tabs {
-				display: flex;
-				border-bottom: 1px solid #5a5a5a;
-				margin-bottom: 16px;
-			}
-			.tab {
-				padding: 10px 20px;
-				cursor: pointer;
-				border: none;
-				background: transparent;
-				color: #999;
-				font-size: 13px;
-				font-weight: 500;
-				border-bottom: 2px solid transparent;
-				transition: all 0.2s;
-			}
-			.tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
-			.tab.active {
-				color: #4FC3F7;
-				border-bottom-color: #4FC3F7;
-			}
-			.tab-content { display: none; }
-			.tab-content.active { display: block; }
-			
-			/* Editor filter panels */
-			.editor-filter-panels {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 10px;
-				margin-bottom: 16px;
-			}
-			.editor-panel {
-				background: #353535;
-				border: 2px solid #5a5a5a;
-				border-radius: 8px;
-				padding: 12px 16px;
-				cursor: pointer;
-				transition: all 0.2s;
-				min-width: 140px;
-				text-align: center;
-			}
-			.editor-panel:hover {
-				background: #404040;
-				border-color: #7a7a7a;
-			}
-			.editor-panel.active {
-				background: #3a4a5a;
-				border-color: #4FC3F7;
-			}
-			.editor-panel-icon {
-				font-size: 24px;
-				margin-bottom: 4px;
-			}
-			.editor-panel-name {
-				font-size: 13px;
-				font-weight: 600;
-				color: #fff;
-				margin-bottom: 2px;
-			}
-			.editor-panel-stats {
-				font-size: 10px;
-				color: #999;
-			}
-			
-			/* Loading state */
-			.loading-state {
-				text-align: center;
-				padding: 40px 20px;
-				color: #999;
-			}
-			.loading-spinner {
-				font-size: 48px;
-				margin-bottom: 16px;
-				animation: pulse 1.5s ease-in-out infinite;
-			}
-			@keyframes pulse {
-				0%, 100% { opacity: 1; }
-				50% { opacity: 0.5; }
-			}
-			.loading-text {
-				font-size: 16px;
-				color: #fff;
-				margin-bottom: 8px;
-			}
-			.loading-subtext {
-				font-size: 12px;
-				color: #888;
-			}
-			
-			/* Summary cards */
-			.summary-cards {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-				gap: 12px;
-				margin-bottom: 16px;
-			}
-			.summary-card {
-				background: #353535;
-				border: 1px solid #5a5a5a;
-				border-radius: 4px;
-				padding: 12px;
-				text-align: center;
-			}
-			.summary-label { font-size: 11px; color: #b3b3b3; margin-bottom: 4px; }
-			.summary-value { font-size: 18px; font-weight: 600; color: #fff; }
-			
-			/* Table styles */
-			.table-container {
-				overflow-x: auto;
-				max-height: 500px;
-				overflow-y: auto;
-			}
-			.session-table {
-				width: 100%;
-				border-collapse: collapse;
-				font-size: 12px;
-			}
-			.session-table th, .session-table td {
-				padding: 8px 10px;
-				text-align: left;
-				border-bottom: 1px solid #5a5a5a;
-			}
-			.session-table th {
-				background: #353535;
-				color: #fff;
-				font-weight: 600;
-				position: sticky;
-				top: 0;
-			}
-			.session-table th.sortable {
-				cursor: pointer;
-				user-select: none;
-			}
-			.session-table th.sortable:hover {
-				background: #454545;
-				color: #4FC3F7;
-			}
-			.session-table tr:hover { background: rgba(255,255,255,0.03); }
-			.editor-badge {
-				background: #4a5a6a;
-				padding: 2px 6px;
-				border-radius: 3px;
-				font-size: 10px;
-				color: #fff;
-			}
-			
-			.session-folders-table {
-				margin-top: 16px;
-				margin-bottom: 16px;
-			}
-			.session-folders-table h4 {
-				color: #ffffff;
-				font-size: 14px;
-				margin-bottom: 12px;
-			}
-			
-			.report-content {
-				background: #2a2a2a;
-				border: 1px solid #5a5a5a;
-				border-radius: 4px;
-				padding: 16px;
-				white-space: pre-wrap;
-				font-size: 13px;
-				overflow-x: auto;
-				max-height: 60vh;
-				overflow-y: auto;
-			}
-			.file-subpath {
-				font-size: 11px;
-				color: #9aa0a6;
-				margin-top: 4px;
-			}
-			.session-file-link, .reveal-link, .view-formatted-link { color: #4FC3F7; text-decoration: underline; cursor: pointer; }
-			.session-file-link:hover, .reveal-link:hover, .view-formatted-link:hover { color: #81D4FA; }
-			.empty-session-link { color: #999; }
-			.empty-session-link:hover { color: #aaa; }
-			.button-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-			.button {
-				background: #202024;
-				border: 1px solid #2d2d33;
-				color: #e7e7e7;
-				padding: 8px 12px;
-				border-radius: 6px;
-				cursor: pointer;
-				font-size: 13px;
-				font-weight: 500;
-				transition: background-color 0.15s ease;
-				display: inline-flex;
-				align-items: center;
-				gap: 8px;
-			}
-			.button:hover { background: #2a2a30; }
-			.button:active { background: #0a5a8a; }
-			.button:disabled { opacity: 0.6; cursor: not-allowed; }
-			.button.secondary { background: #3c3c3c; border-color: #5a5a5a; color: #ffffff; }
-			.button.secondary:hover { background: #4a4a4a; }
-			.info-box {
-				background: #3a4a5a;
-				border: 1px solid #4a5a6a;
-				border-radius: 4px;
-				padding: 12px;
-				margin-bottom: 16px;
-				font-size: 13px;
-			}
-			.info-box-title { font-weight: 600; color: #ffffff; margin-bottom: 6px; }
-			.cache-details { margin-top: 16px; }
-			.cache-location { margin-top: 20px; }
-			.cache-location h4 { color: #fff; font-size: 14px; margin-bottom: 8px; }
-			.location-box {
-				background: #2a2a2a;
-				border: 1px solid #5a5a5a;
-				border-radius: 4px;
-				padding: 12px;
-				overflow-x: auto;
-			}
-			.location-box code { color: #4FC3F7; font-size: 12px; }
-			.cache-actions { margin-top: 20px; }
-			.cache-actions h4 { color: #fff; font-size: 14px; margin-bottom: 8px; }
-		</style>
+		<style>${styles}</style>
 		<div class="container">
 			<div class="header">
 				<div class="header-left">
@@ -1154,8 +908,6 @@ function renderLayout(data: DiagnosticsData): void {
 				btnTab.disabled = false;
 			}
 			
-			console.log('DEBUG Cache cleared confirmation received');
-			
 			// Re-enable buttons after a short delay and reset to original state
 			setTimeout(() => {
 				if (btnReport) {
@@ -1191,7 +943,6 @@ function renderLayout(data: DiagnosticsData): void {
 						if (ageValue) { ageValue.textContent = '0 seconds ago'; }
 					}
 				}
-				console.log('DEBUG Cache refreshed with new data:', cacheInfo);
 			}
 		}
 	});
@@ -1272,6 +1023,25 @@ function setupStorageLinkHandlers(): void {
 			});
 		});
 	}
+	
+	// Wire up context ref filter handlers
+	function setupContextRefFilterHandlers(): void {
+		document.querySelectorAll('.context-ref-filter').forEach(filter => {
+			filter.addEventListener('click', () => {
+				const refType = (filter as HTMLElement).getAttribute('data-ref-type') as keyof ContextReferenceUsage | null;
+				
+				// Toggle: if clicking the same filter, clear it
+				if (currentContextRefFilter === refType) {
+					currentContextRefFilter = null;
+				} else {
+					currentContextRefFilter = refType;
+				}
+				
+				// Re-render table
+				reRenderTable();
+			});
+		});
+	}
 
 	// Re-render the session table with current filter/sort state
 	function reRenderTable(): void {
@@ -1281,6 +1051,7 @@ function setupStorageLinkHandlers(): void {
 			if (!isLoading) {
 				setupSortHandlers();
 				setupEditorFilterHandlers();
+				setupContextRefFilterHandlers();
 				setupFileLinks();
 			}
 		}
@@ -1346,7 +1117,6 @@ function setupStorageLinkHandlers(): void {
 	}
 
 	document.getElementById('btn-clear-cache')?.addEventListener('click', () => {
-		console.log('DEBUG Clear cache button clicked (report tab)');
 		const btn = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
 		if (btn) {
 			btn.style.background = '#d97706';
@@ -1359,7 +1129,6 @@ function setupStorageLinkHandlers(): void {
 	});
 
 	document.getElementById('btn-clear-cache-tab')?.addEventListener('click', () => {
-		console.log('DEBUG Clear cache button clicked (cache tab)');
 		const btn = document.getElementById('btn-clear-cache-tab') as HTMLButtonElement | null;
 		if (btn) {
 			btn.style.background = '#d97706';
@@ -1376,7 +1145,6 @@ function setupStorageLinkHandlers(): void {
 		const target = event.target as HTMLElement;
 		if (!target) { return; }
 		if (target.id === 'btn-clear-cache' || target.id === 'btn-clear-cache-tab') {
-			console.log('DEBUG Clear cache button clicked via delegated handler', target.id);
 			target.style.background = '#d97706';
 			target.innerHTML = '<span>⏳</span><span>Clearing...</span>';
 			if (target instanceof HTMLButtonElement) {
@@ -1395,17 +1163,16 @@ function setupStorageLinkHandlers(): void {
 
 	// Backend configuration buttons
 	document.getElementById('btn-configure-backend')?.addEventListener('click', () => {
-		console.log('[DEBUG] Configure backend button clicked');
 		vscode.postMessage({ command: 'configureBackend' });
 	});
 	
 	document.getElementById('btn-open-settings')?.addEventListener('click', () => {
-		console.log('[DEBUG] Open settings button clicked');
 		vscode.postMessage({ command: 'openSettings' });
 	});
 
 	setupSortHandlers();
 	setupEditorFilterHandlers();
+	setupContextRefFilterHandlers();
 	setupFileLinks();
 	setupStorageLinkHandlers();
 	
