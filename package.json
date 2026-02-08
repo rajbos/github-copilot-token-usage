@@ -233,6 +233,7 @@
     "pretest": "npm run compile && npm run compile-tests && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
+    "lint:css": "stylelint \"src/webview/**/*.css\"",
     "test": "vscode-test",
     "test:node": "npm run compile-tests && node --test out/test/test-node/backend-identity.test.js",
     "test:coverage": "npm run compile-tests && node --require ./out/test/test-node/vscode-shim-register.js --experimental-test-coverage --test --test-coverage-lines=60 --test-coverage-functions=60 --test-coverage-branches=60 --test-coverage-include=out/test/backend/**/*.js --test-coverage-include=out/test/utils/**/*.js out/test/test-node/backend-identity.test.js out/test/test-node/utils-errors.test.js out/test/test-node/backend-settings.test.js out/test/test-node/backend-copyConfig.test.js out/test/test-node/backend-integration.test.js out/test/test-node/backend-commands.test.js out/test/test-node/backend-facade-helpers.test.js out/test/test-node/backend-facade-rollups.test.js out/test/test-node/backend-facade-query.test.js",
@@ -251,6 +252,8 @@
     "esbuild": "^0.27.2",
     "eslint": "^9.39.2",
     "npm-run-all": "^4.1.5",
+    "stylelint": "^17.1.1",
+    "stylelint-config-standard": "^40.0.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {

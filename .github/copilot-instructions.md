@@ -38,18 +38,49 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 
 ## Logging Best Practices
 
-**CRITICAL**: Do NOT add debug logging statements like `log('[DEBUG] message')` for troubleshooting during development. This approach has been found to interfere with the output channel and can hide existing log messages from appearing.
+**CRITICAL**: Do NOT add debug logging statements like `this.log('[DEBUG] message')` or `console.log('[DEBUG] ...')` for troubleshooting during development. This approach has been found to flood the output channel and cause messages to disappear.
 
-- **Use Existing Logs**: The extension already has comprehensive logging throughout. Review existing log statements to understand what's being tracked.
-- **Minimal Logging**: Only add logging if absolutely necessary for a new feature. Keep messages concise and informative.
-- **Remove Debug Logs**: Any temporary debug logging added during development MUST be removed before committing code.
-- **Log Methods**: Use the appropriate method for the severity:
+### Why DEBUG Logs Are Problematic
+
+**Extension Host Flooding**: When DEBUG log statements are added to frequently-called methods in `extension.ts` (e.g., cache lookups, file processing loops, webview message handlers), they can generate hundreds of log entries per operation. VS Code's OutputChannel has a buffer limit, and excessive logging causes older messages to be pushed out and lost. This was observed when:
+- Cache hit/miss logging was added to session file processing
+- JSONL content reference counting was logged for each file
+- Webview message handlers logged every incoming message with full JSON payloads
+- Session data was logged with repository counts on each webview update
+
+**Symptom**: After operations like clearing the cache, expected log messages would disappear from the Output panel because they were pushed out of the buffer by DEBUG logs.
+
+### Extension vs Webview Logging
+
+These are two completely separate logging systems:
+
+| Context | Method | Destination | Visibility |
+|---------|--------|-------------|------------|
+| Extension (`src/extension.ts`) | `this.log()`, `this.warn()`, `this.error()` | VS Code Output Channel | Output panel → "Copilot Token Tracker" |
+| Webview (`src/webview/*/main.ts`) | `console.log()` | Browser DevTools | Help → Toggle Developer Tools in webview |
+
+- Clearing the output channel (`outputChannel.clear()`) does NOT affect webview console logs
+- Webview console.log statements do NOT appear in the Output panel
+- DEBUG prefixes in webviews were removed to maintain consistency with extension guidelines
+
+### Best Practices
+
+- **Use Existing Logs**: The extension already has comprehensive logging. Review existing log statements before adding new ones.
+- **Minimal Logging**: Only add logging if absolutely necessary for a new feature. Keep messages concise.
+- **Remove Debug Logs**: Any temporary debug logging added during development MUST be removed before committing.
+- **Log Methods**: Use appropriate severity:
   - `log(message)` - Standard informational messages
   - `warn(message)` - Warnings or recoverable errors
   - `error(message)` - Critical errors
-- **No Debug Prefixes**: Avoid prefixing messages with `[DEBUG]` or similar markers. The log output is already timestamped and categorized.
+- **No Debug Prefixes**: Avoid `[DEBUG]` markers. The log output is already timestamped.
+- **Avoid High-Frequency Logging**: Never log inside loops that process many items (files, sessions, cache entries).
 
-If you need to troubleshoot execution flow, prefer using VS Code's debugger with breakpoints rather than adding log statements.
+### Debugging Without Logs
+
+Prefer VS Code's debugger with breakpoints rather than adding log statements:
+1. Press `F5` to launch Extension Development Host
+2. Set breakpoints in `src/extension.ts`
+3. Use the Debug Console to inspect variables
 
 ## Key Files & Conventions
 

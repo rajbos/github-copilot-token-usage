@@ -6,6 +6,8 @@ import { BUTTONS } from '../shared/buttonConfig';
 // Token estimators loaded from JSON
 // @ts-ignore
 import tokenEstimatorsJson from '../../tokenEstimators.json';
+// CSS imported as text via esbuild
+import styles from './styles.css';
 
 type ModelUsage = Record<string, { inputTokens: number; outputTokens: number }>;
 type EditorUsage = Record<string, { tokens: number; sessions: number }>;
@@ -100,36 +102,7 @@ function renderShell(
 	root.replaceChildren();
 
 	const style = document.createElement('style');
-	style.textContent = `
-		:root {
-			color: #e7e7e7;
-			background: #1e1e1e;
-			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-		}
-		body { margin: 0; background: #0e0e0f; }
-		.container { padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 1200px; margin: 0 auto; }
-		.header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 4px; }
-		.title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #fff; }
-		.button-row { display: flex; flex-wrap: wrap; gap: 8px; }
-		.sections { display: flex; flex-direction: column; gap: 16px; }
-		.section { background: linear-gradient(135deg, #1b1b1e 0%, #1f1f22 100%); border: 1px solid #2e2e34; border-radius: 10px; padding: 12px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28); }
-		.section h3 { margin: 0 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 6px; color: #ffffff; letter-spacing: 0.2px; }
-		.stats-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #1b1b1e; border: 1px solid #2a2a30; border-radius: 8px; overflow: hidden; }
-		.stats-table thead { background: #242429; }
-		.stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid #2d2d33; vertical-align: middle; }
-		.stats-table th { text-align: left; color: #d0d0d0; font-weight: 700; font-size: 12px; letter-spacing: 0.1px; }
-		.stats-table td { color: #f0f0f0; font-size: 12px; }
-		.stats-table th.align-right, .stats-table td.align-right { text-align: right; }
-		.stats-table tbody tr:nth-child(even) { background: #18181b; }
-		.metric-label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
-		.period-header { display: flex; align-items: center; gap: 4px; color: #c8c8c8; }
-		.align-right .period-header { justify-content: flex-end; }
-		.value-right { text-align: right; }
-		.muted { color: #a0a0a0; font-size: 11px; margin-top: 4px; }
-		.notes { margin: 4px 0 0 0; padding-left: 16px; color: #c8c8c8; }
-		.notes li { margin: 4px 0; line-height: 1.4; }
-		.footer { color: #a0a0a0; font-size: 11px; margin-top: 6px; }
-	`;
+	style.textContent = styles;
 
 	const container = el('div', 'container');
 	const header = el('div', 'header');
