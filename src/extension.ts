@@ -189,6 +189,21 @@ interface SessionFileDetails {
 	repository?: string; // Git remote origin URL for the session's workspace
 }
 
+// Prompt token detail from actual LLM usage data
+interface PromptTokenDetail {
+	category: string;
+	label: string;
+	percentageOfPrompt: number;
+}
+
+// Actual usage data from the LLM API (when available in JSONL)
+interface ActualUsage {
+	completionTokens: number;
+	promptTokens: number;
+	promptTokenDetails?: PromptTokenDetail[];
+	details?: string; // e.g. "Claude Opus 4.5 • 3x"
+}
+
 // Chat turn information for log viewer
 interface ChatTurn {
 	turnNumber: number;
@@ -202,6 +217,7 @@ interface ChatTurn {
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
+	actualUsage?: ActualUsage;
 }
 
 // Full session log data for the log viewer
@@ -3030,6 +3046,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Extract response data
 						const { responseText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
 						
+						// Extract actual usage data from request.result if available
+						let actualUsage: ActualUsage | undefined;
+						if (request.result?.usage) {
+							const u = request.result.usage;
+							actualUsage = {
+								completionTokens: typeof u.completionTokens === 'number' ? u.completionTokens : 0,
+								promptTokens: typeof u.promptTokens === 'number' ? u.promptTokens : 0,
+								promptTokenDetails: Array.isArray(u.promptTokenDetails) ? u.promptTokenDetails : undefined,
+								details: typeof request.result.details === 'string' ? request.result.details : undefined
+							};
+						}
+
 						const turn: ChatTurn = {
 							turnNumber: i + 1,
 							timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
@@ -3041,7 +3069,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 							contextReferences: contextRefs,
 							mcpTools,
 							inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
-							outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel)
+							outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
+							actualUsage
 						};
 						
 						turns.push(turn);
