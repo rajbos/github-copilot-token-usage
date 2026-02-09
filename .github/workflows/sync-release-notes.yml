@@ -64,7 +64,7 @@ jobs:
         This commit automatically updates the CHANGELOG.md file to match
         the release notes from GitHub releases, ensuring consistency
         between local documentation and published releases."
-        git push
+        git push -u origin update-changelog
 
     - name: Create Pull Request
       if: steps.changes.outputs.changed == 'true'
