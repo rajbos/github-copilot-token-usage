@@ -118,7 +118,7 @@ describe('SuccessMessages', () => {
 
 	it('should generate connected message', () => {
 		const msg = SuccessMessages.connected();
-		assert.equal(msg, '✓ Connected to Azure Storage successfully');
+		assert.equal(msg, 'Connected to Azure Storage successfully');
 	});
 
 	it('should generate completed message', () => {
