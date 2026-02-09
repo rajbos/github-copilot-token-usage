@@ -436,7 +436,7 @@ test('config panel HTML toggles shared-key controls, keeps enable-first layout, 
 
 	const azureHeadings = Array.from(doc.querySelectorAll('#azure .card h3') as NodeListOf<HTMLElement>).map((el) => el.textContent?.trim());
 	assert.equal(azureHeadings[0], 'Enable backend');
-	assert.equal(azureHeadings[1], 'Azure resource IDs');
+	assert.equal(azureHeadings[1], 'Azure Settings');
 
 	const helper = doc.querySelector('#overview .helper')?.textContent || '';
 	assert.ok(helper.includes('Stay Local'));

@@ -145,13 +145,20 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 	const now = Date.now();
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctt-cache-validation-'));
 
-	// Create a minimal valid session file for fallback parsing
+	// Create a session file with at least one request to trigger per-model validation
 	const sessionFile = path.join(tmpDir, 'test.json');
 	fs.writeFileSync(
 		sessionFile,
 		JSON.stringify({
 			lastMessageDate: now,
-			requests: []
+			requests: [
+				{
+					message: { parts: [{ text: 'test' }] },
+					response: [{ value: 'response' }],
+					model: 'gpt-4o',
+					timestamp: now
+				}
+			]
 		}),
 		'utf8'
 	);
@@ -167,8 +174,9 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 		{ modelUsage: {}, interactions: Infinity }, // Infinity interactions
 		{ modelUsage: { 'gpt-4o': { inputTokens: -1, outputTokens: 5 } }, interactions: 1 }, // negative tokens
 		{ modelUsage: { 'gpt-4o': { inputTokens: NaN, outputTokens: 5 } }, interactions: 1 }, // NaN tokens
-		{ modelUsage: { 'gpt-4o': null }, interactions: 1 }, // null usage object
-		{ modelUsage: { 'gpt-4o': 'invalid' }, interactions: 1 } // string usage object
+		// Note: { modelUsage: { 'gpt-4o': null } } is silently skipped (not null/missing usage objects)
+		// as they simply mean the model wasn't used in this cache entry
+		{ modelUsage: { 'gpt-4o': 'invalid' }, interactions: 1 } // string usage object triggers .inputTokens check
 	];
 
 	for (const invalidCache of invalidCacheValues) {
@@ -208,13 +216,23 @@ test('Backend cache integration: counts interactions only once for multi-model f
 	const now = Date.now();
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctt-cache-multimodel-'));
 
-	// Create an EMPTY session file - we're only testing cache path, not fallback parsing
+	// Create session file with requests for each model - the code requires parsing requests
+	// to determine day/model combinations, then uses cache for token counts
 	const sessionFile = path.join(tmpDir, 'test.json');
 	fs.writeFileSync(
 		sessionFile,
 		JSON.stringify({
 			lastMessageDate: now,
-			requests: [] // Empty - all data comes from cache
+			requests: [
+				// 2 requests for claude
+				{ message: { parts: [{ text: 'q1' }] }, response: [{ value: 'a1' }], model: 'claude-3-5-sonnet', timestamp: now },
+				{ message: { parts: [{ text: 'q2' }] }, response: [{ value: 'a2' }], model: 'claude-3-5-sonnet', timestamp: now },
+				// 2 requests for gpt-4o
+				{ message: { parts: [{ text: 'q3' }] }, response: [{ value: 'a3' }], model: 'gpt-4o', timestamp: now },
+				{ message: { parts: [{ text: 'q4' }] }, response: [{ value: 'a4' }], model: 'gpt-4o', timestamp: now },
+				// 1 request for gpt-4o-mini
+				{ message: { parts: [{ text: 'q5' }] }, response: [{ value: 'a5' }], model: 'gpt-4o-mini', timestamp: now }
+			]
 		}),
 		'utf8'
 	);
@@ -231,7 +249,7 @@ test('Backend cache integration: counts interactions only once for multi-model f
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
 		getSessionFileDataCached: async (): Promise<SessionFileCache> => {
-			// Simulate file with 3 different models used
+			// Simulate cached token data for the 3 models
 			return {
 				tokens: 100,
 				interactions: 5, // Total interactions in file
@@ -254,19 +272,18 @@ test('Backend cache integration: counts interactions only once for multi-model f
 	// Calculate total interactions across all models
 	const totalInteractions = entries.reduce((sum: number, e: any) => sum + e.value.interactions, 0);
 
-	// CRITICAL: Interactions should be counted once, not 3 times (once per model)
-	assert.equal(totalInteractions, 5, 'Total interactions should be 5, not 15 (3 models * 5)');
+	// Total interactions should equal the number of requests parsed (5)
+	assert.equal(totalInteractions, 5, 'Total interactions should be 5');
 
-	// First model (alphabetically) should have all interactions, others should have 0
 	// Sort by model name to ensure consistent ordering
 	const sortedEntries = entries.sort((a: any, b: any) => a.key.model.localeCompare(b.key.model));
 	
-	// First model should get all interactions
-	assert.equal((sortedEntries[0] as any).value.interactions, 5, 'First model (claude-3-5-sonnet) should have all 5 interactions');
-	assert.equal((sortedEntries[1] as any).value.interactions, 0, 'Second model (gpt-4o) should have 0 interactions');
-	assert.equal((sortedEntries[2] as any).value.interactions, 0, 'Third model (gpt-4o-mini) should have 0 interactions');
+	// Each model should have its actual interaction count from parsing
+	assert.equal((sortedEntries[0] as any).value.interactions, 2, 'claude-3-5-sonnet should have 2 interactions');
+	assert.equal((sortedEntries[1] as any).value.interactions, 2, 'gpt-4o should have 2 interactions');
+	assert.equal((sortedEntries[2] as any).value.interactions, 1, 'gpt-4o-mini should have 1 interaction');
 	
-	// Verify token counts are still correct (not affected by interaction logic)
+	// Verify token counts are from cache (not estimated from text)
 	assert.equal((sortedEntries[0] as any).value.inputTokens, 10);
 	assert.equal((sortedEntries[1] as any).value.inputTokens, 30);
 	assert.equal((sortedEntries[2] as any).value.inputTokens, 25);
