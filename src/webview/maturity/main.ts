@@ -27,6 +27,8 @@ type UsageAnalysisPeriod = {
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
 	modelSwitching: ModelSwitchingAnalysis;
+	repositories: string[];
+	repositoriesWithCustomization: string[];
 };
 
 type CategoryScore = {
@@ -183,6 +185,13 @@ function renderLayout(data: MaturityData): void {
 			? cat.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
 			: '<div class="tip-item" style="color:#666;">No specific suggestions - you\'re doing great!</div>';
 
+		// Add MCP discovery button for Tool Usage category
+		const mcpButton = cat.category === 'Tool Usage' ? `
+			<div style="margin-top: 10px;">
+				<button class="mcp-discover-btn" data-action="searchMcp">🔍 Discover MCP Servers in Marketplace</button>
+			</div>
+		` : '';
+
 		return `
 			<div class="category-card">
 				<div class="category-header">
@@ -199,8 +208,7 @@ function renderLayout(data: MaturityData): void {
 						<div style="font-size: 11px; font-weight: 600; color: #f59e0b; margin-bottom: 6px;">💡 Next steps to level up:</div>
 						${tipsHtml}
 					</div>
-				` : ''}
-			</div>`;
+				` : ''}			${mcpButton}			</div>`;
 	}).join('');
 
 	root.innerHTML = `
@@ -236,9 +244,42 @@ function renderLayout(data: MaturityData): void {
 				<div class="stage-banner-subtitle">${escapeHtml(STAGE_DESCRIPTIONS[data.overallStage] || '')}</div>
 			</div>
 
-			<!-- Radar chart -->
+		<!-- Radar chart with legend -->
+		<div class="radar-wrapper">
 			<div class="radar-container">
 				${renderRadarChart(data.categories)}
+			</div>
+			<div class="legend-panel">
+				<div class="legend-title">Stage Reference</div>
+				<div class="legend-item">
+					<div class="legend-dot stage-1-dot"></div>
+					<div class="legend-content">
+						<div class="legend-label">Stage 1: Copilot Skeptic</div>
+						<div class="legend-desc">Rarely uses Copilot or uses only basic features</div>
+					</div>
+				</div>
+				<div class="legend-item">
+					<div class="legend-dot stage-2-dot"></div>
+					<div class="legend-content">
+						<div class="legend-label">Stage 2: Copilot Explorer</div>
+						<div class="legend-desc">Exploring Copilot capabilities with occasional use</div>
+					</div>
+				</div>
+				<div class="legend-item">
+					<div class="legend-dot stage-3-dot"></div>
+					<div class="legend-content">
+						<div class="legend-label">Stage 3: Copilot Collaborator</div>
+						<div class="legend-desc">Regular, purposeful use across multiple features</div>
+					</div>
+				</div>
+				<div class="legend-item">
+					<div class="legend-dot stage-4-dot"></div>
+					<div class="legend-content">
+						<div class="legend-label">Stage 4: Copilot Strategist</div>
+						<div class="legend-desc">Strategic, advanced use leveraging the full Copilot ecosystem</div>
+					</div>
+				</div>
+			</div>
 			</div>
 
 			<!-- Category detail cards -->
@@ -264,6 +305,11 @@ function renderLayout(data: MaturityData): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+
+	// Wire up MCP discovery button
+	document.querySelector('.mcp-discover-btn')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'searchMcpExtensions' });
 	});
 }
 

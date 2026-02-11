@@ -171,6 +171,8 @@ interface UsageAnalysisPeriod {
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
 	modelSwitching: ModelSwitchingAnalysis;
+	repositories: string[]; // Unique repositories worked in during this period
+	repositoriesWithCustomization: string[]; // Repos with copilot-instructions.md or agents.md
 }
 
 // Detailed session file information for diagnostics view
@@ -1164,7 +1166,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				premiumModels: [],
 				unknownModels: [],
 				mixedTierSessions: 0
-			}
+			},
+			repositories: [],
+			repositoriesWithCustomization: []
 		});
 
 		const todayStats = emptyPeriod();
@@ -1188,31 +1192,52 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const fileSize = fileStats.size;
 						const analysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtime, fileSize);
 						
-						// Add to last 30 days stats
-						last30DaysStats.sessions++;
-						this.mergeUsageAnalysis(last30DaysStats, analysis);
+					// Get repository from cache
+					const cached = this.sessionFileCache.get(sessionFile);
+					const repository = cached?.repository || 'Unknown';
+					const hasCustomization = (analysis.contextReferences.copilotInstructions || 0) > 0 || (analysis.contextReferences.agentsMd || 0) > 0;
+					last30DaysStats.sessions++;
+					this.mergeUsageAnalysis(last30DaysStats, analysis);
+					if (!last30DaysStats.repositories.includes(repository)) {
+						last30DaysStats.repositories.push(repository);
+					}
+					if (hasCustomization && !last30DaysStats.repositoriesWithCustomization.includes(repository)) {
+						last30DaysStats.repositoriesWithCustomization.push(repository);
+					}
 
-						// Add to month stats if modified this calendar month
-						if (fileStats.mtime >= monthStart) {
-							monthStats.sessions++;
-							this.mergeUsageAnalysis(monthStats, analysis);
+					// Add to month stats if modified this calendar month
+					if (fileStats.mtime >= monthStart) {
+						monthStats.sessions++;
+						this.mergeUsageAnalysis(monthStats, analysis);
+						if (!monthStats.repositories.includes(repository)) {
+							monthStats.repositories.push(repository);
 						}
-
-						// Add to today stats if modified today
-						if (fileStats.mtime >= todayStart) {
-							todayStats.sessions++;
-							this.mergeUsageAnalysis(todayStats, analysis);
+						if (hasCustomization && !monthStats.repositoriesWithCustomization.includes(repository)) {
+							monthStats.repositoriesWithCustomization.push(repository);
 						}
 					}
-					
-					processed++;
-					if (processed % progressInterval === 0) {
-						this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed/sessionFiles.length*100)}%)`);
+
+					// Add to today stats if modified today
+					if (fileStats.mtime >= todayStart) {
+						todayStats.sessions++;
+						this.mergeUsageAnalysis(todayStats, analysis);
+						if (!todayStats.repositories.includes(repository)) {
+							todayStats.repositories.push(repository);
+						}
+						if (hasCustomization && !todayStats.repositoriesWithCustomization.includes(repository)) {
+							todayStats.repositoriesWithCustomization.push(repository);
+						}
 					}
-				} catch (fileError) {
-					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
-					processed++;
 				}
+				
+				processed++;
+				if (processed % progressInterval === 0) {
+					this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed/sessionFiles.length*100)}%)`);
+				}
+			} catch (fileError) {
+				this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+				processed++;
+			}
 			}
 		} catch (error) {
 			this.error('Error calculating usage analysis stats:', error);
@@ -4393,6 +4418,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (p.modeUsage.ask > 0) {
 			peEvidence.push(`${p.modeUsage.ask} ask-mode conversations`);
 		}
+		if (p.modeUsage.agent > 0) {
+			peEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
+		}
 
 		if (totalInteractions >= 5) {
 			peStage = 2; // At least trying it out
@@ -4405,29 +4433,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 			peEvidence.push(`Used slash commands: /${usedSlashCommands.join(', /')}`);
 		}
 
-		if (totalInteractions >= 30 && usedSlashCommands.length >= 2) {
+		const hasModelSwitching = p.modelSwitching.mixedTierSessions > 0 || p.modelSwitching.switchingFrequency > 0;
+		const hasAgentMode = p.modeUsage.agent > 0;
+
+		if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) {
 			peStage = 3; // Regular, purposeful use
 		}
 
-		// edit-mode usage + high interaction count + model switching = strategist
-		if (totalInteractions >= 100 && p.modeUsage.edit > 0 && usedSlashCommands.length >= 3) {
+		// Strategist: high volume + agent mode + (model switching or diverse slash commands)
+		if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) {
 			peStage = 4;
-		}
-		if (p.modeUsage.edit > 0) {
-			peEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
 		}
 
 		// Model switching awareness
-		if (p.modelSwitching.mixedTierSessions > 0 || (p.modelSwitching.switchingFrequency > 0)) {
+		if (hasModelSwitching) {
 			peEvidence.push(`Switched models in ${Math.round(p.modelSwitching.switchingFrequency)}% of sessions`);
 			if (peStage < 4 && p.modelSwitching.mixedTierSessions > 0) {
 				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
 			}
 		}
 
+		// Context-aware tips
 		if (peStage < 2) { peTips.push('Try asking Copilot a question using the Chat panel'); }
-		if (peStage < 3) { peTips.push('Use slash commands like /explain, /fix, or /tests to give structured prompts'); }
-		if (peStage < 4) { peTips.push('Try edit mode for multi-file changes and experiment with different models for different tasks'); }
+		if (peStage < 3) {
+			if (!hasAgentMode) { peTips.push('Try agent mode for multi-file changes'); }
+			if (usedSlashCommands.length < 2) { peTips.push('Use slash commands like /explain, /fix, or /tests to give structured prompts'); }
+		}
+		if (peStage < 4) {
+			if (!hasAgentMode) { peTips.push('Try agent mode for autonomous, multi-step coding tasks'); }
+			if (!hasModelSwitching) { peTips.push('Experiment with different models for different tasks - use fast models for simple queries and reasoning models for complex problems'); }
+			if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push('Explore more slash commands like /explain, /tests, or /doc to diversify your prompting'); }
+		}
 
 		// ---------- 2. Context Engineering ----------
 		const ceEvidence: string[] = [];
@@ -4510,56 +4546,87 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const tuTips: string[] = [];
 		let tuStage = 1;
 
+		// Basic tool usage (primarily from agent mode)
 		if (toolCount > 0) {
 			tuEvidence.push(`${toolCount} unique tools used`);
 			tuStage = 2;
 		}
 
-		// Specific advanced tool IDs
-		const advancedTools = ['github_pull_request', 'github_repo', 'run_in_terminal', 'editFiles', 'listFiles'];
-		const usedAdvanced = advancedTools.filter(t => (p.toolCalls.byTool[t] || 0) > 0);
+		// Specific advanced tool IDs (intentional tool integration)
+		const advancedToolFriendlyNames: Record<string, string> = {
+			github_pull_request: 'GitHub Pull Request',
+			github_repo: 'GitHub Repository',
+			run_in_terminal: 'Run In Terminal',
+			editFiles: 'Edit Files',
+			listFiles: 'List Files'
+		};
+		const usedAdvanced = Object.keys(advancedToolFriendlyNames).filter(t => (p.toolCalls.byTool[t] || 0) > 0);
 		if (usedAdvanced.length > 0) {
-			tuEvidence.push(`Advanced tools: ${usedAdvanced.join(', ')}`);
+			tuEvidence.push(`Advanced tools: ${usedAdvanced.map(t => advancedToolFriendlyNames[t]).join(', ')}`);
+			if (usedAdvanced.length >= 2) {
+				tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+			}
 		}
-
-		if (toolCount >= 3 && p.toolCalls.total >= 10) { tuStage = 3; }
-		if (toolCount >= 6 && p.toolCalls.total >= 30 && usedAdvanced.length >= 2) { tuStage = 4; }
 
 		// MCP tools are a strong signal of strategic/advanced use
+		const mcpServers = Object.keys(p.mcpTools.byServer);
 		if (p.mcpTools.total > 0) {
-			const mcpServers = Object.keys(p.mcpTools.byServer);
 			tuEvidence.push(`${p.mcpTools.total} MCP tool calls across ${mcpServers.length} server(s)`);
-			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
-			if (mcpServers.length >= 2) { tuStage = 4; }
+			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4; // Using any MCP server is stage 3
+			if (mcpServers.length >= 2) {
+				tuStage = 4; // Multiple MCP servers = strategist
+			}
 		}
 
-		if (tuStage < 2) { tuTips.push('Let Copilot use built-in tools like file search and terminal in agent mode'); }
-		if (tuStage < 3) { tuTips.push('Explore tools like editFiles, run_in_terminal, and GitHub integrations'); }
-		if (tuStage < 4) { tuTips.push('Set up MCP servers for external tools — databases, APIs, cloud services'); }
+		// Tips based on current state
+		if (tuStage < 2) {
+			tuTips.push('Try agent mode to let Copilot use built-in tools for file operations and terminal commands');
+		}
+		if (tuStage < 3) {
+			if (mcpServers.length === 0) {
+				tuTips.push('Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)');
+			} else {
+				tuTips.push('Explore GitHub integrations and advanced tools like editFiles and run_in_terminal');
+			}
+		}
+		if (tuStage < 4) {
+			if (mcpServers.length === 1) {
+				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry');
+			} else if (mcpServers.length === 0) {
+				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow');
+			} else {
+				tuTips.push('You\'re using multiple MCP servers - keep exploring advanced tool combinations');
+			}
+		}
 
 		// ---------- 5. Customization ----------
 		const cuEvidence: string[] = [];
 		const cuTips: string[] = [];
 		let cuStage = 1;
 
-		if (p.contextReferences.copilotInstructions > 0) {
-			cuEvidence.push(`copilot-instructions.md referenced ${p.contextReferences.copilotInstructions} time(s)`);
+		// Calculate repo-level customization adoption
+		const totalRepos = p.repositories.filter(r => r !== 'Unknown').length;
+		const reposWithCustomization = p.repositoriesWithCustomization.filter(r => r !== 'Unknown').length;
+		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
+
+		if (totalRepos > 0) {
+			cuEvidence.push(`Worked in ${totalRepos} repositor${totalRepos === 1 ? 'y' : 'ies'}`);
+		}
+
+		if (reposWithCustomization > 0) {
+			cuEvidence.push(`${reposWithCustomization} repo${reposWithCustomization === 1 ? '' : 's'} with custom instructions or agents.md`);
 			cuStage = 2;
 		}
 
-		if (p.contextReferences.agentsMd > 0) {
-			cuEvidence.push(`agents.md referenced ${p.contextReferences.agentsMd} time(s)`);
-			cuStage = Math.max(cuStage, 2) as 1 | 2 | 3 | 4;
+		// Stage thresholds based on adoption rate
+		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
+			cuStage = 3;
+			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization`);
 		}
 
-		// Detect custom agent / skill usage from byPath
-		const customPaths = Object.keys(p.contextReferences.byPath || {});
-		const agentPaths = customPaths.filter(fp =>
-			/\.github[\\/]copilot/i.test(fp) || /agents?\.(md|yml)/i.test(fp) || /skills?[\\/]/i.test(fp)
-		);
-		if (agentPaths.length > 1) {
-			cuEvidence.push(`${agentPaths.length} customization files detected in paths`);
-			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
+			cuStage = 4;
+			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate`);
 		}
 
 		// Model selection awareness (choosing specific models)
@@ -4571,13 +4638,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			cuEvidence.push(`Used ${uniqueModels.length} different models`);
 			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 		}
-		if (uniqueModels.length >= 5 && agentPaths.length >= 2) {
+		if (uniqueModels.length >= 5 && reposWithCustomization >= 3) {
 			cuStage = 4;
 		}
 
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
-		if (cuStage < 3) { cuTips.push('Add custom agents (agents.md) and explore different AI models for tasks'); }
-		if (cuStage < 4) { cuTips.push('Build skill files, use prompt templates, and fine-tune model selection per workflow'); }
+		if (cuStage < 3) { cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience'); }
+		if (cuStage < 4) { cuTips.push('Aim for consistent customization across all projects with instructions and agents.md'); }
 
 		// ---------- 6. Workflow Integration ----------
 		const wiEvidence: string[] = [];
@@ -4590,10 +4657,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			wiStage = 2;
 		}
 
-		// Multi-mode usage (ask + edit or agent)
-		const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.edit > 0, p.modeUsage.agent > 0].filter(Boolean).length;
+		// Multi-mode usage (ask + agent)
+		const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.agent > 0].filter(Boolean).length;
 		if (modesUsed >= 2) {
-			wiEvidence.push(`Uses ${modesUsed} modes (ask/edit/agent)`);
+			wiEvidence.push(`Uses ${modesUsed} modes (ask/agent)`);
 			wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
 		}
 
@@ -4603,8 +4670,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			wiEvidence.push('Deep integration: high session count, multiple modes, and rich context usage');
 		}
 
-		if (wiStage < 2) { wiTips.push('Use Copilot more regularly — even for quick questions'); }
-		if (wiStage < 3) { wiTips.push('Combine ask mode with edit or agent mode in your daily workflow'); }
+		if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
+		if (wiStage < 3) { wiTips.push('Combine ask mode with agent mode in your daily workflow'); }
 		if (wiStage < 4) { wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); }
 
 		// ---------- Overall score (median) ----------
@@ -4671,23 +4738,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
-			}
-		});
+				case 'searchMcpExtensions':
+					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
+					break;
+		}
+	});
 
-		this.maturityPanel.onDidDispose(() => {
-			this.log('🎯 Copilot Fluency Score dashboard closed');
-			this.maturityPanel = undefined;
-		});
+	this.maturityPanel.onDidDispose(() => {
+		this.log('🎯 Copilot Fluency Score dashboard closed');
+		this.maturityPanel = undefined;
+	});
+}
+
+private async refreshMaturityPanel(): Promise<void> {
+	if (!this.maturityPanel) {
+		return;
 	}
 
-	private async refreshMaturityPanel(): Promise<void> {
-		if (!this.maturityPanel) { return; }
-		this.log('🔄 Refreshing Copilot Fluency Score dashboard');
-		await this.updateTokenStats();
-		this.log('✅ Copilot Fluency Score dashboard refreshed');
-	}
+	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
+	const maturityData = await this.calculateMaturityScores();
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
+	this.log('✅ Copilot Fluency Score dashboard refreshed');
+}
 
-	private getMaturityHtml(webview: vscode.Webview, data: {
+private getMaturityHtml(webview: vscode.Webview, data: {
 		overallStage: number;
 		overallLabel: string;
 		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
