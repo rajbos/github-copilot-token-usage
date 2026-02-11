@@ -5004,9 +5004,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		if (tuStage < 4) {
 			if (mcpServers.length === 1) {
-				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registr:y');
+				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry');
 			} else if (mcpServers.length === 0) {
-				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow:');
+				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow');
 			} else {
 				tuTips.push('You\'re using multiple MCP servers - keep exploring advanced tool combinations');
 			}
