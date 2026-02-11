@@ -1851,13 +1851,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		
 		if (analysis.sessionDuration) {
 			period.sessionDuration.totalDurationMs += analysis.sessionDuration.totalDurationMs;
-			// For averages, we need to track count and sum them properly
-			const sessionCount = period.sessions; // Use current session count as denominator
+			// Calculate avgDurationMs as total / sessionCount
+			const sessionCount = period.sessions;
 			if (sessionCount > 0) {
-				// Weighted average: incorporate new value into running average
-				const prevAvgDuration = period.sessionDuration.avgDurationMs * (sessionCount - 1);
-				period.sessionDuration.avgDurationMs = (prevAvgDuration + analysis.sessionDuration.avgDurationMs) / sessionCount;
+				period.sessionDuration.avgDurationMs = period.sessionDuration.totalDurationMs / sessionCount;
 				
+				// For other timing metrics, use weighted averaging (approximation across per-session averages)
 				const prevAvgFirstProgress = period.sessionDuration.avgFirstProgressMs * (sessionCount - 1);
 				period.sessionDuration.avgFirstProgressMs = (prevAvgFirstProgress + analysis.sessionDuration.avgFirstProgressMs) / sessionCount;
 				
@@ -1876,11 +1875,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				period.conversationPatterns.maxTurnsInSession,
 				analysis.conversationPatterns.maxTurnsInSession
 			);
-			// Recalculate average turns across all sessions
+			// Calculate average turns by summing total turns across all sessions
 			const totalSessions = period.conversationPatterns.multiTurnSessions + period.conversationPatterns.singleTurnSessions;
 			if (totalSessions > 0) {
+				// Reconstruct previous total turns from previous average
 				const prevTotalTurns = period.conversationPatterns.avgTurnsPerSession * (totalSessions - 1);
-				period.conversationPatterns.avgTurnsPerSession = (prevTotalTurns + analysis.conversationPatterns.avgTurnsPerSession) / totalSessions;
+				// Add current session's turn count (which is stored in avgTurnsPerSession for single session)
+				const newTotalTurns = prevTotalTurns + analysis.conversationPatterns.avgTurnsPerSession;
+				// Calculate true average
+				period.conversationPatterns.avgTurnsPerSession = newTotalTurns / totalSessions;
 			}
 		}
 		
@@ -5469,7 +5472,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (p.applyUsage && p.applyUsage.totalCodeBlocks > 0) {
 			const applyRatePercent = Math.round(p.applyUsage.applyRate);
 			wiEvidence.push(`${applyRatePercent}% code block apply rate (${p.applyUsage.totalApplies}/${p.applyUsage.totalCodeBlocks})`);
-			if (p.applyUsage.applyRate >= 0.5) {
+			if (applyRatePercent >= 50) {
 				wiStage = Math.max(wiStage, 2) as 1 | 2 | 3 | 4;
 			}
 		}
