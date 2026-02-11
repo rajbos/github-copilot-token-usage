@@ -315,6 +315,9 @@ function renderLayout(data: MaturityData): void {
 	document.getElementById('btn-details')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDetails' });
 	});
+	document.getElementById('btn-chart')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showChart' });
+	});
 	document.getElementById('btn-usage')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showUsageAnalysis' });
 	});
