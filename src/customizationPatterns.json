@@ -8,7 +8,7 @@
       "id": "copilot-instructions",
       "type": "instructions",
       "icon": "📋",
-      "label": "Copilot Instructions",
+      "label": "Instructions",
       "path": ".github/copilot-instructions.md",
       "scanMode": "exact"
     },
@@ -40,7 +40,7 @@
       "id": "agents-dir",
       "type": "agent",
       "icon": "🤖",
-      "label": "Agent Definitions",
+      "label": "Custom agents",
       "path": ".github/agents/*.md",
       "scanMode": "recursive",
       "maxDepth": 3
