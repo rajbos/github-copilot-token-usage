@@ -5072,7 +5072,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Apply button usage (high rate shows active adoption of suggestions)
 		if (p.applyUsage && p.applyUsage.totalCodeBlocks > 0) {
-			const applyRatePercent = Math.round(p.applyUsage.applyRate * 100);
+			const applyRatePercent = Math.round(p.applyUsage.applyRate);
 			wiEvidence.push(`${applyRatePercent}% code block apply rate (${p.applyUsage.totalApplies}/${p.applyUsage.totalCodeBlocks})`);
 			if (p.applyUsage.applyRate >= 0.5) {
 				wiStage = Math.max(wiStage, 2) as 1 | 2 | 3 | 4;
