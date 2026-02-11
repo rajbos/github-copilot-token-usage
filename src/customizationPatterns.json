@@ -42,7 +42,8 @@
       "icon": "🤖",
       "label": "Agent Definitions",
       "path": ".github/agents/*.md",
-      "scanMode": "oneLevel"
+      "scanMode": "recursive",
+      "maxDepth": 3
     },
     {
       "id": "scoped-instructions",
