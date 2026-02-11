@@ -584,6 +584,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-maturity')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showMaturity' });
+	});
 
 	// Copy path buttons in customization list
 	Array.from(document.getElementsByClassName('cf-copy')).forEach((el) => {

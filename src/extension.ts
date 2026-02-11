@@ -1561,20 +1561,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (fileStats.mtime >= last30DaysStart) {
 						const mtime = fileStats.mtime.getTime();
 						const fileSize = fileStats.size;
-						const analysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtime, fileSize);
 						
-					// Get repository from cache
-					const cached = this.sessionFileCache.get(sessionFile);
-					const repository = cached?.repository || 'Unknown';
-					const hasCustomization = (analysis.contextReferences.copilotInstructions || 0) > 0 || (analysis.contextReferences.agentsMd || 0) > 0;
-					last30DaysStats.sessions++;
-					this.mergeUsageAnalysis(last30DaysStats, analysis);
-					if (!last30DaysStats.repositories.includes(repository)) {
-						last30DaysStats.repositories.push(repository);
-					}
-					if (hasCustomization && !last30DaysStats.repositoriesWithCustomization.includes(repository)) {
-						last30DaysStats.repositoriesWithCustomization.push(repository);
-					}
 						// Get all session data in one call to avoid multiple cache lookups
 						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 						const interactions = sessionData.interactions;
@@ -1650,30 +1637,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 							this.mergeUsageAnalysis(monthStats, analysis);
 						}
 
-					// Add to month stats if modified this calendar month
-					if (fileStats.mtime >= monthStart) {
-						monthStats.sessions++;
-						this.mergeUsageAnalysis(monthStats, analysis);
-						if (!monthStats.repositories.includes(repository)) {
-							monthStats.repositories.push(repository);
-						}
-						if (hasCustomization && !monthStats.repositoriesWithCustomization.includes(repository)) {
-							monthStats.repositoriesWithCustomization.push(repository);
+						// Add to today stats if modified today
+						if (fileStats.mtime >= todayStart) {
+							todayStats.sessions++;
+							this.mergeUsageAnalysis(todayStats, analysis);
 						}
 					}
-
-					// Add to today stats if modified today
-					if (fileStats.mtime >= todayStart) {
-						todayStats.sessions++;
-						this.mergeUsageAnalysis(todayStats, analysis);
-						if (!todayStats.repositories.includes(repository)) {
-							todayStats.repositories.push(repository);
-						}
-						if (hasCustomization && !todayStats.repositoriesWithCustomization.includes(repository)) {
-							todayStats.repositoriesWithCustomization.push(repository);
-						}
-					}
-				}
 				
 				processed++;
 				if (processed % progressInterval === 0) {
