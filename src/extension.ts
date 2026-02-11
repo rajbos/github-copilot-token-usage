@@ -1066,17 +1066,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const fileSize = fileStats.size;
 					const wasCached = this.isCacheValid(sessionFile, mtime, fileSize);
 					
-					// Get interactions count (uses cache if available)
-					const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime, fileSize);
+					// Get all session data in one call to avoid multiple cache lookups
+					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+					const interactions = sessionData.interactions;
 					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
 					if (interactions === 0) {
 						skippedFiles++;
 						continue;
 					}
 					
-					// Get remaining data (all use cache if available)
-					const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime, fileSize);
-					const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime, fileSize);
+					// Extract remaining data from the cached session
+					const tokens = sessionData.tokens;
+					const modelUsage = sessionData.modelUsage;
 					const editorType = this.getEditorTypeFromPath(sessionFile);
 					
 					// For date filtering, get lastInteraction from session details
@@ -1293,9 +1294,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (fileStats.mtime >= thirtyDaysAgo) {
 						const mtime = fileStats.mtime.getTime();
 						const fileSize = fileStats.size;
-						const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime, fileSize);
-						const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime, fileSize);
-						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime, fileSize);
+						// Get all session data in one call to avoid multiple cache lookups
+						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+						const tokens = sessionData.tokens;
+						const interactions = sessionData.interactions;
+						const modelUsage = sessionData.modelUsage;
 						const editorType = this.getEditorTypeFromPath(sessionFile);
 						
 						// Get repository from cache if available
@@ -1472,10 +1475,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (fileStats.mtime >= last30DaysStart) {
 						const mtime = fileStats.mtime.getTime();
 						const fileSize = fileStats.size;
-						const analysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtime, fileSize);
+						// Get all session data in one call to avoid multiple cache lookups
+						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+						const interactions = sessionData.interactions;
+						const analysis = sessionData.usageAnalysis || {
+							toolCalls: { total: 0, byTool: {} },
+							modeUsage: { ask: 0, edit: 0, agent: 0 },
+							contextReferences: {
+								file: 0,
+								selection: 0,
+								implicitSelection: 0,
+								symbol: 0,
+								codebase: 0,
+								workspace: 0,
+								terminal: 0,
+								vscode: 0,
+								terminalLastCommand: 0,
+								terminalSelection: 0,
+								clipboard: 0,
+								changes: 0,
+								outputPanel: 0,
+								problemsPanel: 0,
+								byKind: {},
+								copilotInstructions: 0,
+								agentsMd: 0,
+								byPath: {}
+							},
+							mcpTools: { total: 0, byServer: {}, byTool: {} },
+							modelSwitching: {
+								uniqueModels: [],
+								modelCount: 0,
+								switchCount: 0,
+								tiers: { standard: [], premium: [], unknown: [] },
+								hasMixedTiers: false
+							}
+						};
 
 						// Exclude empty sessions (no interactions) from usage analysis
-						const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime, fileSize);
 						if (interactions === 0) {
 							// Skip counting this session as it contains no user interactions
 							processed++;
