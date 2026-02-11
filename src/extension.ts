@@ -5526,6 +5526,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			today: stats.today,
 			last30Days: stats.last30Days,
 			month: stats.month,
+			customizationSummary: stats.customizationSummary || null,
 			lastUpdated: stats.lastUpdated.toISOString()
 		}).replace(/</g, '\\u003c');
 
