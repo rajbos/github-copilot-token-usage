@@ -241,6 +241,100 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
 		return Object.values(modelUsage).reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0);
 	}
+
+	/**
+	 * Resolve the workspace folder full path from a session file path.
+	 * Looks for a `workspaceStorage/<id>/` segment and reads `workspace.json` or `meta.json`.
+	 * Synchronous by design to keep the analysis flow simple and cached.
+	 */
+	// Helper: read a workspaceStorage JSON file and extract a candidate folder path from configured keys
+	private parseWorkspaceStorageJsonFile(jsonPath: string, candidateKeys: string[]): string | undefined {
+		try {
+			const raw = fs.readFileSync(jsonPath, 'utf8');
+			const obj = JSON.parse(raw);
+			for (const key of candidateKeys) {
+				const candidate = obj[key];
+				if (typeof candidate !== 'string') { continue; }
+				const pathCandidate = candidate.replace(/^file:\/\//, '');
+				// Prefer vscode.Uri.parse -> fsPath when possible
+				try {
+					const uri = vscode.Uri.parse(candidate);
+					if (uri.fsPath && uri.fsPath.length > 0) {
+						return uri.fsPath;
+					}
+				} catch {}
+				try {
+					return decodeURIComponent(pathCandidate);
+				} catch {
+					return pathCandidate;
+				}
+			}
+		} catch {
+			// ignore parse/read errors
+		}
+		return undefined;
+	}
+
+	private resolveWorkspaceFolderFromSessionPath(sessionFilePath: string): string | undefined {
+		try {
+			// Normalize and split path into segments
+			const normalized = sessionFilePath.replace(/\\/g, '/');
+			const parts = normalized.split('/').filter(p => p.length > 0);
+			const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+			if (idx === -1 || idx + 1 >= parts.length) {
+				return undefined; // Not a workspace-scoped session file
+			}
+
+			const workspaceId = parts[idx + 1];
+			// Return cached value if present
+			if (this._workspaceIdToFolderCache.has(workspaceId)) {
+				return this._workspaceIdToFolderCache.get(workspaceId);
+			}
+
+			// Construct the workspaceStorage folder path by slicing the original normalized path
+			// This preserves absolute-root semantics on both Windows and Unix.
+			const workspaceSegment = `workspaceStorage/${workspaceId}`;
+			const lowerNormalized = normalized.toLowerCase();
+			const segmentIndex = lowerNormalized.indexOf(workspaceSegment.toLowerCase());
+			if (segmentIndex === -1) {
+				// Should not happen if parts detection succeeded, but guard just in case
+				this._workspaceIdToFolderCache.set(workspaceId, undefined);
+				return undefined;
+			}
+			const folderPathNormalized = normalized.substring(0, segmentIndex + workspaceSegment.length);
+			const workspaceStorageFolder = path.normalize(folderPathNormalized);
+
+			const workspaceJsonPath = path.join(workspaceStorageFolder, 'workspace.json');
+			const metaJsonPath = path.join(workspaceStorageFolder, 'meta.json');
+
+			let folderFsPath: string | undefined;
+
+			if (fs.existsSync(workspaceJsonPath)) {
+				folderFsPath = this.parseWorkspaceStorageJsonFile(workspaceJsonPath, ['folder', 'workspace', 'configuration', 'uri', 'path']);
+			} else if (fs.existsSync(metaJsonPath)) {
+				folderFsPath = this.parseWorkspaceStorageJsonFile(metaJsonPath, ['folder', 'uri', 'workspace', 'path']);
+			}
+
+			// Normalize to undefined if folderFsPath is falsy
+			if (!folderFsPath || folderFsPath.length === 0) {
+				this._workspaceIdToFolderCache.set(workspaceId, undefined);
+				return undefined;
+			}
+
+			this._workspaceIdToFolderCache.set(workspaceId, folderFsPath);
+			return folderFsPath;
+		} catch (err) {
+			// On any error, cache undefined to avoid repeated failures
+			try {
+				const parts = sessionFilePath.replace(/\\/g, '/').split('/').filter(p => p.length > 0);
+				const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+				if (idx !== -1 && idx + 1 < parts.length) {
+					this._workspaceIdToFolderCache.set(parts[idx + 1], undefined);
+				}
+			} catch {}
+			return undefined;
+		}
+	}
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
@@ -259,6 +353,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _sessionFilesCache: string[] | null = null;
 	private _sessionFilesCacheTime: number = 0;
 	private static readonly SESSION_FILES_CACHE_TTL = 60000; // Cache for 60 seconds
+
+	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
+	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
