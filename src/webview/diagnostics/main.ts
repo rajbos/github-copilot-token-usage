@@ -397,6 +397,13 @@ function renderBackendStoragePanel(backendInfo: BackendStorageInfo | undefined):
 					Backend storage information is not available. This may be a temporary issue.
 				</div>
 			</div>
+			
+			<div class="button-group">
+				<button class="button" id="btn-configure-backend">
+					<span>🔧</span>
+					<span>Configure Backend</span>
+				</button>
+			</div>
 		`;
 	}
 	

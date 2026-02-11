@@ -197,7 +197,10 @@ export class BackendConfigPanel implements vscode.Disposable {
 			.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
 			.nav { border-right: 1px solid #2f2f2f; padding: 16px; background: #252526; }
 			.nav vscode-button { width: 100%; margin-bottom: 8px; }
-			.nav .selected { background: #0e639c; color: #fff; }
+			.nav vscode-button.selected { 
+				--vscode-button-secondaryBackground: #0e639c; 
+				--vscode-button-secondaryHoverBackground: #1177bb;
+			}
 			.main { padding: 16px 20px 32px; }
 			.section { display: none; gap: 12px; }
 			.section.active { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
