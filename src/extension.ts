@@ -117,6 +117,11 @@ interface SessionUsageAnalysis {
 		tiers: { standard: string[]; premium: string[]; unknown: string[] };
 		hasMixedTiers: boolean;
 	};
+	editScope?: EditScopeUsage;
+	applyUsage?: ApplyButtonUsage;
+	sessionDuration?: SessionDurationData;
+	conversationPatterns?: ConversationPatterns;
+	agentTypes?: AgentTypeUsage;
 }
 
 interface ToolCallUsage {
@@ -156,6 +161,41 @@ interface McpToolUsage {
 	total: number;
 	byServer: { [serverName: string]: number };
 	byTool: { [toolName: string]: number };
+}
+
+interface EditScopeUsage {
+	singleFileEdits: number;   // Edit sessions touching 1 file
+	multiFileEdits: number;    // Edit sessions touching 2+ files
+	totalEditedFiles: number;  // Total unique files edited
+	avgFilesPerSession: number; // Average files per edit session
+}
+
+interface ApplyButtonUsage {
+	totalApplies: number;      // Total Apply button uses
+	totalCodeBlocks: number;   // Total code blocks shown
+	applyRate: number;         // % of code blocks applied
+}
+
+interface SessionDurationData {
+	totalDurationMs: number;       // Total session time
+	avgDurationMs: number;         // Average session duration
+	avgFirstProgressMs: number;    // Average time to first response
+	avgTotalElapsedMs: number;     // Average total request time
+	avgWaitTimeMs: number;         // Average user wait time between interactions
+}
+
+interface ConversationPatterns {
+	multiTurnSessions: number;     // Sessions with >1 request
+	singleTurnSessions: number;    // Sessions with 1 request
+	avgTurnsPerSession: number;    // Average requests per session
+	maxTurnsInSession: number;     // Longest conversation
+}
+
+interface AgentTypeUsage {
+	editsAgent: number;            // github.copilot.editsAgent usage
+	defaultAgent: number;          // github.copilot.default usage
+	workspaceAgent: number;        // github.copilot.workspace usage
+	other: number;                 // Other agents
 }
 
 interface ModelSwitchingAnalysis {
@@ -203,6 +243,13 @@ interface UsageAnalysisPeriod {
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
 	modelSwitching: ModelSwitchingAnalysis;
+	repositories: string[]; // Unique repositories worked in during this period
+	repositoriesWithCustomization: string[]; // Repos with copilot-instructions.md or agents.md
+	editScope: EditScopeUsage;
+	applyUsage: ApplyButtonUsage;
+	sessionDuration: SessionDurationData;
+	conversationPatterns: ConversationPatterns;
+	agentTypes: AgentTypeUsage;
 }
 
 // Detailed session file information for diagnostics view
@@ -529,6 +576,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private chartPanel: vscode.WebviewPanel | undefined;
 	private analysisPanel: vscode.WebviewPanel | undefined;
+	private maturityPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
@@ -959,6 +1007,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.analysisPanel) {
 				const analysisStats = await this.calculateUsageAnalysisStats();
 				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+			}
+
+			// If the maturity panel is open, update its content
+			if (this.maturityPanel) {
+				const maturityData = await this.calculateMaturityScores();
+				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
@@ -1453,6 +1507,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 				premiumModels: [],
 				unknownModels: [],
 				mixedTierSessions: 0
+			},
+			repositories: [],
+			repositoriesWithCustomization: [],
+			editScope: {
+				singleFileEdits: 0,
+				multiFileEdits: 0,
+				totalEditedFiles: 0,
+				avgFilesPerSession: 0
+			},
+			applyUsage: {
+				totalApplies: 0,
+				totalCodeBlocks: 0,
+				applyRate: 0
+			},
+			sessionDuration: {
+				totalDurationMs: 0,
+				avgDurationMs: 0,
+				avgFirstProgressMs: 0,
+				avgTotalElapsedMs: 0,
+				avgWaitTimeMs: 0
+			},
+			conversationPatterns: {
+				multiTurnSessions: 0,
+				singleTurnSessions: 0,
+				avgTurnsPerSession: 0,
+				maxTurnsInSession: 0
+			},
+			agentTypes: {
+				editsAgent: 0,
+				defaultAgent: 0,
+				workspaceAgent: 0,
+				other: 0
 			}
 		});
 
@@ -1482,6 +1568,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (fileStats.mtime >= last30DaysStart) {
 						const mtime = fileStats.mtime.getTime();
 						const fileSize = fileStats.size;
+						
 						// Get all session data in one call to avoid multiple cache lookups
 						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 						const interactions = sessionData.interactions;
@@ -1572,6 +1659,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
 					processed++;
 				}
+			} catch (fileError) {
+				this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+				processed++;
+			}
 			}
 
 			// Build the customization matrix using scanned workspace data and session counts
@@ -1746,6 +1837,72 @@ class CopilotTokenTracker implements vscode.Disposable {
 				period.modelSwitching.minModelsPerSession = Math.min(...counts);
 				period.modelSwitching.switchingFrequency = (counts.filter(c => c > 1).length / counts.length) * 100;
 			}
+		}
+		
+		// Merge new enhanced metrics
+		if (analysis.editScope) {
+			period.editScope.singleFileEdits += analysis.editScope.singleFileEdits;
+			period.editScope.multiFileEdits += analysis.editScope.multiFileEdits;
+			period.editScope.totalEditedFiles += analysis.editScope.totalEditedFiles;
+			// Recalculate average
+			const editSessions = period.editScope.singleFileEdits + period.editScope.multiFileEdits;
+			period.editScope.avgFilesPerSession = editSessions > 0 
+				? period.editScope.totalEditedFiles / editSessions 
+				: 0;
+		}
+		
+		if (analysis.applyUsage) {
+			period.applyUsage.totalApplies += analysis.applyUsage.totalApplies;
+			period.applyUsage.totalCodeBlocks += analysis.applyUsage.totalCodeBlocks;
+			// Recalculate apply rate
+			period.applyUsage.applyRate = period.applyUsage.totalCodeBlocks > 0
+				? (period.applyUsage.totalApplies / period.applyUsage.totalCodeBlocks) * 100
+				: 0;
+		}
+		
+		if (analysis.sessionDuration) {
+			period.sessionDuration.totalDurationMs += analysis.sessionDuration.totalDurationMs;
+			// Calculate avgDurationMs as total / sessionCount
+			const sessionCount = period.sessions;
+			if (sessionCount > 0) {
+				period.sessionDuration.avgDurationMs = period.sessionDuration.totalDurationMs / sessionCount;
+				
+				// For other timing metrics, use weighted averaging (approximation across per-session averages)
+				const prevAvgFirstProgress = period.sessionDuration.avgFirstProgressMs * (sessionCount - 1);
+				period.sessionDuration.avgFirstProgressMs = (prevAvgFirstProgress + analysis.sessionDuration.avgFirstProgressMs) / sessionCount;
+				
+				const prevAvgTotalElapsed = period.sessionDuration.avgTotalElapsedMs * (sessionCount - 1);
+				period.sessionDuration.avgTotalElapsedMs = (prevAvgTotalElapsed + analysis.sessionDuration.avgTotalElapsedMs) / sessionCount;
+				
+				const prevAvgWaitTime = period.sessionDuration.avgWaitTimeMs * (sessionCount - 1);
+				period.sessionDuration.avgWaitTimeMs = (prevAvgWaitTime + analysis.sessionDuration.avgWaitTimeMs) / sessionCount;
+			}
+		}
+		
+		if (analysis.conversationPatterns) {
+			period.conversationPatterns.multiTurnSessions += analysis.conversationPatterns.multiTurnSessions;
+			period.conversationPatterns.singleTurnSessions += analysis.conversationPatterns.singleTurnSessions;
+			period.conversationPatterns.maxTurnsInSession = Math.max(
+				period.conversationPatterns.maxTurnsInSession,
+				analysis.conversationPatterns.maxTurnsInSession
+			);
+			// Calculate average turns by summing total turns across all sessions
+			const totalSessions = period.conversationPatterns.multiTurnSessions + period.conversationPatterns.singleTurnSessions;
+			if (totalSessions > 0) {
+				// Reconstruct previous total turns from previous average
+				const prevTotalTurns = period.conversationPatterns.avgTurnsPerSession * (totalSessions - 1);
+				// Add current session's turn count (which is stored in avgTurnsPerSession for single session)
+				const newTotalTurns = prevTotalTurns + analysis.conversationPatterns.avgTurnsPerSession;
+				// Calculate true average
+				period.conversationPatterns.avgTurnsPerSession = newTotalTurns / totalSessions;
+			}
+		}
+		
+		if (analysis.agentTypes) {
+			period.agentTypes.editsAgent += analysis.agentTypes.editsAgent;
+			period.agentTypes.defaultAgent += analysis.agentTypes.defaultAgent;
+			period.agentTypes.workspaceAgent += analysis.agentTypes.workspaceAgent;
+			period.agentTypes.other += analysis.agentTypes.other;
 		}
 	}
 
@@ -2329,8 +2486,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Calculate model switching statistics from session
 		await this.calculateModelSwitching(sessionFile, analysis);
 
-		return analysis;
 	}
+	// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
+	await this.trackEnhancedMetrics(sessionFile, analysis);
+
+	return analysis;
+}
 
 	/**
 	 * Calculate model switching statistics for a session file.
@@ -2427,6 +2588,229 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const parts = withoutPrefix.split(/[._]/);
 		// Return the first non-empty part, or 'unknown' if none exist
 		return parts[0] || 'unknown';
+	}
+
+	/**
+	 * Track enhanced metrics from session files:
+	 * - Edit scope (single vs multi-file edits)
+	 * - Apply button usage (codeblockUri with isEdit flag)
+	 * - Session duration data
+	 * - Conversation patterns (multi-turn sessions)
+	 * - Agent type usage
+	 */
+	private async trackEnhancedMetrics(sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			
+			// Initialize tracking structures
+			const editedFiles = new Set<string>();
+			let totalApplies = 0;
+			let totalCodeBlocks = 0;
+			const timestamps: number[] = [];
+			const timingsData: { firstProgress: number; totalElapsed: number; }[] = [];
+			const waitTimes: number[] = [];
+			let requestCount = 0;
+			const agentCounts = {
+				editsAgent: 0,
+				defaultAgent: 0,
+				workspaceAgent: 0,
+				other: 0
+			};
+			
+			if (isJsonlContent) {
+				// Handle delta-based JSONL format
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+				
+				if (isDeltaBased) {
+					// Reconstruct full state
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract timestamps
+					if (sessionState.creationDate) { timestamps.push(sessionState.creationDate); }
+					if (sessionState.lastMessageDate) { timestamps.push(sessionState.lastMessageDate); }
+					
+					// Process requests
+					const requests = sessionState.requests || [];
+					requestCount = requests.length;
+					
+					for (const request of requests) {
+						if (!request) { continue; }
+						
+						// Track timestamps
+						if (request.timestamp) { timestamps.push(request.timestamp); }
+						
+						// Track timings
+						if (request.result?.timings) {
+							timingsData.push(request.result.timings);
+						}
+						
+						// Track wait times
+						if (request.timeSpentWaiting !== undefined) {
+							waitTimes.push(request.timeSpentWaiting);
+						}
+						
+						// Track agent types
+						if (request.agent?.id) {
+							const agentId = request.agent.id;
+							if (agentId.includes('edit')) {
+								agentCounts.editsAgent++;
+							} else if (agentId.includes('default')) {
+								agentCounts.defaultAgent++;
+							} else if (agentId.includes('workspace')) {
+								agentCounts.workspaceAgent++;
+							} else {
+								agentCounts.other++;
+							}
+						}
+						
+						// Track edit scope and apply usage
+						if (request.response && Array.isArray(request.response)) {
+							for (const resp of request.response) {
+								if (resp.kind === 'textEditGroup' && resp.uri) {
+									const filePath = resp.uri.path || JSON.stringify(resp.uri);
+									editedFiles.add(filePath);
+								}
+								if (resp.kind === 'codeblockUri') {
+									totalCodeBlocks++;
+									if (resp.isEdit === true) {
+										totalApplies++;
+									}
+								}
+							}
+						}
+					}
+				}
+			} else {
+				// Handle regular JSON files
+				const sessionContent = JSON.parse(fileContent);
+				
+				// Extract timestamps
+				if (sessionContent.creationDate) { timestamps.push(sessionContent.creationDate); }
+				if (sessionContent.lastMessageDate) { timestamps.push(sessionContent.lastMessageDate); }
+				
+				// Process requests
+				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+					requestCount = sessionContent.requests.length;
+					
+					for (const request of sessionContent.requests) {
+						// Track timestamps
+						if (request.timestamp) { timestamps.push(request.timestamp); }
+						
+						// Track timings
+						if (request.result?.timings) {
+							timingsData.push(request.result.timings);
+						}
+						
+						// Track wait times
+						if (request.timeSpentWaiting !== undefined) {
+							waitTimes.push(request.timeSpentWaiting);
+						}
+						
+						// Track agent types
+						if (request.agent?.id) {
+							const agentId = request.agent.id;
+							if (agentId.includes('edit')) {
+								agentCounts.editsAgent++;
+							} else if (agentId.includes('default')) {
+								agentCounts.defaultAgent++;
+							} else if (agentId.includes('workspace')) {
+								agentCounts.workspaceAgent++;
+							} else {
+								agentCounts.other++;
+							}
+						}
+						
+						// Track edit scope and apply usage
+						if (request.response && Array.isArray(request.response)) {
+							for (const resp of request.response) {
+								if (resp.kind === 'textEditGroup' && resp.uri) {
+									const filePath = resp.uri.path || JSON.stringify(resp.uri);
+									editedFiles.add(filePath);
+								}
+								if (resp.kind === 'codeblockUri') {
+									totalCodeBlocks++;
+									if (resp.isEdit === true) {
+										totalApplies++;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			// Store edit scope data
+			const editSessionCount = editedFiles.size > 0 ? 1 : 0;
+			analysis.editScope = {
+				singleFileEdits: editedFiles.size === 1 ? 1 : 0,
+				multiFileEdits: editedFiles.size > 1 ? 1 : 0,
+				totalEditedFiles: editedFiles.size,
+				avgFilesPerSession: editSessionCount > 0 ? editedFiles.size / editSessionCount : 0
+			};
+			
+			// Store apply button usage
+			analysis.applyUsage = {
+				totalApplies,
+				totalCodeBlocks,
+				applyRate: totalCodeBlocks > 0 ? (totalApplies / totalCodeBlocks) * 100 : 0
+			};
+			
+			// Calculate session duration
+			const totalDurationMs = timestamps.length >= 2 
+				? Math.max(...timestamps) - Math.min(...timestamps)
+				: 0;
+			const avgFirstProgressMs = timingsData.length > 0
+				? timingsData.reduce((sum, t) => sum + (t.firstProgress || 0), 0) / timingsData.length
+				: 0;
+			const avgTotalElapsedMs = timingsData.length > 0
+				? timingsData.reduce((sum, t) => sum + (t.totalElapsed || 0), 0) / timingsData.length
+				: 0;
+			const avgWaitTimeMs = waitTimes.length > 0
+				? waitTimes.reduce((sum, w) => sum + w, 0) / waitTimes.length
+				: 0;
+			
+			analysis.sessionDuration = {
+				totalDurationMs,
+				avgDurationMs: totalDurationMs,
+				avgFirstProgressMs,
+				avgTotalElapsedMs,
+				avgWaitTimeMs
+			};
+			
+			// Store conversation patterns
+			analysis.conversationPatterns = {
+				multiTurnSessions: requestCount > 1 ? 1 : 0,
+				singleTurnSessions: requestCount === 1 ? 1 : 0,
+				avgTurnsPerSession: requestCount,
+				maxTurnsInSession: requestCount
+			};
+			
+			// Store agent type usage
+			analysis.agentTypes = agentCounts;
+			
+		} catch (error) {
+			this.warn(`Error tracking enhanced metrics from ${sessionFile}: ${error}`);
+		}
 	}
 
 	/**
@@ -4344,6 +4728,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
 			}
 		});
 
@@ -4402,6 +4789,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
 			}
 		});
 
@@ -4459,6 +4849,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
 					break;
 			}
 		});
@@ -4626,6 +5019,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showUsageAnalysis':
 					await this.showUsageAnalysis();
 					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
 			}
 		});
 
@@ -4758,6 +5154,522 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Refresh all stats so the status bar and tooltip stay in sync
 		await this.updateTokenStats();
 		this.log('✅ Usage Analysis dashboard refreshed');
+	}
+
+	// ── Maturity / Fluency Score ───────────────────────────────────────
+
+	/**
+	 * Calculate maturity scores across 6 categories using last 30 days of usage data.
+	 * Each category is scored 1-4 based on threshold rules.
+	 * Overall stage = median of the 6 category scores.
+	 */
+	private async calculateMaturityScores(): Promise<{
+		overallStage: number;
+		overallLabel: string;
+		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
+		period: UsageAnalysisPeriod;
+		lastUpdated: string;
+	}> {
+		const stats = await this.calculateUsageAnalysisStats();
+		const p = stats.last30Days;
+
+		const stageLabels: Record<number, string> = {
+			1: 'Stage 1: Copilot Skeptic',
+			2: 'Stage 2: Copilot Explorer',
+			3: 'Stage 3: Copilot Collaborator',
+			4: 'Stage 4: Copilot Strategist'
+		};
+
+		// ---------- 1. Prompt Engineering ----------
+		const peEvidence: string[] = [];
+		const peTips: string[] = [];
+		let peStage = 1;
+
+		const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent;
+		if (totalInteractions > 0) {
+			peEvidence.push(`${totalInteractions} total interactions`);
+		}
+		if (p.modeUsage.ask > 0) {
+			peEvidence.push(`${p.modeUsage.ask} ask-mode conversations`);
+		}
+		if (p.modeUsage.agent > 0) {
+			peEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
+		}
+
+		// Conversation patterns (multi-turn shows iterative refinement)
+		if (p.conversationPatterns) {
+			const multiTurnRate = p.sessions > 0
+				? Math.round((p.conversationPatterns.multiTurnSessions / p.sessions) * 100)
+				: 0;
+			if (p.conversationPatterns.multiTurnSessions > 0) {
+				peEvidence.push(`${p.conversationPatterns.multiTurnSessions} multi-turn sessions (${multiTurnRate}%)`);
+			}
+			if (p.conversationPatterns.avgTurnsPerSession >= 3) {
+				peEvidence.push(`Avg ${p.conversationPatterns.avgTurnsPerSession.toFixed(1)} exchanges per session`);
+				peStage = Math.max(peStage, 2) as 1 | 2 | 3 | 4;
+			}
+			if (p.conversationPatterns.avgTurnsPerSession >= 5) {
+				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		if (totalInteractions >= 5) {
+			peStage = 2; // At least trying it out
+		}
+
+		// Check slash command / tool usage (indicates structured prompts)
+		const slashCommands = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
+		const usedSlashCommands = slashCommands.filter(cmd => (p.toolCalls.byTool[cmd] || 0) > 0);
+		if (usedSlashCommands.length > 0) {
+			peEvidence.push(`Used slash commands: /${usedSlashCommands.join(', /')}`);
+		}
+
+		const hasModelSwitching = p.modelSwitching.mixedTierSessions > 0 || p.modelSwitching.switchingFrequency > 0;
+		const hasAgentMode = p.modeUsage.agent > 0;
+
+		if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) {
+			peStage = 3; // Regular, purposeful use
+		}
+
+		// Strategist: high volume + agent mode + (model switching or diverse slash commands)
+		if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) {
+			peStage = 4;
+		}
+
+		// Model switching awareness
+		if (hasModelSwitching) {
+			peEvidence.push(`Switched models in ${Math.round(p.modelSwitching.switchingFrequency)}% of sessions`);
+			if (peStage < 4 && p.modelSwitching.mixedTierSessions > 0) {
+				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Context-aware tips
+		if (peStage < 2) { peTips.push('Try asking Copilot a question using the Chat panel'); }
+		if (peStage < 3) {
+			if (!hasAgentMode) { peTips.push('Try agent mode for multi-file changes'); }
+			if (usedSlashCommands.length < 2) { peTips.push('Use slash commands like /explain, /fix, or /tests to give structured prompts'); }
+		}
+		if (peStage < 4) {
+			if (!hasAgentMode) { peTips.push('Try agent mode for autonomous, multi-step coding tasks'); }
+			if (!hasModelSwitching) { peTips.push('Experiment with different models for different tasks - use fast models for simple queries and reasoning models for complex problems'); }
+			if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push('Explore more slash commands like /explain, /tests, or /doc to diversify your prompting'); }
+		}
+
+		// ---------- 2. Context Engineering ----------
+		const ceEvidence: string[] = [];
+		const ceTips: string[] = [];
+		let ceStage = 1;
+
+		const totalContextRefs = p.contextReferences.file + p.contextReferences.selection +
+			p.contextReferences.symbol + p.contextReferences.codebase + p.contextReferences.workspace;
+		const refTypes = [
+			p.contextReferences.file > 0,
+			p.contextReferences.selection > 0,
+			p.contextReferences.symbol > 0,
+			p.contextReferences.codebase > 0,
+			p.contextReferences.workspace > 0,
+			p.contextReferences.terminal > 0,
+			p.contextReferences.vscode > 0,
+			p.contextReferences.clipboard > 0,
+			p.contextReferences.changes > 0,
+			p.contextReferences.problemsPanel > 0,
+			p.contextReferences.outputPanel > 0,
+			p.contextReferences.terminalLastCommand > 0,
+			p.contextReferences.terminalSelection > 0
+		];
+		const usedRefTypeCount = refTypes.filter(Boolean).length;
+
+		if (p.contextReferences.file > 0) { ceEvidence.push(`${p.contextReferences.file} #file references`); }
+		if (p.contextReferences.selection > 0) { ceEvidence.push(`${p.contextReferences.selection} #selection references`); }
+		if (p.contextReferences.codebase > 0) { ceEvidence.push(`${p.contextReferences.codebase} #codebase references`); }
+		if (p.contextReferences.workspace > 0) { ceEvidence.push(`${p.contextReferences.workspace} @workspace references`); }
+		if (p.contextReferences.terminal > 0) { ceEvidence.push(`${p.contextReferences.terminal} @terminal references`); }
+
+		if (totalContextRefs >= 1) { ceStage = 2; }
+		if (usedRefTypeCount >= 3 && totalContextRefs >= 10) { ceStage = 3; }
+		if (usedRefTypeCount >= 5 && totalContextRefs >= 30) { ceStage = 4; }
+
+		// Image context (byKind: copilot.image)
+		const imageRefs = p.contextReferences.byKind['copilot.image'] || 0;
+		if (imageRefs > 0) {
+			ceEvidence.push(`${imageRefs} image references (vision)`);
+			ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
+		}
+
+		if (ceStage < 2) { ceTips.push('Try adding #file or #selection references to give Copilot more context'); }
+		if (ceStage < 3) { ceTips.push('Explore @workspace, #codebase, and @terminal for broader context'); }
+		if (ceStage < 4) { ceTips.push('Try image attachments, #changes, #problemsPanel, and other specialized context variables'); }
+
+		// ---------- 3. Agentic ----------
+		const agEvidence: string[] = [];
+		const agTips: string[] = [];
+		let agStage = 1;
+
+		if (p.modeUsage.agent > 0) {
+			agEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
+			agStage = 2;
+		}
+		if (p.toolCalls.total > 0) {
+			agEvidence.push(`${p.toolCalls.total} tool calls executed`);
+		}
+		if (p.modeUsage.edit > 0) {
+			agEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
+		}
+
+		// Edit scope tracking (multi-file edits show advanced agentic behavior)
+		if (p.editScope) {
+			const multiFileRate = p.editScope.totalEditedFiles > 0
+				? Math.round((p.editScope.multiFileEdits / (p.editScope.singleFileEdits + p.editScope.multiFileEdits)) * 100)
+				: 0;
+			if (p.editScope.multiFileEdits > 0) {
+				agEvidence.push(`${p.editScope.multiFileEdits} multi-file edit sessions (${multiFileRate}%)`);
+				agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+			}
+			if (p.editScope.avgFilesPerSession >= 3) {
+				agEvidence.push(`Avg ${p.editScope.avgFilesPerSession.toFixed(1)} files per edit session`);
+				agStage = Math.max(agStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Agent type distribution
+		if (p.agentTypes && p.agentTypes.editsAgent > 0) {
+			agEvidence.push(`${p.agentTypes.editsAgent} edits agent sessions`);
+			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+		}
+
+		// Diverse tool usage in agent mode
+		const toolCount = Object.keys(p.toolCalls.byTool).length;
+		if (p.modeUsage.agent >= 10 && toolCount >= 3) {
+			agStage = 3;
+		}
+
+		// Heavy agentic use with many tool types or high multi-file edit rate
+		if (p.modeUsage.agent >= 50 && toolCount >= 5) {
+			agStage = 4;
+		}
+		if (p.editScope && p.editScope.multiFileEdits >= 20 && p.editScope.avgFilesPerSession >= 3) {
+			agStage = Math.max(agStage, 4) as 1 | 2 | 3 | 4;
+		}
+
+		if (agStage < 2) { agTips.push('Try agent mode — it can run terminal commands, edit files, and explore your codebase autonomously'); }
+		if (agStage < 3) { agTips.push('Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits'); }
+		if (agStage < 4) { agTips.push('Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows'); }
+
+		// ---------- 4. Tool Usage ----------
+		const tuEvidence: string[] = [];
+		const tuTips: string[] = [];
+		let tuStage = 1;
+
+		// Basic tool usage (primarily from agent mode)
+		if (toolCount > 0) {
+			tuEvidence.push(`${toolCount} unique tools used`);
+			tuStage = 2;
+		}
+
+		// Agent type distribution (workspace agent shows advanced tool usage)
+		if (p.agentTypes) {
+			if (p.agentTypes.workspaceAgent > 0) {
+				tuEvidence.push(`${p.agentTypes.workspaceAgent} @workspace agent sessions`);
+				tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Specific advanced tool IDs (intentional tool integration)
+		const advancedToolFriendlyNames: Record<string, string> = {
+			github_pull_request: 'GitHub Pull Request',
+			github_repo: 'GitHub Repository',
+			run_in_terminal: 'Run In Terminal',
+			editFiles: 'Edit Files',
+			listFiles: 'List Files'
+		};
+		const usedAdvanced = Object.keys(advancedToolFriendlyNames).filter(t => (p.toolCalls.byTool[t] || 0) > 0);
+		if (usedAdvanced.length > 0) {
+			tuEvidence.push(`Advanced tools: ${usedAdvanced.map(t => advancedToolFriendlyNames[t]).join(', ')}`);
+			if (usedAdvanced.length >= 2) {
+				tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// MCP tools are a strong signal of strategic/advanced use
+		const mcpServers = Object.keys(p.mcpTools.byServer);
+		if (p.mcpTools.total > 0) {
+			tuEvidence.push(`${p.mcpTools.total} MCP tool calls across ${mcpServers.length} server(s)`);
+			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4; // Using any MCP server is stage 3
+			if (mcpServers.length >= 2) {
+				tuStage = 4; // Multiple MCP servers = strategist
+			}
+		}
+
+		// Tips based on current state
+		if (tuStage < 2) {
+			tuTips.push('Try agent mode to let Copilot use built-in tools for file operations and terminal commands');
+		}
+		if (tuStage < 3) {
+			if (mcpServers.length === 0) {
+				tuTips.push('Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)');
+			} else {
+				tuTips.push('Explore GitHub integrations and advanced tools like editFiles and run_in_terminal');
+			}
+		}
+		if (tuStage < 4) {
+			if (mcpServers.length === 1) {
+				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry');
+			} else if (mcpServers.length === 0) {
+				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow');
+			} else {
+				tuTips.push('You\'re using multiple MCP servers - keep exploring advanced tool combinations');
+			}
+		}
+
+		// ---------- 5. Customization ----------
+		const cuEvidence: string[] = [];
+		const cuTips: string[] = [];
+		let cuStage = 1;
+
+		// Calculate repo-level customization adoption
+		const totalRepos = p.repositories.filter(r => r !== 'Unknown').length;
+		const reposWithCustomization = p.repositoriesWithCustomization.filter(r => r !== 'Unknown').length;
+		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
+
+		if (totalRepos > 0) {
+			cuEvidence.push(`Worked in ${totalRepos} repositor${totalRepos === 1 ? 'y' : 'ies'}`);
+		}
+
+		if (reposWithCustomization > 0) {
+			cuEvidence.push(`${reposWithCustomization} repo${reposWithCustomization === 1 ? '' : 's'} with custom instructions or agents.md`);
+			cuStage = 2;
+		}
+
+		// Stage thresholds based on adoption rate
+		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
+			cuStage = 3;
+			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization`);
+		}
+
+		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
+			cuStage = 4;
+			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate`);
+		}
+
+		// Model selection awareness (choosing specific models)
+		const uniqueModels = [...new Set([
+			...p.modelSwitching.standardModels,
+			...p.modelSwitching.premiumModels
+		])];
+		if (uniqueModels.length >= 3) {
+			cuEvidence.push(`Used ${uniqueModels.length} different models`);
+			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+		}
+		if (uniqueModels.length >= 5 && reposWithCustomization >= 3) {
+			cuStage = 4;
+		}
+
+		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
+		if (cuStage < 3) { cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience'); }
+		if (cuStage < 4) { cuTips.push('Aim for consistent customization across all projects with instructions and agents.md'); }
+
+		// ---------- 6. Workflow Integration ----------
+		const wiEvidence: string[] = [];
+		const wiTips: string[] = [];
+		let wiStage = 1;
+
+		// Sessions count reflects regularity
+		if (p.sessions >= 3) {
+			wiEvidence.push(`${p.sessions} sessions in the last 30 days`);
+			wiStage = 2;
+		}
+
+		// Apply button usage (high rate shows active adoption of suggestions)
+		if (p.applyUsage && p.applyUsage.totalCodeBlocks > 0) {
+			const applyRatePercent = Math.round(p.applyUsage.applyRate);
+			wiEvidence.push(`${applyRatePercent}% code block apply rate (${p.applyUsage.totalApplies}/${p.applyUsage.totalCodeBlocks})`);
+			if (applyRatePercent >= 50) {
+				wiStage = Math.max(wiStage, 2) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Session duration (informational only - not used for staging)
+		if (p.sessionDuration && p.sessionDuration.avgDurationMs > 0) {
+			const avgMinutes = Math.round(p.sessionDuration.avgDurationMs / 60000);
+			wiEvidence.push(`Avg ${avgMinutes}min session duration`);
+		}
+
+		// Multi-mode usage (ask + agent) - key indicator of integration
+		const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.agent > 0].filter(Boolean).length;
+		if (modesUsed >= 2) {
+			wiEvidence.push(`Uses ${modesUsed} modes (ask/agent)`);
+			wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
+		}
+
+		// Explicit context usage - strong signal of intentional integration
+		const hasExplicitContext = totalContextRefs >= 10;
+		if (hasExplicitContext) {
+			wiEvidence.push(`${totalContextRefs} explicit context references`);
+			if (totalContextRefs >= 20) {
+				wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Stage 4: Multi-mode + explicit context + regular usage
+		if (p.sessions >= 15 && modesUsed >= 2 && totalContextRefs >= 20) {
+			wiStage = 4;
+			wiEvidence.push('Deep integration: regular usage with multi-mode and explicit context');
+		}
+
+		if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
+		if (wiStage < 3) { 
+			if (modesUsed < 2) { wiTips.push('Combine ask mode with agent mode in your daily workflow'); }
+			if (totalContextRefs < 10) { wiTips.push('Use explicit context references like #file, @workspace, and #selection'); }
+		}
+		if (wiStage < 4) { 
+			if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use #file, @workspace, and other references consistently'); }
+			wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); 
+		}
+
+		// ---------- Overall score (median) ----------
+		const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
+		const mid = Math.floor(scores.length / 2);
+		const overallStage = scores.length % 2 === 0
+			? Math.round((scores[mid - 1] + scores[mid]) / 2)
+			: scores[mid];
+
+		return {
+			overallStage,
+			overallLabel: stageLabels[overallStage] || `Stage ${overallStage}`,
+			categories: [
+				{ category: 'Prompt Engineering', icon: '💬', stage: peStage, evidence: peEvidence, tips: peTips },
+				{ category: 'Context Engineering', icon: '📎', stage: ceStage, evidence: ceEvidence, tips: ceTips },
+				{ category: 'Agentic', icon: '🤖', stage: agStage, evidence: agEvidence, tips: agTips },
+				{ category: 'Tool Usage', icon: '🔧', stage: tuStage, evidence: tuEvidence, tips: tuTips },
+				{ category: 'Customization', icon: '⚙️', stage: cuStage, evidence: cuEvidence, tips: cuTips },
+				{ category: 'Workflow Integration', icon: '🔄', stage: wiStage, evidence: wiEvidence, tips: wiTips }
+			],
+			period: p,
+			lastUpdated: stats.lastUpdated.toISOString()
+		};
+	}
+
+	public async showMaturity(): Promise<void> {
+		this.log('🎯 Opening Copilot Fluency Score dashboard');
+
+		// If panel already exists, dispose and recreate with fresh data
+		if (this.maturityPanel) {
+			this.maturityPanel.dispose();
+			this.maturityPanel = undefined;
+		}
+
+		const maturityData = await this.calculateMaturityScores();
+
+		this.maturityPanel = vscode.window.createWebviewPanel(
+			'copilotMaturity',
+			'Copilot Fluency Score',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		const dismissedTips = await this.getDismissedFluencyTips();
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips });
+
+		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshMaturityPanel();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+				case 'searchMcpExtensions':
+					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
+					break;
+				case 'dismissTips':
+					if (message.category) {
+						await this.dismissFluencyTips(message.category);
+						await this.refreshMaturityPanel();
+					}
+					break;
+		}
+	});
+
+	this.maturityPanel.onDidDispose(() => {
+		this.log('🎯 Copilot Fluency Score dashboard closed');
+		this.maturityPanel = undefined;
+	});
+}
+
+private async refreshMaturityPanel(): Promise<void> {
+	if (!this.maturityPanel) {
+		return;
+	}
+
+	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
+	const maturityData = await this.calculateMaturityScores();
+	const dismissedTips = await this.getDismissedFluencyTips();
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips });
+	this.log('✅ Copilot Fluency Score dashboard refreshed');
+}
+
+private async getDismissedFluencyTips(): Promise<string[]> {
+	return this.context.globalState.get<string[]>('dismissedFluencyTips', []);
+}
+
+private async dismissFluencyTips(category: string): Promise<void> {
+	const dismissed = await this.getDismissedFluencyTips();
+	if (!dismissed.includes(category)) {
+		dismissed.push(category);
+		await this.context.globalState.update('dismissedFluencyTips', dismissed);
+		this.log(`Dismissed fluency tips for category: ${category}`);
+	}
+}
+
+private getMaturityHtml(webview: vscode.Webview, data: {
+		overallStage: number;
+		overallLabel: string;
+		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
+		period: UsageAnalysisPeriod;
+		lastUpdated: string;
+		dismissedTips?: string[];
+	}): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'maturity.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Copilot Fluency Score</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_MATURITY__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
 	}
 
 	private getNonce(): string {
@@ -5130,6 +6042,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showUsageAnalysis':
 					await this.showUsageAnalysis();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
 					break;
 				case 'clearCache':
 					this.log('clearCache message received from diagnostics webview');
@@ -5698,6 +6613,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.analysisPanel) {
 			this.analysisPanel.dispose();
 		}
+		if (this.maturityPanel) {
+			this.maturityPanel.dispose();
+		}
 		// Save cache to storage before disposing (fire-and-forget async operation)
 		// Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
 		// We can't await here since dispose() is synchronous
@@ -5792,6 +6710,12 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showUsageAnalysis();
 	});
 
+	// Register the show maturity / fluency score command
+	const showMaturityCommand = vscode.commands.registerCommand('copilot-token-tracker.showMaturity', async () => {
+		tokenTracker.log('Show maturity command called');
+		await tokenTracker.showMaturity();
+	});
+
 	// Register the generate diagnostic report command
 	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
 		tokenTracker.log('Generate diagnostic report command called');
@@ -5805,7 +6729,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
