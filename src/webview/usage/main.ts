@@ -3,6 +3,7 @@ import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type ModeUsage = { ask: number; edit: number; agent: number };

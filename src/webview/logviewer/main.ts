@@ -1,6 +1,7 @@
 // Log Viewer webview - displays session file details and chat turns
 import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type ChatTurn = {

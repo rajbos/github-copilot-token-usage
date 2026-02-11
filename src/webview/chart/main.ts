@@ -2,6 +2,7 @@
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type ChartModule = typeof import('chart.js/auto');
@@ -65,6 +66,8 @@ function renderLayout(data: InitialChartData): void {
 
 	root.replaceChildren();
 
+	const themeStyle = document.createElement('style');
+	themeStyle.textContent = themeStyles;
 	const style = document.createElement('style');
 	style.textContent = styles;
 
@@ -125,7 +128,7 @@ function renderLayout(data: InitialChartData): void {
 	const footer = el('div', 'footer', `Day-by-day token usage for the last 30 days\nLast updated: ${new Date(data.lastUpdated).toLocaleString()}\nUpdates automatically every 5 minutes.`);
 
 	container.append(header, summarySection, chartSection, footer);
-	root.append(style, container);
+	root.append(themeStyle, style, container);
 
 	wireInteractions(data);
 	void setupChart(canvas, data);
