@@ -432,37 +432,45 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 				} else if (scanMode === 'oneLevel') {
 					// Find the first '*' segment to determine base directory
-					const parts = relativePattern.replace(/\\/g, '/').split('/');
-					const starIndex = parts.findIndex(p => p.includes('*'));
-					let baseDir = workspaceFolderPath;
-					let remainder = parts.join('/');
-					if (starIndex !== -1) {
-						baseDir = path.join(workspaceFolderPath, ...parts.slice(0, starIndex));
-						remainder = parts.slice(starIndex).join('/');
-					}
+					// Treat oneLevel as: enumerate a single directory and glob-match within it.
+					const normalizedPattern = relativePattern.replace(/\\/g, '/');
+					const segments = normalizedPattern.split('/').filter(s => s.length > 0);
+					if (segments.length === 0) { continue; }
+
+					// The last segment is the filename glob (e.g., "*.md"); preceding segments form the base directory.
+					const filePattern = segments[segments.length - 1];
+					const baseDirSegments = segments.slice(0, segments.length - 1);
+					const baseDir = path.join(workspaceFolderPath, ...baseDirSegments);
+
 					if (!fs.existsSync(baseDir)) { continue; }
+					const baseStat = fs.statSync(baseDir);
+					if (!baseStat.isDirectory()) { continue; }
+
+					// Convert simple glob pattern to a RegExp for matching file names.
+					const escaped = filePattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+					const regexSource = '^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+					const globRegex = new RegExp(regexSource);
+
 					const entries = fs.readdirSync(baseDir, { withFileTypes: true });
 					for (const entry of entries) {
-						if (!entry.isDirectory() && !entry.isFile()) { continue; }
-						// Skip excluded dirs when entry is a directory
+						// Only consider files for oneLevel patterns.
+						if (!entry.isFile()) { continue; }
+						// Directory exclusions are irrelevant for files but keep the check harmlessly.
 						if (entry.isDirectory() && excludeDirs.includes(entry.name)) { continue; }
-						// Build candidate path by substituting ALL '*' occurrences with the entry name
-						// Use split/join to avoid regex edge-cases and ensure every wildcard is replaced
-						const substituted = relativePattern.split('*').join(entry.name);
-						const absCandidate = path.join(workspaceFolderPath, substituted);
-						if (fs.existsSync(absCandidate)) {
-							const stat = fs.statSync(absCandidate);
-							results.push({
-								path: absCandidate,
-								relativePath: path.relative(workspaceFolderPath, absCandidate).replace(/\\/g, '/'),
-								type: pattern.type || 'unknown',
-								icon: pattern.icon || '',
-								label: pattern.label || path.basename(absCandidate),
-								name: path.basename(absCandidate),
-									lastModified: stat.mtime.toISOString(),
-								isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
-							});
-						}
+						if (!globRegex.test(entry.name)) { continue; }
+
+						const absCandidate = path.join(baseDir, entry.name);
+						const stat = fs.statSync(absCandidate);
+						results.push({
+							path: absCandidate,
+							relativePath: path.relative(workspaceFolderPath, absCandidate).replace(/\\/g, '/'),
+							type: pattern.type || 'unknown',
+							icon: pattern.icon || '',
+							label: pattern.label || path.basename(absCandidate),
+							name: path.basename(absCandidate),
+							lastModified: stat.mtime.toISOString(),
+							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+						});
 					}
 				} else if (scanMode === 'recursive') {
 					const maxDepth = typeof pattern.maxDepth === 'number' ? pattern.maxDepth : 6;
