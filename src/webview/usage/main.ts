@@ -36,6 +36,7 @@ type UsageAnalysisStats = {
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
 	lastUpdated: string;
+	customizationMatrix?: WorkspaceCustomizationMatrix | null;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -55,14 +56,24 @@ interface CustomizationFileEntry {
 	isStale?: boolean;
 }
 
-interface WorkspaceCustomizationSummary {
-	workspaces: { [folder: string]: { files: CustomizationFileEntry[]; totalFiles: number; staleFiles: number } };
-	totalFiles: number;
-	totalStaleFiles: number;
+type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+
+interface WorkspaceCustomizationRow {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+}
+
+interface WorkspaceCustomizationMatrix {
+	customizationTypes: Array<{ id: string; icon: string; label: string }>;
+	workspaces: WorkspaceCustomizationRow[];
+	totalWorkspaces: number;
+	workspacesWithIssues: number;
 }
 
 declare global {
-	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationSummary?: WorkspaceCustomizationSummary | null } }
+	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null } }
 }
 
 const vscode = acquireVsCodeApi();
@@ -129,59 +140,68 @@ function renderLayout(stats: UsageAnalysisStats): void {
 		return;
 	}
 
-	const customization = (window.__INITIAL_USAGE__ as any)?.customizationSummary as WorkspaceCustomizationSummary | undefined | null;
+	const matrix = (window.__INITIAL_USAGE__ as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null;
 	let customizationHtml = '';
-	if (!customization || Object.keys(customization.workspaces || {}).length === 0) {
+	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
 		customizationHtml = `
 			<div class="section">
-				<div class="section-title"><span>🧩</span><span>Customization Files</span></div>
-				<div class="section-subtitle">Detected repository customization files (copilot instructions, skills, agents, etc.)</div>
-				<div style="color:#999; padding:12px;">No customization files discovered in your workspaces.</div>
+				<div class="section-title"><span>🛠️</span><span>Copilot Customization Files</span></div>
+				<div class="section-subtitle">Showing workspace customization status for active workspaces</div>
+				<div style="color:#999; padding:12px;">No workspaces with customization files detected in the last 30 days.</div>
 			</div>`;
 	} else {
-		const totalFiles = customization.totalFiles || 0;
-		const totalStale = customization.totalStaleFiles || 0;
-		const perWorkspaceHtml = Object.entries(customization.workspaces).map(([folder, data]) => {
-			const filesHtml = (data.files || []).map(f => {
-				const staleBadge = f.isStale ? `<span style="color:#f59e0b; font-weight:700; margin-left:8px;">Stale</span>` : '';
-				const label = f.label || f.name || f.type || '';
-				const rel = escapeHtml(f.relativePath || f.path || '');
-				const lm = f.lastModified ? new Date(f.lastModified).toLocaleString() : '';
-				return `<div class="cf-row" style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
-							<div style="display:flex; gap:10px; align-items:center;">
-								<div style="width:20px">${f.icon || '📄'}</div>
-								<div style="display:flex; flex-direction:column;">
-									<div style="font-weight:600;">${escapeHtml(label)} ${staleBadge}</div>
-									<div style="font-size:12px; color:#b8b8b8; font-family: 'Courier New', monospace;">${rel}</div>
-								</div>
-							</div>
-							<div style="display:flex; gap:8px; align-items:center;">
-								<div style="font-size:12px; color:#999;">${escapeHtml(lm)}</div>
-								<button class="cf-copy" data-path="${escapeHtml(f.path)}">Copy</button>
-							</div>
-						</div>`;
-			}).join('');
-
-			return `
-				<div style="margin-top:8px;">
-					<div style="display:flex; align-items:center; justify-content:space-between;">
-						<div style="font-weight:700;">${escapeHtml(folder)}</div>
-						<div style="color:#999; font-size:12px;">${data.totalFiles} files · ${data.staleFiles} stale</div>
-					</div>
-					<div class="cf-list" style="margin-top:8px;">${filesHtml}</div>
-				</div>`;
-		}).join('');
-
 		customizationHtml = `
-			<div class="section">
-				<div class="section-title"><span>🧩</span><span>Customization Files</span></div>
-				<div class="section-subtitle">Detected repository customization files (copilot instructions, skills, agents, etc.)</div>
-				<div style="padding:12px; background:#0f1720; border-radius:6px;">
-					<div style="display:flex; justify-content:space-between; align-items:center;">
-						<div style="font-weight:700; color:#fff;">${totalFiles} files found</div>
-						<div style="color:#f59e0b;">${totalStale} stale</div>
+			<div style="margin-top: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+					🛠️ Copilot Customization Files
+				</div>
+				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
+					Showing ${matrix.totalWorkspaces} workspace(s) with Copilot activity in the last 30 days.
+					${matrix.workspacesWithIssues > 0
+						? `<span class="stale-warning">⚠️ ${matrix.workspacesWithIssues} workspace(s) have no customization files.</span>`
+						: '✅ All workspaces have up-to-date customizations.'}
+				</div>
+				<div class="customization-matrix-container">
+					<table class="customization-matrix">
+						<thead>
+							<tr>
+								<th style="text-align: left; padding: 8px; border-bottom: 2px solid #2a2a30;">📂 Workspace</th>
+								<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;">Sessions</th>
+								${matrix.customizationTypes.map(type => `
+									<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;" title="${escapeHtml(type.label)}">
+										${type.icon}
+									</th>
+								`).join('')}
+							</tr>
+						</thead>
+						<tbody>
+							${matrix.workspaces.map(ws => `
+								<tr>
+									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; font-family: 'Courier New', monospace; font-size: 12px;">
+										${escapeHtml(ws.workspaceName)}
+									</td>
+									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; color: #60a5fa; font-weight: 600;">
+										${ws.sessionCount}
+									</td>
+									${matrix.customizationTypes.map(type => `
+										<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; font-size: 16px;">
+											${ws.typeStatuses[type.id] || '❓'}
+										</td>
+									`).join('')}
+								</tr>
+							`).join('')}
+						</tbody>
+					</table>
+				</div>
+				<div style="margin-top: 12px; font-size: 10px; color: #999; border-top: 1px solid #2a2a30; padding-top: 8px;">
+					<div style="display: flex; gap: 16px; flex-wrap: wrap;">
+						${matrix.customizationTypes.map(type => `
+							<span>${type.icon} ${escapeHtml(type.label)}</span>
+						`).join('')}
 					</div>
-					<div style="margin-top:12px;">${perWorkspaceHtml}</div>
+					<div style="margin-top: 8px;">
+						✅ = Present &amp; Fresh&nbsp;&nbsp;•&nbsp;&nbsp;⚠️ = Present but Stale&nbsp;&nbsp;•&nbsp;&nbsp;❌ = Missing
+					</div>
 				</div>
 			</div>`;
 	}

@@ -176,7 +176,24 @@ interface UsageAnalysisStats {
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
 	lastUpdated: Date;
-	customizationSummary?: WorkspaceCustomizationSummary;
+	customizationMatrix?: WorkspaceCustomizationMatrix;
+}
+
+/** Matrix types used for Usage Analysis customization matrix */
+type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+
+interface WorkspaceCustomizationRow {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+}
+
+interface WorkspaceCustomizationMatrix {
+	customizationTypes: Array<{ id: string; icon: string; label: string }>;
+	workspaces: WorkspaceCustomizationRow[];
+	totalWorkspaces: number;
+	workspacesWithIssues: number;
 }
 
 interface UsageAnalysisPeriod {
@@ -512,6 +529,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
 	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
+
+	// Cache mapping workspaceFolderPath -> found customization files (avoid re-scanning)
+	private _customizationFilesCache: Map<string, CustomizationFileEntry[]> = new Map();
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
@@ -1418,6 +1438,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const last30DaysStats = emptyPeriod();
 		const monthStats = emptyPeriod();
 
+		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
+		const workspaceSessionCounts = new Map<string, number>();
+
+		// Clear short-lived caches for this analysis run
+		this._workspaceIdToFolderCache.clear();
+		this._customizationFilesCache.clear();
+
 		try {
 			const sessionFiles = await this.getCopilotSessionFiles();
 			this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
@@ -1434,10 +1461,40 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const mtime = fileStats.mtime.getTime();
 						const fileSize = fileStats.size;
 						const analysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtime, fileSize);
-						
+
+						// Exclude empty sessions (no interactions) from usage analysis
+						const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime, fileSize);
+						if (interactions === 0) {
+							// Skip counting this session as it contains no user interactions
+							processed++;
+							if (processed % progressInterval === 0) {
+								this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed/sessionFiles.length*100)}%)`);
+							}
+							continue;
+						}
+
 						// Add to last 30 days stats
 						last30DaysStats.sessions++;
 						this.mergeUsageAnalysis(last30DaysStats, analysis);
+
+						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
+						try {
+							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
+							if (workspaceFolder) {
+								const norm = path.normalize(workspaceFolder);
+								workspaceSessionCounts.set(norm, (workspaceSessionCounts.get(norm) || 0) + 1);
+								if (!this._customizationFilesCache.has(norm)) {
+									try {
+										const files = this.scanWorkspaceCustomizationFiles(norm);
+										this._customizationFilesCache.set(norm, files);
+									} catch (e) {
+										// ignore scan errors per workspace
+									}
+								}
+							}
+						} catch (e) {
+							// ignore workspace resolution errors
+						}
 
 						// Add to month stats if modified this calendar month
 						if (fileStats.mtime >= monthStart) {
@@ -1462,34 +1519,57 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			// Build customization summary by scanning workspaces referenced by session files
+			// Build the customization matrix using scanned workspace data and session counts
 			try {
-				const workspacePaths = new Set<string>();
-				for (const sf of sessionFiles) {
-					const ws = this.resolveWorkspaceFolderFromSessionPath(sf);
-					if (ws) { workspacePaths.add(path.normalize(ws)); }
-				}
-
-				const customizationSummary: WorkspaceCustomizationSummary = { workspaces: {}, totalFiles: 0, staleFiles: 0 };
-				for (const wsPath of workspacePaths) {
-					try {
-						const files = this.scanWorkspaceCustomizationFiles(wsPath);
-						customizationSummary.workspaces[wsPath] = { name: path.basename(wsPath), files };
-						customizationSummary.totalFiles += files.length;
-						customizationSummary.staleFiles += files.filter(f => f.isStale).length;
-					} catch (e) {
-						// ignore per-workspace scan failures
+				// Unique customization types based on patterns JSON
+				const uniqueTypes = new Map<string, { icon: string; label: string }>();
+				for (const pattern of (customizationPatternsData as any).patterns || []) {
+					if (!uniqueTypes.has(pattern.type)) {
+						uniqueTypes.set(pattern.type, { icon: pattern.icon || '', label: pattern.label || pattern.type });
 					}
 				}
 
-				// Attach to month-level result object later via return
-				// Store temporarily on local variable to include in return value
-				// We'll include it below in the return object
-				// Save to a local variable in outer scope by attaching to monthStats variable? instead, set after try-catch
-				// Use a local const to pass through
-				// Attach to monthStats object? We'll include in the returned UsageAnalysisStats object
-				// Save to a property on `this` for potential later use
-				(this as any)._lastCustomizationSummary = customizationSummary;
+				const customizationTypes = Array.from(uniqueTypes.entries()).map(([id, v]) => ({ id, icon: v.icon, label: v.label }));
+
+				const matrixRows: WorkspaceCustomizationRow[] = [];
+				let workspacesWithIssues = 0;
+
+				for (const [folderPath, sessionCount] of workspaceSessionCounts) {
+					const files = this._customizationFilesCache.get(folderPath) || [];
+					const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
+					for (const type of customizationTypes) {
+						const filesOfType = files.filter(f => f.type === type.id);
+						if (filesOfType.length === 0) {
+							typeStatuses[type.id] = '❌';
+						} else if (filesOfType.some(f => f.isStale)) {
+							typeStatuses[type.id] = '⚠️';
+						} else {
+							typeStatuses[type.id] = '✅';
+						}
+					}
+
+					// Count workspaces that have NO customization files present at all
+					const hasNoCustomizationFiles = customizationTypes.every(t => typeStatuses[t.id] === '❌');
+					if (hasNoCustomizationFiles) { workspacesWithIssues++; }
+
+					matrixRows.push({
+						workspacePath: folderPath,
+						workspaceName: path.basename(folderPath),
+						sessionCount,
+						typeStatuses
+					});
+				}
+
+				matrixRows.sort((a, b) => b.sessionCount - a.sessionCount);
+
+				const customizationMatrix: WorkspaceCustomizationMatrix = {
+					customizationTypes,
+					workspaces: matrixRows,
+					totalWorkspaces: matrixRows.length,
+					workspacesWithIssues
+				};
+
+				(this as any)._lastCustomizationMatrix = customizationMatrix;
 			} catch (e) {
 				// ignore overall customization scanning errors
 			}
@@ -1505,7 +1585,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			last30Days: last30DaysStats,
 			month: monthStats,
 			lastUpdated: now,
-			customizationSummary: (this as any)._lastCustomizationSummary as WorkspaceCustomizationSummary | undefined
+			customizationMatrix: (this as any)._lastCustomizationMatrix as WorkspaceCustomizationMatrix | undefined
 		};
 	}
 
@@ -5526,7 +5606,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			today: stats.today,
 			last30Days: stats.last30Days,
 			month: stats.month,
-			customizationSummary: stats.customizationSummary || null,
+			customizationMatrix: stats.customizationMatrix || null,
 			lastUpdated: stats.lastUpdated.toISOString()
 		}).replace(/</g, '\\u003c');
 

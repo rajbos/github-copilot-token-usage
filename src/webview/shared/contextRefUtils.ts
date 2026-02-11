@@ -47,6 +47,31 @@ export type WorkspaceCustomizationSummary = {
 	staleFiles: number;
 };
 
+/** Status of a customization type in a workspace */
+export type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+
+/** Matrix row data for one workspace */
+export type WorkspaceCustomizationRow = {
+	workspacePath: string;      // Full path (for uniqueness)
+	workspaceName: string;      // Basename for display
+	sessionCount: number;       // Number of sessions in last 30 days
+	typeStatuses: {             // Status per customization type
+		[typeId: string]: CustomizationTypeStatus;
+	};
+};
+
+/** Matrix view data structure */
+export type WorkspaceCustomizationMatrix = {
+	customizationTypes: Array<{
+		id: string;
+		icon: string;
+		label: string;
+	}>;
+	workspaces: WorkspaceCustomizationRow[];
+	totalWorkspaces: number;
+	workspacesWithIssues: number;
+};
+
 /**
  * Calculate the total number of context references.
  * This is the single source of truth for what constitutes a context reference.

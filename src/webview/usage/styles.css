@@ -187,48 +187,38 @@ body {
 	font-size: 13px;
 }
 
-/* Customization files list */
-.cf-list {
-	background: transparent;
-	border-radius: 6px;
-	padding: 6px 0;
+/* Customization matrix styles */
+.customization-matrix-container {
+	overflow-x: auto;
+	max-width: 100%;
 }
 
-.cf-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 8px 10px;
-}
-
-.cf-row:hover {
-	background: rgba(255,255,255,0.02);
-}
-
-.cf-row .cf-meta {
-	display: flex;
-	gap: 10px;
-	align-items: center;
-}
-
-.cf-copy {
-	background: transparent;
-	border: 1px solid rgba(255,255,255,0.04);
-	color: #d0d0d0;
-	padding: 6px 8px;
-	border-radius: 6px;
-	cursor: pointer;
+.customization-matrix {
+	width: 100%;
+	border-collapse: collapse;
 	font-size: 12px;
+	color: #d0d0d0;
 }
 
-.cf-copy:hover {
-	background: rgba(255,255,255,0.02);
+.customization-matrix th {
+	background: #1a1a1f;
+	color: #fff;
+	font-weight: 600;
+	font-size: 11px;
+	white-space: nowrap;
 }
 
-.cf-stale {
+.customization-matrix td {
+	background: #18181b;
+}
+
+.customization-matrix tbody tr:hover {
+	background: #1f1f24;
+}
+
+.stale-warning {
 	color: #f59e0b;
-	font-weight: 700;
-	margin-left: 8px;
+	font-weight: 600;
 }
 
 .two-column {
