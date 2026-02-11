@@ -54,8 +54,16 @@ jobs:
           mkdir -p ./session-logs
           
           # Calculate date range (last 7 days)
-          END_DATE=$(date -u +%Y-%m-%d)
-          START_DATE=$(date -u -d '7 days ago' +%Y-%m-%d || date -u -v-7d +%Y-%m-%d)
+          # Use GNU date if available, otherwise BSD date (macOS)
+          if date --version >/dev/null 2>&1; then
+            # GNU date (Linux)
+            END_DATE=$(date -u +%Y-%m-%d)
+            START_DATE=$(date -u -d '7 days ago' +%Y-%m-%d)
+          else
+            # BSD date (macOS)
+            END_DATE=$(date -u +%Y-%m-%d)
+            START_DATE=$(date -u -v-7d +%Y-%m-%d)
+          fi
           
           echo "Date range: $START_DATE to $END_DATE"
           

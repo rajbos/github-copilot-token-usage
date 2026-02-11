@@ -21,6 +21,20 @@ import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
 
 /**
+ * Interface for blob upload service to avoid circular dependency.
+ */
+interface BlobUploadServiceLike {
+	uploadSessionFiles(
+		storageAccount: string,
+		settings: { enabled: boolean; containerName: string; uploadFrequencyHours: number; compressFiles: boolean },
+		credential: any,
+		sessionFiles: string[],
+		machineId: string,
+		datasetId: string
+	): Promise<{ success: boolean; filesUploaded: number; message: string }>;
+}
+
+/**
  * Validate and normalize consent timestamp.
  * Returns ISO string if valid, undefined if invalid or in the future.
  */
@@ -78,7 +92,7 @@ export class SyncService {
 		private readonly deps: SyncServiceDeps,
 		private readonly credentialService: CredentialService,
 		private readonly dataPlaneService: DataPlaneService,
-		private readonly blobUploadService: any, // BlobUploadService - using any to avoid circular dependency
+		private readonly blobUploadService: BlobUploadServiceLike | undefined,
 		private readonly utility: typeof BackendUtility
 	) {}
 

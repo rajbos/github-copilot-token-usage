@@ -228,7 +228,7 @@ export class BlobUploadService {
 			},
 			metadata: {
 				originalFileName: fileName,
-				machineId: machineId.substring(0, 16), // Truncate for metadata
+				machineId: machineId, // Full machine ID (Azure metadata supports up to 8KB)
 				datasetId: datasetId,
 				uploadedAt: new Date().toISOString(),
 				compressed: compress.toString()
