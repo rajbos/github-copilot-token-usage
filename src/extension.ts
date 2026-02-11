@@ -5,6 +5,7 @@ import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
+import customizationPatternsData from './customizationPatterns.json';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
@@ -89,6 +90,18 @@ interface SessionFileCache {
 	title?: string; // Session title (customTitle from session file)
 	repository?: string; // Git remote origin URL for the session's workspace
     workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
+}
+
+// Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)
+interface CustomizationFileEntry {
+	path: string;
+	relativePath: string;
+	type: string;
+	icon: string;
+	label: string;
+	name: string;
+	lastModified: string | null;
+	isStale: boolean;
 }
 
 // New interfaces for usage analysis
@@ -334,6 +347,136 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} catch {}
 			return undefined;
 		}
+	}
+
+	/**
+	 * Convert a simple glob pattern to a RegExp.
+	 * Supports: ** (match multiple path segments), * (match within a segment), ?.
+	 */
+	private globToRegExp(glob: string, caseInsensitive: boolean = false): RegExp {
+		// Normalize to posix-style
+		let pattern = glob.replace(/\\/g, '/');
+		// Escape regex special chars
+		pattern = pattern.replace(/([.+^=!:${}()|[\]\\])/g, '\\$1');
+		// Replace /**/ or ** with placeholder
+		pattern = pattern.replace(/(^|\/)\*\*\/(?!$)/g, '$1__GLOBSTAR__/');
+		pattern = pattern.replace(/\*\*/g, '__GLOBSTAR__');
+		// Replace single * with [^/]* and ? with .
+		pattern = pattern.replace(/\*/g, '[^/]*').replace(/\?/g, '.');
+		// Replace globstar placeholder with .* (allow path separators)
+		pattern = pattern.replace(/__GLOBSTAR__\//g, '(?:.*?/?)').replace(/__GLOBSTAR__/g, '.*');
+		// Anchor
+		const flags = caseInsensitive ? 'i' : '';
+		return new RegExp('^' + pattern + '$', flags);
+	}
+
+	/**
+	 * Scan a workspace folder for customization files according to `customizationPatterns.json`.
+	 */
+	private scanWorkspaceCustomizationFiles(workspaceFolderPath: string): CustomizationFileEntry[] {
+		const results: CustomizationFileEntry[] = [];
+		if (!workspaceFolderPath || !fs.existsSync(workspaceFolderPath)) { return results; }
+
+		const cfg = customizationPatternsData as any;
+		const stalenessDays = typeof cfg.stalenessThresholdDays === 'number' ? cfg.stalenessThresholdDays : 90;
+		const excludeDirs: string[] = Array.isArray(cfg.excludeDirs) ? cfg.excludeDirs : [];
+
+		for (const pattern of (cfg.patterns || [])) {
+			try {
+				const scanMode = pattern.scanMode || 'exact';
+				const relativePattern = pattern.path as string;
+				if (scanMode === 'exact') {
+					const absPath = path.join(workspaceFolderPath, relativePattern);
+					if (fs.existsSync(absPath)) {
+						const stat = fs.statSync(absPath);
+						results.push({
+							path: absPath,
+							relativePath: path.relative(workspaceFolderPath, absPath).replace(/\\/g, '/'),
+							type: pattern.type || 'unknown',
+							icon: pattern.icon || '',
+							label: pattern.label || path.basename(absPath),
+							name: path.basename(absPath),
+								lastModified: stat.mtime.toISOString(),
+							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+						});
+					}
+				} else if (scanMode === 'oneLevel') {
+					// Find the first '*' segment to determine base directory
+					const parts = relativePattern.replace(/\\/g, '/').split('/');
+					const starIndex = parts.findIndex(p => p.includes('*'));
+					let baseDir = workspaceFolderPath;
+					let remainder = parts.join('/');
+					if (starIndex !== -1) {
+						baseDir = path.join(workspaceFolderPath, ...parts.slice(0, starIndex));
+						remainder = parts.slice(starIndex).join('/');
+					}
+					if (!fs.existsSync(baseDir)) { continue; }
+					const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+					for (const entry of entries) {
+						if (!entry.isDirectory() && !entry.isFile()) { continue; }
+						// Skip excluded dirs when entry is a directory
+						if (entry.isDirectory() && excludeDirs.includes(entry.name)) { continue; }
+						// Build candidate path by substituting the first '*' with the entry name
+						const substituted = relativePattern.replace('*', entry.name);
+						const absCandidate = path.join(workspaceFolderPath, substituted);
+						if (fs.existsSync(absCandidate)) {
+							const stat = fs.statSync(absCandidate);
+							results.push({
+								path: absCandidate,
+								relativePath: path.relative(workspaceFolderPath, absCandidate).replace(/\\/g, '/'),
+								type: pattern.type || 'unknown',
+								icon: pattern.icon || '',
+								label: pattern.label || path.basename(absCandidate),
+								name: path.basename(absCandidate),
+									lastModified: stat.mtime.toISOString(),
+								isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+							});
+						}
+					}
+				} else if (scanMode === 'recursive') {
+					const maxDepth = typeof pattern.maxDepth === 'number' ? pattern.maxDepth : 6;
+					const caseInsensitive = !!pattern.caseInsensitive;
+					const regex = this.globToRegExp(relativePattern, caseInsensitive);
+					// Walk recursively
+					const walk = (dir: string, depth: number) => {
+						if (depth < 0) { return; }
+						let children: fs.Dirent[] = [];
+						try { children = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+						for (const child of children) {
+							const name = child.name;
+							if (child.isDirectory()) {
+								if (excludeDirs.includes(name)) { continue; }
+								walk(path.join(dir, name), depth - 1);
+							} else if (child.isFile()) {
+								const rel = path.relative(workspaceFolderPath, path.join(dir, name)).replace(/\\/g, '/');
+								if (regex.test(rel)) {
+									const abs = path.join(dir, name);
+									const stat = fs.statSync(abs);
+									results.push({
+										path: abs,
+										relativePath: rel,
+										type: pattern.type || 'unknown',
+										icon: pattern.icon || '',
+										label: pattern.label || path.basename(abs),
+										name: path.basename(abs),
+											lastModified: stat.mtime.toISOString(),
+										isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+									});
+								}
+							}
+						}
+					};
+					walk(workspaceFolderPath, maxDepth);
+				}
+			} catch (e) {
+				// ignore per-pattern errors
+			}
+		}
+
+		// Deduplicate by absolute path
+		const uniq: { [p: string]: CustomizationFileEntry } = {};
+		for (const r of results) { uniq[path.normalize(r.path)] = r; }
+		return Object.values(uniq);
 	}
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
