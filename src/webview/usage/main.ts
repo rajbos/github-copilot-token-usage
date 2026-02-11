@@ -185,11 +185,23 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; color: #60a5fa; font-weight: 600;">
 										${ws.sessionCount}
 									</td>
-									${matrix.customizationTypes.map(type => `
-										<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; font-size: 16px;">
-											${ws.typeStatuses[type.id] || '❓'}
+									${matrix.customizationTypes.map(type => {
+										const status = ws.typeStatuses[type.id] || '❓';
+										const statusLabel =
+											status === '✅'
+												? 'Present and fresh'
+												: status === '⚠️'
+													? 'Present but stale'
+													: status === '❌'
+														? 'Missing'
+														: 'Status unknown';
+										return `
+										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
+											<span aria-hidden="true">${status}</span>
+											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${statusLabel}</span>
 										</td>
-									`).join('')}
+										`;
+									}).join('')}
 								</tr>
 							`).join('')}
 						</tbody>
