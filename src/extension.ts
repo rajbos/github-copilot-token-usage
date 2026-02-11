@@ -103,6 +103,11 @@ interface SessionUsageAnalysis {
 		tiers: { standard: string[]; premium: string[]; unknown: string[] };
 		hasMixedTiers: boolean;
 	};
+	editScope?: EditScopeUsage;
+	applyUsage?: ApplyButtonUsage;
+	sessionDuration?: SessionDurationData;
+	conversationPatterns?: ConversationPatterns;
+	agentTypes?: AgentTypeUsage;
 }
 
 interface ToolCallUsage {
@@ -144,6 +149,41 @@ interface McpToolUsage {
 	byTool: { [toolName: string]: number };
 }
 
+interface EditScopeUsage {
+	singleFileEdits: number;   // Edit sessions touching 1 file
+	multiFileEdits: number;    // Edit sessions touching 2+ files
+	totalEditedFiles: number;  // Total unique files edited
+	avgFilesPerSession: number; // Average files per edit session
+}
+
+interface ApplyButtonUsage {
+	totalApplies: number;      // Total Apply button uses
+	totalCodeBlocks: number;   // Total code blocks shown
+	applyRate: number;         // % of code blocks applied
+}
+
+interface SessionDurationData {
+	totalDurationMs: number;       // Total session time
+	avgDurationMs: number;         // Average session duration
+	avgFirstProgressMs: number;    // Average time to first response
+	avgTotalElapsedMs: number;     // Average total request time
+	avgWaitTimeMs: number;         // Average user wait time between interactions
+}
+
+interface ConversationPatterns {
+	multiTurnSessions: number;     // Sessions with >1 request
+	singleTurnSessions: number;    // Sessions with 1 request
+	avgTurnsPerSession: number;    // Average requests per session
+	maxTurnsInSession: number;     // Longest conversation
+}
+
+interface AgentTypeUsage {
+	editsAgent: number;            // github.copilot.editsAgent usage
+	defaultAgent: number;          // github.copilot.default usage
+	workspaceAgent: number;        // github.copilot.workspace usage
+	other: number;                 // Other agents
+}
+
 interface ModelSwitchingAnalysis {
 	modelsPerSession: number[];  // Array of unique model counts per session
 	totalSessions: number;
@@ -173,6 +213,11 @@ interface UsageAnalysisPeriod {
 	modelSwitching: ModelSwitchingAnalysis;
 	repositories: string[]; // Unique repositories worked in during this period
 	repositoriesWithCustomization: string[]; // Repos with copilot-instructions.md or agents.md
+	editScope: EditScopeUsage;
+	applyUsage: ApplyButtonUsage;
+	sessionDuration: SessionDurationData;
+	conversationPatterns: ConversationPatterns;
+	agentTypes: AgentTypeUsage;
 }
 
 // Detailed session file information for diagnostics view
@@ -1168,7 +1213,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 				mixedTierSessions: 0
 			},
 			repositories: [],
-			repositoriesWithCustomization: []
+			repositoriesWithCustomization: [],
+			editScope: {
+				singleFileEdits: 0,
+				multiFileEdits: 0,
+				totalEditedFiles: 0,
+				avgFilesPerSession: 0
+			},
+			applyUsage: {
+				totalApplies: 0,
+				totalCodeBlocks: 0,
+				applyRate: 0
+			},
+			sessionDuration: {
+				totalDurationMs: 0,
+				avgDurationMs: 0,
+				avgFirstProgressMs: 0,
+				avgTotalElapsedMs: 0,
+				avgWaitTimeMs: 0
+			},
+			conversationPatterns: {
+				multiTurnSessions: 0,
+				singleTurnSessions: 0,
+				avgTurnsPerSession: 0,
+				maxTurnsInSession: 0
+			},
+			agentTypes: {
+				editsAgent: 0,
+				defaultAgent: 0,
+				workspaceAgent: 0,
+				other: 0
+			}
 		});
 
 		const todayStats = emptyPeriod();
@@ -1356,6 +1431,69 @@ class CopilotTokenTracker implements vscode.Disposable {
 				period.modelSwitching.minModelsPerSession = Math.min(...counts);
 				period.modelSwitching.switchingFrequency = (counts.filter(c => c > 1).length / counts.length) * 100;
 			}
+		}
+		
+		// Merge new enhanced metrics
+		if (analysis.editScope) {
+			period.editScope.singleFileEdits += analysis.editScope.singleFileEdits;
+			period.editScope.multiFileEdits += analysis.editScope.multiFileEdits;
+			period.editScope.totalEditedFiles += analysis.editScope.totalEditedFiles;
+			// Recalculate average
+			const editSessions = period.editScope.singleFileEdits + period.editScope.multiFileEdits;
+			period.editScope.avgFilesPerSession = editSessions > 0 
+				? period.editScope.totalEditedFiles / editSessions 
+				: 0;
+		}
+		
+		if (analysis.applyUsage) {
+			period.applyUsage.totalApplies += analysis.applyUsage.totalApplies;
+			period.applyUsage.totalCodeBlocks += analysis.applyUsage.totalCodeBlocks;
+			// Recalculate apply rate
+			period.applyUsage.applyRate = period.applyUsage.totalCodeBlocks > 0
+				? (period.applyUsage.totalApplies / period.applyUsage.totalCodeBlocks) * 100
+				: 0;
+		}
+		
+		if (analysis.sessionDuration) {
+			period.sessionDuration.totalDurationMs += analysis.sessionDuration.totalDurationMs;
+			// For averages, we need to track count and sum them properly
+			const sessionCount = period.sessions; // Use current session count as denominator
+			if (sessionCount > 0) {
+				// Weighted average: incorporate new value into running average
+				const prevAvgDuration = period.sessionDuration.avgDurationMs * (sessionCount - 1);
+				period.sessionDuration.avgDurationMs = (prevAvgDuration + analysis.sessionDuration.avgDurationMs) / sessionCount;
+				
+				const prevAvgFirstProgress = period.sessionDuration.avgFirstProgressMs * (sessionCount - 1);
+				period.sessionDuration.avgFirstProgressMs = (prevAvgFirstProgress + analysis.sessionDuration.avgFirstProgressMs) / sessionCount;
+				
+				const prevAvgTotalElapsed = period.sessionDuration.avgTotalElapsedMs * (sessionCount - 1);
+				period.sessionDuration.avgTotalElapsedMs = (prevAvgTotalElapsed + analysis.sessionDuration.avgTotalElapsedMs) / sessionCount;
+				
+				const prevAvgWaitTime = period.sessionDuration.avgWaitTimeMs * (sessionCount - 1);
+				period.sessionDuration.avgWaitTimeMs = (prevAvgWaitTime + analysis.sessionDuration.avgWaitTimeMs) / sessionCount;
+			}
+		}
+		
+		if (analysis.conversationPatterns) {
+			period.conversationPatterns.multiTurnSessions += analysis.conversationPatterns.multiTurnSessions;
+			period.conversationPatterns.singleTurnSessions += analysis.conversationPatterns.singleTurnSessions;
+			period.conversationPatterns.maxTurnsInSession = Math.max(
+				period.conversationPatterns.maxTurnsInSession,
+				analysis.conversationPatterns.maxTurnsInSession
+			);
+			// Recalculate average turns across all sessions
+			const totalSessions = period.conversationPatterns.multiTurnSessions + period.conversationPatterns.singleTurnSessions;
+			if (totalSessions > 0) {
+				const prevTotalTurns = period.conversationPatterns.avgTurnsPerSession * (totalSessions - 1);
+				period.conversationPatterns.avgTurnsPerSession = (prevTotalTurns + analysis.conversationPatterns.avgTurnsPerSession) / totalSessions;
+			}
+		}
+		
+		if (analysis.agentTypes) {
+			period.agentTypes.editsAgent += analysis.agentTypes.editsAgent;
+			period.agentTypes.defaultAgent += analysis.agentTypes.defaultAgent;
+			period.agentTypes.workspaceAgent += analysis.agentTypes.workspaceAgent;
+			period.agentTypes.other += analysis.agentTypes.other;
 		}
 	}
 
@@ -1939,6 +2077,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Calculate model switching statistics from session
 	await this.calculateModelSwitching(sessionFile, analysis);
 
+	// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
+	await this.trackEnhancedMetrics(sessionFile, analysis);
+
 	return analysis;
 }
 
@@ -2037,6 +2178,229 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const parts = withoutPrefix.split(/[._]/);
 		// Return the first non-empty part, or 'unknown' if none exist
 		return parts[0] || 'unknown';
+	}
+
+	/**
+	 * Track enhanced metrics from session files:
+	 * - Edit scope (single vs multi-file edits)
+	 * - Apply button usage (codeblockUri with isEdit flag)
+	 * - Session duration data
+	 * - Conversation patterns (multi-turn sessions)
+	 * - Agent type usage
+	 */
+	private async trackEnhancedMetrics(sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
+		try {
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			
+			// Initialize tracking structures
+			const editedFiles = new Set<string>();
+			let totalApplies = 0;
+			let totalCodeBlocks = 0;
+			const timestamps: number[] = [];
+			const timingsData: { firstProgress: number; totalElapsed: number; }[] = [];
+			const waitTimes: number[] = [];
+			let requestCount = 0;
+			const agentCounts = {
+				editsAgent: 0,
+				defaultAgent: 0,
+				workspaceAgent: 0,
+				other: 0
+			};
+			
+			if (isJsonlContent) {
+				// Handle delta-based JSONL format
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+				
+				if (isDeltaBased) {
+					// Reconstruct full state
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+					
+					// Extract timestamps
+					if (sessionState.creationDate) { timestamps.push(sessionState.creationDate); }
+					if (sessionState.lastMessageDate) { timestamps.push(sessionState.lastMessageDate); }
+					
+					// Process requests
+					const requests = sessionState.requests || [];
+					requestCount = requests.length;
+					
+					for (const request of requests) {
+						if (!request) { continue; }
+						
+						// Track timestamps
+						if (request.timestamp) { timestamps.push(request.timestamp); }
+						
+						// Track timings
+						if (request.result?.timings) {
+							timingsData.push(request.result.timings);
+						}
+						
+						// Track wait times
+						if (request.timeSpentWaiting !== undefined) {
+							waitTimes.push(request.timeSpentWaiting);
+						}
+						
+						// Track agent types
+						if (request.agent?.id) {
+							const agentId = request.agent.id;
+							if (agentId.includes('edit')) {
+								agentCounts.editsAgent++;
+							} else if (agentId.includes('default')) {
+								agentCounts.defaultAgent++;
+							} else if (agentId.includes('workspace')) {
+								agentCounts.workspaceAgent++;
+							} else {
+								agentCounts.other++;
+							}
+						}
+						
+						// Track edit scope and apply usage
+						if (request.response && Array.isArray(request.response)) {
+							for (const resp of request.response) {
+								if (resp.kind === 'textEditGroup' && resp.uri) {
+									const filePath = resp.uri.path || JSON.stringify(resp.uri);
+									editedFiles.add(filePath);
+								}
+								if (resp.kind === 'codeblockUri') {
+									totalCodeBlocks++;
+									if (resp.isEdit === true) {
+										totalApplies++;
+									}
+								}
+							}
+						}
+					}
+				}
+			} else {
+				// Handle regular JSON files
+				const sessionContent = JSON.parse(fileContent);
+				
+				// Extract timestamps
+				if (sessionContent.creationDate) { timestamps.push(sessionContent.creationDate); }
+				if (sessionContent.lastMessageDate) { timestamps.push(sessionContent.lastMessageDate); }
+				
+				// Process requests
+				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+					requestCount = sessionContent.requests.length;
+					
+					for (const request of sessionContent.requests) {
+						// Track timestamps
+						if (request.timestamp) { timestamps.push(request.timestamp); }
+						
+						// Track timings
+						if (request.result?.timings) {
+							timingsData.push(request.result.timings);
+						}
+						
+						// Track wait times
+						if (request.timeSpentWaiting !== undefined) {
+							waitTimes.push(request.timeSpentWaiting);
+						}
+						
+						// Track agent types
+						if (request.agent?.id) {
+							const agentId = request.agent.id;
+							if (agentId.includes('edit')) {
+								agentCounts.editsAgent++;
+							} else if (agentId.includes('default')) {
+								agentCounts.defaultAgent++;
+							} else if (agentId.includes('workspace')) {
+								agentCounts.workspaceAgent++;
+							} else {
+								agentCounts.other++;
+							}
+						}
+						
+						// Track edit scope and apply usage
+						if (request.response && Array.isArray(request.response)) {
+							for (const resp of request.response) {
+								if (resp.kind === 'textEditGroup' && resp.uri) {
+									const filePath = resp.uri.path || JSON.stringify(resp.uri);
+									editedFiles.add(filePath);
+								}
+								if (resp.kind === 'codeblockUri') {
+									totalCodeBlocks++;
+									if (resp.isEdit === true) {
+										totalApplies++;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			// Store edit scope data
+			const editSessionCount = editedFiles.size > 0 ? 1 : 0;
+			analysis.editScope = {
+				singleFileEdits: editedFiles.size === 1 ? 1 : 0,
+				multiFileEdits: editedFiles.size > 1 ? 1 : 0,
+				totalEditedFiles: editedFiles.size,
+				avgFilesPerSession: editSessionCount > 0 ? editedFiles.size / editSessionCount : 0
+			};
+			
+			// Store apply button usage
+			analysis.applyUsage = {
+				totalApplies,
+				totalCodeBlocks,
+				applyRate: totalCodeBlocks > 0 ? (totalApplies / totalCodeBlocks) * 100 : 0
+			};
+			
+			// Calculate session duration
+			const totalDurationMs = timestamps.length >= 2 
+				? Math.max(...timestamps) - Math.min(...timestamps)
+				: 0;
+			const avgFirstProgressMs = timingsData.length > 0
+				? timingsData.reduce((sum, t) => sum + (t.firstProgress || 0), 0) / timingsData.length
+				: 0;
+			const avgTotalElapsedMs = timingsData.length > 0
+				? timingsData.reduce((sum, t) => sum + (t.totalElapsed || 0), 0) / timingsData.length
+				: 0;
+			const avgWaitTimeMs = waitTimes.length > 0
+				? waitTimes.reduce((sum, w) => sum + w, 0) / waitTimes.length
+				: 0;
+			
+			analysis.sessionDuration = {
+				totalDurationMs,
+				avgDurationMs: totalDurationMs,
+				avgFirstProgressMs,
+				avgTotalElapsedMs,
+				avgWaitTimeMs
+			};
+			
+			// Store conversation patterns
+			analysis.conversationPatterns = {
+				multiTurnSessions: requestCount > 1 ? 1 : 0,
+				singleTurnSessions: requestCount === 1 ? 1 : 0,
+				avgTurnsPerSession: requestCount,
+				maxTurnsInSession: requestCount
+			};
+			
+			// Store agent type usage
+			analysis.agentTypes = agentCounts;
+			
+		} catch (error) {
+			this.warn(`Error tracking enhanced metrics from ${sessionFile}: ${error}`);
+		}
 	}
 
 	/**
@@ -4422,6 +4786,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 			peEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
 		}
 
+		// Conversation patterns (multi-turn shows iterative refinement)
+		if (p.conversationPatterns) {
+			const multiTurnRate = p.sessions > 0
+				? Math.round((p.conversationPatterns.multiTurnSessions / p.sessions) * 100)
+				: 0;
+			if (p.conversationPatterns.multiTurnSessions > 0) {
+				peEvidence.push(`${p.conversationPatterns.multiTurnSessions} multi-turn sessions (${multiTurnRate}%)`);
+			}
+			if (p.conversationPatterns.avgTurnsPerSession >= 3) {
+				peEvidence.push(`Avg ${p.conversationPatterns.avgTurnsPerSession.toFixed(1)} exchanges per session`);
+				peStage = Math.max(peStage, 2) as 1 | 2 | 3 | 4;
+			}
+			if (p.conversationPatterns.avgTurnsPerSession >= 5) {
+				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
 		if (totalInteractions >= 5) {
 			peStage = 2; // At least trying it out
 		}
@@ -4526,15 +4907,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 			agEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
 		}
 
+		// Edit scope tracking (multi-file edits show advanced agentic behavior)
+		if (p.editScope) {
+			const multiFileRate = p.editScope.totalEditedFiles > 0
+				? Math.round((p.editScope.multiFileEdits / (p.editScope.singleFileEdits + p.editScope.multiFileEdits)) * 100)
+				: 0;
+			if (p.editScope.multiFileEdits > 0) {
+				agEvidence.push(`${p.editScope.multiFileEdits} multi-file edit sessions (${multiFileRate}%)`);
+				agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+			}
+			if (p.editScope.avgFilesPerSession >= 3) {
+				agEvidence.push(`Avg ${p.editScope.avgFilesPerSession.toFixed(1)} files per edit session`);
+				agStage = Math.max(agStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Agent type distribution
+		if (p.agentTypes && p.agentTypes.editsAgent > 0) {
+			agEvidence.push(`${p.agentTypes.editsAgent} edits agent sessions`);
+			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+		}
+
 		// Diverse tool usage in agent mode
 		const toolCount = Object.keys(p.toolCalls.byTool).length;
 		if (p.modeUsage.agent >= 10 && toolCount >= 3) {
 			agStage = 3;
 		}
 
-		// Heavy agentic use with many tool types
+		// Heavy agentic use with many tool types or high multi-file edit rate
 		if (p.modeUsage.agent >= 50 && toolCount >= 5) {
 			agStage = 4;
+		}
+		if (p.editScope && p.editScope.multiFileEdits >= 20 && p.editScope.avgFilesPerSession >= 3) {
+			agStage = Math.max(agStage, 4) as 1 | 2 | 3 | 4;
 		}
 
 		if (agStage < 2) { agTips.push('Try agent mode — it can run terminal commands, edit files, and explore your codebase autonomously'); }
@@ -4550,6 +4955,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (toolCount > 0) {
 			tuEvidence.push(`${toolCount} unique tools used`);
 			tuStage = 2;
+		}
+
+		// Agent type distribution (workspace agent shows advanced tool usage)
+		if (p.agentTypes) {
+			if (p.agentTypes.workspaceAgent > 0) {
+				tuEvidence.push(`${p.agentTypes.workspaceAgent} @workspace agent sessions`);
+				tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+			}
 		}
 
 		// Specific advanced tool IDs (intentional tool integration)
@@ -4591,9 +5004,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		if (tuStage < 4) {
 			if (mcpServers.length === 1) {
-				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry');
+				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registr:y');
 			} else if (mcpServers.length === 0) {
-				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow');
+				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow:');
 			} else {
 				tuTips.push('You\'re using multiple MCP servers - keep exploring advanced tool combinations');
 			}
@@ -4657,22 +5070,52 @@ class CopilotTokenTracker implements vscode.Disposable {
 			wiStage = 2;
 		}
 
-		// Multi-mode usage (ask + agent)
+		// Apply button usage (high rate shows active adoption of suggestions)
+		if (p.applyUsage && p.applyUsage.totalCodeBlocks > 0) {
+			const applyRatePercent = Math.round(p.applyUsage.applyRate * 100);
+			wiEvidence.push(`${applyRatePercent}% code block apply rate (${p.applyUsage.totalApplies}/${p.applyUsage.totalCodeBlocks})`);
+			if (p.applyUsage.applyRate >= 0.5) {
+				wiStage = Math.max(wiStage, 2) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Session duration (informational only - not used for staging)
+		if (p.sessionDuration && p.sessionDuration.avgDurationMs > 0) {
+			const avgMinutes = Math.round(p.sessionDuration.avgDurationMs / 60000);
+			wiEvidence.push(`Avg ${avgMinutes}min session duration`);
+		}
+
+		// Multi-mode usage (ask + agent) - key indicator of integration
 		const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.agent > 0].filter(Boolean).length;
 		if (modesUsed >= 2) {
 			wiEvidence.push(`Uses ${modesUsed} modes (ask/agent)`);
 			wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
 		}
 
-		// High session count + multi-mode + context engineering
-		if (p.sessions >= 15 && modesUsed >= 2 && totalContextRefs >= 10) {
+		// Explicit context usage - strong signal of intentional integration
+		const hasExplicitContext = totalContextRefs >= 10;
+		if (hasExplicitContext) {
+			wiEvidence.push(`${totalContextRefs} explicit context references`);
+			if (totalContextRefs >= 20) {
+				wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		// Stage 4: Multi-mode + explicit context + regular usage
+		if (p.sessions >= 15 && modesUsed >= 2 && totalContextRefs >= 20) {
 			wiStage = 4;
-			wiEvidence.push('Deep integration: high session count, multiple modes, and rich context usage');
+			wiEvidence.push('Deep integration: regular usage with multi-mode and explicit context');
 		}
 
 		if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
-		if (wiStage < 3) { wiTips.push('Combine ask mode with agent mode in your daily workflow'); }
-		if (wiStage < 4) { wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); }
+		if (wiStage < 3) { 
+			if (modesUsed < 2) { wiTips.push('Combine ask mode with agent mode in your daily workflow'); }
+			if (totalContextRefs < 10) { wiTips.push('Use explicit context references like #file, @workspace, and #selection'); }
+		}
+		if (wiStage < 4) { 
+			if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use #file, @workspace, and other references consistently'); }
+			wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); 
+		}
 
 		// ---------- Overall score (median) ----------
 		const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
@@ -4719,7 +5162,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		);
 
-		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
+		const dismissedTips = await this.getDismissedFluencyTips();
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips });
 
 		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
 			switch (message.command) {
@@ -4741,6 +5185,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'searchMcpExtensions':
 					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
 					break;
+				case 'dismissTips':
+					if (message.category) {
+						await this.dismissFluencyTips(message.category);
+						await this.refreshMaturityPanel();
+					}
+					break;
 		}
 	});
 
@@ -4757,8 +5207,22 @@ private async refreshMaturityPanel(): Promise<void> {
 
 	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
 	const maturityData = await this.calculateMaturityScores();
-	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
+	const dismissedTips = await this.getDismissedFluencyTips();
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips });
 	this.log('✅ Copilot Fluency Score dashboard refreshed');
+}
+
+private async getDismissedFluencyTips(): Promise<string[]> {
+	return this.context.globalState.get<string[]>('dismissedFluencyTips', []);
+}
+
+private async dismissFluencyTips(category: string): Promise<void> {
+	const dismissed = await this.getDismissedFluencyTips();
+	if (!dismissed.includes(category)) {
+		dismissed.push(category);
+		await this.context.globalState.update('dismissedFluencyTips', dismissed);
+		this.log(`Dismissed fluency tips for category: ${category}`);
+	}
 }
 
 private getMaturityHtml(webview: vscode.Webview, data: {
@@ -4767,6 +5231,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
 		period: UsageAnalysisPeriod;
 		lastUpdated: string;
+		dismissedTips?: string[];
 	}): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'maturity.js'));

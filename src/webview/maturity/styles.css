@@ -319,6 +319,28 @@ body {
 	box-shadow: 0 2px 4px rgba(59, 130, 246, 0.15);
 }
 
+.dismiss-tips-btn {
+	background: transparent;
+	border: 1px solid #3a3a40;
+	color: #888;
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 11px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	line-height: 1;
+}
+
+.dismiss-tips-btn:hover {
+	background: #2a2a30;
+	border-color: #555;
+	color: #ccc;
+}
+
+.dismiss-tips-btn:active {
+	transform: scale(0.95);
+}
+
 .info-box {
 	background: #1b1b1e;
 	border: 1px solid #2a2a30;

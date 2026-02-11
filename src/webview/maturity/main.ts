@@ -29,6 +29,11 @@ type UsageAnalysisPeriod = {
 	modelSwitching: ModelSwitchingAnalysis;
 	repositories: string[];
 	repositoriesWithCustomization: string[];
+	editScope?: { singleFileEdits: number; multiFileEdits: number; totalEditedFiles: number; avgFilesPerSession: number };
+	applyUsage?: { totalApplies: number; totalCodeBlocks: number; applyRate: number };
+	sessionDuration?: { totalDurationMs: number; avgDurationMs: number; avgFirstProgressMs: number; avgTotalElapsedMs: number; avgWaitTimeMs: number };
+	conversationPatterns?: { multiTurnSessions: number; singleTurnSessions: number; avgTurnsPerSession: number; maxTurnsInSession: number };
+	agentTypes?: { editsAgent: number; defaultAgent: number; workspaceAgent: number; other: number };
 };
 
 type CategoryScore = {
@@ -45,6 +50,7 @@ type MaturityData = {
 	categories: CategoryScore[];
 	period: UsageAnalysisPeriod;
 	lastUpdated: string;
+	dismissedTips?: string[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -175,6 +181,8 @@ function renderLayout(data: MaturityData): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 
+	const dismissedTips = data.dismissedTips || [];
+
 	const categoryCards = data.categories.map(cat => {
 		const progressPct = (cat.stage / 4) * 100;
 		const color = stageColor(cat.stage);
@@ -185,6 +193,9 @@ function renderLayout(data: MaturityData): void {
 			? cat.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
 			: '<div class="tip-item" style="color:#666;">No specific suggestions - you\'re doing great!</div>';
 
+		// Check if tips are dismissed for this category
+		const tipsAreDismissed = dismissedTips.includes(cat.category);
+		
 		// Add MCP discovery button for Tool Usage category
 		const mcpButton = cat.category === 'Tool Usage' ? `
 			<div style="margin-top: 10px;">
@@ -203,12 +214,15 @@ function renderLayout(data: MaturityData): void {
 					<div class="category-progress-fill" style="width: ${progressPct}%; background: ${color};"></div>
 				</div>
 				<ul class="evidence-list">${evidenceHtml || '<li class="evidence-item"><span class="evidence-icon">-</span><span>No significant activity detected</span></li>'}</ul>
-				${cat.tips.length > 0 ? `
+				${!tipsAreDismissed && cat.tips.length > 0 ? `
 					<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a2a30;">
-						<div style="font-size: 11px; font-weight: 600; color: #f59e0b; margin-bottom: 6px;">💡 Next steps to level up:</div>
+						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+							<div style="font-size: 11px; font-weight: 600; color: #f59e0b;">💡 Next steps to level up:</div>
+							<button class="dismiss-tips-btn" data-category="${escapeHtml(cat.category)}" title="Dismiss these tips">✕</button>
+						</div>
 						${tipsHtml}
 					</div>
-				` : ''}			${mcpButton}			</div>`;
+				` : ''}${mcpButton}</div>`;
 	}).join('');
 
 	root.innerHTML = `
@@ -310,6 +324,17 @@ function renderLayout(data: MaturityData): void {
 	// Wire up MCP discovery button
 	document.querySelector('.mcp-discover-btn')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'searchMcpExtensions' });
+	});
+
+	// Wire up dismiss tips buttons
+	document.querySelectorAll('.dismiss-tips-btn').forEach(btn => {
+		btn.addEventListener('click', (e) => {
+			const target = e.target as HTMLElement;
+			const category = target.getAttribute('data-category');
+			if (category) {
+				vscode.postMessage({ command: 'dismissTips', category });
+			}
+		});
 	});
 }
 

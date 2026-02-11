@@ -23,6 +23,7 @@
         "/^node \\.github/skills/load-cache-data/load-cache-data\\.js(?: --last \\d+)?(?: --json)?$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "npx eslint": true
     }
 }
