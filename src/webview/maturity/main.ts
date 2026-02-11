@@ -236,6 +236,7 @@ function renderLayout(data: MaturityData): void {
 				<div class="button-row">
 					${buttonHtml('btn-refresh')}
 					${buttonHtml('btn-details')}
+					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
 					${buttonHtml('btn-diagnostics')}
 				</div>
