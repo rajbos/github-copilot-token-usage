@@ -44,8 +44,25 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 	getState: () => TState | undefined;
 };
 
+interface CustomizationFileEntry {
+	path: string;
+	relativePath: string;
+	type: string;
+	icon?: string;
+	label?: string;
+	name?: string;
+	lastModified?: string;
+	isStale?: boolean;
+}
+
+interface WorkspaceCustomizationSummary {
+	workspaces: { [folder: string]: { files: CustomizationFileEntry[]; totalFiles: number; staleFiles: number } };
+	totalFiles: number;
+	totalStaleFiles: number;
+}
+
 declare global {
-	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats; }
+	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationSummary?: WorkspaceCustomizationSummary | null } }
 }
 
 const vscode = acquireVsCodeApi();
@@ -110,6 +127,63 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const root = document.getElementById('root');
 	if (!root) {
 		return;
+	}
+
+	const customization = (window.__INITIAL_USAGE__ as any)?.customizationSummary as WorkspaceCustomizationSummary | undefined | null;
+	let customizationHtml = '';
+	if (!customization || Object.keys(customization.workspaces || {}).length === 0) {
+		customizationHtml = `
+			<div class="section">
+				<div class="section-title"><span>🧩</span><span>Customization Files</span></div>
+				<div class="section-subtitle">Detected repository customization files (copilot instructions, skills, agents, etc.)</div>
+				<div style="color:#999; padding:12px;">No customization files discovered in your workspaces.</div>
+			</div>`;
+	} else {
+		const totalFiles = customization.totalFiles || 0;
+		const totalStale = customization.totalStaleFiles || 0;
+		const perWorkspaceHtml = Object.entries(customization.workspaces).map(([folder, data]) => {
+			const filesHtml = (data.files || []).map(f => {
+				const staleBadge = f.isStale ? `<span style="color:#f59e0b; font-weight:700; margin-left:8px;">Stale</span>` : '';
+				const label = f.label || f.name || f.type || '';
+				const rel = escapeHtml(f.relativePath || f.path || '');
+				const lm = f.lastModified ? new Date(f.lastModified).toLocaleString() : '';
+				return `<div class="cf-row" style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+							<div style="display:flex; gap:10px; align-items:center;">
+								<div style="width:20px">${f.icon || '📄'}</div>
+								<div style="display:flex; flex-direction:column;">
+									<div style="font-weight:600;">${escapeHtml(label)} ${staleBadge}</div>
+									<div style="font-size:12px; color:#b8b8b8; font-family: 'Courier New', monospace;">${rel}</div>
+								</div>
+							</div>
+							<div style="display:flex; gap:8px; align-items:center;">
+								<div style="font-size:12px; color:#999;">${escapeHtml(lm)}</div>
+								<button class="cf-copy" data-path="${escapeHtml(f.path)}">Copy</button>
+							</div>
+						</div>`;
+			}).join('');
+
+			return `
+				<div style="margin-top:8px;">
+					<div style="display:flex; align-items:center; justify-content:space-between;">
+						<div style="font-weight:700;">${escapeHtml(folder)}</div>
+						<div style="color:#999; font-size:12px;">${data.totalFiles} files · ${data.staleFiles} stale</div>
+					</div>
+					<div class="cf-list" style="margin-top:8px;">${filesHtml}</div>
+				</div>`;
+		}).join('');
+
+		customizationHtml = `
+			<div class="section">
+				<div class="section-title"><span>🧩</span><span>Customization Files</span></div>
+				<div class="section-subtitle">Detected repository customization files (copilot instructions, skills, agents, etc.)</div>
+				<div style="padding:12px; background:#0f1720; border-radius:6px;">
+					<div style="display:flex; justify-content:space-between; align-items:center;">
+						<div style="font-weight:700; color:#fff;">${totalFiles} files found</div>
+						<div style="color:#f59e0b;">${totalStale} stale</div>
+					</div>
+					<div style="margin-top:12px;">${perWorkspaceHtml}</div>
+				</div>
+			</div>`;
 	}
 
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
@@ -450,11 +524,15 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				</div>
 			</div>
 
+			${customizationHtml}
+
 			<div class="footer">
 				Last updated: ${new Date(stats.lastUpdated).toLocaleString()} · Updates every 5 minutes
 			</div>
 		</div>
 	`;
+
+
 
 	// Wire up navigation buttons
 	document.getElementById('btn-refresh')?.addEventListener('click', () => {
@@ -468,6 +546,22 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+
+	// Copy path buttons in customization list
+	Array.from(document.getElementsByClassName('cf-copy')).forEach((el) => {
+		(el as HTMLElement).addEventListener('click', (ev) => {
+			const target = ev.currentTarget as HTMLElement;
+			const path = target.getAttribute('data-path') || '';
+			if (navigator.clipboard && path) {
+				navigator.clipboard.writeText(path).then(() => {
+					target.textContent = 'Copied';
+					setTimeout(() => { target.textContent = 'Copy'; }, 1200);
+				}).catch(() => {
+					vscode.postMessage({ command: 'copyFailed', path });
+				});
+			}
+		});
 	});
 }
 
