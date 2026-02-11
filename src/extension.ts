@@ -542,6 +542,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Cache mapping workspaceFolderPath -> found customization files (avoid re-scanning)
 	private _customizationFilesCache: Map<string, CustomizationFileEntry[]> = new Map();
 
+	// Last computed customization matrix for usage analysis (typed)
+	private _lastCustomizationMatrix?: WorkspaceCustomizationMatrix;
+
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
 	// Reference: Anthropic Claude Pricing (https://www.anthropic.com/pricing) - Standard rates
@@ -1578,7 +1581,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					workspacesWithIssues
 				};
 
-				(this as any)._lastCustomizationMatrix = customizationMatrix;
+				this._lastCustomizationMatrix = customizationMatrix;
 			} catch (e) {
 				// ignore overall customization scanning errors
 			}
@@ -1594,7 +1597,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			last30Days: last30DaysStats,
 			month: monthStats,
 			lastUpdated: now,
-			customizationMatrix: (this as any)._lastCustomizationMatrix as WorkspaceCustomizationMatrix | undefined
+			customizationMatrix: this._lastCustomizationMatrix
 		};
 	}
 
