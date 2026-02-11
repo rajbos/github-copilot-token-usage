@@ -1,0 +1,67 @@
+{
+  "$schema": "Defines Copilot customization file patterns to scan in workspaces",
+  "lastUpdated": "2026-02-11",
+  "stalenessThresholdDays": 90,
+  "excludeDirs": ["node_modules", ".git", "dist", "build", "out", "__pycache__", ".venv", ".next", "coverage"],
+  "patterns": [
+    {
+      "id": "copilot-instructions",
+      "type": "instructions",
+      "icon": "📋",
+      "label": "Copilot Instructions",
+      "path": ".github/copilot-instructions.md",
+      "scanMode": "exact"
+    },
+    {
+      "id": "copilot-setup",
+      "type": "coding-agent",
+      "icon": "⚙️",
+      "label": "Coding Agent Setup",
+      "path": ".github/copilot-setup.md",
+      "scanMode": "exact"
+    },
+    {
+      "id": "mcp-config",
+      "type": "mcp-config",
+      "icon": "🔌",
+      "label": "MCP Server Config",
+      "path": ".vscode/mcp.json",
+      "scanMode": "exact"
+    },
+    {
+      "id": "skills",
+      "type": "skill",
+      "icon": "🧠",
+      "label": "Skill Files",
+      "path": ".github/skills/*/SKILL.md",
+      "scanMode": "oneLevel"
+    },
+    {
+      "id": "agents-dir",
+      "type": "agent",
+      "icon": "🤖",
+      "label": "Agent Definitions",
+      "path": ".github/agents/*.md",
+      "scanMode": "oneLevel"
+    },
+    {
+      "id": "scoped-instructions",
+      "type": "instructions",
+      "icon": "📋",
+      "label": "Scoped Instructions",
+      "path": "**/*.instructions.md",
+      "scanMode": "recursive",
+      "maxDepth": 5
+    },
+    {
+      "id": "agents-md",
+      "type": "agent",
+      "icon": "🤖",
+      "label": "AGENTS.md",
+      "path": "**/AGENTS.md",
+      "scanMode": "recursive",
+      "maxDepth": 5,
+      "caseInsensitive": true
+    }
+  ]
+}
