@@ -13,6 +13,7 @@ import { DataPlaneService } from './services/dataPlaneService';
 import { SyncService } from './services/syncService';
 import { QueryService, type BackendQueryResultLike } from './services/queryService';
 import { BackendUtility } from './services/utilityService';
+import { BlobUploadService } from './services/blobUploadService';
 import { BackendConfigPanel, type BackendConfigPanelState } from './configPanel';
 import { applyDraftToSettings, getPrivacyBadge, needsConsent, toDraft, validateDraft, type BackendConfigDraft } from './configurationFlow';
 import { ConfirmationMessages, SuccessMessages, ErrorMessages } from './ui/messages';
@@ -44,6 +45,7 @@ export class BackendFacade {
 	private readonly dataPlaneService: DataPlaneService;
 	private readonly syncService: SyncService;
 	private readonly queryService: QueryService;
+	private readonly blobUploadService: BlobUploadService;
 	private configPanel: BackendConfigPanel | undefined;
 
 	public constructor(deps: BackendFacadeDeps) {
@@ -51,6 +53,11 @@ export class BackendFacade {
 		
 		// Initialize services
 		this.credentialService = new CredentialService(deps.context);
+		this.blobUploadService = new BlobUploadService(
+			deps.log,
+			deps.warn,
+			deps.context
+		);
 		this.dataPlaneService = new DataPlaneService(
 			BackendUtility,
 			deps.log,
@@ -81,6 +88,7 @@ export class BackendFacade {
 			},
 			this.credentialService,
 			this.dataPlaneService,
+			this.blobUploadService,
 			BackendUtility
 		);
 		this.azureResourceService = new AzureResourceService(

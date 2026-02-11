@@ -66,7 +66,11 @@ test('isBackendConfigured checks required fields', () => {
 			aggTable: 'agg',
 			eventsTable: 'events',
 			lookbackDays: 30,
-			includeMachineBreakdown: true
+			includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 		}),
 		true
 	);
@@ -90,7 +94,11 @@ test('isBackendConfigured checks required fields', () => {
 			aggTable: 'agg',
 			eventsTable: 'events',
 			lookbackDays: 30,
-			includeMachineBreakdown: true
+			includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 		}),
 		false
 	);

@@ -1,0 +1,112 @@
+name: "Copilot Setup Steps"
+
+# Automatically run the setup steps when they are changed to allow for easy validation, and
+# allow manual testing through the repository's "Actions" tab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    # Set the permissions to the lowest permissions possible needed for your steps.
+    # Copilot will be given its own token for its operations.
+    permissions:
+      # If you want to clone the repository as part of your setup steps, for example to install dependencies, 
+      # you'll need the `contents: read` permission. If you don't clone the repository in your setup steps, 
+      # Copilot will do this for you automatically after the steps complete.
+      contents: read
+
+    # You can define any steps you want, and they will run before the agent starts.
+    # If you do not check out your code, Copilot will do this for you.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      # Download session log files from Azure Blob Storage (optional)
+      # This step only runs if Azure Storage credentials are configured in the `copilot` environment
+      - name: Download Copilot session logs from Azure Blob Storage
+        if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ vars.COPILOT_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_CONTAINER: ${{ vars.COPILOT_STORAGE_CONTAINER || 'copilot-session-logs' }}
+          AZURE_DATASET_ID: ${{ vars.COPILOT_DATASET_ID || 'default' }}
+        run: |
+          echo "📦 Downloading session logs from Azure Blob Storage..."
+          
+          # Create directory for session logs
+          mkdir -p ./session-logs
+          
+          # Calculate date range (last 7 days)
+          END_DATE=$(date -u +%Y-%m-%d)
+          START_DATE=$(date -u -d '7 days ago' +%Y-%m-%d || date -u -v-7d +%Y-%m-%d)
+          
+          echo "Date range: $START_DATE to $END_DATE"
+          
+          # Check if Azure CLI is available
+          if ! command -v az &> /dev/null; then
+            echo "⚠️ Azure CLI not installed, skipping session log download"
+            exit 0
+          fi
+          
+          # Check if authenticated (will be true if using Entra ID via azure/login action)
+          if ! az account show &> /dev/null; then
+            echo "⚠️ Not authenticated with Azure, skipping session log download"
+            echo "💡 To enable: configure Azure authentication in the copilot environment"
+            exit 0
+          fi
+          
+          # Download blobs from the dataset path
+          echo "Downloading from container: $AZURE_STORAGE_CONTAINER, dataset: $AZURE_DATASET_ID"
+          
+          # Download all blobs matching the dataset path pattern
+          # This downloads: {dataset}/{machine-id}/{date}/session-*.json.gz
+          az storage blob download-batch \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --source "$AZURE_STORAGE_CONTAINER" \
+            --destination ./session-logs \
+            --pattern "${AZURE_DATASET_ID}/*/*/*.json.gz" \
+            --auth-mode login \
+            --no-progress || {
+              echo "⚠️ Failed to download session logs, continuing without them"
+              exit 0
+            }
+          
+          # Count downloaded files
+          FILE_COUNT=$(find ./session-logs -name "*.json.gz" | wc -l)
+          echo "✅ Downloaded $FILE_COUNT session log files"
+          
+          # Decompress all files
+          if [ "$FILE_COUNT" -gt 0 ]; then
+            echo "📂 Decompressing session logs..."
+            find ./session-logs -name "*.gz" -exec gunzip {} \;
+            echo "✅ Session logs ready in ./session-logs"
+          fi
+
+      - name: Display session log summary
+        if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
+        run: |
+          if [ -d ./session-logs ]; then
+            echo "📊 Session log summary:"
+            echo "Total files: $(find ./session-logs -name "*.json" | wc -l)"
+            echo "Directory structure:"
+            tree -L 3 ./session-logs || ls -R ./session-logs
+          else
+            echo "No session logs available"
+          fi

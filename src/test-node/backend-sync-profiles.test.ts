@@ -30,7 +30,11 @@ test('backend sync: soloFull profile uploads raw workspace/machine IDs and names
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -65,7 +69,11 @@ test('backend sync: teamAnonymized profile hashes IDs, no user dimension, no nam
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -100,7 +108,11 @@ test('backend sync: teamPseudonymous profile includes user dimension with consen
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -136,7 +148,11 @@ test('backend sync: teamIdentified profile includes user dimension with explicit
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -173,7 +189,11 @@ test('regression: shareWithTeam=false with profile=off never uploads anything', 
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -206,7 +226,11 @@ test('regression: profile=off overrides shareWithTeam=true (safety gate)', () =>
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -239,7 +263,11 @@ test('consent timestamp: teamPseudonymous requires shareConsentAt', () => {
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	assert.ok(settingsWithConsent.shareConsentAt, 'teamPseudonymous should have shareConsentAt');
@@ -265,7 +293,11 @@ test('consent timestamp: teamIdentified requires shareConsentAt', () => {
 		aggTable: 'agg',
 		eventsTable: 'events',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 
 	assert.ok(settingsWithConsent.shareConsentAt, 'teamIdentified should have shareConsentAt');
