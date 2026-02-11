@@ -151,7 +151,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			</div>`;
 	} else {
 		customizationHtml = `
-			<div style="margin-top: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
 					🛠️ Copilot Customization Files
 				</div>
@@ -326,6 +326,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					</div>
 				` : ''}
 			</div>
+
+			${customizationHtml}
 
 			<!-- Tool Calls Section -->
 			<div class="section">
@@ -543,8 +545,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div class="stat-card"><div class="stat-label">📆 Last 30 Days Sessions</div><div class="stat-value">${stats.last30Days.sessions}</div></div>
 				</div>
 			</div>
-
-			${customizationHtml}
 
 			<div class="footer">
 				Last updated: ${new Date(stats.lastUpdated).toLocaleString()} · Updates every 5 minutes
