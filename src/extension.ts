@@ -1659,10 +1659,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
 					processed++;
 				}
-			} catch (fileError) {
-				this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
-				processed++;
-			}
 			}
 
 			// Build the customization matrix using scanned workspace data and session counts
@@ -2486,12 +2482,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Calculate model switching statistics from session
 		await this.calculateModelSwitching(sessionFile, analysis);
 
-	}
-	// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
-	await this.trackEnhancedMetrics(sessionFile, analysis);
+		// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
+		await this.trackEnhancedMetrics(sessionFile, analysis);
 
-	return analysis;
-}
+		return analysis;
+	}
 
 	/**
 	 * Calculate model switching statistics for a session file.
