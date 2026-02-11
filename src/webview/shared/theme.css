@@ -34,6 +34,9 @@
 	--list-active-bg: var(--vscode-list-activeSelectionBackground);
 	--list-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
 	
+	/* Alternating row colors for better readability */
+	--row-alternate-bg: var(--vscode-list-inactiveSelectionBackground);
+	
 	/* Badge colors */
 	--badge-bg: var(--vscode-badge-background);
 	--badge-fg: var(--vscode-badge-foreground);

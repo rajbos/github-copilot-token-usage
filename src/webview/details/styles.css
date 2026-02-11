@@ -101,8 +101,7 @@ body {
 }
 
 .stats-table tbody tr:nth-child(even) {
-	background: var(--list-hover-bg);
-	opacity: 0.5;
+	background: var(--row-alternate-bg);
 }
 
 .metric-label {
