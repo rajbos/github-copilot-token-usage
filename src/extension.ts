@@ -245,6 +245,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private chartPanel: vscode.WebviewPanel | undefined;
 	private analysisPanel: vscode.WebviewPanel | undefined;
+	private maturityPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
@@ -666,6 +667,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.analysisPanel) {
 				const analysisStats = await this.calculateUsageAnalysisStats();
 				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+			}
+
+			// If the maturity panel is open, update its content
+			if (this.maturityPanel) {
+				const maturityData = await this.calculateMaturityScores();
+				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
 			}
 
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
@@ -3922,6 +3929,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
 			}
 		});
 
@@ -3980,6 +3990,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
 					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
 			}
 		});
 
@@ -4037,6 +4050,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showDiagnostics':
 					await this.showDiagnosticReport();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
 					break;
 			}
 		});
@@ -4204,6 +4220,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showUsageAnalysis':
 					await this.showUsageAnalysis();
 					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
 			}
 		});
 
@@ -4336,6 +4355,372 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Refresh all stats so the status bar and tooltip stay in sync
 		await this.updateTokenStats();
 		this.log('✅ Usage Analysis dashboard refreshed');
+	}
+
+	// ── Maturity / Fluency Score ───────────────────────────────────────
+
+	/**
+	 * Calculate maturity scores across 6 categories using last 30 days of usage data.
+	 * Each category is scored 1-4 based on threshold rules.
+	 * Overall stage = median of the 6 category scores.
+	 */
+	private async calculateMaturityScores(): Promise<{
+		overallStage: number;
+		overallLabel: string;
+		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
+		period: UsageAnalysisPeriod;
+		lastUpdated: string;
+	}> {
+		const stats = await this.calculateUsageAnalysisStats();
+		const p = stats.last30Days;
+
+		const stageLabels: Record<number, string> = {
+			1: 'Stage 1: Copilot Skeptic',
+			2: 'Stage 2: Copilot Explorer',
+			3: 'Stage 3: Copilot Collaborator',
+			4: 'Stage 4: Copilot Strategist'
+		};
+
+		// ---------- 1. Prompt Engineering ----------
+		const peEvidence: string[] = [];
+		const peTips: string[] = [];
+		let peStage = 1;
+
+		const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent;
+		if (totalInteractions > 0) {
+			peEvidence.push(`${totalInteractions} total interactions`);
+		}
+		if (p.modeUsage.ask > 0) {
+			peEvidence.push(`${p.modeUsage.ask} ask-mode conversations`);
+		}
+
+		if (totalInteractions >= 5) {
+			peStage = 2; // At least trying it out
+		}
+
+		// Check slash command / tool usage (indicates structured prompts)
+		const slashCommands = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
+		const usedSlashCommands = slashCommands.filter(cmd => (p.toolCalls.byTool[cmd] || 0) > 0);
+		if (usedSlashCommands.length > 0) {
+			peEvidence.push(`Used slash commands: /${usedSlashCommands.join(', /')}`);
+		}
+
+		if (totalInteractions >= 30 && usedSlashCommands.length >= 2) {
+			peStage = 3; // Regular, purposeful use
+		}
+
+		// edit-mode usage + high interaction count + model switching = strategist
+		if (totalInteractions >= 100 && p.modeUsage.edit > 0 && usedSlashCommands.length >= 3) {
+			peStage = 4;
+		}
+		if (p.modeUsage.edit > 0) {
+			peEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
+		}
+
+		// Model switching awareness
+		if (p.modelSwitching.mixedTierSessions > 0 || (p.modelSwitching.switchingFrequency > 0)) {
+			peEvidence.push(`Switched models in ${Math.round(p.modelSwitching.switchingFrequency)}% of sessions`);
+			if (peStage < 4 && p.modelSwitching.mixedTierSessions > 0) {
+				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+
+		if (peStage < 2) { peTips.push('Try asking Copilot a question using the Chat panel'); }
+		if (peStage < 3) { peTips.push('Use slash commands like /explain, /fix, or /tests to give structured prompts'); }
+		if (peStage < 4) { peTips.push('Try edit mode for multi-file changes and experiment with different models for different tasks'); }
+
+		// ---------- 2. Context Engineering ----------
+		const ceEvidence: string[] = [];
+		const ceTips: string[] = [];
+		let ceStage = 1;
+
+		const totalContextRefs = p.contextReferences.file + p.contextReferences.selection +
+			p.contextReferences.symbol + p.contextReferences.codebase + p.contextReferences.workspace;
+		const refTypes = [
+			p.contextReferences.file > 0,
+			p.contextReferences.selection > 0,
+			p.contextReferences.symbol > 0,
+			p.contextReferences.codebase > 0,
+			p.contextReferences.workspace > 0,
+			p.contextReferences.terminal > 0,
+			p.contextReferences.vscode > 0,
+			p.contextReferences.clipboard > 0,
+			p.contextReferences.changes > 0,
+			p.contextReferences.problemsPanel > 0,
+			p.contextReferences.outputPanel > 0,
+			p.contextReferences.terminalLastCommand > 0,
+			p.contextReferences.terminalSelection > 0
+		];
+		const usedRefTypeCount = refTypes.filter(Boolean).length;
+
+		if (p.contextReferences.file > 0) { ceEvidence.push(`${p.contextReferences.file} #file references`); }
+		if (p.contextReferences.selection > 0) { ceEvidence.push(`${p.contextReferences.selection} #selection references`); }
+		if (p.contextReferences.codebase > 0) { ceEvidence.push(`${p.contextReferences.codebase} #codebase references`); }
+		if (p.contextReferences.workspace > 0) { ceEvidence.push(`${p.contextReferences.workspace} @workspace references`); }
+		if (p.contextReferences.terminal > 0) { ceEvidence.push(`${p.contextReferences.terminal} @terminal references`); }
+
+		if (totalContextRefs >= 1) { ceStage = 2; }
+		if (usedRefTypeCount >= 3 && totalContextRefs >= 10) { ceStage = 3; }
+		if (usedRefTypeCount >= 5 && totalContextRefs >= 30) { ceStage = 4; }
+
+		// Image context (byKind: copilot.image)
+		const imageRefs = p.contextReferences.byKind['copilot.image'] || 0;
+		if (imageRefs > 0) {
+			ceEvidence.push(`${imageRefs} image references (vision)`);
+			ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
+		}
+
+		if (ceStage < 2) { ceTips.push('Try adding #file or #selection references to give Copilot more context'); }
+		if (ceStage < 3) { ceTips.push('Explore @workspace, #codebase, and @terminal for broader context'); }
+		if (ceStage < 4) { ceTips.push('Try image attachments, #changes, #problemsPanel, and other specialized context variables'); }
+
+		// ---------- 3. Agentic ----------
+		const agEvidence: string[] = [];
+		const agTips: string[] = [];
+		let agStage = 1;
+
+		if (p.modeUsage.agent > 0) {
+			agEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
+			agStage = 2;
+		}
+		if (p.toolCalls.total > 0) {
+			agEvidence.push(`${p.toolCalls.total} tool calls executed`);
+		}
+		if (p.modeUsage.edit > 0) {
+			agEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
+		}
+
+		// Diverse tool usage in agent mode
+		const toolCount = Object.keys(p.toolCalls.byTool).length;
+		if (p.modeUsage.agent >= 10 && toolCount >= 3) {
+			agStage = 3;
+		}
+
+		// Heavy agentic use with many tool types
+		if (p.modeUsage.agent >= 50 && toolCount >= 5) {
+			agStage = 4;
+		}
+
+		if (agStage < 2) { agTips.push('Try agent mode — it can run terminal commands, edit files, and explore your codebase autonomously'); }
+		if (agStage < 3) { agTips.push('Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits'); }
+		if (agStage < 4) { agTips.push('Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows'); }
+
+		// ---------- 4. Tool Usage ----------
+		const tuEvidence: string[] = [];
+		const tuTips: string[] = [];
+		let tuStage = 1;
+
+		if (toolCount > 0) {
+			tuEvidence.push(`${toolCount} unique tools used`);
+			tuStage = 2;
+		}
+
+		// Specific advanced tool IDs
+		const advancedTools = ['github_pull_request', 'github_repo', 'run_in_terminal', 'editFiles', 'listFiles'];
+		const usedAdvanced = advancedTools.filter(t => (p.toolCalls.byTool[t] || 0) > 0);
+		if (usedAdvanced.length > 0) {
+			tuEvidence.push(`Advanced tools: ${usedAdvanced.join(', ')}`);
+		}
+
+		if (toolCount >= 3 && p.toolCalls.total >= 10) { tuStage = 3; }
+		if (toolCount >= 6 && p.toolCalls.total >= 30 && usedAdvanced.length >= 2) { tuStage = 4; }
+
+		// MCP tools are a strong signal of strategic/advanced use
+		if (p.mcpTools.total > 0) {
+			const mcpServers = Object.keys(p.mcpTools.byServer);
+			tuEvidence.push(`${p.mcpTools.total} MCP tool calls across ${mcpServers.length} server(s)`);
+			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+			if (mcpServers.length >= 2) { tuStage = 4; }
+		}
+
+		if (tuStage < 2) { tuTips.push('Let Copilot use built-in tools like file search and terminal in agent mode'); }
+		if (tuStage < 3) { tuTips.push('Explore tools like editFiles, run_in_terminal, and GitHub integrations'); }
+		if (tuStage < 4) { tuTips.push('Set up MCP servers for external tools — databases, APIs, cloud services'); }
+
+		// ---------- 5. Customization ----------
+		const cuEvidence: string[] = [];
+		const cuTips: string[] = [];
+		let cuStage = 1;
+
+		if (p.contextReferences.copilotInstructions > 0) {
+			cuEvidence.push(`copilot-instructions.md referenced ${p.contextReferences.copilotInstructions} time(s)`);
+			cuStage = 2;
+		}
+
+		if (p.contextReferences.agentsMd > 0) {
+			cuEvidence.push(`agents.md referenced ${p.contextReferences.agentsMd} time(s)`);
+			cuStage = Math.max(cuStage, 2) as 1 | 2 | 3 | 4;
+		}
+
+		// Detect custom agent / skill usage from byPath
+		const customPaths = Object.keys(p.contextReferences.byPath || {});
+		const agentPaths = customPaths.filter(fp =>
+			/\.github[\\/]copilot/i.test(fp) || /agents?\.(md|yml)/i.test(fp) || /skills?[\\/]/i.test(fp)
+		);
+		if (agentPaths.length > 1) {
+			cuEvidence.push(`${agentPaths.length} customization files detected in paths`);
+			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+		}
+
+		// Model selection awareness (choosing specific models)
+		const uniqueModels = [...new Set([
+			...p.modelSwitching.standardModels,
+			...p.modelSwitching.premiumModels
+		])];
+		if (uniqueModels.length >= 3) {
+			cuEvidence.push(`Used ${uniqueModels.length} different models`);
+			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+		}
+		if (uniqueModels.length >= 5 && agentPaths.length >= 2) {
+			cuStage = 4;
+		}
+
+		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
+		if (cuStage < 3) { cuTips.push('Add custom agents (agents.md) and explore different AI models for tasks'); }
+		if (cuStage < 4) { cuTips.push('Build skill files, use prompt templates, and fine-tune model selection per workflow'); }
+
+		// ---------- 6. Workflow Integration ----------
+		const wiEvidence: string[] = [];
+		const wiTips: string[] = [];
+		let wiStage = 1;
+
+		// Sessions count reflects regularity
+		if (p.sessions >= 3) {
+			wiEvidence.push(`${p.sessions} sessions in the last 30 days`);
+			wiStage = 2;
+		}
+
+		// Multi-mode usage (ask + edit or agent)
+		const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.edit > 0, p.modeUsage.agent > 0].filter(Boolean).length;
+		if (modesUsed >= 2) {
+			wiEvidence.push(`Uses ${modesUsed} modes (ask/edit/agent)`);
+			wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
+		}
+
+		// High session count + multi-mode + context engineering
+		if (p.sessions >= 15 && modesUsed >= 2 && totalContextRefs >= 10) {
+			wiStage = 4;
+			wiEvidence.push('Deep integration: high session count, multiple modes, and rich context usage');
+		}
+
+		if (wiStage < 2) { wiTips.push('Use Copilot more regularly — even for quick questions'); }
+		if (wiStage < 3) { wiTips.push('Combine ask mode with edit or agent mode in your daily workflow'); }
+		if (wiStage < 4) { wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); }
+
+		// ---------- Overall score (median) ----------
+		const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
+		const mid = Math.floor(scores.length / 2);
+		const overallStage = scores.length % 2 === 0
+			? Math.round((scores[mid - 1] + scores[mid]) / 2)
+			: scores[mid];
+
+		return {
+			overallStage,
+			overallLabel: stageLabels[overallStage] || `Stage ${overallStage}`,
+			categories: [
+				{ category: 'Prompt Engineering', icon: '💬', stage: peStage, evidence: peEvidence, tips: peTips },
+				{ category: 'Context Engineering', icon: '📎', stage: ceStage, evidence: ceEvidence, tips: ceTips },
+				{ category: 'Agentic', icon: '🤖', stage: agStage, evidence: agEvidence, tips: agTips },
+				{ category: 'Tool Usage', icon: '🔧', stage: tuStage, evidence: tuEvidence, tips: tuTips },
+				{ category: 'Customization', icon: '⚙️', stage: cuStage, evidence: cuEvidence, tips: cuTips },
+				{ category: 'Workflow Integration', icon: '🔄', stage: wiStage, evidence: wiEvidence, tips: wiTips }
+			],
+			period: p,
+			lastUpdated: stats.lastUpdated.toISOString()
+		};
+	}
+
+	public async showMaturity(): Promise<void> {
+		this.log('🎯 Opening Copilot Fluency Score dashboard');
+
+		// If panel already exists, dispose and recreate with fresh data
+		if (this.maturityPanel) {
+			this.maturityPanel.dispose();
+			this.maturityPanel = undefined;
+		}
+
+		const maturityData = await this.calculateMaturityScores();
+
+		this.maturityPanel = vscode.window.createWebviewPanel(
+			'copilotMaturity',
+			'Copilot Fluency Score',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
+
+		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshMaturityPanel();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+			}
+		});
+
+		this.maturityPanel.onDidDispose(() => {
+			this.log('🎯 Copilot Fluency Score dashboard closed');
+			this.maturityPanel = undefined;
+		});
+	}
+
+	private async refreshMaturityPanel(): Promise<void> {
+		if (!this.maturityPanel) { return; }
+		this.log('🔄 Refreshing Copilot Fluency Score dashboard');
+		await this.updateTokenStats();
+		this.log('✅ Copilot Fluency Score dashboard refreshed');
+	}
+
+	private getMaturityHtml(webview: vscode.Webview, data: {
+		overallStage: number;
+		overallLabel: string;
+		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
+		period: UsageAnalysisPeriod;
+		lastUpdated: string;
+	}): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'maturity.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Copilot Fluency Score</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_MATURITY__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
 	}
 
 	private getNonce(): string {
@@ -4708,6 +5093,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showUsageAnalysis':
 					await this.showUsageAnalysis();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
 					break;
 				case 'clearCache':
 					this.log('clearCache message received from diagnostics webview');
@@ -5275,6 +5663,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.analysisPanel) {
 			this.analysisPanel.dispose();
 		}
+		if (this.maturityPanel) {
+			this.maturityPanel.dispose();
+		}
 		// Save cache to storage before disposing (fire-and-forget async operation)
 		// Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
 		// We can't await here since dispose() is synchronous
@@ -5369,6 +5760,12 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showUsageAnalysis();
 	});
 
+	// Register the show maturity / fluency score command
+	const showMaturityCommand = vscode.commands.registerCommand('copilot-token-tracker.showMaturity', async () => {
+		tokenTracker.log('Show maturity command called');
+		await tokenTracker.showMaturity();
+	});
+
 	// Register the generate diagnostic report command
 	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
 		tokenTracker.log('Generate diagnostic report command called');
@@ -5382,7 +5779,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }

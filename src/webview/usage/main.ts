@@ -130,6 +130,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${buttonHtml('btn-details')}
 				${buttonHtml('btn-chart')}
 				${buttonHtml('btn-diagnostics')}
+				${buttonHtml('btn-maturity')}
 				</div>
 			</div>
 
@@ -468,6 +469,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+	document.getElementById('btn-maturity')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showMaturity' });
 	});
 }
 

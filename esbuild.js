@@ -47,6 +47,7 @@ async function main() {
 			usage: 'src/webview/usage/main.ts',
 			diagnostics: 'src/webview/diagnostics/main.ts',
 			logviewer: 'src/webview/logviewer/main.ts',
+			maturity: 'src/webview/maturity/main.ts',
 		},
 		bundle: true,
 		format: 'iife',
