@@ -1,5 +1,5 @@
 {
-  "$schema": "Defines Copilot customization file patterns to scan in workspaces",
+  "description": "Defines Copilot customization file patterns to scan in workspaces",
   "lastUpdated": "2026-02-11",
   "stalenessThresholdDays": 90,
   "excludeDirs": ["node_modules", ".git", "dist", "build", "out", "__pycache__", ".venv", ".next", "coverage"],
