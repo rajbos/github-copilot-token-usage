@@ -88,6 +88,7 @@ interface SessionFileCache {
 	lastInteraction?: string | null; // ISO timestamp of last interaction
 	title?: string; // Session title (customTitle from session file)
 	repository?: string; // Git remote origin URL for the session's workspace
+    workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
 }
 
 // New interfaces for usage analysis
@@ -222,7 +223,7 @@ interface SessionLogData {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 15; // Fix MCP tools detection in delta-based JSONL session analysis (2026-02-08)
+	private static readonly CACHE_VERSION = 16; // Bumped to include workspaceFolderPath in cache (2026-02-11)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
