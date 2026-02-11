@@ -176,6 +176,7 @@ interface UsageAnalysisStats {
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
 	lastUpdated: Date;
+	customizationSummary?: WorkspaceCustomizationSummary;
 }
 
 interface UsageAnalysisPeriod {
@@ -232,6 +233,18 @@ interface SessionLogData {
 	lastInteraction: string | null;
 	turns: ChatTurn[];
 	usageAnalysis?: SessionUsageAnalysis;
+}
+
+// Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)
+interface WorkspaceCustomizationSummary {
+	workspaces: {
+		[workspacePath: string]: {
+			name: string;
+			files: CustomizationFileEntry[];
+		};
+	};
+	totalFiles: number;
+	staleFiles: number;
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -1448,6 +1461,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 					processed++;
 				}
 			}
+
+			// Build customization summary by scanning workspaces referenced by session files
+			try {
+				const workspacePaths = new Set<string>();
+				for (const sf of sessionFiles) {
+					const ws = this.resolveWorkspaceFolderFromSessionPath(sf);
+					if (ws) { workspacePaths.add(path.normalize(ws)); }
+				}
+
+				const customizationSummary: WorkspaceCustomizationSummary = { workspaces: {}, totalFiles: 0, staleFiles: 0 };
+				for (const wsPath of workspacePaths) {
+					try {
+						const files = this.scanWorkspaceCustomizationFiles(wsPath);
+						customizationSummary.workspaces[wsPath] = { name: path.basename(wsPath), files };
+						customizationSummary.totalFiles += files.length;
+						customizationSummary.staleFiles += files.filter(f => f.isStale).length;
+					} catch (e) {
+						// ignore per-workspace scan failures
+					}
+				}
+
+				// Attach to month-level result object later via return
+				// Store temporarily on local variable to include in return value
+				// We'll include it below in the return object
+				// Save to a local variable in outer scope by attaching to monthStats variable? instead, set after try-catch
+				// Use a local const to pass through
+				// Attach to monthStats object? We'll include in the returned UsageAnalysisStats object
+				// Save to a property on `this` for potential later use
+				(this as any)._lastCustomizationSummary = customizationSummary;
+			} catch (e) {
+				// ignore overall customization scanning errors
+			}
 		} catch (error) {
 			this.error('Error calculating usage analysis stats:', error);
 		}
@@ -1459,7 +1504,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			today: todayStats,
 			last30Days: last30DaysStats,
 			month: monthStats,
-			lastUpdated: now
+			lastUpdated: now,
+			customizationSummary: (this as any)._lastCustomizationSummary as WorkspaceCustomizationSummary | undefined
 		};
 	}
 
