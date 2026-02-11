@@ -431,46 +431,53 @@ class CopilotTokenTracker implements vscode.Disposable {
 						});
 					}
 				} else if (scanMode === 'oneLevel') {
-					// Find the first '*' segment to determine base directory
-					// Treat oneLevel as: enumerate a single directory and glob-match within it.
+					// Split at the first '*' wildcard to find base directory and remaining path
+					// e.g., ".github/skills/*/SKILL.md" -> base: ".github/skills/", remaining: "/SKILL.md"
 					const normalizedPattern = relativePattern.replace(/\\/g, '/');
-					const segments = normalizedPattern.split('/').filter(s => s.length > 0);
-					if (segments.length === 0) { continue; }
+					const starIndex = normalizedPattern.indexOf('*');
+					if (starIndex === -1) { continue; } // No wildcard, skip
 
-					// The last segment is the filename glob (e.g., "*.md"); preceding segments form the base directory.
-					const filePattern = segments[segments.length - 1];
-					const baseDirSegments = segments.slice(0, segments.length - 1);
-					const baseDir = path.join(workspaceFolderPath, ...baseDirSegments);
+					// Split the pattern at the '*'
+					const beforeStar = normalizedPattern.substring(0, starIndex);
+					const afterStar = normalizedPattern.substring(starIndex + 1);
+
+					// The base directory is everything before the '*' (trim trailing slash)
+					const baseDirPath = beforeStar.replace(/\/$/, '');
+					const baseDir = baseDirPath ? path.join(workspaceFolderPath, baseDirPath) : workspaceFolderPath;
 
 					if (!fs.existsSync(baseDir)) { continue; }
 					const baseStat = fs.statSync(baseDir);
 					if (!baseStat.isDirectory()) { continue; }
 
-					// Convert simple glob pattern to a RegExp for matching file names.
-					const escaped = filePattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-					const regexSource = '^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-					const globRegex = new RegExp(regexSource);
-
+					// Enumerate directories in the base directory
 					const entries = fs.readdirSync(baseDir, { withFileTypes: true });
 					for (const entry of entries) {
-						// Only consider files for oneLevel patterns.
-						if (!entry.isFile()) { continue; }
-						// Directory exclusions are irrelevant for files but keep the check harmlessly.
-						if (entry.isDirectory() && excludeDirs.includes(entry.name)) { continue; }
-						if (!globRegex.test(entry.name)) { continue; }
+						// Only consider directories at this level (unless afterStar is just a filename)
+						if (excludeDirs.includes(entry.name)) { continue; }
+						
+						// Construct the full path with this entry replacing the '*'
+						const fullPattern = afterStar.startsWith('/') ? afterStar.substring(1) : afterStar;
+						const candidatePath = path.join(baseDir, entry.name, fullPattern);
 
-						const absCandidate = path.join(baseDir, entry.name);
-						const stat = fs.statSync(absCandidate);
-						results.push({
-							path: absCandidate,
-							relativePath: path.relative(workspaceFolderPath, absCandidate).replace(/\\/g, '/'),
-							type: pattern.type || 'unknown',
-							icon: pattern.icon || '',
-							label: pattern.label || path.basename(absCandidate),
-							name: path.basename(absCandidate),
-							lastModified: stat.mtime.toISOString(),
-							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
-						});
+						// Check if this path exists
+						if (fs.existsSync(candidatePath)) {
+							const stat = fs.statSync(candidatePath);
+							if (stat.isFile()) {
+								// For skills, use the directory name (parent of SKILL.md) as the display name
+								const displayName = pattern.type === 'skill' ? entry.name : path.basename(candidatePath);
+								
+								results.push({
+									path: candidatePath,
+									relativePath: path.relative(workspaceFolderPath, candidatePath).replace(/\\/g, '/'),
+									type: pattern.type || 'unknown',
+									icon: pattern.icon || '',
+									label: pattern.label || displayName,
+									name: displayName,
+									lastModified: stat.mtime.toISOString(),
+									isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+								});
+							}
+						}
 					}
 				} else if (scanMode === 'recursive') {
 					const maxDepth = typeof pattern.maxDepth === 'number' ? pattern.maxDepth : 6;
