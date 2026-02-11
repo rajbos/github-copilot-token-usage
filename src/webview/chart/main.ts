@@ -79,7 +79,8 @@ function renderLayout(data: InitialChartData): void {
 		createButton(BUTTONS['btn-refresh']),
 		createButton(BUTTONS['btn-details']),
 		createButton(BUTTONS['btn-usage']),
-		createButton(BUTTONS['btn-diagnostics'])
+		createButton(BUTTONS['btn-diagnostics']),
+		createButton(BUTTONS['btn-maturity'])
 	);
 	header.append(headerLeft, buttons);
 
@@ -161,6 +162,9 @@ function wireInteractions(data: InitialChartData): void {
 
 	const diagnostics = document.getElementById('btn-diagnostics');
 	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+
+	const maturity = document.getElementById('btn-maturity');
+	maturity?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 
 	const viewButtons = [
 		{ id: 'view-total', view: 'total' as const },

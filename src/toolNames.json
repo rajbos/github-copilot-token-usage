@@ -28,4 +28,8 @@
   ,"todoList": "TODO List"
   ,"terminal": "Terminal"
   ,"terminal_last_command": "Terminal Last Command"
+  ,"github_pull_request": "GitHub Pull Request"
+  ,"github_repo": "GitHub Repository"
+  ,"editFiles": "Edit Files"
+  ,"listFiles": "List Files"
 }
