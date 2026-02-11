@@ -187,6 +187,50 @@ body {
 	font-size: 13px;
 }
 
+/* Customization files list */
+.cf-list {
+	background: transparent;
+	border-radius: 6px;
+	padding: 6px 0;
+}
+
+.cf-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 10px;
+}
+
+.cf-row:hover {
+	background: rgba(255,255,255,0.02);
+}
+
+.cf-row .cf-meta {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+}
+
+.cf-copy {
+	background: transparent;
+	border: 1px solid rgba(255,255,255,0.04);
+	color: #d0d0d0;
+	padding: 6px 8px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 12px;
+}
+
+.cf-copy:hover {
+	background: rgba(255,255,255,0.02);
+}
+
+.cf-stale {
+	color: #f59e0b;
+	font-weight: 700;
+	margin-left: 8px;
+}
+
 .two-column {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
