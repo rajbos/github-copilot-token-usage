@@ -212,7 +212,7 @@ body {
 	background: #18181b;
 }
 
-.customization-matrix tbody tr:hover {
+.customization-matrix tbody tr:hover td {
 	background: #1f1f24;
 }
 
