@@ -446,8 +446,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (!entry.isDirectory() && !entry.isFile()) { continue; }
 						// Skip excluded dirs when entry is a directory
 						if (entry.isDirectory() && excludeDirs.includes(entry.name)) { continue; }
-						// Build candidate path by substituting the first '*' with the entry name
-						const substituted = relativePattern.replace('*', entry.name);
+						// Build candidate path by substituting ALL '*' occurrences with the entry name
+						// Use split/join to avoid regex edge-cases and ensure every wildcard is replaced
+						const substituted = relativePattern.split('*').join(entry.name);
 						const absCandidate = path.join(workspaceFolderPath, substituted);
 						if (fs.existsSync(absCandidate)) {
 							const stat = fs.statSync(absCandidate);
