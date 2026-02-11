@@ -23,6 +23,30 @@ export type ContextReferenceUsage = {
 	byPath: { [path: string]: number };
 };
 
+/** A single customization file found in a workspace */
+export type CustomizationFileEntry = {
+	path: string;           // Absolute file path
+	relativePath: string;   // Workspace-relative path for display
+	type: string;           // From pattern definition (e.g., 'instructions', 'skill', 'agent')
+	icon: string;           // Emoji icon from pattern definition
+	label: string;          // Human-readable label from pattern definition
+	name: string;           // Display name (e.g., skill directory name, or filename)
+	lastModified: string | null;  // ISO date string, null if file not accessible
+	isStale: boolean;       // true if lastModified > stalenessThresholdDays ago
+};
+
+/** Customization files summary for all workspaces found in sessions */
+export type WorkspaceCustomizationSummary = {
+	workspaces: {
+		[workspacePath: string]: {
+			name: string;                   // Workspace folder basename
+			files: CustomizationFileEntry[];
+		};
+	};
+	totalFiles: number;
+	staleFiles: number;
+};
+
 /**
  * Calculate the total number of context references.
  * This is the single source of truth for what constitutes a context reference.
