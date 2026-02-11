@@ -399,8 +399,8 @@ function renderBackendStoragePanel(backendInfo: BackendStorageInfo | undefined):
 			</div>
 			
 			<div class="button-group">
-				<button class="button" id="btn-configure-backend">
-					<span>🔧</span>
+				<button class="button" id="btn-configure-backend" aria-label="Configure Azure Storage Backend">
+					<span aria-hidden="true">🔧</span>
 					<span>Configure Backend</span>
 				</button>
 			</div>
