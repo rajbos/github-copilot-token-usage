@@ -5,6 +5,7 @@ import * as os from 'os';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
+import customizationPatternsData from './customizationPatterns.json';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
@@ -88,6 +89,19 @@ interface SessionFileCache {
 	lastInteraction?: string | null; // ISO timestamp of last interaction
 	title?: string; // Session title (customTitle from session file)
 	repository?: string; // Git remote origin URL for the session's workspace
+    workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
+}
+
+// Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)
+interface CustomizationFileEntry {
+	path: string;
+	relativePath: string;
+	type: string;
+	icon: string;
+	label: string;
+	name: string;
+	lastModified: string | null;
+	isStale: boolean;
 }
 
 // New interfaces for usage analysis
@@ -202,6 +216,24 @@ interface UsageAnalysisStats {
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
 	lastUpdated: Date;
+	customizationMatrix?: WorkspaceCustomizationMatrix;
+}
+
+/** Matrix types used for Usage Analysis customization matrix */
+type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+
+interface WorkspaceCustomizationRow {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+}
+
+interface WorkspaceCustomizationMatrix {
+	customizationTypes: Array<{ id: string; icon: string; label: string }>;
+	workspaces: WorkspaceCustomizationRow[];
+	totalWorkspaces: number;
+	workspacesWithIssues: number;
 }
 
 interface UsageAnalysisPeriod {
@@ -267,9 +299,21 @@ interface SessionLogData {
 	usageAnalysis?: SessionUsageAnalysis;
 }
 
+// Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)
+interface WorkspaceCustomizationSummary {
+	workspaces: {
+		[workspacePath: string]: {
+			name: string;
+			files: CustomizationFileEntry[];
+		};
+	};
+	totalFiles: number;
+	staleFiles: number;
+}
+
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 15; // Fix MCP tools detection in delta-based JSONL session analysis (2026-02-08)
+	private static readonly CACHE_VERSION = 16; // Bumped to include workspaceFolderPath in cache (2026-02-11)
 	
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -286,6 +330,239 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Helper method to get total tokens from ModelUsage
 	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
 		return Object.values(modelUsage).reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0);
+	}
+
+	/**
+	 * Resolve the workspace folder full path from a session file path.
+	 * Looks for a `workspaceStorage/<id>/` segment and reads `workspace.json` or `meta.json`.
+	 * Synchronous by design to keep the analysis flow simple and cached.
+	 */
+	// Helper: read a workspaceStorage JSON file and extract a candidate folder path from configured keys
+	private parseWorkspaceStorageJsonFile(jsonPath: string, candidateKeys: string[]): string | undefined {
+		try {
+			const raw = fs.readFileSync(jsonPath, 'utf8');
+			const obj = JSON.parse(raw);
+			for (const key of candidateKeys) {
+				const candidate = obj[key];
+				if (typeof candidate !== 'string') { continue; }
+				const pathCandidate = candidate.replace(/^file:\/\//, '');
+				// Prefer vscode.Uri.parse -> fsPath when possible
+				try {
+					const uri = vscode.Uri.parse(candidate);
+					if (uri.fsPath && uri.fsPath.length > 0) {
+						return uri.fsPath;
+					}
+				} catch {}
+				try {
+					return decodeURIComponent(pathCandidate);
+				} catch {
+					return pathCandidate;
+				}
+			}
+		} catch {
+			// ignore parse/read errors
+		}
+		return undefined;
+	}
+
+	private resolveWorkspaceFolderFromSessionPath(sessionFilePath: string): string | undefined {
+		try {
+			// Normalize and split path into segments
+			const normalized = sessionFilePath.replace(/\\/g, '/');
+			const parts = normalized.split('/').filter(p => p.length > 0);
+			const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+			if (idx === -1 || idx + 1 >= parts.length) {
+				return undefined; // Not a workspace-scoped session file
+			}
+
+			const workspaceId = parts[idx + 1];
+			// Return cached value if present
+			if (this._workspaceIdToFolderCache.has(workspaceId)) {
+				return this._workspaceIdToFolderCache.get(workspaceId);
+			}
+
+			// Construct the workspaceStorage folder path by slicing the original normalized path
+			// This preserves absolute-root semantics on both Windows and Unix.
+			const workspaceSegment = `workspaceStorage/${workspaceId}`;
+			const lowerNormalized = normalized.toLowerCase();
+			const segmentIndex = lowerNormalized.indexOf(workspaceSegment.toLowerCase());
+			if (segmentIndex === -1) {
+				// Should not happen if parts detection succeeded, but guard just in case
+				this._workspaceIdToFolderCache.set(workspaceId, undefined);
+				return undefined;
+			}
+			const folderPathNormalized = normalized.substring(0, segmentIndex + workspaceSegment.length);
+			const workspaceStorageFolder = path.normalize(folderPathNormalized);
+
+			const workspaceJsonPath = path.join(workspaceStorageFolder, 'workspace.json');
+			const metaJsonPath = path.join(workspaceStorageFolder, 'meta.json');
+
+			let folderFsPath: string | undefined;
+
+			if (fs.existsSync(workspaceJsonPath)) {
+				folderFsPath = this.parseWorkspaceStorageJsonFile(workspaceJsonPath, ['folder', 'workspace', 'configuration', 'uri', 'path']);
+			} else if (fs.existsSync(metaJsonPath)) {
+				folderFsPath = this.parseWorkspaceStorageJsonFile(metaJsonPath, ['folder', 'uri', 'workspace', 'path']);
+			}
+
+			// Normalize to undefined if folderFsPath is falsy
+			if (!folderFsPath || folderFsPath.length === 0) {
+				this._workspaceIdToFolderCache.set(workspaceId, undefined);
+				return undefined;
+			}
+
+			this._workspaceIdToFolderCache.set(workspaceId, folderFsPath);
+			return folderFsPath;
+		} catch (err) {
+			// On any error, cache undefined to avoid repeated failures
+			try {
+				const parts = sessionFilePath.replace(/\\/g, '/').split('/').filter(p => p.length > 0);
+				const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+				if (idx !== -1 && idx + 1 < parts.length) {
+					this._workspaceIdToFolderCache.set(parts[idx + 1], undefined);
+				}
+			} catch {}
+			return undefined;
+		}
+	}
+
+	/**
+	 * Convert a simple glob pattern to a RegExp.
+	 * Supports: ** (match multiple path segments), * (match within a segment), ?.
+	 */
+	private globToRegExp(glob: string, caseInsensitive: boolean = false): RegExp {
+		// Normalize to posix-style
+		let pattern = glob.replace(/\\/g, '/');
+		// Escape regex special chars
+		pattern = pattern.replace(/([.+^=!:${}()|[\]\\])/g, '\\$1');
+		// Replace /**/ or ** with placeholder
+		pattern = pattern.replace(/(^|\/)\*\*\/(?!$)/g, '$1__GLOBSTAR__/');
+		pattern = pattern.replace(/\*\*/g, '__GLOBSTAR__');
+		// Replace single * with [^/]* and ? with .
+		pattern = pattern.replace(/\*/g, '[^/]*').replace(/\?/g, '.');
+		// Replace globstar placeholder with .* (allow path separators)
+		pattern = pattern.replace(/__GLOBSTAR__\//g, '(?:.*?/?)').replace(/__GLOBSTAR__/g, '.*');
+		// Anchor
+		const flags = caseInsensitive ? 'i' : '';
+		return new RegExp('^' + pattern + '$', flags);
+	}
+
+	/**
+	 * Scan a workspace folder for customization files according to `customizationPatterns.json`.
+	 */
+	private scanWorkspaceCustomizationFiles(workspaceFolderPath: string): CustomizationFileEntry[] {
+		const results: CustomizationFileEntry[] = [];
+		if (!workspaceFolderPath || !fs.existsSync(workspaceFolderPath)) { return results; }
+
+		const cfg = customizationPatternsData as any;
+		const stalenessDays = typeof cfg.stalenessThresholdDays === 'number' ? cfg.stalenessThresholdDays : 90;
+		const excludeDirs: string[] = Array.isArray(cfg.excludeDirs) ? cfg.excludeDirs : [];
+
+		for (const pattern of (cfg.patterns || [])) {
+			try {
+				const scanMode = pattern.scanMode || 'exact';
+				const relativePattern = pattern.path as string;
+				if (scanMode === 'exact') {
+					const absPath = path.join(workspaceFolderPath, relativePattern);
+					if (fs.existsSync(absPath)) {
+						const stat = fs.statSync(absPath);
+						results.push({
+							path: absPath,
+							relativePath: path.relative(workspaceFolderPath, absPath).replace(/\\/g, '/'),
+							type: pattern.type || 'unknown',
+							icon: pattern.icon || '',
+							label: pattern.label || path.basename(absPath),
+							name: path.basename(absPath),
+								lastModified: stat.mtime.toISOString(),
+							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+						});
+					}
+				} else if (scanMode === 'oneLevel') {
+					// Find the first '*' segment to determine base directory
+					// Treat oneLevel as: enumerate a single directory and glob-match within it.
+					const normalizedPattern = relativePattern.replace(/\\/g, '/');
+					const segments = normalizedPattern.split('/').filter(s => s.length > 0);
+					if (segments.length === 0) { continue; }
+
+					// The last segment is the filename glob (e.g., "*.md"); preceding segments form the base directory.
+					const filePattern = segments[segments.length - 1];
+					const baseDirSegments = segments.slice(0, segments.length - 1);
+					const baseDir = path.join(workspaceFolderPath, ...baseDirSegments);
+
+					if (!fs.existsSync(baseDir)) { continue; }
+					const baseStat = fs.statSync(baseDir);
+					if (!baseStat.isDirectory()) { continue; }
+
+					// Convert simple glob pattern to a RegExp for matching file names.
+					const escaped = filePattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+					const regexSource = '^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+					const globRegex = new RegExp(regexSource);
+
+					const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+					for (const entry of entries) {
+						// Only consider files for oneLevel patterns.
+						if (!entry.isFile()) { continue; }
+						// Directory exclusions are irrelevant for files but keep the check harmlessly.
+						if (entry.isDirectory() && excludeDirs.includes(entry.name)) { continue; }
+						if (!globRegex.test(entry.name)) { continue; }
+
+						const absCandidate = path.join(baseDir, entry.name);
+						const stat = fs.statSync(absCandidate);
+						results.push({
+							path: absCandidate,
+							relativePath: path.relative(workspaceFolderPath, absCandidate).replace(/\\/g, '/'),
+							type: pattern.type || 'unknown',
+							icon: pattern.icon || '',
+							label: pattern.label || path.basename(absCandidate),
+							name: path.basename(absCandidate),
+							lastModified: stat.mtime.toISOString(),
+							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+						});
+					}
+				} else if (scanMode === 'recursive') {
+					const maxDepth = typeof pattern.maxDepth === 'number' ? pattern.maxDepth : 6;
+					const caseInsensitive = !!pattern.caseInsensitive;
+					const regex = this.globToRegExp(relativePattern, caseInsensitive);
+					// Walk recursively
+					const walk = (dir: string, depth: number) => {
+						if (depth < 0) { return; }
+						let children: fs.Dirent[] = [];
+						try { children = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+						for (const child of children) {
+							const name = child.name;
+							if (child.isDirectory()) {
+								if (excludeDirs.includes(name)) { continue; }
+								walk(path.join(dir, name), depth - 1);
+							} else if (child.isFile()) {
+								const rel = path.relative(workspaceFolderPath, path.join(dir, name)).replace(/\\/g, '/');
+								if (regex.test(rel)) {
+									const abs = path.join(dir, name);
+									const stat = fs.statSync(abs);
+									results.push({
+										path: abs,
+										relativePath: rel,
+										type: pattern.type || 'unknown',
+										icon: pattern.icon || '',
+										label: pattern.label || path.basename(abs),
+										name: path.basename(abs),
+											lastModified: stat.mtime.toISOString(),
+										isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+									});
+								}
+							}
+						}
+					};
+					walk(workspaceFolderPath, maxDepth);
+				}
+			} catch (e) {
+				// ignore per-pattern errors
+			}
+		}
+
+		// Deduplicate by absolute path
+		const uniq: { [p: string]: CustomizationFileEntry } = {};
+		for (const r of results) { uniq[path.normalize(r.path)] = r; }
+		return Object.values(uniq);
 	}
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
@@ -306,6 +583,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _sessionFilesCache: string[] | null = null;
 	private _sessionFilesCacheTime: number = 0;
 	private static readonly SESSION_FILES_CACHE_TTL = 60000; // Cache for 60 seconds
+
+	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
+	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
+
+	// Cache mapping workspaceFolderPath -> found customization files (avoid re-scanning)
+	private _customizationFilesCache: Map<string, CustomizationFileEntry[]> = new Map();
+
+	// Last computed customization matrix for usage analysis (typed)
+	private _lastCustomizationMatrix?: WorkspaceCustomizationMatrix;
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
@@ -834,17 +1120,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const fileSize = fileStats.size;
 					const wasCached = this.isCacheValid(sessionFile, mtime, fileSize);
 					
-					// Get interactions count (uses cache if available)
-					const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime, fileSize);
+					// Get all session data in one call to avoid multiple cache lookups
+					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+					const interactions = sessionData.interactions;
 					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
 					if (interactions === 0) {
 						skippedFiles++;
 						continue;
 					}
 					
-					// Get remaining data (all use cache if available)
-					const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime, fileSize);
-					const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime, fileSize);
+					// Extract remaining data from the cached session
+					const tokens = sessionData.tokens;
+					const modelUsage = sessionData.modelUsage;
 					const editorType = this.getEditorTypeFromPath(sessionFile);
 					
 					// For date filtering, get lastInteraction from session details
@@ -1061,9 +1348,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (fileStats.mtime >= thirtyDaysAgo) {
 						const mtime = fileStats.mtime.getTime();
 						const fileSize = fileStats.size;
-						const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime, fileSize);
-						const interactions = await this.countInteractionsInSessionCached(sessionFile, mtime, fileSize);
-						const modelUsage = await this.getModelUsageFromSessionCached(sessionFile, mtime, fileSize);
+						// Get all session data in one call to avoid multiple cache lookups
+						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+						const tokens = sessionData.tokens;
+						const interactions = sessionData.interactions;
+						const modelUsage = sessionData.modelUsage;
 						const editorType = this.getEditorTypeFromPath(sessionFile);
 						
 						// Get repository from cache if available
@@ -1250,6 +1539,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const last30DaysStats = emptyPeriod();
 		const monthStats = emptyPeriod();
 
+		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
+		const workspaceSessionCounts = new Map<string, number>();
+
+		// Clear short-lived caches for this analysis run
+		this._workspaceIdToFolderCache.clear();
+		this._customizationFilesCache.clear();
+
 		try {
 			const sessionFiles = await this.getCopilotSessionFiles();
 			this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
@@ -1279,6 +1575,80 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (hasCustomization && !last30DaysStats.repositoriesWithCustomization.includes(repository)) {
 						last30DaysStats.repositoriesWithCustomization.push(repository);
 					}
+						// Get all session data in one call to avoid multiple cache lookups
+						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+						const interactions = sessionData.interactions;
+						const analysis = sessionData.usageAnalysis || {
+							toolCalls: { total: 0, byTool: {} },
+							modeUsage: { ask: 0, edit: 0, agent: 0 },
+							contextReferences: {
+								file: 0,
+								selection: 0,
+								implicitSelection: 0,
+								symbol: 0,
+								codebase: 0,
+								workspace: 0,
+								terminal: 0,
+								vscode: 0,
+								terminalLastCommand: 0,
+								terminalSelection: 0,
+								clipboard: 0,
+								changes: 0,
+								outputPanel: 0,
+								problemsPanel: 0,
+								byKind: {},
+								copilotInstructions: 0,
+								agentsMd: 0,
+								byPath: {}
+							},
+							mcpTools: { total: 0, byServer: {}, byTool: {} },
+							modelSwitching: {
+								uniqueModels: [],
+								modelCount: 0,
+								switchCount: 0,
+								tiers: { standard: [], premium: [], unknown: [] },
+								hasMixedTiers: false
+							}
+						};
+
+						// Exclude empty sessions (no interactions) from usage analysis
+						if (interactions === 0) {
+							// Skip counting this session as it contains no user interactions
+							processed++;
+							if (processed % progressInterval === 0) {
+								this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed/sessionFiles.length*100)}%)`);
+							}
+							continue;
+						}
+
+						// Add to last 30 days stats
+						last30DaysStats.sessions++;
+						this.mergeUsageAnalysis(last30DaysStats, analysis);
+
+						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
+						try {
+							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
+							if (workspaceFolder) {
+								const norm = path.normalize(workspaceFolder);
+								workspaceSessionCounts.set(norm, (workspaceSessionCounts.get(norm) || 0) + 1);
+								if (!this._customizationFilesCache.has(norm)) {
+									try {
+										const files = this.scanWorkspaceCustomizationFiles(norm);
+										this._customizationFilesCache.set(norm, files);
+									} catch (e) {
+										// ignore scan errors per workspace
+									}
+								}
+							}
+						} catch (e) {
+							// ignore workspace resolution errors
+						}
+
+						// Add to month stats if modified this calendar month
+						if (fileStats.mtime >= monthStart) {
+							monthStats.sessions++;
+							this.mergeUsageAnalysis(monthStats, analysis);
+						}
 
 					// Add to month stats if modified this calendar month
 					if (fileStats.mtime >= monthStart) {
@@ -1314,6 +1684,61 @@ class CopilotTokenTracker implements vscode.Disposable {
 				processed++;
 			}
 			}
+
+			// Build the customization matrix using scanned workspace data and session counts
+			try {
+				// Unique customization types based on patterns JSON
+				const uniqueTypes = new Map<string, { icon: string; label: string }>();
+				for (const pattern of (customizationPatternsData as any).patterns || []) {
+					if (!uniqueTypes.has(pattern.type)) {
+						uniqueTypes.set(pattern.type, { icon: pattern.icon || '', label: pattern.label || pattern.type });
+					}
+				}
+
+				const customizationTypes = Array.from(uniqueTypes.entries()).map(([id, v]) => ({ id, icon: v.icon, label: v.label }));
+
+				const matrixRows: WorkspaceCustomizationRow[] = [];
+				let workspacesWithIssues = 0;
+
+				for (const [folderPath, sessionCount] of workspaceSessionCounts) {
+					const files = this._customizationFilesCache.get(folderPath) || [];
+					const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
+					for (const type of customizationTypes) {
+						const filesOfType = files.filter(f => f.type === type.id);
+						if (filesOfType.length === 0) {
+							typeStatuses[type.id] = '❌';
+						} else if (filesOfType.some(f => f.isStale)) {
+							typeStatuses[type.id] = '⚠️';
+						} else {
+							typeStatuses[type.id] = '✅';
+						}
+					}
+
+					// Count workspaces that have NO customization files present at all
+					const hasNoCustomizationFiles = customizationTypes.every(t => typeStatuses[t.id] === '❌');
+					if (hasNoCustomizationFiles) { workspacesWithIssues++; }
+
+					matrixRows.push({
+						workspacePath: folderPath,
+						workspaceName: path.basename(folderPath),
+						sessionCount,
+						typeStatuses
+					});
+				}
+
+				matrixRows.sort((a, b) => b.sessionCount - a.sessionCount);
+
+				const customizationMatrix: WorkspaceCustomizationMatrix = {
+					customizationTypes,
+					workspaces: matrixRows,
+					totalWorkspaces: matrixRows.length,
+					workspacesWithIssues
+				};
+
+				this._lastCustomizationMatrix = customizationMatrix;
+			} catch (e) {
+				// ignore overall customization scanning errors
+			}
 		} catch (error) {
 			this.error('Error calculating usage analysis stats:', error);
 		}
@@ -1325,7 +1750,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			today: todayStats,
 			last30Days: last30DaysStats,
 			month: monthStats,
-			lastUpdated: now
+			lastUpdated: now,
+			customizationMatrix: this._lastCustomizationMatrix
 		};
 	}
 
@@ -6166,6 +6592,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			today: stats.today,
 			last30Days: stats.last30Days,
 			month: stats.month,
+			customizationMatrix: stats.customizationMatrix || null,
 			lastUpdated: stats.lastUpdated.toISOString()
 		}).replace(/</g, '\\u003c');
 

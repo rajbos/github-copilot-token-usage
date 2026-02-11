@@ -36,6 +36,7 @@ type UsageAnalysisStats = {
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
 	lastUpdated: string;
+	customizationMatrix?: WorkspaceCustomizationMatrix | null;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -44,8 +45,35 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 	getState: () => TState | undefined;
 };
 
+interface CustomizationFileEntry {
+	path: string;
+	relativePath: string;
+	type: string;
+	icon?: string;
+	label?: string;
+	name?: string;
+	lastModified?: string;
+	isStale?: boolean;
+}
+
+type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+
+interface WorkspaceCustomizationRow {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+}
+
+interface WorkspaceCustomizationMatrix {
+	customizationTypes: Array<{ id: string; icon: string; label: string }>;
+	workspaces: WorkspaceCustomizationRow[];
+	totalWorkspaces: number;
+	workspacesWithIssues: number;
+}
+
 declare global {
-	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats; }
+	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null } }
 }
 
 const vscode = acquireVsCodeApi();
@@ -110,6 +138,86 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const root = document.getElementById('root');
 	if (!root) {
 		return;
+	}
+
+	const matrix =
+		((stats as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null) ??
+		((window.__INITIAL_USAGE__ as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null);
+	let customizationHtml = '';
+	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
+		customizationHtml = `
+			<div class="section">
+				<div class="section-title"><span>🛠️</span><span>Copilot Customization Files</span></div>
+				<div class="section-subtitle">Showing workspace customization status for active workspaces</div>
+				<div style="color:#999; padding:12px;">No workspaces with customization files detected in the last 30 days.</div>
+			</div>`;
+	} else {
+		customizationHtml = `
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+					🛠️ Copilot Customization Files
+				</div>
+				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
+					Showing ${matrix.totalWorkspaces} workspace(s) with Copilot activity in the last 30 days.
+					${matrix.workspacesWithIssues > 0
+						? `<span class="stale-warning">⚠️ ${matrix.workspacesWithIssues} workspace(s) have no customization files.</span>`
+						: '✅ All workspaces have up-to-date customizations.'}
+				</div>
+				<div class="customization-matrix-container">
+					<table class="customization-matrix">
+						<thead>
+							<tr>
+								<th style="text-align: left; padding: 8px; border-bottom: 2px solid #2a2a30;">📂 Workspace</th>
+								<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;">Sessions</th>
+								${matrix.customizationTypes.map(type => `
+									<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;" title="${escapeHtml(type.label)}">
+										${type.icon}
+									</th>
+								`).join('')}
+							</tr>
+						</thead>
+						<tbody>
+							${matrix.workspaces.map(ws => `
+								<tr>
+									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; font-family: 'Courier New', monospace; font-size: 12px;">
+										${escapeHtml(ws.workspaceName)}
+									</td>
+									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; color: #60a5fa; font-weight: 600;">
+										${ws.sessionCount}
+									</td>
+									${matrix.customizationTypes.map(type => {
+										const status = ws.typeStatuses[type.id] || '❓';
+										const statusLabel =
+											status === '✅'
+												? 'Present and fresh'
+												: status === '⚠️'
+													? 'Present but stale'
+													: status === '❌'
+														? 'Missing'
+														: 'Status unknown';
+										return `
+										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
+											<span aria-hidden="true">${status}</span>
+											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${statusLabel}</span>
+										</td>
+										`;
+									}).join('')}
+								</tr>
+							`).join('')}
+						</tbody>
+					</table>
+				</div>
+				<div style="margin-top: 12px; font-size: 10px; color: #999; border-top: 1px solid #2a2a30; padding-top: 8px;">
+					<div style="display: flex; gap: 16px; flex-wrap: wrap;">
+						${matrix.customizationTypes.map(type => `
+							<span>${type.icon} ${escapeHtml(type.label)}</span>
+						`).join('')}
+					</div>
+					<div style="margin-top: 8px;">
+						✅ = Present &amp; Fresh&nbsp;&nbsp;•&nbsp;&nbsp;⚠️ = Present but Stale&nbsp;&nbsp;•&nbsp;&nbsp;❌ = Missing
+					</div>
+				</div>
+			</div>`;
 	}
 
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
@@ -233,6 +341,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					</div>
 				` : ''}
 			</div>
+
+			${customizationHtml}
 
 			<!-- Tool Calls Section -->
 			<div class="section">
@@ -457,6 +567,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 		</div>
 	`;
 
+
+
 	// Wire up navigation buttons
 	document.getElementById('btn-refresh')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'refresh' });
@@ -472,9 +584,23 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-maturity')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showMaturity' });
+
+	// Copy path buttons in customization list
+	Array.from(document.getElementsByClassName('cf-copy')).forEach((el) => {
+		(el as HTMLElement).addEventListener('click', (ev) => {
+			const target = ev.currentTarget as HTMLElement;
+			const path = target.getAttribute('data-path') || '';
+			if (navigator.clipboard && path) {
+				navigator.clipboard.writeText(path).then(() => {
+					target.textContent = 'Copied';
+					setTimeout(() => { target.textContent = 'Copy'; }, 1200);
+				}).catch(() => {
+					vscode.postMessage({ command: 'copyFailed', path });
+				});
+			}
+		});
 	});
 }
-
 
 async function bootstrap(): Promise<void> {
 	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
