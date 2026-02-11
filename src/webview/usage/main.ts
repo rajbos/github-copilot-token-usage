@@ -140,7 +140,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 		return;
 	}
 
-	const matrix = (window.__INITIAL_USAGE__ as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null;
+	const matrix =
+		((stats as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null) ??
+		((window.__INITIAL_USAGE__ as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null);
 	let customizationHtml = '';
 	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
 		customizationHtml = `
