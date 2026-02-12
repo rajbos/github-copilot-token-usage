@@ -5453,18 +5453,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 			...p.modelSwitching.premiumModels
 		])];
 		if (uniqueModels.length >= 3) {
+			// Check for Stage 4 criteria first
+			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
+			
 			// Show threshold context to help users understand the score
-			if (uniqueModels.length >= 5 && reposWithCustomization >= 3) {
+			if (hasStage4Models) {
 				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ with 3+ repos customized → Stage 4)`);
+				cuStage = 4;
 			} else if (uniqueModels.length >= 5) {
 				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ detected, need 3+ repos customized for Stage 4)`);
+				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			} else {
 				cuEvidence.push(`Used ${uniqueModels.length} different models (3+ models → Stage 3)`);
+				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			}
-			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
-		}
-		if (uniqueModels.length >= 5 && reposWithCustomization >= 3) {
-			cuStage = 4;
 		}
 
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
