@@ -1377,19 +1377,6 @@ function renderLayout(data: DiagnosticsData): void {
       vscode.postMessage({ command: "showDetails" }),
     );
 
-  // Backend configuration buttons
-  document
-    .getElementById("btn-configure-backend")
-    ?.addEventListener("click", () => {
-      vscode.postMessage({ command: "configureBackend" });
-    });
-
-  document
-    .getElementById("btn-open-settings")
-    ?.addEventListener("click", () => {
-      vscode.postMessage({ command: "openSettings" });
-    });
-
   setupSortHandlers();
   setupEditorFilterHandlers();
   setupContextRefFilterHandlers();
