@@ -54,7 +54,7 @@ e62ba546-5a3f-4c1a-9b2c-8d4e6f7g8h9i
 
 ### Error Symptoms
 
-When the extension encounters these new format files, it logs warnings like:
+When the extension encountered these new format files (before the fix), it logged warnings like:
 
 ```
 [11:02:34 PM] WARNING: Error analyzing session file details for C:\Users\RobBos\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\copilot.cli.workspaceSessions.423f810e-e0a8-445f-9516-841fe1c446dc.json: SyntaxError: Unexpected token 'e', "e62ba546-5"... is not valid JSON
@@ -62,21 +62,74 @@ When the extension encounters these new format files, it logs warnings like:
 [11:02:35 PM] WARNING: Error analyzing session file details for C:\Users\RobBos\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\copilot.cli.oldGlobalSessions.json: SyntaxError: Unexpected token 'a', "afcac95b-3"... is not valid JSON
 ```
 
-### Code Location
+### Code Locations (Before Fix)
 
-The errors occur in `src/extension.ts` in the `getSessionFileDetails()` method:
+The errors occurred in `src/extension.ts` in multiple methods that parse session files:
 
-1. **Line 3668**: `JSON.parse(fileContent)` - Attempts to parse regular JSON
-2. **Line 3624**: `JSON.parse(line)` - Attempts to parse JSONL line-by-line
-3. **Line 3740**: Error is caught and logged as a warning
+1. **getSessionFileDetails()** - Line ~3668: `JSON.parse(fileContent)` 
+2. **countInteractionsInSession()** - Line ~1938: `JSON.parse(fileContent)`
+3. **getModelUsageFromSession()** - Line ~2069: `JSON.parse(fileContent)`
+4. **trackEnhancedMetrics()** - Line ~2613: Attempted to parse as JSONL
+5. **estimateTokensFromSession()** - Line ~4446: `JSON.parse(fileContent)`
+6. **showFormattedJsonlFile()** - Line ~5092: `JSON.parse(lines[i])`
+7. **getSessionLogData()** - Line ~3782: Attempted to parse as JSONL
 
-### Current Behavior
+### Behavior Before Fix
 
-- Extension attempts to parse the UUID string as JSON
-- JSON.parse() throws a SyntaxError
-- Error is caught and logged as a warning
-- Session file is skipped (returns empty details with 0 interactions)
+- Extension attempted to parse the UUID string as JSON
+- JSON.parse() threw a SyntaxError
+- Error was caught and logged as a warning
+- Session file was skipped (returned empty details with 0 interactions)
 - No crash or data corruption
+
+## Fix Implementation
+
+### Detection Logic
+
+The fix adds UUID detection before attempting to parse files:
+
+```typescript
+// Check if this is a UUID-only file (new Copilot CLI format)
+const trimmedContent = fileContent.trim();
+const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+if (isUuidOnly) {
+    // Skip parsing and return empty/default values
+    return; // or return appropriate empty structure
+}
+```
+
+### Changes Made
+
+The UUID detection was added to all 7 methods that read session files:
+
+1. **getSessionFileDetails()** (line ~3543)
+   - Returns empty details with 0 interactions
+   
+2. **getSessionLogData()** (line ~3806)
+   - Returns complete SessionLogData structure with empty turns
+   
+3. **countInteractionsInSession()** (line ~1912)
+   - Returns 0 (no interactions)
+   
+4. **getModelUsageFromSession()** (line ~1971)
+   - Returns empty ModelUsage object
+   
+5. **trackEnhancedMetrics()** (line ~2617)
+   - Returns early (no metrics to track)
+   
+6. **estimateTokensFromSession()** (line ~4442)
+   - Returns 0 (no tokens to estimate)
+   
+7. **showFormattedJsonlFile()** (line ~5090)
+   - Shows informational message to user explaining the new format
+
+### Behavior After Fix
+
+- UUID-only files are detected before parsing attempts
+- No warnings or errors are logged
+- Files are silently skipped with appropriate empty/zero values
+- No impact on other session file formats
+- Backwards compatible with old JSONL format
 
 ## Likely Reason for Change
 
@@ -105,54 +158,43 @@ The actual session data is likely stored in one of these locations:
 
 ### For Extension Users
 
-- These warnings are harmless - they indicate files that can't be parsed but don't affect functionality
+- These files will now be silently skipped - no warnings will appear
 - No action required - the extension continues to work with other session file formats
+- Copilot CLI token usage will not be tracked until the new data store is located
 
 ### For Extension Developers
 
-1. **Detection**: Add logic to detect UUID-only files before attempting JSON parsing
-2. **Skip Gracefully**: Skip these files without logging errors
-3. **Future Enhancement**: If the new data store location is discovered, add support for reading it
-4. **Backwards Compatibility**: Keep support for old JSONL format (some users may have old files)
-
-## Detection Logic
-
-To detect UUID-only files:
-
-```typescript
-// Check if content is just a UUID (no JSON structure)
-const trimmedContent = fileContent.trim();
-const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-
-if (isUuidOnly) {
-    // This is a session ID pointer file, not actual session data
-    // Skip parsing and return empty details
-    return details;
-}
-```
+1. ✅ **Detection**: UUID-only files are now detected before parsing
+2. ✅ **Skip Gracefully**: These files are skipped without logging errors
+3. ⏳ **Future Enhancement**: If the new data store location is discovered, add support for reading it
+4. ✅ **Backwards Compatibility**: Old JSONL format is still fully supported
 
 ## Testing
 
-To test the fix, create test files in the format:
+### UUID Detection Tests
 
-```bash
-# Create new format file (UUID only)
-echo "e62ba546-5a3f-4c1a-9b2c-8d4e6f7g8h9i" > test-uuid.json
+The UUID regex has been tested with:
+- Valid UUIDs (lowercase, uppercase, mixed)
+- Invalid UUIDs (wrong characters, wrong format)
+- JSON content
+- Plain text
+- Content with whitespace/newlines (properly trimmed)
 
-# Create old format file (JSONL)
-echo '{"type":"user.message","timestamp":"2024-01-01T12:00:00Z"}' > test-jsonl.jsonl
-```
+All tests pass successfully.
 
-The extension should:
-- Skip the UUID-only file without errors
-- Parse the JSONL file normally
+### Compilation
+
+- ✅ TypeScript compilation successful
+- ✅ ESLint validation passed
+- ✅ No type errors
 
 ## Related Files
 
-- `src/extension.ts` - Main parsing logic
-- `docs/SESSION-LOG-FORMATS.md` - General session log format documentation
+- `src/extension.ts` - Main parsing logic (7 methods updated)
+- `docs/SESSION-LOG-FORMATS.md` - General session log format documentation (if exists)
 
 ## References
 
 - GitHub Copilot CLI documentation (if available)
 - VS Code Copilot extension session storage paths
+- Issue reports from users experiencing the SyntaxError warnings
