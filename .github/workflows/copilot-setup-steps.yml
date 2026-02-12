@@ -118,3 +118,54 @@ jobs:
           else
             echo "No session logs available"
           fi
+
+      # Download aggregated usage data from Azure Table Storage (optional)
+      # Uses the existing load-table-data.js helper script from the azure-storage-loader skill
+      - name: Install Azure Storage loader dependencies
+        if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
+        run: |
+          cd .github/skills/azure-storage-loader
+          npm install --production
+
+      - name: Download aggregated usage data from Azure Table Storage
+        if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ vars.COPILOT_STORAGE_ACCOUNT }}
+          AZURE_TABLE_NAME: ${{ vars.COPILOT_TABLE_NAME || 'usageAggDaily' }}
+          AZURE_DATASET_ID: ${{ vars.COPILOT_DATASET_ID || 'default' }}
+          AZURE_TABLE_DATA_DAYS: ${{ vars.COPILOT_TABLE_DATA_DAYS || '30' }}
+          AZURE_STORAGE_KEY: ${{ secrets.COPILOT_STORAGE_KEY }}
+        run: |
+          echo "📊 Downloading aggregated usage data from Azure Table Storage..."
+
+          mkdir -p ./usage-data
+
+          # Calculate date range
+          END_DATE=$(date -u +%Y-%m-%d)
+          START_DATE=$(date -u -d "${AZURE_TABLE_DATA_DAYS} days ago" +%Y-%m-%d)
+          echo "Date range: $START_DATE to $END_DATE"
+
+          # Build command arguments
+          ARGS="--storageAccount $AZURE_STORAGE_ACCOUNT"
+          ARGS="$ARGS --tableName $AZURE_TABLE_NAME"
+          ARGS="$ARGS --datasetId $AZURE_DATASET_ID"
+          ARGS="$ARGS --startDate $START_DATE"
+          ARGS="$ARGS --endDate $END_DATE"
+          ARGS="$ARGS --output ./usage-data/usage-agg-daily.json"
+
+          # Use shared key if available, otherwise rely on Entra ID (DefaultAzureCredential)
+          if [ -n "$AZURE_STORAGE_KEY" ]; then
+            ARGS="$ARGS --sharedKey $AZURE_STORAGE_KEY"
+          fi
+
+          node .github/skills/azure-storage-loader/load-table-data.js $ARGS || {
+            echo "⚠️ Failed to download aggregated usage data, continuing without it"
+            exit 0
+          }
+
+          if [ -f ./usage-data/usage-agg-daily.json ]; then
+            ENTITY_COUNT=$(node -e "const d=require('./usage-data/usage-agg-daily.json'); console.log(d.length)")
+            echo "✅ Downloaded $ENTITY_COUNT aggregated usage records to ./usage-data/usage-agg-daily.json"
+          else
+            echo "⚠️ No aggregated usage data file created"
+          fi

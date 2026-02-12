@@ -94,6 +94,21 @@ Prefer VS Code's debugger with breakpoints rather than adding log statements:
 - **`package.json`**: Defines activation events, commands, and build scripts.
 - **`esbuild.js`**: The build script that bundles the TypeScript source and JSON data files.
 
+## Coding Agent Data Sources
+
+When running as the GitHub Copilot Coding Agent (bootstrapped via `.github/workflows/copilot-setup-steps.yml`), additional data files may be available in the workspace root. These are downloaded from Azure Storage during the agent's setup phase and are **not** present in local development.
+
+- **`./session-logs/`**: Raw Copilot Chat session log files (last 7 days) from Azure Blob Storage. Contains full conversation history including prompts, responses, and model info.
+- **`./usage-data/usage-agg-daily.json`**: Aggregated daily token usage data (last 30 days) from Azure Table Storage. Contains per-day, per-model, per-workspace token counts and interaction counts.
+
+These files are only available when the repository's `copilot` GitHub environment has `COPILOT_STORAGE_ACCOUNT` configured. See the `session-log-data` skill in `.github/skills/session-log-data/SKILL.md` for data schemas, analysis examples, and cost estimation.
+
+To check if data is available:
+```bash
+[ -d ./session-logs ] && echo "Session logs available"
+[ -f ./usage-data/usage-agg-daily.json ] && echo "Aggregated data available"
+```
+
 ## Webview Navigation Buttons
 
 To maintain a consistent, VS Code-native look across all webview panels (Details, Chart, Usage Analysis, Diagnostics), use the VS Code Webview UI Toolkit for top-level navigation buttons.
