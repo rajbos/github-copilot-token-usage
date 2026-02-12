@@ -610,6 +610,7 @@ function renderLayout(data: DiagnosticsData): void {
 	const detailedFiles = data.detailedSessionFiles || [];
 
 	root.innerHTML = `
+		<style>${themeStyles}</style>
 		<style>${styles}</style>
 		<div class="container">
 			<div class="header">

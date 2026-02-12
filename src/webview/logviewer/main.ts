@@ -428,6 +428,7 @@ function renderLayout(data: SessionLogData): void {
 	const modelNames = Object.keys(modelUsage);
 	
 	root.innerHTML = `
+		<style>${themeStyles}</style>
 		<style>${styles}</style>
 		
 		<div class="container">

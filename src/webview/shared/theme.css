@@ -32,6 +32,7 @@
 	/* List/card colors */
 	--list-hover-bg: var(--vscode-list-hoverBackground);
 	--list-active-bg: var(--vscode-list-activeSelectionBackground);
+	--list-active-fg: var(--vscode-list-activeSelectionForeground);
 	--list-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
 	
 	/* Alternating row colors for better readability */

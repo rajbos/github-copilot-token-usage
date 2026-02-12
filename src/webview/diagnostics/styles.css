@@ -61,7 +61,7 @@ body {
 	cursor: pointer;
 	border: none;
 	background: transparent;
-	color: var(--text-muted);
+	color: var(--text-secondary);
 	font-size: 13px;
 	font-weight: 500;
 	border-bottom: 2px solid transparent;
@@ -70,7 +70,7 @@ body {
 
 .tab:hover {
 	color: var(--text-primary);
-	background: rgb(255, 255, 255, 0.05);
+	background: var(--list-hover-bg);
 }
 
 .tab.active {
@@ -103,6 +103,7 @@ body {
 	transition: all 0.2s;
 	min-width: 140px;
 	text-align: center;
+	white-space: nowrap;
 }
 
 .editor-panel:hover {
@@ -113,6 +114,16 @@ body {
 .editor-panel.active {
 	background: var(--list-active-bg);
 	border-color: var(--link-color);
+	color: var(--list-active-fg);
+}
+
+.editor-panel.active .editor-panel-name {
+	color: var(--list-active-fg);
+}
+
+.editor-panel.active .editor-panel-stats {
+	color: var(--list-active-fg);
+	opacity: 0.85;
 }
 
 .editor-panel-icon {
@@ -267,7 +278,8 @@ body {
 	padding: 2px 6px;
 	border-radius: 3px;
 	font-size: 10px;
-	color: var(--text-primary);
+	color: var(--list-active-fg);
+	white-space: nowrap;
 }
 
 .session-folders-table {
@@ -372,11 +384,12 @@ body {
 	padding: 12px;
 	margin-bottom: 16px;
 	font-size: 13px;
+	color: var(--list-active-fg);
 }
 
 .info-box-title {
 	font-weight: 600;
-	color: var(--text-primary);
+	color: var(--list-active-fg);
 	margin-bottom: 6px;
 }
 
