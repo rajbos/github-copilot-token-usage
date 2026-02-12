@@ -137,7 +137,11 @@ test('BackendIntegration proxies facade calls and fallbacks', async () => {
 		aggTable: 'usageAggDaily',
 		eventsTable: 'usageEvents',
 		lookbackDays: 30,
-		includeMachineBreakdown: true
+		includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 	};
 	const facade = {
 		getSettings: () => {

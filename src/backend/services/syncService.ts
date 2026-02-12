@@ -21,6 +21,20 @@ import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
 
 /**
+ * Interface for blob upload service to avoid circular dependency.
+ */
+interface BlobUploadServiceLike {
+	uploadSessionFiles(
+		storageAccount: string,
+		settings: { enabled: boolean; containerName: string; uploadFrequencyHours: number; compressFiles: boolean },
+		credential: any,
+		sessionFiles: string[],
+		machineId: string,
+		datasetId: string
+	): Promise<{ success: boolean; filesUploaded: number; message: string }>;
+}
+
+/**
  * Validate and normalize consent timestamp.
  * Returns ISO string if valid, undefined if invalid or in the future.
  */
@@ -78,6 +92,7 @@ export class SyncService {
 		private readonly deps: SyncServiceDeps,
 		private readonly credentialService: CredentialService,
 		private readonly dataPlaneService: DataPlaneService,
+		private readonly blobUploadService: BlobUploadServiceLike | undefined,
 		private readonly utility: typeof BackendUtility
 	) {}
 
@@ -696,6 +711,37 @@ export class SyncService {
 				}
 				
 				this.deps.log('Backend sync: completed');
+				
+				// Upload session files to Blob Storage if enabled
+				if (settings.blobUploadEnabled && this.blobUploadService) {
+					try {
+						this.deps.log('Blob upload: starting');
+						const machineId = vscode.env.machineId;
+						const sessionFiles = await this.deps.getCopilotSessionFiles();
+						
+						const uploadResult = await this.blobUploadService.uploadSessionFiles(
+							settings.storageAccount,
+							{
+								enabled: settings.blobUploadEnabled,
+								containerName: settings.blobContainerName,
+								uploadFrequencyHours: settings.blobUploadFrequencyHours,
+								compressFiles: settings.blobCompressFiles
+							},
+							creds.blobCredential,
+							sessionFiles,
+							machineId,
+							settings.datasetId
+						);
+						
+						if (uploadResult.success) {
+							this.deps.log(`Blob upload: ${uploadResult.message}`);
+						} else {
+							this.deps.warn(`Blob upload: ${uploadResult.message}`);
+						}
+					} catch (blobError: any) {
+						this.deps.warn(`Blob upload: failed - ${blobError?.message ?? blobError}`);
+					}
+				}
 				
 				// Trigger UI refresh to update status bar and panels with latest sync data
 				try {

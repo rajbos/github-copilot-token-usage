@@ -23,7 +23,11 @@ suite('Backend Config Panel Webview Integration Tests', () => {
 				aggTable: 'usageAggDaily',
 				eventsTable: 'usageEvents',
 				userIdentityMode: 'pseudonymous' as const,
-				userId: 'testuser'
+				userId: 'testuser',
+				blobUploadEnabled: false,
+				blobContainerName: 'copilot-session-logs',
+				blobUploadFrequencyHours: 24,
+				blobCompressFiles: true
 			},
 			sharedKeySet: false,
 			privacyBadge: 'Solo',

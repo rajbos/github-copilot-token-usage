@@ -78,6 +78,24 @@ This caching significantly reduces the time needed for periodic updates, especia
 
 The cloud backend is **disabled by default**. When enabled, the extension periodically uploads daily aggregates to Azure Storage Tables and queries them for cross-device reporting.
 
+### Session Log Upload (Optional)
+
+The extension can also upload your local session log files to Azure Blob Storage. This enables:
+- **Team collaboration**: Share logs with your team for analysis
+- **Persistent storage**: Keep logs beyond local VS Code limits
+- **Coding agent access**: Make logs available to GitHub Copilot Coding Agent as reference material
+
+To enable log file uploads:
+```json
+{
+  "copilotTokenTracker.backend.blobUploadEnabled": true,
+  "copilotTokenTracker.backend.blobContainerName": "copilot-session-logs",
+  "copilotTokenTracker.backend.blobUploadFrequencyHours": 24
+}
+```
+
+See [Blob Upload Guide](docs/BLOB-UPLOAD.md) for detailed setup instructions and security considerations.
+
 ### Authentication
 
 - **Recommended**: Entra ID (Azure RBAC) using `DefaultAzureCredential` (Azure CLI / VS Code Azure Account / Managed Identity)
