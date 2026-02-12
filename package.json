@@ -222,6 +222,28 @@
           "type": "boolean",
           "default": false,
           "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence."
+        },
+        "copilotTokenTracker.backend.blobUploadEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable uploading session log files to Azure Blob Storage. Files are uploaded with configurable frequency and can be used by GitHub Copilot Coding Agent."
+        },
+        "copilotTokenTracker.backend.blobContainerName": {
+          "type": "string",
+          "default": "copilot-session-logs",
+          "description": "Name of the Azure Blob Storage container for session log files."
+        },
+        "copilotTokenTracker.backend.blobUploadFrequencyHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 168,
+          "description": "How often to upload session log files to blob storage (in hours). Default is once per day (24 hours)."
+        },
+        "copilotTokenTracker.backend.blobCompressFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
         }
       }
     }

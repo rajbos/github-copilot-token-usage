@@ -35,7 +35,11 @@ const baseSettings: BackendSettings = {
 	aggTable: 'usageAggDaily',
 	eventsTable: 'usageEvents',
 	lookbackDays: 30,
-	includeMachineBreakdown: false
+	includeMachineBreakdown: false,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 };
 
 test('validateDraft enforces lookback bounds, alias rules, and dataset/table format', () => {
