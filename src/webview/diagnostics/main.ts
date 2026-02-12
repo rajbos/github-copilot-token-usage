@@ -1,12 +1,8 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from "../shared/buttonConfig";
 // CSS imported as text via esbuild
-<<<<<<< HEAD
-import themeStyles from '../shared/theme.css';
-import styles from './styles.css';
-=======
+import themeStyles from "../shared/theme.css";
 import styles from "./styles.css";
->>>>>>> 875ff6d (fix azure storage ui issue)
 
 // Constants
 const LOADING_PLACEHOLDER = "Loading...";
@@ -713,10 +709,6 @@ function renderLayout(data: DiagnosticsData): void {
   // Check if we're in loading state for the report
   const reportIsLoading = data.report === LOADING_PLACEHOLDER;
 
-<<<<<<< HEAD
-	root.innerHTML = `
-		<style>${themeStyles}</style>
-=======
   if (!reportIsLoading) {
     // Remove the old session files list from the report text if present
     escapedReport = removeSessionFilesSection(escapedReport);
@@ -729,7 +721,7 @@ function renderLayout(data: DiagnosticsData): void {
   const detailedFiles = data.detailedSessionFiles || [];
 
   root.innerHTML = `
->>>>>>> 875ff6d (fix azure storage ui issue)
+		<style>${themeStyles}</style>
 		<style>${styles}</style>
 		<div class="container">
 			<div class="header">
@@ -738,16 +730,9 @@ function renderLayout(data: DiagnosticsData): void {
 					<span class="header-title">Diagnostic Report</span>
 				</div>
 				<div class="button-row">
-<<<<<<< HEAD
-					${buttonHtml('btn-chart')}
-					${buttonHtml('btn-usage')}
-					${buttonHtml('btn-details')}
-					${buttonHtml('btn-maturity')}
-=======
 					${buttonHtml("btn-chart")}
 					${buttonHtml("btn-usage")}
 					${buttonHtml("btn-details")}
->>>>>>> 875ff6d (fix azure storage ui issue)
 				</div>
 			</div>
 
@@ -1194,19 +1179,11 @@ function renderLayout(data: DiagnosticsData): void {
         const editor = (panel as HTMLElement).getAttribute("data-editor");
         currentEditorFilter = editor === "" ? null : editor;
 
-<<<<<<< HEAD
-	// Navigation buttons (match details view)
-	document.getElementById('btn-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
-	document.getElementById('btn-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
-	document.getElementById('btn-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
-	document.getElementById('btn-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
-=======
         // Re-render table
         reRenderTable();
       });
     });
   }
->>>>>>> 875ff6d (fix azure storage ui issue)
 
   // Wire up context ref filter handlers
   function setupContextRefFilterHandlers(): void {
@@ -1399,6 +1376,19 @@ function renderLayout(data: DiagnosticsData): void {
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showDetails" }),
     );
+
+  // Backend configuration buttons
+  document
+    .getElementById("btn-configure-backend")
+    ?.addEventListener("click", () => {
+      vscode.postMessage({ command: "configureBackend" });
+    });
+
+  document
+    .getElementById("btn-open-settings")
+    ?.addEventListener("click", () => {
+      vscode.postMessage({ command: "openSettings" });
+    });
 
   setupSortHandlers();
   setupEditorFilterHandlers();
