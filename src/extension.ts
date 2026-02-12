@@ -1906,6 +1906,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				return 0; // No interactions to count in pointer files
+			}
+
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			if (isJsonlContent) {
@@ -1956,6 +1963,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				return modelUsage; // Empty model usage for pointer files
+			}
 
 			// Detect JSONL content: either by extension or by content analysis
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
@@ -2596,6 +2610,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async trackEnhancedMetrics(sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				return; // No metrics to track in pointer files
+			}
+
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			
 			// Initialize tracking structures
@@ -3535,6 +3557,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
+			// Check if this is a UUID-only file (new Copilot CLI format where the file contains just a session ID)
+			// These files act as session pointers, with actual data stored elsewhere
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				// This is a session ID pointer file, not actual session data
+				// Skip parsing and return empty details (no interactions to count)
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
 			if (isJsonlContent) {
@@ -3766,6 +3799,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				// This is a session ID pointer file with no actual conversation data
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: details.editorName || details.editorSource,
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
 
 			// Check for JSONL content (either by extension or content detection)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
@@ -4394,6 +4448,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				return 0; // No tokens to estimate in pointer files
+			}
 
 			// Handle .jsonl files OR .json files with JSONL content (each line is a separate JSON object)
 			const isJsonlContent = sessionFilePath.endsWith('.jsonl') || this.isJsonlContent(fileContent);
@@ -5034,6 +5095,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			// Read the file content
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf-8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			const trimmedContent = fileContent.trim();
+			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+			if (isUuidOnly) {
+				vscode.window.showInformationMessage(
+					`This file contains only a session ID (${trimmedContent}). The actual session data is stored elsewhere in the Copilot CLI format.`
+				);
+				return;
+			}
 
 			// Parse JSONL into array of objects
 			const lines = fileContent.trim().split('\n').filter(line => line.trim().length > 0);
