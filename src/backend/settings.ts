@@ -38,6 +38,11 @@ export interface BackendSettings {
 	eventsTable: string;
 	lookbackDays: number;
 	includeMachineBreakdown: boolean;
+	// Blob upload settings
+	blobUploadEnabled: boolean;
+	blobContainerName: string;
+	blobUploadFrequencyHours: number;
+	blobCompressFiles: boolean;
 }
 
 export interface BackendQueryFilters {
@@ -94,7 +99,12 @@ export function getBackendSettings(): BackendSettings {
 		aggTable: config.get<string>('backend.aggTable', 'usageAggDaily'),
 		eventsTable: config.get<string>('backend.eventsTable', 'usageEvents'),
 		lookbackDays: Math.max(MIN_LOOKBACK_DAYS, Math.min(MAX_LOOKBACK_DAYS, config.get<number>('backend.lookbackDays', DEFAULT_LOOKBACK_DAYS))),
-		includeMachineBreakdown: config.get<boolean>('backend.includeMachineBreakdown', false)
+		includeMachineBreakdown: config.get<boolean>('backend.includeMachineBreakdown', false),
+		// Blob upload settings
+		blobUploadEnabled: config.get<boolean>('backend.blobUploadEnabled', false),
+		blobContainerName: config.get<string>('backend.blobContainerName', 'copilot-session-logs').trim() || 'copilot-session-logs',
+		blobUploadFrequencyHours: Math.max(1, config.get<number>('backend.blobUploadFrequencyHours', 24)),
+		blobCompressFiles: config.get<boolean>('backend.blobCompressFiles', true)
 	};
 }
 

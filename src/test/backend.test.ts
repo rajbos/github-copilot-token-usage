@@ -27,7 +27,11 @@ suite('Extension Test Suite', () => {
 					aggTable: 'usageAggDaily',
 					eventsTable: 'usageEvents',
 					lookbackDays: 30,
-					includeMachineBreakdown: true
+					includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 				});
 
 				assert.strictEqual(payload.version, 1);
@@ -110,7 +114,11 @@ suite('Extension Test Suite', () => {
 						aggTable: 'table',
 						eventsTable: '',
 						lookbackDays: 30,
-						includeMachineBreakdown: true
+						includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 					}),
 					false,
 					'Should return false when subscriptionId is empty'
@@ -135,7 +143,11 @@ suite('Extension Test Suite', () => {
 						aggTable: 'table',
 						eventsTable: '',
 						lookbackDays: 30,
-						includeMachineBreakdown: true
+						includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 					}),
 					false,
 					'Should return false when resourceGroup is empty'
@@ -160,7 +172,11 @@ suite('Extension Test Suite', () => {
 						aggTable: 'table',
 						eventsTable: '',
 						lookbackDays: 30,
-						includeMachineBreakdown: true
+						includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 					}),
 					false,
 					'Should return false when storageAccount is empty'
@@ -185,7 +201,11 @@ suite('Extension Test Suite', () => {
 						aggTable: '',
 						eventsTable: '',
 						lookbackDays: 30,
-						includeMachineBreakdown: true
+						includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 					}),
 					false,
 					'Should return false when aggTable is empty'
@@ -210,7 +230,11 @@ suite('Extension Test Suite', () => {
 						aggTable: 'table',
 						eventsTable: '',
 						lookbackDays: 30,
-						includeMachineBreakdown: true
+						includeMachineBreakdown: true,
+	blobUploadEnabled: false,
+	blobContainerName: "copilot-session-logs",
+	blobUploadFrequencyHours: 24,
+	blobCompressFiles: true
 					}),
 					true,
 					'Should return true when required fields are present'

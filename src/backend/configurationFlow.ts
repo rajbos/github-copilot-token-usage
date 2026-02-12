@@ -20,6 +20,11 @@ export interface BackendConfigDraft {
 	eventsTable: string;
 	userIdentityMode: BackendUserIdentityMode;
 	userId: string;
+	// Blob upload settings
+	blobUploadEnabled: boolean;
+	blobContainerName: string;
+	blobUploadFrequencyHours: number;
+	blobCompressFiles: boolean;
 }
 
 export interface DraftValidationResult {
@@ -44,7 +49,11 @@ export function toDraft(settings: BackendSettings): BackendConfigDraft {
 		aggTable: settings.aggTable,
 		eventsTable: settings.eventsTable,
 		userIdentityMode: settings.userIdentityMode,
-		userId: settings.userId
+		userId: settings.userId,
+		blobUploadEnabled: settings.blobUploadEnabled,
+		blobContainerName: settings.blobContainerName,
+		blobUploadFrequencyHours: settings.blobUploadFrequencyHours,
+		blobCompressFiles: settings.blobCompressFiles
 	};
 }
 
@@ -146,6 +155,16 @@ export function validateDraft(draft: BackendConfigDraft): DraftValidationResult 
 		errors.authMode = ValidationMessages.required('Auth mode');
 	}
 
+	if (draft.blobUploadEnabled) {
+		const freq = Number(draft.blobUploadFrequencyHours);
+		if (!Number.isFinite(freq) || freq < 1 || freq > 168) {
+			errors.blobUploadFrequencyHours = 'Upload frequency must be between 1 and 168 hours.';
+		}
+		if (!draft.blobContainerName || !draft.blobContainerName.trim()) {
+			errors.blobContainerName = 'Container name is required when blob upload is enabled.';
+		}
+	}
+
 	return { valid: Object.keys(errors).length === 0, errors };
 }
 
@@ -176,7 +195,11 @@ export function applyDraftToSettings(
 		aggTable: draft.aggTable.trim(),
 		eventsTable: draft.eventsTable.trim(),
 		lookbackDays: clampLookback(draft.lookbackDays),
-		includeMachineBreakdown: !!draft.includeMachineBreakdown
+		includeMachineBreakdown: !!draft.includeMachineBreakdown,
+		blobUploadEnabled: !!draft.blobUploadEnabled,
+		blobContainerName: (draft.blobContainerName || '').trim() || 'copilot-session-logs',
+		blobUploadFrequencyHours: Math.max(1, Math.min(168, Number(draft.blobUploadFrequencyHours) || 24)),
+		blobCompressFiles: draft.blobCompressFiles !== false
 	};
 }
 

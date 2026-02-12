@@ -13,6 +13,7 @@ import { DataPlaneService } from './services/dataPlaneService';
 import { SyncService } from './services/syncService';
 import { QueryService, type BackendQueryResultLike } from './services/queryService';
 import { BackendUtility } from './services/utilityService';
+import { BlobUploadService } from './services/blobUploadService';
 import { BackendConfigPanel, type BackendConfigPanelState } from './configPanel';
 import { applyDraftToSettings, getPrivacyBadge, needsConsent, toDraft, validateDraft, type BackendConfigDraft } from './configurationFlow';
 import { ConfirmationMessages, SuccessMessages, ErrorMessages } from './ui/messages';
@@ -44,6 +45,7 @@ export class BackendFacade {
 	private readonly dataPlaneService: DataPlaneService;
 	private readonly syncService: SyncService;
 	private readonly queryService: QueryService;
+	private readonly blobUploadService: BlobUploadService;
 	private configPanel: BackendConfigPanel | undefined;
 
 	public constructor(deps: BackendFacadeDeps) {
@@ -51,6 +53,11 @@ export class BackendFacade {
 		
 		// Initialize services
 		this.credentialService = new CredentialService(deps.context);
+		this.blobUploadService = new BlobUploadService(
+			deps.log,
+			deps.warn,
+			deps.context
+		);
 		this.dataPlaneService = new DataPlaneService(
 			BackendUtility,
 			deps.log,
@@ -81,6 +88,7 @@ export class BackendFacade {
 			},
 			this.credentialService,
 			this.dataPlaneService,
+			this.blobUploadService,
 			BackendUtility
 		);
 		this.azureResourceService = new AzureResourceService(
@@ -358,7 +366,11 @@ export class BackendFacade {
 			config.update('backend.aggTable', next.aggTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.eventsTable', next.eventsTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.lookbackDays', next.lookbackDays, vscode.ConfigurationTarget.Global),
-			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global)
+			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobUploadEnabled', next.blobUploadEnabled, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobContainerName', next.blobContainerName, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobUploadFrequencyHours', next.blobUploadFrequencyHours, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobCompressFiles', next.blobCompressFiles, vscode.ConfigurationTarget.Global)
 		]);
 	}
 
@@ -445,7 +457,11 @@ export class BackendFacade {
 			aggTable: 'usageAggDaily',
 			eventsTable: 'usageEvents',
 			userIdentityMode: 'pseudonymous',
-			userId: ''
+			userId: '',
+			blobUploadEnabled: false,
+			blobContainerName: 'copilot-session-logs',
+			blobUploadFrequencyHours: 24,
+			blobCompressFiles: true
 		};
 		
 		const next = applyDraftToSettings(settings, draft, undefined);
