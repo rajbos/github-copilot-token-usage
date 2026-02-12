@@ -418,16 +418,19 @@ export class BackendConfigPanel implements vscode.Disposable {
 				</div>
 				<div class="card">
 					<h3>Blob Upload</h3>
-					<p class="helper">Upload session log files to Azure Blob Storage for use by GitHub Copilot Coding Agent or other downstream tools.</p>
-					<div class="field inline">
-						<vscode-checkbox id="blobUploadEnabled" aria-describedby="blobUploadEnabled-help">Enable blob upload</vscode-checkbox>
+					<p class="helper"><strong>What gets uploaded:</strong> The raw Copilot Chat session log files from your local VS Code storage. These JSON/JSONL files contain <em>full conversation content</em> — your prompts, AI responses (including generated code), model names, timestamps, tool calls, and context references.</p>
+					<p class="helper"><strong>Why:</strong> Enables downstream analysis by tools like GitHub Copilot Coding Agent, Power BI, or custom pipelines that need access to the complete session data — not just the aggregated token counts stored in Table Storage.</p>
+					<p class="helper"><strong>Privacy note:</strong> Unlike the table sync (which only stores aggregated token counts), blob upload stores the <em>complete</em> session files. This means anyone with read access to the blob container can see your full Copilot conversations. Only enable this if you are comfortable sharing this data.</p>
+					<p class="helper"><strong>Storage path:</strong> Files are organized as <code>{dataset}/{machineId}/{date}/{sessionFile}</code> in the container, using the same storage account as table sync.</p>
+					<div class="field inline" style="margin-top: 8px;">
+						<vscode-checkbox id="blobUploadEnabled" aria-describedby="blobUploadEnabled-help">Enable blob upload of session log files</vscode-checkbox>
 					</div>
-					<div id="blobUploadEnabled-help" class="helper">When enabled, session log files are periodically uploaded to Azure Blob Storage.</div>
+					<div id="blobUploadEnabled-help" class="helper">Periodically uploads your local Copilot session files to Azure Blob Storage. Uses the same storage account and credentials as the table sync above.</div>
 					<div id="blobSettingsGroup">
 						<div class="field"><label for="blobContainerName">Container name</label><vscode-text-field id="blobContainerName" placeholder="copilot-session-logs" aria-describedby="blobContainerName-help blobContainerName-error"></vscode-text-field><div id="blobContainerName-error" class="error" role="alert" data-error-for="blobContainerName"></div></div>
-						<div id="blobContainerName-help" class="helper">Name of the Azure Blob Storage container for session log files.</div>
+						<div id="blobContainerName-help" class="helper">The blob container to store session files in. Created automatically if it doesn't exist. Uses private access (no public access).</div>
 						<div class="field"><label for="blobUploadFrequencyHours">Upload frequency (hours) <span class="range">(1-168)</span></label><vscode-text-field id="blobUploadFrequencyHours" type="number" placeholder="24" aria-describedby="blobUploadFrequencyHours-help blobUploadFrequencyHours-error"></vscode-text-field><div id="blobUploadFrequencyHours-error" class="error" role="alert" data-error-for="blobUploadFrequencyHours"></div></div>
-						<div id="blobUploadFrequencyHours-help" class="helper">How often to upload session log files (1 = hourly, 24 = daily, 168 = weekly).</div>
+						<div id="blobUploadFrequencyHours-help" class="helper">All session files within the lookback window are re-uploaded on each cycle (1 = hourly, 24 = daily, 168 = weekly). Existing blobs are overwritten.</div>
 						<div class="field inline">
 							<vscode-checkbox id="blobCompressFiles" aria-describedby="blobCompressFiles-help">Compress files before upload (gzip)</vscode-checkbox>
 						</div>
@@ -694,7 +697,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 				html += '<div class="change-item"><div class="change-label">Dataset & Lookback</div><div class="change-value">Dataset ID: ' + (draft.datasetId || 'default') + '<br>Lookback: ' + (draft.lookbackDays || 30) + ' days</div></div>';
 				
 				if (draft.blobUploadEnabled) {
-					html += '<div class="change-item"><div class="change-label">Blob Upload</div><div class="change-value">Enabled<br>Container: ' + (draft.blobContainerName || 'copilot-session-logs') + '<br>Frequency: every ' + (draft.blobUploadFrequencyHours || 24) + ' hours<br>Compression: ' + (draft.blobCompressFiles !== false ? 'On' : 'Off') + '</div></div>';
+					html += '<div class="change-item warning"><div class="change-label">⚠️ Blob Upload</div><div class="change-value">Enabled — full session log files (prompts, responses, code) will be uploaded<br>Container: ' + (draft.blobContainerName || 'copilot-session-logs') + '<br>Frequency: every ' + (draft.blobUploadFrequencyHours || 24) + ' hours<br>Compression: ' + (draft.blobCompressFiles !== false ? 'On' : 'Off') + '</div></div>';
 				}
 			}
 			
