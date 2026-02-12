@@ -727,7 +727,7 @@ export class SyncService {
 								uploadFrequencyHours: settings.blobUploadFrequencyHours,
 								compressFiles: settings.blobCompressFiles
 							},
-							creds.tableCredential, // Reuse the same credentials
+							creds.blobCredential,
 							sessionFiles,
 							machineId,
 							settings.datasetId

@@ -366,7 +366,11 @@ export class BackendFacade {
 			config.update('backend.aggTable', next.aggTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.eventsTable', next.eventsTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.lookbackDays', next.lookbackDays, vscode.ConfigurationTarget.Global),
-			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global)
+			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobUploadEnabled', next.blobUploadEnabled, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobContainerName', next.blobContainerName, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobUploadFrequencyHours', next.blobUploadFrequencyHours, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobCompressFiles', next.blobCompressFiles, vscode.ConfigurationTarget.Global)
 		]);
 	}
 
@@ -453,7 +457,11 @@ export class BackendFacade {
 			aggTable: 'usageAggDaily',
 			eventsTable: 'usageEvents',
 			userIdentityMode: 'pseudonymous',
-			userId: ''
+			userId: '',
+			blobUploadEnabled: false,
+			blobContainerName: 'copilot-session-logs',
+			blobUploadFrequencyHours: 24,
+			blobCompressFiles: true
 		};
 		
 		const next = applyDraftToSettings(settings, draft, undefined);

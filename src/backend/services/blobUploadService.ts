@@ -9,8 +9,7 @@ import * as path from 'path';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 import type { TokenCredential } from '@azure/core-auth';
-import { AzureNamedKeyCredential } from '@azure/core-auth';
-import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
+import { BlobServiceClient, ContainerClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { safeStringifyError } from '../../utils/errors';
 
 const gzip = promisify(zlib.gzip);
@@ -61,11 +60,11 @@ export class BlobUploadService {
 	 */
 	private createBlobServiceClient(
 		storageAccount: string,
-		credential: TokenCredential | AzureNamedKeyCredential
+		credential: TokenCredential | StorageSharedKeyCredential
 	): BlobServiceClient {
 		return new BlobServiceClient(
 			this.getStorageBlobEndpoint(storageAccount),
-			credential as TokenCredential
+			credential
 		);
 	}
 
@@ -75,7 +74,7 @@ export class BlobUploadService {
 	async getContainerClient(
 		storageAccount: string,
 		containerName: string,
-		credential: TokenCredential | AzureNamedKeyCredential
+		credential: TokenCredential | StorageSharedKeyCredential
 	): Promise<ContainerClient> {
 		const blobServiceClient = this.createBlobServiceClient(storageAccount, credential);
 		const containerClient = blobServiceClient.getContainerClient(containerName);
@@ -118,7 +117,7 @@ export class BlobUploadService {
 	async uploadSessionFiles(
 		storageAccount: string,
 		settings: BlobUploadSettings,
-		credential: TokenCredential | AzureNamedKeyCredential,
+		credential: TokenCredential | StorageSharedKeyCredential,
 		sessionFiles: string[],
 		machineId: string,
 		datasetId: string
@@ -161,18 +160,40 @@ export class BlobUploadService {
 				} catch (error: any) {
 					const fileName = path.basename(sessionFile);
 					const errorMsg = safeStringifyError(error);
+
+					// Stop immediately on authorization errors — retrying other files won't help.
+					if (error?.statusCode === 403 || error?.code === 'AuthorizationPermissionMismatch') {
+						const isEntraId = !('accountName' in credential);
+						const hint = isEntraId
+							? 'Your Entra ID identity needs the "Storage Blob Data Contributor" role on this storage account. '
+							  + 'Note: the Portal Storage Browser may use Access Keys, which bypass RBAC — '
+							  + 'that is different from the data plane Entra ID access the extension uses. '
+							  + 'Assign the role via: az role assignment create --assignee <your-id> --role "Storage Blob Data Contributor" --scope <storage-account-resource-id>'
+							: 'The storage shared key may not have blob write permission. Check that shared key access (allowSharedKeyAccess) is enabled on the storage account.';
+						this.warn(`Blob upload: authorization failed for ${fileName}. ${hint}`);
+						return {
+							success: false,
+							filesUploaded,
+							message: `Authorization failed: ${hint}`
+						};
+					}
+
 					errors.push(`${fileName}: ${errorMsg}`);
 					this.warn(`Blob upload: failed to upload ${fileName}: ${errorMsg}`);
 				}
 			}
 
-			// Update upload status
-			this.uploadStatus.set(machineId, {
-				lastUploadTime: Date.now(),
-				filesUploaded,
-				lastError: errors.length > 0 ? errors.join('; ') : undefined
-			});
-			this.saveUploadStatus();
+			// Only update lastUploadTime when files were actually uploaded successfully.
+			// On failure (0 files uploaded), preserve the previous timestamp so the next
+			// sync cycle retries instead of waiting for the full frequency interval.
+			if (filesUploaded > 0) {
+				this.uploadStatus.set(machineId, {
+					lastUploadTime: Date.now(),
+					filesUploaded,
+					lastError: errors.length > 0 ? errors.join('; ') : undefined
+				});
+				this.saveUploadStatus();
+			}
 
 			const message = errors.length > 0
 				? `Uploaded ${filesUploaded}/${sessionFiles.length} files (${errors.length} errors)`
@@ -184,15 +205,7 @@ export class BlobUploadService {
 		} catch (error: any) {
 			const errorMsg = safeStringifyError(error);
 			this.warn(`Blob upload: failed: ${errorMsg}`);
-			
-			// Update status with error
-			this.uploadStatus.set(machineId, {
-				lastUploadTime: Date.now(),
-				filesUploaded: 0,
-				lastError: errorMsg
-			});
-			this.saveUploadStatus();
-			
+			// Do not update lastUploadTime on failure — allow the next sync cycle to retry.
 			return { success: false, filesUploaded: 0, message: `Upload failed: ${errorMsg}` };
 		}
 	}
@@ -254,7 +267,9 @@ export class BlobUploadService {
 		try {
 			const stored = this.context.globalState.get<Record<string, UploadStatus>>('blobUploadStatus');
 			if (stored) {
-				this.uploadStatus = new Map(Object.entries(stored));
+				// Discard entries where no files were actually uploaded (stale from failed attempts)
+				const valid = Object.entries(stored).filter(([, s]) => s.filesUploaded > 0);
+				this.uploadStatus = new Map(valid);
 				this.log(`Blob upload: loaded status for ${this.uploadStatus.size} machine(s)`);
 			}
 		} catch (error) {
