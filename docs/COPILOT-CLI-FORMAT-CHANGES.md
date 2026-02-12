@@ -84,17 +84,34 @@ The errors occurred in `src/extension.ts` in multiple methods that parse session
 
 ## Fix Implementation
 
-### Detection Logic
+### Detection Helper Method
 
-The fix adds UUID detection before attempting to parse files:
+A reusable helper method was added to detect UUID-only files:
+
+```typescript
+/**
+ * Check if file content is a UUID-only pointer file (new Copilot CLI format).
+ * These files contain only a session ID instead of actual session data.
+ * @param content The file content to check
+ * @returns true if the content is a UUID-only pointer file
+ */
+private isUuidPointerFile(content: string): boolean {
+    const trimmedContent = content.trim();
+    return /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+}
+```
+
+This helper method (line ~4608) centralizes the UUID detection logic, making it easier to maintain and update.
+
+### Usage Pattern
+
+All methods that read session files now use this helper:
 
 ```typescript
 // Check if this is a UUID-only file (new Copilot CLI format)
-const trimmedContent = fileContent.trim();
-const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-if (isUuidOnly) {
-    // Skip parsing and return empty/default values
-    return; // or return appropriate empty structure
+if (this.isUuidPointerFile(fileContent)) {
+    // Skip parsing and return appropriate empty value
+    return;
 }
 ```
 

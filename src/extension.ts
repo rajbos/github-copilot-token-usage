@@ -1907,9 +1907,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				return 0; // No interactions to count in pointer files
 			}
 
@@ -1965,9 +1963,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				return modelUsage; // Empty model usage for pointer files
 			}
 
@@ -2612,9 +2608,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				return; // No metrics to track in pointer files
 			}
 
@@ -3559,9 +3553,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Check if this is a UUID-only file (new Copilot CLI format where the file contains just a session ID)
 			// These files act as session pointers, with actual data stored elsewhere
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				// This is a session ID pointer file, not actual session data
 				// Skip parsing and return empty details (no interactions to count)
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
@@ -3801,9 +3793,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				// This is a session ID pointer file with no actual conversation data
 				return {
 					file: details.file,
@@ -4450,9 +4440,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				return 0; // No tokens to estimate in pointer files
 			}
 
@@ -4604,6 +4592,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const secondLine = lines[1].trim();
 		return firstLine.startsWith('{') && firstLine.endsWith('}') &&
 			secondLine.startsWith('{') && secondLine.endsWith('}');
+	}
+
+	/**
+	 * Check if file content is a UUID-only pointer file (new Copilot CLI format).
+	 * These files contain only a session ID instead of actual session data.
+	 * @param content The file content to check
+	 * @returns true if the content is a UUID-only pointer file
+	 */
+	private isUuidPointerFile(content: string): boolean {
+		const trimmedContent = content.trim();
+		return /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
 	}
 
 	/**
@@ -5097,11 +5096,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf-8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			const trimmedContent = fileContent.trim();
-			const isUuidOnly = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
-			if (isUuidOnly) {
+			if (this.isUuidPointerFile(fileContent)) {
 				vscode.window.showInformationMessage(
-					`This file contains only a session ID (${trimmedContent}). The actual session data is stored elsewhere in the Copilot CLI format.`
+					`This file contains only a session ID (${fileContent.trim()}). The actual session data is stored elsewhere in the Copilot CLI format.`
 				);
 				return;
 			}
