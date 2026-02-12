@@ -622,6 +622,7 @@ function renderLayout(data: DiagnosticsData): void {
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
 					${buttonHtml('btn-details')}
+					${buttonHtml('btn-maturity')}
 				</div>
 			</div>
 			
@@ -1162,6 +1163,7 @@ function setupStorageLinkHandlers(): void {
 	document.getElementById('btn-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
 	document.getElementById('btn-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
 	document.getElementById('btn-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+	document.getElementById('btn-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 
 	// Backend configuration buttons
 	document.getElementById('btn-configure-backend')?.addEventListener('click', () => {

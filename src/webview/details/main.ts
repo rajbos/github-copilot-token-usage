@@ -118,7 +118,8 @@ function renderShell(
 		createButton(BUTTONS['btn-refresh']),
 		createButton(BUTTONS['btn-chart']),
 		createButton(BUTTONS['btn-usage']),
-		createButton(BUTTONS['btn-diagnostics'])
+		createButton(BUTTONS['btn-diagnostics']),
+		createButton(BUTTONS['btn-maturity'])
 	);
 
 	header.append(title, buttonRow);
@@ -465,6 +466,9 @@ function wireButtons(): void {
 	chart?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
 	usage?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
 	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+
+	const maturity = document.getElementById('btn-maturity');
+	maturity?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 }
 
 async function bootstrap(): Promise<void> {

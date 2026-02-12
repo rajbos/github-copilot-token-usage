@@ -187,6 +187,40 @@ body {
 	font-size: 13px;
 }
 
+/* Customization matrix styles */
+.customization-matrix-container {
+	overflow-x: auto;
+	max-width: 100%;
+}
+
+.customization-matrix {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12px;
+	color: #d0d0d0;
+}
+
+.customization-matrix th {
+	background: #1a1a1f;
+	color: #fff;
+	font-weight: 600;
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.customization-matrix td {
+	background: #18181b;
+}
+
+.customization-matrix tbody tr:hover td {
+	background: #1f1f24;
+}
+
+.stale-warning {
+	color: #f59e0b;
+	font-weight: 600;
+}
+
 .two-column {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
