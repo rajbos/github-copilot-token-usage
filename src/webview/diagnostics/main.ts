@@ -730,9 +730,12 @@ function renderLayout(data: DiagnosticsData): void {
 					<span class="header-title">Diagnostic Report</span>
 				</div>
 				<div class="button-row">
+					${buttonHtml("btn-refresh")}
+					${buttonHtml("btn-details")}
 					${buttonHtml("btn-chart")}
 					${buttonHtml("btn-usage")}
-					${buttonHtml("btn-details")}
+					${buttonHtml("btn-diagnostics")}
+					${buttonHtml("btn-maturity")}
 				</div>
 			</div>
 
