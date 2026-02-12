@@ -1,6 +1,7 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from '../shared/buttonConfig';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 // Constants
@@ -609,6 +610,7 @@ function renderLayout(data: DiagnosticsData): void {
 	const detailedFiles = data.detailedSessionFiles || [];
 
 	root.innerHTML = `
+		<style>${themeStyles}</style>
 		<style>${styles}</style>
 		<div class="container">
 			<div class="header">

@@ -7,6 +7,7 @@ import { BUTTONS } from '../shared/buttonConfig';
 // @ts-ignore
 import tokenEstimatorsJson from '../../tokenEstimators.json';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type ModelUsage = Record<string, { inputTokens: number; outputTokens: number }>;
@@ -101,6 +102,10 @@ function renderShell(
 
 	root.replaceChildren();
 
+	// Inject theme styles first, then component styles
+	const themeStyle = document.createElement('style');
+	themeStyle.textContent = themeStyles;
+	
 	const style = document.createElement('style');
 	style.textContent = styles;
 
@@ -137,7 +142,7 @@ function renderShell(
 	sections.append(buildEstimatesSection());
 
 	container.append(header, sections, footer);
-	root.append(style, container);
+	root.append(themeStyle, style, container);
 }
 
 function buildMetricsSection(
