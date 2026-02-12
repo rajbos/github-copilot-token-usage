@@ -5439,12 +5439,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Stage thresholds based on adoption rate
 		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
 			cuStage = 3;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization`);
+			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization (30%+ with 2+ repos → Stage 3)`);
 		}
 
 		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
 			cuStage = 4;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate`);
+			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate (70%+ with 3+ repos → Stage 4)`);
 		}
 
 		// Model selection awareness (choosing specific models)
@@ -5453,11 +5453,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 			...p.modelSwitching.premiumModels
 		])];
 		if (uniqueModels.length >= 3) {
-			cuEvidence.push(`Used ${uniqueModels.length} different models`);
-			cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
-		}
-		if (uniqueModels.length >= 5 && reposWithCustomization >= 3) {
-			cuStage = 4;
+			// Check for Stage 4 criteria first
+			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
+			
+			// Show threshold context to help users understand the score
+			if (hasStage4Models) {
+				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ with 3+ repos customized → Stage 4)`);
+				cuStage = 4;
+			} else if (uniqueModels.length >= 5) {
+				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ detected, need 3+ repos customized for Stage 4)`);
+				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+			} else {
+				cuEvidence.push(`Used ${uniqueModels.length} different models (3+ models → Stage 3)`);
+				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+			}
 		}
 
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
