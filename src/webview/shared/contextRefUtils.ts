@@ -23,6 +23,55 @@ export type ContextReferenceUsage = {
 	byPath: { [path: string]: number };
 };
 
+/** A single customization file found in a workspace */
+export type CustomizationFileEntry = {
+	path: string;           // Absolute file path
+	relativePath: string;   // Workspace-relative path for display
+	type: string;           // From pattern definition (e.g., 'instructions', 'skill', 'agent')
+	icon: string;           // Emoji icon from pattern definition
+	label: string;          // Human-readable label from pattern definition
+	name: string;           // Display name (e.g., skill directory name, or filename)
+	lastModified: string | null;  // ISO date string, null if file not accessible
+	isStale: boolean;       // true if lastModified > stalenessThresholdDays ago
+};
+
+/** Customization files summary for all workspaces found in sessions */
+export type WorkspaceCustomizationSummary = {
+	workspaces: {
+		[workspacePath: string]: {
+			name: string;                   // Workspace folder basename
+			files: CustomizationFileEntry[];
+		};
+	};
+	totalFiles: number;
+	staleFiles: number;
+};
+
+/** Status of a customization type in a workspace */
+export type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+
+/** Matrix row data for one workspace */
+export type WorkspaceCustomizationRow = {
+	workspacePath: string;      // Full path (for uniqueness)
+	workspaceName: string;      // Basename for display
+	sessionCount: number;       // Number of sessions in last 30 days
+	typeStatuses: {             // Status per customization type
+		[typeId: string]: CustomizationTypeStatus;
+	};
+};
+
+/** Matrix view data structure */
+export type WorkspaceCustomizationMatrix = {
+	customizationTypes: Array<{
+		id: string;
+		icon: string;
+		label: string;
+	}>;
+	workspaces: WorkspaceCustomizationRow[];
+	totalWorkspaces: number;
+	workspacesWithIssues: number;
+};
+
 /**
  * Calculate the total number of context references.
  * This is the single source of truth for what constitutes a context reference.

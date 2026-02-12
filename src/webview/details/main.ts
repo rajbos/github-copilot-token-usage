@@ -7,6 +7,7 @@ import { BUTTONS } from '../shared/buttonConfig';
 // @ts-ignore
 import tokenEstimatorsJson from '../../tokenEstimators.json';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type ModelUsage = Record<string, { inputTokens: number; outputTokens: number }>;
@@ -101,6 +102,10 @@ function renderShell(
 
 	root.replaceChildren();
 
+	// Inject theme styles first, then component styles
+	const themeStyle = document.createElement('style');
+	themeStyle.textContent = themeStyles;
+	
 	const style = document.createElement('style');
 	style.textContent = styles;
 
@@ -113,7 +118,8 @@ function renderShell(
 		createButton(BUTTONS['btn-refresh']),
 		createButton(BUTTONS['btn-chart']),
 		createButton(BUTTONS['btn-usage']),
-		createButton(BUTTONS['btn-diagnostics'])
+		createButton(BUTTONS['btn-diagnostics']),
+		createButton(BUTTONS['btn-maturity'])
 	);
 
 	header.append(title, buttonRow);
@@ -136,7 +142,7 @@ function renderShell(
 	sections.append(buildEstimatesSection());
 
 	container.append(header, sections, footer);
-	root.append(style, container);
+	root.append(themeStyle, style, container);
 }
 
 function buildMetricsSection(
@@ -460,6 +466,9 @@ function wireButtons(): void {
 	chart?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
 	usage?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
 	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+
+	const maturity = document.getElementById('btn-maturity');
+	maturity?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 }
 
 async function bootstrap(): Promise<void> {
