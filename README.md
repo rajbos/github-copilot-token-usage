@@ -10,6 +10,8 @@ You can also use a **shared Azure Storage account** (a “shared storage server�
 
 - **Real-time Token Tracking**: Displays current day and month token usage in the status bar
 - **Usage Analysis Dashboard**: Comprehensive analytics on how you use Copilot (modes, tool calls, context references, MCP tools)
+- **Copilot Fluency Score**: Evaluate your proficiency across 6 categories with actionable tips for improvement
+- **Fluency Level Viewer**: Debug-only tool to explore all scoring rules and thresholds (requires active debugger)
 - **Automatic Updates**: Refreshes every 5 minutes to show the latest usage
 - **Click to Refresh**: Click the status bar item to manually refresh the token count
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
@@ -207,6 +209,28 @@ The extension includes a comprehensive usage analysis dashboard that helps you u
 3. Or use the Command Palette: "Copilot Token Tracker: Show Usage Analysis Dashboard"
 
 The dashboard provides insights into your prompting patterns and helps you optimize your Copilot workflow. For detailed information about the metrics and how to interpret them, see [Usage Analysis Documentation](docs/USAGE-ANALYSIS.md).
+
+## Copilot Fluency Score & Level Viewer
+
+The extension includes a **Copilot Fluency Score** dashboard that evaluates your GitHub Copilot proficiency across 6 categories with 4 stages each (Skeptic → Explorer → Collaborator → Strategist).
+
+**Categories Evaluated:**
+- 💬 **Prompt Engineering**: How you structure prompts and use modes
+- 📎 **Context Engineering**: Your use of context references
+- 🤖 **Agentic**: Agent mode and autonomous feature usage
+- 🔧 **Tool Usage**: Built-in tools and MCP server integration
+- ⚙️ **Customization**: Repository customization and model selection
+- 🔄 **Workflow Integration**: Regular usage and mode diversity
+
+**Fluency Level Viewer (Debug Mode)**
+
+A debug-only tool that displays all fluency score rules, thresholds, and tips for each category and stage. This feature helps developers understand the scoring system and what actions trigger different fluency levels.
+
+- **Access**: Only available when a VS Code debugger is active
+- **Features**: View all stage requirements and advancement tips for each category
+- **Use Cases**: Test scoring logic, debug scoring issues, plan improvements
+
+For detailed information, see [Fluency Level Viewer Documentation](docs/FLUENCY-LEVEL-VIEWER.md).
 
 ## Known Issues
 

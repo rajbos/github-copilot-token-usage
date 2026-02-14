@@ -1,0 +1,239 @@
+/* Fluency Level Viewer Styles */
+
+.container {
+	padding: 20px;
+	max-width: 1400px;
+	margin: 0 auto;
+}
+
+.header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.header-left {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.header-icon {
+	font-size: 24px;
+}
+
+.header-title {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.button-row {
+	display: flex;
+	gap: 8px;
+}
+
+.debug-badge {
+	display: inline-block;
+	padding: 4px 10px;
+	background: rgba(255, 152, 0, 0.2);
+	color: #ff9800;
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 600;
+	margin-left: 12px;
+	border: 1px solid rgba(255, 152, 0, 0.4);
+}
+
+.info-box {
+	background: rgba(3, 102, 214, 0.1);
+	border: 1px solid rgba(3, 102, 214, 0.3);
+	border-radius: 6px;
+	padding: 12px 16px;
+	margin-bottom: 20px;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.info-box-title {
+	font-weight: 600;
+	margin-bottom: 6px;
+	color: #3b82f6;
+}
+
+.category-selector {
+	display: flex;
+	gap: 10px;
+	margin-bottom: 20px;
+	flex-wrap: wrap;
+}
+
+.category-btn {
+	padding: 10px 16px;
+	background: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 500;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	transition: all 0.2s;
+}
+
+.category-btn:hover {
+	background: var(--vscode-button-secondaryHoverBackground);
+	border-color: var(--vscode-focusBorder);
+}
+
+.category-btn.active {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border-color: var(--vscode-focusBorder);
+	box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.category-btn .icon {
+	font-size: 16px;
+}
+
+.level-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	gap: 16px;
+	margin-bottom: 24px;
+}
+
+.level-card {
+	background: var(--vscode-editor-background);
+	border: 2px solid var(--vscode-panel-border);
+	border-radius: 8px;
+	padding: 16px;
+	transition: all 0.2s;
+}
+
+.level-card:hover {
+	border-color: var(--vscode-focusBorder);
+	box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.level-card.stage-1 { border-left: 4px solid #ef4444; }
+.level-card.stage-2 { border-left: 4px solid #f59e0b; }
+.level-card.stage-3 { border-left: 4px solid #3b82f6; }
+.level-card.stage-4 { border-left: 4px solid #10b981; }
+
+.level-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.level-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.level-badge {
+	padding: 3px 10px;
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.badge-1 { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.badge-2 { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.badge-3 { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.badge-4 { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+
+.level-description {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 12px;
+	line-height: 1.5;
+}
+
+.threshold-section {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--vscode-panel-border);
+}
+
+.threshold-title {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 8px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.threshold-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.threshold-item {
+	font-size: 12px;
+	padding: 6px 0;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	line-height: 1.5;
+}
+
+.threshold-icon {
+	color: #3b82f6;
+	font-size: 12px;
+	margin-top: 2px;
+}
+
+.tips-section {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--vscode-panel-border);
+}
+
+.tips-title {
+	font-size: 11px;
+	font-weight: 600;
+	color: #f59e0b;
+	margin-bottom: 8px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.tips-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.tip-item-viewer {
+	font-size: 12px;
+	padding: 6px 0;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	line-height: 1.5;
+}
+
+.tip-icon {
+	color: #f59e0b;
+	font-size: 12px;
+	margin-top: 2px;
+}
+
+.footer {
+	margin-top: 24px;
+	padding-top: 16px;
+	border-top: 1px solid var(--vscode-panel-border);
+	text-align: center;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}

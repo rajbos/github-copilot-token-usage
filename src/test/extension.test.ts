@@ -26,6 +26,7 @@ suite('Extension Test Suite', () => {
 			'copilot-token-tracker.showDetails',
 			'copilot-token-tracker.showChart',
 			'copilot-token-tracker.showMaturity',
+			'copilot-token-tracker.showFluencyLevelViewer',
 			'copilot-token-tracker.generateDiagnosticReport'
 		];
 

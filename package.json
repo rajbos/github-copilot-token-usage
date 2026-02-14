@@ -55,6 +55,11 @@
         "category": "Copilot Token Tracker"
       },
       {
+        "command": "copilot-token-tracker.showFluencyLevelViewer",
+        "title": "Show Fluency Level Viewer (Debug Only)",
+        "category": "Copilot Token Tracker"
+      },
+      {
         "command": "copilot-token-tracker.configureBackend",
         "title": "Configure Backend",
         "category": "Copilot Token Tracker"

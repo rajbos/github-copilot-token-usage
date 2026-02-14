@@ -51,6 +51,7 @@ type MaturityData = {
 	period: UsageAnalysisPeriod;
 	lastUpdated: string;
 	dismissedTips?: string[];
+	isDebugMode?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -235,6 +236,7 @@ function renderLayout(data: MaturityData): void {
 				</div>
 				<div class="button-row">
 					${buttonHtml('btn-refresh')}
+					${data.isDebugMode ? buttonHtml('btn-level-viewer') : ''}
 					${buttonHtml('btn-details')}
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
@@ -311,6 +313,9 @@ function renderLayout(data: MaturityData): void {
 	// Wire up navigation buttons
 	document.getElementById('btn-refresh')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'refresh' });
+	});
+	document.getElementById('btn-level-viewer')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showFluencyLevelViewer' });
 	});
 	document.getElementById('btn-details')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDetails' });
