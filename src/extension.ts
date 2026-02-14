@@ -2817,13 +2817,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgWaitTimeMs
 			};
 			
-			// Store conversation patterns
-			analysis.conversationPatterns = {
-				multiTurnSessions: requestCount > 1 ? 1 : 0,
-				singleTurnSessions: requestCount === 1 ? 1 : 0,
-				avgTurnsPerSession: requestCount,
-				maxTurnsInSession: requestCount
-			};
+			// Store conversation patterns (only for non-empty sessions)
+			// Skip empty sessions (requestCount === 0) to avoid skewing fluency score calculations
+			if (requestCount > 0) {
+				analysis.conversationPatterns = {
+					multiTurnSessions: requestCount > 1 ? 1 : 0,
+					singleTurnSessions: requestCount === 1 ? 1 : 0,
+					avgTurnsPerSession: requestCount,
+					maxTurnsInSession: requestCount
+				};
+			}
 			
 			// Store agent type usage
 			analysis.agentTypes = agentCounts;
