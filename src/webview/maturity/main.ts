@@ -199,7 +199,7 @@ function renderLayout(data: MaturityData): void {
 		// Add MCP discovery button for Tool Usage category
 		const mcpButton = cat.category === 'Tool Usage' ? `
 			<div style="margin-top: 10px;">
-				<button class="mcp-discover-btn" data-action="searchMcp">🔍 Discover MCP Servers in Marketplace</button>
+				<button class="mcp-discover-btn" data-action="searchMcp">🔍 Discover more MCP Servers in Marketplace</button>
 			</div>
 		` : '';
 
