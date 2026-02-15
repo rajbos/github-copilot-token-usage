@@ -650,6 +650,11 @@ function renderLayout(data: DiagnosticsData): void {
 				<table class="session-table">
 					<thead>
 						<tr>
+              document
+                .getElementById("btn-maturity")
+                ?.addEventListener("click", () =>
+                  vscode.postMessage({ command: "showMaturity" }),
+                );
 							<th>Folder</th>
 							<th>Editor</th>
 							<th># of Sessions</th>
@@ -734,7 +739,6 @@ function renderLayout(data: DiagnosticsData): void {
 					${buttonHtml("btn-details")}
 					${buttonHtml("btn-chart")}
 					${buttonHtml("btn-usage")}
-					${buttonHtml("btn-diagnostics")}
 					${buttonHtml("btn-maturity")}
 				</div>
 			</div>
