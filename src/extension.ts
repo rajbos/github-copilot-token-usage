@@ -313,7 +313,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 16; // Bumped to include workspaceFolderPath in cache (2026-02-11)
+	private static readonly CACHE_VERSION = 18; // Ensure conversationPatterns set for all JSONL paths (delta + non-delta)
 
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -2254,6 +2254,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Calculate model switching for delta-based JSONL files
 					await this.calculateModelSwitching(sessionFile, analysis);
+
+					// Derive conversation patterns from mode usage before returning
+					this.deriveConversationPatterns(analysis);
+
 					return analysis;
 				}
 
@@ -2405,6 +2409,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				// Calculate model switching for JSONL files before returning
 				await this.calculateModelSwitching(sessionFile, analysis);
+
+				// Derive conversation patterns from mode usage before returning
+				this.deriveConversationPatterns(analysis);
+
 				return analysis;
 			}
 
@@ -2605,6 +2613,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Derive conversation patterns from already-computed mode usage.
+	 * Called before every return in analyzeSessionUsage to ensure all file formats get patterns.
+	 */
+	private deriveConversationPatterns(analysis: SessionUsageAnalysis): void {
+		const totalRequests = analysis.modeUsage.ask + analysis.modeUsage.edit + analysis.modeUsage.agent;
+		analysis.conversationPatterns = {
+			multiTurnSessions: totalRequests > 1 ? 1 : 0,
+			singleTurnSessions: totalRequests === 1 ? 1 : 0,
+			avgTurnsPerSession: totalRequests,
+			maxTurnsInSession: totalRequests
+		};
+	}
+
+	/**
 	 * Track enhanced metrics from session files:
 	 * - Edit scope (single vs multi-file edits)
 	 * - Apply button usage (codeblockUri with isEdit flag)
@@ -2630,7 +2652,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const timestamps: number[] = [];
 			const timingsData: { firstProgress: number; totalElapsed: number; }[] = [];
 			const waitTimes: number[] = [];
-			let requestCount = 0;
 			const agentCounts = {
 				editsAgent: 0,
 				defaultAgent: 0,
@@ -2671,7 +2692,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					
 					// Process requests
 					const requests = sessionState.requests || [];
-					requestCount = requests.length;
 					
 					for (const request of requests) {
 						if (!request) { continue; }
@@ -2730,8 +2750,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 				
 				// Process requests
 				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-					requestCount = sessionContent.requests.length;
-					
 					for (const request of sessionContent.requests) {
 						// Track timestamps
 						if (request.timestamp) { timestamps.push(request.timestamp); }
@@ -2818,12 +2836,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			};
 			
 			// Store conversation patterns
-			analysis.conversationPatterns = {
-				multiTurnSessions: requestCount > 1 ? 1 : 0,
-				singleTurnSessions: requestCount === 1 ? 1 : 0,
-				avgTurnsPerSession: requestCount,
-				maxTurnsInSession: requestCount
-			};
+			this.deriveConversationPatterns(analysis);
 			
 			// Store agent type usage
 			analysis.agentTypes = agentCounts;
