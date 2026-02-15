@@ -208,6 +208,14 @@ The extension includes a comprehensive usage analysis dashboard that helps you u
 
 The dashboard provides insights into your prompting patterns and helps you optimize your Copilot workflow. For detailed information about the metrics and how to interpret them, see [Usage Analysis Documentation](docs/USAGE-ANALYSIS.md).
 
+## Copilot Fluency Score
+
+The extension includes a **Copilot Fluency Score** dashboard that maps your usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories: Prompt Engineering, Context Engineering, Agentic, Tool Usage, Customization, and Workflow Integration.
+
+Access it via the Command Palette: **Copilot Token Tracker: Show Fluency Score**, or from any panel's navigation buttons.
+
+For the full scoring rules and thresholds, see [Fluency Levels Documentation](docs/FLUENCY-LEVELS.md).
+
 ## Known Issues
 
 - The numbers shown are **estimates**, computed from Copilot Chat session logs.
