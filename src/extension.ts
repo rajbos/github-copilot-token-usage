@@ -5714,6 +5714,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'searchMcpExtensions':
 					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
 					break;
+				case 'shareToIssue': {
+					const scores = await this.calculateMaturityScores();
+					const categorySections = scores.categories.map(c => {
+						const evidenceList = c.evidence.length > 0
+							? c.evidence.map(e => `- ✅ ${e}`).join('\n')
+							: '- No significant activity detected';
+						return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
+					}).join('\n\n');
+					const body = `<h2>Copilot Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
+					const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
+					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					break;
+				}
 				case 'dismissTips':
 					if (message.category) {
 						await this.dismissFluencyTips(message.category);

@@ -305,6 +305,15 @@ function renderLayout(data: MaturityData): void {
 			<div class="footer">
 				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
 			</div>
+
+			<div class="beta-footer">
+				<span class="beta-footer-icon">⚠️</span>
+				<div class="beta-footer-content">
+					<strong>Beta</strong> — This screen is still in beta. If you have feedback or suggestions for improvements,
+					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository. Use the button to share your stats :arrow_right:
+				</div>
+				<button id="btn-share-issue" class="share-issue-btn">📤 Share to Issue</button>
+			</div>
 		</div>
 	`;
 
@@ -323,6 +332,11 @@ function renderLayout(data: MaturityData): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+
+	// Wire up share to issue button
+	document.getElementById('btn-share-issue')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToIssue' });
 	});
 
 	// Wire up MCP discovery button
