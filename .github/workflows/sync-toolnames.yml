@@ -1,0 +1,222 @@
+name: Sync Tool Names from vscode-copilot-chat
+
+on:
+  workflow_dispatch:  # Manual trigger
+  schedule:
+    - cron: '30 14 * * 1'  # Run every Monday at 2:30 PM UTC
+
+permissions:
+  contents: read
+
+jobs:
+  sync-toolnames:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Need write permission to create branches and push changes
+      pull-requests: write  # Need write permission to create PRs
+      
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      with:
+        egress-policy: audit
+
+    - name: Checkout current repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        path: current-repo
+        fetch-depth: 0
+        
+    - name: Checkout vscode-copilot-chat repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        repository: microsoft/vscode-copilot-chat
+        path: vscode-copilot-chat
+        fetch-depth: 1
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      with:
+        node-version: '20.x'
+
+    - name: Authenticate GitHub CLI
+      env:
+        # Try to use COPILOT_CLI_TOKEN first, fall back to GITHUB_TOKEN
+        GH_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN || secrets.GITHUB_TOKEN }}
+      run: |
+        echo "$GH_TOKEN" | gh auth login --with-token
+        gh auth status
+        
+    - name: Run Copilot CLI with prompt
+      id: copilot_run
+      working-directory: current-repo
+      env:
+        GH_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN || secrets.GITHUB_TOKEN }}
+      run: |
+        # Read the prompt from the file
+        PROMPT=$(cat .github/workflows/prompts/sync-toolnames-prompt.md)
+        
+        # Get the path to the vscode-copilot-chat repo
+        UPSTREAM_PATH="${GITHUB_WORKSPACE}/vscode-copilot-chat"
+        
+        # Get the path to toolNames.json
+        TOOLNAMES_PATH="${GITHUB_WORKSPACE}/current-repo/src/toolNames.json"
+        
+        # Create the full prompt with context - append context to the base prompt
+        {
+          echo "$PROMPT"
+          echo ""
+          echo "## Context Paths"
+          echo ""
+          echo "- Upstream repository path: ${UPSTREAM_PATH}"
+          echo "- Current repository toolNames.json path: ${TOOLNAMES_PATH}"
+          echo "- Upstream toolNames.ts path: ${UPSTREAM_PATH}/src/extension/tools/common/toolNames.ts"
+          echo ""
+          echo "## Additional Instructions"
+          echo ""
+          echo "Please check if the upstream file exists at the specified path. If it doesn't, search for toolNames.ts or similar files in the upstream repository and use the correct path."
+        } > /tmp/copilot-prompt.md
+        
+        echo "=== Running Copilot CLI with prompt ==="
+        cat /tmp/copilot-prompt.md
+        echo ""
+        echo "=== Copilot CLI Output ==="
+        
+        # Run gh copilot with the prompt using -p flag for non-interactive mode
+        # Allow file system tools so it can read the files
+        gh copilot -p "$(cat /tmp/copilot-prompt.md)" --allow-tool 'fs' > /tmp/copilot-output.txt 2>&1 || {
+          echo "Warning: gh copilot command failed, but continuing to check output"
+          cat /tmp/copilot-output.txt
+        }
+        
+        cat /tmp/copilot-output.txt
+        
+        # Store output for later steps
+        {
+          echo "output<<EOF"
+          cat /tmp/copilot-output.txt
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        
+    - name: Parse Copilot output and update toolNames.json
+      id: update_file
+      working-directory: current-repo
+      run: |
+        # Extract the delta from Copilot output
+        COPILOT_OUTPUT="${{ steps.copilot_run.outputs.output }}"
+        
+        # Check if output contains NO_DELTA
+        if echo "$COPILOT_OUTPUT" | grep -q "NO_DELTA"; then
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "ℹ️ No new tool names to add"
+          exit 0
+        fi
+        
+        # Extract JSON entries (lines starting with comma and containing colon)
+        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,"[^"]+"\s*:\s*"[^"]+"' || true)
+        
+        if [ -z "$DELTA_ENTRIES" ]; then
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "ℹ️ No valid delta entries found in Copilot output"
+          exit 0
+        fi
+        
+        echo "has_changes=true" >> $GITHUB_OUTPUT
+        
+        # Save the delta entries
+        echo "$DELTA_ENTRIES" > /tmp/delta-entries.txt
+        
+        echo "=== Delta entries to add ==="
+        cat /tmp/delta-entries.txt
+        
+        # Backup original file
+        cp src/toolNames.json src/toolNames.json.bak
+        
+        # Insert delta entries before the last line (closing brace)
+        # This preserves the JSON format and adds entries with leading commas
+        head -n -1 src/toolNames.json > /tmp/toolnames-temp.json
+        cat /tmp/delta-entries.txt >> /tmp/toolnames-temp.json
+        echo "}" >> /tmp/toolnames-temp.json
+        
+        # Validate the JSON
+        if ! jq empty /tmp/toolnames-temp.json 2>/dev/null; then
+          echo "❌ Error: Generated JSON is invalid"
+          cat /tmp/toolnames-temp.json
+          exit 1
+        fi
+        
+        # Pretty-print the JSON to match the existing format
+        jq --indent 2 --sort-keys . /tmp/toolnames-temp.json > src/toolNames.json
+        
+        echo "✅ Successfully updated src/toolNames.json"
+        
+        # Show the diff
+        echo "=== Changes made ==="
+        diff -u src/toolNames.json.bak src/toolNames.json || true
+        
+    - name: Check for changes
+      id: changes
+      working-directory: current-repo
+      run: |
+        if [ "${{ steps.update_file.outputs.has_changes }}" != "true" ]; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        if git diff --quiet src/toolNames.json; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "No changes detected in toolNames.json"
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Changes detected in toolNames.json"
+        fi
+        
+    - name: Create branch and commit changes
+      if: steps.changes.outputs.changed == 'true'
+      working-directory: current-repo
+      id: push_changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git checkout -b sync-toolnames-$(date +%Y%m%d-%H%M%S)
+        git add src/toolNames.json
+        git commit -m "chore: sync toolNames.json with vscode-copilot-chat" \
+                   -m "This commit automatically updates src/toolNames.json with new tool identifiers from microsoft/vscode-copilot-chat repository." \
+                   -m "Source: microsoft/vscode-copilot-chat" \
+                   -m "File: src/extension/tools/common/toolNames.ts"
+        
+        # Store branch name for next step
+        BRANCH_NAME=$(git branch --show-current)
+        echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+        git push -u origin "$BRANCH_NAME"
+
+    - name: Create Pull Request
+      if: steps.changes.outputs.changed == 'true'
+      uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+      with:
+        path: current-repo
+        branch: ${{ steps.push_changes.outputs.branch_name }}
+        title: "chore: sync toolNames.json with vscode-copilot-chat"
+        body: |
+          This pull request updates `src/toolNames.json` with new tool identifiers
+          found in the `microsoft/vscode-copilot-chat` repository.
+          
+          **Source Repository:** microsoft/vscode-copilot-chat
+          **Source File:** src/extension/tools/common/toolNames.ts
+          
+          The changes were automatically generated by scanning the upstream repository
+          and comparing tool IDs with our existing mapping.
+          
+          Please review the new entries to ensure the friendly names are appropriate.
+        labels: maintenance,autogenerated
+        
+    - name: Summary
+      working-directory: current-repo
+      run: |
+        if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
+          echo "✅ toolNames.json has been successfully updated with new tool names from vscode-copilot-chat"
+          echo ""
+          echo "A pull request has been created for review."
+        else
+          echo "ℹ️ toolNames.json was already up to date with vscode-copilot-chat"
+        fi
