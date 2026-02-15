@@ -18,7 +18,13 @@ Scan `microsoft/vscode-copilot-chat` for model-facing tool identifiers, compare 
    - Replace `_` / `-` / `.` with spaces.
    - Split camelCase / PascalCase boundaries into words.
    - Uppercase words (Title Case).
-   - Preserve known acronyms: `VS Code`, `MCP`, `GitHub`, `API`, `URL`, `JSON`.
+   - Preserve known acronyms in ALL CAPS: `VS CODE`, `MCP`, `GITHUB`, `API`, `URL`, `JSON`, `HTTP`, `HTTPS`, `CLI`, `UI`.
+   - Examples:
+     - `github_api_tool` → `GitHub API Tool`
+     - `copilot_readFile` → `Copilot Read File`
+     - `mcp.io.github.git` → `MCP IO GitHub Git`
+     - `search_subagent` → `Search Subagent`
+     - `run_in_terminal` → `Run In Terminal`
 6. Output **only** the missing entries in a format directly pasteable into the existing mapping object, using the same style as the mapping (leading comma on each line), e.g.:
    ```
    ,"some_tool": "Some Tool"

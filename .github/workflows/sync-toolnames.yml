@@ -116,8 +116,9 @@ jobs:
         fi
         
         # Extract JSON entries (lines that look like JSON key-value pairs with leading comma)
-        # Make the regex flexible to handle various whitespace configurations
-        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,"[^"]+"\s*:\s*"[^"]+"\s*$' || true)
+        # Make the regex flexible - we'll validate with jq later
+        # Pattern matches: optional whitespace, comma, optional whitespace, quote, content, quote, colon, quote, content, quote
+        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,\s*"[^"]+"\s*:\s*".*"\s*$' || true)
         
         if [ -z "$DELTA_ENTRIES" ]; then
           echo "has_changes=false" >> $GITHUB_OUTPUT
@@ -138,11 +139,11 @@ jobs:
         
         # Use jq to add the new entries properly
         # Convert delta entries to proper JSON format by:
-        # 1. Remove leading commas from each line
+        # 1. Remove leading whitespace and commas
         # 2. Wrap in braces with proper formatting
         {
           echo "{"
-          echo "$DELTA_ENTRIES" | sed 's/^[[:space:]]*,//' | sed '1!s/^/,/'
+          echo "$DELTA_ENTRIES" | sed 's/^[[:space:]]*,//' | sed 's/^[[:space:]]*//' | sed '1!s/^/,/'
           echo "}"
         } > /tmp/delta-object.json
         
