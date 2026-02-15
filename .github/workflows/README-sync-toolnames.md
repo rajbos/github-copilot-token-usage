@@ -16,6 +16,7 @@ The workflow:
 
 The workflow runs:
 - **Automatically**: Every Monday at 2:30 PM UTC
+- **On changes**: When the workflow file or prompt file is modified
 - **Manually**: Can be triggered via the Actions tab in GitHub
 
 ## Authentication

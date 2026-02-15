@@ -4,6 +4,10 @@ on:
   workflow_dispatch:  # Manual trigger
   schedule:
     - cron: '30 14 * * 1'  # Run every Monday at 2:30 PM UTC
+  push:
+    paths:
+      - .github/workflows/sync-toolnames.yml
+      - .github/workflows/prompts/sync-toolnames-prompt.md
 
 permissions:
   contents: read
