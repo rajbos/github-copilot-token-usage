@@ -115,8 +115,9 @@ jobs:
           exit 0
         fi
         
-        # Extract JSON entries (lines starting with comma and containing colon)
-        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,"[^"]+"\s*:\s*"[^"]+"' || true)
+        # Extract JSON entries (lines that look like JSON key-value pairs with leading comma)
+        # Make the regex flexible to handle various whitespace configurations
+        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,"[^"]+"\s*:\s*"[^"]+"\s*$' || true)
         
         if [ -z "$DELTA_ENTRIES" ]; then
           echo "has_changes=false" >> $GITHUB_OUTPUT
@@ -135,21 +136,35 @@ jobs:
         # Backup original file
         cp src/toolNames.json src/toolNames.json.bak
         
-        # Insert delta entries before the last line (closing brace)
-        # This preserves the JSON format and adds entries with leading commas
-        head -n -1 src/toolNames.json > /tmp/toolnames-temp.json
-        cat /tmp/delta-entries.txt >> /tmp/toolnames-temp.json
-        echo "}" >> /tmp/toolnames-temp.json
+        # Use jq to add the new entries properly
+        # Convert delta entries to proper JSON format by:
+        # 1. Remove leading commas from each line
+        # 2. Wrap in braces with proper formatting
+        {
+          echo "{"
+          echo "$DELTA_ENTRIES" | sed 's/^[[:space:]]*,//' | sed '1!s/^/,/'
+          echo "}"
+        } > /tmp/delta-object.json
         
-        # Validate the JSON
-        if ! jq empty /tmp/toolnames-temp.json 2>/dev/null; then
-          echo "❌ Error: Generated JSON is invalid"
-          cat /tmp/toolnames-temp.json
+        # Validate the delta JSON
+        if ! jq empty /tmp/delta-object.json 2>/dev/null; then
+          echo "❌ Error: Delta entries are not valid JSON"
+          cat /tmp/delta-object.json
           exit 1
         fi
         
-        # Pretty-print the JSON to match the existing format
-        jq --indent 2 --sort-keys . /tmp/toolnames-temp.json > src/toolNames.json
+        # Merge the new entries with the existing JSON using jq
+        jq -s '.[0] * .[1]' src/toolNames.json /tmp/delta-object.json > /tmp/toolnames-merged.json
+        
+        # Validate the merged JSON
+        if ! jq empty /tmp/toolnames-merged.json 2>/dev/null; then
+          echo "❌ Error: Merged JSON is invalid"
+          cat /tmp/toolnames-merged.json
+          exit 1
+        fi
+        
+        # Pretty-print the JSON to match the existing format (2 spaces, sorted keys)
+        jq --indent 2 --sort-keys . /tmp/toolnames-merged.json > src/toolNames.json
         
         echo "✅ Successfully updated src/toolNames.json"
         
