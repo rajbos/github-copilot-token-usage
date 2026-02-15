@@ -234,3 +234,4 @@ jobs:
         else
           echo "ℹ️ toolNames.json was already up to date with vscode-copilot-chat"
         fi
+
