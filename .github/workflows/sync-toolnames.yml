@@ -82,10 +82,11 @@ jobs:
         echo ""
         echo "=== Copilot CLI Output ==="
         
-        # Run gh copilot with the prompt using -p flag for non-interactive mode
-        # Allow file system tools so it can read the files
-        gh copilot -p "$(cat /tmp/copilot-prompt.md)" --allow-tool 'fs' > /tmp/copilot-output.txt 2>&1 || {
-          echo "Warning: gh copilot command failed, but continuing to check output"
+        # Run gh copilot with the prompt using non-interactive mode
+        # Use -s/--silent for script-friendly output, -p for prompt, --allow-all for permissions
+        gh copilot -- -p "$(cat /tmp/copilot-prompt.md)" --silent --allow-all --add-dir "${UPSTREAM_PATH}" --add-dir "${GITHUB_WORKSPACE}/current-repo" > /tmp/copilot-output.txt 2>&1 || {
+          EXIT_CODE=$?
+          echo "Warning: gh copilot command exited with code $EXIT_CODE, but continuing to check output"
           cat /tmp/copilot-output.txt
         }
         
