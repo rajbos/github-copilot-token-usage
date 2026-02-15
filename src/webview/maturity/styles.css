@@ -366,6 +366,66 @@ body {
 	color: #a0a0a0;
 }
 
+/* Beta warning footer */
+.beta-footer {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 12px;
+	padding: 12px 14px;
+	background: #3b2c10;
+	border: 1px solid #f59e0b80;
+	border-radius: 6px;
+	font-size: 12px;
+	color: #f5d78e;
+}
+
+.beta-footer-icon {
+	flex-shrink: 0;
+	font-size: 16px;
+}
+
+.beta-footer-content {
+	flex: 1;
+	line-height: 1.5;
+}
+
+.beta-link {
+	color: #f59e0b;
+	text-decoration: underline;
+}
+
+.beta-link:hover {
+	color: #fbbf24;
+}
+
+.share-issue-btn {
+	flex-shrink: 0;
+	background: linear-gradient(135deg, #3b2c10 0%, #4a3815 100%);
+	border: 1px solid #f59e0b;
+	color: #f5d78e;
+	padding: 6px 14px;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	white-space: nowrap;
+}
+
+.share-issue-btn:hover {
+	background: linear-gradient(135deg, #4a3815 0%, #5a4520 100%);
+	border-color: #fbbf24;
+	color: #fff;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(245, 158, 11, 0.2);
+}
+
+.share-issue-btn:active {
+	transform: translateY(0);
+	box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15);
+}
+
 @media (width <= 768px) {
 	.category-grid {
 		grid-template-columns: 1fr;

@@ -734,7 +734,6 @@ function renderLayout(data: DiagnosticsData): void {
 					${buttonHtml("btn-details")}
 					${buttonHtml("btn-chart")}
 					${buttonHtml("btn-usage")}
-					${buttonHtml("btn-diagnostics")}
 					${buttonHtml("btn-maturity")}
 				</div>
 			</div>
@@ -1365,6 +1364,11 @@ function renderLayout(data: DiagnosticsData): void {
 
   // Navigation buttons (match details view)
   document
+    .getElementById("btn-refresh")
+    ?.addEventListener("click", () =>
+      vscode.postMessage({ command: "refresh" }),
+    );
+  document
     .getElementById("btn-chart")
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showChart" }),
@@ -1378,6 +1382,16 @@ function renderLayout(data: DiagnosticsData): void {
     .getElementById("btn-details")
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showDetails" }),
+    );
+  document
+    .getElementById("btn-diagnostics")
+    ?.addEventListener("click", () =>
+      vscode.postMessage({ command: "showDiagnostics" }),
+    );
+  document
+    .getElementById("btn-maturity")
+    ?.addEventListener("click", () =>
+      vscode.postMessage({ command: "showMaturity" }),
     );
 
   setupSortHandlers();

@@ -113,24 +113,24 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string
 		return '<div style="color: var(--text-muted);">No tools used yet</div>';
 	}
 
-	const rows = sortedTools.map(([tool, count], idx) => {
+	    const rows = sortedTools.map(([tool, count], idx) => {
 		const friendly = escapeHtml(lookupToolName(tool));
 		const idEscaped = escapeHtml(tool);
 		return `
-			<tr>
-					<td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle);">${idx + 1}</td>
-					<td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle);"><strong title="${idEscaped}">${friendly}</strong></td>
-					<td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right;">${count}</td>
-			</tr>`;
-	}).join('');
+		    <tr>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); width:40px; max-width:40px; text-align:center;">${idx + 1}</td>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle);"> <strong title="${idEscaped}">${friendly}</strong></td>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px;">${count}</td>
+		    </tr>`;
+	    }).join('');
 
 	return `
 		<table style="width:100%; border-collapse:collapse;">
 			<thead>
 				<tr style="color:var(--text-secondary); font-size:12px; text-align:left;">
-					<th style="padding:8px 12px; opacity:0.9;">#</th>
+					<th style="padding:8px 12px; opacity:0.9; width:40px;">#</th>
 					<th style="padding:8px 12px; opacity:0.9;">Tool</th>
-					<th style="padding:8px 12px; opacity:0.9; text-align:right;">Calls</th>
+					<th style="padding:8px 12px; opacity:0.9; text-align:right; width:90px;">Calls</th>
 				</tr>
 			</thead>
 			<tbody>
