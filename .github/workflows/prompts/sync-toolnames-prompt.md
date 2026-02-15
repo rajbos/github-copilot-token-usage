@@ -4,8 +4,8 @@ Scan `microsoft/vscode-copilot-chat` for model-facing tool identifiers, compare 
 
 ## Requirements
 
-1. Add `microsoft/vscode-copilot-chat` as a git remote named `upstream` (do not assume it already exists), fetch it, and use the default branch from upstream (prefer `main` if present).
-2. In the upstream repo, treat `src/extension/tools/common/toolNames.ts` as the source of truth for tool IDs.
+1. The `microsoft/vscode-copilot-chat` repository has been checked out and is available in the workspace. Use the paths provided in the Context Paths section below.
+2. In the vscode-copilot-chat repo, treat `src/extension/tools/common/toolNames.ts` as the source of truth for tool IDs.
    - Extract tool IDs from:
      - `export enum ToolName { ... }` (string literal values)
      - `export enum ContributedToolName { ... }` (string literal values)
