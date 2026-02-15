@@ -441,26 +441,28 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</div>
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
 							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
-							${stats.today.modelSwitching.standardModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: var(--link-color);">🔵 Standard:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.standardModels.join(', ')}</span>
-								</div>
-							` : ''}
-							${stats.today.modelSwitching.premiumModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: #fbbf24;">⭐ Premium:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.premiumModels.join(', ')}</span>
-								</div>
-							` : ''}
-							${stats.today.modelSwitching.unknownModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: var(--text-muted);">❓ Unknown:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.unknownModels.join(', ')}</span>
-								</div>
-							` : ''}
+							<div style="min-height: 90px;">
+								${stats.today.modelSwitching.standardModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--link-color);">🔵 Standard:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.standardModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.today.modelSwitching.premiumModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.premiumModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.today.modelSwitching.unknownModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--text-muted);">❓ Unknown:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.unknownModels.join(', ')}</span>
+									</div>
+								` : ''}
+							</div>
 							${stats.today.modelSwitching.totalRequests > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
 									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
 									${stats.today.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
@@ -508,26 +510,28 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</div>
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
 							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
-							${stats.month.modelSwitching.standardModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: var(--link-color);">🔵 Standard:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.standardModels.join(', ')}</span>
-								</div>
-							` : ''}
-							${stats.month.modelSwitching.premiumModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: #fbbf24;">⭐ Premium:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.join(', ')}</span>
-								</div>
-							` : ''}
-							${stats.month.modelSwitching.unknownModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: var(--text-muted);">❓ Unknown:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.join(', ')}</span>
-								</div>
-							` : ''}
+							<div style="min-height: 90px;">
+								${stats.month.modelSwitching.standardModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--link-color);">🔵 Standard:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.standardModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.month.modelSwitching.premiumModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.month.modelSwitching.unknownModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--text-muted);">❓ Unknown:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.join(', ')}</span>
+									</div>
+								` : ''}
+							</div>
 							${stats.month.modelSwitching.totalRequests > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
 									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
 									${stats.month.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
@@ -575,26 +579,28 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</div>
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
 							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
-							${stats.last30Days.modelSwitching.standardModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: var(--link-color);">🔵 Standard:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.standardModels.join(', ')}</span>
-								</div>
-							` : ''}
-							${stats.last30Days.modelSwitching.premiumModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: #fbbf24;">⭐ Premium:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumModels.join(', ')}</span>
-								</div>
-							` : ''}
-							${stats.last30Days.modelSwitching.unknownModels.length > 0 ? `
-								<div style="margin-bottom: 6px;">
-									<span style="color: var(--text-muted);">❓ Unknown:</span>
-									<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownModels.join(', ')}</span>
-								</div>
-							` : ''}
+							<div style="min-height: 90px;">
+								${stats.last30Days.modelSwitching.standardModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--link-color);">🔵 Standard:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.standardModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.last30Days.modelSwitching.premiumModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.last30Days.modelSwitching.unknownModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--text-muted);">❓ Unknown:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownModels.join(', ')}</span>
+									</div>
+								` : ''}
+							</div>
 							${stats.last30Days.modelSwitching.totalRequests > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
 									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
 									${stats.last30Days.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
