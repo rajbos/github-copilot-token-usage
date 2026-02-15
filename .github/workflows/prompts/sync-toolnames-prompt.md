@@ -25,9 +25,9 @@ Scan `microsoft/vscode-copilot-chat` for model-facing tool identifiers, compare 
      - `mcp.io.github.git` → `MCP IO GitHub Git`
      - `search_subagent` → `Search Subagent`
      - `run_in_terminal` → `Run In Terminal`
-6. Output **only** the missing entries in a format directly pasteable into the existing mapping object, using the same style as the mapping (leading comma on each line), e.g.:
+6. Output **only** the missing entries in a format directly pasteable into the existing mapping object, using the same style as the mapping (leading comma with space on each line), e.g.:
    ```
-   ,"some_tool": "Some Tool"
+   , "some_tool": "Some Tool"
    ```
 7. If `missing` is empty, output nothing except a single line: `NO_DELTA`.
 8. Also print (as plain text, after the delta or NO_DELTA) the upstream commit SHA used for the scan and the exact file path scanned in upstream, for traceability.

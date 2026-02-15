@@ -117,8 +117,8 @@ jobs:
         
         # Extract JSON entries (lines that look like JSON key-value pairs with leading comma)
         # Make the regex flexible - we'll validate with jq later
-        # Pattern matches: optional whitespace, comma, optional whitespace, quote, content, quote, colon, quote, content, quote
-        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,\s*"[^"]+"\s*:\s*".*"\s*$' || true)
+        # Use .* for both key and value to handle any content including escaped quotes
+        DELTA_ENTRIES=$(echo "$COPILOT_OUTPUT" | grep -E '^\s*,\s*".*"\s*:\s*".*"\s*$' || true)
         
         if [ -z "$DELTA_ENTRIES" ]; then
           echo "has_changes=false" >> $GITHUB_OUTPUT
