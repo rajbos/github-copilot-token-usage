@@ -199,7 +199,7 @@ function renderLayout(data: MaturityData): void {
 		// Add MCP discovery button for Tool Usage category
 		const mcpButton = cat.category === 'Tool Usage' ? `
 			<div style="margin-top: 10px;">
-				<button class="mcp-discover-btn" data-action="searchMcp">🔍 Discover MCP Servers in Marketplace</button>
+				<button class="mcp-discover-btn" data-action="searchMcp">🔍 Discover more MCP Servers in Marketplace</button>
 			</div>
 		` : '';
 
@@ -247,6 +247,8 @@ function renderLayout(data: MaturityData): void {
 				<div>
 					This dashboard maps your GitHub Copilot usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories.
 					It helps you understand which Copilot capabilities you already use and suggests areas to explore for greater productivity.
+					<br><br>
+					📖 <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated.
 					<br><br>
 					<strong>Note:</strong> Scores are based on data from session log files. Some features (e.g., inline suggestion acceptance) cannot be tracked via logs.
 				</div>
@@ -305,6 +307,15 @@ function renderLayout(data: MaturityData): void {
 			<div class="footer">
 				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
 			</div>
+
+			<div class="beta-footer">
+				<span class="beta-footer-icon">⚠️</span>
+				<div class="beta-footer-content">
+					<strong>Beta</strong> — This screen is still in beta. If you have feedback or suggestions for improvements,
+					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository. Use the button to share your stats :arrow_right:
+				</div>
+				<button id="btn-share-issue" class="share-issue-btn">📤 Share to Issue</button>
+			</div>
 		</div>
 	`;
 
@@ -323,6 +334,11 @@ function renderLayout(data: MaturityData): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+
+	// Wire up share to issue button
+	document.getElementById('btn-share-issue')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToIssue' });
 	});
 
 	// Wire up MCP discovery button

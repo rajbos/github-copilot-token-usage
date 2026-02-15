@@ -313,7 +313,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 16; // Bumped to include workspaceFolderPath in cache (2026-02-11)
+	private static readonly CACHE_VERSION = 18; // Ensure conversationPatterns set for all JSONL paths (delta + non-delta)
 
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -2254,6 +2254,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Calculate model switching for delta-based JSONL files
 					await this.calculateModelSwitching(sessionFile, analysis);
+
+					// Derive conversation patterns from mode usage before returning
+					this.deriveConversationPatterns(analysis);
+
 					return analysis;
 				}
 
@@ -2405,6 +2409,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				// Calculate model switching for JSONL files before returning
 				await this.calculateModelSwitching(sessionFile, analysis);
+
+				// Derive conversation patterns from mode usage before returning
+				this.deriveConversationPatterns(analysis);
+
 				return analysis;
 			}
 
@@ -2605,6 +2613,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Derive conversation patterns from already-computed mode usage.
+	 * Called before every return in analyzeSessionUsage to ensure all file formats get patterns.
+	 */
+	private deriveConversationPatterns(analysis: SessionUsageAnalysis): void {
+		const totalRequests = analysis.modeUsage.ask + analysis.modeUsage.edit + analysis.modeUsage.agent;
+		analysis.conversationPatterns = {
+			multiTurnSessions: totalRequests > 1 ? 1 : 0,
+			singleTurnSessions: totalRequests === 1 ? 1 : 0,
+			avgTurnsPerSession: totalRequests,
+			maxTurnsInSession: totalRequests
+		};
+	}
+
+	/**
 	 * Track enhanced metrics from session files:
 	 * - Edit scope (single vs multi-file edits)
 	 * - Apply button usage (codeblockUri with isEdit flag)
@@ -2630,7 +2652,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const timestamps: number[] = [];
 			const timingsData: { firstProgress: number; totalElapsed: number; }[] = [];
 			const waitTimes: number[] = [];
-			let requestCount = 0;
 			const agentCounts = {
 				editsAgent: 0,
 				defaultAgent: 0,
@@ -2671,7 +2692,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					
 					// Process requests
 					const requests = sessionState.requests || [];
-					requestCount = requests.length;
 					
 					for (const request of requests) {
 						if (!request) { continue; }
@@ -2730,8 +2750,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 				
 				// Process requests
 				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-					requestCount = sessionContent.requests.length;
-					
 					for (const request of sessionContent.requests) {
 						// Track timestamps
 						if (request.timestamp) { timestamps.push(request.timestamp); }
@@ -2817,16 +2835,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgWaitTimeMs
 			};
 			
-			// Store conversation patterns (only for non-empty sessions)
-			// Skip empty sessions (requestCount === 0) to avoid skewing fluency score calculations
-			if (requestCount > 0) {
-				analysis.conversationPatterns = {
-					multiTurnSessions: requestCount > 1 ? 1 : 0,
-					singleTurnSessions: requestCount === 1 ? 1 : 0,
-					avgTurnsPerSession: requestCount,
-					maxTurnsInSession: requestCount
-				};
-			}
+			// Store conversation patterns
+			this.deriveConversationPatterns(analysis);
 			
 			// Store agent type usage
 			analysis.agentTypes = agentCounts;
@@ -5532,9 +5542,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const cuTips: string[] = [];
 		let cuStage = 1;
 
-		// Calculate repo-level customization adoption
-		const totalRepos = p.repositories.filter(r => r !== 'Unknown').length;
-		const reposWithCustomization = p.repositoriesWithCustomization.filter(r => r !== 'Unknown').length;
+		// Derive repo-level customization from the customization matrix (which is actually populated)
+		const matrix = this._lastCustomizationMatrix;
+		const totalRepos = matrix?.totalWorkspaces ?? 0;
+		const reposWithCustomization = totalRepos - (matrix?.workspacesWithIssues ?? 0);
 		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
 
 		if (totalRepos > 0) {
@@ -5542,19 +5553,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		if (reposWithCustomization > 0) {
-			cuEvidence.push(`${reposWithCustomization} repo${reposWithCustomization === 1 ? '' : 's'} with custom instructions or agents.md`);
 			cuStage = 2;
 		}
 
 		// Stage thresholds based on adoption rate
 		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
 			cuStage = 3;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization (30%+ with 2+ repos → Stage 3)`);
 		}
 
 		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
 			cuStage = 4;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate (70%+ with 3+ repos → Stage 4)`);
 		}
 
 		// Model selection awareness (choosing specific models)
@@ -5566,22 +5574,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for Stage 4 criteria first
 			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
 			
-			// Show threshold context to help users understand the score
+			cuEvidence.push(`Used ${uniqueModels.length} different models`);
 			if (hasStage4Models) {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ with 3+ repos customized → Stage 4)`);
 				cuStage = 4;
 			} else if (uniqueModels.length >= 5) {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ detected, need 3+ repos customized for Stage 4)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			} else {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (3+ models → Stage 3)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			}
 		}
 
+		// Show repo customization evidence once, reflecting the final achieved stage
+		if (cuStage >= 4) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (70%+ with 3+ repos → Stage 4)`);
+		} else if (cuStage >= 3) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (30%+ with 2+ repos → Stage 3)`);
+		} else if (reposWithCustomization > 0) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos with custom instructions or agents.md`);
+		}
+
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
 		if (cuStage < 3) { cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience'); }
-		if (cuStage < 4) { cuTips.push('Aim for consistent customization across all projects with instructions and agents.md'); }
+		if (cuStage < 4) {
+			const uncustomized = totalRepos - reposWithCustomization;
+			if (totalRepos > 0 && uncustomized > 0) {
+				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add instructions and agents.md to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
+			} else {
+				cuTips.push('Aim for consistent customization across all projects with instructions and agents.md');
+			}
+		}
+		if (cuStage >= 4) {
+			const uncustomized = totalRepos - reposWithCustomization;
+			if (uncustomized > 0) {
+				cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+			} else {
+				cuTips.push('All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration');
+			}
+		}
 
 		// ---------- 6. Workflow Integration ----------
 		const wiEvidence: string[] = [];
@@ -5709,6 +5738,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'searchMcpExtensions':
 					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
 					break;
+				case 'shareToIssue': {
+					const scores = await this.calculateMaturityScores();
+					const categorySections = scores.categories.map(c => {
+						const evidenceList = c.evidence.length > 0
+							? c.evidence.map(e => `- ✅ ${e}`).join('\n')
+							: '- No significant activity detected';
+						return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
+					}).join('\n\n');
+					const body = `<h2>Copilot Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
+					const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
+					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					break;
+				}
 				case 'dismissTips':
 					if (message.category) {
 						await this.dismissFluencyTips(message.category);
