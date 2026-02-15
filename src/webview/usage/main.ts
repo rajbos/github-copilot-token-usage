@@ -21,6 +21,10 @@ type ModelSwitchingAnalysis = {
 	premiumModels: string[];
 	unknownModels: string[];
 	mixedTierSessions: number;
+	standardRequests: number;
+	premiumRequests: number;
+	unknownRequests: number;
+	totalRequests: number;
 };
 
 type UsageAnalysisPeriod = {
@@ -455,6 +459,29 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.unknownModels.join(', ')}</span>
 								</div>
 							` : ''}
+							${stats.today.modelSwitching.totalRequests > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
+									${stats.today.modelSwitching.standardRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--link-color);">🔵 Standard: </span>
+											<span style="color: var(--text-primary);">${stats.today.modelSwitching.standardRequests} (${((stats.today.modelSwitching.standardRequests / stats.today.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.today.modelSwitching.premiumRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--text-primary);">${stats.today.modelSwitching.premiumRequests} (${((stats.today.modelSwitching.premiumRequests / stats.today.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.today.modelSwitching.unknownRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--text-muted);">❓ Unknown: </span>
+											<span style="color: var(--text-primary);">${stats.today.modelSwitching.unknownRequests} (${((stats.today.modelSwitching.unknownRequests / stats.today.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+								</div>
+							` : ''}
 							${stats.today.modelSwitching.mixedTierSessions > 0 ? `
 								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
 									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${stats.today.modelSwitching.mixedTierSessions}</span>
@@ -499,6 +526,29 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.join(', ')}</span>
 								</div>
 							` : ''}
+							${stats.month.modelSwitching.totalRequests > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
+									${stats.month.modelSwitching.standardRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--link-color);">🔵 Standard: </span>
+											<span style="color: var(--text-primary);">${stats.month.modelSwitching.standardRequests} (${((stats.month.modelSwitching.standardRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.month.modelSwitching.premiumRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--text-primary);">${stats.month.modelSwitching.premiumRequests} (${((stats.month.modelSwitching.premiumRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.month.modelSwitching.unknownRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--text-muted);">❓ Unknown: </span>
+											<span style="color: var(--text-primary);">${stats.month.modelSwitching.unknownRequests} (${((stats.month.modelSwitching.unknownRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+								</div>
+							` : ''}
 							${stats.month.modelSwitching.mixedTierSessions > 0 ? `
 								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
 									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${stats.month.modelSwitching.mixedTierSessions}</span>
@@ -541,6 +591,29 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								<div style="margin-bottom: 6px;">
 									<span style="color: var(--text-muted);">❓ Unknown:</span>
 									<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownModels.join(', ')}</span>
+								</div>
+							` : ''}
+							${stats.last30Days.modelSwitching.totalRequests > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
+									${stats.last30Days.modelSwitching.standardRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--link-color);">🔵 Standard: </span>
+											<span style="color: var(--text-primary);">${stats.last30Days.modelSwitching.standardRequests} (${((stats.last30Days.modelSwitching.standardRequests / stats.last30Days.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.last30Days.modelSwitching.premiumRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumRequests} (${((stats.last30Days.modelSwitching.premiumRequests / stats.last30Days.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.last30Days.modelSwitching.unknownRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--text-muted);">❓ Unknown: </span>
+											<span style="color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownRequests} (${((stats.last30Days.modelSwitching.unknownRequests / stats.last30Days.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
 								</div>
 							` : ''}
 							${stats.last30Days.modelSwitching.mixedTierSessions > 0 ? `

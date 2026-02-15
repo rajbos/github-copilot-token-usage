@@ -116,6 +116,10 @@ interface SessionUsageAnalysis {
 		switchCount: number;
 		tiers: { standard: string[]; premium: string[]; unknown: string[] };
 		hasMixedTiers: boolean;
+		standardRequests: number;
+		premiumRequests: number;
+		unknownRequests: number;
+		totalRequests: number;
 	};
 	editScope?: EditScopeUsage;
 	applyUsage?: ApplyButtonUsage;
@@ -209,6 +213,10 @@ interface ModelSwitchingAnalysis {
 	premiumModels: string[];     // Unique premium models used
 	unknownModels: string[];     // Unique models with unknown tier
 	mixedTierSessions: number;   // Sessions using both standard and premium
+	standardRequests: number;    // Count of requests using standard models
+	premiumRequests: number;     // Count of requests using premium models
+	unknownRequests: number;     // Count of requests using unknown tier models
+	totalRequests: number;       // Total requests across all tiers
 }
 
 interface UsageAnalysisStats {
@@ -1506,7 +1514,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				standardModels: [],
 				premiumModels: [],
 				unknownModels: [],
-				mixedTierSessions: 0
+				mixedTierSessions: 0,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			},
 			repositories: [],
 			repositoriesWithCustomization: [],
@@ -1601,7 +1613,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 								modelCount: 0,
 								switchCount: 0,
 								tiers: { standard: [], premium: [], unknown: [] },
-								hasMixedTiers: false
+								hasMixedTiers: false,
+								standardRequests: 0,
+								premiumRequests: 0,
+								unknownRequests: 0,
+								totalRequests: 0
 							}
 						};
 
@@ -1793,7 +1809,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			};
 		}
 
@@ -1824,6 +1844,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (analysis.modelSwitching.hasMixedTiers) {
 				period.modelSwitching.mixedTierSessions++;
 			}
+
+			// Aggregate request counts per tier
+			period.modelSwitching.standardRequests += analysis.modelSwitching.standardRequests || 0;
+			period.modelSwitching.premiumRequests += analysis.modelSwitching.premiumRequests || 0;
+			period.modelSwitching.unknownRequests += analysis.modelSwitching.unknownRequests || 0;
+			period.modelSwitching.totalRequests += analysis.modelSwitching.totalRequests || 0;
 
 			// Calculate aggregate statistics
 			if (period.modelSwitching.modelsPerSession.length > 0) {
@@ -2149,7 +2175,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			}
 		};
 
@@ -2543,7 +2573,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			analysis.modelSwitching.tiers = { standard: standardModels, premium: premiumModels, unknown: unknownModels };
 			analysis.modelSwitching.hasMixedTiers = standardModels.length > 0 && premiumModels.length > 0;
 
-			// Count model switches by examining request sequence (for JSON files only - not JSONL)
+			// Count requests per tier and model switches by examining request sequence
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
@@ -2555,17 +2585,107 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 					let previousModel: string | null = null;
 					let switchCount = 0;
+					const tierCounts = { standard: 0, premium: 0, unknown: 0 };
 
 					for (const request of sessionContent.requests) {
 						const currentModel = this.getModelFromRequest(request);
+						
+						// Count model switches
 						if (previousModel && currentModel !== previousModel) {
 							switchCount++;
 						}
 						previousModel = currentModel;
+
+						// Count requests per tier
+						const tier = this.getModelTier(currentModel);
+						if (tier === 'standard') {
+							tierCounts.standard++;
+						} else if (tier === 'premium') {
+							tierCounts.premium++;
+						} else {
+							tierCounts.unknown++;
+						}
 					}
 
 					analysis.modelSwitching.switchCount = switchCount;
+					analysis.modelSwitching.standardRequests = tierCounts.standard;
+					analysis.modelSwitching.premiumRequests = tierCounts.premium;
+					analysis.modelSwitching.unknownRequests = tierCounts.unknown;
+					analysis.modelSwitching.totalRequests = tierCounts.standard + tierCounts.premium + tierCounts.unknown;
 				}
+			} else {
+				// For JSONL files, we need to count requests differently
+				// Count user messages as requests (type === 'user.message' or kind: 2 with requests)
+				const lines = fileContent.trim().split('\n');
+				const tierCounts = { standard: 0, premium: 0, unknown: 0 };
+				let defaultModel = 'gpt-4o';
+
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+
+						// Track model changes
+						if (event.kind === 0) {
+							const modelId = event.v?.selectedModel?.identifier ||
+								event.v?.selectedModel?.metadata?.id ||
+								event.v?.inputState?.selectedModel?.metadata?.id;
+							if (modelId) {
+								defaultModel = modelId.replace(/^copilot\//, '');
+							}
+						}
+
+						if (event.kind === 2 && event.k?.[0] === 'selectedModel') {
+							const modelId = event.v?.identifier || event.v?.metadata?.id;
+							if (modelId) {
+								defaultModel = modelId.replace(/^copilot\//, '');
+							}
+						}
+
+						// Count user messages (requests)
+						if (event.type === 'user.message') {
+							const model = event.model || defaultModel;
+							const tier = this.getModelTier(model);
+							if (tier === 'standard') {
+								tierCounts.standard++;
+							} else if (tier === 'premium') {
+								tierCounts.premium++;
+							} else {
+								tierCounts.unknown++;
+							}
+						}
+
+						// Count VS Code incremental format requests (kind: 2 with requests array)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								let requestModel = defaultModel;
+								if (request.modelId) {
+									requestModel = request.modelId.replace(/^copilot\//, '');
+								} else if (request.result?.metadata?.modelId) {
+									requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
+								} else if (request.result?.details) {
+									requestModel = this.getModelFromRequest(request);
+								}
+
+								const tier = this.getModelTier(requestModel);
+								if (tier === 'standard') {
+									tierCounts.standard++;
+								} else if (tier === 'premium') {
+									tierCounts.premium++;
+								} else {
+									tierCounts.unknown++;
+								}
+							}
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+
+				analysis.modelSwitching.standardRequests = tierCounts.standard;
+				analysis.modelSwitching.premiumRequests = tierCounts.premium;
+				analysis.modelSwitching.unknownRequests = tierCounts.unknown;
+				analysis.modelSwitching.totalRequests = tierCounts.standard + tierCounts.premium + tierCounts.unknown;
 			}
 		} catch (error) {
 			this.warn(`Error calculating model switching for ${sessionFile}: ${error}`);
@@ -3385,7 +3505,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			}
 		};
 
@@ -3396,7 +3520,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			};
 		}
 
@@ -3508,7 +3636,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					modelCount: 0,
 					switchCount: 0,
 					tiers: { standard: [], premium: [], unknown: [] },
-					hasMixedTiers: false
+					hasMixedTiers: false,
+					standardRequests: 0,
+					premiumRequests: 0,
+					unknownRequests: 0,
+					totalRequests: 0
 				}
 			},
 			firstInteraction: details.firstInteraction,
