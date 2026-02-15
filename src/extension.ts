@@ -5529,9 +5529,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const cuTips: string[] = [];
 		let cuStage = 1;
 
-		// Calculate repo-level customization adoption
-		const totalRepos = p.repositories.filter(r => r !== 'Unknown').length;
-		const reposWithCustomization = p.repositoriesWithCustomization.filter(r => r !== 'Unknown').length;
+		// Derive repo-level customization from the customization matrix (which is actually populated)
+		const matrix = this._lastCustomizationMatrix;
+		const totalRepos = matrix?.totalWorkspaces ?? 0;
+		const reposWithCustomization = totalRepos - (matrix?.workspacesWithIssues ?? 0);
 		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
 
 		if (totalRepos > 0) {
@@ -5564,21 +5565,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
 			
 			// Show threshold context to help users understand the score
+			cuEvidence.push(`Used ${uniqueModels.length} different models`);
 			if (hasStage4Models) {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ with 3+ repos customized → Stage 4)`);
+				cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (5+ models with 3+ repos customized → Stage 4)`);
 				cuStage = 4;
 			} else if (uniqueModels.length >= 5) {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ detected, need 3+ repos customized for Stage 4)`);
+				cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (need 3+ repos customized for Stage 4)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			} else {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (3+ models → Stage 3)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			}
 		}
 
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
 		if (cuStage < 3) { cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience'); }
-		if (cuStage < 4) { cuTips.push('Aim for consistent customization across all projects with instructions and agents.md'); }
+		if (cuStage < 4) {
+			const uncustomized = totalRepos - reposWithCustomization;
+			if (totalRepos > 0 && uncustomized > 0) {
+				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add instructions and agents.md to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
+			} else {
+				cuTips.push('Aim for consistent customization across all projects with instructions and agents.md');
+			}
+		}
 
 		// ---------- 6. Workflow Integration ----------
 		const wiEvidence: string[] = [];
