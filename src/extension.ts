@@ -5540,19 +5540,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		if (reposWithCustomization > 0) {
-			cuEvidence.push(`${reposWithCustomization} repo${reposWithCustomization === 1 ? '' : 's'} with custom instructions or agents.md`);
 			cuStage = 2;
 		}
 
 		// Stage thresholds based on adoption rate
 		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
 			cuStage = 3;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization (30%+ with 2+ repos → Stage 3)`);
 		}
 
 		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
 			cuStage = 4;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate (70%+ with 3+ repos → Stage 4)`);
 		}
 
 		// Model selection awareness (choosing specific models)
@@ -5564,17 +5561,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for Stage 4 criteria first
 			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
 			
-			// Show threshold context to help users understand the score
 			cuEvidence.push(`Used ${uniqueModels.length} different models`);
 			if (hasStage4Models) {
-				cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (5+ models with 3+ repos customized → Stage 4)`);
 				cuStage = 4;
 			} else if (uniqueModels.length >= 5) {
-				cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (need 3+ repos customized for Stage 4)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			} else {
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			}
+		}
+
+		// Show repo customization evidence once, reflecting the final achieved stage
+		if (cuStage >= 4) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (70%+ with 3+ repos → Stage 4)`);
+		} else if (cuStage >= 3) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (30%+ with 2+ repos → Stage 3)`);
+		} else if (reposWithCustomization > 0) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos with custom instructions or agents.md`);
 		}
 
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
@@ -5585,6 +5588,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add instructions and agents.md to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
 			} else {
 				cuTips.push('Aim for consistent customization across all projects with instructions and agents.md');
+			}
+		}
+		if (cuStage >= 4) {
+			const uncustomized = totalRepos - reposWithCustomization;
+			if (uncustomized > 0) {
+				cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+			} else {
+				cuTips.push('All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration');
 			}
 		}
 
