@@ -46,10 +46,32 @@ jobs:
     - name: Authenticate GitHub CLI
       env:
         # Try to use COPILOT_CLI_TOKEN first, fall back to GITHUB_TOKEN
-        GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN || secrets.GITHUB_TOKEN }}
       run: |
-        echo "$GH_TOKEN" | gh auth login --with-token
-        gh auth status
+        echo "=== Authenticating GitHub CLI ==="
+        if [ -z "$GH_TOKEN" ]; then
+          echo "❌ Error: No authentication token available"
+          echo "Both COPILOT_CLI_TOKEN and GITHUB_TOKEN are empty"
+          exit 1
+        fi
+        
+        echo "Logging in with token..."
+        if echo "$GH_TOKEN" | gh auth login --with-token 2>&1; then
+          echo "✅ Successfully authenticated with GitHub CLI"
+        else
+          echo "❌ Failed to authenticate with GitHub CLI"
+          exit 1
+        fi
+        
+        echo ""
+        echo "=== Checking authentication status ==="
+        if gh auth status 2>&1; then
+          echo "✅ Authentication verified"
+        else
+          echo "❌ Authentication check failed"
+          echo "Note: This may indicate an issue with token permissions or GitHub CLI configuration"
+          exit 1
+        fi
         
     - name: Run Copilot CLI with prompt
       id: copilot_run
