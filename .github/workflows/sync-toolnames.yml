@@ -127,11 +127,11 @@ jobs:
         #cat /tmp/copilot-output.txt
         
         # Store output for later steps
-        {
-          echo "output<<EOF"
-          cat /tmp/copilot-output.txt
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
+        # {
+        #   echo "output<<EOF"
+        #   cat /tmp/copilot-output.txt
+        #   echo "EOF"
+        # } >> "$GITHUB_OUTPUT"
 
     - run: |
         echo "$PWD"
