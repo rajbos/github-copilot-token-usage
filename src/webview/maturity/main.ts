@@ -44,6 +44,12 @@ type CategoryScore = {
 	tips: string[];      // suggestions to reach next stage
 };
 
+type CategoryLevelData = {
+	category: string;
+	icon: string;
+	levels: Array<{ stage: number; label: string; description: string; thresholds: string[]; tips: string[] }>;
+};
+
 type MaturityData = {
 	overallStage: number;
 	overallLabel: string;
@@ -51,6 +57,8 @@ type MaturityData = {
 	period: UsageAnalysisPeriod;
 	lastUpdated: string;
 	dismissedTips?: string[];
+	isDebugMode?: boolean;
+	fluencyLevels?: CategoryLevelData[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -65,6 +73,11 @@ declare global {
 
 const vscode = acquireVsCodeApi();
 const initialData = window.__INITIAL_MATURITY__;
+
+// ── Demo mode state ─────────────────────────────────────────────────────
+
+let demoModeActive = false;
+let demoStageOverrides: number[] = [];
 
 // ── Stage labels ───────────────────────────────────────────────────────
 
@@ -175,6 +188,69 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+// ── Demo controls ──────────────────────────────────────────────────────
+
+function renderDemoControls(categories: CategoryScore[]): string {
+	const sliders = categories.map((cat, i) => {
+		const currentStage = demoModeActive ? demoStageOverrides[i] : cat.stage;
+		const stageButtons = [1, 2, 3, 4].map(s =>
+			`<button class="demo-step-btn ${s === currentStage ? 'demo-step-active' : ''} demo-step-${s}" data-index="${i}" data-stage="${s}">${s}</button>`
+		).join('');
+		return `
+			<div class="demo-slider-row">
+				<label class="demo-slider-label">${cat.icon} ${escapeHtml(cat.category)}</label>
+				<div class="demo-step-group">${stageButtons}</div>
+				<span class="demo-slider-value badge-${currentStage}" data-value-index="${i}">${escapeHtml(STAGE_LABELS[currentStage] || '')}</span>
+			</div>
+		`;
+	}).join('');
+
+	return `
+		<div class="demo-panel">
+			<div class="demo-panel-header">
+				<div class="demo-panel-title">🐛 Demo Mode — Override Spider Chart</div>
+				<div class="demo-panel-actions">
+					<button class="demo-btn demo-btn-toggle" id="demo-toggle">${demoModeActive ? '⏸ Disable Overrides' : '▶ Enable Overrides'}</button>
+					<button class="demo-btn demo-btn-reset" id="demo-reset">↺ Reset to Actual</button>
+				</div>
+			</div>
+			<div class="demo-sliders ${demoModeActive ? '' : 'demo-disabled'}">
+				${sliders}
+			</div>
+		</div>
+	`;
+}
+
+function wireDemoControls(data: MaturityData): void {
+	// Initialize overrides from actual data if not set
+	if (demoStageOverrides.length === 0) {
+		demoStageOverrides = data.categories.map(c => c.stage);
+	}
+
+	document.getElementById('demo-toggle')?.addEventListener('click', () => {
+		demoModeActive = !demoModeActive;
+		renderLayout(data);
+	});
+
+	document.getElementById('demo-reset')?.addEventListener('click', () => {
+		demoStageOverrides = data.categories.map(c => c.stage);
+		demoModeActive = false;
+		renderLayout(data);
+	});
+
+	document.querySelectorAll('.demo-step-btn').forEach(btn => {
+		btn.addEventListener('click', (e) => {
+			const target = e.currentTarget as HTMLElement;
+			const idx = parseInt(target.getAttribute('data-index') || '0', 10);
+			const stage = parseInt(target.getAttribute('data-stage') || '1', 10);
+			demoStageOverrides[idx] = stage;
+			if (demoModeActive) {
+				renderLayout(data);
+			}
+		});
+	});
+}
+
 // ── Main render ────────────────────────────────────────────────────────
 
 function renderLayout(data: MaturityData): void {
@@ -182,10 +258,50 @@ function renderLayout(data: MaturityData): void {
 	if (!root) { return; }
 
 	const dismissedTips = data.dismissedTips || [];
+	const useDemoCards = demoModeActive && data.fluencyLevels;
 
-	const categoryCards = data.categories.map(cat => {
-		const progressPct = (cat.stage / 4) * 100;
-		const color = stageColor(cat.stage);
+	const categoryCards = data.categories.map((cat, catIdx) => {
+		const demoStage = demoStageOverrides[catIdx] ?? cat.stage;
+		const displayStage = useDemoCards ? demoStage : cat.stage;
+		const progressPct = (displayStage / 4) * 100;
+		const color = stageColor(displayStage);
+
+		// When demo mode is active, show level info from fluencyLevels instead of actual evidence/tips
+		if (useDemoCards && data.fluencyLevels) {
+			const levelData = data.fluencyLevels.find(l => l.category === cat.category);
+			const stageInfo = levelData?.levels.find(l => l.stage === demoStage);
+
+			const thresholdsHtml = stageInfo && stageInfo.thresholds.length > 0
+				? stageInfo.thresholds.map(t =>
+					`<li class="evidence-item"><span class="evidence-icon">🎯</span><span>${escapeHtml(t)}</span></li>`
+				).join('')
+				: '<li class="evidence-item"><span class="evidence-icon">-</span><span>No thresholds defined</span></li>';
+
+			const tipsHtml = stageInfo && stageInfo.tips.length > 0
+				? stageInfo.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
+				: '<div class="tip-item" style="color:#666;">No tips for this stage</div>';
+
+			return `
+				<div class="category-card demo-card-highlight">
+					<div class="category-header">
+						<span class="category-name">${cat.icon} ${escapeHtml(cat.category)}</span>
+						<span class="category-stage-badge badge-${displayStage}">Stage ${displayStage}</span>
+					</div>
+					<div class="category-stage-label">${escapeHtml(STAGE_LABELS[displayStage] || 'Unknown')}</div>
+					<div class="demo-card-description">${escapeHtml(stageInfo?.description || '')}</div>
+					<div class="category-progress">
+						<div class="category-progress-fill" style="width: ${progressPct}%; background: ${color};"></div>
+					</div>
+					<div class="demo-section-label">🎯 Requirements to Reach This Stage</div>
+					<ul class="evidence-list">${thresholdsHtml}</ul>
+					<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+						<div class="demo-section-label">💡 Tips</div>
+						${tipsHtml}
+					</div>
+				</div>`;
+		}
+
+		// Normal mode — actual evidence/tips
 		const evidenceHtml = cat.evidence.map(e =>
 			`<li class="evidence-item"><span class="evidence-icon">&#x2713;</span><span>${escapeHtml(e)}</span></li>`
 		).join('');
@@ -235,6 +351,7 @@ function renderLayout(data: MaturityData): void {
 				</div>
 				<div class="button-row">
 					${buttonHtml('btn-refresh')}
+					${data.isDebugMode ? buttonHtml('btn-level-viewer') : ''}
 					${buttonHtml('btn-details')}
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
@@ -261,10 +378,13 @@ function renderLayout(data: MaturityData): void {
 				<div class="stage-banner-subtitle">${escapeHtml(STAGE_DESCRIPTIONS[data.overallStage] || '')}</div>
 			</div>
 
+		<!-- Demo controls (debug mode only) -->
+		${data.isDebugMode ? renderDemoControls(data.categories) : ''}
+
 		<!-- Radar chart with legend -->
 		<div class="radar-wrapper">
 			<div class="radar-container">
-				${renderRadarChart(data.categories)}
+				${renderRadarChart(demoModeActive ? data.categories.map((c, i) => ({ ...c, stage: demoStageOverrides[i] ?? c.stage })) : data.categories)}
 			</div>
 			<div class="legend-panel">
 				<div class="legend-title">Stage Reference</div>
@@ -352,6 +472,9 @@ function renderLayout(data: MaturityData): void {
 	document.getElementById('btn-refresh')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'refresh' });
 	});
+	document.getElementById('btn-level-viewer')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showFluencyLevelViewer' });
+	});
 	document.getElementById('btn-details')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDetails' });
 	});
@@ -399,6 +522,11 @@ function renderLayout(data: MaturityData): void {
 	document.getElementById('btn-download-image')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'downloadChartImage' });
 	});
+  
+	// Wire up demo mode controls (debug mode only)
+	if (data.isDebugMode) {
+		wireDemoControls(data);
+	}
 }
 
 async function bootstrap(): Promise<void> {

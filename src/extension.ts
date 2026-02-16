@@ -585,6 +585,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private chartPanel: vscode.WebviewPanel | undefined;
 	private analysisPanel: vscode.WebviewPanel | undefined;
 	private maturityPanel: vscode.WebviewPanel | undefined;
+	private fluencyLevelViewerPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
@@ -5835,6 +5836,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		const maturityData = await this.calculateMaturityScores();
+		const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 
 		this.maturityPanel = vscode.window.createWebviewPanel(
 			'copilotMaturity',
@@ -5848,12 +5850,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		);
 
 		const dismissedTips = await this.getDismissedFluencyTips();
-		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips });
+		const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
 
 		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
 			switch (message.command) {
 				case 'refresh':
 					await this.refreshMaturityPanel();
+					break;
+				case 'showFluencyLevelViewer':
+					await this.showFluencyLevelViewer();
 					break;
 				case 'showDetails':
 					await this.showDetails();
@@ -5918,7 +5924,9 @@ private async refreshMaturityPanel(): Promise<void> {
 	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
 	const maturityData = await this.calculateMaturityScores();
 	const dismissedTips = await this.getDismissedFluencyTips();
-	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips });
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+	const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
 	this.log('✅ Copilot Fluency Score dashboard refreshed');
 }
 
@@ -6014,6 +6022,514 @@ private async downloadChartImage(): Promise<void> {
 		'Got it'
 	);
 	this.log('Showed chart download instructions');
+public async showFluencyLevelViewer(): Promise<void> {
+	// Check if debugger is active
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+
+	if (!isDebugMode) {
+		this.warn('⚠️ Fluency Level Viewer is only available in debug mode');
+		void vscode.window.showWarningMessage(
+			'Fluency Level Viewer is only available when a debugger is active.',
+			'Learn More'
+		).then(selection => {
+			if (selection === 'Learn More') {
+				void vscode.env.openExternal(vscode.Uri.parse('https://code.visualstudio.com/docs/editor/debugging'));
+			}
+		});
+		return;
+	}
+
+	this.log('🔍 Opening Fluency Level Viewer (debug mode)');
+
+	// If panel already exists, dispose and recreate with fresh data
+	if (this.fluencyLevelViewerPanel) {
+		this.fluencyLevelViewerPanel.dispose();
+		this.fluencyLevelViewerPanel = undefined;
+	}
+
+	const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
+
+	this.fluencyLevelViewerPanel = vscode.window.createWebviewPanel(
+		'copilotFluencyLevelViewer',
+		'Fluency Level Viewer',
+		{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+		{
+			enableScripts: true,
+			retainContextWhenHidden: false,
+			localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+		}
+	);
+
+	this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(this.fluencyLevelViewerPanel.webview, fluencyLevelData);
+
+	this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(async (message) => {
+		switch (message.command) {
+			case 'refresh':
+				await this.refreshFluencyLevelViewerPanel();
+				break;
+			case 'showMaturity':
+				await this.showMaturity();
+				break;
+			case 'showDetails':
+				await this.showDetails();
+				break;
+			case 'showChart':
+				await this.showChart();
+				break;
+			case 'showUsageAnalysis':
+				await this.showUsageAnalysis();
+				break;
+			case 'showDiagnostics':
+				await this.showDiagnosticReport();
+				break;
+		}
+	});
+
+	this.fluencyLevelViewerPanel.onDidDispose(() => {
+		this.log('🔍 Fluency Level Viewer closed');
+		this.fluencyLevelViewerPanel = undefined;
+	});
+}
+
+private async refreshFluencyLevelViewerPanel(): Promise<void> {
+	if (!this.fluencyLevelViewerPanel) {
+		return;
+	}
+
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+	this.log('🔄 Refreshing Fluency Level Viewer');
+	const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
+	this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(this.fluencyLevelViewerPanel.webview, fluencyLevelData);
+	this.log('✅ Fluency Level Viewer refreshed');
+}
+
+private getFluencyLevelData(isDebugMode: boolean): {
+	categories: Array<{
+		category: string;
+		icon: string;
+		levels: Array<{
+			stage: number;
+			label: string;
+			description: string;
+			thresholds: string[];
+			tips: string[];
+		}>;
+	}>;
+	isDebugMode: boolean;
+} {
+	return {
+		isDebugMode,
+		categories: [
+			{
+				category: 'Prompt Engineering',
+				icon: '💬',
+				levels: [
+					{
+						stage: 1,
+						label: 'Stage 1: Copilot Skeptic',
+						description: 'Rarely uses Copilot or uses only basic features',
+						thresholds: [
+							'Fewer than 5 total interactions in 30 days',
+							'Minimal multi-turn conversations',
+							'No slash commands or agent mode usage'
+						],
+						tips: [
+							'Try asking Copilot a question using the Chat panel',
+							'Start with simple queries to get familiar with the interface'
+						]
+					},
+					{
+						stage: 2,
+						label: 'Stage 2: Copilot Explorer',
+						description: 'Exploring Copilot capabilities with occasional use',
+						thresholds: [
+							'At least 5 total interactions',
+							'Average 3+ exchanges per session shows iterative refinement',
+							'Beginning to use slash commands or agent mode'
+						],
+						tips: [
+							'Try agent mode for multi-file changes',
+							'Use slash commands like /explain, /fix, or /tests to give structured prompts',
+							'Experiment with multi-turn conversations to refine responses'
+						]
+					},
+					{
+						stage: 3,
+						label: 'Stage 3: Copilot Collaborator',
+						description: 'Regular, purposeful use across multiple features',
+						thresholds: [
+							'At least 30 total interactions',
+							'Using 2+ slash commands or agent mode regularly',
+							'Average 5+ exchanges per session OR model switching in sessions',
+							'Shows model switching awareness (mixed-tier sessions)'
+						],
+						tips: [
+							'Try agent mode for autonomous, multi-step coding tasks',
+							'Experiment with different models for different tasks - use fast models for simple queries and reasoning models for complex problems',
+							'Explore more slash commands like /explain, /tests, or /doc to diversify your prompting'
+						]
+					},
+					{
+						stage: 4,
+						label: 'Stage 4: Copilot Strategist',
+						description: 'Strategic, advanced use leveraging the full Copilot ecosystem',
+						thresholds: [
+							'At least 100 total interactions',
+							'Using agent mode regularly',
+							'Active model switching (switches in sessions) OR 3+ diverse slash commands',
+							'Demonstrates strategic choice of models and commands for different tasks'
+						],
+						tips: [
+							'You\'re at the highest level!',
+							'Continue exploring advanced combinations of models, modes, and commands'
+						]
+					}
+				]
+			},
+			{
+				category: 'Context Engineering',
+				icon: '📎',
+				levels: [
+					{
+						stage: 1,
+						label: 'Stage 1: Copilot Skeptic',
+						description: 'Not using explicit context references',
+						thresholds: [
+							'Zero explicit context references (#file, #selection, @workspace, etc.)'
+						],
+						tips: [
+							'Try adding #file or #selection references to give Copilot more context',
+							'Start with #file to reference specific files in your prompts'
+						]
+					},
+					{
+						stage: 2,
+						label: 'Stage 2: Copilot Explorer',
+						description: 'Beginning to use basic context references',
+						thresholds: [
+							'At least 1 context reference used',
+							'Exploring basic references like #file or #selection'
+						],
+						tips: [
+							'Explore @workspace, #codebase, and @terminal for broader context',
+							'Try combining multiple context types in a single query'
+						]
+					},
+					{
+						stage: 3,
+						label: 'Stage 3: Copilot Collaborator',
+						description: 'Regular use of diverse context types',
+						thresholds: [
+							'At least 3 different context reference types used',
+							'At least 10 total context references',
+							'May include image references (vision capabilities)'
+						],
+						tips: [
+							'Try image attachments, #changes, #problemsPanel, and other specialized context variables',
+							'Experiment with @terminal and @vscode for IDE-level context'
+						]
+					},
+					{
+						stage: 4,
+						label: 'Stage 4: Copilot Strategist',
+						description: 'Strategic use of advanced context engineering',
+						thresholds: [
+							'At least 5 different context reference types used',
+							'At least 30 total context references',
+							'Using specialized references like #changes, #problemsPanel, #outputPanel, etc.'
+						],
+						tips: [
+							'You\'re at the highest level!',
+							'Continue mastering context engineering for optimal results'
+						]
+					}
+				]
+			},
+			{
+				category: 'Agentic',
+				icon: '🤖',
+				levels: [
+					{
+						stage: 1,
+						label: 'Stage 1: Copilot Skeptic',
+						description: 'Not using agent mode or autonomous features',
+						thresholds: [
+							'Zero agent-mode interactions',
+							'No tool calls executed',
+							'Not using edit mode or multi-file capabilities'
+						],
+						tips: [
+							'Try agent mode — it can run terminal commands, edit files, and explore your codebase autonomously',
+							'Start with simple tasks to see how agent mode works'
+						]
+					},
+					{
+						stage: 2,
+						label: 'Stage 2: Copilot Explorer',
+						description: 'Beginning to explore agent mode',
+						thresholds: [
+							'At least 1 agent-mode interaction OR',
+							'Using edit mode OR',
+							'At least 1 multi-file edit session'
+						],
+						tips: [
+							'Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits',
+							'Try edit mode for focused code changes'
+						]
+					},
+					{
+						stage: 3,
+						label: 'Stage 3: Copilot Collaborator',
+						description: 'Regular use of agent mode with diverse tools',
+						thresholds: [
+							'At least 10 agent-mode interactions AND 3+ unique tools used OR',
+							'Average 3+ files per edit session OR',
+							'Using edits agent for focused editing tasks'
+						],
+						tips: [
+							'Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows',
+							'Let agent mode handle multi-step tasks that span multiple files'
+						]
+					},
+					{
+						stage: 4,
+						label: 'Stage 4: Copilot Strategist',
+						description: 'Heavy, strategic use of autonomous features',
+						thresholds: [
+							'At least 50 agent-mode interactions AND 5+ tool types used OR',
+							'At least 20 multi-file edits with 3+ files per session average',
+							'Demonstrates mastery of agent orchestration'
+						],
+						tips: [
+							'You\'re at the highest level!',
+							'Continue leveraging agent mode for complex, multi-step workflows'
+						]
+					}
+				]
+			},
+			{
+				category: 'Tool Usage',
+				icon: '🔧',
+				levels: [
+					{
+						stage: 1,
+						label: 'Stage 1: Copilot Skeptic',
+						description: 'Not using tools beyond basic chat',
+						thresholds: [
+							'Zero unique tools used',
+							'No MCP servers configured',
+							'No workspace agent sessions'
+						],
+						tips: [
+							'Try agent mode to let Copilot use built-in tools for file operations and terminal commands',
+							'Explore the built-in tools available in agent mode'
+						]
+					},
+					{
+						stage: 2,
+						label: 'Stage 2: Copilot Explorer',
+						description: 'Beginning to use basic tools',
+						thresholds: [
+							'At least 1 unique tool used',
+							'Using basic agent mode tools'
+						],
+						tips: [
+							'Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)',
+							'Explore GitHub integrations and advanced tools like editFiles and run_in_terminal'
+						]
+					},
+					{
+						stage: 3,
+						label: 'Stage 3: Copilot Collaborator',
+						description: 'Regular use of diverse tools and integrations',
+						thresholds: [
+							'Using @workspace agent OR',
+							'Using 2+ advanced tools (GitHub PR, GitHub Repo, terminal, editFiles, listFiles) OR',
+							'Using at least 1 MCP server'
+						],
+						tips: [
+							'Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry',
+							'Explore advanced tool combinations for complex workflows'
+						]
+					},
+					{
+						stage: 4,
+						label: 'Stage 4: Copilot Strategist',
+						description: 'Strategic use of multiple MCP servers and advanced tools',
+						thresholds: [
+							'Using 2+ MCP servers',
+							'Leveraging multiple advanced tools strategically'
+						],
+						tips: [
+							'You\'re at the highest level!',
+							'Keep exploring advanced tool combinations and new MCP servers'
+						]
+					}
+				]
+			},
+			{
+				category: 'Customization',
+				icon: '⚙️',
+				levels: [
+					{
+						stage: 1,
+						label: 'Stage 1: Copilot Skeptic',
+						description: 'Using default Copilot without customization',
+						thresholds: [
+							'No repositories with custom instructions or agents.md',
+							'Using fewer than 3 different models'
+						],
+						tips: [
+							'Create a .github/copilot-instructions.md file with project-specific guidelines',
+							'Start customizing Copilot for your workflow'
+						]
+					},
+					{
+						stage: 2,
+						label: 'Stage 2: Copilot Explorer',
+						description: 'Beginning to customize Copilot',
+						thresholds: [
+							'At least 1 repository with custom instructions or agents.md'
+						],
+						tips: [
+							'Add custom instructions to more repositories to standardize your Copilot experience',
+							'Experiment with different models for different tasks'
+						]
+					},
+					{
+						stage: 3,
+						label: 'Stage 3: Copilot Collaborator',
+						description: 'Regular customization across repositories',
+						thresholds: [
+							'30%+ of repositories have customization (with 2+ repos) OR',
+							'Using 3+ different models strategically'
+						],
+						tips: [
+							'Aim for consistent customization across all projects with instructions and agents.md',
+							'Explore 5+ models to match tasks with optimal model capabilities'
+						]
+					},
+					{
+						stage: 4,
+						label: 'Stage 4: Copilot Strategist',
+						description: 'Comprehensive customization strategy',
+						thresholds: [
+							'70%+ customization adoption rate with 3+ repos OR',
+							'Using 5+ different models with 3+ repos customized'
+						],
+						tips: [
+							'You\'re at the highest level!',
+							'Continue refining your customization strategy'
+						]
+					}
+				]
+			},
+			{
+				category: 'Workflow Integration',
+				icon: '🔄',
+				levels: [
+					{
+						stage: 1,
+						label: 'Stage 1: Copilot Skeptic',
+						description: 'Minimal integration into daily workflow',
+						thresholds: [
+							'Fewer than 3 sessions in 30 days',
+							'Using only 1 mode (ask OR agent)',
+							'Fewer than 10 explicit context references'
+						],
+						tips: [
+							'Use Copilot more regularly - even for quick questions',
+							'Make Copilot part of your daily coding routine'
+						]
+					},
+					{
+						stage: 2,
+						label: 'Stage 2: Copilot Explorer',
+						description: 'Occasional integration with some regularity',
+						thresholds: [
+							'At least 3 sessions in 30 days OR',
+							'50%+ code block apply rate'
+						],
+						tips: [
+							'Combine ask mode with agent mode in your daily workflow',
+							'Use explicit context references like #file, @workspace, and #selection'
+						]
+					},
+					{
+						stage: 3,
+						label: 'Stage 3: Copilot Collaborator',
+						description: 'Regular workflow integration',
+						thresholds: [
+							'Using 2 modes (ask AND agent) OR',
+							'At least 20 explicit context references'
+						],
+						tips: [
+							'Make explicit context a habit - use #file, @workspace, and other references consistently',
+							'Make Copilot part of every coding task: planning, coding, testing, and reviewing'
+						]
+					},
+					{
+						stage: 4,
+						label: 'Stage 4: Copilot Strategist',
+						description: 'Deep integration across all development activities',
+						thresholds: [
+							'At least 15 sessions',
+							'Using 2+ modes (ask + agent)',
+							'At least 20 explicit context references',
+							'Shows regular, purposeful usage pattern'
+						],
+						tips: [
+							'You\'re at the highest level!',
+							'Continue integrating Copilot into every aspect of your development workflow'
+						]
+					}
+				]
+			}
+		]
+	};
+}
+
+private getFluencyLevelViewerHtml(webview: vscode.Webview, data: {
+	categories: Array<{
+		category: string;
+		icon: string;
+		levels: Array<{
+			stage: number;
+			label: string;
+			description: string;
+			thresholds: string[];
+			tips: string[];
+		}>;
+	}>;
+	isDebugMode: boolean;
+}): string {
+	const nonce = this.getNonce();
+	const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'fluency-level-viewer.js'));
+
+	const csp = [
+		`default-src 'none'`,
+		`img-src ${webview.cspSource} https: data:`,
+		`style-src 'unsafe-inline' ${webview.cspSource}`,
+		`font-src ${webview.cspSource} https: data:`,
+		`script-src 'nonce-${nonce}'`
+	].join('; ');
+
+	const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+
+	return `<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta http-equiv="Content-Security-Policy" content="${csp}" />
+		<title>Fluency Level Viewer</title>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script nonce="${nonce}">window.__INITIAL_FLUENCY_LEVEL_DATA__ = ${initialData};</script>
+		<script nonce="${nonce}" src="${scriptUri}"></script>
+	</body>
+	</html>`;
 }
 
 private getMaturityHtml(webview: vscode.Webview, data: {
@@ -6023,6 +6539,12 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		period: UsageAnalysisPeriod;
 		lastUpdated: string;
 		dismissedTips?: string[];
+		isDebugMode?: boolean;
+		fluencyLevels?: Array<{
+			category: string;
+			icon: string;
+			levels: Array<{ stage: number; label: string; description: string; thresholds: string[]; tips: string[] }>;
+		}>;
 	}): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'maturity.js'));
@@ -7102,6 +7624,12 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showMaturity();
 	});
 
+	// Register the show fluency level viewer command (debug-only)
+	const showFluencyLevelViewerCommand = vscode.commands.registerCommand('copilot-token-tracker.showFluencyLevelViewer', async () => {
+		tokenTracker.log('Show fluency level viewer command called');
+		await tokenTracker.showFluencyLevelViewer();
+	});
+
 	// Register the generate diagnostic report command
 	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
 		tokenTracker.log('Generate diagnostic report command called');
@@ -7115,7 +7643,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, showFluencyLevelViewerCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
