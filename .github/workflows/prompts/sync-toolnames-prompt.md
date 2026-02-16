@@ -30,7 +30,8 @@ Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, com
    ```
    , "some_tool": "Some Tool"
    ```
-7. Also print (as plain text, after the delta or NO_DELTA) the upstream commit SHA used for the scan and the exact file path scanned in upstream, for traceability.
+7. Inject the missing entries inside the json object, matching the organic grouping of locically related tools if possible (e.g. if there are existing entries with the same prefix, group the new entry with them). If no related entries exist, add the new entry at the end of the file, but before the closing `}`.
+8. Also print (as plain text, after the delta or NO_DELTA) the upstream commit SHA used for the scan and the exact file path scanned in upstream, for traceability.
 
 ## Constraints
 - Only modify our toolNames.json file.
