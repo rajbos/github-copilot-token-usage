@@ -67,6 +67,8 @@ jobs:
 
     - name: Check Copilot CLI installed
       run: |
+        npm install -g @github/copilot
+
         copilot --version
         
     - name: Run Copilot CLI with prompt
