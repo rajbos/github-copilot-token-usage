@@ -5889,6 +5889,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 						await this.refreshMaturityPanel();
 					}
 					break;
+				case 'shareToLinkedIn':
+					await this.shareToSocialMedia('linkedin');
+					break;
+				case 'shareToBluesky':
+					await this.shareToSocialMedia('bluesky');
+					break;
+				case 'shareToMastodon':
+					await this.shareToSocialMedia('mastodon');
+					break;
+				case 'downloadChartImage':
+					await this.downloadChartImage();
+					break;
 		}
 	});
 
@@ -5921,6 +5933,87 @@ private async dismissFluencyTips(category: string): Promise<void> {
 		await this.context.globalState.update('dismissedFluencyTips', dismissed);
 		this.log(`Dismissed fluency tips for category: ${category}`);
 	}
+}
+
+/**
+ * Share Copilot Fluency Score to social media platforms
+ */
+private async shareToSocialMedia(platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
+	const scores = await this.calculateMaturityScores();
+	const marketplaceUrl = 'https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker';
+	const hashtag = '#CopilotFluencyScore';
+	
+	// Build share text with stats
+	const categoryScores = scores.categories.map(c => `${c.icon} ${c.category}: Stage ${c.stage}`).join('\n');
+	
+	const shareText = `🎯 My GitHub Copilot Fluency Score
+
+Overall: ${scores.overallLabel}
+
+${categoryScores}
+
+Track your Copilot usage and level up your AI-assisted development skills!
+
+Get the extension: ${marketplaceUrl}
+
+${hashtag}`;
+
+	let shareUrl: string;
+	
+	switch (platform) {
+		case 'linkedin':
+			// LinkedIn share URL - opens in browser for user to add their own commentary
+			shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
+			
+			// Copy share text to clipboard for easy pasting
+			await vscode.env.clipboard.writeText(shareText);
+			await vscode.window.showInformationMessage(
+				'Share text copied to clipboard! Paste it into your LinkedIn post.',
+				'Open LinkedIn'
+			).then(async selection => {
+				if (selection === 'Open LinkedIn') {
+					await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+				}
+			});
+			break;
+			
+		case 'bluesky':
+			// Bluesky web intent
+			shareUrl = `https://bsky.app/intent/compose?text=${encodeURIComponent(shareText)}`;
+			await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+			break;
+			
+		case 'mastodon':
+			// Mastodon share - ask user for their instance
+			const instance = await vscode.window.showInputBox({
+				prompt: 'Enter your Mastodon instance (e.g., mastodon.social)',
+				placeHolder: 'mastodon.social',
+				value: 'mastodon.social'
+			});
+			
+			if (instance) {
+				shareUrl = `https://${instance}/share?text=${encodeURIComponent(shareText)}`;
+				await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+			}
+			break;
+	}
+	
+	this.log(`Shared fluency score to ${platform}`);
+}
+
+/**
+ * Download the fluency chart as an image
+ */
+private async downloadChartImage(): Promise<void> {
+	await vscode.window.showInformationMessage(
+		'💡 To save the chart as an image:\n\n' +
+		'1. Right-click on the radar chart above\n' +
+		'2. Select "Save image as..." or "Copy image"\n' +
+		'3. Use it in your social media posts!\n\n' +
+		'The chart is an SVG graphic that can be saved directly from your browser.',
+		'Got it'
+	);
+	this.log('Showed chart download instructions');
 }
 
 private getMaturityHtml(webview: vscode.Webview, data: {

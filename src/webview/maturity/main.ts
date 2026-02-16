@@ -308,11 +308,40 @@ function renderLayout(data: MaturityData): void {
 				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
 			</div>
 
+			<!-- Share to social media section -->
+			<div class="share-section">
+				<div class="share-header">
+					<span class="share-icon">📢</span>
+					<span class="share-title">Share Your Copilot Fluency Score</span>
+				</div>
+				<div class="share-description">
+					Share your progress with the community and inspire others to level up their Copilot skills!
+				</div>
+				<div class="share-buttons">
+					<button id="btn-share-linkedin" class="share-btn share-btn-linkedin">
+						<span class="share-btn-icon">💼</span>
+						<span>Share on LinkedIn</span>
+					</button>
+					<button id="btn-share-bluesky" class="share-btn share-btn-bluesky">
+						<span class="share-btn-icon">🦋</span>
+						<span>Share on Bluesky</span>
+					</button>
+					<button id="btn-share-mastodon" class="share-btn share-btn-mastodon">
+						<span class="share-btn-icon">🐘</span>
+						<span>Share on Mastodon</span>
+					</button>
+					<button id="btn-download-image" class="share-btn share-btn-download">
+						<span class="share-btn-icon">💾</span>
+						<span>Download Chart Image</span>
+					</button>
+				</div>
+			</div>
+
 			<div class="beta-footer">
 				<span class="beta-footer-icon">⚠️</span>
 				<div class="beta-footer-content">
 					<strong>Beta</strong> — This screen is still in beta. If you have feedback or suggestions for improvements,
-					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository. Use the button to share your stats :arrow_right:
+					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository.
 				</div>
 				<button id="btn-share-issue" class="share-issue-btn">📤 Share to Issue</button>
 			</div>
@@ -355,6 +384,20 @@ function renderLayout(data: MaturityData): void {
 				vscode.postMessage({ command: 'dismissTips', category });
 			}
 		});
+	});
+
+	// Wire up share buttons
+	document.getElementById('btn-share-linkedin')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToLinkedIn' });
+	});
+	document.getElementById('btn-share-bluesky')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToBluesky' });
+	});
+	document.getElementById('btn-share-mastodon')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToMastodon' });
+	});
+	document.getElementById('btn-download-image')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'downloadChartImage' });
 	});
 }
 
