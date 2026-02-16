@@ -116,6 +116,10 @@ interface SessionUsageAnalysis {
 		switchCount: number;
 		tiers: { standard: string[]; premium: string[]; unknown: string[] };
 		hasMixedTiers: boolean;
+		standardRequests: number;
+		premiumRequests: number;
+		unknownRequests: number;
+		totalRequests: number;
 	};
 	editScope?: EditScopeUsage;
 	applyUsage?: ApplyButtonUsage;
@@ -209,6 +213,10 @@ interface ModelSwitchingAnalysis {
 	premiumModels: string[];     // Unique premium models used
 	unknownModels: string[];     // Unique models with unknown tier
 	mixedTierSessions: number;   // Sessions using both standard and premium
+	standardRequests: number;    // Count of requests using standard models
+	premiumRequests: number;     // Count of requests using premium models
+	unknownRequests: number;     // Count of requests using unknown tier models
+	totalRequests: number;       // Total requests across all tiers
 }
 
 interface UsageAnalysisStats {
@@ -313,7 +321,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 16; // Bumped to include workspaceFolderPath in cache (2026-02-11)
+	private static readonly CACHE_VERSION = 18; // Ensure conversationPatterns set for all JSONL paths (delta + non-delta)
 
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -1507,7 +1515,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				standardModels: [],
 				premiumModels: [],
 				unknownModels: [],
-				mixedTierSessions: 0
+				mixedTierSessions: 0,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			},
 			repositories: [],
 			repositoriesWithCustomization: [],
@@ -1602,7 +1614,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 								modelCount: 0,
 								switchCount: 0,
 								tiers: { standard: [], premium: [], unknown: [] },
-								hasMixedTiers: false
+								hasMixedTiers: false,
+								standardRequests: 0,
+								premiumRequests: 0,
+								unknownRequests: 0,
+								totalRequests: 0
 							}
 						};
 
@@ -1794,7 +1810,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			};
 		}
 
@@ -1825,6 +1845,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (analysis.modelSwitching.hasMixedTiers) {
 				period.modelSwitching.mixedTierSessions++;
 			}
+
+			// Aggregate request counts per tier
+			period.modelSwitching.standardRequests += analysis.modelSwitching.standardRequests || 0;
+			period.modelSwitching.premiumRequests += analysis.modelSwitching.premiumRequests || 0;
+			period.modelSwitching.unknownRequests += analysis.modelSwitching.unknownRequests || 0;
+			period.modelSwitching.totalRequests += analysis.modelSwitching.totalRequests || 0;
 
 			// Calculate aggregate statistics
 			if (period.modelSwitching.modelsPerSession.length > 0) {
@@ -2150,7 +2176,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			}
 		};
 
@@ -2255,6 +2285,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Calculate model switching for delta-based JSONL files
 					await this.calculateModelSwitching(sessionFile, analysis);
+
+					// Derive conversation patterns from mode usage before returning
+					this.deriveConversationPatterns(analysis);
+
 					return analysis;
 				}
 
@@ -2406,6 +2440,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				// Calculate model switching for JSONL files before returning
 				await this.calculateModelSwitching(sessionFile, analysis);
+
+				// Derive conversation patterns from mode usage before returning
+				this.deriveConversationPatterns(analysis);
+
 				return analysis;
 			}
 
@@ -2544,7 +2582,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			analysis.modelSwitching.tiers = { standard: standardModels, premium: premiumModels, unknown: unknownModels };
 			analysis.modelSwitching.hasMixedTiers = standardModels.length > 0 && premiumModels.length > 0;
 
-			// Count model switches by examining request sequence (for JSON files only - not JSONL)
+			// Count requests per tier and model switches by examining request sequence
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
@@ -2556,17 +2594,107 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 					let previousModel: string | null = null;
 					let switchCount = 0;
+					const tierCounts = { standard: 0, premium: 0, unknown: 0 };
 
 					for (const request of sessionContent.requests) {
 						const currentModel = this.getModelFromRequest(request);
+						
+						// Count model switches
 						if (previousModel && currentModel !== previousModel) {
 							switchCount++;
 						}
 						previousModel = currentModel;
+
+						// Count requests per tier
+						const tier = this.getModelTier(currentModel);
+						if (tier === 'standard') {
+							tierCounts.standard++;
+						} else if (tier === 'premium') {
+							tierCounts.premium++;
+						} else {
+							tierCounts.unknown++;
+						}
 					}
 
 					analysis.modelSwitching.switchCount = switchCount;
+					analysis.modelSwitching.standardRequests = tierCounts.standard;
+					analysis.modelSwitching.premiumRequests = tierCounts.premium;
+					analysis.modelSwitching.unknownRequests = tierCounts.unknown;
+					analysis.modelSwitching.totalRequests = tierCounts.standard + tierCounts.premium + tierCounts.unknown;
 				}
+			} else {
+				// For JSONL files, we need to count requests differently
+				// Count user messages as requests (type === 'user.message' or kind: 2 with requests)
+				const lines = fileContent.trim().split('\n');
+				const tierCounts = { standard: 0, premium: 0, unknown: 0 };
+				let defaultModel = 'gpt-4o';
+
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+
+						// Track model changes
+						if (event.kind === 0) {
+							const modelId = event.v?.selectedModel?.identifier ||
+								event.v?.selectedModel?.metadata?.id ||
+								event.v?.inputState?.selectedModel?.metadata?.id;
+							if (modelId) {
+								defaultModel = modelId.replace(/^copilot\//, '');
+							}
+						}
+
+						if (event.kind === 2 && event.k?.[0] === 'selectedModel') {
+							const modelId = event.v?.identifier || event.v?.metadata?.id;
+							if (modelId) {
+								defaultModel = modelId.replace(/^copilot\//, '');
+							}
+						}
+
+						// Count user messages (requests)
+						if (event.type === 'user.message') {
+							const model = event.model || defaultModel;
+							const tier = this.getModelTier(model);
+							if (tier === 'standard') {
+								tierCounts.standard++;
+							} else if (tier === 'premium') {
+								tierCounts.premium++;
+							} else {
+								tierCounts.unknown++;
+							}
+						}
+
+						// Count VS Code incremental format requests (kind: 2 with requests array)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								let requestModel = defaultModel;
+								if (request.modelId) {
+									requestModel = request.modelId.replace(/^copilot\//, '');
+								} else if (request.result?.metadata?.modelId) {
+									requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
+								} else if (request.result?.details) {
+									requestModel = this.getModelFromRequest(request);
+								}
+
+								const tier = this.getModelTier(requestModel);
+								if (tier === 'standard') {
+									tierCounts.standard++;
+								} else if (tier === 'premium') {
+									tierCounts.premium++;
+								} else {
+									tierCounts.unknown++;
+								}
+							}
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+
+				analysis.modelSwitching.standardRequests = tierCounts.standard;
+				analysis.modelSwitching.premiumRequests = tierCounts.premium;
+				analysis.modelSwitching.unknownRequests = tierCounts.unknown;
+				analysis.modelSwitching.totalRequests = tierCounts.standard + tierCounts.premium + tierCounts.unknown;
 			}
 		} catch (error) {
 			this.warn(`Error calculating model switching for ${sessionFile}: ${error}`);
@@ -2606,6 +2734,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Derive conversation patterns from already-computed mode usage.
+	 * Called before every return in analyzeSessionUsage to ensure all file formats get patterns.
+	 */
+	private deriveConversationPatterns(analysis: SessionUsageAnalysis): void {
+		const totalRequests = analysis.modeUsage.ask + analysis.modeUsage.edit + analysis.modeUsage.agent;
+		analysis.conversationPatterns = {
+			multiTurnSessions: totalRequests > 1 ? 1 : 0,
+			singleTurnSessions: totalRequests === 1 ? 1 : 0,
+			avgTurnsPerSession: totalRequests,
+			maxTurnsInSession: totalRequests
+		};
+	}
+
+	/**
 	 * Track enhanced metrics from session files:
 	 * - Edit scope (single vs multi-file edits)
 	 * - Apply button usage (codeblockUri with isEdit flag)
@@ -2631,7 +2773,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const timestamps: number[] = [];
 			const timingsData: { firstProgress: number; totalElapsed: number; }[] = [];
 			const waitTimes: number[] = [];
-			let requestCount = 0;
 			const agentCounts = {
 				editsAgent: 0,
 				defaultAgent: 0,
@@ -2672,7 +2813,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					
 					// Process requests
 					const requests = sessionState.requests || [];
-					requestCount = requests.length;
 					
 					for (const request of requests) {
 						if (!request) { continue; }
@@ -2731,8 +2871,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 				
 				// Process requests
 				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-					requestCount = sessionContent.requests.length;
-					
 					for (const request of sessionContent.requests) {
 						// Track timestamps
 						if (request.timestamp) { timestamps.push(request.timestamp); }
@@ -2818,16 +2956,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				avgWaitTimeMs
 			};
 			
-			// Store conversation patterns (only for non-empty sessions)
-			// Skip empty sessions (requestCount === 0) to avoid skewing fluency score calculations
-			if (requestCount > 0) {
-				analysis.conversationPatterns = {
-					multiTurnSessions: requestCount > 1 ? 1 : 0,
-					singleTurnSessions: requestCount === 1 ? 1 : 0,
-					avgTurnsPerSession: requestCount,
-					maxTurnsInSession: requestCount
-				};
-			}
+			// Store conversation patterns
+			this.deriveConversationPatterns(analysis);
 			
 			// Store agent type usage
 			analysis.agentTypes = agentCounts;
@@ -3386,7 +3516,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			}
 		};
 
@@ -3397,7 +3531,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				modelCount: 0,
 				switchCount: 0,
 				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
 			};
 		}
 
@@ -3509,7 +3647,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					modelCount: 0,
 					switchCount: 0,
 					tiers: { standard: [], premium: [], unknown: [] },
-					hasMixedTiers: false
+					hasMixedTiers: false,
+					standardRequests: 0,
+					premiumRequests: 0,
+					unknownRequests: 0,
+					totalRequests: 0
 				}
 			},
 			firstInteraction: details.firstInteraction,
@@ -5533,9 +5675,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const cuTips: string[] = [];
 		let cuStage = 1;
 
-		// Calculate repo-level customization adoption
-		const totalRepos = p.repositories.filter(r => r !== 'Unknown').length;
-		const reposWithCustomization = p.repositoriesWithCustomization.filter(r => r !== 'Unknown').length;
+		// Derive repo-level customization from the customization matrix (which is actually populated)
+		const matrix = this._lastCustomizationMatrix;
+		const totalRepos = matrix?.totalWorkspaces ?? 0;
+		const reposWithCustomization = totalRepos - (matrix?.workspacesWithIssues ?? 0);
 		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
 
 		if (totalRepos > 0) {
@@ -5543,19 +5686,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		if (reposWithCustomization > 0) {
-			cuEvidence.push(`${reposWithCustomization} repo${reposWithCustomization === 1 ? '' : 's'} with custom instructions or agents.md`);
 			cuStage = 2;
 		}
 
 		// Stage thresholds based on adoption rate
 		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
 			cuStage = 3;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% of repos have customization (30%+ with 2+ repos → Stage 3)`);
 		}
 
 		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
 			cuStage = 4;
-			cuEvidence.push(`${Math.round(customizationRate * 100)}% customization adoption rate (70%+ with 3+ repos → Stage 4)`);
 		}
 
 		// Model selection awareness (choosing specific models)
@@ -5567,22 +5707,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for Stage 4 criteria first
 			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
 			
-			// Show threshold context to help users understand the score
+			cuEvidence.push(`Used ${uniqueModels.length} different models`);
 			if (hasStage4Models) {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ with 3+ repos customized → Stage 4)`);
 				cuStage = 4;
 			} else if (uniqueModels.length >= 5) {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (5+ detected, need 3+ repos customized for Stage 4)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			} else {
-				cuEvidence.push(`Used ${uniqueModels.length} different models (3+ models → Stage 3)`);
 				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
 			}
 		}
 
+		// Show repo customization evidence once, reflecting the final achieved stage
+		if (cuStage >= 4) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (70%+ with 3+ repos → Stage 4)`);
+		} else if (cuStage >= 3) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (30%+ with 2+ repos → Stage 3)`);
+		} else if (reposWithCustomization > 0) {
+			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos with custom instructions or agents.md`);
+		}
+
 		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
 		if (cuStage < 3) { cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience'); }
-		if (cuStage < 4) { cuTips.push('Aim for consistent customization across all projects with instructions and agents.md'); }
+		if (cuStage < 4) {
+			const uncustomized = totalRepos - reposWithCustomization;
+			if (totalRepos > 0 && uncustomized > 0) {
+				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add instructions and agents.md to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
+			} else {
+				cuTips.push('Aim for consistent customization across all projects with instructions and agents.md');
+			}
+		}
+		if (cuStage >= 4) {
+			const uncustomized = totalRepos - reposWithCustomization;
+			if (uncustomized > 0) {
+				cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+			} else {
+				cuTips.push('All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration');
+			}
+		}
 
 		// ---------- 6. Workflow Integration ----------
 		const wiEvidence: string[] = [];
@@ -5714,6 +5875,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'searchMcpExtensions':
 					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
 					break;
+				case 'shareToIssue': {
+					const scores = await this.calculateMaturityScores();
+					const categorySections = scores.categories.map(c => {
+						const evidenceList = c.evidence.length > 0
+							? c.evidence.map(e => `- ✅ ${e}`).join('\n')
+							: '- No significant activity detected';
+						return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
+					}).join('\n\n');
+					const body = `<h2>Copilot Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
+					const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
+					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					break;
+				}
 				case 'dismissTips':
 					if (message.category) {
 						await this.dismissFluencyTips(message.category);
