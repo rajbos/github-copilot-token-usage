@@ -64,6 +64,10 @@ jobs:
           echo "Note: This may indicate an issue with token permissions or GitHub CLI configuration"
           exit 1
         fi
+
+    - name: Check Copilot CLI installed
+      run: |
+        copilot --version
         
     - name: Run Copilot CLI with prompt
       id: copilot_run
