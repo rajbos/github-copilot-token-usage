@@ -130,7 +130,9 @@ jobs:
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
 
-    - run: git status
+    - run: |
+        cd github-copilot-token-usage
+        git status
 
     - run: |
         cd /tmp/
