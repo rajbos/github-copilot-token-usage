@@ -6075,7 +6075,6 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		const { BackendUtility } = await import('./backend/services/utilityService.js');
 		const settings = this.backend.getSettings();
-		const currentMachineId = vscode.env.machineId;
 		const currentUserId = settings.userId; // Use the configured userId from settings
 
 		// Query backend for last 30 days
@@ -6143,9 +6142,13 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		// Calculate costs
 		const personalCost = this.calculateEstimatedCost(personalModelUsage);
+		
+		// For team members, use a simplified cost estimate since we don't track
+		// per-user model breakdown in the current aggregation. This provides a
+		// rough approximation assuming average model pricing (~$0.05 per 1M tokens).
+		// The personal cost uses the accurate model-aware calculation.
 		for (const [userId, userData] of userMap.entries()) {
-			// Simple cost estimation based on total tokens
-			userData.cost = (userData.tokens / 1000000) * 0.05; // Rough estimate
+			userData.cost = (userData.tokens / 1000000) * 0.05;
 		}
 
 		// Build team leaderboard

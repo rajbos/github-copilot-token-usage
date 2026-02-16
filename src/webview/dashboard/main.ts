@@ -237,10 +237,8 @@ function wireButtons(): void {
 	document.getElementById('btn-maturity')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showMaturity' });
 	});
-
-	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
-		vscode.postMessage({ command: 'showDashboard' });
-	});
+	
+	// Note: No dashboard button handler - users are already on the dashboard
 }
 
 if (initialData) {
