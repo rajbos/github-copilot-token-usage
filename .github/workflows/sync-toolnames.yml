@@ -121,6 +121,8 @@ jobs:
         }
 
         echo ""
+        echo "-------------------------------------------------------------------"
+        echo "Catting the output file:"
         cat /tmp/copilot-output.txt
         
         # Store output for later steps
@@ -133,7 +135,7 @@ jobs:
     - run: |
         echo "$PWD"
         ls -la
-        cd /github-copilot-token-usage
+        cd /current-repo
         git status
 
     - run: |
