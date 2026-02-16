@@ -119,7 +119,8 @@ jobs:
           echo "Warning: gh copilot command exited with code $EXIT_CODE, but continuing to check output"
           cat /tmp/copilot-output.txt
         }
-        
+
+        echo ""
         cat /tmp/copilot-output.txt
         
         # Store output for later steps
@@ -128,6 +129,12 @@ jobs:
           cat /tmp/copilot-output.txt
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
+
+    - run: git status
+
+    - run: |
+        cd /tmp/
+        ls -la
         
     - name: Parse Copilot output and update toolNames.json
       id: update_file
