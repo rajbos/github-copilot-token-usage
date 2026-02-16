@@ -440,3 +440,154 @@ body {
 		min-width: 0;
 	}
 }
+
+/* Demo mode controls */
+.demo-panel {
+	background: linear-gradient(135deg, #1a1a2e 0%, #1e2a3a 100%);
+	border: 1px solid #3b82f680;
+	border-radius: 8px;
+	padding: 14px;
+	margin-bottom: 16px;
+}
+
+.demo-panel-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid #2a3a50;
+}
+
+.demo-panel-title {
+	font-size: 13px;
+	font-weight: 700;
+	color: #60a5fa;
+}
+
+.demo-panel-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.demo-btn {
+	padding: 4px 12px;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	cursor: pointer;
+	border: 1px solid;
+	transition: all 0.2s ease;
+}
+
+.demo-btn-toggle {
+	background: #1e3a5f;
+	border-color: #3b82f6;
+	color: #60a5fa;
+}
+
+.demo-btn-toggle:hover {
+	background: #2a4a7c;
+	color: #93bbfd;
+}
+
+.demo-btn-reset {
+	background: transparent;
+	border-color: #555;
+	color: #999;
+}
+
+.demo-btn-reset:hover {
+	background: #2a2a30;
+	border-color: #888;
+	color: #ccc;
+}
+
+.demo-sliders {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.demo-sliders.demo-disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+.demo-slider-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.demo-slider-label {
+	font-size: 12px;
+	color: #c0c0d0;
+	min-width: 160px;
+	flex-shrink: 0;
+}
+
+.demo-step-group {
+	display: flex;
+	gap: 0;
+	border-radius: 6px;
+	overflow: hidden;
+	border: 1px solid #3a3a50;
+}
+
+.demo-step-btn {
+	width: 36px;
+	height: 28px;
+	border: none;
+	background: #1a1a2e;
+	color: #888;
+	font-size: 12px;
+	font-weight: 700;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	border-right: 1px solid #3a3a50;
+}
+
+.demo-step-btn:last-child {
+	border-right: none;
+}
+
+.demo-step-btn:hover {
+	background: #2a2a40;
+	color: #ccc;
+}
+
+.demo-step-active.demo-step-1 { background: #3b1515; color: #ef4444; }
+.demo-step-active.demo-step-2 { background: #3b2c10; color: #f59e0b; }
+.demo-step-active.demo-step-3 { background: #152040; color: #3b82f6; }
+.demo-step-active.demo-step-4 { background: #0d2d20; color: #10b981; }
+
+.demo-slider-value {
+	font-size: 11px;
+	font-weight: 700;
+	padding: 2px 8px;
+	border-radius: 10px;
+	min-width: 180px;
+	text-align: center;
+	flex-shrink: 0;
+}
+
+/* Demo mode card highlight */
+.demo-card-highlight {
+	border-color: #3b82f680 !important;
+	box-shadow: 0 0 0 1px #3b82f640, 0 2px 8px rgba(59, 130, 246, 0.15) !important;
+}
+
+.demo-card-description {
+	font-size: 12px;
+	color: #a0a0b0;
+	margin-bottom: 10px;
+	font-style: italic;
+}
+
+.demo-section-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #d0d0e0;
+	margin-bottom: 6px;
+}

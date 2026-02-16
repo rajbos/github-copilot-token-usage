@@ -5836,7 +5836,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		const maturityData = await this.calculateMaturityScores();
-		const isDebugMode = vscode.debug.activeDebugSession !== undefined;
+		const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 
 		this.maturityPanel = vscode.window.createWebviewPanel(
 			'copilotMaturity',
@@ -5850,7 +5850,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		);
 
 		const dismissedTips = await this.getDismissedFluencyTips();
-		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode });
+		const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
 
 		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
 			switch (message.command) {
@@ -5911,8 +5912,9 @@ private async refreshMaturityPanel(): Promise<void> {
 	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
 	const maturityData = await this.calculateMaturityScores();
 	const dismissedTips = await this.getDismissedFluencyTips();
-	const isDebugMode = vscode.debug.activeDebugSession !== undefined;
-	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode });
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+	const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
 	this.log('✅ Copilot Fluency Score dashboard refreshed');
 }
 
@@ -5931,8 +5933,8 @@ private async dismissFluencyTips(category: string): Promise<void> {
 
 public async showFluencyLevelViewer(): Promise<void> {
 	// Check if debugger is active
-	const isDebugMode = vscode.debug.activeDebugSession !== undefined;
-	
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+
 	if (!isDebugMode) {
 		this.warn('⚠️ Fluency Level Viewer is only available in debug mode');
 		void vscode.window.showWarningMessage(
@@ -6003,7 +6005,7 @@ private async refreshFluencyLevelViewerPanel(): Promise<void> {
 		return;
 	}
 
-	const isDebugMode = vscode.debug.activeDebugSession !== undefined;
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 	this.log('🔄 Refreshing Fluency Level Viewer');
 	const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
 	this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(this.fluencyLevelViewerPanel.webview, fluencyLevelData);
@@ -6447,6 +6449,11 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		lastUpdated: string;
 		dismissedTips?: string[];
 		isDebugMode?: boolean;
+		fluencyLevels?: Array<{
+			category: string;
+			icon: string;
+			levels: Array<{ stage: number; label: string; description: string; thresholds: string[]; tips: string[] }>;
+		}>;
 	}): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'maturity.js'));
