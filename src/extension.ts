@@ -5907,6 +5907,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'downloadChartImage':
 					await this.downloadChartImage();
 					break;
+				case 'saveChartImage':
+					if (message.data) {
+						await this.saveChartImageData(message.data);
+					}
+					break;
 		}
 	});
 
@@ -5965,13 +5970,11 @@ Track your Copilot usage and level up your AI-assisted development skills!
 Get the extension: ${marketplaceUrl}
 
 ${hashtag}`;
-
-	let shareUrl: string;
 	
 	switch (platform) {
-		case 'linkedin':
+		case 'linkedin': {
 			// LinkedIn share URL - opens in browser for user to add their own commentary
-			shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
+			const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
 			
 			// Copy share text to clipboard for easy pasting
 			await vscode.env.clipboard.writeText(shareText);
@@ -5984,14 +5987,23 @@ ${hashtag}`;
 				}
 			});
 			break;
+		}
 			
-		case 'bluesky':
-			// Bluesky web intent
-			shareUrl = `https://bsky.app/intent/compose?text=${encodeURIComponent(shareText)}`;
-			await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+		case 'bluesky': {
+			// Copy share text to clipboard, then open Bluesky compose
+			await vscode.env.clipboard.writeText(shareText);
+			await vscode.window.showInformationMessage(
+				'Share text copied to clipboard! Paste it into your Bluesky post.',
+				'Open Bluesky'
+			).then(async selection => {
+				if (selection === 'Open Bluesky') {
+					await vscode.env.openExternal(vscode.Uri.parse('https://bsky.app/intent/compose'));
+				}
+			});
 			break;
+		}
 			
-		case 'mastodon':
+		case 'mastodon': {
 			// Mastodon share - ask user for their instance
 			const instance = await vscode.window.showInputBox({
 				prompt: 'Enter your Mastodon instance (e.g., mastodon.social)',
@@ -6000,10 +6012,19 @@ ${hashtag}`;
 			});
 			
 			if (instance) {
-				shareUrl = `https://${instance}/share?text=${encodeURIComponent(shareText)}`;
-				await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+				// Copy share text to clipboard, then open Mastodon compose
+				await vscode.env.clipboard.writeText(shareText);
+				await vscode.window.showInformationMessage(
+					'Share text copied to clipboard! Paste it into your Mastodon post.',
+					'Open Mastodon'
+				).then(async selection => {
+					if (selection === 'Open Mastodon') {
+						await vscode.env.openExternal(vscode.Uri.parse(`https://${instance}/share`));
+					}
+				});
 			}
 			break;
+		}
 	}
 	
 	this.log(`Shared fluency score to ${platform}`);
@@ -6014,14 +6035,35 @@ ${hashtag}`;
  */
 private async downloadChartImage(): Promise<void> {
 	await vscode.window.showInformationMessage(
-		'💡 To save the chart as an image:\n\n' +
-		'1. Right-click on the radar chart above\n' +
-		'2. Select "Save image as..." or "Copy image"\n' +
-		'3. Use it in your social media posts!\n\n' +
-		'The chart is an SVG graphic that can be saved directly from your browser.',
+		'💡 Click the "Download Chart Image" button to save the radar chart as a PNG file.',
 		'Got it'
 	);
 	this.log('Showed chart download instructions');
+}
+
+private async saveChartImageData(dataUrl: string): Promise<void> {
+	const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+	if (!base64Match) {
+		void vscode.window.showErrorMessage('Failed to process chart image data.');
+		return;
+	}
+
+	const uri = await vscode.window.showSaveDialog({
+		defaultUri: vscode.Uri.file('copilot-fluency-score.png'),
+		filters: { 'PNG Image': ['png'] },
+		title: 'Save Fluency Score Chart'
+	});
+
+	if (!uri) { return; }
+
+	const buffer = Buffer.from(base64Match[1], 'base64');
+	await vscode.workspace.fs.writeFile(uri, buffer);
+	void vscode.window.showInformationMessage(`Chart image saved to ${uri.fsPath}`, 'Open Image').then(selection => {
+		if (selection === 'Open Image') {
+			void vscode.env.openExternal(uri);
+		}
+	});
+	this.log(`Chart image saved to ${uri.fsPath}`);
 }
 
 public async showFluencyLevelViewer(): Promise<void> {
