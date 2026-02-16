@@ -26,7 +26,7 @@ Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, com
      - `search_subagent` → `Search Subagent`
      - `run_in_terminal` → `Run In Terminal`
      - `vscode_command` → `VSCode Command`
-6. Output **only** the missing entries in a format directly pasteable into the existing mapping object, using the same style as the mapping (leading comma with space on each line), e.g.:
+6. Inject **only** the missing entries into our existing mapping object in the current repository, using the same style as the mapping (leading comma with space on each line), e.g.:
    ```
    , "some_tool": "Some Tool"
    ```
@@ -34,7 +34,7 @@ Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, com
 8. Also print (as plain text, after the delta or NO_DELTA) the upstream commit SHA used for the scan and the exact file path scanned in upstream, for traceability.
 
 ## Constraints
-- Do not modify any files.
+- Only modify our toolNames.json file.
 - Do not open a PR.
-- Do not include tools that are not model-facing (only those defined in upstream `ToolName` / `ContributedToolName` string values).
+- Do not include tools in the list that are not model-facing (only those defined in upstream `ToolName` / `ContributedToolName` string values).
 - Be resilient to minor refactors (enum order changes, added comments, etc.).
