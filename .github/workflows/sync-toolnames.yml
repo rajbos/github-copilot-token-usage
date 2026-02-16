@@ -3,7 +3,7 @@ name: Sync Tool Names from vscode-copilot-chat
 on:
   workflow_dispatch:  # Manual trigger
   schedule:
-    - cron: '30 14 * * 1'  # Run every Monday at 2:30 PM UTC
+    - cron: '30 17 * * 1'  # Run every Monday at 17:30 UTC
   push:
     paths:
       - .github/workflows/sync-toolnames.yml
