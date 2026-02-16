@@ -46,7 +46,7 @@ jobs:
     - name: Authenticate GitHub CLI
       env:
         # Try to use COPILOT_CLI_TOKEN first, fall back to GITHUB_TOKEN
-        GH_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN || secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         echo "=== Authenticating GitHub CLI ==="
         if [ -z "$GH_TOKEN" ]; then
