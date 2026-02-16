@@ -6022,6 +6022,8 @@ private async downloadChartImage(): Promise<void> {
 		'Got it'
 	);
 	this.log('Showed chart download instructions');
+}
+
 public async showFluencyLevelViewer(): Promise<void> {
 	// Check if debugger is active
 	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
