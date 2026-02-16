@@ -135,7 +135,7 @@ jobs:
     - run: |
         echo "$PWD"
         ls -la
-        cd /current-repo
+        cd current-repo
         git status
 
     - run: |
