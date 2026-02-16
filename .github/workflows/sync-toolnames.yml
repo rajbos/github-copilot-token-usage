@@ -123,8 +123,8 @@ jobs:
 
         echo ""
         echo "-------------------------------------------------------------------"
-        echo "Catting the output file:"
-        cat /tmp/copilot-output.txt
+        #echo "Catting the output file:"
+        #cat /tmp/copilot-output.txt
         
         # Store output for later steps
         {
@@ -138,7 +138,6 @@ jobs:
         ls -la
         cd current-repo
         git status
-
         
     - name: Parse Copilot output and update toolNames.json
       id: update_file
