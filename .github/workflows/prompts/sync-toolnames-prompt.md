@@ -1,10 +1,10 @@
 # Sync Tool Names from vscode-copilot-chat
 
-Scan `microsoft/vscode-copilot-chat` for model-facing tool identifiers, compare them to the existing `toolnames.json` friendly-name mapping in this repository, and output the **delta** as JSON entries that can be pasted directly into the mapping.
+Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, compare them to the existing `src/toolnames.json` in our repo in the `current` folder. Comapare with friendly-name mapping in this repository, and output the **delta** as JSON entries that can be pasted directly into the mapping. Do not output any other text, only a json response with the missing entries, or `NO_DELTA` if there are none. 
 
 ## Requirements
 
-1. The `microsoft/vscode-copilot-chat` repository has been checked out and is available in the workspace. Use the paths provided in the Context Paths section below.
+1. The `microsoft/vscode-copilot-chat` repository has been checked out and is available in the workspace in the folder `vscode-copilot-chat`. Use the paths provided in the Context Paths section below.
 2. In the vscode-copilot-chat repo, treat `src/extension/tools/common/toolNames.ts` as the source of truth for tool IDs.
    - Extract tool IDs from:
      - `export enum ToolName { ... }` (string literal values)
@@ -34,7 +34,6 @@ Scan `microsoft/vscode-copilot-chat` for model-facing tool identifiers, compare 
 8. Also print (as plain text, after the delta or NO_DELTA) the upstream commit SHA used for the scan and the exact file path scanned in upstream, for traceability.
 
 ## Constraints
-
 - Do not modify any files.
 - Do not open a PR.
 - Do not include tools that are not model-facing (only those defined in upstream `ToolName` / `ContributedToolName` string values).
