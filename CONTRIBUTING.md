@@ -233,6 +233,8 @@ npx vsce package
 ## Available Scripts
 
 - `npm run lint` - Run ESLint to check code quality
+- `npm run lint:css` - Run Stylelint to check CSS code quality
+- `npm run lint:json` - Validate all JSON files in the repository
 - `npm run check-types` - Run TypeScript type checking
 - `npm run compile` - Build development version (includes linting and type checking)
 - `npm run package` - Build production version (optimized)
@@ -336,6 +338,28 @@ This will:
 - Type-check with TypeScript
 - Build the extension with esbuild
 
+### JSON File Validation
+
+The repository includes automatic validation of all JSON files. This ensures that:
+
+- All JSON files contain valid JSON syntax
+- JSONC files (JSON with Comments) are properly formatted
+- Configuration files (tsconfig, VS Code settings) are valid
+
+**Validated Files:**
+
+- Core JSON data: `src/tokenEstimators.json`, `src/modelPricing.json`, `src/toolNames.json`, `src/customizationPatterns.json`
+- Configuration: `package.json`, `tsconfig.json`, `.vscode/*.json`, `.devcontainer/devcontainer.json`
+- Schemas: `docs/logFilesSchema/*.json`
+
+**Run JSON validation manually:**
+
+```bash
+npm run lint:json
+```
+
+**Note:** JSON validation is automatically run in CI/CD pipelines to catch syntax errors early.
+
 ## Testing
 
 - Test the extension manually in the Extension Development Host (F5)
@@ -358,11 +382,12 @@ The project includes comprehensive GitHub Actions workflows:
 
 ### What Gets Tested
 
-1. **Linting:** ESLint checks for code quality issues
-2. **Type Checking:** TypeScript validates all types
-3. **Compilation:** esbuild creates the production bundle
-4. **Packaging:** VSIX package is created and validated
-5. **Extension Tests:** VS Code extension tests run in CI
+1. **JSON Validation:** All JSON and JSONC files are validated for correct syntax
+2. **Linting:** ESLint checks for code quality issues
+3. **Type Checking:** TypeScript validates all types
+4. **Compilation:** esbuild creates the production bundle
+5. **Packaging:** VSIX package is created and validated
+6. **Extension Tests:** VS Code extension tests run in CI
 
 All builds must pass these checks before merging.
 
