@@ -8,11 +8,9 @@
 	--bg-primary: var(--vscode-editor-background);
 	--bg-secondary: var(--vscode-sideBar-background);
 	--bg-tertiary: var(--vscode-editorWidget-background);
-	
 	--text-primary: var(--vscode-editor-foreground);
 	--text-secondary: var(--vscode-descriptionForeground);
 	--text-muted: var(--vscode-disabledForeground);
-	
 	--border-color: var(--vscode-panel-border);
 	--border-subtle: var(--vscode-widget-border);
 	
@@ -55,15 +53,15 @@
 	--success-fg: var(--vscode-terminal-ansiGreen);
 	
 	/* Shadow for cards */
-	--shadow-color: rgba(0, 0, 0, 0.16);
-	--shadow-hover-color: rgba(0, 0, 0, 0.24);
+	--shadow-color: rgb(0, 0, 0, 0.16);
+	--shadow-hover-color: rgb(0, 0, 0, 0.24);
 }
 
 /* Light theme adjustments */
 body[data-vscode-theme-kind="vscode-light"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] {
-	--shadow-color: rgba(0, 0, 0, 0.08);
-	--shadow-hover-color: rgba(0, 0, 0, 0.12);
+	--shadow-color: rgb(0, 0, 0, 0.08);
+	--shadow-hover-color: rgb(0, 0, 0, 0.12);
 }
 
 /* High contrast mode adjustments */

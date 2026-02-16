@@ -208,10 +208,29 @@ body {
 	letter-spacing: 0.5px;
 }
 
-.badge-1 { background: #3b1515; color: #ef4444; border: 1px solid #ef444480; }
-.badge-2 { background: #3b2c10; color: #f59e0b; border: 1px solid #f59e0b80; }
-.badge-3 { background: #152040; color: #3b82f6; border: 1px solid #3b82f680; }
-.badge-4 { background: #0d2d20; color: #10b981; border: 1px solid #10b98180; }
+.badge-1 {
+	background: #3b1515;
+	color: #ef4444;
+	border: 1px solid #ef444480;
+}
+
+.badge-2 {
+	background: #3b2c10;
+	color: #f59e0b;
+	border: 1px solid #f59e0b80;
+}
+
+.badge-3 {
+	background: #152040;
+	color: #3b82f6;
+	border: 1px solid #3b82f680;
+}
+
+.badge-4 {
+	background: #0d2d20;
+	color: #10b981;
+	border: 1px solid #10b98180;
+}
 
 .category-stage-label {
 	font-size: 11px;
@@ -311,12 +330,12 @@ body {
 	border-color: #60a5fa;
 	color: #fff;
 	transform: translateY(-1px);
-	box-shadow: 0 4px 8px rgba(59, 130, 246, 0.2);
+	box-shadow: 0 4px 8px rgb(59, 130, 246, 0.2);
 }
 
 .mcp-discover-btn:active {
 	transform: translateY(0);
-	box-shadow: 0 2px 4px rgba(59, 130, 246, 0.15);
+	box-shadow: 0 2px 4px rgb(59, 130, 246, 0.15);
 }
 
 .dismiss-tips-btn {
@@ -450,7 +469,7 @@ body {
 	background: linear-gradient(135deg, #0d3050 0%, #0f3d60 100%);
 	border-color: #0a66c2;
 	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(10, 102, 194, 0.3);
+	box-shadow: 0 4px 12px rgb(10, 102, 194, 0.3);
 }
 
 .share-btn-bluesky {
@@ -463,7 +482,7 @@ body {
 	background: linear-gradient(135deg, #0d3550 0%, #104060 100%);
 	border-color: #1285fe;
 	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(18, 133, 254, 0.3);
+	box-shadow: 0 4px 12px rgb(18, 133, 254, 0.3);
 }
 
 .share-btn-mastodon {
@@ -476,7 +495,7 @@ body {
 	background: linear-gradient(135deg, #20204e 0%, #28285e 100%);
 	border-color: #6364ff;
 	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(99, 100, 255, 0.3);
+	box-shadow: 0 4px 12px rgb(99, 100, 255, 0.3);
 }
 
 .share-btn-download {
@@ -489,27 +508,12 @@ body {
 	background: linear-gradient(135deg, #123d2a 0%, #164d34 100%);
 	border-color: #10b981;
 	transform: translateY(-2px);
-	box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+	box-shadow: 0 4px 12px rgb(16, 185, 129, 0.3);
 }
 
 .share-btn:active {
 	transform: translateY(0);
 }
-
-/* Beta warning footer */
-.beta-footer {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	margin-top: 12px;
-	padding: 12px 14px;
-	background: #3b2c10;
-	border: 1px solid #f59e0b80;
-	border-radius: 6px;
-	font-size: 12px;
-	color: #f5d78e;
-}
-
 
 .beta-footer-icon {
 	flex-shrink: 0;
@@ -549,12 +553,12 @@ body {
 	border-color: #fbbf24;
 	color: #fff;
 	transform: translateY(-1px);
-	box-shadow: 0 4px 8px rgba(245, 158, 11, 0.2);
+	box-shadow: 0 4px 8px rgb(245, 158, 11, 0.2);
 }
 
 .share-issue-btn:active {
 	transform: translateY(0);
-	box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15);
+	box-shadow: 0 2px 4px rgb(245, 158, 11, 0.15);
 }
 
 @media (width <= 768px) {
