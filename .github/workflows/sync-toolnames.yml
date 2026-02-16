@@ -122,6 +122,18 @@ jobs:
           echo "Warning: gh copilot command exited with code $EXIT_CODE, but continuing to check output"
           cat /tmp/copilot-output.txt
         }
+        
+    - name: Check for changes
+      id: changes
+      working-directory: current-repo
+      run: |
+        if git diff --quiet; then
+          echo "No changes detected in toolNames.json"
+          echo "changed=false" >> $GITHUB_OUTPUT
+        else
+          echo "Changes detected in toolNames.json"
+          echo "changed=true" >> $GITHUB_OUTPUT
+        fi
 
     - name: Create Pull Request
       if: steps.changes.outputs.changed == 'true'
@@ -164,4 +176,3 @@ jobs:
         else
           echo "ℹ️ toolNames.json was already up to date with vscode-copilot-chat"
         fi
-
