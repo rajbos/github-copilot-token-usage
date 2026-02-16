@@ -123,48 +123,6 @@ jobs:
           cat /tmp/copilot-output.txt
         }
 
-        echo ""
-        echo "-------------------------------------------------------------------"
-        #echo "Catting the output file:"
-        #cat /tmp/copilot-output.txt
-        
-        # Store output for later steps
-        # {
-        #   echo "output<<EOF"
-        #   cat /tmp/copilot-output.txt
-        #   echo "EOF"
-        # } >> "$GITHUB_OUTPUT"
-
-    - run: |
-        cd current-repo
-        git status
-
-        echo ""
-        git diff
-        
-    - name: Check for changes
-      id: changes
-      working-directory: current-repo
-      run: |
-        # run a git diff to check if there are changes to commit
-        if git diff --quiet; then
-          echo "No changes detected"
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "Changes detected"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-          # create a new branch
-          git checkout -b sync-toolnames
-
-          git add src/toolNames.json
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: sync toolNames.json with vscode-copilot-chat
-
-          git push origin sync-toolnames --force"          
-        fi        
-
     - name: Create Pull Request
       if: steps.changes.outputs.changed == 'true'
       uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
