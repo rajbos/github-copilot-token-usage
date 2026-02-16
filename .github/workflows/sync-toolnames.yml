@@ -109,6 +109,8 @@ jobs:
         cat /tmp/copilot-prompt.md
         echo ""
         echo "=== Copilot CLI Output ==="
+
+        cd ${GITHUB_WORKSPACE}/current-repo/
         
         # Run gh copilot with the prompt using non-interactive mode
         # Use -s/--silent for script-friendly output, -p for prompt, --allow-all for permissions
