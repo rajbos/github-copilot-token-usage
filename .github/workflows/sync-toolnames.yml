@@ -104,7 +104,7 @@ jobs:
         # Use -s/--silent for script-friendly output, -p for prompt, --allow-all for permissions
         # Read the prompt into a variable for safer handling
         COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
-        gh copilot -- -p "$COPILOT_PROMPT_TEXT" --silent --allow-all --add-dir "${UPSTREAM_PATH}" --add-dir "${GITHUB_WORKSPACE}/current-repo" > /tmp/copilot-output.txt 2>&1 || {
+        copilot -p "$COPILOT_PROMPT_TEXT" --silent --allow-all --add-dir "${UPSTREAM_PATH}" --add-dir "${GITHUB_WORKSPACE}/current-repo" > /tmp/copilot-output.txt 2>&1 || {
           EXIT_CODE=$?
           echo "Warning: gh copilot command exited with code $EXIT_CODE, but continuing to check output"
           cat /tmp/copilot-output.txt
