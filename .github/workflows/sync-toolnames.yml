@@ -131,7 +131,9 @@ jobs:
         } >> "$GITHUB_OUTPUT"
 
     - run: |
-        cd github-copilot-token-usage
+        echo "$PWD"
+        ls -la
+        cd /github-copilot-token-usage
         git status
 
     - run: |
