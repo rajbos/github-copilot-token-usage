@@ -4974,6 +4974,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showMaturity':
 					await this.showMaturity();
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 			}
 		});
 
@@ -5035,6 +5038,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showMaturity':
 					await this.showMaturity();
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 			}
 		});
 
@@ -5095,6 +5101,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showMaturity':
 					await this.showMaturity();
+					break;
+				case 'showDashboard':
+					await this.showDashboard();
 					break;
 			}
 		});
@@ -5893,6 +5902,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						await this.refreshMaturityPanel();
 					}
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 		}
 	});
 
@@ -6611,6 +6623,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 					break;
 				case 'openSettings':
 					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
+					break;
+				case 'showDashboard':
+					await this.showDashboard();
 					break;
 			}
 		});
