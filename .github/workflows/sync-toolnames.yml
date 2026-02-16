@@ -51,15 +51,7 @@ jobs:
         echo "=== Authenticating GitHub CLI ==="
         if [ -z "$GH_TOKEN" ]; then
           echo "❌ Error: No authentication token available"
-          echo "Both COPILOT_CLI_TOKEN and GITHUB_TOKEN are empty"
-          exit 1
-        fi
-        
-        echo "Logging in with token..."
-        if echo "$GH_TOKEN" | gh auth login --with-token 2>&1; then
-          echo "✅ Successfully authenticated with GitHub CLI"
-        else
-          echo "❌ Failed to authenticate with GitHub CLI"
+          echo "Environment variable GH_TOKEN is empty"
           exit 1
         fi
         
