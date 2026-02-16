@@ -68,6 +68,7 @@ jobs:
     - name: Check Copilot CLI installed
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
+        COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         npm install -g @github/copilot
 
@@ -78,6 +79,7 @@ jobs:
       working-directory: current-repo
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
+        COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         # Read the prompt from the file
         PROMPT=$(cat .github/workflows/prompts/sync-toolnames-prompt.md)
