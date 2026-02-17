@@ -1725,6 +1725,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				const matrixRows: WorkspaceCustomizationRow[] = [];
 				let workspacesWithIssues = 0;
+				const WORKSPACE_ID_DISPLAY_LENGTH = 8; // Length limit for displaying workspace IDs in the matrix
 
 				for (const [folderPath, sessionCount] of workspaceSessionCounts) {
 					const files = this._customizationFilesCache.get(folderPath) || [];
@@ -1760,8 +1761,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						typeStatuses[type.id] = '❌';
 					}
 					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
-					const displayId = workspaceId.length > 8 
-						? `${workspaceId.substring(0, 8)}...` 
+					const displayId = workspaceId.length > WORKSPACE_ID_DISPLAY_LENGTH
+						? `${workspaceId.substring(0, WORKSPACE_ID_DISPLAY_LENGTH)}...` 
 						: workspaceId;
 					matrixRows.push({
 						workspacePath: `<unresolved:${workspaceId}>`,
