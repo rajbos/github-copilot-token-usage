@@ -44,6 +44,12 @@ type CategoryScore = {
 	tips: string[];      // suggestions to reach next stage
 };
 
+type CategoryLevelData = {
+	category: string;
+	icon: string;
+	levels: Array<{ stage: number; label: string; description: string; thresholds: string[]; tips: string[] }>;
+};
+
 type MaturityData = {
 	overallStage: number;
 	overallLabel: string;
@@ -51,6 +57,8 @@ type MaturityData = {
 	period: UsageAnalysisPeriod;
 	lastUpdated: string;
 	dismissedTips?: string[];
+	isDebugMode?: boolean;
+	fluencyLevels?: CategoryLevelData[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -65,6 +73,11 @@ declare global {
 
 const vscode = acquireVsCodeApi();
 const initialData = window.__INITIAL_MATURITY__;
+
+// ── Demo mode state ─────────────────────────────────────────────────────
+
+let demoModeActive = false;
+let demoStageOverrides: number[] = [];
 
 // ── Stage labels ───────────────────────────────────────────────────────
 
@@ -175,6 +188,69 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+// ── Demo controls ──────────────────────────────────────────────────────
+
+function renderDemoControls(categories: CategoryScore[]): string {
+	const sliders = categories.map((cat, i) => {
+		const currentStage = demoModeActive ? demoStageOverrides[i] : cat.stage;
+		const stageButtons = [1, 2, 3, 4].map(s =>
+			`<button class="demo-step-btn ${s === currentStage ? 'demo-step-active' : ''} demo-step-${s}" data-index="${i}" data-stage="${s}">${s}</button>`
+		).join('');
+		return `
+			<div class="demo-slider-row">
+				<label class="demo-slider-label">${cat.icon} ${escapeHtml(cat.category)}</label>
+				<div class="demo-step-group">${stageButtons}</div>
+				<span class="demo-slider-value badge-${currentStage}" data-value-index="${i}">${escapeHtml(STAGE_LABELS[currentStage] || '')}</span>
+			</div>
+		`;
+	}).join('');
+
+	return `
+		<div class="demo-panel">
+			<div class="demo-panel-header">
+				<div class="demo-panel-title">🐛 Demo Mode — Override Spider Chart</div>
+				<div class="demo-panel-actions">
+					<button class="demo-btn demo-btn-toggle" id="demo-toggle">${demoModeActive ? '⏸ Disable Overrides' : '▶ Enable Overrides'}</button>
+					<button class="demo-btn demo-btn-reset" id="demo-reset">↺ Reset to Actual</button>
+				</div>
+			</div>
+			<div class="demo-sliders ${demoModeActive ? '' : 'demo-disabled'}">
+				${sliders}
+			</div>
+		</div>
+	`;
+}
+
+function wireDemoControls(data: MaturityData): void {
+	// Initialize overrides from actual data if not set
+	if (demoStageOverrides.length === 0) {
+		demoStageOverrides = data.categories.map(c => c.stage);
+	}
+
+	document.getElementById('demo-toggle')?.addEventListener('click', () => {
+		demoModeActive = !demoModeActive;
+		renderLayout(data);
+	});
+
+	document.getElementById('demo-reset')?.addEventListener('click', () => {
+		demoStageOverrides = data.categories.map(c => c.stage);
+		demoModeActive = false;
+		renderLayout(data);
+	});
+
+	document.querySelectorAll('.demo-step-btn').forEach(btn => {
+		btn.addEventListener('click', (e) => {
+			const target = e.currentTarget as HTMLElement;
+			const idx = parseInt(target.getAttribute('data-index') || '0', 10);
+			const stage = parseInt(target.getAttribute('data-stage') || '1', 10);
+			demoStageOverrides[idx] = stage;
+			if (demoModeActive) {
+				renderLayout(data);
+			}
+		});
+	});
+}
+
 // ── Main render ────────────────────────────────────────────────────────
 
 function renderLayout(data: MaturityData): void {
@@ -182,10 +258,50 @@ function renderLayout(data: MaturityData): void {
 	if (!root) { return; }
 
 	const dismissedTips = data.dismissedTips || [];
+	const useDemoCards = demoModeActive && data.fluencyLevels;
 
-	const categoryCards = data.categories.map(cat => {
-		const progressPct = (cat.stage / 4) * 100;
-		const color = stageColor(cat.stage);
+	const categoryCards = data.categories.map((cat, catIdx) => {
+		const demoStage = demoStageOverrides[catIdx] ?? cat.stage;
+		const displayStage = useDemoCards ? demoStage : cat.stage;
+		const progressPct = (displayStage / 4) * 100;
+		const color = stageColor(displayStage);
+
+		// When demo mode is active, show level info from fluencyLevels instead of actual evidence/tips
+		if (useDemoCards && data.fluencyLevels) {
+			const levelData = data.fluencyLevels.find(l => l.category === cat.category);
+			const stageInfo = levelData?.levels.find(l => l.stage === demoStage);
+
+			const thresholdsHtml = stageInfo && stageInfo.thresholds.length > 0
+				? stageInfo.thresholds.map(t =>
+					`<li class="evidence-item"><span class="evidence-icon">🎯</span><span>${escapeHtml(t)}</span></li>`
+				).join('')
+				: '<li class="evidence-item"><span class="evidence-icon">-</span><span>No thresholds defined</span></li>';
+
+			const tipsHtml = stageInfo && stageInfo.tips.length > 0
+				? stageInfo.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
+				: '<div class="tip-item" style="color:#666;">No tips for this stage</div>';
+
+			return `
+				<div class="category-card demo-card-highlight">
+					<div class="category-header">
+						<span class="category-name">${cat.icon} ${escapeHtml(cat.category)}</span>
+						<span class="category-stage-badge badge-${displayStage}">Stage ${displayStage}</span>
+					</div>
+					<div class="category-stage-label">${escapeHtml(STAGE_LABELS[displayStage] || 'Unknown')}</div>
+					<div class="demo-card-description">${escapeHtml(stageInfo?.description || '')}</div>
+					<div class="category-progress">
+						<div class="category-progress-fill" style="width: ${progressPct}%; background: ${color};"></div>
+					</div>
+					<div class="demo-section-label">🎯 Requirements to Reach This Stage</div>
+					<ul class="evidence-list">${thresholdsHtml}</ul>
+					<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+						<div class="demo-section-label">💡 Tips</div>
+						${tipsHtml}
+					</div>
+				</div>`;
+		}
+
+		// Normal mode — actual evidence/tips
 		const evidenceHtml = cat.evidence.map(e =>
 			`<li class="evidence-item"><span class="evidence-icon">&#x2713;</span><span>${escapeHtml(e)}</span></li>`
 		).join('');
@@ -235,6 +351,7 @@ function renderLayout(data: MaturityData): void {
 				</div>
 				<div class="button-row">
 					${buttonHtml('btn-refresh')}
+					${data.isDebugMode ? buttonHtml('btn-level-viewer') : ''}
 					${buttonHtml('btn-details')}
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
@@ -261,10 +378,13 @@ function renderLayout(data: MaturityData): void {
 				<div class="stage-banner-subtitle">${escapeHtml(STAGE_DESCRIPTIONS[data.overallStage] || '')}</div>
 			</div>
 
+		<!-- Demo controls (debug mode only) -->
+		${data.isDebugMode ? renderDemoControls(data.categories) : ''}
+
 		<!-- Radar chart with legend -->
 		<div class="radar-wrapper">
 			<div class="radar-container">
-				${renderRadarChart(data.categories)}
+				${renderRadarChart(demoModeActive ? data.categories.map((c, i) => ({ ...c, stage: demoStageOverrides[i] ?? c.stage })) : data.categories)}
 			</div>
 			<div class="legend-panel">
 				<div class="legend-title">Stage Reference</div>
@@ -308,11 +428,40 @@ function renderLayout(data: MaturityData): void {
 				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
 			</div>
 
+			<!-- Share to social media section -->
+			<div class="share-section">
+				<div class="share-header">
+					<span class="share-icon">📢</span>
+					<span class="share-title">Share Your Copilot Fluency Score</span>
+				</div>
+				<div class="share-description">
+					Share your progress with the community and inspire others to level up their Copilot skills!
+				</div>
+				<div class="share-buttons">
+					<button id="btn-share-linkedin" class="share-btn share-btn-linkedin">
+						<span class="share-btn-icon">💼</span>
+						<span>Share on LinkedIn</span>
+					</button>
+					<button id="btn-share-bluesky" class="share-btn share-btn-bluesky">
+						<span class="share-btn-icon">🦋</span>
+						<span>Share on Bluesky</span>
+					</button>
+					<button id="btn-share-mastodon" class="share-btn share-btn-mastodon">
+						<span class="share-btn-icon">🐘</span>
+						<span>Share on Mastodon</span>
+					</button>
+					<button id="btn-download-image" class="share-btn share-btn-download">
+						<span class="share-btn-icon">💾</span>
+						<span>Download Chart Image</span>
+					</button>
+				</div>
+			</div>
+
 			<div class="beta-footer">
 				<span class="beta-footer-icon">⚠️</span>
 				<div class="beta-footer-content">
 					<strong>Beta</strong> — This screen is still in beta. If you have feedback or suggestions for improvements,
-					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository. Use the button to share your stats :arrow_right:
+					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository.
 				</div>
 				<button id="btn-share-issue" class="share-issue-btn">📤 Share to Issue</button>
 			</div>
@@ -322,6 +471,9 @@ function renderLayout(data: MaturityData): void {
 	// Wire up navigation buttons
 	document.getElementById('btn-refresh')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'refresh' });
+	});
+	document.getElementById('btn-level-viewer')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showFluencyLevelViewer' });
 	});
 	document.getElementById('btn-details')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDetails' });
@@ -356,6 +508,58 @@ function renderLayout(data: MaturityData): void {
 			}
 		});
 	});
+
+	// Wire up share buttons
+	document.getElementById('btn-share-linkedin')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToLinkedIn' });
+	});
+	document.getElementById('btn-share-bluesky')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToBluesky' });
+	});
+	document.getElementById('btn-share-mastodon')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'shareToMastodon' });
+	});
+	document.getElementById('btn-download-image')?.addEventListener('click', () => {
+		const svgEl = document.querySelector('.radar-svg') as SVGSVGElement | null;
+		if (!svgEl) { return; }
+
+		// Clone SVG and set explicit dimensions + background for the exported image
+		const clone = svgEl.cloneNode(true) as SVGSVGElement;
+		clone.setAttribute('width', '1100');
+		clone.setAttribute('height', '1100');
+		// Add dark background rectangle as first child
+		const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+		bg.setAttribute('width', '100%');
+		bg.setAttribute('height', '100%');
+		bg.setAttribute('fill', '#1b1b1e');
+		clone.insertBefore(bg, clone.firstChild);
+
+		const svgData = new XMLSerializer().serializeToString(clone);
+		// Use data URL instead of blob URL — blob: is blocked by webview CSP
+		const encodedSvg = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+
+		const img = new Image();
+		img.onload = () => {
+			const canvas = document.createElement('canvas');
+			canvas.width = 1100;
+			canvas.height = 1100;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) { return; }
+			ctx.drawImage(img, 0, 0, 1100, 1100);
+
+			const dataUrl = canvas.toDataURL('image/png');
+			vscode.postMessage({ command: 'saveChartImage', data: dataUrl });
+		};
+		img.onerror = () => {
+			vscode.postMessage({ command: 'downloadChartImage' });
+		};
+		img.src = encodedSvg;
+	});
+  
+	// Wire up demo mode controls (debug mode only)
+	if (data.isDebugMode) {
+		wireDemoControls(data);
+	}
 }
 
 async function bootstrap(): Promise<void> {

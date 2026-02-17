@@ -49,6 +49,7 @@ async function main() {
 			logviewer: 'src/webview/logviewer/main.ts',
 			maturity: 'src/webview/maturity/main.ts',
 			dashboard: 'src/webview/dashboard/main.ts',
+			'fluency-level-viewer': 'src/webview/fluency-level-viewer/main.ts',
 		},
 		bundle: true,
 		format: 'iife',
