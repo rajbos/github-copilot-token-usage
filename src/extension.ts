@@ -1663,9 +1663,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						this.mergeUsageAnalysis(last30DaysStats, analysis);
 
 						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
-						let workspaceId: string | undefined;
+						// Extract workspace ID first (this operation should be safe and not throw)
+						const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
 						try {
-							workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
 							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
 							if (workspaceFolder) {
 								const norm = path.normalize(workspaceFolder);
@@ -1684,11 +1684,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 								unresolvedWorkspaceIds.add(workspaceId);
 							}
 						} catch (e) {
-							// If extraction failed or threw in the try block, workspaceId may still be undefined
-							// Try once more to extract the ID
-							if (!workspaceId) {
-								workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
-							}
+							// Resolution threw an exception; track as unresolved if we have a workspace ID
 							if (workspaceId) {
 								unresolvedWorkspaceIds.add(workspaceId);
 							}
