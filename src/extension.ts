@@ -322,6 +322,8 @@ interface WorkspaceCustomizationSummary {
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
 	private static readonly CACHE_VERSION = 18; // Ensure conversationPatterns set for all JSONL paths (delta + non-delta)
+	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
+	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -1661,8 +1663,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						this.mergeUsageAnalysis(last30DaysStats, analysis);
 
 						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
+						let workspaceId: string | undefined;
 						try {
-							const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
+							workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
 							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
 							if (workspaceFolder) {
 								const norm = path.normalize(workspaceFolder);
@@ -1681,8 +1684,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 								unresolvedWorkspaceIds.add(workspaceId);
 							}
 						} catch (e) {
-							// Try to extract workspace ID even if resolution fails
-							const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
+							// If extraction failed or threw in the try block, workspaceId may still be undefined
+							// Try once more to extract the ID
+							if (!workspaceId) {
+								workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
+							}
 							if (workspaceId) {
 								unresolvedWorkspaceIds.add(workspaceId);
 							}
@@ -1725,7 +1731,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				const matrixRows: WorkspaceCustomizationRow[] = [];
 				let workspacesWithIssues = 0;
-				const WORKSPACE_ID_DISPLAY_LENGTH = 8; // Length limit for displaying workspace IDs in the matrix
 
 				for (const [folderPath, sessionCount] of workspaceSessionCounts) {
 					const files = this._customizationFilesCache.get(folderPath) || [];
@@ -1761,8 +1766,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						typeStatuses[type.id] = '❌';
 					}
 					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
-					const displayId = workspaceId.length > WORKSPACE_ID_DISPLAY_LENGTH
-						? `${workspaceId.substring(0, WORKSPACE_ID_DISPLAY_LENGTH)}...` 
+					const displayId = workspaceId.length > CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH
+						? `${workspaceId.substring(0, CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH)}...` 
 						: workspaceId;
 					matrixRows.push({
 						workspacePath: `<unresolved:${workspaceId}>`,
