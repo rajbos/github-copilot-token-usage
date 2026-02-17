@@ -5895,6 +5895,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 						await this.refreshMaturityPanel();
 					}
 					break;
+				case 'shareToLinkedIn':
+					await this.shareToSocialMedia('linkedin');
+					break;
+				case 'shareToBluesky':
+					await this.shareToSocialMedia('bluesky');
+					break;
+				case 'shareToMastodon':
+					await this.shareToSocialMedia('mastodon');
+					break;
+				case 'downloadChartImage':
+					await this.downloadChartImage();
+					break;
+				case 'saveChartImage':
+					if (message.data) {
+						await this.saveChartImageData(message.data);
+					}
+					break;
 		}
 	});
 
@@ -5929,6 +5946,124 @@ private async dismissFluencyTips(category: string): Promise<void> {
 		await this.context.globalState.update('dismissedFluencyTips', dismissed);
 		this.log(`Dismissed fluency tips for category: ${category}`);
 	}
+}
+
+/**
+ * Share Copilot Fluency Score to social media platforms
+ */
+private async shareToSocialMedia(platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
+	const scores = await this.calculateMaturityScores();
+	const marketplaceUrl = 'https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker';
+	const hashtag = '#CopilotFluencyScore';
+	
+	// Build share text with stats
+	const categoryScores = scores.categories.map(c => `${c.icon} ${c.category}: Stage ${c.stage}`).join('\n');
+	
+	const shareText = `🎯 My GitHub Copilot Fluency Score
+
+Overall: ${scores.overallLabel}
+
+${categoryScores}
+
+Track your Copilot usage and level up your AI-assisted development skills!
+
+Get the extension: ${marketplaceUrl}
+
+${hashtag}`;
+	
+	switch (platform) {
+		case 'linkedin': {
+			// LinkedIn share URL - opens in browser for user to add their own commentary
+			const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
+			
+			// Copy share text to clipboard for easy pasting
+			await vscode.env.clipboard.writeText(shareText);
+			await vscode.window.showInformationMessage(
+				'Share text copied to clipboard! Paste it into your LinkedIn post.',
+				'Open LinkedIn'
+			).then(async selection => {
+				if (selection === 'Open LinkedIn') {
+					await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+				}
+			});
+			break;
+		}
+			
+		case 'bluesky': {
+			// Copy share text to clipboard, then open Bluesky compose
+			await vscode.env.clipboard.writeText(shareText);
+			await vscode.window.showInformationMessage(
+				'Share text copied to clipboard! Paste it into your Bluesky post.',
+				'Open Bluesky'
+			).then(async selection => {
+				if (selection === 'Open Bluesky') {
+					await vscode.env.openExternal(vscode.Uri.parse('https://bsky.app/intent/compose'));
+				}
+			});
+			break;
+		}
+			
+		case 'mastodon': {
+			// Mastodon share - ask user for their instance
+			const instance = await vscode.window.showInputBox({
+				prompt: 'Enter your Mastodon instance (e.g., mastodon.social)',
+				placeHolder: 'mastodon.social',
+				value: 'mastodon.social'
+			});
+			
+			if (instance) {
+				// Copy share text to clipboard, then open Mastodon compose
+				await vscode.env.clipboard.writeText(shareText);
+				await vscode.window.showInformationMessage(
+					'Share text copied to clipboard! Paste it into your Mastodon post.',
+					'Open Mastodon'
+				).then(async selection => {
+					if (selection === 'Open Mastodon') {
+						await vscode.env.openExternal(vscode.Uri.parse(`https://${instance}/share`));
+					}
+				});
+			}
+			break;
+		}
+	}
+	
+	this.log(`Shared fluency score to ${platform}`);
+}
+
+/**
+ * Download the fluency chart as an image
+ */
+private async downloadChartImage(): Promise<void> {
+	await vscode.window.showInformationMessage(
+		'💡 Click the "Download Chart Image" button to save the radar chart as a PNG file.',
+		'Got it'
+	);
+	this.log('Showed chart download instructions');
+}
+
+private async saveChartImageData(dataUrl: string): Promise<void> {
+	const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+	if (!base64Match) {
+		void vscode.window.showErrorMessage('Failed to process chart image data.');
+		return;
+	}
+
+	const uri = await vscode.window.showSaveDialog({
+		defaultUri: vscode.Uri.file('copilot-fluency-score.png'),
+		filters: { 'PNG Image': ['png'] },
+		title: 'Save Fluency Score Chart'
+	});
+
+	if (!uri) { return; }
+
+	const buffer = Buffer.from(base64Match[1], 'base64');
+	await vscode.workspace.fs.writeFile(uri, buffer);
+	void vscode.window.showInformationMessage(`Chart image saved to ${uri.fsPath}`, 'Open Image').then(selection => {
+		if (selection === 'Open Image') {
+			void vscode.env.openExternal(uri);
+		}
+	});
+	this.log(`Chart image saved to ${uri.fsPath}`);
 }
 
 public async showFluencyLevelViewer(): Promise<void> {
