@@ -42,6 +42,7 @@ type UsageAnalysisStats = {
 	month: UsageAnalysisPeriod;
 	lastUpdated: string;
 	customizationMatrix?: WorkspaceCustomizationMatrix | null;
+	backendConfigured?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -245,6 +246,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${buttonHtml('btn-chart')}
 				${buttonHtml('btn-diagnostics')}
 				${buttonHtml('btn-maturity')}
+				${stats.backendConfigured ? buttonHtml('btn-dashboard') : ''}
 				</div>
 			</div>
 
@@ -665,6 +667,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-maturity')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showMaturity' });
+	});
+	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDashboard' });
 	});
 
 	// Copy path buttons in customization list

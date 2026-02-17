@@ -21,6 +21,7 @@ type LevelInfo = {
 type FluencyLevelData = {
 	categories: CategoryLevelData[];
 	isDebugMode: boolean;
+	backendConfigured?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -140,6 +141,7 @@ function renderLayout(data: FluencyLevelData): void {
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
 					${buttonHtml('btn-diagnostics')}
+					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}
 				</div>
 			</div>
 
@@ -184,6 +186,9 @@ function renderLayout(data: FluencyLevelData): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDashboard' });
 	});
 
 	// Wire up category selection buttons

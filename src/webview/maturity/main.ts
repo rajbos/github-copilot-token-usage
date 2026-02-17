@@ -59,6 +59,7 @@ type MaturityData = {
 	dismissedTips?: string[];
 	isDebugMode?: boolean;
 	fluencyLevels?: CategoryLevelData[];
+	backendConfigured?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -355,8 +356,7 @@ function renderLayout(data: MaturityData): void {
 					${buttonHtml('btn-details')}
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
-					${buttonHtml('btn-diagnostics')}
-				</div>
+					${buttonHtml('btn-diagnostics')}					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}				</div>
 			</div>
 
 			<div class="info-box">
@@ -486,6 +486,9 @@ function renderLayout(data: MaturityData): void {
 	});
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDiagnostics' });
+	});
+	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showDashboard' });
 	});
 
 	// Wire up share to issue button

@@ -585,6 +585,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private chartPanel: vscode.WebviewPanel | undefined;
 	private analysisPanel: vscode.WebviewPanel | undefined;
 	private maturityPanel: vscode.WebviewPanel | undefined;
+	private dashboardPanel: vscode.WebviewPanel | undefined;
 	private fluencyLevelViewerPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
@@ -618,6 +619,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Tool name mapping - loaded from toolNames.json for friendly display names
 	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
+
+	// Backend facade instance for accessing table storage data
+	private backend: BackendFacade | undefined;
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
@@ -4971,6 +4975,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showMaturity':
 					await this.showMaturity();
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 			}
 		});
 
@@ -5032,6 +5039,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showMaturity':
 					await this.showMaturity();
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 			}
 		});
 
@@ -5092,6 +5102,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showMaturity':
 					await this.showMaturity();
+					break;
+				case 'showDashboard':
+					await this.showDashboard();
 					break;
 			}
 		});
@@ -5895,6 +5908,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						await this.refreshMaturityPanel();
 					}
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 				case 'shareToLinkedIn':
 					await this.shareToSocialMedia('linkedin');
 					break;
@@ -6558,7 +6574,8 @@ private getFluencyLevelViewerHtml(webview: vscode.Webview, data: {
 		`script-src 'nonce-${nonce}'`
 	].join('; ');
 
-	const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+	const dataWithBackend = { ...data, backendConfigured: this.isBackendConfigured() };
+	const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
 	return `<!DOCTYPE html>
 	<html lang="en">
@@ -6601,7 +6618,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+		const dataWithBackend = { ...data, backendConfigured: this.isBackendConfigured() };
+		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -6619,6 +6637,248 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		</html>`;
 	}
 
+	/**
+	 * Opens the Team Dashboard panel showing personal and team usage comparison.
+	 */
+	public async showDashboard(): Promise<void> {
+		this.log('📊 Opening Team Dashboard');
+
+		// Check if backend is configured
+		if (!this.backend) {
+			vscode.window.showWarningMessage('Team Dashboard requires backend sync to be configured. Please configure backend settings first.');
+			return;
+		}
+
+		const settings = this.backend.getSettings();
+		if (!this.backend.isConfigured(settings)) {
+			vscode.window.showWarningMessage('Team Dashboard requires backend sync to be configured. Please configure backend settings first.');
+			return;
+		}
+
+		// If panel already exists, just reveal it
+		if (this.dashboardPanel) {
+			this.dashboardPanel.reveal();
+			this.log('📊 Team Dashboard revealed (already exists)');
+			return;
+		}
+
+		// Show panel immediately with loading state
+		this.dashboardPanel = vscode.window.createWebviewPanel(
+			'copilotDashboard',
+			'Team Dashboard',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: true,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.dashboardPanel.webview.html = this.getDashboardHtml(this.dashboardPanel.webview, undefined);
+
+		this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshDashboardPanel();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
+			}
+		});
+
+		this.dashboardPanel.onDidDispose(() => {
+			this.log('📊 Team Dashboard closed');
+			this.dashboardPanel = undefined;
+		});
+
+		// Load data asynchronously and send to webview
+		try {
+			const dashboardData = await this.getDashboardData();
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardData', data: dashboardData });
+		} catch (error) {
+			this.error('Failed to load dashboard data:', error);
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardError', message: 'Failed to load dashboard data. Please check backend configuration and try again.' });
+		}
+	}
+
+	private async refreshDashboardPanel(): Promise<void> {
+		if (!this.dashboardPanel) {
+			return;
+		}
+
+		this.log('🔄 Refreshing Team Dashboard');
+		this.dashboardPanel.webview.postMessage({ command: 'dashboardLoading' });
+		try {
+			const dashboardData = await this.getDashboardData();
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardData', data: dashboardData });
+			this.log('✅ Team Dashboard refreshed');
+		} catch (error) {
+			this.error('Failed to refresh dashboard:', error);
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardError', message: 'Failed to refresh dashboard data.' });
+		}
+	}
+
+	/**
+	 * Fetches and aggregates data for the Team Dashboard.
+	 */
+	private async getDashboardData(): Promise<any> {
+		if (!this.backend) {
+			throw new Error('Backend not configured');
+		}
+
+		const { BackendUtility } = await import('./backend/services/utilityService.js');
+		const settings = this.backend.getSettings();
+		const currentUserId = settings.userId; // Use the configured userId from settings
+
+		// Query backend for last 30 days
+		const now = new Date();
+		const todayKey = BackendUtility.toUtcDayKey(now);
+		const startKey = BackendUtility.addDaysUtc(todayKey, -29);
+
+		// Fetch all entities for the dataset using the facade's public API
+		const allEntities = await this.backend.getAggEntitiesForRange(settings, startKey, todayKey);
+
+		// Aggregate personal data (all machines and workspaces for current user)
+		const personalDevices = new Set<string>();
+		const personalWorkspaces = new Set<string>();
+		const personalModelUsage: { [model: string]: { inputTokens: number; outputTokens: number } } = {};
+		let personalTotalTokens = 0;
+		let personalTotalInteractions = 0;
+
+		// Aggregate team data (all users)
+		const userMap = new Map<string, { tokens: number; interactions: number; cost: number }>();
+
+		for (const entity of allEntities) {
+			const userId = (entity.userId ?? '').toString();
+			const machineId = (entity.machineId ?? '').toString();
+			const workspaceId = (entity.workspaceId ?? '').toString();
+			const model = (entity.model ?? '').toString();
+			const inputTokens = Number.isFinite(Number(entity.inputTokens)) ? Number(entity.inputTokens) : 0;
+			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
+			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
+			const tokens = inputTokens + outputTokens;
+
+			// Personal data aggregation
+			if (userId === currentUserId) {
+				personalTotalTokens += tokens;
+				personalTotalInteractions += interactions;
+				personalDevices.add(machineId);
+				personalWorkspaces.add(workspaceId);
+
+				if (!personalModelUsage[model]) {
+					personalModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+				}
+				personalModelUsage[model].inputTokens += inputTokens;
+				personalModelUsage[model].outputTokens += outputTokens;
+			}
+
+			// Team data aggregation
+			if (userId && userId.trim()) {
+				if (!userMap.has(userId)) {
+					userMap.set(userId, { tokens: 0, interactions: 0, cost: 0 });
+				}
+				const userData = userMap.get(userId)!;
+				userData.tokens += tokens;
+				userData.interactions += interactions;
+			}
+		}
+
+		// Calculate costs
+		const personalCost = this.calculateEstimatedCost(personalModelUsage);
+		
+		// For team members, use a simplified cost estimate since we don't track
+		// per-user model breakdown in the current aggregation. This provides a
+		// rough approximation assuming average model pricing (~$0.05 per 1M tokens).
+		// The personal cost uses the accurate model-aware calculation.
+		for (const [userId, userData] of userMap.entries()) {
+			userData.cost = (userData.tokens / 1000000) * 0.05;
+		}
+
+		// Build team leaderboard
+		const teamMembers = Array.from(userMap.entries())
+			.map(([userId, data]) => ({
+				userId,
+				totalTokens: data.tokens,
+				totalInteractions: data.interactions,
+				totalCost: data.cost,
+				rank: 0
+			}))
+			.sort((a, b) => b.totalTokens - a.totalTokens)
+			.map((member, index) => ({
+				...member,
+				rank: index + 1
+			}));
+
+		const teamTotalTokens = Array.from(userMap.values()).reduce((sum, u) => sum + u.tokens, 0);
+		const teamTotalInteractions = Array.from(userMap.values()).reduce((sum, u) => sum + u.interactions, 0);
+		const averageTokensPerUser = userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
+
+		return {
+			personal: {
+				userId: currentUserId,
+				totalTokens: personalTotalTokens,
+				totalInteractions: personalTotalInteractions,
+				totalCost: personalCost,
+				devices: Array.from(personalDevices),
+				workspaces: Array.from(personalWorkspaces),
+				modelUsage: personalModelUsage
+			},
+			team: {
+				members: teamMembers,
+				totalTokens: teamTotalTokens,
+				totalInteractions: teamTotalInteractions,
+				averageTokensPerUser
+			},
+			lastUpdated: new Date().toISOString()
+		};
+	}
+
+	private getDashboardHtml(webview: vscode.Webview, data: any | undefined): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'dashboard.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const dataWithBackend = data ? { ...data, backendConfigured: this.isBackendConfigured() } : undefined;
+		const initialDataScript = dataWithBackend
+			? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, '\\u003c')};</script>`
+			: '';
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Team Dashboard</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			${initialDataScript}
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+	}
+
 	private getNonce(): string {
 		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 		let text = '';
@@ -6626,6 +6886,17 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			text += possible.charAt(Math.floor(Math.random() * possible.length));
 		}
 		return text;
+	}
+
+	/**
+	 * Check if backend sync is configured for Team Dashboard access.
+	 */
+	private isBackendConfigured(): boolean {
+		if (!this.backend) {
+			return false;
+		}
+		const settings = this.backend.getSettings();
+		return this.backend.isConfigured(settings);
 	}
 
 	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
@@ -6642,7 +6913,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify(stats).replace(/</g, '\\u003c');
+		const dataWithBackend = { ...stats, backendConfigured: this.isBackendConfigured() };
+		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -7026,6 +7298,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				case 'openSettings':
 					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
 					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
 			}
 		});
 
@@ -7361,7 +7636,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			storagePath: storageFilePath
 		};
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo }).replace(/</g, '\\u003c');
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo, backendConfigured: this.isBackendConfigured() }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -7491,7 +7766,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			totalTokens,
 			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
 			totalSessions,
-			lastUpdated: new Date().toISOString()
+			lastUpdated: new Date().toISOString(),
+			backendConfigured: this.isBackendConfigured()
 		};
 
 		const initialData = JSON.stringify(chartData).replace(/</g, '\\u003c');
@@ -7529,7 +7805,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			last30Days: stats.last30Days,
 			month: stats.month,
 			customizationMatrix: stats.customizationMatrix || null,
-			lastUpdated: stats.lastUpdated.toISOString()
+			lastUpdated: stats.lastUpdated.toISOString(),
+			backendConfigured: this.isBackendConfigured()
 		}).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
@@ -7627,6 +7904,9 @@ export function activate(context: vscode.ExtensionContext) {
 			log: (m: string) => (tokenTracker as any).log(m)
 		});
 
+		// Store backend facade in the tracker instance for dashboard access
+		(tokenTracker as any).backend = backendFacade;
+
 		const configureBackendCommand = vscode.commands.registerCommand('copilot-token-tracker.configureBackend', async () => {
 			await backendHandler.handleConfigureBackend();
 		});
@@ -7668,6 +7948,12 @@ export function activate(context: vscode.ExtensionContext) {
 		await tokenTracker.showMaturity();
 	});
 
+	// Register the show dashboard command
+	const showDashboardCommand = vscode.commands.registerCommand('copilot-token-tracker.showDashboard', async () => {
+		tokenTracker.log('Show dashboard command called');
+		await tokenTracker.showDashboard();
+	});
+  
 	// Register the show fluency level viewer command (debug-only)
 	const showFluencyLevelViewerCommand = vscode.commands.registerCommand('copilot-token-tracker.showFluencyLevelViewer', async () => {
 		tokenTracker.log('Show fluency level viewer command called');
@@ -7687,7 +7973,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, showFluencyLevelViewerCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
+	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, showFluencyLevelViewerCommand, showDashboardCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
 
 	tokenTracker.log('Extension activation complete');
 }
