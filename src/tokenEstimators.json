@@ -17,6 +17,7 @@
     "gpt-5.2": 0.25,
     "gpt-5.2-codex": 0.25,
     "gpt-5.2-pro": 0.25,
+    "gpt-5.3-codex": 0.25,
     "gpt-4.1-nano": 0.25,
     "gemini-2.0-flash": 0.25,
     "gemini-2.0-flash-lite": 0.25,
