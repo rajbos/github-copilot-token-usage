@@ -7934,6 +7934,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const showDashboardCommand = vscode.commands.registerCommand('copilot-token-tracker.showDashboard', async () => {
 		tokenTracker.log('Show dashboard command called');
 		await tokenTracker.showDashboard();
+	});
   
 	// Register the show fluency level viewer command (debug-only)
 	const showFluencyLevelViewerCommand = vscode.commands.registerCommand('copilot-token-tracker.showFluencyLevelViewer', async () => {
