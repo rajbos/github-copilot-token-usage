@@ -19,6 +19,17 @@
 	color: var(--vscode-foreground);
 }
 
+.title-group {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.period {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+}
+
 .button-row {
 	display: flex;
 	gap: 10px;
@@ -165,4 +176,38 @@
 	font-size: 12px;
 	padding: 20px 0;
 	border-top: 1px solid var(--vscode-panel-border);
+}
+
+.loading-indicator {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 60px 20px;
+	gap: 20px;
+}
+
+.spinner {
+	width: 40px;
+	height: 40px;
+	border: 4px solid var(--vscode-panel-border);
+	border-top-color: var(--vscode-textLink-foreground);
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+
+.loading-text {
+	color: var(--vscode-descriptionForeground);
+	font-size: 14px;
+}
+
+.error-message {
+	text-align: center;
+	padding: 40px 20px;
+	color: var(--vscode-errorForeground);
+	font-size: 14px;
 }

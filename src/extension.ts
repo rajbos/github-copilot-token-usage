@@ -5994,58 +5994,62 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			return;
 		}
 
-		// If panel already exists, dispose and recreate with fresh data
+		// If panel already exists, just reveal it
 		if (this.dashboardPanel) {
-			this.dashboardPanel.dispose();
-			this.dashboardPanel = undefined;
+			this.dashboardPanel.reveal();
+			this.log('📊 Team Dashboard revealed (already exists)');
+			return;
 		}
 
+		// Show panel immediately with loading state
+		this.dashboardPanel = vscode.window.createWebviewPanel(
+			'copilotDashboard',
+			'Team Dashboard',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: true,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.dashboardPanel.webview.html = this.getDashboardHtml(this.dashboardPanel.webview, undefined);
+
+		this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh':
+					await this.refreshDashboardPanel();
+					break;
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
+			}
+		});
+
+		this.dashboardPanel.onDidDispose(() => {
+			this.log('📊 Team Dashboard closed');
+			this.dashboardPanel = undefined;
+		});
+
+		// Load data asynchronously and send to webview
 		try {
 			const dashboardData = await this.getDashboardData();
-
-			this.dashboardPanel = vscode.window.createWebviewPanel(
-				'copilotDashboard',
-				'Team Dashboard',
-				{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
-				{
-					enableScripts: true,
-					retainContextWhenHidden: false,
-					localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
-				}
-			);
-
-			this.dashboardPanel.webview.html = this.getDashboardHtml(this.dashboardPanel.webview, dashboardData);
-
-			this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
-				switch (message.command) {
-					case 'refresh':
-						await this.refreshDashboardPanel();
-						break;
-					case 'showDetails':
-						await this.showDetails();
-						break;
-					case 'showChart':
-						await this.showChart();
-						break;
-					case 'showUsageAnalysis':
-						await this.showUsageAnalysis();
-						break;
-					case 'showDiagnostics':
-						await this.showDiagnosticReport();
-						break;
-					case 'showMaturity':
-						await this.showMaturity();
-						break;
-				}
-			});
-
-			this.dashboardPanel.onDidDispose(() => {
-				this.log('📊 Team Dashboard closed');
-				this.dashboardPanel = undefined;
-			});
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardData', data: dashboardData });
 		} catch (error) {
 			this.error('Failed to load dashboard data:', error);
-			vscode.window.showErrorMessage('Failed to load Team Dashboard. Please check backend configuration and try again.');
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardError', message: 'Failed to load dashboard data. Please check backend configuration and try again.' });
 		}
 	}
 
@@ -6055,13 +6059,14 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		}
 
 		this.log('🔄 Refreshing Team Dashboard');
+		this.dashboardPanel.webview.postMessage({ command: 'dashboardLoading' });
 		try {
 			const dashboardData = await this.getDashboardData();
-			this.dashboardPanel.webview.html = this.getDashboardHtml(this.dashboardPanel.webview, dashboardData);
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardData', data: dashboardData });
 			this.log('✅ Team Dashboard refreshed');
 		} catch (error) {
 			this.error('Failed to refresh dashboard:', error);
-			vscode.window.showErrorMessage('Failed to refresh Team Dashboard.');
+			this.dashboardPanel?.webview.postMessage({ command: 'dashboardError', message: 'Failed to refresh dashboard data.' });
 		}
 	}
 
@@ -6082,18 +6087,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const todayKey = BackendUtility.toUtcDayKey(now);
 		const startKey = BackendUtility.addDaysUtc(todayKey, -29);
 
-		// Fetch all entities for the dataset
-		const dataPlane = (this.backend as any).dataPlane;
-		const credentialService = (this.backend as any).credentialService;
-		const creds = await credentialService.getBackendDataPlaneCredentialsOrThrow(settings);
-		const tableClient = dataPlane.createTableClient(settings, creds.tableCredential);
-		
-		const allEntities = await dataPlane.listEntitiesForRange({
-			tableClient: tableClient as any,
-			datasetId: settings.datasetId,
-			startDayKey: startKey,
-			endDayKey: todayKey
-		});
+		// Fetch all entities for the dataset using the facade's public API
+		const allEntities = await this.backend.getAggEntitiesForRange(settings, startKey, todayKey);
 
 		// Aggregate personal data (all machines and workspaces for current user)
 		const personalDevices = new Set<string>();
@@ -6190,7 +6185,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		};
 	}
 
-	private getDashboardHtml(webview: vscode.Webview, data: any): string {
+	private getDashboardHtml(webview: vscode.Webview, data: any | undefined): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'dashboard.js'));
 
@@ -6202,7 +6197,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+		const initialDataScript = data
+			? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`
+			: '';
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -6214,7 +6211,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		</head>
 		<body>
 			<div id="root"></div>
-			<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${initialData};</script>
+			${initialDataScript}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;

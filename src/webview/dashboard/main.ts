@@ -58,6 +58,58 @@ const initialData = window.__INITIAL_DASHBOARD__;
 console.log('[CopilotTokenTracker] dashboard webview loaded');
 console.log('[CopilotTokenTracker] initialData:', initialData);
 
+function showLoading(): void {
+	const root = document.getElementById('root');
+	if (!root) { return; }
+
+	root.replaceChildren();
+
+	const themeStyle = document.createElement('style');
+	themeStyle.textContent = themeStyles;
+
+	const style = document.createElement('style');
+	style.textContent = styles;
+
+	const container = el('div', 'container');
+	const header = el('div', 'header');
+	const title = el('div', 'title', '📊 Team Dashboard');
+	header.append(title);
+
+	const loading = el('div', 'loading-indicator');
+	const spinner = el('div', 'spinner');
+	const loadingText = el('div', 'loading-text', 'Loading dashboard data...');
+	loading.append(spinner, loadingText);
+
+	container.append(header, loading);
+	root.append(themeStyle, style, container);
+}
+
+function showError(message: string): void {
+	const root = document.getElementById('root');
+	if (!root) { return; }
+
+	root.replaceChildren();
+
+	const themeStyle = document.createElement('style');
+	themeStyle.textContent = themeStyles;
+
+	const style = document.createElement('style');
+	style.textContent = styles;
+
+	const container = el('div', 'container');
+	const header = el('div', 'header');
+	const title = el('div', 'title', '📊 Team Dashboard');
+	const buttonRow = el('div', 'button-row');
+	buttonRow.append(createButton(BUTTONS['btn-refresh']));
+	header.append(title, buttonRow);
+
+	const errorEl = el('div', 'error-message', message);
+
+	container.append(header, errorEl);
+	root.append(themeStyle, style, container);
+	wireButtons();
+}
+
 function render(stats: DashboardStats): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
@@ -79,7 +131,10 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
 
 	const container = el('div', 'container');
 	const header = el('div', 'header');
+	const titleGroup = el('div', 'title-group');
 	const title = el('div', 'title', '📊 Team Dashboard');
+	const period = el('div', 'period', 'Last 30 days');
+	titleGroup.append(title, period);
 	const buttonRow = el('div', 'button-row');
 
 	buttonRow.append(
@@ -91,7 +146,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
 		createButton(BUTTONS['btn-maturity'])
 	);
 
-	header.append(title, buttonRow);
+	header.append(titleGroup, buttonRow);
 
 	const footer = el('div', 'footer', `Last updated: ${lastUpdated.toLocaleString()}`);
 
@@ -241,11 +296,38 @@ function wireButtons(): void {
 	// Note: No dashboard button handler - users are already on the dashboard
 }
 
-if (initialData) {
-	render(initialData);
-} else {
-	const root = document.getElementById('root');
-	if (root) {
-		root.textContent = 'No dashboard data available. Please configure backend sync.';
+// Listen for messages from the extension
+window.addEventListener('message', (event) => {
+	const message = event.data;
+	switch (message.command) {
+		case 'dashboardData':
+			render(message.data);
+			break;
+		case 'dashboardLoading':
+			showLoading();
+			break;
+		case 'dashboardError':
+			showError(message.message);
+			break;
+	}
+});
+
+async function bootstrap(): Promise<void> {
+	console.log('[CopilotTokenTracker] dashboard bootstrap called');
+	const { provideVSCodeDesignSystem, vsCodeButton } = await import('@vscode/webview-ui-toolkit');
+	provideVSCodeDesignSystem().register(vsCodeButton());
+
+	if (initialData) {
+		render(initialData);
+	} else {
+		showLoading();
 	}
 }
+
+bootstrap().catch(err => {
+	console.error('[CopilotTokenTracker] Failed to bootstrap dashboard:', err);
+	const root = document.getElementById('root');
+	if (root) {
+		root.textContent = 'Failed to initialize dashboard.';
+	}
+});
