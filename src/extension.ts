@@ -1760,9 +1760,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						typeStatuses[type.id] = '❌';
 					}
 					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
+					const displayId = workspaceId.substring(0, Math.min(8, workspaceId.length));
 					matrixRows.push({
 						workspacePath: `<unresolved:${workspaceId}>`,
-						workspaceName: `Unresolved (${workspaceId.substring(0, 8)}...)`,
+						workspaceName: `Unresolved (${displayId}...)`,
 						sessionCount: 0, // We don't track session counts for unresolved workspaces
 						typeStatuses
 					});
