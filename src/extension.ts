@@ -5910,6 +5910,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showDashboard':
 					await this.showDashboard();
+					break;
 				case 'shareToLinkedIn':
 					await this.shareToSocialMedia('linkedin');
 					break;
@@ -6573,7 +6574,8 @@ private getFluencyLevelViewerHtml(webview: vscode.Webview, data: {
 		`script-src 'nonce-${nonce}'`
 	].join('; ');
 
-	const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+	const dataWithBackend = { ...data, backendConfigured: this.isBackendConfigured() };
+	const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
 	return `<!DOCTYPE html>
 	<html lang="en">
@@ -6616,7 +6618,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify(data).replace(/</g, '\\u003c');
+		const dataWithBackend = { ...data, backendConfigured: this.isBackendConfigured() };
+		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -6855,8 +6858,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialDataScript = data
-			? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`
+		const dataWithBackend = data ? { ...data, backendConfigured: this.isBackendConfigured() } : undefined;
+		const initialDataScript = dataWithBackend
+			? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, '\\u003c')};</script>`
 			: '';
 
 		return `<!DOCTYPE html>
@@ -6884,6 +6888,17 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		return text;
 	}
 
+	/**
+	 * Check if backend sync is configured for Team Dashboard access.
+	 */
+	private isBackendConfigured(): boolean {
+		if (!this.backend) {
+			return false;
+		}
+		const settings = this.backend.getSettings();
+		return this.backend.isConfigured(settings);
+	}
+
 	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
 		const nonce = this.getNonce();
 		const scriptUri = webview.asWebviewUri(
@@ -6898,7 +6913,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify(stats).replace(/</g, '\\u003c');
+		const dataWithBackend = { ...stats, backendConfigured: this.isBackendConfigured() };
+		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -7620,7 +7636,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			storagePath: storageFilePath
 		};
 
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo }).replace(/</g, '\\u003c');
+		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo, backendConfigured: this.isBackendConfigured() }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -7750,7 +7766,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			totalTokens,
 			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
 			totalSessions,
-			lastUpdated: new Date().toISOString()
+			lastUpdated: new Date().toISOString(),
+			backendConfigured: this.isBackendConfigured()
 		};
 
 		const initialData = JSON.stringify(chartData).replace(/</g, '\\u003c');
@@ -7788,7 +7805,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			last30Days: stats.last30Days,
 			month: stats.month,
 			customizationMatrix: stats.customizationMatrix || null,
-			lastUpdated: stats.lastUpdated.toISOString()
+			lastUpdated: stats.lastUpdated.toISOString(),
+			backendConfigured: this.isBackendConfigured()
 		}).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>

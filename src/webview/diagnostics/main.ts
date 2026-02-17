@@ -64,6 +64,7 @@ type DiagnosticsData = {
   detailedSessionFiles?: SessionFileDetails[];
   cacheInfo?: CacheInfo;
   backendStorageInfo?: BackendStorageInfo;
+  backendConfigured?: boolean;
 };
 
 type DiagnosticsViewState = {
@@ -735,6 +736,7 @@ function renderLayout(data: DiagnosticsData): void {
 					${buttonHtml("btn-chart")}
 					${buttonHtml("btn-usage")}
 					${buttonHtml("btn-maturity")}
+					${data?.backendConfigured ? buttonHtml("btn-dashboard") : ""}
 				</div>
 			</div>
 
@@ -1392,6 +1394,11 @@ function renderLayout(data: DiagnosticsData): void {
     .getElementById("btn-maturity")
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showMaturity" }),
+    );
+  document
+    .getElementById("btn-dashboard")
+    ?.addEventListener("click", () =>
+      vscode.postMessage({ command: "showDashboard" }),
     );
 
   setupSortHandlers();

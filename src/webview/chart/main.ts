@@ -28,6 +28,7 @@ type InitialChartData = {
 	avgTokensPerDay: number;
 	totalSessions: number;
 	lastUpdated: string;
+	backendConfigured?: boolean;
 };
 
 // VS Code injects this in the webview environment
@@ -85,6 +86,9 @@ function renderLayout(data: InitialChartData): void {
 		createButton(BUTTONS['btn-diagnostics']),
 		createButton(BUTTONS['btn-maturity'])
 	);
+	if (data.backendConfigured) {
+		buttons.append(createButton(BUTTONS['btn-dashboard']));
+	}
 	header.append(headerLeft, buttons);
 
 	const summarySection = el('div', 'section');
@@ -168,6 +172,9 @@ function wireInteractions(data: InitialChartData): void {
 
 	const maturity = document.getElementById('btn-maturity');
 	maturity?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
+
+	const dashboard = document.getElementById('btn-dashboard');
+	dashboard?.addEventListener('click', () => vscode.postMessage({ command: 'showDashboard' }));
 
 	const viewButtons = [
 		{ id: 'view-total', view: 'total' as const },

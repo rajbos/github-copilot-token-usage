@@ -32,6 +32,7 @@ type DetailedStats = {
 	lastMonth: PeriodStats;
 	last30Days: PeriodStats;
 	lastUpdated: string | Date;
+	backendConfigured?: boolean;
 };
 
 // VS Code injects this in the webview environment
@@ -119,9 +120,11 @@ function renderShell(
 		createButton(BUTTONS['btn-chart']),
 		createButton(BUTTONS['btn-usage']),
 		createButton(BUTTONS['btn-diagnostics']),
-		createButton(BUTTONS['btn-maturity']),
-		createButton(BUTTONS['btn-dashboard'])
+		createButton(BUTTONS['btn-maturity'])
 	);
+	if (stats.backendConfigured) {
+		buttonRow.append(createButton(BUTTONS['btn-dashboard']));
+	}
 
 	header.append(title, buttonRow);
 
