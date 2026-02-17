@@ -373,6 +373,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return undefined;
 	}
 
+	/**
+	 * Extract workspace ID from a session file path, if it's workspace-scoped.
+	 * Returns the workspace ID or undefined if not a workspace-scoped session.
+	 */
+	private extractWorkspaceIdFromSessionPath(sessionFilePath: string): string | undefined {
+		try {
+			const normalized = sessionFilePath.replace(/\\/g, '/');
+			const parts = normalized.split('/').filter(p => p.length > 0);
+			const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+			if (idx === -1 || idx + 1 >= parts.length) {
+				return undefined; // Not a workspace-scoped session file
+			}
+			return parts[idx + 1];
+		} catch {
+			return undefined;
+		}
+	}
+
 	private resolveWorkspaceFolderFromSessionPath(sessionFilePath: string): string | undefined {
 		try {
 			// Normalize and split path into segments
@@ -1565,6 +1583,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
 		const workspaceSessionCounts = new Map<string, number>();
+		// Track unresolved workspace IDs (failed resolution or no workspace)
+		const unresolvedWorkspaceIds = new Set<string>();
 
 		// Clear short-lived caches for this analysis run
 		this._workspaceIdToFolderCache.clear();
@@ -1642,6 +1662,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
 						try {
+							const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
 							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
 							if (workspaceFolder) {
 								const norm = path.normalize(workspaceFolder);
@@ -1654,9 +1675,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 										// ignore scan errors per workspace
 									}
 								}
+							} else if (workspaceId) {
+								// Workspace resolution failed but we have a workspace ID
+								// Track it as unresolved so it counts toward total repos
+								unresolvedWorkspaceIds.add(workspaceId);
 							}
 						} catch (e) {
-							// ignore workspace resolution errors
+							// Try to extract workspace ID even if resolution fails
+							const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
+							if (workspaceId) {
+								unresolvedWorkspaceIds.add(workspaceId);
+							}
 						}
 
 						// Add to month stats if modified this calendar month
@@ -1719,6 +1748,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 						workspacePath: folderPath,
 						workspaceName: path.basename(folderPath),
 						sessionCount,
+						typeStatuses
+					});
+				}
+
+				// Add unresolved workspaces as rows with all customization types marked as ❌
+				// This ensures they count toward total repos and are assumed to have NO customizations
+				for (const workspaceId of unresolvedWorkspaceIds) {
+					const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
+					for (const type of customizationTypes) {
+						typeStatuses[type.id] = '❌';
+					}
+					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
+					matrixRows.push({
+						workspacePath: `<unresolved:${workspaceId}>`,
+						workspaceName: `Unresolved (${workspaceId.substring(0, 8)}...)`,
+						sessionCount: 0, // We don't track session counts for unresolved workspaces
 						typeStatuses
 					});
 				}
