@@ -1762,13 +1762,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 						typeStatuses[type.id] = '❌';
 					}
 					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
+					
+					// Generate display name with smart truncation
 					const displayId = workspaceId.length > CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH
-						? `${workspaceId.substring(0, CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH)}...` 
+						? `${workspaceId.substring(0, CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH)}...`
 						: workspaceId;
+					
 					matrixRows.push({
 						workspacePath: `<unresolved:${workspaceId}>`,
 						workspaceName: `Unresolved (${displayId})`,
-						sessionCount: 0, // We don't track session counts for unresolved workspaces
+						// Session count is 0 because we only track counts in workspaceSessionCounts for successfully resolved workspaces.
+						// The presence of this workspace in unresolvedWorkspaceIds means we encountered session files for it,
+						// but couldn't resolve its folder path, so we couldn't increment a count in workspaceSessionCounts.
+						sessionCount: 0,
 						typeStatuses
 					});
 				}
