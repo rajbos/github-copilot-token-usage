@@ -234,6 +234,7 @@ interface WorkspaceCustomizationRow {
 	workspacePath: string;
 	workspaceName: string;
 	sessionCount: number;
+	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
 }
 
@@ -1585,8 +1586,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
 		const workspaceSessionCounts = new Map<string, number>();
+		// Track interaction counts per resolved workspace (for prioritization)
+		const workspaceInteractionCounts = new Map<string, number>();
 		// Track unresolved workspace IDs (failed resolution or no workspace)
 		const unresolvedWorkspaceIds = new Set<string>();
+		// Track interaction counts for unresolved workspace IDs
+		const unresolvedWorkspaceInteractionCounts = new Map<string, number>();
 
 		// Clear short-lived caches for this analysis run
 		this._workspaceIdToFolderCache.clear();
@@ -1670,6 +1675,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (workspaceFolder) {
 								const norm = path.normalize(workspaceFolder);
 								workspaceSessionCounts.set(norm, (workspaceSessionCounts.get(norm) || 0) + 1);
+								workspaceInteractionCounts.set(norm, (workspaceInteractionCounts.get(norm) || 0) + interactions);
 								if (!this._customizationFilesCache.has(norm)) {
 									try {
 										const files = this.scanWorkspaceCustomizationFiles(norm);
@@ -1682,11 +1688,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 								// Workspace resolution failed but we have a workspace ID
 								// Track it as unresolved so it counts toward total repos
 								unresolvedWorkspaceIds.add(workspaceId);
+								unresolvedWorkspaceInteractionCounts.set(workspaceId, (unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0) + interactions);
 							}
 						} catch (e) {
 							// Resolution threw an exception; track as unresolved if we have a workspace ID
 							if (workspaceId) {
 								unresolvedWorkspaceIds.add(workspaceId);
+								unresolvedWorkspaceInteractionCounts.set(workspaceId, (unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0) + interactions);
 							}
 						}
 
@@ -1750,6 +1758,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						workspacePath: folderPath,
 						workspaceName: path.basename(folderPath),
 						sessionCount,
+						interactionCount: workspaceInteractionCounts.get(folderPath) || 0,
 						typeStatuses
 					});
 				}
@@ -1775,11 +1784,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// The presence of this workspace in unresolvedWorkspaceIds means we encountered session files for it,
 						// but couldn't resolve its folder path, so we couldn't increment a count in workspaceSessionCounts.
 						sessionCount: 0,
+						interactionCount: unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0,
 						typeStatuses
 					});
 				}
 
-				matrixRows.sort((a, b) => b.sessionCount - a.sessionCount);
+				matrixRows.sort((a, b) => {
+					if (b.interactionCount !== a.interactionCount) {
+						return b.interactionCount - a.interactionCount;
+					}
+					return b.sessionCount - a.sessionCount;
+				});
 
 				const customizationMatrix: WorkspaceCustomizationMatrix = {
 					customizationTypes,
@@ -5808,7 +5823,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (cuStage >= 4) {
 			const uncustomized = totalRepos - reposWithCustomization;
 			if (uncustomized > 0) {
-				cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+				const missingCustomizationRepos = (matrix?.workspaces || [])
+					.filter(row => Object.values(row.typeStatuses).every(status => status === '❌'));
+				const prioritizedMissingRepos = missingCustomizationRepos
+					.filter(row => !row.workspacePath.startsWith('<unresolved:'))
+					.sort((a, b) => {
+						if (b.interactionCount !== a.interactionCount) {
+							return b.interactionCount - a.interactionCount;
+						}
+						return b.sessionCount - a.sessionCount;
+					})
+					.slice(0, 3);
+
+				const summaryTip = `${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage.`;
+				if (prioritizedMissingRepos.length > 0) {
+					const repoLines = prioritizedMissingRepos.map(row => 
+						`${row.workspaceName} (${row.interactionCount} interaction${row.interactionCount === 1 ? '' : 's'})`
+					).join('\n');
+					cuTips.push(`${summaryTip}\n\nTop repos to customize first:\n${repoLines}`);
+				} else {
+					cuTips.push(summaryTip);
+				}
 			} else {
 				cuTips.push('All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration');
 			}
