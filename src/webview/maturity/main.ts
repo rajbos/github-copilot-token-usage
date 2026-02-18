@@ -79,6 +79,7 @@ const initialData = window.__INITIAL_MATURITY__;
 
 let demoModeActive = false;
 let demoStageOverrides: number[] = [];
+let demoPanelExpanded = false; // Hidden by default
 
 // ── Stage labels ───────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 		if (Math.cos(angle) < -0.3) { anchor = 'end'; }
 		else if (Math.cos(angle) > 0.3) { anchor = 'start'; }
 		return `<text x="${x}" y="${y}" text-anchor="${anchor}" dominant-baseline="central"
-			font-size="11" fill="#d0d0d0" font-weight="600">${cat.icon} ${cat.category}</text>`;
+			font-size="14" fill="#d0d0d0" font-weight="600">${cat.icon} ${cat.category}</text>`;
 	}).join('');
 
 	// Stage dots
@@ -208,14 +209,19 @@ function renderDemoControls(categories: CategoryScore[]): string {
 
 	return `
 		<div class="demo-panel">
-			<div class="demo-panel-header">
-				<div class="demo-panel-title">🐛 Demo Mode — Override Spider Chart</div>
-				<div class="demo-panel-actions">
+			<div class="demo-panel-header ${demoPanelExpanded ? '' : 'demo-collapsed'}">
+				<div class="demo-panel-title">
+					<button class="demo-expand-btn" id="demo-expand-toggle" title="${demoPanelExpanded ? 'Collapse' : 'Expand'} Demo Mode Panel">
+						${demoPanelExpanded ? '▼' : '▶'}
+					</button>
+					🐛 Demo Mode — Override Spider Chart
+				</div>
+				<div class="demo-panel-actions ${demoPanelExpanded ? '' : 'demo-hidden'}">
 					<button class="demo-btn demo-btn-toggle" id="demo-toggle">${demoModeActive ? '⏸ Disable Overrides' : '▶ Enable Overrides'}</button>
 					<button class="demo-btn demo-btn-reset" id="demo-reset">↺ Reset to Actual</button>
 				</div>
 			</div>
-			<div class="demo-sliders ${demoModeActive ? '' : 'demo-disabled'}">
+			<div class="demo-sliders ${demoModeActive ? '' : 'demo-disabled'} ${demoPanelExpanded ? '' : 'demo-hidden'}">
 				${sliders}
 			</div>
 		</div>
@@ -227,6 +233,11 @@ function wireDemoControls(data: MaturityData): void {
 	if (demoStageOverrides.length === 0) {
 		demoStageOverrides = data.categories.map(c => c.stage);
 	}
+
+	document.getElementById('demo-expand-toggle')?.addEventListener('click', () => {
+		demoPanelExpanded = !demoPanelExpanded;
+		renderLayout(data);
+	});
 
 	document.getElementById('demo-toggle')?.addEventListener('click', () => {
 		demoModeActive = !demoModeActive;
