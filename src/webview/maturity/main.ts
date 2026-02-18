@@ -307,7 +307,24 @@ function renderLayout(data: MaturityData): void {
 			`<li class="evidence-item"><span class="evidence-icon">&#x2713;</span><span>${escapeHtml(e)}</span></li>`
 		).join('');
 		const tipsHtml = cat.tips.length > 0
-			? cat.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
+			? cat.tips.map(t => {
+					// Check if tip contains newlines (multi-line tip with list items)
+					if (t.includes('\n')) {
+						const lines = t.split('\n').filter(line => line.trim());
+						const summary = lines[0];
+						const hasHeader = lines.length > 1 && lines[1].toLowerCase().includes('top repos');
+						if (hasHeader && lines.length > 2) {
+							const header = lines[1];
+							const listItems = lines.slice(2).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+							return `<div class="tip-item">${escapeHtml(summary)}<div style="margin-top: 8px; font-weight: 600; font-size: 11px; color: #999;">${escapeHtml(header)}</div><ul style="margin: 6px 0 0 0; padding-left: 18px; list-style: disc;">${listItems}</ul></div>`;
+						} else {
+							// Just split lines without special list formatting
+							return `<div class="tip-item">${lines.map(line => escapeHtml(line)).join('<br>')}</div>`;
+						}
+					} else {
+						return `<div class="tip-item">${escapeHtml(t)}</div>`;
+					}
+				}).join('')
 			: '<div class="tip-item" style="color:#666;">No specific suggestions - you\'re doing great!</div>';
 
 		// Check if tips are dismissed for this category
