@@ -190,7 +190,7 @@
       "outputCostPerMillion": 0.00,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 3
     },
     "claude-haiku": {
       "inputCostPerMillion": 0.25,
