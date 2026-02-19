@@ -232,7 +232,7 @@
       "outputCostPerMillion": 25.0,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
-      "multiplier": 9
+      "multiplier": 30
     },
     "claude-opus-4.6-fast": {
       "inputCostPerMillion": 5.0,
