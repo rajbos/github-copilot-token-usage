@@ -594,10 +594,39 @@ body {
 	border-bottom: 1px solid #2a3a50;
 }
 
+.demo-panel-header.demo-collapsed {
+	margin-bottom: 0;
+	padding-bottom: 0;
+	border-bottom: none;
+}
+
 .demo-panel-title {
 	font-size: 13px;
 	font-weight: 700;
 	color: #60a5fa;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.demo-expand-btn {
+	background: transparent;
+	border: none;
+	color: #60a5fa;
+	font-size: 12px;
+	cursor: pointer;
+	padding: 2px 4px;
+	transition: transform 0.2s ease;
+	line-height: 1;
+}
+
+.demo-expand-btn:hover {
+	color: #93bbfd;
+	transform: scale(1.1);
+}
+
+.demo-hidden {
+	display: none !important;
 }
 
 .demo-panel-actions {
