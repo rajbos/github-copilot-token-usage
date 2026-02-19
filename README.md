@@ -10,6 +10,7 @@ You can also use a **shared Azure Storage account** (a â€œshared storage serverâ
 
 - **Real-time Token Tracking**: Displays current day and month token usage in the status bar
 - **Copilot Fluency Score**: Maturity model dashboard with 4 stages across 6 categories to track your Copilot mastery
+- **Export Fluency Score**: Export your Fluency Score as a PNG image or comprehensive multi-page PDF report
 - **Social Media Sharing**: Share your Fluency Score achievements on LinkedIn, Bluesky, and Mastodon with #CopilotFluencyScore
 - **Usage Analysis Dashboard**: Comprehensive analytics on how you use Copilot (modes, tool calls, context references, MCP tools)
 - **Copilot Fluency Score**: Evaluate your proficiency across 6 categories with actionable tips for improvement

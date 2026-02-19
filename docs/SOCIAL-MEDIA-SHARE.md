@@ -6,12 +6,16 @@ The Copilot Fluency Score dashboard now includes built-in social media sharing c
 
 ### Share Buttons
 
-The dashboard includes four share buttons located below the category cards:
+The dashboard includes share and export buttons located below the category cards:
 
 1. **💼 Share on LinkedIn** - Opens LinkedIn share dialog with pre-formatted text
 2. **🦋 Share on Bluesky** - Opens Bluesky compose window with share text
 3. **🐘 Share on Mastodon** - Prompts for Mastodon instance, then opens share dialog
-4. **💾 Download Chart Image** - Provides instructions for saving the radar chart
+4. **💾 Export Fluency Score** - Dropdown menu with export options:
+   - **🖼️ Export as PNG Image** - Saves the radar chart as a high-resolution PNG image
+   - **📄 Export as PDF Report** - Generates a comprehensive multi-page PDF report with:
+     - Cover page with overall score and category summary
+     - Individual pages for each category with evidence and improvement tips
 
 ### Share Content
 
@@ -54,9 +58,32 @@ Get the extension: https://marketplace.visualstudio.com/items?itemName=RobBos.co
 - Opens the instance's share dialog
 - Pre-fills the share text
 
-#### Download Chart
-- Provides instructions for saving the SVG radar chart
-- Users can right-click the chart to save or copy the image
+#### Export Options
+
+The export dropdown provides two options:
+
+**PNG Image Export:**
+- Captures the radar chart as a high-resolution (1100x1100) PNG image
+- Includes dark background matching the dashboard theme
+- Uses HTML5 Canvas for rendering
+- Prompts user to choose save location
+- Displays confirmation message with option to open the saved image
+
+**PDF Report Export:**
+- Generates a comprehensive multi-page PDF document using jsPDF
+- **Cover Page** includes:
+  - Title and report date
+  - Overall fluency stage
+  - Summary of all category scores
+  - Report period (last 30 days)
+- **Category Pages** (one per category) include:
+  - Category name and icon
+  - Current stage level
+  - Evidence items showing what you've accomplished
+  - Tips for reaching the next stage
+- Professional A4 format with headers and footers
+- Prompts user to choose save location
+- Displays confirmation message with option to open the PDF
 
 ## Hashtag
 
@@ -84,18 +111,25 @@ The share section features:
 ## Implementation Details
 
 ### Frontend (webview/maturity/main.ts)
-- Share section HTML with four buttons
-- Event listeners for each share action
-- Messages sent to extension host
+- Share section HTML with share buttons and export dropdown
+- Event listeners for share actions and export options
+- `handlePngExport()` - Converts SVG radar chart to PNG using Canvas API
+- `handlePdfExport()` - Sends maturity data to extension for PDF generation
+- Messages sent to extension host for processing
 
 ### Backend (extension.ts)
 - `shareToSocialMedia(platform)` - Handles share logic for each platform
-- `downloadChartImage()` - Provides download instructions
+- `saveChartImageData(dataUrl)` - Saves PNG image from base64 data
+- `exportFluencyScorePdf(maturityData)` - Generates multi-page PDF report using jsPDF
 - URL encoding for safe sharing
 - Clipboard integration for LinkedIn
+- VS Code file dialogs for save location selection
 
 ### Styling (webview/maturity/styles.css)
 - `.share-section` - Container styling
 - `.share-btn` - Button base styles
+- `.export-dropdown-container` - Dropdown positioning
+- `.export-dropdown-menu` - Popup menu styling with shadow and animations
+- `.export-menu-item` - Individual menu item styles with hover effects
 - Platform-specific classes for colors and effects
 - Responsive grid layout for buttons
