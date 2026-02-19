@@ -562,17 +562,17 @@ function renderBackendStoragePanel(
 				<div class="summary-cards">
 					<div class="summary-card">
 						<div class="summary-label">💻 Unique Devices</div>
-						<div class="summary-value">${backendInfo.deviceCount}</div>
+						<div class="summary-value">${escapeHtml(String(backendInfo.deviceCount))}</div>
 						<div style="font-size: 11px; color: #999; margin-top: 4px;">Based on workspace IDs</div>
 					</div>
 					<div class="summary-card">
 						<div class="summary-label">📁 Total Sessions</div>
-						<div class="summary-value">${backendInfo.sessionCount}</div>
+						<div class="summary-value">${escapeHtml(String(backendInfo.sessionCount))}</div>
 						<div style="font-size: 11px; color: #999; margin-top: 4px;">Local session files</div>
 					</div>
 					<div class="summary-card">
 						<div class="summary-label">☁️ Cloud Records</div>
-						<div class="summary-value">${backendInfo.recordCount !== null ? backendInfo.recordCount : "—"}</div>
+						<div class="summary-value">${backendInfo.recordCount !== null ? escapeHtml(String(backendInfo.recordCount)) : "—"}</div>
 						<div style="font-size: 11px; color: #999; margin-top: 4px;">Azure Storage records</div>
 					</div>
 					<div class="summary-card">
