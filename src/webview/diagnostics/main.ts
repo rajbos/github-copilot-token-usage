@@ -283,11 +283,8 @@ function safeText(value: unknown): string {
   if (value === null || value === undefined) {
     return "";
   }
-  if (typeof value === "string") {
-    // Use existing HTML escaping to avoid XSS when inserting into innerHTML.
-    return escapeHtml(value);
-  }
-  return String(value);
+  // Always convert to string and escape HTML to avoid XSS when inserting into innerHTML.
+  return escapeHtml(String(value));
 }
 
 function renderSessionTable(
