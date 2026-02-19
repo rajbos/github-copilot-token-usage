@@ -234,6 +234,7 @@ interface WorkspaceCustomizationRow {
 	workspacePath: string;
 	workspaceName: string;
 	sessionCount: number;
+	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
 }
 
@@ -322,6 +323,8 @@ interface WorkspaceCustomizationSummary {
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
 	private static readonly CACHE_VERSION = 18; // Ensure conversationPatterns set for all JSONL paths (delta + non-delta)
+	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
+	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
 	private diagnosticsPanel?: vscode.WebviewPanel;
 	// Tracks whether the diagnostics panel has already received its session files
@@ -371,6 +374,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// ignore parse/read errors
 		}
 		return undefined;
+	}
+
+	/**
+	 * Extract workspace ID from a session file path, if it's workspace-scoped.
+	 * Returns the workspace ID or undefined if not a workspace-scoped session.
+	 */
+	private extractWorkspaceIdFromSessionPath(sessionFilePath: string): string | undefined {
+		try {
+			const normalized = sessionFilePath.replace(/\\/g, '/');
+			const parts = normalized.split('/').filter(p => p.length > 0);
+			const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
+			if (idx === -1 || idx + 1 >= parts.length) {
+				return undefined; // Not a workspace-scoped session file
+			}
+			return parts[idx + 1];
+		} catch {
+			return undefined;
+		}
 	}
 
 	private resolveWorkspaceFolderFromSessionPath(sessionFilePath: string): string | undefined {
@@ -1565,6 +1586,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
 		const workspaceSessionCounts = new Map<string, number>();
+		// Track interaction counts per resolved workspace (for prioritization)
+		const workspaceInteractionCounts = new Map<string, number>();
+		// Track unresolved workspace IDs (failed resolution or no workspace)
+		const unresolvedWorkspaceIds = new Set<string>();
+		// Track interaction counts for unresolved workspace IDs
+		const unresolvedWorkspaceInteractionCounts = new Map<string, number>();
 
 		// Clear short-lived caches for this analysis run
 		this._workspaceIdToFolderCache.clear();
@@ -1641,11 +1668,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 						this.mergeUsageAnalysis(last30DaysStats, analysis);
 
 						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
+						// Extract workspace ID first (this operation should be safe and not throw)
+						const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
 						try {
 							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
 							if (workspaceFolder) {
 								const norm = path.normalize(workspaceFolder);
 								workspaceSessionCounts.set(norm, (workspaceSessionCounts.get(norm) || 0) + 1);
+								workspaceInteractionCounts.set(norm, (workspaceInteractionCounts.get(norm) || 0) + interactions);
 								if (!this._customizationFilesCache.has(norm)) {
 									try {
 										const files = this.scanWorkspaceCustomizationFiles(norm);
@@ -1654,9 +1684,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 										// ignore scan errors per workspace
 									}
 								}
+							} else if (workspaceId) {
+								// Workspace resolution failed but we have a workspace ID
+								// Track it as unresolved so it counts toward total repos
+								unresolvedWorkspaceIds.add(workspaceId);
+								unresolvedWorkspaceInteractionCounts.set(workspaceId, (unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0) + interactions);
 							}
 						} catch (e) {
-							// ignore workspace resolution errors
+							// Resolution threw an exception; track as unresolved if we have a workspace ID
+							if (workspaceId) {
+								unresolvedWorkspaceIds.add(workspaceId);
+								unresolvedWorkspaceInteractionCounts.set(workspaceId, (unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0) + interactions);
+							}
 						}
 
 						// Add to month stats if modified this calendar month
@@ -1719,11 +1758,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 						workspacePath: folderPath,
 						workspaceName: path.basename(folderPath),
 						sessionCount,
+						interactionCount: workspaceInteractionCounts.get(folderPath) || 0,
 						typeStatuses
 					});
 				}
 
-				matrixRows.sort((a, b) => b.sessionCount - a.sessionCount);
+				// Add unresolved workspaces as rows with all customization types marked as ❌
+				// This ensures they count toward total repos and are assumed to have NO customizations
+				for (const workspaceId of unresolvedWorkspaceIds) {
+					const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
+					for (const type of customizationTypes) {
+						typeStatuses[type.id] = '❌';
+					}
+					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
+					
+					// Generate display name with smart truncation
+					const displayId = workspaceId.length > CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH
+						? `${workspaceId.substring(0, CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH)}...`
+						: workspaceId;
+					
+					matrixRows.push({
+						workspacePath: `<unresolved:${workspaceId}>`,
+						workspaceName: `Unresolved (${displayId})`,
+						// Session count is 0 because we only track counts in workspaceSessionCounts for successfully resolved workspaces.
+						// The presence of this workspace in unresolvedWorkspaceIds means we encountered session files for it,
+						// but couldn't resolve its folder path, so we couldn't increment a count in workspaceSessionCounts.
+						sessionCount: 0,
+						interactionCount: unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0,
+						typeStatuses
+					});
+				}
+
+				matrixRows.sort((a, b) => {
+					if (b.interactionCount !== a.interactionCount) {
+						return b.interactionCount - a.interactionCount;
+					}
+					return b.sessionCount - a.sessionCount;
+				});
 
 				const customizationMatrix: WorkspaceCustomizationMatrix = {
 					customizationTypes,
@@ -5752,7 +5823,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (cuStage >= 4) {
 			const uncustomized = totalRepos - reposWithCustomization;
 			if (uncustomized > 0) {
-				cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+				const missingCustomizationRepos = (matrix?.workspaces || [])
+					.filter(row => Object.values(row.typeStatuses).every(status => status === '❌'));
+				const prioritizedMissingRepos = missingCustomizationRepos
+					.filter(row => !row.workspacePath.startsWith('<unresolved:'))
+					.sort((a, b) => {
+						if (b.interactionCount !== a.interactionCount) {
+							return b.interactionCount - a.interactionCount;
+						}
+						return b.sessionCount - a.sessionCount;
+					})
+					.slice(0, 3);
+
+				const summaryTip = `${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage.`;
+				if (prioritizedMissingRepos.length > 0) {
+					const repoLines = prioritizedMissingRepos.map(row => 
+						`${row.workspaceName} (${row.interactionCount} interaction${row.interactionCount === 1 ? '' : 's'})`
+					).join('\n');
+					cuTips.push(`${summaryTip}\n\nTop repos to customize first:\n${repoLines}`);
+				} else {
+					cuTips.push(summaryTip);
+				}
 			} else {
 				cuTips.push('All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration');
 			}
