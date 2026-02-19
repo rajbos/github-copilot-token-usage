@@ -239,7 +239,7 @@
       "outputCostPerMillion": 25.0,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
-      "multiplier": 9
+      "multiplier": 30
     },
     "o3-mini": {
       "inputCostPerMillion": 4.0,
