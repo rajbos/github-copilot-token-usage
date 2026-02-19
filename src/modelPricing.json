@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-02-09",
+    "lastUpdated": "2026-02-19",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -94,6 +94,13 @@
       "tier": "premium",
       "multiplier": 1
     },
+    "gpt-5.3-codex": {
+      "inputCostPerMillion": 0.00,
+      "outputCostPerMillion": 0.00,
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
+    },
     "gpt-5.2-pro": {
       "inputCostPerMillion": 21.0,
       "outputCostPerMillion": 168.0,
@@ -174,6 +181,13 @@
     "claude-sonnet-4.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
+      "category": "Claude models (Anthropic)",
+      "tier": "premium",
+      "multiplier": 1
+    },
+    "claude-sonnet-4.6": {
+      "inputCostPerMillion": 0.00,
+      "outputCostPerMillion": 0.00,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 1
@@ -320,6 +334,13 @@
     "raptor-mini": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 2.0,
+      "category": "GitHub Copilot fine-tuned models",
+      "tier": "standard",
+      "multiplier": 0
+    },
+    "goldeneye": {
+      "inputCostPerMillion": 0.00,
+      "outputCostPerMillion": 0.00,
       "category": "GitHub Copilot fine-tuned models",
       "tier": "standard",
       "multiplier": 0

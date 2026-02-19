@@ -17,6 +17,7 @@
     "gpt-5.2": 0.25,
     "gpt-5.2-codex": 0.25,
     "gpt-5.2-pro": 0.25,
+    "gpt-5.3-codex": 0.25,
     "gpt-4.1-nano": 0.25,
     "gemini-2.0-flash": 0.25,
     "gemini-2.0-flash-lite": 0.25,
@@ -26,6 +27,7 @@
     "claude-sonnet-3.7": 0.24,
     "claude-sonnet-4": 0.24,
     "claude-sonnet-4.5": 0.24,
+    "claude-sonnet-4.6": 0.24,
     "claude-haiku": 0.24,
     "claude-haiku-4.5": 0.24,
     "claude-opus-4.1": 0.24,
@@ -39,6 +41,7 @@
     "gemini-3-pro-preview": 0.25,
     "grok-code-fast-1": 0.25,
     "raptor-mini": 0.25,
+    "goldeneye": 0.25,
     "o3-mini": 0.25,
     "o4-mini": 0.25
   }
