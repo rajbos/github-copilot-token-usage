@@ -478,10 +478,23 @@ function renderLayout(data: MaturityData): void {
 						<span class="share-btn-icon">🐘</span>
 						<span>Share on Mastodon</span>
 					</button>
-					<button id="btn-download-image" class="share-btn share-btn-download">
-						<span class="share-btn-icon">💾</span>
-						<span>Download Chart Image</span>
-					</button>
+					<div class="export-dropdown-container">
+						<button id="btn-export-toggle" class="share-btn share-btn-download">
+							<span class="share-btn-icon">💾</span>
+							<span>Export Fluency Score</span>
+							<span class="dropdown-arrow">▼</span>
+						</button>
+						<div id="export-dropdown" class="export-dropdown-menu" style="display: none;">
+							<button class="export-menu-item" data-export-type="png">
+								<span class="export-menu-icon">🖼️</span>
+								<span>Export as PNG Image</span>
+							</button>
+							<button class="export-menu-item" data-export-type="pdf">
+								<span class="export-menu-icon">📄</span>
+								<span>Export as PDF Report</span>
+							</button>
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -550,7 +563,46 @@ function renderLayout(data: MaturityData): void {
 	document.getElementById('btn-share-mastodon')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'shareToMastodon' });
 	});
-	document.getElementById('btn-download-image')?.addEventListener('click', () => {
+	
+	// Wire up export dropdown
+	const exportToggleBtn = document.getElementById('btn-export-toggle');
+	const exportDropdown = document.getElementById('export-dropdown');
+	
+	exportToggleBtn?.addEventListener('click', (e) => {
+		e.stopPropagation();
+		if (exportDropdown) {
+			const isVisible = exportDropdown.style.display === 'block';
+			exportDropdown.style.display = isVisible ? 'none' : 'block';
+		}
+	});
+	
+	// Close dropdown when clicking outside
+	document.addEventListener('click', () => {
+		if (exportDropdown) {
+			exportDropdown.style.display = 'none';
+		}
+	});
+	
+	// Handle export menu items
+	document.querySelectorAll('.export-menu-item').forEach(item => {
+		item.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const target = e.currentTarget as HTMLElement;
+			const exportType = target.getAttribute('data-export-type');
+			
+			if (exportDropdown) {
+				exportDropdown.style.display = 'none';
+			}
+			
+			if (exportType === 'png') {
+				handlePngExport();
+			} else if (exportType === 'pdf') {
+				handlePdfExport(data);
+			}
+		});
+	});
+	
+	function handlePngExport(): void {
 		const svgEl = document.querySelector('.radar-svg') as SVGSVGElement | null;
 		if (!svgEl) { return; }
 
@@ -585,7 +637,15 @@ function renderLayout(data: MaturityData): void {
 			vscode.postMessage({ command: 'downloadChartImage' });
 		};
 		img.src = encodedSvg;
-	});
+	}
+	
+	function handlePdfExport(maturityData: MaturityData): void {
+		// Send data to extension for PDF generation
+		vscode.postMessage({ 
+			command: 'exportPdf',
+			data: maturityData
+		});
+	}
   
 	// Wire up demo mode controls (debug mode only)
 	if (data.isDebugMode) {
