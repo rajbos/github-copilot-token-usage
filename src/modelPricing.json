@@ -108,6 +108,13 @@
       "tier": "premium",
       "multiplier": 1
     },
+    "gpt-5.3-codex": {
+      "inputCostPerMillion": 1.75,
+      "outputCostPerMillion": 14.0,
+      "category": "GPT-5 models",
+      "tier": "premium",
+      "multiplier": 1
+    },
     "gpt-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 12.0,
