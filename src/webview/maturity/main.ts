@@ -478,10 +478,27 @@ function renderLayout(data: MaturityData): void {
 						<span class="share-btn-icon">🐘</span>
 						<span>Share on Mastodon</span>
 					</button>
-					<button id="btn-download-image" class="share-btn share-btn-download">
-						<span class="share-btn-icon">💾</span>
-						<span>Download Chart Image</span>
-					</button>
+					<div class="export-dropdown-container">
+						<button id="btn-export-toggle" class="share-btn share-btn-download">
+							<span class="share-btn-icon">💾</span>
+							<span>Export Fluency Score</span>
+							<span class="dropdown-arrow">▼</span>
+						</button>
+						<div id="export-dropdown" class="export-dropdown-menu" style="display: none;">
+							<button class="export-menu-item" data-export-type="png">
+								<span class="export-menu-icon">🖼️</span>
+								<span>Export as PNG Image</span>
+							</button>
+							<button class="export-menu-item" data-export-type="pdf">
+								<span class="export-menu-icon">📄</span>
+								<span>Export as PDF Report</span>
+							</button>
+							<button class="export-menu-item" data-export-type="pptx">
+								<span class="export-menu-icon">📊</span>
+								<span>Export as PowerPoint</span>
+							</button>
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -550,7 +567,48 @@ function renderLayout(data: MaturityData): void {
 	document.getElementById('btn-share-mastodon')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'shareToMastodon' });
 	});
-	document.getElementById('btn-download-image')?.addEventListener('click', () => {
+	
+	// Wire up export dropdown
+	const exportToggleBtn = document.getElementById('btn-export-toggle');
+	const exportDropdown = document.getElementById('export-dropdown');
+	
+	exportToggleBtn?.addEventListener('click', (e) => {
+		e.stopPropagation();
+		if (exportDropdown) {
+			const isVisible = exportDropdown.style.display === 'block';
+			exportDropdown.style.display = isVisible ? 'none' : 'block';
+		}
+	});
+	
+	// Close dropdown when clicking outside
+	document.addEventListener('click', () => {
+		if (exportDropdown) {
+			exportDropdown.style.display = 'none';
+		}
+	});
+	
+	// Handle export menu items
+	document.querySelectorAll('.export-menu-item').forEach(item => {
+		item.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const target = e.currentTarget as HTMLElement;
+			const exportType = target.getAttribute('data-export-type');
+			
+			if (exportDropdown) {
+				exportDropdown.style.display = 'none';
+			}
+			
+			if (exportType === 'png') {
+				handlePngExport();
+			} else if (exportType === 'pdf') {
+				void handleScreenshotExport('exportPdf');
+			} else if (exportType === 'pptx') {
+				void handleScreenshotExport('exportPptx');
+			}
+		});
+	});
+	
+	function handlePngExport(): void {
 		const svgEl = document.querySelector('.radar-svg') as SVGSVGElement | null;
 		if (!svgEl) { return; }
 
@@ -585,7 +643,59 @@ function renderLayout(data: MaturityData): void {
 			vscode.postMessage({ command: 'downloadChartImage' });
 		};
 		img.src = encodedSvg;
-	});
+	}
+	
+	async function handleScreenshotExport(command: 'exportPdf' | 'exportPptx'): Promise<void> {
+		const html2canvasModule = await import('html2canvas');
+		const html2canvas = (html2canvasModule.default ?? html2canvasModule) as unknown as (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+
+		// Capture each section as a screenshot image
+		const images: { label: string; dataUrl: string }[] = [];
+
+		// 1. Cover section: stage banner + radar chart + legend
+		const stageBanner = document.querySelector('.stage-banner') as HTMLElement | null;
+		const radarWrapper = document.querySelector('.radar-wrapper') as HTMLElement | null;
+
+		// Create a temporary container for the cover page capture
+		const coverContainer = document.createElement('div');
+		coverContainer.style.cssText = 'position:absolute;left:-9999px;top:0;width:1200px;background:#1b1b1e;padding:24px;border-radius:10px;';
+
+		// Add title
+		const titleEl = document.createElement('div');
+		titleEl.style.cssText = 'text-align:center;margin-bottom:20px;';
+		titleEl.innerHTML = `<div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px;">GitHub Copilot Fluency Score</div><div style="font-size:16px;color:#b8b8c8;">Report &middot; ${new Date().toLocaleDateString()}</div>`;
+		coverContainer.appendChild(titleEl);
+
+		if (stageBanner) { coverContainer.appendChild(stageBanner.cloneNode(true)); }
+		if (radarWrapper) { coverContainer.appendChild(radarWrapper.cloneNode(true)); }
+
+		document.body.appendChild(coverContainer);
+		try {
+			const coverCanvas = await html2canvas(coverContainer, { backgroundColor: '#1b1b1e', scale: 2, useCORS: true });
+			images.push({ label: 'Cover', dataUrl: coverCanvas.toDataURL('image/png') });
+		} finally {
+			document.body.removeChild(coverContainer);
+		}
+
+		// 2. Each category card as its own page/slide
+		const cards = Array.from(document.querySelectorAll('.category-card'));
+		for (const card of cards) {
+			const wrapper = document.createElement('div');
+			wrapper.style.cssText = 'position:absolute;left:-9999px;top:0;width:900px;background:#1b1b1e;padding:24px;border-radius:10px;';
+			wrapper.appendChild(card.cloneNode(true));
+			document.body.appendChild(wrapper);
+			try {
+				const cardCanvas = await html2canvas(wrapper, { backgroundColor: '#1b1b1e', scale: 2, useCORS: true });
+				const nameEl = card.querySelector('.category-name');
+				const label = nameEl?.textContent?.trim() || 'Category';
+				images.push({ label, dataUrl: cardCanvas.toDataURL('image/png') });
+			} finally {
+				document.body.removeChild(wrapper);
+			}
+		}
+
+		vscode.postMessage({ command, data: images });
+	}
   
 	// Wire up demo mode controls (debug mode only)
 	if (data.isDebugMode) {
