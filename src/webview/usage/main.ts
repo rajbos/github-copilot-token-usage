@@ -2,6 +2,7 @@
 import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
+import { formatFixed, formatNumber, formatPercent, setFormatLocale } from '../shared/formatUtils';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -40,6 +41,7 @@ type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
+	locale?: string;
 	lastUpdated: string;
 	customizationMatrix?: WorkspaceCustomizationMatrix | null;
 	backendConfigured?: boolean;
@@ -92,10 +94,6 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
-}
-
-function formatNumber(n: number): string {
-	return n.toLocaleString();
 }
 
 import toolNames from '../../toolNames.json';
@@ -309,15 +307,15 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 						<div class="bar-chart">
 							<div class="bar-item">
-								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${stats.today.modeUsage.ask}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${formatNumber(stats.today.modeUsage.ask)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.ask / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
 							</div>
 							<div class="bar-item">
-								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${stats.today.modeUsage.edit}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${formatNumber(stats.today.modeUsage.edit)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.edit / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
 							</div>
 							<div class="bar-item">
-								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${stats.today.modeUsage.agent}</strong> (${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${formatNumber(stats.today.modeUsage.agent)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
 							</div>
 						</div>
@@ -326,15 +324,15 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📊 Last 30 Days</h4>
 						<div class="bar-chart">
 							<div class="bar-item">
-								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${stats.last30Days.modeUsage.ask}</strong> (${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / last30DaysTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.ask)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
 							</div>
 							<div class="bar-item">
-								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${stats.last30Days.modeUsage.edit}</strong> (${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / last30DaysTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.edit)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
 							</div>
 							<div class="bar-item">
-								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${stats.last30Days.modeUsage.agent}</strong> (${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.agent)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
 							</div>
 						</div>
@@ -488,16 +486,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div class="stats-grid" style="grid-template-columns: 1fr;">
 							<div class="stat-card">
 								<div class="stat-label">📊 Avg Models per Conversation</div>
-								<div class="stat-value">${stats.today.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+								<div class="stat-value">${formatFixed(stats.today.modelSwitching.averageModelsPerSession, 1)}</div>
 							</div>
 							<div class="stat-card">
 								<div class="stat-label">🔄 Switching Frequency</div>
-								<div class="stat-value">${stats.today.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div class="stat-value">${formatPercent(stats.today.modelSwitching.switchingFrequency, 0)}</div>
 								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
 							</div>
 							<div class="stat-card">
 								<div class="stat-label">📈 Max Models in Session</div>
-								<div class="stat-value">${stats.today.modelSwitching.maxModelsPerSession || 0}</div>
+								<div class="stat-value">${formatNumber(stats.today.modelSwitching.maxModelsPerSession || 0)}</div>
 							</div>
 						</div>
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
@@ -528,26 +526,26 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									${stats.today.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: var(--link-color);">🔵 Standard: </span>
-											<span style="color: var(--text-primary);">${stats.today.modelSwitching.standardRequests} (${((stats.today.modelSwitching.standardRequests / stats.today.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.standardRequests)} (${formatPercent((stats.today.modelSwitching.standardRequests / stats.today.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 									${stats.today.modelSwitching.premiumRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: #fbbf24;">⭐ Premium: </span>
-											<span style="color: var(--text-primary);">${stats.today.modelSwitching.premiumRequests} (${((stats.today.modelSwitching.premiumRequests / stats.today.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.premiumRequests)} (${formatPercent((stats.today.modelSwitching.premiumRequests / stats.today.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 									${stats.today.modelSwitching.unknownRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: var(--text-muted);">❓ Unknown: </span>
-											<span style="color: var(--text-primary);">${stats.today.modelSwitching.unknownRequests} (${((stats.today.modelSwitching.unknownRequests / stats.today.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.unknownRequests)} (${formatPercent((stats.today.modelSwitching.unknownRequests / stats.today.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 								</div>
 							` : ''}
 							${stats.today.modelSwitching.mixedTierSessions > 0 ? `
 								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
-									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${stats.today.modelSwitching.mixedTierSessions}</span>
+									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${formatNumber(stats.today.modelSwitching.mixedTierSessions)}</span>
 								</div>
 							` : ''}
 						</div>
@@ -557,16 +555,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div class="stats-grid" style="grid-template-columns: 1fr;">
 							<div class="stat-card">
 								<div class="stat-label">📊 Avg Models per Conversation</div>
-								<div class="stat-value">${stats.last30Days.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+								<div class="stat-value">${formatFixed(stats.last30Days.modelSwitching.averageModelsPerSession, 1)}</div>
 							</div>
 							<div class="stat-card">
 								<div class="stat-label">🔄 Switching Frequency</div>
-								<div class="stat-value">${stats.last30Days.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div class="stat-value">${formatPercent(stats.last30Days.modelSwitching.switchingFrequency, 0)}</div>
 								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
 							</div>
 							<div class="stat-card">
 								<div class="stat-label">📈 Max Models in Session</div>
-								<div class="stat-value">${stats.last30Days.modelSwitching.maxModelsPerSession || 0}</div>
+								<div class="stat-value">${formatNumber(stats.last30Days.modelSwitching.maxModelsPerSession || 0)}</div>
 							</div>
 						</div>
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
@@ -597,26 +595,26 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									${stats.last30Days.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: var(--link-color);">🔵 Standard: </span>
-											<span style="color: var(--text-primary);">${stats.last30Days.modelSwitching.standardRequests} (${((stats.last30Days.modelSwitching.standardRequests / stats.last30Days.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.standardRequests)} (${formatPercent((stats.last30Days.modelSwitching.standardRequests / stats.last30Days.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 									${stats.last30Days.modelSwitching.premiumRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: #fbbf24;">⭐ Premium: </span>
-											<span style="color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumRequests} (${((stats.last30Days.modelSwitching.premiumRequests / stats.last30Days.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.premiumRequests)} (${formatPercent((stats.last30Days.modelSwitching.premiumRequests / stats.last30Days.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 									${stats.last30Days.modelSwitching.unknownRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: var(--text-muted);">❓ Unknown: </span>
-											<span style="color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownRequests} (${((stats.last30Days.modelSwitching.unknownRequests / stats.last30Days.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.unknownRequests)} (${formatPercent((stats.last30Days.modelSwitching.unknownRequests / stats.last30Days.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 								</div>
 							` : ''}
 							${stats.last30Days.modelSwitching.mixedTierSessions > 0 ? `
 								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
-									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${stats.last30Days.modelSwitching.mixedTierSessions}</span>
+									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${formatNumber(stats.last30Days.modelSwitching.mixedTierSessions)}</span>
 								</div>
 							` : ''}
 						</div>
@@ -626,16 +624,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div class="stats-grid" style="grid-template-columns: 1fr;">
 							<div class="stat-card">
 								<div class="stat-label">📊 Avg Models per Conversation</div>
-								<div class="stat-value">${stats.month.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+								<div class="stat-value">${formatFixed(stats.month.modelSwitching.averageModelsPerSession, 1)}</div>
 							</div>
 							<div class="stat-card">
 								<div class="stat-label">🔄 Switching Frequency</div>
-								<div class="stat-value">${stats.month.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div class="stat-value">${formatPercent(stats.month.modelSwitching.switchingFrequency, 0)}</div>
 								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
 							</div>
 							<div class="stat-card">
 								<div class="stat-label">📈 Max Models in Session</div>
-								<div class="stat-value">${stats.month.modelSwitching.maxModelsPerSession || 0}</div>
+								<div class="stat-value">${formatNumber(stats.month.modelSwitching.maxModelsPerSession || 0)}</div>
 							</div>
 						</div>
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
@@ -666,26 +664,26 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									${stats.month.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: var(--link-color);">🔵 Standard: </span>
-											<span style="color: var(--text-primary);">${stats.month.modelSwitching.standardRequests} (${((stats.month.modelSwitching.standardRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.standardRequests)} (${formatPercent((stats.month.modelSwitching.standardRequests / stats.month.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 									${stats.month.modelSwitching.premiumRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: #fbbf24;">⭐ Premium: </span>
-											<span style="color: var(--text-primary);">${stats.month.modelSwitching.premiumRequests} (${((stats.month.modelSwitching.premiumRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.premiumRequests)} (${formatPercent((stats.month.modelSwitching.premiumRequests / stats.month.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 									${stats.month.modelSwitching.unknownRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
 											<span style="color: var(--text-muted);">❓ Unknown: </span>
-											<span style="color: var(--text-primary);">${stats.month.modelSwitching.unknownRequests} (${((stats.month.modelSwitching.unknownRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.unknownRequests)} (${formatPercent((stats.month.modelSwitching.unknownRequests / stats.month.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
 								</div>
 							` : ''}
 							${stats.month.modelSwitching.mixedTierSessions > 0 ? `
 								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
-									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${stats.month.modelSwitching.mixedTierSessions}</span>
+									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${formatNumber(stats.month.modelSwitching.mixedTierSessions)}</span>
 								</div>
 							` : ''}
 						</div>
@@ -761,6 +759,10 @@ async function bootstrap(): Promise<void> {
 		}
 		return;
 	}
+	console.log('[Usage Analysis] Browser default locale:', Intl.DateTimeFormat().resolvedOptions().locale);
+	console.log('[Usage Analysis] Received locale from extension:', initialData.locale);
+	console.log('[Usage Analysis] Test format 1234567.89 with received locale:', new Intl.NumberFormat(initialData.locale).format(1234567.89));
+	setFormatLocale(initialData.locale);
 	renderLayout(initialData);
 }
 

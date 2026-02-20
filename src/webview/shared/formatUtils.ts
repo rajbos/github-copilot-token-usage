@@ -2,6 +2,15 @@
 import tokenEstimatorsJson from '../../tokenEstimators.json';
 
 const tokenEstimators: Record<string, number> = tokenEstimatorsJson.estimators;
+let currentLocale: string | undefined;
+
+/**
+ * Sets an optional locale used by format helpers.
+ * When undefined, runtime default locale is used.
+ */
+export function setFormatLocale(locale?: string): void {
+	currentLocale = locale;
+}
 
 /**
  * Returns an icon for a given editor name.
@@ -33,26 +42,34 @@ export function getCharsPerToken(model: string): number {
  * Formats a number to a fixed number of decimal places.
  */
 export function formatFixed(value: number, digits: number): string {
-	return value.toFixed(digits);
+	return new Intl.NumberFormat(currentLocale, {
+		minimumFractionDigits: digits,
+		maximumFractionDigits: digits
+	}).format(value);
 }
 
 /**
  * Formats a number as a percentage with one decimal place.
  */
-export function formatPercent(value: number): string {
-	return `${value.toFixed(1)}%`;
+export function formatPercent(value: number, digits = 1): string {
+	return `${formatFixed(value, digits)}%`;
 }
 
 /**
  * Formats a number with locale-specific thousand separators.
  */
 export function formatNumber(value: number): string {
-	return value.toLocaleString();
+	return value.toLocaleString(currentLocale);
 }
 
 /**
  * Formats a number as a USD cost with 4 decimal places.
  */
 export function formatCost(value: number): string {
-	return `$ ${value.toFixed(4)}`;
+	return new Intl.NumberFormat(currentLocale, {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 4,
+		maximumFractionDigits: 4
+	}).format(value);
 }

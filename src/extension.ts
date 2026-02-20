@@ -223,6 +223,7 @@ interface UsageAnalysisStats {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
 	month: UsageAnalysisPeriod;
+	locale?: string;
 	lastUpdated: Date;
 	customizationMatrix?: WorkspaceCustomizationMatrix;
 }
@@ -1852,6 +1853,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			today: todayStats,
 			last30Days: last30DaysStats,
 			month: monthStats,
+			locale: Intl.DateTimeFormat().resolvedOptions().locale,
 			lastUpdated: now,
 			customizationMatrix: this._lastCustomizationMatrix
 		};
@@ -8142,10 +8144,24 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
+		// Detect user's locale for number formatting
+		const localeFromEnv = process.env.LC_ALL || process.env.LC_NUMERIC || process.env.LANG;
+		const vscodeLanguage = vscode.env.language; // e.g., 'en', 'nl', 'de'
+		const intlLocale = Intl.DateTimeFormat().resolvedOptions().locale;
+		
+		this.log(`[Locale Detection] VS Code language: ${vscodeLanguage}`);
+		this.log(`[Locale Detection] Environment locale: ${localeFromEnv || 'not set'}`);
+		this.log(`[Locale Detection] Intl default: ${intlLocale}`);
+		
+		const detectedLocale = stats.locale || localeFromEnv || intlLocale;
+		this.log(`[Usage Analysis] Extension detected locale: ${detectedLocale}`);
+		this.log(`[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`);
+		
 		const initialData = JSON.stringify({
 			today: stats.today,
 			last30Days: stats.last30Days,
 			month: stats.month,
+			locale: detectedLocale,
 			customizationMatrix: stats.customizationMatrix || null,
 			lastUpdated: stats.lastUpdated.toISOString(),
 			backendConfigured: this.isBackendConfigured()
