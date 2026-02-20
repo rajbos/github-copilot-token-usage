@@ -1,14 +1,17 @@
 # Sync Copilot Model Data
 
-Update `src/tokenEstimators.json` and `src/modelPricing.json` with missing models found in the scraped documentation data.
+Update `src/tokenEstimators.json` and `src/modelPricing.json` with missing models found in GitHub Copilot documentation.
 
 ## Requirements
 
-1. Scraped model data is available in `.github/scripts/scraped-models.json` - this is the source of truth for which models are supported by GitHub Copilot.
-2. Read the scraped models list and compare it to:
+1. Fetch and parse the GitHub Copilot supported models documentation page:
+   - URL: https://docs.github.com/en/copilot/reference/ai-models/supported-models
+   - Extract all model names from the "Supported AI models in Copilot" section
+   - Model names should be normalized (lowercase, hyphens instead of spaces)
+2. Compare the extracted models list to:
    - `src/tokenEstimators.json` - contains character-to-token ratio estimators
    - `src/modelPricing.json` - contains pricing data (cost per million tokens)
-3. For each model in the scraped data that is missing from either JSON file:
+3. For each model from the documentation that is missing from either JSON file:
    - Add it to the appropriate JSON file(s)
    - Use sensible defaults based on existing similar models
 
