@@ -7062,17 +7062,33 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		const { BackendUtility } = await import('./backend/services/utilityService.js');
 		const settings = this.backend.getSettings();
-		const currentUserId = settings.userId; // Use the configured userId from settings
+		
+		// Log backend settings for debugging
+		this.log(`[Dashboard] Backend settings - userIdentityMode: ${settings.userIdentityMode}, configured userId: "${settings.userId}", datasetId: "${settings.datasetId}"`);
+		
+		// Resolve the effective userId for the current user based on backend config
+		const currentUserId = await this.backend.resolveEffectiveUserId(settings);
+		
+		if (!currentUserId) {
+			this.warn('[Dashboard] No user identity available. Ensure sharing profile includes user dimension.');
+			this.warn(`[Dashboard] Settings: mode=${settings.userIdentityMode}, userId="${settings.userId}"`);
+		}
 
 		// Query backend for last 30 days
 		const now = new Date();
 		const todayKey = BackendUtility.toUtcDayKey(now);
 		const startKey = BackendUtility.addDaysUtc(todayKey, -29);
 
-		// Fetch all entities for the dataset using the facade's public API
-		const allEntities = await this.backend.getAggEntitiesForRange(settings, startKey, todayKey);
+		// Fetch ALL entities across all datasets using the facade's public API
+		const allEntities = await this.backend.getAllAggEntitiesForRange(settings, startKey, todayKey);
 		
+		// Log all unique userIds and datasets in the data for debugging
+		const uniqueUserIds = new Set(allEntities.map(e => (e.userId ?? '').toString()).filter(id => id.trim()));
+		const uniqueDatasets = new Set(allEntities.map(e => (e.datasetId ?? '').toString()).filter(id => id.trim()));
 		this.log(`[Dashboard] Fetched ${allEntities.length} entities for date range ${startKey} to ${todayKey}`);
+		this.log(`[Dashboard] Current user ID resolved as: ${currentUserId || '(none)'}`);
+		this.log(`[Dashboard] Datasets found: [${Array.from(uniqueDatasets).map(id => `"${id}"`).join(', ')}]`);
+		this.log(`[Dashboard] UserIds in data: [${Array.from(uniqueUserIds).map(id => `"${id}"`).join(', ')}]`);
 
 		// Aggregate personal data (all machines and workspaces for current user)
 		const personalDevices = new Set<string>();
@@ -7081,23 +7097,33 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		let personalTotalTokens = 0;
 		let personalTotalInteractions = 0;
 
-		// Aggregate team data (all users)
-		const userMap = new Map<string, { tokens: number; interactions: number; cost: number }>();
+		// Aggregate team data (all users across all datasets)
+		const userMap = new Map<string, { 
+			tokens: number; 
+			interactions: number; 
+			cost: number; 
+			datasetId: string;
+			sessions: Set<string>; // Track unique day+workspace+machine as session proxy
+			models: Set<string>; // Track unique models used
+			workspaces: Set<string>; // Track unique workspaces
+			days: Set<string>; // Track unique days active
+		}>();
 		
 		// Track first and last data points for reference
 		let firstDate: string | null = null;
 		let lastDate: string | null = null;
 
 		for (const entity of allEntities) {
-			const userId = (entity.userId ?? '').toString();
+			const userId = (entity.userId ?? '').toString().replace(/^u:/, ''); // Strip u: prefix
+			const datasetId = (entity.datasetId ?? '').toString().replace(/^ds:/, ''); // Strip ds: prefix
 			const machineId = (entity.machineId ?? '').toString();
 			const workspaceId = (entity.workspaceId ?? '').toString();
-			const model = (entity.model ?? '').toString();
+			const model = (entity.model ?? '').toString().replace(/^m:/, ''); // Strip m: prefix
 			const inputTokens = Number.isFinite(Number(entity.inputTokens)) ? Number(entity.inputTokens) : 0;
 			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
 			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
 			const tokens = inputTokens + outputTokens;
-			const dayKey = (entity.day ?? '').toString();
+			const dayKey = (entity.day ?? '').toString().replace(/^d:/, ''); // Strip d: prefix
 
 			// Track date range
 			if (dayKey) {
@@ -7109,8 +7135,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				}
 			}
 
-			// Personal data aggregation
-			if (userId === currentUserId) {
+			// Personal data aggregation - match against resolved userId
+			if (currentUserId && userId === currentUserId) {
 				personalTotalTokens += tokens;
 				personalTotalInteractions += interactions;
 				personalDevices.add(machineId);
@@ -7123,14 +7149,31 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				personalModelUsage[model].outputTokens += outputTokens;
 			}
 
-			// Team data aggregation
+			// Team data aggregation - use userId|datasetId as key to track users across datasets
 			if (userId && userId.trim()) {
-				if (!userMap.has(userId)) {
-					userMap.set(userId, { tokens: 0, interactions: 0, cost: 0 });
+				const userKey = `${userId}|${datasetId}`;
+				if (!userMap.has(userKey)) {
+					userMap.set(userKey, { 
+						tokens: 0, 
+						interactions: 0, 
+						cost: 0, 
+						datasetId, 
+						sessions: new Set<string>(),
+						models: new Set<string>(),
+						workspaces: new Set<string>(),
+						days: new Set<string>()
+					});
 				}
-				const userData = userMap.get(userId)!;
+				const userData = userMap.get(userKey)!;
 				userData.tokens += tokens;
 				userData.interactions += interactions;
+				// Track unique sessions as day+workspace+machine combinations
+				const sessionKey = `${dayKey}|${workspaceId}|${machineId}`;
+				userData.sessions.add(sessionKey);
+				// Track unique models, workspaces, and days
+				if (model) { userData.models.add(model); }
+				if (workspaceId) { userData.workspaces.add(workspaceId); }
+				if (dayKey) { userData.days.add(dayKey); }
 			}
 		}
 
@@ -7138,22 +7181,34 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const personalCost = this.calculateEstimatedCost(personalModelUsage);
 		
 		// For team members, use a simplified cost estimate since we don't track
-		// per-user model breakdown in the current aggregation. This provides a
-		// rough approximation assuming average model pricing (~$0.05 per 1M tokens).
+		// per-user model usage in aggregated data yet.
 		// The personal cost uses the accurate model-aware calculation.
 		for (const [userId, userData] of userMap.entries()) {
 			userData.cost = (userData.tokens / 1000000) * 0.05;
 		}
 
-		// Build team leaderboard
+		// Build team leaderboard grouped by dataset
 		const teamMembers = Array.from(userMap.entries())
-			.map(([userId, data]) => ({
-				userId,
-				totalTokens: data.tokens,
-				totalInteractions: data.interactions,
-				totalCost: data.cost,
-				rank: 0
-			}))
+			.map(([userKey, data]) => {
+				const [userId, datasetId] = userKey.split('|');
+				const sessionCount = data.sessions.size;
+				const avgTurnsPerSession = sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
+				const avgTokensPerTurn = data.interactions > 0 ? Math.round(data.tokens / data.interactions) : 0;
+				return {
+					userId,
+					datasetId,
+					totalTokens: data.tokens,
+					totalInteractions: data.interactions,
+					totalCost: data.cost,
+					sessions: sessionCount,
+					avgTurnsPerSession,
+					uniqueModels: data.models.size,
+					uniqueWorkspaces: data.workspaces.size,
+					daysActive: data.days.size,
+					avgTokensPerTurn,
+					rank: 0
+				};
+			})
 			.sort((a, b) => b.totalTokens - a.totalTokens)
 			.map((member, index) => ({
 				...member,
@@ -7165,10 +7220,17 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const averageTokensPerUser = userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
 
 		this.log(`[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`);
+		this.log(`[Dashboard] Personal stats: ${personalTotalTokens} tokens, ${personalTotalInteractions} interactions, ${personalDevices.size} devices, ${personalWorkspaces.size} workspaces`);
+		
+		// Log each user's aggregated data for debugging
+		for (const [userKey, data] of userMap.entries()) {
+			const [userId, datasetId] = userKey.split('|');
+			this.log(`[Dashboard] User "${userId}" (dataset: ${datasetId}): ${data.tokens} tokens, ${data.interactions} interactions`);
+		}
 
 		return {
 			personal: {
-				userId: currentUserId,
+				userId: currentUserId || '',
 				totalTokens: personalTotalTokens,
 				totalInteractions: personalTotalInteractions,
 				totalCost: personalCost,
