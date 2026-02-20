@@ -17,6 +17,14 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
   4. For each file, it calculates token counts (`estimateTokensFromSession`), interactions (`countInteractionsInSession`), and per-model usage (`getModelUsageFromSession`).
   5. Token counts are *estimated* using character-to-token ratios defined in the `tokenEstimators` class property. This is a key convention.
 
+- **Thinking Token Tracking**: Models that use extended thinking (e.g., Claude) produce `kind: "thinking"` response items in session logs. These are tracked separately:
+  - `estimateTokensFromSession` and `estimateTokensFromJsonlSession` return `{ tokens, thinkingTokens }`. The `tokens` field is the **grand total** (input + output + thinking). The `thinkingTokens` field is a **breakdown** showing what portion of the total was thinking — it is NOT subtracted from `tokens`.
+  - `SessionFileCache` stores `thinkingTokens` alongside `tokens`.
+  - `extractResponseData` separates `responseText` and `thinkingText` so the logviewer can display them independently per turn.
+  - `getModelUsageFromSession` does NOT separate thinking — thinking tokens are counted as `outputTokens` in the per-model breakdown. This is intentional since it keeps cost estimation simple.
+  - **Critical invariant**: When computing token totals for display (per-turn, per-session, per-period), always include thinking tokens. In the logviewer, `totalTokens = input + output + thinking`. In stats aggregation, `sessionData.tokens` already includes thinking. Never subtract thinking from a total.
+  - `CACHE_VERSION` must be bumped when changing how tokens are counted so stale caches are invalidated.
+
 - **UI Components**:
   1. **Status Bar**: A `vscode.StatusBarItem` (`statusBarItem`) shows a brief summary. Its tooltip provides more detail.
   2. **Details Panel**: The `copilot-token-tracker.showDetails` command opens a `vscode.WebviewPanel`. The content for this panel is generated dynamically as an HTML string by the `getDetailsHtml` method.

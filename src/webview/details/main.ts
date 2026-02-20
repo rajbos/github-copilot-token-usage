@@ -15,6 +15,7 @@ type EditorUsage = Record<string, { tokens: number; sessions: number }>;
 
 type PeriodStats = {
 	tokens: number;
+	thinkingTokens: number;
 	sessions: number;
 	avgInteractionsPerSession: number;
 	avgTokensPerSession: number;
@@ -192,6 +193,7 @@ function buildMetricsSection(
 	const tbody = document.createElement('tbody');
 	const rows: Array<{ label: string; icon: string; color?: string; today: string; last30Days: string; lastMonth: string; projected: string }> = [
 		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), last30Days: formatNumber(stats.last30Days.tokens), lastMonth: formatNumber(stats.lastMonth.tokens), projected: formatNumber(projections.projectedTokens) },
+		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatNumber(stats.today.thinkingTokens || 0), last30Days: formatNumber(stats.last30Days.thinkingTokens || 0), lastMonth: formatNumber(stats.lastMonth.thinkingTokens || 0), projected: '—' },
 		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
 		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },

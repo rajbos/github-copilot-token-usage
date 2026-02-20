@@ -49,6 +49,7 @@ interface RepositoryUsage {
 
 interface PeriodStats {
 	tokens: number;
+	thinkingTokens: number;
 	sessions: number;
 	avgInteractionsPerSession: number;
 	avgTokensPerSession: number;
@@ -90,6 +91,7 @@ interface SessionFileCache {
 	title?: string; // Session title (customTitle from session file)
 	repository?: string; // Git remote origin URL for the session's workspace
 	workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
+	thinkingTokens?: number; // Estimated thinking/reasoning tokens
 }
 
 // Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)
@@ -291,6 +293,7 @@ interface ChatTurn {
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
+	thinkingTokensEstimate: number;
 }
 
 // Full session log data for the log viewer
@@ -323,7 +326,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 18; // Ensure conversationPatterns set for all JSONL paths (delta + non-delta)
+	private static readonly CACHE_VERSION = 19; // Add thinking tokens tracking
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1146,10 +1149,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Calculate last 30 days boundary
 		const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-		const todayStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const monthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const lastMonthStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const last30DaysStats = { tokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const todayStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const monthStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const lastMonthStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const last30DaysStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -1219,6 +1222,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Check if activity is within last 30 days
 					if (lastActivity >= last30DaysStart) {
 						last30DaysStats.tokens += tokens;
+						last30DaysStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						last30DaysStats.sessions += 1;
 						last30DaysStats.interactions += interactions;
 
@@ -1241,6 +1245,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					if (lastActivity >= monthStart) {
 						monthStats.tokens += tokens;
+						monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						monthStats.sessions += 1;
 						monthStats.interactions += interactions;
 
@@ -1262,6 +1267,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						if (lastActivity >= todayStart) {
 							todayStats.tokens += tokens;
+							todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
 
@@ -1285,6 +1291,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
 						// Session is from last month - only track lastMonth stats
 						lastMonthStats.tokens += tokens;
+						lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						lastMonthStats.sessions += 1;
 						lastMonthStats.interactions += interactions;
 
@@ -1341,6 +1348,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const result: DetailedStats = {
 			today: {
 				tokens: todayStats.tokens,
+				thinkingTokens: todayStats.thinkingTokens,
 				sessions: todayStats.sessions,
 				avgInteractionsPerSession: todayStats.sessions > 0 ? Math.round(todayStats.interactions / todayStats.sessions) : 0,
 				avgTokensPerSession: todayStats.sessions > 0 ? Math.round(todayStats.tokens / todayStats.sessions) : 0,
@@ -1353,6 +1361,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			month: {
 				tokens: monthStats.tokens,
+				thinkingTokens: monthStats.thinkingTokens,
 				sessions: monthStats.sessions,
 				avgInteractionsPerSession: monthStats.sessions > 0 ? Math.round(monthStats.interactions / monthStats.sessions) : 0,
 				avgTokensPerSession: monthStats.sessions > 0 ? Math.round(monthStats.tokens / monthStats.sessions) : 0,
@@ -1365,6 +1374,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			lastMonth: {
 				tokens: lastMonthStats.tokens,
+				thinkingTokens: lastMonthStats.thinkingTokens,
 				sessions: lastMonthStats.sessions,
 				avgInteractionsPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.interactions / lastMonthStats.sessions) : 0,
 				avgTokensPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.tokens / lastMonthStats.sessions) : 0,
@@ -1377,6 +1387,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			last30Days: {
 				tokens: last30DaysStats.tokens,
+				thinkingTokens: last30DaysStats.thinkingTokens,
 				sessions: last30DaysStats.sessions,
 				avgInteractionsPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.interactions / last30DaysStats.sessions) : 0,
 				avgTokensPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.tokens / last30DaysStats.sessions) : 0,
@@ -3581,7 +3592,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		this._cacheMisses++;
 		// Cache miss - read and process the file once to get all data
-		const tokens = await this.estimateTokensFromSession(sessionFilePath);
+		const tokenResult = await this.estimateTokensFromSession(sessionFilePath);
 		const interactions = await this.countInteractionsInSession(sessionFilePath);
 		const modelUsage = await this.getModelUsageFromSession(sessionFilePath);
 		const usageAnalysis = await this.analyzeSessionUsage(sessionFilePath);
@@ -3590,7 +3601,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const sessionMeta = await this.extractSessionMetadata(sessionFilePath);
 
 		const sessionData: SessionFileCache = {
-			tokens,
+			tokens: tokenResult.tokens,
 			interactions,
 			modelUsage,
 			mtime,
@@ -3598,7 +3609,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			usageAnalysis,
 			title: sessionMeta.title,
 			firstInteraction: sessionMeta.firstInteraction,
-			lastInteraction: sessionMeta.lastInteraction
+			lastInteraction: sessionMeta.lastInteraction,
+			thinkingTokens: tokenResult.thinkingTokens
 		};
 
 		this.setCachedSessionData(sessionFilePath, sessionData, fileSize);
@@ -4169,7 +4181,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							'gpt-4';
 
 						// Extract response data
-						const { responseText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
+						const { responseText, thinkingText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
 
 						const turn: ChatTurn = {
 							turnNumber: i + 1,
@@ -4182,7 +4194,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 							contextReferences: contextRefs,
 							mcpTools,
 							inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
-							outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel)
+							outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
+							thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, requestModel)
 						};
 
 						turns.push(turn);
@@ -4212,7 +4225,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 									contextReferences: contextRefs,
 									mcpTools: [],
 									inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
-									outputTokensEstimate: 0
+									outputTokensEstimate: 0,
+									thinkingTokensEstimate: 0
 								};
 								turns.push(turn);
 							}
@@ -4307,12 +4321,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						// Extract response
 						let assistantResponse = '';
+						let thinkingText = '';
 						const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
 						const mcpTools: { server: string; tool: string }[] = [];
 
 						if (request.response && Array.isArray(request.response)) {
-							const { responseText, toolCalls: tc, mcpTools: mcp } = this.extractResponseData(request.response);
+							const { responseText, thinkingText: tt, toolCalls: tc, mcpTools: mcp } = this.extractResponseData(request.response);
 							assistantResponse = responseText;
+							thinkingText = tt;
 							toolCalls.push(...tc);
 							mcpTools.push(...mcp);
 						}
@@ -4328,7 +4344,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 							contextReferences: contextRefs,
 							mcpTools,
 							inputTokensEstimate: this.estimateTokensFromText(userMessage, model),
-							outputTokensEstimate: this.estimateTokensFromText(assistantResponse, model)
+							outputTokensEstimate: this.estimateTokensFromText(assistantResponse, model),
+							thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, model)
 						};
 
 						turns.push(turn);
@@ -4380,14 +4397,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private extractResponseData(response: any[]): {
 		responseText: string;
+		thinkingText: string;
 		toolCalls: { toolName: string; arguments?: string; result?: string }[];
 		mcpTools: { server: string; tool: string }[];
 	} {
 		let responseText = '';
+		let thinkingText = '';
 		const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
 		const mcpTools: { server: string; tool: string }[] = [];
 
 		for (const item of response) {
+			// Separate thinking items
+			if (item.kind === 'thinking') {
+				if (item.value && typeof item.value === 'string') {
+					thinkingText += item.value;
+				}
+				continue;
+			}
+
 			// Extract text content
 			if (item.value && typeof item.value === 'string') {
 				responseText += item.value;
@@ -4421,7 +4448,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
-		return { responseText, toolCalls, mcpTools };
+		return { responseText, thinkingText, toolCalls, mcpTools };
 	}
 
 	/**
@@ -4755,13 +4782,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return nonSessionFilePatterns.some(pattern => lowerFilename.includes(pattern));
 	}
 
-	private async estimateTokensFromSession(sessionFilePath: string): Promise<number> {
+	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number }> {
 		try {
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
-				return 0; // No tokens to estimate in pointer files
+				return { tokens: 0, thinkingTokens: 0 };
 			}
 
 			// Handle .jsonl files OR .json files with JSONL content (each line is a separate JSON object)
@@ -4774,6 +4801,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const sessionContent = JSON.parse(fileContent);
 			let totalInputTokens = 0;
 			let totalOutputTokens = 0;
+			let totalThinkingTokens = 0;
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				for (const request of sessionContent.requests) {
@@ -4789,6 +4817,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Estimate tokens from assistant response (output)
 					if (request.response && Array.isArray(request.response)) {
 						for (const responseItem of request.response) {
+							// Separate thinking tokens
+							if (responseItem.kind === 'thinking' && responseItem.value) {
+								totalThinkingTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
+								continue;
+							}
 							if (responseItem.value) {
 								totalOutputTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
 							}
@@ -4797,10 +4830,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			return totalInputTokens + totalOutputTokens;
+			return { tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens };
 		} catch (error) {
 			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
-			return 0;
+			return { tokens: 0, thinkingTokens: 0 };
 		}
 	}
 
@@ -4808,8 +4841,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
 	 * Each line is a separate JSON object representing an event in the session
 	 */
-	private estimateTokensFromJsonlSession(fileContent: string): number {
+	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number } {
 		let totalTokens = 0;
+		let totalThinkingTokens = 0;
 		const lines = fileContent.trim().split('\n');
 
 		for (const line of lines) {
@@ -4841,6 +4875,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
 					for (const responseItem of event.v) {
+						// Separate thinking tokens
+						if (responseItem.kind === 'thinking' && responseItem.value) {
+							totalThinkingTokens += this.estimateTokensFromText(responseItem.value);
+							continue;
+						}
 						if (responseItem.value) {
 							totalTokens += this.estimateTokensFromText(responseItem.value);
 						} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
@@ -4853,7 +4892,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
-		return totalTokens;
+		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens };
 	}
 
 	private getModelFromRequest(request: any): string {
