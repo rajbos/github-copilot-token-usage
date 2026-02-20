@@ -94,6 +94,10 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+function formatNumber(n: number): string {
+	return n.toLocaleString();
+}
+
 import toolNames from '../../toolNames.json';
 
 let TOOL_NAME_MAP: { [key: string]: string } | null = toolNames || null;
@@ -158,7 +162,7 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 		    <tr>
 			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); width:40px; max-width:40px; text-align:center;">${idx + 1}</td>
 			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); word-break:break-word; overflow-wrap:break-word; max-width:0;"> <strong title="${idEscaped}">${friendly}</strong></td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px; white-space:nowrap;">${count}</td>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px; white-space:nowrap;">${formatNumber(count)}</td>
 		    </tr>`;
 	    }).join('');
 
@@ -397,21 +401,21 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div>
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${stats.today.toolCalls.total}</div>
+						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.today.toolCalls.total)}</div>
 						${renderToolsTable(stats.today.toolCalls.byTool, 10)}
 					</div>
 				</div>
 				<div>
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
 					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${stats.last30Days.toolCalls.total}</div>
+						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.last30Days.toolCalls.total)}</div>
 							${renderToolsTable(stats.last30Days.toolCalls.byTool, 10)}
 						</div>
 					</div>
 				<div>
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
 					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${stats.month.toolCalls.total}</div>
+						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
 							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
 						</div>
 					</div>
@@ -444,7 +448,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div>
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 						<div class="list">
-							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.today.mcpTools.total}</div>
+							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
 							${stats.today.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
 								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
@@ -454,7 +458,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div>
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
 						<div class="list">
-							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.last30Days.mcpTools.total}</div>
+							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
 							${stats.last30Days.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
 								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
@@ -464,7 +468,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div>
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
 						<div class="list">
-							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.month.mcpTools.total}</div>
+							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
 							${stats.month.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
 								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
@@ -693,9 +697,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			<div class="section">
 				<div class="section-title"><span>📈</span><span>Sessions Summary</span></div>
 				<div class="stats-grid">
-					<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${stats.today.sessions}</div></div>
-					<div class="stat-card"><div class="stat-label">📆 Last 30 Days Sessions</div><div class="stat-value">${stats.last30Days.sessions}</div></div>
-					<div class="stat-card"><div class="stat-label">📅 Last Month Sessions</div><div class="stat-value">${stats.month.sessions}</div></div>
+					<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${formatNumber(stats.today.sessions)}</div></div>
+					<div class="stat-card"><div class="stat-label">📆 Last 30 Days Sessions</div><div class="stat-value">${formatNumber(stats.last30Days.sessions)}</div></div>
+					<div class="stat-card"><div class="stat-label">📅 Last Month Sessions</div><div class="stat-value">${formatNumber(stats.month.sessions)}</div></div>
 				</div>
 			</div>
 
