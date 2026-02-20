@@ -110,7 +110,7 @@ The extension analyzes two types of session files:
 The dashboard shows metrics for two time periods:
 
 - **📅 Today**: All sessions modified today (based on file modification time)
-- **📊 This Month**: All sessions modified in the current calendar month
+- **📊 Last 30 Days**: All sessions modified in the last 30 days
 
 ### Caching
 

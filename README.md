@@ -45,7 +45,7 @@ You can also use a **shared Azure Storage account** (a â€œshared storage serverâ
 
 ## Status Bar Display
 
-The extension shows token usage in the format: `# <today> | <this month>` in the status bar:
+The extension shows token usage in the format: `# <today> | <last 30 days>` in the status bar:
 
 ![Status Bar Display](docs/images/01%20Toolbar%20info.png)
 
