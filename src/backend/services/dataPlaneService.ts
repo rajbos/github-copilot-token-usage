@@ -171,6 +171,68 @@ export class DataPlaneService {
 	}
 
 	/**
+	 * List entities for a date range across ALL datasets.
+	 * @param args - Table client and date range
+	 * @returns Array of daily aggregate entities from all datasets
+	 */
+	async listAllEntitiesForRange(args: {
+		tableClient: TableClientLike;
+		startDayKey: string;
+		endDayKey: string;
+	}): Promise<BackendAggDailyEntityLike[]> {
+		const { tableClient, startDayKey, endDayKey } = args;
+		
+		// Query all entities in the date range without filtering by dataset
+		// Filter by timestamp to limit the scan
+		const startDate = new Date(startDayKey);
+		const endDate = new Date(endDayKey);
+		endDate.setUTCHours(23, 59, 59, 999); // End of day
+		
+		const filter = `Timestamp ge datetime'${startDate.toISOString()}' and Timestamp le datetime'${endDate.toISOString()}'`;
+		
+		this.log(`Querying all datasets for date range ${startDayKey} to ${endDayKey}`);
+		
+		const entities: BackendAggDailyEntityLike[] = [];
+		const iterator = tableClient.listEntities({ queryOptions: { filter } });
+		
+		for await (const entity of iterator) {
+			const pk = entity.partitionKey;
+			const rk = entity.rowKey;
+			
+			// Extract day from partition key (format: datasetId|day)
+			const pkParts = (pk ?? '').toString().split('|');
+			const day = pkParts.length === 2 ? pkParts[1] : '';
+			const datasetId = pkParts[0] ?? '';
+			
+			// Parse RowKey: model|workspaceId|machineId|userId
+			const rkParts = (rk ?? '').toString().split('|');
+			const model = rkParts[0] ?? '';
+			const workspaceId = rkParts[1] ?? '';
+			const machineId = rkParts[2] ?? '';
+			const userId = rkParts[3] ?? '';
+			
+			entities.push({
+				partitionKey: (pk ?? '').toString(),
+				rowKey: (rk ?? '').toString(),
+				datasetId,
+				day,
+				model,
+				workspaceId,
+				machineId,
+				userId,
+				inputTokens: entity.inputTokens,
+				outputTokens: entity.outputTokens,
+				interactions: entity.interactions,
+				workspaceName: entity.workspaceName,
+				machineName: entity.machineName
+			});
+		}
+		
+		this.log(`Found ${entities.length} entities across all datasets`);
+		return entities;
+	}
+
+	/**
 	 * Upsert entities in batches with retry logic for improved reliability.
 	 * 
 	 * @param tableClient - The table client to use

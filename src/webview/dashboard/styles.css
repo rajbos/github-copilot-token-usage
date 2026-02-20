@@ -164,9 +164,23 @@
 	color: var(--vscode-textLink-foreground);
 }
 
+.dataset-cell {
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	font-style: italic;
+}
+
 .number-cell {
 	text-align: right;
 	font-family: var(--vscode-editor-font-family);
+}
+
+.number-header {
+	text-align: right !important;
+}
+
+.rank-header {
+	text-align: center !important;
 }
 
 .footer {
