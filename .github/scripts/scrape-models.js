@@ -75,7 +75,9 @@ async function extractRelevantSectionHTML(page) {
   return page.evaluate(() => {
     const headings = Array.from(document.querySelectorAll('h2, h3'));
     const targetHeading = headings.find(h => h.textContent.trim().includes('Supported AI models in Copilot'));
-    if (!targetHeading) return '<p>Could not find target section</p>';
+    if (!targetHeading) {
+      return '<p>Could not find target section</p>';
+    }
 
     let html = '<h2>' + targetHeading.textContent + '</h2>\n';
     let current = targetHeading.nextElementSibling;
