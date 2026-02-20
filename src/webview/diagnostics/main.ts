@@ -867,6 +867,8 @@ function renderLayout(data: DiagnosticsData): void {
           // Re-attach event listeners for backend buttons
           setupBackendButtonHandlers();
         }
+      } else {
+        console.warn("diagnosticDataLoaded received but backendStorageInfo is missing or undefined");
       }
 
       // Update session folders if provided

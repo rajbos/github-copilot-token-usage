@@ -35,6 +35,8 @@ interface DashboardStats {
 		totalTokens: number;
 		totalInteractions: number;
 		averageTokensPerUser: number;
+		firstDate?: string | null;
+		lastDate?: string | null;
 	};
 	lastUpdated: string | Date;
 }
@@ -189,9 +191,33 @@ function buildTeamSection(stats: DashboardStats): HTMLElement {
 		buildStatCard('Avg per User', formatNumber(Math.round(stats.team.averageTokensPerUser)) + ' tokens')
 	);
 
+	// Add date range info if available
+	console.log('Team firstDate:', stats.team.firstDate, 'lastDate:', stats.team.lastDate);
+	let dateInfo: HTMLElement | null = null;
+	if (stats.team.firstDate || stats.team.lastDate) {
+		dateInfo = el('div', 'info-box');
+		dateInfo.style.cssText = 'margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 13px; color: #aaa;';
+		const firstDate = stats.team.firstDate;
+		const lastDate = stats.team.lastDate;
+		if (firstDate && lastDate) {
+			dateInfo.textContent = `📅 Data Range: ${firstDate} to ${lastDate}`;
+		} else if (firstDate) {
+			dateInfo.textContent = `📅 First Data: ${firstDate}`;
+		} else if (lastDate) {
+			dateInfo.textContent = `📅 Last Data: ${lastDate}`;
+		}
+		console.log('Date info element created');
+	} else {
+		console.log('No date range data available');
+	}
+
 	const leaderboard = buildLeaderboard(stats);
 	
-	section.append(sectionTitle, teamGrid, leaderboard);
+	if (dateInfo) {
+		section.append(sectionTitle, teamGrid, dateInfo, leaderboard);
+	} else {
+		section.append(sectionTitle, teamGrid, leaderboard);
+	}
 	return section;
 }
 
@@ -301,6 +327,7 @@ window.addEventListener('message', (event) => {
 	const message = event.data;
 	switch (message.command) {
 		case 'dashboardData':
+			console.log('Dashboard data received:', JSON.stringify(message.data.team, null, 2));
 			render(message.data);
 			break;
 		case 'dashboardLoading':
