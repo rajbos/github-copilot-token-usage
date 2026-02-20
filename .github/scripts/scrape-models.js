@@ -58,7 +58,9 @@ async function extractModels(page) {
           text = headerCell.textContent.trim();
         } else {
           const firstCell = row.querySelector('td');
-          if (firstCell) text = firstCell.textContent.trim();
+          if (firstCell) {
+            text = firstCell.textContent.trim();
+          }
         }
         if (text) {
           const normalized = text.toLowerCase().replace(/\s+/g, '-');
