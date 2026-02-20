@@ -2370,7 +2370,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 										analysis.mcpTools.total++;
 										const serverName = this.extractMcpServerName(toolName);
 										analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-										analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+										const normalizedTool = this.normalizeMcpToolName(toolName);
+										analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
 									} else {
 										analysis.toolCalls.total++;
 										analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
@@ -2510,7 +2511,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 								analysis.mcpTools.total++;
 								const serverName = this.extractMcpServerName(toolName);
 								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-								analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+								const normalizedTool = this.normalizeMcpToolName(toolName);
+								analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
 							} else {
 								// Count as regular tool call
 								analysis.toolCalls.total++;
@@ -2522,14 +2524,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.type === 'mcp.tool.call' || (event.data?.mcpServer)) {
 							analysis.mcpTools.total++;
 							const serverName = event.data?.mcpServer || 'unknown';
-							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							const mcpToolName = event.data?.toolName || event.toolName || 'unknown';
 							analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-							analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
-						}
-
-						// Detect context references in user messages
-						if (event.type === 'user.message' && event.data?.content) {
-							this.analyzeContextReferences(event.data.content, analysis.contextReferences);
+							const normalizedMcpTool = this.normalizeMcpToolName(mcpToolName);
+							analysis.mcpTools.byTool[normalizedMcpTool] = (analysis.mcpTools.byTool[normalizedMcpTool] || 0) + 1;
 						}
 					} catch (e) {
 						// Skip malformed lines
@@ -2601,7 +2599,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 									analysis.mcpTools.total++;
 									const serverName = this.extractMcpServerName(toolName);
 									analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-									analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+									const normalizedTool = this.normalizeMcpToolName(toolName);
+									analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
 								} else {
 									// Count as regular tool call
 									analysis.toolCalls.total++;
@@ -2807,6 +2806,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Normalize an MCP tool name so that equivalent tools from different servers
+	 * (local stdio vs remote) are counted under a single canonical key in "By Tool" views.
+	 * Maps mcp_github_github_<action> → mcp_io_github_git_<action>.
+	 */
+	private normalizeMcpToolName(toolName: string): string {
+		if (toolName.startsWith('mcp_github_github_')) {
+			return 'mcp_io_github_git_' + toolName.substring('mcp_github_github_'.length);
+		}
+		if (toolName.startsWith('mcp.github.github.')) {
+			return 'mcp.io.github.git.' + toolName.substring('mcp.github.github.'.length);
+		}
+		return toolName;
+	}
+
+	/**
 	 * Extract server name from an MCP tool name.
 	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
 	 * For example: "mcp.io.github.git.assign_copilot_to_issue" → "GitHub MCP"
@@ -2821,12 +2835,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return displayName.split(':')[0].trim();
 		}
 
-		// Fallback: extract from tool name structure
-		// Remove the mcp. or mcp_ prefix
+		// Fallback: recognize known MCP server prefixes for unlisted tools
+		if (toolName.startsWith('mcp_io_github_git_') || toolName.startsWith('mcp.io.github.git.')) {
+			return 'GitHub MCP (Local)';
+		}
+		if (toolName.startsWith('mcp_github_github_') || toolName.startsWith('mcp.github.github.')) {
+			return 'GitHub MCP (Remote)';
+		}
+
+		// Generic fallback: extract from tool name structure
 		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
-		// Split on . or _ and take the first part (server identifier)
 		const parts = withoutPrefix.split(/[._]/);
-		// Return the first non-empty part, or 'unknown' if none exist
 		return parts[0] || 'unknown';
 	}
 

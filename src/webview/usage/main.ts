@@ -105,7 +105,44 @@ function lookupToolName(id: string): string {
 	return TOOL_NAME_MAP[id] || id;
 }
 
-function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string {
+function lookupMcpToolName(id: string): string {
+	const full = lookupToolName(id);
+	// Strip the server prefix (e.g. "GitHub MCP (Local): Issue Read" → "Issue Read")
+	const colonIdx = full.indexOf(':');
+	if (colonIdx !== -1) {
+		return full.substring(colonIdx + 1).trim();
+	}
+	return full;
+}
+
+function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
+	const allTools = new Set<string>();
+	
+	// Collect all MCP tools from all periods
+	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	
+	// Filter to only unknown tools (where lookupToolName returns the same value)
+	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool).sort();
+}
+
+function createMcpToolIssueUrl(unknownTools: string[]): string {
+	const repoUrl = 'https://github.com/rajbos/github-copilot-token-usage';
+	const title = encodeURIComponent('Add missing friendly names for MCP tools');
+	const toolList = unknownTools.map(tool => `- \`${tool}\``).join('\n');
+	const body = encodeURIComponent(
+		`## Unknown MCP Tools Found\n\n` +
+		`The following MCP tools were detected but don't have friendly display names:\n\n` +
+		`${toolList}\n\n` +
+		`Please add friendly names for these tools to improve the user experience.`
+	);
+	const labels = encodeURIComponent('MCP Toolnames');
+	
+	return `${repoUrl}/issues/new?title=${title}&body=${body}&labels=${labels}`;
+}
+
+function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName): string {
 	const sortedTools = Object.entries(byTool)
 		.sort(([, a], [, b]) => b - a)
 		.slice(0, limit);
@@ -115,18 +152,18 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string
 	}
 
 	    const rows = sortedTools.map(([tool, count], idx) => {
-		const friendly = escapeHtml(lookupToolName(tool));
+		const friendly = escapeHtml(nameResolver(tool));
 		const idEscaped = escapeHtml(tool);
 		return `
 		    <tr>
 			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); width:40px; max-width:40px; text-align:center;">${idx + 1}</td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle);"> <strong title="${idEscaped}">${friendly}</strong></td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px;">${count}</td>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); word-break:break-word; overflow-wrap:break-word; max-width:0;"> <strong title="${idEscaped}">${friendly}</strong></td>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px; white-space:nowrap;">${count}</td>
 		    </tr>`;
 	    }).join('');
 
 	return `
-		<table style="width:100%; border-collapse:collapse;">
+		<table style="width:100%; border-collapse:collapse; table-layout:fixed;">
 			<thead>
 				<tr style="color:var(--text-secondary); font-size:12px; text-align:left;">
 					<th style="padding:8px 12px; opacity:0.9; width:40px;">#</th>
@@ -385,6 +422,24 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			<div class="section">
 				<div class="section-title"><span>🔌</span><span>MCP Tools</span></div>
 				<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
+				${(() => {
+					const unknownTools = getUnknownMcpTools(stats);
+					if (unknownTools.length > 0) {
+						const issueUrl = createMcpToolIssueUrl(unknownTools);
+						return `
+							<div style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
+								<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+									Found ${unknownTools.length} MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names
+								</div>
+								<a href="${issueUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--button-bg); color: var(--button-fg); border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 500;">
+									<span>📝</span>
+									<span>Report Unknown Tools</span>
+								</a>
+							</div>
+						`;
+					}
+					return '';
+				})()}
 				<div class="three-column">
 					<div>
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
@@ -392,7 +447,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.today.mcpTools.total}</div>
 							${stats.today.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -402,7 +457,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.month.mcpTools.total}</div>
 							${stats.month.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -412,7 +467,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.last30Days.mcpTools.total}</div>
 							${stats.last30Days.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
