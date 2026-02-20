@@ -7,7 +7,7 @@ export type TeamAliasValidationResult =
 	| { valid: true; alias: string }
 	| { valid: false; error: string };
 
-const TEAM_ALIAS_REGEX = /^[a-z0-9-]+$/;
+const TEAM_ALIAS_REGEX = /^[a-zA-Z0-9-]+$/;
 const MAX_TEAM_ALIAS_LENGTH = 32;
 const COMMON_NAME_PATTERNS = /\b(john|jane|smith|doe|admin|user|dev|test|demo)\b/i;
 
@@ -16,37 +16,37 @@ export function validateTeamAlias(input: string): TeamAliasValidationResult {
 	if (!alias) {
 		return { 
 			valid: false, 
-			error: ValidationMessages.required('Team alias', 'alex-dev') + ' ' + ValidationMessages.piiWarning('Do not use email addresses or real names.')
+			error: ValidationMessages.required('Team alias', 'Alex-Dev') + ' ' + ValidationMessages.piiWarning('Do not use email addresses or real names.')
 		};
 	}
 	if (alias.length > MAX_TEAM_ALIAS_LENGTH) {
 		return { 
 			valid: false, 
-			error: `Team alias is too long (maximum ${MAX_TEAM_ALIAS_LENGTH} characters). Use a shorter handle like "alex-dev".`
+			error: `Team alias is too long (maximum ${MAX_TEAM_ALIAS_LENGTH} characters). Use a shorter handle like "Alex-Dev".`
 		};
 	}
 	if (alias.includes('@')) {
 		return { 
 			valid: false, 
-			error: `Team alias cannot contain @ symbol (looks like an email). Use a handle like "alex-dev" instead. ${ValidationMessages.piiWarning('Do not use email addresses.')}`
+			error: `Team alias cannot contain @ symbol (looks like an email). Use a handle like "Alex-Dev" instead. ${ValidationMessages.piiWarning('Do not use email addresses.')}`
 		};
 	}
 	if (alias.includes(' ')) {
 		return { 
 			valid: false, 
-			error: `Team alias cannot contain spaces (looks like a display name). Use dashes instead. Example: "alex-dev". ${ValidationMessages.piiWarning('Do not use real names.')}`
+			error: `Team alias cannot contain spaces (looks like a display name). Use dashes instead. Example: "Alex-Dev". ${ValidationMessages.piiWarning('Do not use real names.')}`
 		};
 	}
 	if (!TEAM_ALIAS_REGEX.test(alias)) {
 		return { 
 			valid: false, 
-			error: ValidationMessages.format('Team alias', 'use only lowercase letters, numbers, and dashes', 'alex-dev') + ' ' + ValidationMessages.piiWarning('Do not use email addresses or real names.')
+			error: ValidationMessages.format('Team alias', 'use only letters, numbers, and dashes', 'Alex-Dev') + ' ' + ValidationMessages.piiWarning('Do not use email addresses or real names.')
 		};
 	}
 	if (COMMON_NAME_PATTERNS.test(alias)) {
 		return { 
 			valid: false, 
-			error: `Team alias "${alias}" looks like a real name or common identifier. Use a non-identifying handle like "team-frontend" or "qa-lead".`
+			error: `Team alias "${alias}" looks like a real name or common identifier. Use a non-identifying handle like "Team-Frontend" or "QA-Lead".`
 		};
 	}
 	return { valid: true, alias };

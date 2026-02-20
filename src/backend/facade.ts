@@ -132,6 +132,49 @@ export class BackendFacade {
 		return isBackendConfigured(settings);
 	}
 
+	/**
+	 * Resolves the effective user identity for the current user based on the backend configuration.
+	 * This is the userId that would be used when syncing data to the backend.
+	 * For dashboard purposes, this always attempts resolution to match historical sync behavior.
+	 */
+	public async resolveEffectiveUserId(settings: BackendSettings): Promise<string | undefined> {
+		// Import identity resolution function
+		const { resolveUserIdentityForSync, validateTeamAlias } = await import('./identity.js');
+		const { DefaultAzureCredential } = await import('@azure/identity');
+
+		// Get access token for pseudonymous mode if needed
+		let accessTokenForClaims: string | undefined;
+		if (settings.userIdentityMode === 'pseudonymous' && settings.authMode === 'entraId') {
+			try {
+				const token = await new DefaultAzureCredential().getToken('https://storage.azure.com/.default');
+				accessTokenForClaims = token?.token;
+			} catch {
+				// Best-effort only: fall back to undefined
+			}
+		}
+
+		// Debug logging for team alias mode
+		if (settings.userIdentityMode === 'teamAlias') {
+			const validation = validateTeamAlias(settings.userId);
+			this.deps.log(`[Backend] Team alias validation - input: "${settings.userId}", valid: ${validation.valid}, ${validation.valid ? `alias: "${validation.alias}"` : `error: ${validation.error}`}`);
+		}
+
+		// Always pass shareWithTeam: true to resolve identity for dashboard viewing,
+		// even if current sharing policy excludes user dimension. We want to match
+		// the identity that was used during previous syncs.
+		const resolved = resolveUserIdentityForSync({
+			shareWithTeam: true,
+			userIdentityMode: settings.userIdentityMode,
+			configuredUserId: settings.userId,
+			datasetId: settings.datasetId,
+			accessTokenForClaims
+		});
+
+		this.deps.log(`[Backend] Resolved userId: ${resolved.userId || '(none)'}, userKeyType: ${resolved.userKeyType || '(none)'}`);
+
+		return resolved.userId;
+	}
+
 	public getFilters(): BackendQueryFilters {
 		return this.queryService.getFilters();
 	}
@@ -222,6 +265,19 @@ export class BackendFacade {
 		return await this.dataPlaneService.listEntitiesForRange({
 			tableClient,
 			datasetId: settings.datasetId,
+			startDayKey,
+			endDayKey
+		});
+	}
+
+	/**
+	 * Get all entities across ALL datasets for a date range (for cross-team dashboard).
+	 */
+	public async getAllAggEntitiesForRange(settings: BackendSettings, startDayKey: string, endDayKey: string): Promise<BackendAggDailyEntityLike[]> {
+		const creds = await this.credentialService.getBackendDataPlaneCredentialsOrThrow(settings);
+		const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+		return await this.dataPlaneService.listAllEntitiesForRange({
+			tableClient,
 			startDayKey,
 			endDayKey
 		});

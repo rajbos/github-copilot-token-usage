@@ -20,9 +20,16 @@ interface UserSummary {
 
 interface TeamMemberStats {
 	userId: string;
+	datasetId: string;
 	totalTokens: number;
 	totalInteractions: number;
 	totalCost: number;
+	sessions: number;
+	avgTurnsPerSession: number;
+	uniqueModels: number;
+	uniqueWorkspaces: number;
+	daysActive: number;
+	avgTokensPerTurn: number;
 	rank: number;
 }
 
@@ -262,8 +269,22 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 	const thead = el('thead', '');
 	const headerRow = el('tr', '');
 	
-	['Rank', 'User', 'Tokens', 'Interactions', 'Est. Cost'].forEach(text => {
-		const th = el('th', '', text);
+	const headers = [
+		{ text: '#', class: 'rank-header' },
+		{ text: 'User', class: '' },
+		{ text: 'Dataset', class: '' },
+		{ text: 'Tokens', class: 'number-header' },
+		{ text: 'Days', class: 'number-header' },
+		{ text: 'Sessions', class: 'number-header' },
+		{ text: 'Avg Turns', class: 'number-header' },
+		{ text: 'Models', class: 'number-header' },
+		{ text: 'Projects', class: 'number-header' },
+		{ text: 'Tok/Turn', class: 'number-header' },
+		{ text: 'Cost', class: 'number-header' }
+	];
+	
+	headers.forEach(header => {
+		const th = el('th', header.class, header.text);
 		headerRow.append(th);
 	});
 	thead.append(headerRow);
@@ -273,19 +294,29 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 	for (const member of stats.team.members) {
 		const row = el('tr', '');
 		
+		// Strip prefixes for display (u:, ds:)
+		const displayUserId = member.userId.replace(/^u:/, '');
+		const displayDatasetId = (member.datasetId || '').replace(/^ds:/, '');
+		
 		// Highlight current user
 		const isCurrentUser = member.userId === stats.personal.userId;
 		if (isCurrentUser) {
 			row.classList.add('current-user');
 		}
 		
-		const rankCell = el('td', 'rank-cell', `#${member.rank}`);
-		const userCell = el('td', '', isCurrentUser ? `${member.userId} (You)` : member.userId);
+		const rankCell = el('td', 'rank-cell', `${member.rank}`);
+		const userCell = el('td', '', isCurrentUser ? `${displayUserId} (You)` : displayUserId);
+		const datasetCell = el('td', 'dataset-cell', displayDatasetId);
 		const tokensCell = el('td', 'number-cell', formatNumber(member.totalTokens));
-		const interactionsCell = el('td', 'number-cell', formatNumber(member.totalInteractions));
+		const daysCell = el('td', 'number-cell', formatNumber(member.daysActive));
+		const sessionsCell = el('td', 'number-cell', formatNumber(member.sessions));
+		const avgTurnsCell = el('td', 'number-cell', formatNumber(member.avgTurnsPerSession));
+		const modelsCell = el('td', 'number-cell', formatNumber(member.uniqueModels));
+		const projectsCell = el('td', 'number-cell', formatNumber(member.uniqueWorkspaces));
+		const tokPerTurnCell = el('td', 'number-cell', formatNumber(member.avgTokensPerTurn));
 		const costCell = el('td', 'number-cell', formatCost(member.totalCost));
 		
-		row.append(rankCell, userCell, tokensCell, interactionsCell, costCell);
+		row.append(rankCell, userCell, datasetCell, tokensCell, daysCell, sessionsCell, avgTurnsCell, modelsCell, projectsCell, tokPerTurnCell, costCell);
 		tbody.append(row);
 	}
 	
