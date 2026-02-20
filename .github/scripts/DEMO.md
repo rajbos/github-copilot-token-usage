@@ -36,7 +36,7 @@ Identifies which models from the scraped list are missing from each configuratio
 
 ### Step 4: Automatic Updates
 Adds missing models with default values:
-- **Token Estimators**: 0.25 ratio (4 characters per token) for GPT-family models
+- **Token Estimators**: 0.25 ratio (meaning 1 token ≈ 4 characters) for GPT-family models
 - **Model Pricing**: $0.00 placeholder costs that require manual verification
 
 ### Step 5: Change Visualization

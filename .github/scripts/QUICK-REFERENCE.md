@@ -8,7 +8,7 @@ Automatically keeps model configuration files synchronized with GitHub Copilot's
 - `src/modelPricing.json` - Pricing per million tokens
 
 ## When It Runs
-- 🗓️ **Weekly**: Every Monday at 5:11 PM UTC (chosen to avoid peak CI hours)
+- 🗓️ **Weekly**: Every Monday at 17:11 UTC / 5:11 PM UTC (cron: `11 17 * * 1`, chosen to avoid peak CI hours)
 - 🔧 **Manual**: Run `gh workflow run check-models.yml`
 - 📝 **On Changes**: When workflow or prompt files are modified
 
@@ -29,7 +29,7 @@ graph LR
 1. **Scrape** - Fetches model list from https://docs.github.com/en/copilot/reference/ai-models/supported-models
 2. **Compare** - Checks what's missing from local JSON files
 3. **Update** - Adds missing models with defaults:
-   - Token estimators: `0.25` ratio
+   - Token estimators: `0.25` ratio (1 token ≈ 4 characters)
    - Pricing: `$0.00` (needs verification)
 4. **PR** - Creates pull request for review
 
