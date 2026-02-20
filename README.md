@@ -234,6 +234,28 @@ A debug-only tool that displays all fluency score rules, thresholds, and tips fo
 
 For detailed information, see [Fluency Level Viewer Documentation](docs/FLUENCY-LEVEL-VIEWER.md).
 
+## Automated Model Syncing
+
+The extension includes an automated workflow that keeps model data up-to-date with GitHub Copilot's officially supported models. This workflow:
+
+- 🔄 **Runs Weekly**: Automatically scrapes the latest model list every Monday
+- 🤖 **Uses AI**: Leverages GitHub Copilot CLI to intelligently update configuration files
+- 📊 **Maintains Accuracy**: Ensures token estimation and pricing data stays current
+- 🔀 **Creates PRs**: Automatically generates pull requests for review
+
+**Try the Demo**:
+```bash
+cd .github/scripts
+bash demo-sync-models.sh
+```
+
+This interactive demo shows how the workflow identifies missing models and updates the configuration files. For detailed documentation, see [.github/scripts/DEMO.md](.github/scripts/DEMO.md).
+
+**Manual Trigger**:
+```bash
+gh workflow run check-models.yml
+```
+
 ## Known Issues
 
 - The numbers shown are **estimates**, computed from Copilot Chat session logs.
