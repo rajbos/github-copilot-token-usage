@@ -2,6 +2,8 @@
 
 This directory contains a demonstration of the automated model syncing workflow that keeps the extension's model data up-to-date with GitHub Copilot's supported models.
 
+> 📋 **Quick Reference**: For a quick overview of the workflow, see [QUICK-REFERENCE.md](QUICK-REFERENCE.md)
+
 ## Overview
 
 The `check-models.yml` workflow automatically:
