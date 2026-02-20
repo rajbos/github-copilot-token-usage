@@ -100,10 +100,6 @@ body {
 	text-align: right;
 }
 
-.stats-table tbody tr:nth-child(even) {
-	background: var(--row-alternate-bg);
-}
-
 .metric-label {
 	display: inline-flex;
 	align-items: center;

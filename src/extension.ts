@@ -948,21 +948,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
 			this.log(`⏳ Waiting for Copilot Extension to start (${delaySeconds}s delay)`);
 
-			this.initialDelayTimeout = setTimeout(() => {
+			this.initialDelayTimeout = setTimeout(async () => {
 				try {
 					this.log('🚀 Starting token usage analysis...');
 					this.recheckCopilotExtensionsAfterDelay();
-					this.updateTokenStats();
+					await this.updateTokenStats();
+					this.startBackendSyncAfterInitialAnalysis();
 				} catch (error) {
 					this.error('Error in delayed initial update:', error);
 				}
 			}, delaySeconds * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
 			this.log('⚠️ No Copilot extensions found - starting analysis anyway');
-			setTimeout(() => this.updateTokenStats(), 100);
+			setTimeout(async () => {
+				await this.updateTokenStats();
+				this.startBackendSyncAfterInitialAnalysis();
+			}, 100);
 		} else {
 			this.log('✅ Copilot extensions are active - starting token analysis');
-			setTimeout(() => this.updateTokenStats(), 100);
+			setTimeout(async () => {
+				await this.updateTokenStats();
+				this.startBackendSyncAfterInitialAnalysis();
+			}, 100);
 		}
 	}
 
@@ -977,6 +984,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.log('✅ Copilot extensions are now active');
 		} else {
 			this.warn('⚠️ Some Copilot extensions still inactive after delay');
+		}
+	}
+
+	/**
+	 * Start backend sync timer after initial token analysis completes.
+	 * This avoids resource contention during extension startup.
+	 */
+	private startBackendSyncAfterInitialAnalysis(): void {
+		try {
+			const backend = (this as any).backend;
+			if (backend && typeof backend.startTimerIfEnabled === 'function') {
+				backend.startTimerIfEnabled();
+			}
+		} catch (error) {
+			this.warn('Failed to start backend sync timer: ' + error);
 		}
 	}
 
@@ -2348,7 +2370,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 										analysis.mcpTools.total++;
 										const serverName = this.extractMcpServerName(toolName);
 										analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-										analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+										const normalizedTool = this.normalizeMcpToolName(toolName);
+										analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
 									} else {
 										analysis.toolCalls.total++;
 										analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
@@ -2488,7 +2511,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 								analysis.mcpTools.total++;
 								const serverName = this.extractMcpServerName(toolName);
 								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-								analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+								const normalizedTool = this.normalizeMcpToolName(toolName);
+								analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
 							} else {
 								// Count as regular tool call
 								analysis.toolCalls.total++;
@@ -2500,14 +2524,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.type === 'mcp.tool.call' || (event.data?.mcpServer)) {
 							analysis.mcpTools.total++;
 							const serverName = event.data?.mcpServer || 'unknown';
-							const toolName = event.data?.toolName || event.toolName || 'unknown';
+							const mcpToolName = event.data?.toolName || event.toolName || 'unknown';
 							analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-							analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
-						}
-
-						// Detect context references in user messages
-						if (event.type === 'user.message' && event.data?.content) {
-							this.analyzeContextReferences(event.data.content, analysis.contextReferences);
+							const normalizedMcpTool = this.normalizeMcpToolName(mcpToolName);
+							analysis.mcpTools.byTool[normalizedMcpTool] = (analysis.mcpTools.byTool[normalizedMcpTool] || 0) + 1;
 						}
 					} catch (e) {
 						// Skip malformed lines
@@ -2579,7 +2599,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 									analysis.mcpTools.total++;
 									const serverName = this.extractMcpServerName(toolName);
 									analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-									analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+									const normalizedTool = this.normalizeMcpToolName(toolName);
+									analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
 								} else {
 									// Count as regular tool call
 									analysis.toolCalls.total++;
@@ -2785,6 +2806,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Normalize an MCP tool name so that equivalent tools from different servers
+	 * (local stdio vs remote) are counted under a single canonical key in "By Tool" views.
+	 * Maps mcp_github_github_<action> → mcp_io_github_git_<action>.
+	 */
+	private normalizeMcpToolName(toolName: string): string {
+		if (toolName.startsWith('mcp_github_github_')) {
+			return 'mcp_io_github_git_' + toolName.substring('mcp_github_github_'.length);
+		}
+		if (toolName.startsWith('mcp.github.github.')) {
+			return 'mcp.io.github.git.' + toolName.substring('mcp.github.github.'.length);
+		}
+		return toolName;
+	}
+
+	/**
 	 * Extract server name from an MCP tool name.
 	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
 	 * For example: "mcp.io.github.git.assign_copilot_to_issue" → "GitHub MCP"
@@ -2799,12 +2835,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return displayName.split(':')[0].trim();
 		}
 
-		// Fallback: extract from tool name structure
-		// Remove the mcp. or mcp_ prefix
+		// Fallback: recognize known MCP server prefixes for unlisted tools
+		if (toolName.startsWith('mcp_io_github_git_') || toolName.startsWith('mcp.io.github.git.')) {
+			return 'GitHub MCP (Local)';
+		}
+		if (toolName.startsWith('mcp_github_github_') || toolName.startsWith('mcp.github.github.')) {
+			return 'GitHub MCP (Remote)';
+		}
+
+		// Generic fallback: extract from tool name structure
 		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
-		// Split on . or _ and take the first part (server identifier)
 		const parts = withoutPrefix.split(/[._]/);
-		// Return the first non-empty part, or 'unknown' if none exist
 		return parts[0] || 'unknown';
 	}
 
@@ -7037,6 +7078,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		// Fetch all entities for the dataset using the facade's public API
 		const allEntities = await this.backend.getAggEntitiesForRange(settings, startKey, todayKey);
+		
+		this.log(`[Dashboard] Fetched ${allEntities.length} entities for date range ${startKey} to ${todayKey}`);
 
 		// Aggregate personal data (all machines and workspaces for current user)
 		const personalDevices = new Set<string>();
@@ -7047,6 +7090,10 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		// Aggregate team data (all users)
 		const userMap = new Map<string, { tokens: number; interactions: number; cost: number }>();
+		
+		// Track first and last data points for reference
+		let firstDate: string | null = null;
+		let lastDate: string | null = null;
 
 		for (const entity of allEntities) {
 			const userId = (entity.userId ?? '').toString();
@@ -7057,6 +7104,17 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
 			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
 			const tokens = inputTokens + outputTokens;
+			const dayKey = (entity.day ?? '').toString();
+
+			// Track date range
+			if (dayKey) {
+				if (!firstDate || dayKey < firstDate) {
+					firstDate = dayKey;
+				}
+				if (!lastDate || dayKey > lastDate) {
+					lastDate = dayKey;
+				}
+			}
 
 			// Personal data aggregation
 			if (userId === currentUserId) {
@@ -7113,6 +7171,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const teamTotalInteractions = Array.from(userMap.values()).reduce((sum, u) => sum + u.interactions, 0);
 		const averageTokensPerUser = userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
 
+		this.log(`[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`);
+
 		return {
 			personal: {
 				userId: currentUserId,
@@ -7127,7 +7187,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				members: teamMembers,
 				totalTokens: teamTotalTokens,
 				totalInteractions: teamTotalInteractions,
-				averageTokensPerUser
+				averageTokensPerUser,
+				firstDate,
+				lastDate
 			},
 			lastUpdated: new Date().toISOString()
 		};
@@ -7668,6 +7730,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
+			this.log(`Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`);
 
 			// Check if panel is still open before updating
 			if (!this.isPanelOpen(panel)) {
@@ -7676,6 +7739,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			}
 
 			// Send the loaded data to the webview
+			this.log(`Sending backend info to webview: ${backendStorageInfo ? 'present' : 'missing'}`);
 			panel.webview.postMessage({
 				command: 'diagnosticDataLoaded',
 				report,
@@ -8193,6 +8257,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Store backend facade in the tracker instance for dashboard access
 		(tokenTracker as any).backend = backendFacade;
+
+		// Backend sync timer will be started after initial token analysis completes
+		// (see startBackendSyncAfterInitialAnalysis method)
 
 		const configureBackendCommand = vscode.commands.registerCommand('copilot-token-tracker.configureBackend', async () => {
 			await backendHandler.handleConfigureBackend();
