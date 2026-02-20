@@ -948,21 +948,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
 			this.log(`⏳ Waiting for Copilot Extension to start (${delaySeconds}s delay)`);
 
-			this.initialDelayTimeout = setTimeout(() => {
+			this.initialDelayTimeout = setTimeout(async () => {
 				try {
 					this.log('🚀 Starting token usage analysis...');
 					this.recheckCopilotExtensionsAfterDelay();
-					this.updateTokenStats();
+					await this.updateTokenStats();
+					this.startBackendSyncAfterInitialAnalysis();
 				} catch (error) {
 					this.error('Error in delayed initial update:', error);
 				}
 			}, delaySeconds * 1000);
 		} else if (!copilotExtension && !copilotChatExtension) {
 			this.log('⚠️ No Copilot extensions found - starting analysis anyway');
-			setTimeout(() => this.updateTokenStats(), 100);
+			setTimeout(async () => {
+				await this.updateTokenStats();
+				this.startBackendSyncAfterInitialAnalysis();
+			}, 100);
 		} else {
 			this.log('✅ Copilot extensions are active - starting token analysis');
-			setTimeout(() => this.updateTokenStats(), 100);
+			setTimeout(async () => {
+				await this.updateTokenStats();
+				this.startBackendSyncAfterInitialAnalysis();
+			}, 100);
 		}
 	}
 
@@ -977,6 +984,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.log('✅ Copilot extensions are now active');
 		} else {
 			this.warn('⚠️ Some Copilot extensions still inactive after delay');
+		}
+	}
+
+	/**
+	 * Start backend sync timer after initial token analysis completes.
+	 * This avoids resource contention during extension startup.
+	 */
+	private startBackendSyncAfterInitialAnalysis(): void {
+		try {
+			const backend = (this as any).backend;
+			if (backend && typeof backend.startTimerIfEnabled === 'function') {
+				backend.startTimerIfEnabled();
+			}
+		} catch (error) {
+			this.warn('Failed to start backend sync timer: ' + error);
 		}
 	}
 
@@ -6841,6 +6863,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		// Fetch all entities for the dataset using the facade's public API
 		const allEntities = await this.backend.getAggEntitiesForRange(settings, startKey, todayKey);
+		
+		this.log(`[Dashboard] Fetched ${allEntities.length} entities for date range ${startKey} to ${todayKey}`);
 
 		// Aggregate personal data (all machines and workspaces for current user)
 		const personalDevices = new Set<string>();
@@ -6851,6 +6875,10 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		// Aggregate team data (all users)
 		const userMap = new Map<string, { tokens: number; interactions: number; cost: number }>();
+		
+		// Track first and last data points for reference
+		let firstDate: string | null = null;
+		let lastDate: string | null = null;
 
 		for (const entity of allEntities) {
 			const userId = (entity.userId ?? '').toString();
@@ -6861,6 +6889,17 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
 			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
 			const tokens = inputTokens + outputTokens;
+			const dayKey = (entity.day ?? '').toString();
+
+			// Track date range
+			if (dayKey) {
+				if (!firstDate || dayKey < firstDate) {
+					firstDate = dayKey;
+				}
+				if (!lastDate || dayKey > lastDate) {
+					lastDate = dayKey;
+				}
+			}
 
 			// Personal data aggregation
 			if (userId === currentUserId) {
@@ -6917,6 +6956,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const teamTotalInteractions = Array.from(userMap.values()).reduce((sum, u) => sum + u.interactions, 0);
 		const averageTokensPerUser = userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
 
+		this.log(`[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`);
+
 		return {
 			personal: {
 				userId: currentUserId,
@@ -6931,7 +6972,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				members: teamMembers,
 				totalTokens: teamTotalTokens,
 				totalInteractions: teamTotalInteractions,
-				averageTokensPerUser
+				averageTokensPerUser,
+				firstDate,
+				lastDate
 			},
 			lastUpdated: new Date().toISOString()
 		};
@@ -7472,6 +7515,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
+			this.log(`Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`);
 
 			// Check if panel is still open before updating
 			if (!this.isPanelOpen(panel)) {
@@ -7480,6 +7524,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			}
 
 			// Send the loaded data to the webview
+			this.log(`Sending backend info to webview: ${backendStorageInfo ? 'present' : 'missing'}`);
 			panel.webview.postMessage({
 				command: 'diagnosticDataLoaded',
 				report,
@@ -7997,6 +8042,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Store backend facade in the tracker instance for dashboard access
 		(tokenTracker as any).backend = backendFacade;
+
+		// Backend sync timer will be started after initial token analysis completes
+		// (see startBackendSyncAfterInitialAnalysis method)
 
 		const configureBackendCommand = vscode.commands.registerCommand('copilot-token-tracker.configureBackend', async () => {
 			await backendHandler.handleConfigureBackend();
