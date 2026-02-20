@@ -8,7 +8,7 @@ Automatically keeps model configuration files synchronized with GitHub Copilot's
 - `src/modelPricing.json` - Pricing per million tokens
 
 ## When It Runs
-- 🗓️ **Weekly**: Every Monday at 5:11 PM UTC
+- 🗓️ **Weekly**: Every Monday at 5:11 PM UTC (chosen to avoid peak CI hours)
 - 🔧 **Manual**: Run `gh workflow run check-models.yml`
 - 📝 **On Changes**: When workflow or prompt files are modified
 
