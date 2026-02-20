@@ -156,29 +156,38 @@ function applyDelta(state: unknown, delta: unknown): unknown {
 }
 
 /**
- * Extract text content from response items
+ * Extract text content from response items, separating thinking text.
  */
-function extractResponseText(response: unknown): string {
+function extractResponseAndThinkingText(response: unknown): { responseText: string; thinkingText: string } {
 	if (!Array.isArray(response)) {
-		return '';
+		return { responseText: '', thinkingText: '' };
 	}
-	let text = '';
+	let responseText = '';
+	let thinkingText = '';
 	for (const item of response) {
 		if (!isObject(item)) {
+			continue;
+		}
+		// Separate thinking items from regular response text
+		if ((item as any).kind === 'thinking') {
+			const value = (item as any).value;
+			if (typeof value === 'string' && value) {
+				thinkingText += value;
+			}
 			continue;
 		}
 		const contentValue = isObject((item as any).content) ? (item as any).content.value : undefined;
 		const value = (item as any).value;
 		// Prefer content.value when present to avoid double-counting wrapper text.
 		if (typeof contentValue === 'string' && contentValue) {
-			text += contentValue;
+			responseText += contentValue;
 			continue;
 		}
 		if (typeof value === 'string' && value) {
-			text += value;
+			responseText += value;
 		}
 	}
-	return text;
+	return { responseText, thinkingText };
 }
 
 export function parseSessionFileContent(
@@ -191,6 +200,7 @@ export function parseSessionFileContent(
 	let interactions = 0;
 	let totalInputTokens = 0;
 	let totalOutputTokens = 0;
+	let totalThinkingTokens = 0;
 
 	let sessionJson: any | undefined;
 
@@ -273,18 +283,22 @@ export function parseSessionFileContent(
 						addInput(model, (message as any).text);
 					}
 
-					// Extract response text
-					const responseText = extractResponseText((request as any).response);
+					// Extract response text (separating thinking text)
+					const { responseText, thinkingText } = extractResponseAndThinkingText((request as any).response);
 					if (responseText) {
 						addOutput(model, responseText);
+					}
+					if (thinkingText) {
+						totalThinkingTokens += estimateTokensFromText(thinkingText, model);
 					}
 				}
 			}
 
 			return {
-				tokens: totalInputTokens + totalOutputTokens,
+				tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
 				interactions,
-				modelUsage
+				modelUsage,
+				thinkingTokens: totalThinkingTokens
 			};
 		}
 
@@ -292,7 +306,7 @@ export function parseSessionFileContent(
 		try {
 			sessionJson = JSON.parse(fileContent.trim());
 		} catch {
-			return { tokens: 0, interactions: 0, modelUsage: {} };
+			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0 };
 		}
 	}
 
@@ -301,7 +315,7 @@ export function parseSessionFileContent(
 		try {
 			sessionJson = JSON.parse(fileContent);
 		} catch {
-			return { tokens: 0, interactions: 0, modelUsage: {} };
+			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0 };
 		}
 	}
 
@@ -328,6 +342,11 @@ export function parseSessionFileContent(
 
 		const responses = Array.isArray(request?.response) ? request.response : (Array.isArray(request?.responses) ? request.responses : []);
 		for (const responseItem of responses) {
+			// Separate thinking tokens
+			if (responseItem?.kind === 'thinking' && typeof responseItem?.value === 'string' && responseItem.value) {
+				totalThinkingTokens += estimateTokensFromText(responseItem.value, model);
+				continue;
+			}
 			if (typeof responseItem?.value === 'string' && responseItem.value) {
 				const t = estimateTokensFromText(responseItem.value, model);
 				modelUsage[model].outputTokens += t;
@@ -346,9 +365,10 @@ export function parseSessionFileContent(
 	}
 
 	return {
-		tokens: totalInputTokens + totalOutputTokens,
+		tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
 		interactions,
-		modelUsage
+		modelUsage,
+		thinkingTokens: totalThinkingTokens
 	};
 }
 

@@ -16,6 +16,7 @@ type ChatTurn = {
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
+	thinkingTokensEstimate: number;
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
@@ -238,10 +239,11 @@ function truncateText(text: string, maxLength: number): string {
 }
 
 function renderTurnCard(turn: ChatTurn): string {
-	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate;
+	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate + turn.thinkingTokensEstimate;
 	const hasToolCalls = turn.toolCalls.length > 0;
 	const hasMcpTools = turn.mcpTools.length > 0;
 	const totalRefs = getTotalContextRefs(turn.contextReferences);
+	const hasThinking = turn.thinkingTokensEstimate > 0;
 	
 	// Build context file badges for header
 	const contextFileBadges: string[] = [];
@@ -357,6 +359,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
 					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+					${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
 					${contextHeaderHtml}
 				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
@@ -385,9 +388,11 @@ function renderLayout(data: SessionLogData): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 	
-	const totalTokens = data.turns.reduce((sum, t) => sum + t.inputTokensEstimate + t.outputTokensEstimate, 0);
+	const totalTokens = data.turns.reduce((sum, t) => sum + t.inputTokensEstimate + t.outputTokensEstimate + t.thinkingTokensEstimate, 0);
+	const totalThinkingTokens = data.turns.reduce((sum, t) => sum + t.thinkingTokensEstimate, 0);
 	const totalToolCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.length, 0);
 	const totalMcpTools = data.turns.reduce((sum, t) => sum + t.mcpTools.length, 0);
+	const turnsWithThinking = data.turns.filter(t => t.thinkingTokensEstimate > 0).length;
 	const totalRefs = getTotalContextRefs(data.contextReferences);
 	const usage = data.usageAnalysis;
 	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0 };
@@ -443,6 +448,11 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${totalTokens.toLocaleString()}</div>
 					<div class="summary-sub">Input + Output tokens across all turns</div>
 				</div>
+				${totalThinkingTokens > 0 ? `<div class="summary-card">
+					<div class="summary-label">🧠 Thinking Tokens</div>
+					<div class="summary-value">${totalThinkingTokens.toLocaleString()}</div>
+					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
+				</div>` : ''}
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
