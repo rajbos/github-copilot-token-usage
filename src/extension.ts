@@ -611,6 +611,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
+	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
@@ -882,6 +883,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.diagnosticsCachedFiles = [];
 			// Clear cached computed stats so details panel doesn't show stale data
 			this.lastDetailedStats = undefined;
+			this.lastUsageAnalysisStats = undefined;
 
 			this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
 			vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
@@ -1061,13 +1063,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the analysis panel is open, update its content
 			if (this.analysisPanel) {
-				const analysisStats = await this.calculateUsageAnalysisStats();
+				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation on refresh
 				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+			} else {
+				// Pre-populate the cache even when panel isn't open, so first open is fast
+				await this.calculateUsageAnalysisStats(false);
 			}
 
 			// If the maturity panel is open, update its content
 			if (this.maturityPanel) {
-				const maturityData = await this.calculateMaturityScores();
+				const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
 				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
 			}
 
@@ -1516,8 +1521,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Calculate usage analysis statistics for today and this month
+	 * @param useCache If true, return cached stats if available. If false, force recalculation.
 	 */
-	private async calculateUsageAnalysisStats(): Promise<UsageAnalysisStats> {
+	private async calculateUsageAnalysisStats(useCache = true): Promise<UsageAnalysisStats> {
+		// Return cached stats if available and cache is allowed
+		if (useCache && this.lastUsageAnalysisStats) {
+			this.log('🔍 [Usage Analysis] Using cached stats');
+			return this.lastUsageAnalysisStats;
+		}
+
 		const now = new Date();
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -1836,13 +1848,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Log cache statistics
 		this.log(`🔍 [Usage Analysis] Cache stats: ${this._cacheHits} hits, ${this._cacheMisses} misses`);
 
-		return {
+		const stats: UsageAnalysisStats = {
 			today: todayStats,
 			last30Days: last30DaysStats,
 			month: monthStats,
 			lastUpdated: now,
 			customizationMatrix: this._lastCustomizationMatrix
 		};
+
+		// Cache the result for future use
+		this.lastUsageAnalysisStats = stats;
+
+		return stats;
 	}
 
 	/**
@@ -5174,8 +5191,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.analysisPanel = undefined;
 		}
 
-		// Get usage analysis stats
-		const analysisStats = await this.calculateUsageAnalysisStats();
+		// Get usage analysis stats (use cached version for fast loading)
+		const analysisStats = await this.calculateUsageAnalysisStats(true);
 
 		// Create webview panel
 		this.analysisPanel = vscode.window.createWebviewPanel(
@@ -5535,15 +5552,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Calculate maturity scores across 6 categories using last 30 days of usage data.
 	 * Each category is scored 1-4 based on threshold rules.
 	 * Overall stage = median of the 6 category scores.
+	 * @param useCache If true, use cached usage stats. If false, force recalculation.
 	 */
-	private async calculateMaturityScores(): Promise<{
+	private async calculateMaturityScores(useCache = true): Promise<{
 		overallStage: number;
 		overallLabel: string;
 		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
 		period: UsageAnalysisPeriod;
 		lastUpdated: string;
 	}> {
-		const stats = await this.calculateUsageAnalysisStats();
+		const stats = await this.calculateUsageAnalysisStats(useCache);
 		const p = stats.last30Days;
 
 		const stageLabels: Record<number, string> = {
@@ -5980,7 +5998,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.maturityPanel = undefined;
 		}
 
-		const maturityData = await this.calculateMaturityScores();
+		const maturityData = await this.calculateMaturityScores(true); // Use cached data for fast loading
 		const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 
 		this.maturityPanel = vscode.window.createWebviewPanel(
@@ -6085,7 +6103,7 @@ private async refreshMaturityPanel(): Promise<void> {
 	}
 
 	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
-	const maturityData = await this.calculateMaturityScores();
+	const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
 	const dismissedTips = await this.getDismissedFluencyTips();
 	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 	const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
