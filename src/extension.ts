@@ -921,7 +921,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		);
 		this.statusBarItem.name = "GitHub Copilot Token Usage";
 		this.statusBarItem.text = "$(loading~spin) Copilot Tokens: Loading...";
-		this.statusBarItem.tooltip = "Daily and monthly GitHub Copilot token usage - Click to open details";
+		this.statusBarItem.tooltip = "Daily and 30-day GitHub Copilot token usage - Click to open details";
 		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
 		this.statusBarItem.show();
 
@@ -1012,7 +1012,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
 			});
 
-			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.month.tokens.toLocaleString()}`;
+			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.last30Days.tokens.toLocaleString()}`;
 
 			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
@@ -1033,16 +1033,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			tooltip.appendMarkdown('\n---\n');
 
-			// Table layout for This Month
-			tooltip.appendMarkdown(`📊 This month  \n`);
+			// Table layout for Last 30 Days
+			tooltip.appendMarkdown(`📊 Last 30 Days  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
-			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.month.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.month.estimatedCost.toFixed(4)} |\n`);
-			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.month.co2.toFixed(2)} grams |\n`);
-			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.month.waterUsage.toFixed(3)} liters |\n`);
-			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.month.sessions} |\n`);
-			tooltip.appendMarkdown(`| Average interactions/session :      | ${detailedStats.month.avgInteractionsPerSession} |\n`);
-			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.month.avgTokensPerSession.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.last30Days.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.last30Days.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.last30Days.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.last30Days.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.last30Days.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :      | ${detailedStats.last30Days.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.last30Days.avgTokensPerSession.toLocaleString()} |\n`);
 			// Footer
 			tooltip.appendMarkdown('\n---\n');
 			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
@@ -1076,7 +1076,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
 			}
 
-			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Month: ${detailedStats.month.tokens}`);
+			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Last 30 Days: ${detailedStats.last30Days.tokens}`);
 			// Store the stats for reuse without recalculation
 			this.lastDetailedStats = detailedStats;
 
@@ -1520,7 +1520,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
-	 * Calculate usage analysis statistics for today and this month
+	 * Calculate usage analysis statistics for today and last 30 days
 	 * @param useCache If true, return cached stats if available. If false, force recalculation.
 	 */
 	private async calculateUsageAnalysisStats(useCache = true): Promise<UsageAnalysisStats> {
