@@ -493,6 +493,10 @@ function renderLayout(data: MaturityData): void {
 								<span class="export-menu-icon">📄</span>
 								<span>Export as PDF Report</span>
 							</button>
+							<button class="export-menu-item" data-export-type="pptx">
+								<span class="export-menu-icon">📊</span>
+								<span>Export as PowerPoint</span>
+							</button>
 						</div>
 					</div>
 				</div>
@@ -597,7 +601,9 @@ function renderLayout(data: MaturityData): void {
 			if (exportType === 'png') {
 				handlePngExport();
 			} else if (exportType === 'pdf') {
-				handlePdfExport(data);
+				void handleScreenshotExport('exportPdf');
+			} else if (exportType === 'pptx') {
+				void handleScreenshotExport('exportPptx');
 			}
 		});
 	});
@@ -639,12 +645,56 @@ function renderLayout(data: MaturityData): void {
 		img.src = encodedSvg;
 	}
 	
-	function handlePdfExport(maturityData: MaturityData): void {
-		// Send data to extension for PDF generation
-		vscode.postMessage({ 
-			command: 'exportPdf',
-			data: maturityData
-		});
+	async function handleScreenshotExport(command: 'exportPdf' | 'exportPptx'): Promise<void> {
+		const html2canvasModule = await import('html2canvas');
+		const html2canvas = (html2canvasModule.default ?? html2canvasModule) as unknown as (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+
+		// Capture each section as a screenshot image
+		const images: { label: string; dataUrl: string }[] = [];
+
+		// 1. Cover section: stage banner + radar chart + legend
+		const stageBanner = document.querySelector('.stage-banner') as HTMLElement | null;
+		const radarWrapper = document.querySelector('.radar-wrapper') as HTMLElement | null;
+
+		// Create a temporary container for the cover page capture
+		const coverContainer = document.createElement('div');
+		coverContainer.style.cssText = 'position:absolute;left:-9999px;top:0;width:1200px;background:#1b1b1e;padding:24px;border-radius:10px;';
+
+		// Add title
+		const titleEl = document.createElement('div');
+		titleEl.style.cssText = 'text-align:center;margin-bottom:20px;';
+		titleEl.innerHTML = `<div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px;">GitHub Copilot Fluency Score</div><div style="font-size:16px;color:#b8b8c8;">Report &middot; ${new Date().toLocaleDateString()}</div>`;
+		coverContainer.appendChild(titleEl);
+
+		if (stageBanner) { coverContainer.appendChild(stageBanner.cloneNode(true)); }
+		if (radarWrapper) { coverContainer.appendChild(radarWrapper.cloneNode(true)); }
+
+		document.body.appendChild(coverContainer);
+		try {
+			const coverCanvas = await html2canvas(coverContainer, { backgroundColor: '#1b1b1e', scale: 2, useCORS: true });
+			images.push({ label: 'Cover', dataUrl: coverCanvas.toDataURL('image/png') });
+		} finally {
+			document.body.removeChild(coverContainer);
+		}
+
+		// 2. Each category card as its own page/slide
+		const cards = Array.from(document.querySelectorAll('.category-card'));
+		for (const card of cards) {
+			const wrapper = document.createElement('div');
+			wrapper.style.cssText = 'position:absolute;left:-9999px;top:0;width:900px;background:#1b1b1e;padding:24px;border-radius:10px;';
+			wrapper.appendChild(card.cloneNode(true));
+			document.body.appendChild(wrapper);
+			try {
+				const cardCanvas = await html2canvas(wrapper, { backgroundColor: '#1b1b1e', scale: 2, useCORS: true });
+				const nameEl = card.querySelector('.category-name');
+				const label = nameEl?.textContent?.trim() || 'Category';
+				images.push({ label, dataUrl: cardCanvas.toDataURL('image/png') });
+			} finally {
+				document.body.removeChild(wrapper);
+			}
+		}
+
+		vscode.postMessage({ command, data: images });
 	}
   
 	// Wire up demo mode controls (debug mode only)

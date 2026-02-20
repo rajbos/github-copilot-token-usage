@@ -305,7 +305,9 @@
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "chart.js": "^4.4.1",
     "html-escape": "^2.0.0",
+    "html2canvas": "1.4.1",
     "jsdom": "^28.1.0",
-    "jspdf": "4.2.0"
+    "jspdf": "4.2.0",
+    "pptxgenjs": "3.12.0"
   }
 }
