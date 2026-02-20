@@ -7,6 +7,7 @@ Thank you for your interest in contributing to the Copilot Token Tracker extensi
 - [Development Environment Setup](#development-environment-setup)
 - [Using the DevContainer (Recommended)](#using-the-devcontainer-recommended)
 - [Why Use a DevContainer for AI-Assisted Development?](#why-use-a-devcontainer-for-ai-assisted-development)
+- [DevContainer Configuration Notes](#devcontainer-configuration-notes)
 - [Manual Local Setup](#manual-local-setup)
 - [Development Workflow](#development-workflow)
 - [Available Scripts](#available-scripts)
@@ -114,7 +115,7 @@ The devcontainer allows you to confidently let AI assistants:
 - **Zero Configuration:** AI can start working immediately without environment setup
 - **Pre-installed Tools:** All required dependencies are ready to go
 - **Known State:** AI agents can make more accurate suggestions knowing the exact environment
-- **Automatic Setup:** The `postCreateCommand` ensures dependencies are always up-to-date
+- **Automatic Setup:** The `updateContentCommand` ensures dependencies are installed after content updates
 
 ### 💡 Real-World Scenario
 
@@ -132,6 +133,16 @@ Without a devcontainer, you'd need to:
 - Worry about package conflicts with other projects
 - Risk system-level changes
 - Potentially need to uninstall packages or revert changes
+
+### DevContainer Configuration Notes
+
+The `.devcontainer/devcontainer.json` uses `updateContentCommand` instead of `postCreateCommand` for dependency installation:
+
+- **Why `updateContentCommand`?** This lifecycle hook runs after workspace content is updated (including initial clone), making it more reliable for dependency installation in GitHub Codespaces and similar environments.
+- **Benefits:** More reliable timing, better suited for `npm ci` operations, and follows devcontainer best practices.
+- **Lifecycle Order:** The devcontainer executes hooks in this order: `onCreateCommand` → `updateContentCommand` → `postCreateCommand` → `postStartCommand`.
+
+Using `updateContentCommand` prevents timeout issues that can occur with `postCreateCommand` during initial codespace creation, especially for projects with many dependencies.
 
 ## Manual Local Setup
 

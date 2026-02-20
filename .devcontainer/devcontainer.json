@@ -23,6 +23,6 @@
       }
     }
   },
-  "postCreateCommand": "npm ci",
+  "updateContentCommand": "npm ci",
   "remoteUser": "node"
 }
