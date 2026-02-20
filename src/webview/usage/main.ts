@@ -105,6 +105,16 @@ function lookupToolName(id: string): string {
 	return TOOL_NAME_MAP[id] || id;
 }
 
+function lookupMcpToolName(id: string): string {
+	const full = lookupToolName(id);
+	// Strip the server prefix (e.g. "GitHub MCP (Local): Issue Read" → "Issue Read")
+	const colonIdx = full.indexOf(':');
+	if (colonIdx !== -1) {
+		return full.substring(colonIdx + 1).trim();
+	}
+	return full;
+}
+
 function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	const allTools = new Set<string>();
 	
@@ -132,7 +142,7 @@ function createMcpToolIssueUrl(unknownTools: string[]): string {
 	return `${repoUrl}/issues/new?title=${title}&body=${body}&labels=${labels}`;
 }
 
-function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string {
+function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName): string {
 	const sortedTools = Object.entries(byTool)
 		.sort(([, a], [, b]) => b - a)
 		.slice(0, limit);
@@ -142,7 +152,7 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10): string
 	}
 
 	    const rows = sortedTools.map(([tool, count], idx) => {
-		const friendly = escapeHtml(lookupToolName(tool));
+		const friendly = escapeHtml(nameResolver(tool));
 		const idEscaped = escapeHtml(tool);
 		return `
 		    <tr>
@@ -437,7 +447,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.today.mcpTools.total}</div>
 							${stats.today.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -447,7 +457,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.month.mcpTools.total}</div>
 							${stats.month.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -457,7 +467,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.last30Days.mcpTools.total}</div>
 							${stats.last30Days.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
