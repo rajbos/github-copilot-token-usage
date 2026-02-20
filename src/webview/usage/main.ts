@@ -119,7 +119,7 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 
 function createMcpToolIssueUrl(unknownTools: string[]): string {
 	const repoUrl = 'https://github.com/rajbos/github-copilot-token-usage';
-	const title = encodeURIComponent('Add friendly names for MCP tools');
+	const title = encodeURIComponent('Add missing friendly names for MCP tools');
 	const toolList = unknownTools.map(tool => `- \`${tool}\``).join('\n');
 	const body = encodeURIComponent(
 		`## Unknown MCP Tools Found\n\n` +
