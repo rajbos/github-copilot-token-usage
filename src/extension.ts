@@ -1065,6 +1065,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.analysisPanel) {
 				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation on refresh
 				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+			} else {
+				// Pre-populate the cache even when panel isn't open, so first open is fast
+				await this.calculateUsageAnalysisStats(false);
 			}
 
 			// If the maturity panel is open, update its content
