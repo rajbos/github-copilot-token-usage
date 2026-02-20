@@ -110,10 +110,15 @@ export class SyncService {
 				shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
 			});
 			if (!sharingPolicy.allowCloudSync || !isConfigured) {
+				if (!sharingPolicy.allowCloudSync) {
+					this.deps.log(`Backend sync: not starting timer (cloud sync disabled, profile: ${settings.sharingProfile})`);
+				} else if (!isConfigured) {
+					this.deps.log('Backend sync: not starting timer (backend not configured)');
+				}
 				return;
 			}
-			const intervalMs = Math.max(BACKEND_SYNC_MIN_INTERVAL_MS, settings.lookbackDays * 60 * 1000);
-			this.deps.log(`Backend sync: starting timer with interval ${intervalMs}ms`);
+			const intervalMs = BACKEND_SYNC_MIN_INTERVAL_MS;
+			this.deps.log(`Backend sync: starting timer with interval ${intervalMs}ms (${intervalMs / 60000} minutes)`);
 			this.backendSyncInterval = setInterval(() => {
 				this.syncToBackendStore(false, settings, isConfigured).catch((e) => {
 					this.deps.warn(`Backend sync timer failed: ${e?.message ?? e}`);
@@ -624,6 +629,11 @@ export class SyncService {
 				shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
 			});
 			if (!sharingPolicy.allowCloudSync || !isConfigured) {
+				if (!sharingPolicy.allowCloudSync) {
+					this.deps.log(`Backend sync: skipping (sharing policy does not allow cloud sync, profile: ${settings.sharingProfile})`);
+				} else if (!isConfigured) {
+					this.deps.log('Backend sync: skipping (backend not configured - missing storage account, subscription, or resource group)');
+				}
 				return;
 			}
 
@@ -641,6 +651,13 @@ export class SyncService {
 				const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
 				if (!creds) {
 					// Shared Key mode selected but key not available (or user canceled). Keep local mode functional.
+					this.deps.warn('Backend sync: skipping (credentials not available - check authentication mode and secrets)');
+					// Update timestamp to prevent stale "last sync" display
+					try {
+						await this.deps.context?.globalState.update('backend.lastSyncAt', Date.now());
+					} catch (e) {
+						this.deps.warn(`Backend sync: failed to update lastSyncAt: ${e}`);
+					}
 					return;
 				}
 				await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);

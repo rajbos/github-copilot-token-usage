@@ -283,11 +283,8 @@ function safeText(value: unknown): string {
   if (value === null || value === undefined) {
     return "";
   }
-  if (typeof value === "string") {
-    // Use existing HTML escaping to avoid XSS when inserting into innerHTML.
-    return escapeHtml(value);
-  }
-  return String(value);
+  // Always convert to string and escape HTML to avoid XSS when inserting into innerHTML.
+  return escapeHtml(String(value));
 }
 
 function renderSessionTable(
@@ -565,17 +562,17 @@ function renderBackendStoragePanel(
 				<div class="summary-cards">
 					<div class="summary-card">
 						<div class="summary-label">💻 Unique Devices</div>
-						<div class="summary-value">${backendInfo.deviceCount}</div>
+						<div class="summary-value">${escapeHtml(String(backendInfo.deviceCount))}</div>
 						<div style="font-size: 11px; color: #999; margin-top: 4px;">Based on workspace IDs</div>
 					</div>
 					<div class="summary-card">
 						<div class="summary-label">📁 Total Sessions</div>
-						<div class="summary-value">${backendInfo.sessionCount}</div>
+						<div class="summary-value">${escapeHtml(String(backendInfo.sessionCount))}</div>
 						<div style="font-size: 11px; color: #999; margin-top: 4px;">Local session files</div>
 					</div>
 					<div class="summary-card">
 						<div class="summary-label">☁️ Cloud Records</div>
-						<div class="summary-value">${backendInfo.recordCount !== null ? backendInfo.recordCount : "—"}</div>
+						<div class="summary-value">${backendInfo.recordCount !== null ? escapeHtml(String(backendInfo.recordCount)) : "—"}</div>
 						<div style="font-size: 11px; color: #999; margin-top: 4px;">Azure Storage records</div>
 					</div>
 					<div class="summary-card">
@@ -870,6 +867,8 @@ function renderLayout(data: DiagnosticsData): void {
           // Re-attach event listeners for backend buttons
           setupBackendButtonHandlers();
         }
+      } else {
+        console.warn("diagnosticDataLoaded received but backendStorageInfo is missing or undefined");
       }
 
       // Update session folders if provided

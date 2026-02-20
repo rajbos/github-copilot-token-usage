@@ -35,12 +35,16 @@ async function extractModels(page) {
 
     const headings = Array.from(document.querySelectorAll('h2, h3'));
     const targetHeading = headings.find(h => h.textContent.trim().includes('Supported AI models in Copilot'));
-    if (!targetHeading) return [];
+    if (!targetHeading) {
+      return [];
+    }
 
     const tables = [];
     let current = targetHeading.nextElementSibling;
     while (current) {
-      if (current.tagName === 'H2') break;
+      if (current.tagName === 'H2') {
+        break;
+      }
       if (current.tagName === 'TABLE') {
         tables.push(current);
       } else if (current.querySelectorAll) {
@@ -58,7 +62,9 @@ async function extractModels(page) {
           text = headerCell.textContent.trim();
         } else {
           const firstCell = row.querySelector('td');
-          if (firstCell) text = firstCell.textContent.trim();
+          if (firstCell) {
+            text = firstCell.textContent.trim();
+          }
         }
         if (text) {
           const normalized = text.toLowerCase().replace(/\s+/g, '-');
@@ -75,7 +81,9 @@ async function extractRelevantSectionHTML(page) {
   return page.evaluate(() => {
     const headings = Array.from(document.querySelectorAll('h2, h3'));
     const targetHeading = headings.find(h => h.textContent.trim().includes('Supported AI models in Copilot'));
-    if (!targetHeading) return '<p>Could not find target section</p>';
+    if (!targetHeading) {
+      return '<p>Could not find target section</p>';
+    }
 
     let html = '<h2>' + targetHeading.textContent + '</h2>\n';
     let current = targetHeading.nextElementSibling;
