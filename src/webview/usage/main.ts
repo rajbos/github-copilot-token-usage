@@ -263,9 +263,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	}
 
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
-	const monthTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
+	const last30DaysTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
 	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent;
-	const monthTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent;
+	const last30DaysTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent;
 
 	root.innerHTML = `
 		<style>${themeStyles}</style>
@@ -321,16 +321,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📊 Last 30 Days</h4>
 						<div class="bar-chart">
 							<div class="bar-item">
-								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${stats.last30Days.modeUsage.ask}</strong> (${monthTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / monthTotalModes) * 100).toFixed(0) : 0}%)</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
+								<div class="bar-label"><span>💬 Ask Mode</span><span><strong>${stats.last30Days.modeUsage.ask}</strong> (${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / last30DaysTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.ask / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
 							</div>
 							<div class="bar-item">
-								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${stats.last30Days.modeUsage.edit}</strong> (${monthTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / monthTotalModes) * 100).toFixed(0) : 0}%)</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
+								<div class="bar-label"><span>✏️ Edit Mode</span><span><strong>${stats.last30Days.modeUsage.edit}</strong> (${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / last30DaysTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.edit / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
 							</div>
 							<div class="bar-item">
-								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${stats.last30Days.modeUsage.agent}</strong> (${monthTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / monthTotalModes) * 100).toFixed(0) : 0}%)</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${monthTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / monthTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
+								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${stats.last30Days.modeUsage.agent}</strong> (${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100).toFixed(0) : 0}%)</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
 							</div>
 						</div>
 					</div>
@@ -358,7 +358,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div class="stat-card" title="Problems panel contents"><div class="stat-label">⚠️ #problemsPanel</div><div class="stat-value">${stats.last30Days.contextReferences.problemsPanel || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.problemsPanel || 0}</div></div>
 					<div class="stat-card" title="copilot-instructions.md file references detected in session logs"><div class="stat-label">📋 Copilot Instructions</div><div class="stat-value">${stats.last30Days.contextReferences.copilotInstructions}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.copilotInstructions}</div></div>
 					<div class="stat-card" title="agents.md file references detected in session logs"><div class="stat-label">🤖 Agents.md</div><div class="stat-value">${stats.last30Days.contextReferences.agentsMd}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.agentsMd}</div></div>
-					<div class="stat-card" style="background: var(--list-active-bg); border: 2px solid var(--border-color); color: var(--list-active-fg);"><div class="stat-label" style="color: var(--list-active-fg); opacity: 0.85;">📊 Total References</div><div class="stat-value" style="color: var(--list-active-fg);">${monthTotalRefs}</div><div style="font-size: 10px; color: var(--list-active-fg); opacity: 0.75; margin-top: 4px;">Today: ${todayTotalRefs}</div></div>
+					<div class="stat-card" style="background: var(--list-active-bg); border: 2px solid var(--border-color); color: var(--list-active-fg);"><div class="stat-label" style="color: var(--list-active-fg); opacity: 0.85;">📊 Total References</div><div class="stat-value" style="color: var(--list-active-fg);">${last30DaysTotalRefs}</div><div style="font-size: 10px; color: var(--list-active-fg); opacity: 0.75; margin-top: 4px;">Today: ${todayTotalRefs}</div></div>
 				</div>
 				${Object.keys(stats.last30Days.contextReferences.byKind).length > 0 ? `
 					<div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
