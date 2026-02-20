@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-02-19",
+    "lastUpdated": "2026-02-20",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -330,6 +330,13 @@
       "tier": "premium",
       "multiplier": 1,
       "displayNames": ["Gemini 3 Pro (Preview)"]
+    },
+    "gemini-3.1-pro": {
+      "inputCostPerMillion": 0.00,
+      "outputCostPerMillion": 0.00,
+      "category": "Google Gemini models",
+      "tier": "premium",
+      "multiplier": 1
     },
     "grok-code-fast-1": {
       "inputCostPerMillion": 0.20,
