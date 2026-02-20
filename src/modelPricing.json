@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-02-19",
+    "lastUpdated": "2026-02-20",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -161,6 +161,14 @@
       "multiplier": 0,
       "displayNames": ["GPT-4o-mini", "GPT-4o Mini"]
     },
+    "gpt-4-turbo": {
+      "inputCostPerMillion": 10.0,
+      "outputCostPerMillion": 30.0,
+      "category": "GPT-4 models",
+      "tier": "standard",
+      "multiplier": 0,
+      "displayNames": ["GPT-4 Turbo"]
+    },
     "claude-sonnet-3.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
@@ -264,6 +272,22 @@
       "multiplier": 1,
       "displayNames": ["o4-mini"]
     },
+    "o1-preview": {
+      "inputCostPerMillion": 15.0,
+      "outputCostPerMillion": 60.0,
+      "category": "OpenAI reasoning models",
+      "tier": "premium",
+      "multiplier": 1,
+      "displayNames": ["o1-preview"]
+    },
+    "o1-mini": {
+      "inputCostPerMillion": 3.0,
+      "outputCostPerMillion": 12.0,
+      "category": "OpenAI reasoning models",
+      "tier": "premium",
+      "multiplier": 1,
+      "displayNames": ["o1-mini"]
+    },
     "gpt-3.5-turbo": {
       "inputCostPerMillion": 0.5,
       "outputCostPerMillion": 1.5,
@@ -330,6 +354,14 @@
       "tier": "premium",
       "multiplier": 1,
       "displayNames": ["Gemini 3 Pro (Preview)"]
+    },
+    "gemini-3.1-pro": {
+      "inputCostPerMillion": 2.0,
+      "outputCostPerMillion": 12.0,
+      "category": "Google Gemini models",
+      "tier": "premium",
+      "multiplier": 1,
+      "displayNames": ["Gemini 3.1 Pro", "Gemini 3.1 Pro (Preview)"]
     },
     "grok-code-fast-1": {
       "inputCostPerMillion": 0.20,
