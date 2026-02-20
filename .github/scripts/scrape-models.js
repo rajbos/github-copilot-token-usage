@@ -40,7 +40,9 @@ async function extractModels(page) {
     const tables = [];
     let current = targetHeading.nextElementSibling;
     while (current) {
-      if (current.tagName === 'H2') break;
+      if (current.tagName === 'H2') {
+        break;
+      }
       if (current.tagName === 'TABLE') {
         tables.push(current);
       } else if (current.querySelectorAll) {
