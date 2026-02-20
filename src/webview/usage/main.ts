@@ -121,6 +121,7 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	// Collect all MCP tools from all periods
 	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	
 	// Filter to only unknown tools (where lookupToolName returns the same value)
 	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool).sort();
@@ -407,6 +408,13 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							${renderToolsTable(stats.last30Days.toolCalls.byTool, 10)}
 						</div>
 					</div>
+				<div>
+					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
+					<div class="list">
+						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${stats.month.toolCalls.total}</div>
+							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -450,6 +458,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							${stats.last30Days.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
 								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
+						</div>
+					</div>
+					<div>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
+						<div class="list">
+							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${stats.month.mcpTools.total}</div>
+							${stats.month.mcpTools.total > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
+								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -599,6 +617,75 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							` : ''}
 						</div>
 					</div>
+					<div>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
+						<div class="stats-grid" style="grid-template-columns: 1fr;">
+							<div class="stat-card">
+								<div class="stat-label">📊 Avg Models per Conversation</div>
+								<div class="stat-value">${stats.month.modelSwitching.averageModelsPerSession.toFixed(1)}</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">🔄 Switching Frequency</div>
+								<div class="stat-value">${stats.month.modelSwitching.switchingFrequency.toFixed(0)}%</div>
+								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">📈 Max Models in Session</div>
+								<div class="stat-value">${stats.month.modelSwitching.maxModelsPerSession || 0}</div>
+							</div>
+						</div>
+						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
+							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
+							<div style="min-height: 90px;">
+								${stats.month.modelSwitching.standardModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--link-color);">🔵 Standard:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.standardModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.month.modelSwitching.premiumModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.join(', ')}</span>
+									</div>
+								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
+								${stats.month.modelSwitching.unknownModels.length > 0 ? `
+									<div style="margin-bottom: 6px;">
+										<span style="color: var(--text-muted);">❓ Unknown:</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.join(', ')}</span>
+									</div>
+								` : ''}
+							</div>
+							${stats.month.modelSwitching.totalRequests > 0 ? `
+								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
+									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
+									${stats.month.modelSwitching.standardRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--link-color);">🔵 Standard: </span>
+											<span style="color: var(--text-primary);">${stats.month.modelSwitching.standardRequests} (${((stats.month.modelSwitching.standardRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.month.modelSwitching.premiumRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--text-primary);">${stats.month.modelSwitching.premiumRequests} (${((stats.month.modelSwitching.premiumRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+									${stats.month.modelSwitching.unknownRequests > 0 ? `
+										<div style="margin-bottom: 4px; font-size: 11px;">
+											<span style="color: var(--text-muted);">❓ Unknown: </span>
+											<span style="color: var(--text-primary);">${stats.month.modelSwitching.unknownRequests} (${((stats.month.modelSwitching.unknownRequests / stats.month.modelSwitching.totalRequests) * 100).toFixed(1)}%)</span>
+										</div>
+									` : ''}
+								</div>
+							` : ''}
+							${stats.month.modelSwitching.mixedTierSessions > 0 ? `
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${stats.month.modelSwitching.mixedTierSessions}</span>
+								</div>
+							` : ''}
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -608,6 +695,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<div class="stats-grid">
 					<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${stats.today.sessions}</div></div>
 					<div class="stat-card"><div class="stat-label">📆 Last 30 Days Sessions</div><div class="stat-value">${stats.last30Days.sessions}</div></div>
+					<div class="stat-card"><div class="stat-label">📅 Last Month Sessions</div><div class="stat-value">${stats.month.sessions}</div></div>
 				</div>
 			</div>
 
