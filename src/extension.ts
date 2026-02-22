@@ -9218,7 +9218,8 @@ export function activate(context: vscode.ExtensionContext) {
 			getCopilotSessionFiles: () => (tokenTracker as any).getCopilotSessionFiles(),
 			estimateTokensFromText: (text: string, model?: string) => (tokenTracker as any).estimateTokensFromText(text, model),
 			getModelFromRequest: (req: any) => (tokenTracker as any).getModelFromRequest(req),
-			getSessionFileDataCached: (p: string, m: number, s: number) => (tokenTracker as any).getSessionFileDataCached(p, m, s)
+			getSessionFileDataCached: (p: string, m: number, s: number) => (tokenTracker as any).getSessionFileDataCached(p, m, s),
+			statSessionFile: (sessionFile: string) => (tokenTracker as any).statSessionFile(sessionFile)
 		});
 
 		const backendHandler = new BackendCommandHandler({

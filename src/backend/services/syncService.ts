@@ -78,6 +78,8 @@ export interface SyncServiceDeps {
 	getSessionFileDataCached?: (sessionFilePath: string, mtime: number, fileSize: number) => Promise<SessionFileCache>;
 	// UI refresh callback after successful sync
 	updateTokenStats?: () => Promise<void>;
+	// Stat helper for OpenCode DB virtual paths
+	statSessionFile: (sessionFile: string) => Promise<fs.Stats>;
 }
 
 /**
@@ -468,7 +470,7 @@ export class SyncService {
 			let fileMtimeMs: number | undefined;
 			
 			try {
-				const fileStat = await fs.promises.stat(sessionFile);
+				const fileStat = await this.deps.statSessionFile(sessionFile);
 				fileMtimeMs = fileStat.mtimeMs;
 				
 
@@ -490,7 +492,7 @@ export class SyncService {
 			// Note: We still parse the file to get accurate day keys from timestamps,
 			// but use cached token counts for performance
 			if (useCachedData) {
-				const fileStat = await fs.promises.stat(sessionFile);
+				const fileStat = await this.deps.statSessionFile(sessionFile);
 				const cacheSuccess = await this.processCachedSessionFile(
 					sessionFile,
 					fileMtimeMs,
