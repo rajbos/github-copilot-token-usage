@@ -5,7 +5,7 @@ import styles from './styles.css';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-type ModeUsage = { ask: number; edit: number; agent: number };
+type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 type ModelSwitchingAnalysis = {

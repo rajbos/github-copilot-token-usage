@@ -7,7 +7,7 @@ import styles from './styles.css';
 type ChatTurn = {
 	turnNumber: number;
 	timestamp: string | null;
-	mode: 'ask' | 'edit' | 'agent';
+	mode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent';
 	userMessage: string;
 	assistantResponse: string;
 	model: string | null;
@@ -20,7 +20,7 @@ type ChatTurn = {
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
-type ModeUsage = { ask: number; edit: number; agent: number };
+type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 type SessionUsageAnalysis = {
 	toolCalls: ToolCallUsage;
@@ -215,6 +215,8 @@ function getModeIcon(mode: string): string {
 		case 'ask': return '💬';
 		case 'edit': return '✏️';
 		case 'agent': return '🤖';
+		case 'plan': return '📋';
+		case 'customAgent': return '⚡';
 		default: return '❓';
 	}
 }
@@ -224,6 +226,8 @@ function getModeColor(mode: string): string {
 		case 'ask': return '#3b82f6';
 		case 'edit': return '#10b981';
 		case 'agent': return '#7c3aed';
+		case 'plan': return '#f59e0b';
+		case 'customAgent': return '#ec4899';
 		default: return '#888';
 	}
 }
@@ -395,7 +399,7 @@ function renderLayout(data: SessionLogData): void {
 	const turnsWithThinking = data.turns.filter(t => t.thinkingTokensEstimate > 0).length;
 	const totalRefs = getTotalContextRefs(data.contextReferences);
 	const usage = data.usageAnalysis;
-	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0 };
+	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
 	const usageToolTotal = usage?.toolCalls?.total ?? totalToolCalls;
 	const usageTopTools = usage ? getTopEntries(usage.toolCalls.byTool, 3) : [];
 	const usageMcpTotal = usage?.mcpTools?.total ?? totalMcpTools;
@@ -422,7 +426,7 @@ function renderLayout(data: SessionLogData): void {
 	};
 	
 	// Mode usage summary
-	const modeUsage = { ask: 0, edit: 0, agent: 0 };
+	const modeUsage = { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
 	const modelUsage: { [model: string]: number } = {};
 	for (const turn of data.turns) {
 		modeUsage[turn.mode]++;

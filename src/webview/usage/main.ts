@@ -7,7 +7,7 @@ import { formatFixed, formatNumber, formatPercent, setFormatLocale } from '../sh
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
-type ModeUsage = { ask: number; edit: number; agent: number };
+type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 
@@ -267,8 +267,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
 	const last30DaysTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
-	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent;
-	const last30DaysTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent;
+	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent + stats.today.modeUsage.plan + stats.today.modeUsage.customAgent;
+	const last30DaysTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent + stats.last30Days.modeUsage.plan + stats.last30Days.modeUsage.customAgent;
 
 	root.innerHTML = `
 		<style>${themeStyles}</style>
@@ -317,8 +317,14 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div class="bar-item">
 								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${formatNumber(stats.today.modeUsage.agent)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.agent / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
-							</div>
+							</div>						<div class="bar-item">
+							<div class="bar-label"><span>📋 Plan Mode</span><span><strong>${formatNumber(stats.today.modeUsage.plan)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.plan / todayTotalModes) * 100) : 0, 0)})</span></div>
+							<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.plan / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #f59e0b, #fbbf24);"></div></div>
 						</div>
+						<div class="bar-item">
+							<div class="bar-label"><span>⚡ Custom Agent</span><span><strong>${formatNumber(stats.today.modeUsage.customAgent)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.customAgent / todayTotalModes) * 100) : 0, 0)})</span></div>
+							<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.customAgent / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div>
+						</div>						</div>
 					</div>
 					<div>
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📊 Last 30 Days</h4>
@@ -334,8 +340,14 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div class="bar-item">
 								<div class="bar-label"><span>🤖 Agent Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.agent)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.agent / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
-							</div>
+							</div>						<div class="bar-item">
+							<div class="bar-label"><span>📋 Plan Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.plan)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.plan / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
+							<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.plan / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #f59e0b, #fbbf24);"></div></div>
 						</div>
+						<div class="bar-item">
+							<div class="bar-label"><span>⚡ Custom Agent</span><span><strong>${formatNumber(stats.last30Days.modeUsage.customAgent)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.customAgent / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
+							<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.customAgent / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div>
+						</div>						</div>
 					</div>
 				</div>
 			</div>
