@@ -5473,12 +5473,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private isNonSessionFile(filename: string): boolean {
 		const nonSessionFilePatterns = [
-			'embeddings', // commandEmbeddings.json, settingEmbeddings.json
-			'index',      // index files
-			'cache',      // cache files
+			'embeddings',       // commandEmbeddings.json, settingEmbeddings.json
+			'index',            // index files
+			'cache',            // cache files
 			'preferences',
 			'settings',
-			'config'
+			'config',
+			'workspacesessions', // copilot.cli.workspaceSessions.*.json (index files with session ID lists)
+			'globalsessions',    // copilot.cli.oldGlobalSessions.json (index files)
+			'api.json'           // api.json (API configuration)
 		];
 		const lowerFilename = filename.toLowerCase();
 		return nonSessionFilePatterns.some(pattern => lowerFilename.includes(pattern));
@@ -5753,6 +5756,54 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		return modelUsage;
+	}
+
+	/**
+	 * Get all session data from an OpenCode session in one call (for backend sync).
+	 * Returns tokens, interactions, model usage, and timestamp.
+	 * Includes per-model interaction counts in modelUsage.
+	 */
+	private async getOpenCodeSessionData(sessionFilePath: string): Promise<{ tokens: number; interactions: number; modelUsage: ModelUsage & { [key: string]: { inputTokens: number; outputTokens: number; interactions?: number } }; timestamp: number }> {
+		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
+		
+		// Get timestamp from the first message
+		let timestamp = Date.now();
+		if (messages.length > 0 && messages[0].time_created) {
+			timestamp = messages[0].time_created;
+		}
+
+		// Get tokens
+		const { tokens } = await this.getTokensFromOpenCodeSession(sessionFilePath);
+
+		// Get interactions (total count)
+		const interactions = await this.countOpenCodeInteractions(sessionFilePath);
+
+		// Get model usage with per-model interaction counts
+		const baseModelUsage = await this.getOpenCodeModelUsage(sessionFilePath);
+		
+		// Count interactions per model (each user turn -> 1 interaction for the model that responded)
+		const modelInteractions: { [model: string]: number } = {};
+		let prevTotal = 0;
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			if (msg.role !== 'user') { continue; }
+			const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
+			if (turnAssistantMsgs.length === 0) { continue; }
+			
+			const model = turnAssistantMsgs[0].modelID || turnAssistantMsgs[0].model?.modelID || 'unknown';
+			modelInteractions[model] = (modelInteractions[model] || 0) + 1;
+		}
+		
+		// Merge interaction counts into model usage
+		const modelUsage: any = {};
+		for (const [model, usage] of Object.entries(baseModelUsage)) {
+			modelUsage[model] = {
+				...usage,
+				interactions: modelInteractions[model] || 0
+			};
+		}
+
+		return { tokens, interactions, modelUsage, timestamp };
 	}
 
 	private getModelFromRequest(request: any): string {
@@ -9218,7 +9269,10 @@ export function activate(context: vscode.ExtensionContext) {
 			getCopilotSessionFiles: () => (tokenTracker as any).getCopilotSessionFiles(),
 			estimateTokensFromText: (text: string, model?: string) => (tokenTracker as any).estimateTokensFromText(text, model),
 			getModelFromRequest: (req: any) => (tokenTracker as any).getModelFromRequest(req),
-			getSessionFileDataCached: (p: string, m: number, s: number) => (tokenTracker as any).getSessionFileDataCached(p, m, s)
+			getSessionFileDataCached: (p: string, m: number, s: number) => (tokenTracker as any).getSessionFileDataCached(p, m, s),
+			statSessionFile: (sessionFile: string) => (tokenTracker as any).statSessionFile(sessionFile),
+			isOpenCodeSession: (sessionFile: string) => (tokenTracker as any).isOpenCodeSessionFile(sessionFile),
+			getOpenCodeSessionData: (sessionFile: string) => (tokenTracker as any).getOpenCodeSessionData(sessionFile)
 		});
 
 		const backendHandler = new BackendCommandHandler({

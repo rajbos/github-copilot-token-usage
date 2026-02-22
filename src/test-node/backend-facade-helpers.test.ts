@@ -14,7 +14,11 @@ function createFacade(): BackendFacade {
 		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+		statSessionFile: async (f: string) => {
+			const fs = await import('fs');
+			return fs.promises.stat(f);
+		}
 	});
 }
 

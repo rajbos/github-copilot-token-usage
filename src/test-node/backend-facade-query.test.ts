@@ -1,5 +1,6 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 
 import { BackendFacade } from '../backend/facade';
 
@@ -17,7 +18,8 @@ test('BackendFacade queryBackendRollups aggregates, filters, and caches results'
 		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	let listCalls = 0;

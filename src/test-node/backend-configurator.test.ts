@@ -2,6 +2,7 @@
 import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 
 import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
@@ -107,7 +108,8 @@ test('saveDraft persists settings, records consent, and clamps values', async ()
 		co2AbsorptionPerTreePerYear: 0,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	facade.getSettings = () => current;
@@ -152,7 +154,8 @@ test('saveDraft blocks when consent is withheld', async () => {
 		co2AbsorptionPerTreePerYear: 0,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	facade.getSettings = () => current;
@@ -187,7 +190,8 @@ test('updateSharedKey stores secret and returns updated panel state', async () =
 		co2AbsorptionPerTreePerYear: 0,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	facade.getSettings = () => current;
@@ -218,7 +222,8 @@ test('testConnectionFromDraft surfaces success, errors, and shared-key requireme
 		co2AbsorptionPerTreePerYear: 0,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	let validated = 0;
@@ -477,7 +482,8 @@ test('launchConfigureWizardFromPanel triggers wizard, timers, cache clear, and s
 		co2AbsorptionPerTreePerYear: 0,
 		getCopilotSessionFiles: async () => [],
 		estimateTokensFromText: () => 0,
-		getModelFromRequest: () => 'gpt-4o'
+		getModelFromRequest: () => 'gpt-4o',
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	facade.azureResourceService = { configureBackendWizard: async () => { wizardCalled++; } } as any;

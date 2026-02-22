@@ -62,7 +62,8 @@ test('Backend cache integration: uses cached data when available', async () => {
 				},
 				mtime
 			};
-		}
+		},
+		statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
@@ -120,7 +121,8 @@ test('Backend cache integration: falls back to parsing on cache miss', async () 
 		getSessionFileDataCached: async (filePath: string, mtime: number): Promise<SessionFileCache> => {
 			cacheMissCount++;
 			throw new Error('ENOENT: file not found'); // Simulate cache miss
-		}
+		},
+		statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
@@ -197,10 +199,9 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 			getSessionFileDataCached: async (): Promise<SessionFileCache> => {
 				return invalidCache as any; // Return invalid cache data
 			}
-		});
-
-		const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
-		
+		,
+		statSessionFile: async (f: string) => fs.promises.stat(f)
+	});
 		// Should fall back to parsing when cache validation fails
 		// Empty requests array means no rollups from fallback, but validation warning should be logged
 		assert.ok(
@@ -248,6 +249,7 @@ test('Backend cache integration: counts interactions only once for multi-model f
 		getCopilotSessionFiles: async () => [sessionFile],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
+		statSessionFile: async (f: string) => fs.promises.stat(f),
 		getSessionFileDataCached: async (): Promise<SessionFileCache> => {
 			// Simulate cached token data for the 3 models
 			return {
@@ -325,6 +327,8 @@ test('Backend cache integration: handles cache errors gracefully', async () => {
 		getSessionFileDataCached: async (): Promise<SessionFileCache> => {
 			throw new Error('Network timeout'); // Unexpected error
 		}
+	,
+		statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });

@@ -93,7 +93,8 @@ test('BackendFacade computes daily rollups from JSONL and JSON sessions (and ski
 		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [jsonlPath, jsonPath, invalidJsonPath, missingPath],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
-		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString()
+		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
+	statSessionFile: async (f: string) => fs.promises.stat(f)
 	});
 
 	const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
