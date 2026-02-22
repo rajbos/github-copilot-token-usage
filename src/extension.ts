@@ -51,6 +51,8 @@ interface RepositoryUsage {
 interface PeriodStats {
 	tokens: number;
 	thinkingTokens: number;
+	estimatedTokens: number; // Text-based estimate (user messages + responses only)
+	actualTokens: number; // Actual LLM API-reported tokens (0 when unavailable)
 	sessions: number;
 	avgInteractionsPerSession: number;
 	avgTokensPerSession: number;
@@ -93,6 +95,7 @@ interface SessionFileCache {
 	repository?: string; // Git remote origin URL for the session's workspace
 	workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
 	thinkingTokens?: number; // Estimated thinking/reasoning tokens
+	actualTokens?: number; // Actual token count from LLM API usage data (when available)
 }
 
 // Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)
@@ -345,7 +348,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 20; // Fix OpenCode token counting (use cumulative totals)
+	private static readonly CACHE_VERSION = 22; // Force cache rebuild for actualTokens extraction fix
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1489,10 +1492,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Calculate last 30 days boundary
 		const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-		const todayStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const monthStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const lastMonthStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const last30DaysStats = { tokens: 0, thinkingTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const lastMonthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const last30DaysStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		try {
 			// Clean expired cache entries
@@ -1553,7 +1556,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 
 					// Extract remaining data from the cached session
-					const tokens = sessionData.tokens;
+					const estimatedTokens = sessionData.tokens; // Text-based estimate (user content only)
+					const actualTokens = sessionData.actualTokens || 0; // Actual LLM API tokens (when available)
+					const tokens = actualTokens > 0 ? actualTokens : estimatedTokens; // Best available
 					const modelUsage = sessionData.modelUsage;
 					const editorType = this.getEditorTypeFromPath(sessionFile);
 
@@ -1573,6 +1578,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// Check if activity is within last 30 days
 					if (lastActivity >= last30DaysStart) {
 						last30DaysStats.tokens += tokens;
+						last30DaysStats.estimatedTokens += estimatedTokens;
+						last30DaysStats.actualTokens += actualTokens;
 						last30DaysStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						last30DaysStats.sessions += 1;
 						last30DaysStats.interactions += interactions;
@@ -1596,6 +1603,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					if (lastActivity >= monthStart) {
 						monthStats.tokens += tokens;
+						monthStats.estimatedTokens += estimatedTokens;
+						monthStats.actualTokens += actualTokens;
 						monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						monthStats.sessions += 1;
 						monthStats.interactions += interactions;
@@ -1618,6 +1627,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						if (lastActivity >= todayStart) {
 							todayStats.tokens += tokens;
+							todayStats.estimatedTokens += estimatedTokens;
+							todayStats.actualTokens += actualTokens;
 							todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 							todayStats.sessions += 1;
 							todayStats.interactions += interactions;
@@ -1642,6 +1653,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
 						// Session is from last month - only track lastMonth stats
 						lastMonthStats.tokens += tokens;
+						lastMonthStats.estimatedTokens += estimatedTokens;
+						lastMonthStats.actualTokens += actualTokens;
 						lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						lastMonthStats.sessions += 1;
 						lastMonthStats.interactions += interactions;
@@ -1700,6 +1713,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			today: {
 				tokens: todayStats.tokens,
 				thinkingTokens: todayStats.thinkingTokens,
+				estimatedTokens: todayStats.estimatedTokens,
+				actualTokens: todayStats.actualTokens,
 				sessions: todayStats.sessions,
 				avgInteractionsPerSession: todayStats.sessions > 0 ? Math.round(todayStats.interactions / todayStats.sessions) : 0,
 				avgTokensPerSession: todayStats.sessions > 0 ? Math.round(todayStats.tokens / todayStats.sessions) : 0,
@@ -1713,6 +1728,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			month: {
 				tokens: monthStats.tokens,
 				thinkingTokens: monthStats.thinkingTokens,
+				estimatedTokens: monthStats.estimatedTokens,
+				actualTokens: monthStats.actualTokens,
 				sessions: monthStats.sessions,
 				avgInteractionsPerSession: monthStats.sessions > 0 ? Math.round(monthStats.interactions / monthStats.sessions) : 0,
 				avgTokensPerSession: monthStats.sessions > 0 ? Math.round(monthStats.tokens / monthStats.sessions) : 0,
@@ -1726,6 +1743,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastMonth: {
 				tokens: lastMonthStats.tokens,
 				thinkingTokens: lastMonthStats.thinkingTokens,
+				estimatedTokens: lastMonthStats.estimatedTokens,
+				actualTokens: lastMonthStats.actualTokens,
 				sessions: lastMonthStats.sessions,
 				avgInteractionsPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.interactions / lastMonthStats.sessions) : 0,
 				avgTokensPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.tokens / lastMonthStats.sessions) : 0,
@@ -1739,6 +1758,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			last30Days: {
 				tokens: last30DaysStats.tokens,
 				thinkingTokens: last30DaysStats.thinkingTokens,
+				estimatedTokens: last30DaysStats.estimatedTokens,
+				actualTokens: last30DaysStats.actualTokens,
 				sessions: last30DaysStats.sessions,
 				avgInteractionsPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.interactions / last30DaysStats.sessions) : 0,
 				avgTokensPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.tokens / last30DaysStats.sessions) : 0,
@@ -2519,10 +2540,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// Default model for CLI sessions - they may not specify the model per event
 				let defaultModel = 'gpt-4o';
 
+				// For delta-based formats, reconstruct state to extract actual usage
+				let sessionState: any = {};
+				let isDeltaBased = false;
+
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
 						const event = JSON.parse(line);
+
+						// Detect and reconstruct delta-based format
+						if (typeof event.kind === 'number') {
+							isDeltaBased = true;
+							sessionState = this.applyDelta(sessionState, event);
+						}
 
 						// Handle VS Code incremental format - extract model from session header (kind: 0)
 						// The schema has v.selectedModel.identifier or v.selectedModel.metadata.id
@@ -2551,70 +2582,63 @@ class CopilotTokenTracker implements vscode.Disposable {
 							modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 						}
 
-						// Handle Copilot CLI format
-						if (event.type === 'user.message' && event.data?.content) {
-							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
-						} else if (event.type === 'assistant.message' && event.data?.content) {
-							modelUsage[model].outputTokens += this.estimateTokensFromText(event.data.content, model);
-						} else if (event.type === 'tool.result' && event.data?.output) {
-							// Tool outputs are typically input context
-							modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
-						}
-
-						// Handle VS Code incremental format (kind: 2 with requests)
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							for (const request of event.v) {
-								// Extract request-level modelId if available
-								let requestModel = model;
-								if (request.modelId) {
-									requestModel = request.modelId.replace(/^copilot\//, '');
-								} else if (request.result?.metadata?.modelId) {
-									requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
-								} else if (request.result?.details) {
-									// Parse model from details string like "Claude Opus 4.5 • 3x"
-									requestModel = this.getModelFromRequest(request);
-								}
-
-								if (!modelUsage[requestModel]) {
-									modelUsage[requestModel] = { inputTokens: 0, outputTokens: 0 };
-								}
-
-								if (request.message?.text) {
-									modelUsage[requestModel].inputTokens += this.estimateTokensFromText(request.message.text, requestModel);
-								}
-								// Also process message.parts if available
-								if (request.message?.parts && Array.isArray(request.message.parts)) {
-									for (const part of request.message.parts) {
-										if (part.text && part.text !== request.message?.text) {
-											modelUsage[requestModel].inputTokens += this.estimateTokensFromText(part.text, requestModel);
-										}
-									}
-								}
-								// Process response items if present in the request
-								if (request.response && Array.isArray(request.response)) {
-									for (const responseItem of request.response) {
-										if (responseItem.value) {
-											modelUsage[requestModel].outputTokens += this.estimateTokensFromText(responseItem.value, requestModel);
-										}
-									}
-								}
-							}
-						}
-
-						// Handle VS Code incremental format - response content (kind: 2 with response)
-						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-							for (const responseItem of event.v) {
-								if (responseItem.value) {
-									modelUsage[model].outputTokens += this.estimateTokensFromText(responseItem.value, model);
-								} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
-									modelUsage[model].outputTokens += this.estimateTokensFromText(responseItem.content.value, model);
-								}
+						// For non-delta formats, estimate from event text (CLI format)
+						if (!isDeltaBased) {
+							// Handle Copilot CLI format
+							if (event.type === 'user.message' && event.data?.content) {
+								modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
+							} else if (event.type === 'assistant.message' && event.data?.content) {
+								modelUsage[model].outputTokens += this.estimateTokensFromText(event.data.content, model);
+							} else if (event.type === 'tool.result' && event.data?.output) {
+								// Tool outputs are typically input context
+								modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
 							}
 						}
 					} catch (e) {
 						// Skip malformed lines
 					}
 				}
+
+				// For delta-based formats, extract actual usage from reconstructed state
+				if (isDeltaBased && sessionState.requests && Array.isArray(sessionState.requests)) {
+					for (const request of sessionState.requests) {
+						if (!request || !request.requestId) { continue; }
+
+						// Extract request-level modelId
+						let requestModel = defaultModel;
+						if (request.modelId) {
+							requestModel = request.modelId.replace(/^copilot\//, '');
+						} else if (request.result?.metadata?.modelId) {
+							requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
+						} else if (request.result?.details) {
+							requestModel = this.getModelFromRequest(request);
+						}
+
+						if (!modelUsage[requestModel]) {
+							modelUsage[requestModel] = { inputTokens: 0, outputTokens: 0 };
+						}
+
+						// Use actual usage if available, otherwise estimate from text
+						if (request.result?.usage) {
+							const u = request.result.usage;
+							modelUsage[requestModel].inputTokens += typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+							modelUsage[requestModel].outputTokens += typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+						} else {
+							// Fallback to text-based estimation
+							if (request.message?.text) {
+								modelUsage[requestModel].inputTokens += this.estimateTokensFromText(request.message.text, requestModel);
+							}
+							if (request.response && Array.isArray(request.response)) {
+								for (const responseItem of request.response) {
+									if (responseItem.value) {
+										modelUsage[requestModel].outputTokens += this.estimateTokensFromText(responseItem.value, requestModel);
+									}
+								}
+							}
+						}
+					}
+				}
+
 				return modelUsage;
 			}
 
@@ -2631,22 +2655,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 						modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 					}
 
-					// Estimate tokens from user message (input)
-					if (request.message && request.message.parts) {
-						for (const part of request.message.parts) {
-							if (part.text) {
-								const tokens = this.estimateTokensFromText(part.text, model);
-								modelUsage[model].inputTokens += tokens;
+					// Use actual usage if available, otherwise estimate from text
+					if (request.result?.usage) {
+						const u = request.result.usage;
+						modelUsage[model].inputTokens += typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+						modelUsage[model].outputTokens += typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+					} else {
+						// Fallback to text-based estimation
+						// Estimate tokens from user message (input)
+						if (request.message && request.message.parts) {
+							for (const part of request.message.parts) {
+								if (part.text) {
+									const tokens = this.estimateTokensFromText(part.text, model);
+									modelUsage[model].inputTokens += tokens;
+								}
 							}
 						}
-					}
 
-					// Estimate tokens from assistant response (output)
-					if (request.response && Array.isArray(request.response)) {
-						for (const responseItem of request.response) {
-							if (responseItem.value) {
-								const tokens = this.estimateTokensFromText(responseItem.value, model);
-								modelUsage[model].outputTokens += tokens;
+						// Estimate tokens from assistant response (output)
+						if (request.response && Array.isArray(request.response)) {
+							for (const responseItem of request.response) {
+								if (responseItem.value) {
+									const tokens = this.estimateTokensFromText(responseItem.value, model);
+									modelUsage[model].outputTokens += tokens;
+								}
 							}
 						}
 					}
@@ -4080,7 +4112,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			title: sessionMeta.title,
 			firstInteraction: sessionMeta.firstInteraction,
 			lastInteraction: sessionMeta.lastInteraction,
-			thinkingTokens: tokenResult.thinkingTokens
+			thinkingTokens: tokenResult.thinkingTokens,
+			actualTokens: tokenResult.actualTokens
 		};
 
 		this.setCachedSessionData(sessionFilePath, sessionData, fileSize);
@@ -5451,18 +5484,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return nonSessionFilePatterns.some(pattern => lowerFilename.includes(pattern));
 	}
 
-	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number }> {
+	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
 		try {
 			// Handle OpenCode sessions - they have actual token counts in message files
 			if (this.isOpenCodeSessionFile(sessionFilePath)) {
-				return this.getTokensFromOpenCodeSession(sessionFilePath);
+				const result = await this.getTokensFromOpenCodeSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
 			}
 
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
-				return { tokens: 0, thinkingTokens: 0 };
+				return { tokens: 0, thinkingTokens: 0, actualTokens: 0 };
 			}
 
 			// Handle .jsonl files OR .json files with JSONL content (each line is a separate JSON object)
@@ -5476,6 +5510,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let totalInputTokens = 0;
 			let totalOutputTokens = 0;
 			let totalThinkingTokens = 0;
+			let totalActualTokens = 0;
 
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				for (const request of sessionContent.requests) {
@@ -5501,13 +5536,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+
+					// Extract actual token counts from LLM API usage data
+					if (request.result?.usage) {
+						const u = request.result.usage;
+						const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+						const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+						totalActualTokens += prompt + completion;
+					}
 				}
 			}
 
-			return { tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens };
+			return { tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: totalActualTokens };
 		} catch (error) {
 			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
-			return { tokens: 0, thinkingTokens: 0 };
+			return { tokens: 0, thinkingTokens: 0, actualTokens: 0 };
 		}
 	}
 
@@ -5515,16 +5558,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
 	 * Each line is a separate JSON object representing an event in the session
 	 */
-	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number } {
+	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number } {
 		let totalTokens = 0;
 		let totalThinkingTokens = 0;
 		const lines = fileContent.trim().split('\n');
+
+		// For delta-based formats, reconstruct full state to reliably extract actual usage.
+		// Usage data can arrive at many different delta path levels, so line-by-line matching
+		// is fragile. Reconstructing the state (like the logviewer does) is the reliable approach.
+		let sessionState: any = {};
+		let isDeltaBased = false;
 
 		for (const line of lines) {
 			if (!line.trim()) { continue; }
 
 			try {
 				const event = JSON.parse(line);
+
+				// Detect and reconstruct delta-based format in parallel with estimation
+				if (typeof event.kind === 'number') {
+					isDeltaBased = true;
+					sessionState = this.applyDelta(sessionState, event);
+				}
 
 				// Handle Copilot CLI event types
 				if (event.type === 'user.message' && event.data?.content) {
@@ -5566,7 +5621,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
-		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens };
+		// Extract actual tokens from the reconstructed state (handles all delta path patterns)
+		let totalActualTokens = 0;
+		if (isDeltaBased && sessionState.requests && Array.isArray(sessionState.requests)) {
+			for (const request of sessionState.requests) {
+				if (request?.result?.usage) {
+					const u = request.result.usage;
+					const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+					const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+					totalActualTokens += prompt + completion;
+				}
+			}
+		}
+
+		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: totalActualTokens };
 	}
 
 	/**
