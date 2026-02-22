@@ -29,11 +29,8 @@ type ChatTurn = {
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
-<<<<<<< actual-tokens
-	actualUsage?: ActualUsage;
-=======
 	thinkingTokensEstimate: number;
->>>>>>> main
+	actualUsage?: ActualUsage;
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
@@ -264,7 +261,7 @@ function renderTurnCard(turn: ChatTurn): string {
 	const hasToolCalls = turn.toolCalls.length > 0;
 	const hasMcpTools = turn.mcpTools.length > 0;
 	const totalRefs = getTotalContextRefs(turn.contextReferences);
-<<<<<<< actual-tokens
+	const hasThinking = turn.thinkingTokensEstimate > 0;
 	const hasActualUsage = !!turn.actualUsage;
 	
 	// Build actual usage section
@@ -380,9 +377,6 @@ function renderTurnCard(turn: ChatTurn): string {
 			</div>
 		`;
 	}
-=======
-	const hasThinking = turn.thinkingTokensEstimate > 0;
->>>>>>> main
 	
 	// Build context file badges for header
 	const contextFileBadges: string[] = [];

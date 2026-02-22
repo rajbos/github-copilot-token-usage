@@ -311,11 +311,8 @@ interface ChatTurn {
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
-<<<<<<< actual-tokens
-	actualUsage?: ActualUsage;
-=======
 	thinkingTokensEstimate: number;
->>>>>>> main
+	actualUsage?: ActualUsage;
 }
 
 // Full session log data for the log viewer
@@ -4782,8 +4779,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							'gpt-4';
 
 						// Extract response data
-<<<<<<< actual-tokens
-						const { responseText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
+						const { responseText, thinkingText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
 						
 						// Extract actual usage data from request.result if available
 						let actualUsage: ActualUsage | undefined;
@@ -4796,103 +4792,94 @@ class CopilotTokenTracker implements vscode.Disposable {
 								details: typeof request.result.details === 'string' ? request.result.details : undefined
 							};
 						}
-=======
-						const { responseText, thinkingText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
->>>>>>> main
 
+					const turn: ChatTurn = {
+						turnNumber: i + 1,
+						timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
+						mode: sessionMode,
+						userMessage,
+						assistantResponse: responseText,
+						model: requestModel,
+						toolCalls,
+						contextReferences: contextRefs,
+						mcpTools,
+						inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
+						outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
+						thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, requestModel),
+						actualUsage
+					};
+
+					turns.push(turn);
+				}
+			} else {
+			// Non-delta JSONL (Copilot CLI format)
+			let turnNumber = 0;
+
+			for (const line of lines) {
+				try {
+					const event = JSON.parse(line);
+
+					// Handle Copilot CLI format (type: 'user.message')
+					if (event.type === 'user.message' && event.data?.content) {
+						turnNumber++;
+						const contextRefs = this.createEmptyContextRefs();
+						const userMessage = event.data.content;
+						this.analyzeContextReferences(userMessage, contextRefs);
 						const turn: ChatTurn = {
-							turnNumber: i + 1,
-							timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
-							mode: sessionMode,
+							turnNumber,
+							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
+							mode: 'agent', // CLI is typically agent mode
 							userMessage,
-							assistantResponse: responseText,
-							model: requestModel,
-							toolCalls,
+							assistantResponse: '',
+							model: event.model || 'gpt-4o',
+							toolCalls: [],
 							contextReferences: contextRefs,
-							mcpTools,
-							inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
-							outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
-<<<<<<< actual-tokens
-							actualUsage
-=======
-							thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, requestModel)
->>>>>>> main
+							mcpTools: [],
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
+							outputTokensEstimate: 0,
+							thinkingTokensEstimate: 0
 						};
-
 						turns.push(turn);
 					}
-				} else {
-					// Non-delta JSONL (Copilot CLI format)
-					let turnNumber = 0;
 
-					for (const line of lines) {
-						try {
-							const event = JSON.parse(line);
+					// Handle CLI assistant response
+					if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
+						const lastTurn = turns[turns.length - 1];
+						lastTurn.assistantResponse += event.data.content;
+						lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+					}
 
-							// Handle Copilot CLI format (type: 'user.message')
-							if (event.type === 'user.message' && event.data?.content) {
-								turnNumber++;
-								const contextRefs = this.createEmptyContextRefs();
-								const userMessage = event.data.content;
-								this.analyzeContextReferences(userMessage, contextRefs);
-								const turn: ChatTurn = {
-									turnNumber,
-									timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
-									mode: 'agent', // CLI is typically agent mode
-									userMessage,
-									assistantResponse: '',
-									model: event.model || 'gpt-4o',
-									toolCalls: [],
-									contextReferences: contextRefs,
-									mcpTools: [],
-									inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
-									outputTokensEstimate: 0,
-									thinkingTokensEstimate: 0
-								};
-								turns.push(turn);
-							}
+					// Handle CLI tool calls
+					if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
+						const lastTurn = turns[turns.length - 1];
+						const toolName = event.data?.toolName || event.toolName || 'unknown';
 
-							// Handle CLI assistant response
-							if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
-								const lastTurn = turns[turns.length - 1];
-								lastTurn.assistantResponse += event.data.content;
-								lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
-							}
-
-							// Handle CLI tool calls
-							if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
-								const lastTurn = turns[turns.length - 1];
-								const toolName = event.data?.toolName || event.toolName || 'unknown';
-
-								// Check if this is an MCP tool by name pattern
-								if (this.isMcpTool(toolName)) {
-									const serverName = this.extractMcpServerName(toolName);
-									lastTurn.mcpTools.push({ server: serverName, tool: toolName });
-								} else {
-									// Add to regular tool calls
-									lastTurn.toolCalls.push({
-										toolName,
-										arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
-										result: event.type === 'tool.result' ? event.data?.output : undefined
-									});
-								}
-							}
-
-							// Handle explicit MCP tool calls from CLI
-							if ((event.type === 'mcp.tool.call' || event.data?.mcpServer) && turns.length > 0) {
-								const lastTurn = turns[turns.length - 1];
-								const serverName = event.data?.mcpServer || 'unknown';
-								const toolName = event.data?.toolName || event.toolName || 'unknown';
-								lastTurn.mcpTools.push({ server: serverName, tool: toolName });
-							}
-						} catch {
-							// Skip malformed lines
+						// Check if this is an MCP tool by name pattern
+						if (this.isMcpTool(toolName)) {
+							const serverName = this.extractMcpServerName(toolName);
+							lastTurn.mcpTools.push({ server: serverName, tool: toolName });
+						} else {
+							// Add to regular tool calls
+							lastTurn.toolCalls.push({
+								toolName,
+								arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+								result: event.type === 'tool.result' ? event.data?.output : undefined
+							});
 						}
 					}
-				}
 
-			} else {
-				// Handle regular .json files
+					// Handle explicit MCP tool calls from CLI
+					if ((event.type === 'mcp.tool.call' || event.data?.mcpServer) && turns.length > 0) {
+						const lastTurn = turns[turns.length - 1];
+						const serverName = event.data?.mcpServer || 'unknown';
+						const toolName = event.data?.toolName || event.toolName || 'unknown';
+						lastTurn.mcpTools.push({ server: serverName, tool: toolName });
+					}
+				} catch {
+					// Skip malformed lines
+				}
+			}
+		}
 				const sessionContent = JSON.parse(fileContent);
 				let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
 
