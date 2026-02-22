@@ -216,6 +216,9 @@ function getRepoDisplayName(repoUrl: string): string {
 
 function getEditorIcon(editor: string): string {
   const lower = editor.toLowerCase();
+  if (lower.includes("opencode")) {
+    return "🟢";
+  }
   if (lower.includes("cursor")) {
     return "🖱️";
   }

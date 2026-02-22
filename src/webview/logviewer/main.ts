@@ -476,8 +476,11 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">📁 File Name</div>
-					<div class="summary-value" style="font-size: 16px;"><span class="filename-link" id="open-file-link">${escapeHtml(getFileName(data.file))}</span></div>
-					<div class="summary-sub">Click to open in editor</div>
+					<div class="summary-value" style="font-size: 16px;">${data.file.includes('opencode.db#ses_') 
+						? `<span title="${escapeHtml(getFileName(data.file))}">${escapeHtml(truncateText(getFileName(data.file), 30))}</span>`
+						: `<span class="filename-link" id="open-file-link" title="${escapeHtml(getFileName(data.file))}">${escapeHtml(truncateText(getFileName(data.file), 30))}</span>`
+					}</div>
+					<div class="summary-sub">${data.file.includes('opencode.db#ses_') ? 'Stored in SQLite database' : 'Click to open in editor'}</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">💻 Editor</div>
