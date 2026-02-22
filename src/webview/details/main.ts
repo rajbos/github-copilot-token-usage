@@ -16,6 +16,8 @@ type EditorUsage = Record<string, { tokens: number; sessions: number }>;
 type PeriodStats = {
 	tokens: number;
 	thinkingTokens: number;
+	estimatedTokens: number;
+	actualTokens: number;
 	sessions: number;
 	avgInteractionsPerSession: number;
 	avgTokensPerSession: number;
@@ -192,7 +194,9 @@ function buildMetricsSection(
 
 	const tbody = document.createElement('tbody');
 	const rows: Array<{ label: string; icon: string; color?: string; today: string; last30Days: string; lastMonth: string; projected: string }> = [
-		{ label: 'Tokens', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), last30Days: formatNumber(stats.last30Days.tokens), lastMonth: formatNumber(stats.lastMonth.tokens), projected: formatNumber(projections.projectedTokens) },
+		{ label: 'Tokens (total)', icon: '🟣', color: '#c37bff', today: (stats.today.actualTokens || 0) > 0 ? formatNumber(stats.today.tokens) : '—', last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatNumber(stats.last30Days.tokens) : '—', lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatNumber(stats.lastMonth.tokens) : '—', projected: formatNumber(projections.projectedTokens) },
+		{ label: 'Tokens (user estimated)', icon: '📝', color: '#b39ddb', today: formatNumber(stats.today.estimatedTokens), last30Days: formatNumber(stats.last30Days.estimatedTokens), lastMonth: formatNumber(stats.lastMonth.estimatedTokens), projected: '—' },
+		{ label: 'Service overhead %', icon: '☁️', color: '#90a4ae', today: (stats.today.actualTokens || 0) > 0 ? formatPercent(((stats.today.tokens - stats.today.estimatedTokens) / stats.today.tokens) * 100) : '—', last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatPercent(((stats.last30Days.tokens - stats.last30Days.estimatedTokens) / stats.last30Days.tokens) * 100) : '—', lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatPercent(((stats.lastMonth.tokens - stats.lastMonth.estimatedTokens) / stats.lastMonth.tokens) * 100) : '—', projected: '—' },
 		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatNumber(stats.today.thinkingTokens || 0), last30Days: formatNumber(stats.last30Days.thinkingTokens || 0), lastMonth: formatNumber(stats.lastMonth.thinkingTokens || 0), projected: '—' },
 		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },

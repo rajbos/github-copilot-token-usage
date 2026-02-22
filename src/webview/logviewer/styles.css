@@ -749,3 +749,274 @@ details[open] > summary .collapse-arrow {
 	font-size: 11px;
 	color: #666;
 }
+
+/* Actual LLM Usage - per turn */
+.turn-actual-usage {
+	margin: 0 16px 14px;
+	background: linear-gradient(135deg, #1a2530 0%, #1a2028 100%);
+	border: 1px solid #2a5a6a;
+	border-radius: 8px;
+	padding: 12px 14px;
+	box-shadow: 0 2px 8px rgb(0, 0, 0, 0.2);
+}
+
+.actual-usage-details {
+	cursor: pointer;
+	margin: 0;
+	padding: 0;
+}
+
+.actual-usage-summary {
+	list-style: none;
+	cursor: pointer;
+	user-select: none;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 2px 0;
+	padding-inline-start: 0;
+	margin: 0;
+}
+
+.actual-usage-summary::-webkit-details-marker {
+	display: none;
+}
+
+.actual-usage-summary::marker {
+	display: none;
+}
+
+.actual-usage-summary:hover {
+	color: #fff;
+}
+
+.actual-usage-header-inline {
+	font-size: 13px;
+	font-weight: 700;
+	color: #fff;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.actual-usage-summary-text {
+	font-size: 12px;
+	font-weight: 600;
+	color: #38bdf8;
+	flex: 1;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.usage-badge {
+	background: rgb(56, 189, 248, 0.1);
+	border: 1px solid rgb(56, 189, 248, 0.3);
+	padding: 2px 8px;
+	border-radius: 4px;
+	white-space: nowrap;
+}
+
+.usage-badge.usage-total {
+	background: rgb(56, 189, 248, 0.2);
+	border-color: rgb(56, 189, 248, 0.5);
+	font-weight: 700;
+}
+
+.usage-badge.usage-model-info {
+	background: rgb(168, 85, 247, 0.15);
+	border-color: rgb(168, 85, 247, 0.4);
+	color: #c084fc;
+}
+
+.usage-badge.delta-over {
+	background: rgb(239, 68, 68, 0.15);
+	border-color: rgb(239, 68, 68, 0.4);
+	color: #f87171;
+}
+
+.usage-badge.delta-under {
+	background: rgb(34, 197, 94, 0.15);
+	border-color: rgb(34, 197, 94, 0.4);
+	color: #4ade80;
+}
+
+.usage-badge.delta-zero {
+	background: rgb(148, 163, 184, 0.1);
+	border-color: rgb(148, 163, 184, 0.3);
+	color: #94a3b8;
+}
+
+.actual-usage-content {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid rgb(255, 255, 255, 0.1);
+}
+
+.usage-comparison-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+	margin-bottom: 16px;
+}
+
+.usage-comparison-table th,
+.usage-comparison-table td {
+	padding: 8px 12px;
+	text-align: left;
+	border-bottom: 1px solid #334155;
+}
+
+.usage-comparison-table th {
+	color: #94a3b8;
+	font-weight: 600;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	background: #1e293b;
+}
+
+.usage-comparison-table .count-cell {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.usage-total-row {
+	border-top: 2px solid #475569;
+}
+
+.usage-total-row td {
+	padding-top: 10px;
+}
+
+.delta-over {
+	color: #f87171;
+}
+
+.delta-under {
+	color: #4ade80;
+}
+
+.delta-zero {
+	color: #94a3b8;
+}
+
+/* Prompt breakdown */
+.prompt-breakdown {
+	margin-top: 4px;
+}
+
+.breakdown-summary {
+	display: flex;
+	gap: 20px;
+	margin-bottom: 12px;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.category-system {
+	color: #f97316;
+	background: rgb(249, 115, 22, 0.1);
+	border: 1px solid rgb(249, 115, 22, 0.3);
+	padding: 3px 10px;
+	border-radius: 4px;
+}
+
+.category-user {
+	color: #38bdf8;
+	background: rgb(56, 189, 248, 0.1);
+	border: 1px solid rgb(56, 189, 248, 0.3);
+	padding: 3px 10px;
+	border-radius: 4px;
+}
+
+.prompt-breakdown-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.prompt-breakdown-table th,
+.prompt-breakdown-table td {
+	padding: 8px 12px;
+	text-align: left;
+	border-bottom: 1px solid #334155;
+}
+
+.prompt-breakdown-table th {
+	color: #94a3b8;
+	font-weight: 600;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	background: #1e293b;
+}
+
+.prompt-breakdown-table .count-cell {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.bar-cell {
+	width: 100%;
+	height: 14px;
+	background: #1e293b;
+	border-radius: 4px;
+	overflow: hidden;
+	min-width: 80px;
+}
+
+.bar-fill {
+	height: 100%;
+	border-radius: 4px;
+	transition: width 0.3s ease;
+}
+
+.category-system-bar {
+	background: linear-gradient(90deg, #f97316, #fb923c);
+}
+
+.category-user-bar {
+	background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+}
+
+/* Actual usage summary card highlight */
+.actual-usage-card {
+	border-color: #2a5a6a;
+	background: linear-gradient(135deg, #1a2530 0%, #1a2028 100%);
+}
+
+.actual-usage-card .summary-value {
+	color: #38bdf8;
+}
+
+/* Session-level actual usage panel */
+.session-actual-usage {
+	background: linear-gradient(135deg, #1a2530 0%, #1a2028 100%);
+	border: 1px solid #2a5a6a;
+	border-radius: 12px;
+	padding: 20px 24px;
+	margin-bottom: 24px;
+	box-shadow: 0 4px 12px rgb(0, 0, 0, 0.3), 0 1px 3px rgb(0, 0, 0, 0.2);
+}
+
+.session-usage-header {
+	font-size: 16px;
+	font-weight: 700;
+	color: #fff;
+	margin-bottom: 16px;
+	padding-bottom: 12px;
+	border-bottom: 2px solid #2a5a6a;
+}
+
+.session-usage-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 24px;
+}
+
+@media (max-width: 800px) {
+	.session-usage-grid {
+		grid-template-columns: 1fr;
+	}
+}

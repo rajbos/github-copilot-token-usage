@@ -4,6 +4,19 @@ import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, get
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
+type PromptTokenDetail = {
+	category: string;
+	label: string;
+	percentageOfPrompt: number;
+};
+
+type ActualUsage = {
+	completionTokens: number;
+	promptTokens: number;
+	promptTokenDetails?: PromptTokenDetail[];
+	details?: string;
+};
+
 type ChatTurn = {
 	turnNumber: number;
 	timestamp: string | null;
@@ -17,6 +30,7 @@ type ChatTurn = {
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
 	thinkingTokensEstimate: number;
+	actualUsage?: ActualUsage;
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
@@ -248,6 +262,121 @@ function renderTurnCard(turn: ChatTurn): string {
 	const hasMcpTools = turn.mcpTools.length > 0;
 	const totalRefs = getTotalContextRefs(turn.contextReferences);
 	const hasThinking = turn.thinkingTokensEstimate > 0;
+	const hasActualUsage = !!turn.actualUsage;
+	
+	// Build actual usage section
+	let actualUsageHtml = '';
+	if (hasActualUsage && turn.actualUsage) {
+		const au = turn.actualUsage;
+		const actualTotal = au.promptTokens + au.completionTokens;
+		const estimatedTotal = totalTokens;
+		const deltaTotal = actualTotal - estimatedTotal;
+		const deltaInput = au.promptTokens - turn.inputTokensEstimate;
+		const deltaOutput = au.completionTokens - turn.outputTokensEstimate;
+		const deltaSign = (n: number) => n > 0 ? '+' : '';
+		const deltaClass = (n: number) => n > 0 ? 'delta-over' : n < 0 ? 'delta-under' : 'delta-zero';
+		
+		// Build prompt breakdown rows
+		let promptBreakdownHtml = '';
+		if (au.promptTokenDetails && au.promptTokenDetails.length > 0) {
+			const breakdownRows = au.promptTokenDetails.map(detail => {
+				const deducedTokens = Math.round(au.promptTokens * detail.percentageOfPrompt / 100);
+				const barWidth = Math.min(detail.percentageOfPrompt, 100);
+				const categoryClass = detail.category === 'System' ? 'category-system' : 'category-user';
+				return `<tr>
+					<td><span class="${categoryClass}">${escapeHtml(detail.category)}</span></td>
+					<td>${escapeHtml(detail.label)}</td>
+					<td class="count-cell">${detail.percentageOfPrompt}%</td>
+					<td class="count-cell">${deducedTokens.toLocaleString()}</td>
+					<td><div class="bar-cell"><div class="bar-fill ${categoryClass}-bar" style="width: ${barWidth}%"></div></div></td>
+				</tr>`;
+			}).join('');
+			
+			// Calculate system vs user totals
+			const systemPct = au.promptTokenDetails.filter(d => d.category === 'System').reduce((s, d) => s + d.percentageOfPrompt, 0);
+			const userPct = au.promptTokenDetails.filter(d => d.category !== 'System').reduce((s, d) => s + d.percentageOfPrompt, 0);
+			const systemTokens = Math.round(au.promptTokens * systemPct / 100);
+			const userTokens = Math.round(au.promptTokens * userPct / 100);
+			
+			promptBreakdownHtml = `
+				<div class="prompt-breakdown">
+					<div class="breakdown-summary">
+						<span class="category-system">System: ${systemPct}% (~${systemTokens.toLocaleString()} tokens)</span>
+						<span class="category-user">User Context: ${userPct}% (~${userTokens.toLocaleString()} tokens)</span>
+					</div>
+					<table class="prompt-breakdown-table">
+						<thead>
+							<tr>
+								<th>Category</th>
+								<th>Label</th>
+								<th>%</th>
+								<th>~Tokens</th>
+								<th>Distribution</th>
+							</tr>
+						</thead>
+						<tbody>
+							${breakdownRows}
+						</tbody>
+					</table>
+				</div>
+			`;
+		}
+		
+		actualUsageHtml = `
+			<div class="turn-actual-usage">
+				<details class="actual-usage-details">
+					<summary class="actual-usage-summary">
+						<span class="collapse-arrow">▶</span>
+						<span class="actual-usage-header-inline">📊 ACTUAL LLM USAGE</span>
+						<span class="actual-usage-summary-text">
+							<span class="usage-badge">↑${au.promptTokens.toLocaleString()}</span>
+							<span class="usage-badge">↓${au.completionTokens.toLocaleString()}</span>
+							<span class="usage-badge usage-total">Σ${actualTotal.toLocaleString()}</span>
+							<span class="usage-badge ${deltaClass(deltaTotal)}">delta: ${deltaSign(deltaTotal)}${deltaTotal.toLocaleString()}</span>
+							${au.details ? `<span class="usage-badge usage-model-info">${escapeHtml(au.details)}</span>` : ''}
+						</span>
+					</summary>
+					<div class="actual-usage-content">
+						<table class="usage-comparison-table">
+							<thead>
+								<tr>
+									<th>Metric</th>
+									<th>Estimated</th>
+									<th>Actual</th>
+									<th>Delta</th>
+									<th>Ratio</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>↑ Prompt / Input</td>
+									<td class="count-cell">${turn.inputTokensEstimate.toLocaleString()}</td>
+									<td class="count-cell">${au.promptTokens.toLocaleString()}</td>
+									<td class="count-cell ${deltaClass(deltaInput)}">${deltaSign(deltaInput)}${deltaInput.toLocaleString()}</td>
+									<td class="count-cell">${turn.inputTokensEstimate > 0 ? (au.promptTokens / turn.inputTokensEstimate).toFixed(1) + 'x' : 'N/A'}</td>
+								</tr>
+								<tr>
+									<td>↓ Completion / Output</td>
+									<td class="count-cell">${turn.outputTokensEstimate.toLocaleString()}</td>
+									<td class="count-cell">${au.completionTokens.toLocaleString()}</td>
+									<td class="count-cell ${deltaClass(deltaOutput)}">${deltaSign(deltaOutput)}${deltaOutput.toLocaleString()}</td>
+									<td class="count-cell">${turn.outputTokensEstimate > 0 ? (au.completionTokens / turn.outputTokensEstimate).toFixed(1) + 'x' : 'N/A'}</td>
+								</tr>
+								<tr class="usage-total-row">
+									<td><strong>Σ Total</strong></td>
+									<td class="count-cell"><strong>${estimatedTotal.toLocaleString()}</strong></td>
+									<td class="count-cell"><strong>${actualTotal.toLocaleString()}</strong></td>
+									<td class="count-cell ${deltaClass(deltaTotal)}"><strong>${deltaSign(deltaTotal)}${deltaTotal.toLocaleString()}</strong></td>
+									<td class="count-cell"><strong>${estimatedTotal > 0 ? (actualTotal / estimatedTotal).toFixed(1) + 'x' : 'N/A'}</strong></td>
+								</tr>
+							</tbody>
+						</table>
+						${promptBreakdownHtml}
+					</div>
+				</details>
+			</div>
+		`;
+	}
 	
 	// Build context file badges for header
 	const contextFileBadges: string[] = [];
@@ -362,8 +491,12 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
+<<<<<<< actual-tokens
+					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} est.${hasActualUsage ? ` | ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual` : ''}</span>
+=======
 					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
 					${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
+>>>>>>> main
 					${contextHeaderHtml}
 				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
@@ -372,6 +505,7 @@ function renderTurnCard(turn: ChatTurn): string {
 			${toolCallsHtml}
 			${mcpToolsHtml}
 			${contextRefsHtml}
+			${actualUsageHtml}
 			
 			<div class="turn-content">
 				<div class="message user-message">
@@ -408,6 +542,30 @@ function renderLayout(data: SessionLogData): void {
 	const usageContextTotal = getTotalContextRefs(usageContextRefs);
 	const usageContextImplicit = getImplicitContextRefs(usageContextRefs);
 	const usageContextExplicit = getExplicitContextRefs(usageContextRefs);
+
+	// Calculate actual usage totals across all turns
+	const turnsWithActual = data.turns.filter(t => t.actualUsage);
+	const hasAnyActualUsage = turnsWithActual.length > 0;
+	const actualPromptTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.promptTokens || 0), 0);
+	const actualCompletionTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.completionTokens || 0), 0);
+	const actualTotal = actualPromptTotal + actualCompletionTotal;
+	
+	// Aggregate prompt breakdown across all turns
+	const aggregatedBreakdown: { [key: string]: { category: string; label: string; totalTokens: number; totalPct: number; count: number } } = {};
+	for (const turn of turnsWithActual) {
+		if (turn.actualUsage?.promptTokenDetails) {
+			for (const detail of turn.actualUsage.promptTokenDetails) {
+				const key = `${detail.category}|${detail.label}`;
+				if (!aggregatedBreakdown[key]) {
+					aggregatedBreakdown[key] = { category: detail.category, label: detail.label, totalTokens: 0, totalPct: 0, count: 0 };
+				}
+				const deducedTokens = Math.round((turn.actualUsage?.promptTokens || 0) * detail.percentageOfPrompt / 100);
+				aggregatedBreakdown[key].totalTokens += deducedTokens;
+				aggregatedBreakdown[key].totalPct += detail.percentageOfPrompt;
+				aggregatedBreakdown[key].count++;
+			}
+		}
+	}
 
 	const formatTopList = (entries: { key: string; value: number }[], mapper?: (k: string) => string) => {
 		if (!entries.length) { return 'None'; }
@@ -448,15 +606,25 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
 				<div class="summary-card">
-					<div class="summary-label">📊 Total Tokens</div>
+					<div class="summary-label">📊 Estimated Tokens</div>
 					<div class="summary-value">${totalTokens.toLocaleString()}</div>
-					<div class="summary-sub">Input + Output tokens across all turns</div>
+					<div class="summary-sub">Input + Output estimated from text</div>
 				</div>
+				${hasAnyActualUsage ? `
+				<div class="summary-card actual-usage-card">
+					<div class="summary-label">📊 Actual Tokens</div>
+					<div class="summary-value">${actualTotal.toLocaleString()}</div>
+					<div class="summary-sub">↑${actualPromptTotal.toLocaleString()} prompt, ↓${actualCompletionTotal.toLocaleString()} completion</div>
+				</div>
+<<<<<<< actual-tokens
+				` : ''}
+=======
 				${totalThinkingTokens > 0 ? `<div class="summary-card">
 					<div class="summary-label">🧠 Thinking Tokens</div>
 					<div class="summary-value">${totalThinkingTokens.toLocaleString()}</div>
 					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
 				</div>` : ''}
+>>>>>>> main
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
@@ -508,6 +676,54 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-sub">Most recent activity</div>
 				</div>
 			</div>
+			
+			${hasAnyActualUsage ? (() => {
+				const breakdownEntries = Object.values(aggregatedBreakdown).sort((a, b) => b.totalTokens - a.totalTokens);
+				const avgPct = (entry: { totalPct: number; count: number }) => Math.round(entry.totalPct / entry.count);
+				const breakdownRows = breakdownEntries.map(entry => {
+					const pct = avgPct(entry);
+					const categoryClass = entry.category === 'System' ? 'category-system' : 'category-user';
+					return `<tr>
+						<td><span class="${categoryClass}">${escapeHtml(entry.category)}</span></td>
+						<td>${escapeHtml(entry.label)}</td>
+						<td class="count-cell">${pct}%</td>
+						<td class="count-cell">${entry.totalTokens.toLocaleString()}</td>
+						<td><div class="bar-cell"><div class="bar-fill ${categoryClass}-bar" style="width: ${Math.min(pct, 100)}%"></div></div></td>
+					</tr>`;
+				}).join('');
+				
+				const systemTokens = breakdownEntries.filter(e => e.category === 'System').reduce((s, e) => s + e.totalTokens, 0);
+				const userTokens = breakdownEntries.filter(e => e.category !== 'System').reduce((s, e) => s + e.totalTokens, 0);
+				const estimateRatio = totalTokens > 0 ? (actualTotal / totalTokens).toFixed(1) : 'N/A';
+				
+				return `
+			<div class="session-actual-usage">
+				<div class="session-usage-header">📊 Session Actual LLM Usage (${turnsWithActual.length}/${data.turns.length} turns with data)</div>
+				<div class="session-usage-grid">
+					<div class="session-usage-comparison">
+						<table class="usage-comparison-table">
+							<thead><tr><th>Metric</th><th>Estimated</th><th>Actual</th><th>Ratio</th></tr></thead>
+							<tbody>
+								<tr><td>↑ Prompt</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0).toLocaleString()}</td><td class="count-cell">${actualPromptTotal.toLocaleString()}</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0) > 0 ? (actualPromptTotal / data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0)).toFixed(1) + 'x' : 'N/A'}</td></tr>
+								<tr><td>↓ Completion</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0).toLocaleString()}</td><td class="count-cell">${actualCompletionTotal.toLocaleString()}</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0) > 0 ? (actualCompletionTotal / data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0)).toFixed(1) + 'x' : 'N/A'}</td></tr>
+								<tr class="usage-total-row"><td><strong>Σ Total</strong></td><td class="count-cell"><strong>${totalTokens.toLocaleString()}</strong></td><td class="count-cell"><strong>${actualTotal.toLocaleString()}</strong></td><td class="count-cell"><strong>${estimateRatio}x</strong></td></tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="session-usage-breakdown">
+						<div class="breakdown-summary">
+							<span class="category-system">System: ~${systemTokens.toLocaleString()} tokens</span>
+							<span class="category-user">User Context: ~${userTokens.toLocaleString()} tokens</span>
+						</div>
+						<table class="prompt-breakdown-table">
+							<thead><tr><th>Category</th><th>Label</th><th>Avg %</th><th>Total ~Tokens</th><th>Distribution</th></tr></thead>
+							<tbody>${breakdownRows}</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+			`;
+			})() : ''}
 			
 			<div class="turns-header">
 				<span>📝</span>
