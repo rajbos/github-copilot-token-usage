@@ -32,6 +32,8 @@ interface BlobUploadServiceLike {
 		machineId: string,
 		datasetId: string
 	): Promise<{ success: boolean; filesUploaded: number; message: string }>;
+	shouldUpload(machineId: string, settings: { enabled: boolean; uploadFrequencyHours: number }): boolean;
+	getUploadStatus(machineId: string): { lastUploadTime: number; filesUploaded: number; lastError?: string } | undefined;
 }
 
 /**
@@ -424,7 +426,7 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[] }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
@@ -452,7 +454,8 @@ export class SyncService {
 			machineNamesById[machineId] = machineName;
 		}
 
-		const sessionFiles = await this.deps.getCopilotSessionFiles();
+		// Use pre-fetched session files if provided, otherwise fetch them
+		const sessionFiles = args.sessionFiles ?? await this.deps.getCopilotSessionFiles();
 		const useCachedData = !!this.deps.getSessionFileDataCached;
 		let cacheHits = 0;
 		let cacheMisses = 0;
@@ -679,8 +682,15 @@ export class SyncService {
 				await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);
 				await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
 
+				// Fetch session files once and reuse for both rollups and blob upload
+				const sessionFiles = await this.deps.getCopilotSessionFiles();
+
 				const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(settings, sharingPolicy.includeUserDimension);
-				const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({ lookbackDays: settings.lookbackDays, userId: resolvedIdentity.userId });
+				const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({ 
+					lookbackDays: settings.lookbackDays, 
+					userId: resolvedIdentity.userId,
+					sessionFiles // Pass pre-fetched session files to avoid rescan
+				});
 				
 				// Log day keys being synced for better visibility
 				const dayKeys = new Set<string>();
@@ -746,42 +756,48 @@ export class SyncService {
 				this.deps.log('Backend sync: completed');
 				
 				// Upload session files to Blob Storage if enabled
+				// Check if upload is needed BEFORE processing files to avoid redundant work
 				if (settings.blobUploadEnabled && this.blobUploadService) {
 					try {
-						this.deps.log('Blob upload: starting');
 						const machineId = vscode.env.machineId;
-						const sessionFiles = await this.deps.getCopilotSessionFiles();
-						
-						const uploadResult = await this.blobUploadService.uploadSessionFiles(
-							settings.storageAccount,
-							{
-								enabled: settings.blobUploadEnabled,
-								containerName: settings.blobContainerName,
-								uploadFrequencyHours: settings.blobUploadFrequencyHours,
-								compressFiles: settings.blobCompressFiles
-							},
-							creds.blobCredential,
-							sessionFiles,
-							machineId,
-							settings.datasetId
-						);
-						
-						if (uploadResult.success) {
-							this.deps.log(`Blob upload: ${uploadResult.message}`);
+						const uploadSettings = {
+							enabled: settings.blobUploadEnabled,
+							containerName: settings.blobContainerName,
+							uploadFrequencyHours: settings.blobUploadFrequencyHours,
+							compressFiles: settings.blobCompressFiles
+						};
+
+						// Only fetch and upload if it's time to upload
+						if (this.blobUploadService.shouldUpload(machineId, uploadSettings)) {
+							this.deps.log('Blob upload: starting');
+							
+							const uploadResult = await this.blobUploadService.uploadSessionFiles(
+								settings.storageAccount,
+								uploadSettings,
+								creds.blobCredential,
+								sessionFiles, // Reuse session files from rollup computation
+								machineId,
+								settings.datasetId
+							);
+							
+							if (uploadResult.success) {
+								this.deps.log(`Blob upload: ${uploadResult.message}`);
+							} else {
+								this.deps.warn(`Blob upload: ${uploadResult.message}`);
+							}
 						} else {
-							this.deps.warn(`Blob upload: ${uploadResult.message}`);
+							// Log the skip reason without fetching session files
+							const status = this.blobUploadService.getUploadStatus(machineId);
+							const hoursSince = status ? Math.round((Date.now() - status.lastUploadTime) / (1000 * 60 * 60)) : 0;
+							this.deps.log(`Blob upload: skipped (last upload ${hoursSince}h ago, frequency: ${settings.blobUploadFrequencyHours}h)`);
 						}
 					} catch (blobError: any) {
 						this.deps.warn(`Blob upload: failed - ${blobError?.message ?? blobError}`);
 					}
 				}
 				
-				// Trigger UI refresh to update status bar and panels with latest sync data
-				try {
-					await this.deps.updateTokenStats?.();
-				} catch (e) {
-					this.deps.warn(`Backend sync: failed to update UI: ${e}`);
-				}
+				// DO NOT trigger UI refresh here - it causes redundant analysis and blocks UI
+				// The periodic timer in extension.ts will handle UI updates
 			} catch (e: any) {
 				// Keep local mode functional.
 				const secretsToRedact = await this.credentialService.getBackendSecretsToRedactForError(settings);

@@ -8,3 +8,4 @@ node_modules
 .github/scripts/scraper.log
 .github/scripts/scraped-models.json
 example.json
+log-example.txt
