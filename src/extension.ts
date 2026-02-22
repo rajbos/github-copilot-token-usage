@@ -136,9 +136,11 @@ interface ToolCallUsage {
 }
 
 interface ModeUsage {
-	ask: number;     // Regular chat mode
-	edit: number;    // Edit mode interactions
-	agent: number;   // Agent mode interactions
+	ask: number;         // Regular chat mode
+	edit: number;        // Edit mode interactions
+	agent: number;       // Agent mode interactions (standard agent mode)
+	plan: number;        // Plan mode interactions (built-in plan agent)
+	customAgent: number; // Custom agent mode interactions (.agent.md files)
 }
 
 interface ContextReferenceUsage {
@@ -284,7 +286,7 @@ interface SessionFileDetails {
 interface ChatTurn {
 	turnNumber: number;
 	timestamp: string | null;
-	mode: 'ask' | 'edit' | 'agent';
+	mode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent';
 	userMessage: string;
 	assistantResponse: string;
 	model: string | null;
@@ -659,6 +661,75 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Determine the editor type from a session file path
 	 * Returns: 'VS Code', 'VS Code Insiders', 'VSCodium', 'Cursor', 'Copilot CLI', or 'Unknown'
 	 */
+	/**
+	 * Detect the actual mode type from inputState.mode object.
+	 * Returns 'ask', 'edit', 'agent', 'plan', or 'customAgent'.
+	 */
+	private getModeType(mode: any): 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' {
+		if (!mode || !mode.kind) {
+			return 'ask';
+		}
+
+		// Check kind first - edit and ask are straightforward
+		if (mode.kind === 'edit') { return 'edit'; }
+		if (mode.kind === 'ask') { return 'ask'; }
+
+		// For agent kind, check the mode.id to differentiate
+		if (mode.kind === 'agent') {
+			if (!mode.id || mode.id === 'agent') {
+				// Standard agent mode (no special id or id='agent')
+				return 'agent';
+			}
+
+			// Check for plan mode (vscode-userdata:/.../plan-agent/Plan.agent.md)
+			if (typeof mode.id === 'string' && mode.id.includes('plan-agent/Plan.agent.md')) {
+				return 'plan';
+			}
+
+			// Check for custom agent (file:// URI to .agent.md)
+			if (typeof mode.id === 'string' && mode.id.includes('.agent.md')) {
+				return 'customAgent';
+			}
+
+			// Fallback to standard agent for any other agent kind
+			return 'agent';
+		}
+
+		// Default to ask for unknown modes
+		return 'ask';
+	}
+
+	/**
+	 * Extract custom agent name from a file:// URI pointing to a .agent.md file.
+	 * Returns the filename without the .agent.md extension.
+	 */
+	private extractCustomAgentName(modeId: string): string | null {
+		if (!modeId || !modeId.includes('.agent.md')) {
+			return null;
+		}
+
+		try {
+			// Handle both file:/// URIs and regular paths
+			const cleanPath = modeId.replace('file:///', '').replace('file://', '');
+			const decodedPath = decodeURIComponent(cleanPath);
+			const parts = decodedPath.split(/[\\/]/);
+			const filename = parts[parts.length - 1];
+
+			// Remove .agent.md extension
+			if (filename.endsWith('.agent.md')) {
+				return filename.slice(0, -10); // Remove '.agent.md'
+			}
+			if (filename.endsWith('.md.agent.md')) {
+				// Handle case like TestEngineerAgent.md.agent.md
+				return filename.slice(0, -10).replace('.md', '');
+			}
+		} catch (e) {
+			return null;
+		}
+
+		return null;
+	}
+
 	private getEditorTypeFromPath(filePath: string): string {
 		const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
 
@@ -1554,7 +1625,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const emptyPeriod = (): UsageAnalysisPeriod => ({
 			sessions: 0,
 			toolCalls: { total: 0, byTool: {} },
-			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
 			contextReferences: {
 				file: 0,
 				selection: 0,
@@ -1664,7 +1735,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const interactions = sessionData.interactions;
 						const analysis = sessionData.usageAnalysis || {
 							toolCalls: { total: 0, byTool: {} },
-							modeUsage: { ask: 0, edit: 0, agent: 0 },
+							modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
 							contextReferences: {
 								file: 0,
 								selection: 0,
@@ -1889,6 +1960,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		period.modeUsage.ask += analysis.modeUsage.ask;
 		period.modeUsage.edit += analysis.modeUsage.edit;
 		period.modeUsage.agent += analysis.modeUsage.agent;
+		period.modeUsage.plan += analysis.modeUsage.plan;
+		period.modeUsage.customAgent += analysis.modeUsage.customAgent;
 
 		// Merge context references
 		period.contextReferences.file += analysis.contextReferences.file;
@@ -2276,7 +2349,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async analyzeSessionUsage(sessionFile: string): Promise<SessionUsageAnalysis> {
 		const analysis: SessionUsageAnalysis = {
 			toolCalls: { total: 0, byTool: {} },
-			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
 			contextReferences: {
 				file: 0,
 				selection: 0,
@@ -2350,10 +2423,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 
 					// Extract session mode from reconstructed state
-					let sessionMode = 'ask';
-					if (sessionState.inputState?.mode?.kind) {
-						sessionMode = sessionState.inputState.mode.kind;
-					}
+					const sessionModeType = sessionState.inputState?.mode 
+						? this.getModeType(sessionState.inputState.mode)
+						: 'ask';
 
 					// Detect implicit selections
 					if (sessionState.inputState?.selections && Array.isArray(sessionState.inputState.selections)) {
@@ -2370,11 +2442,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 					for (const request of requests) {
 						if (!request || !request.requestId) { continue; }
 
-						// Count by mode
-						if (sessionMode === 'agent') {
+						// Count by mode type
+						if (sessionModeType === 'agent') {
 							analysis.modeUsage.agent++;
-						} else if (sessionMode === 'edit') {
+						} else if (sessionModeType === 'edit') {
 							analysis.modeUsage.edit++;
+						} else if (sessionModeType === 'plan') {
+							analysis.modeUsage.plan++;
+						} else if (sessionModeType === 'customAgent') {
+							analysis.modeUsage.customAgent++;
 						} else {
 							analysis.modeUsage.ask++;
 						}
@@ -2428,8 +2504,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const event = JSON.parse(line);
 
 						// Handle VS Code incremental format - detect mode from session header
-						if (event.kind === 0 && event.v?.inputState?.mode?.kind) {
-							sessionMode = event.v.inputState.mode.kind;
+						if (event.kind === 0 && event.v?.inputState?.mode) {
+							sessionMode = this.getModeType(event.v.inputState.mode);
 
 							// Detect implicit selections in initial state (only if there's an actual range)
 							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections)) {
@@ -2444,8 +2520,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 
 						// Handle mode changes (kind: 1 with mode update)
-						if (event.kind === 1 && event.k?.includes('mode') && event.v?.kind) {
-							sessionMode = event.v.kind;
+						if (event.kind === 1 && event.k?.includes('mode') && event.v) {
+							sessionMode = this.getModeType(event.v);
 						}
 
 						// Detect implicit selections in updates to inputState.selections
@@ -2473,11 +2549,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
 							for (const request of event.v) {
 								if (request.requestId) {
-									// Count by mode
+									// Count by mode type
 									if (sessionMode === 'agent') {
 										analysis.modeUsage.agent++;
 									} else if (sessionMode === 'edit') {
 										analysis.modeUsage.edit++;
+									} else if (sessionMode === 'plan') {
+										analysis.modeUsage.plan++;
+									} else if (sessionMode === 'customAgent') {
+										analysis.modeUsage.customAgent++;
 									} else {
 										analysis.modeUsage.ask++;
 									}
@@ -3636,7 +3716,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 		const analysis = sessionData.usageAnalysis || {
 			toolCalls: { total: 0, byTool: {} },
-			modeUsage: { ask: 0, edit: 0, agent: 0 },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
 			contextReferences: {
 				file: 0,
 				selection: 0,
@@ -3780,7 +3860,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			size: stat.size,
 			usageAnalysis: existingCache?.usageAnalysis || {
 				toolCalls: { total: 0, byTool: {} },
-				modeUsage: { ask: 0, edit: 0, agent: 0 },
+				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
 				contextReferences: {
 					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 					workspace: 0, terminal: 0, vscode: 0,
@@ -4152,14 +4232,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 
 					// Extract session-level info
-					let sessionMode: 'ask' | 'edit' | 'agent' = 'ask';
+					let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
 					let currentModel: string | null = null;
 
-					if (sessionState.inputState?.mode?.kind) {
-						sessionMode = sessionState.inputState.mode.kind as 'ask' | 'edit' | 'agent';
-					}
-					if (sessionState.inputState?.selectedModel?.metadata?.id) {
-						currentModel = sessionState.inputState.selectedModel.metadata.id;
+					if (sessionState.inputState?.mode) {
+						sessionMode = this.getModeType(sessionState.inputState.mode);
+						if (sessionState.inputState?.selectedModel?.metadata?.id) {
+							currentModel = sessionState.inputState.selectedModel.metadata.id;
+						}
 					}
 
 					// Extract turns from reconstructed requests array
@@ -4273,16 +4353,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} else {
 				// Handle regular .json files
 				const sessionContent = JSON.parse(fileContent);
-				let sessionMode: 'ask' | 'edit' | 'agent' = 'ask';
+				let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
 
 				// Detect session-level mode
-				if (sessionContent.mode?.id) {
-					const modeId = sessionContent.mode.id.toLowerCase();
-					if (modeId.includes('agent')) {
-						sessionMode = 'agent';
-					} else if (modeId.includes('edit')) {
-						sessionMode = 'edit';
-					}
+				if (sessionContent.mode) {
+					sessionMode = this.getModeType(sessionContent.mode);
 				}
 
 				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
