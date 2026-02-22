@@ -38,6 +38,9 @@ export interface BackendFacadeDeps {
 	getSessionFileDataCached?: (sessionFilePath: string, mtime: number, fileSize: number) => Promise<SessionFileCache>;
 	// Stat helper for OpenCode DB virtual paths
 	statSessionFile: (sessionFile: string) => Promise<any>;
+	// OpenCode session handling
+	isOpenCodeSession?: (sessionFile: string) => boolean;
+	getOpenCodeSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: ModelUsage; timestamp: number }>;
 }
 
 export class BackendFacade {
@@ -87,7 +90,9 @@ export class BackendFacade {
 				getModelFromRequest: deps.getModelFromRequest,
 				getSessionFileDataCached: deps.getSessionFileDataCached,
 				updateTokenStats: deps.updateTokenStats,
-				statSessionFile: deps.statSessionFile
+				statSessionFile: deps.statSessionFile,
+				isOpenCodeSession: deps.isOpenCodeSession,
+				getOpenCodeSessionData: deps.getOpenCodeSessionData
 			},
 			this.credentialService,
 			this.dataPlaneService,

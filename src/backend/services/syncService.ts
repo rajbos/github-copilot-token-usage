@@ -80,6 +80,9 @@ export interface SyncServiceDeps {
 	updateTokenStats?: () => Promise<void>;
 	// Stat helper for OpenCode DB virtual paths
 	statSessionFile: (sessionFile: string) => Promise<fs.Stats>;
+	// OpenCode session handling
+	isOpenCodeSession?: (sessionFile: string) => boolean;
+	getOpenCodeSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
 }
 
 /**
@@ -485,6 +488,44 @@ export class SyncService {
 				continue;
 			}
 
+			// Handle OpenCode sessions separately (different data format)
+			if (this.deps.isOpenCodeSession && this.deps.isOpenCodeSession(sessionFile)) {
+				if (!this.deps.getOpenCodeSessionData) {
+					filesSkipped++;
+					continue;
+				}
+				
+				try {
+					const data = await this.deps.getOpenCodeSessionData(sessionFile);
+					const eventMs = data.timestamp || fileMtimeMs;
+					
+					if (!eventMs || eventMs < startMs) {
+						filesSkipped++;
+						continue;
+					}
+
+					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+					const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
+					await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
+
+					// Process each model's usage with per-model interaction counts
+					for (const [model, usage] of Object.entries(data.modelUsage)) {
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						upsertDailyRollup(rollups as any, key, {
+							inputTokens: (usage as any).inputTokens || 0,
+							outputTokens: (usage as any).outputTokens || 0,
+							interactions: (usage as any).interactions || 0
+						});
+					}
+					
+					filesProcessed++;
+					continue;
+				} catch (e) {
+					this.deps.warn(`Backend sync: failed to process OpenCode session ${sessionFile}: ${e}`);
+					continue;
+				}
+			}
+
 			const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
 			await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
 
@@ -684,6 +725,26 @@ export class SyncService {
 				await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);
 				await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
 
+				// Check blob upload status upfront (before expensive file scanning)
+				let blobUploadNeeded = false;
+				if (settings.blobUploadEnabled && this.blobUploadService) {
+					const machineId = vscode.env.machineId;
+					const uploadSettings = {
+						enabled: settings.blobUploadEnabled,
+						containerName: settings.blobContainerName,
+						uploadFrequencyHours: settings.blobUploadFrequencyHours,
+						compressFiles: settings.blobCompressFiles
+					};
+					blobUploadNeeded = this.blobUploadService.shouldUpload(machineId, uploadSettings);
+					if (blobUploadNeeded) {
+						this.deps.log('Blob upload: will upload session files after table sync');
+					} else {
+						const status = this.blobUploadService.getUploadStatus(machineId);
+						const hoursSince = status ? Math.round((Date.now() - status.lastUploadTime) / (1000 * 60 * 60)) : 0;
+						this.deps.log(`Blob upload: not needed (last upload ${hoursSince}h ago, frequency: ${settings.blobUploadFrequencyHours}h)`);
+					}
+				}
+
 				// Fetch session files once and reuse for both rollups and blob upload
 				const sessionFiles = await this.deps.getCopilotSessionFiles();
 
@@ -757,9 +818,8 @@ export class SyncService {
 				
 				this.deps.log('Backend sync: completed');
 				
-				// Upload session files to Blob Storage if enabled
-				// Check if upload is needed BEFORE processing files to avoid redundant work
-				if (settings.blobUploadEnabled && this.blobUploadService) {
+				// Upload session files to Blob Storage if needed (check was done earlier)
+				if (blobUploadNeeded && this.blobUploadService) {
 					try {
 						const machineId = vscode.env.machineId;
 						const uploadSettings = {
@@ -769,29 +829,21 @@ export class SyncService {
 							compressFiles: settings.blobCompressFiles
 						};
 
-						// Only fetch and upload if it's time to upload
-						if (this.blobUploadService.shouldUpload(machineId, uploadSettings)) {
-							this.deps.log('Blob upload: starting');
-							
-							const uploadResult = await this.blobUploadService.uploadSessionFiles(
-								settings.storageAccount,
-								uploadSettings,
-								creds.blobCredential,
-								sessionFiles, // Reuse session files from rollup computation
-								machineId,
-								settings.datasetId
-							);
-							
-							if (uploadResult.success) {
-								this.deps.log(`Blob upload: ${uploadResult.message}`);
-							} else {
-								this.deps.warn(`Blob upload: ${uploadResult.message}`);
-							}
+						this.deps.log('Blob upload: starting');
+						
+						const uploadResult = await this.blobUploadService.uploadSessionFiles(
+							settings.storageAccount,
+							uploadSettings,
+							creds.blobCredential,
+							sessionFiles, // Reuse session files from rollup computation
+							machineId,
+							settings.datasetId
+						);
+						
+						if (uploadResult.success) {
+							this.deps.log(`Blob upload: ${uploadResult.message}`);
 						} else {
-							// Log the skip reason without fetching session files
-							const status = this.blobUploadService.getUploadStatus(machineId);
-							const hoursSince = status ? Math.round((Date.now() - status.lastUploadTime) / (1000 * 60 * 60)) : 0;
-							this.deps.log(`Blob upload: skipped (last upload ${hoursSince}h ago, frequency: ${settings.blobUploadFrequencyHours}h)`);
+							this.deps.warn(`Blob upload: ${uploadResult.message}`);
 						}
 					} catch (blobError: any) {
 						this.deps.warn(`Blob upload: failed - ${blobError?.message ?? blobError}`);

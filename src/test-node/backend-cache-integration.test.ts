@@ -200,11 +200,8 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 				return invalidCache as any; // Return invalid cache data
 			}
 		,
-$2statSessionFile: async (f: string) => fs.promises.stat(f)
-$2});
-
-		const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
-		
+		statSessionFile: async (f: string) => fs.promises.stat(f)
+	});
 		// Should fall back to parsing when cache validation fails
 		// Empty requests array means no rollups from fallback, but validation warning should be logged
 		assert.ok(
@@ -252,6 +249,7 @@ test('Backend cache integration: counts interactions only once for multi-model f
 		getCopilotSessionFiles: async () => [sessionFile],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
+		statSessionFile: async (f: string) => fs.promises.stat(f),
 		getSessionFileDataCached: async (): Promise<SessionFileCache> => {
 			// Simulate cached token data for the 3 models
 			return {
@@ -330,8 +328,8 @@ test('Backend cache integration: handles cache errors gracefully', async () => {
 			throw new Error('Network timeout'); // Unexpected error
 		}
 	,
-$2statSessionFile: async (f: string) => fs.promises.stat(f)
-$2});
+		statSessionFile: async (f: string) => fs.promises.stat(f)
+	});
 
 	const { rollups } = await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
 	const entries = Array.from(rollups.values());
