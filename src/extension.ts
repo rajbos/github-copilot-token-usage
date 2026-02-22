@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import initSqlJs from 'sql.js';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
@@ -328,7 +329,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 19; // Add thinking tokens tracking
+	private static readonly CACHE_VERSION = 20; // Fix OpenCode token counting (use cumulative totals)
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -629,6 +630,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _sessionFilesCacheTime: number = 0;
 	private static readonly SESSION_FILES_CACHE_TTL = 60000; // Cache for 60 seconds
 
+	// Cached sql.js SQL module (lazy initialized)
+	private _sqlJsModule: any = null;
+
 	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
 	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
 
@@ -730,11 +734,245 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return null;
 	}
 
+	/**
+	 * Get the OpenCode data directory path.
+	 * OpenCode follows XDG Base Directory Specification:
+	 * - Windows: %USERPROFILE%\.local\share\opencode\
+	 * - Linux/macOS: ~/.local/share/opencode/
+	 */
+	private getOpenCodeDataDir(): string {
+		const platform = os.platform();
+		const homedir = os.homedir();
+		if (platform === 'win32') {
+			return path.join(homedir, '.local', 'share', 'opencode');
+		}
+		const xdgDataHome = process.env.XDG_DATA_HOME || path.join(homedir, '.local', 'share');
+		return path.join(xdgDataHome, 'opencode');
+	}
+
+	/**
+	 * Check if a session file is an OpenCode session file.
+	 * OpenCode sessions are stored in ~/.local/share/opencode/storage/session/ (JSON)
+	 * or referenced via virtual paths like opencode.db#ses_<id> (SQLite).
+	 */
+	private isOpenCodeSessionFile(filePath: string): boolean {
+		const normalized = filePath.toLowerCase().replace(/\\/g, '/');
+		return normalized.includes('/opencode/storage/session/') || normalized.includes('/opencode/opencode.db#ses_');
+	}
+
+	/**
+	 * Check if a session is stored in the OpenCode SQLite database.
+	 * Virtual path format: <opencode_dir>/opencode.db#ses_<id>
+	 */
+	private isOpenCodeDbSession(filePath: string): boolean {
+		return filePath.includes('opencode.db#ses_');
+	}
+
+	/**
+	 * Lazily initialize and return the sql.js SQL module.
+	 */
+	private async initSqlJs(): Promise<any> {
+		if (this._sqlJsModule) { return this._sqlJsModule; }
+		const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
+		let wasmBinary: Uint8Array | undefined;
+		if (fs.existsSync(wasmPath)) {
+			wasmBinary = fs.readFileSync(wasmPath);
+		}
+		this._sqlJsModule = await initSqlJs(wasmBinary ? { wasmBinary } : undefined);
+		return this._sqlJsModule;
+	}
+
+	/**
+	 * Read session metadata from the OpenCode SQLite database.
+	 */
+	private async readOpenCodeDbSession(sessionId: string): Promise<any | null> {
+		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
+		if (!fs.existsSync(dbPath)) { return null; }
+		try {
+			const SQL = await this.initSqlJs();
+			const buffer = fs.readFileSync(dbPath);
+			const db = new SQL.Database(buffer);
+			try {
+				const result = db.exec('SELECT id, slug, title, time_created, time_updated, project_id, directory FROM session WHERE id = ?', [sessionId]);
+				if (result.length === 0 || result[0].values.length === 0) { return null; }
+				const row = result[0].values[0];
+				const cols = result[0].columns;
+				const obj: any = {};
+				for (let i = 0; i < cols.length; i++) { obj[cols[i]] = row[i]; }
+				return {
+					id: obj.id,
+					slug: obj.slug,
+					title: obj.title,
+					projectID: obj.project_id,
+					directory: obj.directory,
+					time: { created: obj.time_created, updated: obj.time_updated }
+				};
+			} finally {
+				db.close();
+			}
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Read all OpenCode messages from the SQLite database for a given session.
+	 */
+	private async readOpenCodeDbMessages(sessionId: string): Promise<any[]> {
+		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
+		if (!fs.existsSync(dbPath)) { return []; }
+		try {
+			const SQL = await this.initSqlJs();
+			const buffer = fs.readFileSync(dbPath);
+			const db = new SQL.Database(buffer);
+			try {
+				const result = db.exec('SELECT id, data, time_created FROM message WHERE session_id = ? ORDER BY time_created ASC', [sessionId]);
+				if (result.length === 0) { return []; }
+				return result[0].values.map((row: unknown[]) => {
+					const data = JSON.parse(row[1] as string);
+					data.id = row[0];
+					data.time = data.time || {};
+					data.time.created = data.time.created || row[2];
+					return data;
+				});
+			} finally {
+				db.close();
+			}
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Read all OpenCode parts from the SQLite database for a given message.
+	 */
+	private async readOpenCodeDbParts(messageId: string): Promise<any[]> {
+		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
+		if (!fs.existsSync(dbPath)) { return []; }
+		try {
+			const SQL = await this.initSqlJs();
+			const buffer = fs.readFileSync(dbPath);
+			const db = new SQL.Database(buffer);
+			try {
+				const result = db.exec('SELECT id, data, time_created FROM part WHERE message_id = ? ORDER BY time_created ASC', [messageId]);
+				if (result.length === 0) { return []; }
+				return result[0].values.map((row: unknown[]) => {
+					const data = JSON.parse(row[1] as string);
+					data.id = row[0];
+					data.time = data.time || {};
+					data.time.created = data.time.created || row[2];
+					return data;
+				});
+			} finally {
+				db.close();
+			}
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Discover all session IDs from the OpenCode SQLite database.
+	 */
+	private async discoverOpenCodeDbSessions(): Promise<string[]> {
+		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
+		if (!fs.existsSync(dbPath)) { return []; }
+		try {
+			const SQL = await this.initSqlJs();
+			const buffer = fs.readFileSync(dbPath);
+			const db = new SQL.Database(buffer);
+			try {
+				const result = db.exec('SELECT id FROM session');
+				if (result.length === 0) { return []; }
+				return result[0].values.map((row: unknown[]) => row[0] as string);
+			} finally {
+				db.close();
+			}
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Get file stats for a session, handling OpenCode DB virtual paths.
+	 * For DB sessions, returns the stat of the opencode.db file itself.
+	 */
+	private async statSessionFile(sessionFile: string): Promise<fs.Stats> {
+		if (this.isOpenCodeDbSession(sessionFile)) {
+			const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
+			return fs.promises.stat(dbPath);
+		}
+		return fs.promises.stat(sessionFile);
+	}
+
+	/**
+	 * Read all OpenCode message files for a given session.
+	 * Messages are stored in ~/.local/share/opencode/storage/message/ses_<id>/
+	 * Returns an array of parsed message objects sorted by creation time.
+	 */
+	private readOpenCodeMessages(sessionId: string): any[] {
+		const dataDir = this.getOpenCodeDataDir();
+		const messageDir = path.join(dataDir, 'storage', 'message', sessionId);
+		const messages: any[] = [];
+		try {
+			if (!fs.existsSync(messageDir)) { return messages; }
+			const entries = fs.readdirSync(messageDir, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isFile() || !entry.name.endsWith('.json')) { continue; }
+				try {
+					const content = fs.readFileSync(path.join(messageDir, entry.name), 'utf8');
+					const msg = JSON.parse(content);
+					messages.push(msg);
+				} catch {
+					// Skip unreadable message files
+				}
+			}
+		} catch {
+			// Directory not accessible
+		}
+		// Sort by creation time
+		messages.sort((a, b) => ((a.time?.created || 0) - (b.time?.created || 0)));
+		return messages;
+	}
+
+	/**
+	 * Read all OpenCode part files for a given message.
+	 * Parts are stored in ~/.local/share/opencode/storage/part/msg_<id>/
+	 * Returns an array of parsed part objects sorted by creation/start time.
+	 */
+	private readOpenCodeParts(messageId: string): any[] {
+		const dataDir = this.getOpenCodeDataDir();
+		const partDir = path.join(dataDir, 'storage', 'part', messageId);
+		const parts: any[] = [];
+		try {
+			if (!fs.existsSync(partDir)) { return parts; }
+			const entries = fs.readdirSync(partDir, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isFile() || !entry.name.endsWith('.json')) { continue; }
+				try {
+					const content = fs.readFileSync(path.join(partDir, entry.name), 'utf8');
+					const part = JSON.parse(content);
+					parts.push(part);
+				} catch {
+					// Skip unreadable part files
+				}
+			}
+		} catch {
+			// Directory not accessible
+		}
+		// Sort by start time if available, otherwise by ID
+		parts.sort((a, b) => ((a.time?.start || 0) - (b.time?.start || 0)));
+		return parts;
+	}
+
 	private getEditorTypeFromPath(filePath: string): string {
 		const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
 
 		if (normalizedPath.includes('/.copilot/session-state/')) {
 			return 'Copilot CLI';
+		}
+		if (this.isOpenCodeSessionFile(filePath)) {
+			return 'OpenCode';
 		}
 		if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
 			return 'VS Code Insiders';
@@ -770,6 +1008,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const lower = rootPath.toLowerCase();
 		// Check obvious markers first
 		if (lower.includes('.copilot') || lower.includes('copilot')) { return 'Copilot CLI'; }
+		if (lower.includes('opencode')) { return 'OpenCode'; }
 		if (lower.includes('code - insiders') || lower.includes('code-insiders') || lower.includes('insiders')) { return 'VS Code Insiders'; }
 		if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
 		if (lower.includes('vscodium')) { return 'VSCodium'; }
@@ -1194,7 +1433,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						fileSize = cachedData.size;
 					} else {
 						// Not in cache - need to stat the file
-						const fileStats = await fs.promises.stat(sessionFile);
+						const fileStats = await this.statSessionFile(sessionFile);
 						mtime = fileStats.mtime.getTime();
 						fileSize = fileStats.size;
 					}
@@ -1275,7 +1514,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						wasCached = true;
 					} else {
 						// Not in cache - need to stat the file
-						const fileStats = await fs.promises.stat(sessionFile);
+						const fileStats = await this.statSessionFile(sessionFile);
 						mtime = fileStats.mtime.getTime();
 						fileSize = fileStats.size;
 						wasCached = false;
@@ -1531,7 +1770,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						fileSize = cachedData.size;
 					} else {
 						// Not in cache - need to stat the file
-						fileStats = await fs.promises.stat(sessionFile);
+						fileStats = await this.statSessionFile(sessionFile);
 						mtime = fileStats.mtime.getTime();
 						fileSize = fileStats.size;
 					}
@@ -1772,7 +2011,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						fileSize = cachedData.size;
 					} else {
 						// Not in cache - need to stat the file
-						const fileStats = await fs.promises.stat(sessionFile);
+						const fileStats = await this.statSessionFile(sessionFile);
 						mtime = fileStats.mtime.getTime();
 						fileSize = fileStats.size;
 					}
@@ -2181,6 +2420,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
+			// Handle OpenCode sessions
+			if (this.isOpenCodeSessionFile(sessionFile)) {
+				return await this.countOpenCodeInteractions(sessionFile);
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -2234,6 +2478,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async getModelUsageFromSession(sessionFile: string): Promise<ModelUsage> {
 		const modelUsage: ModelUsage = {};
+
+		// Handle OpenCode sessions
+		if (this.isOpenCodeSessionFile(sessionFile)) {
+			return await this.getOpenCodeModelUsage(sessionFile);
+		}
+
 		const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
 
 		try {
@@ -2435,12 +2685,54 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 
 		try {
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-
-			// Check if this is a UUID-only file (new Copilot CLI format)
-			if (this.isUuidPointerFile(fileContent)) {
-				return analysis; // No usage data in pointer files
+			// Handle OpenCode sessions
+			if (this.isOpenCodeSessionFile(sessionFile)) {
+				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+				if (messages.length > 0) {
+					const models: string[] = [];
+					for (const msg of messages) {
+						if (msg.role === 'user') {
+							// OpenCode uses agent/mode field for mode type
+							const mode = msg.agent || 'agent';
+							if (mode === 'build' || mode === 'agent') {
+								analysis.modeUsage.agent++;
+							} else if (mode === 'ask') {
+								analysis.modeUsage.ask++;
+							} else if (mode === 'edit') {
+								analysis.modeUsage.edit++;
+							} else {
+								analysis.modeUsage.agent++;
+							}
+						}
+						if (msg.role === 'assistant') {
+							const model = msg.modelID || 'unknown';
+							models.push(model);
+							// Check parts for tool calls
+							const parts = await this.getOpenCodePartsForMessage(msg.id);
+							for (const part of parts) {
+								if (part.type === 'tool' && part.tool) {
+									analysis.toolCalls.total++;
+									const toolName = part.tool;
+									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+								}
+							}
+						}
+					}
+					// Model switching analysis
+					const uniqueModels = [...new Set(models)];
+					analysis.modelSwitching.uniqueModels = uniqueModels;
+					analysis.modelSwitching.modelCount = uniqueModels.length;
+					analysis.modelSwitching.totalRequests = models.length;
+					let switchCount = 0;
+					for (let i = 1; i < models.length; i++) {
+						if (models[i] !== models[i - 1]) { switchCount++; }
+					}
+					analysis.modelSwitching.switchCount = switchCount;
+				}
+				return analysis;
 			}
+
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
@@ -3631,6 +3923,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const timestamps: number[] = [];
 
 		try {
+			// Handle OpenCode sessions
+			if (this.isOpenCodeSessionFile(sessionFile)) {
+				// Read session metadata from DB or JSON file
+				let session: any = null;
+				const sessionId = this.getOpenCodeSessionId(sessionFile);
+				if (this.isOpenCodeDbSession(sessionFile) && sessionId) {
+					session = await this.readOpenCodeDbSession(sessionId);
+				} else {
+					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+					session = JSON.parse(fileContent);
+				}
+				if (session) {
+					title = session.title || session.slug;
+					if (session.time?.created) { timestamps.push(session.time.created); }
+					if (session.time?.updated) { timestamps.push(session.time.updated); }
+				}
+				// Also check message timestamps for more precision
+				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+				for (const msg of messages) {
+					if (msg.time?.created) { timestamps.push(msg.time.created); }
+					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
+				}
+				let firstInteraction: string | null = null;
+				let lastInteraction: string | null = null;
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					firstInteraction = new Date(timestamps[0]).toISOString();
+					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -3950,7 +4274,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Uses cached data when available to avoid re-reading files.
 	 */
 	private async getSessionFileDetails(sessionFile: string): Promise<SessionFileDetails> {
-		const stat = await fs.promises.stat(sessionFile);
+		const stat = await this.statSessionFile(sessionFile);
 
 		// Try to get details from cache first
 		const cachedDetails = await this.getSessionFileDetailsFromCache(sessionFile, stat);
@@ -3987,6 +4311,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.enrichDetailsWithEditorInfo(sessionFile, details);
 
 		try {
+			// Handle OpenCode sessions
+			if (this.isOpenCodeSessionFile(sessionFile)) {
+				// Read session metadata from DB or JSON file
+				let session: any = null;
+				const sessionId = this.getOpenCodeSessionId(sessionFile);
+				if (this.isOpenCodeDbSession(sessionFile) && sessionId) {
+					session = await this.readOpenCodeDbSession(sessionId);
+				} else {
+					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+					session = JSON.parse(fileContent);
+				}
+				if (session) {
+					details.title = session.title || session.slug;
+				}
+				details.interactions = await this.countOpenCodeInteractions(sessionFile);
+				const timestamps: number[] = [];
+				if (session?.time?.created) { timestamps.push(session.time.created); }
+				if (session?.time?.updated) { timestamps.push(session.time.updated); }
+				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+				for (const msg of messages) {
+					if (msg.time?.created) { timestamps.push(msg.time.created); }
+					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
+				}
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				// Set editor info for OpenCode
+				details.editorRoot = this.getOpenCodeDataDir();
+				details.editorName = 'OpenCode';
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format where the file contains just a session ID)
@@ -4212,6 +4571,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private detectEditorSource(filePath: string): string {
 		const lowerPath = filePath.toLowerCase().replace(/\\/g, '/');
 		if (lowerPath.includes('/.copilot/session-state/')) { return 'Copilot CLI'; }
+		if (this.isOpenCodeSessionFile(filePath)) { return 'OpenCode'; }
 		if (lowerPath.includes('cursor')) { return 'Cursor'; }
 		if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
 		if (lowerPath.includes('vscodium')) { return 'VSCodium'; }
@@ -4228,6 +4588,98 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const turns: ChatTurn[] = [];
 
 		try {
+			// Handle OpenCode sessions
+			if (this.isOpenCodeSessionFile(sessionFile)) {
+				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+				if (messages.length > 0) {
+					let turnNumber = 0;
+					let prevCumulativeTotal = 0; // track cumulative total to compute per-turn deltas
+					for (let i = 0; i < messages.length; i++) {
+						const msg = messages[i];
+						if (msg.role !== 'user') { continue; }
+						turnNumber++;
+						// Collect ALL assistant messages for this turn (agentic tool-use loops produce multiple)
+						const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
+						const userParts = await this.getOpenCodePartsForMessage(msg.id);
+						const userText = userParts.filter(p => p.type === 'text').map(p => p.text || '').join('\n');
+						let assistantText = '';
+						let thinkingText = '';
+						const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+						let model: string | null = null;
+						let thinkingTokens = 0;
+
+						// Process all assistant messages in this turn to collect text, tool calls, and token totals
+						let turnCumulativeTotal = prevCumulativeTotal;
+						for (const assistantMsg of turnAssistantMsgs) {
+							if (!model) {
+								model = assistantMsg.modelID || null;
+							}
+							thinkingTokens += assistantMsg.tokens?.reasoning || 0;
+							// Track the cumulative total — the last assistant message has the highest value
+							if (typeof assistantMsg.tokens?.total === 'number') {
+								turnCumulativeTotal = Math.max(turnCumulativeTotal, assistantMsg.tokens.total);
+							}
+							const assistantParts = await this.getOpenCodePartsForMessage(assistantMsg.id);
+							for (const part of assistantParts) {
+								if (part.type === 'text' && part.text) {
+									assistantText += part.text;
+								} else if (part.type === 'reasoning' && part.text) {
+									thinkingText += part.text;
+								} else if (part.type === 'tool' && part.tool) {
+									toolCalls.push({
+										toolName: part.tool,
+										arguments: part.state?.input ? JSON.stringify(part.state.input) : undefined,
+										result: part.state?.output || undefined
+									});
+								}
+							}
+						}
+
+						// Per-turn tokens = delta of cumulative total between this turn and previous
+						const turnTokens = turnCumulativeTotal - prevCumulativeTotal;
+						// Split proportionally: output+thinking are known, remainder is input
+						const turnOutputAndThinking = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.output || 0) + (m.tokens?.reasoning || 0), 0);
+						const turnInputTokens = Math.max(0, turnTokens - turnOutputAndThinking);
+
+						turns.push({
+							turnNumber,
+							timestamp: msg.time?.created ? new Date(msg.time.created).toISOString() : null,
+							mode: (msg.agent === 'build' || msg.agent === 'agent') ? 'agent' : (msg.agent === 'ask' ? 'ask' : 'agent'),
+							userMessage: userText,
+							assistantResponse: assistantText,
+							model,
+							toolCalls,
+							contextReferences: {
+								file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+								workspace: 0, terminal: 0, vscode: 0,
+								terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
+								outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+							},
+							mcpTools: [],
+							inputTokensEstimate: turnInputTokens,
+							outputTokensEstimate: turnOutputAndThinking - thinkingTokens,
+							thinkingTokensEstimate: thinkingTokens
+						});
+
+						prevCumulativeTotal = turnCumulativeTotal;
+					}
+				}
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: details.editorName || 'OpenCode',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -4842,6 +5294,72 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.warn(`Could not check Copilot CLI session path ${copilotCliSessionPath}: ${checkError}`);
 			}
 
+			// Check for OpenCode session files
+			// OpenCode stores session data in ~/.local/share/opencode/storage/session/
+			const openCodeDataDir = this.getOpenCodeDataDir();
+			try {
+				const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
+				if (fs.existsSync(openCodeSessionDir)) {
+					const scanOpenCodeDir = (dir: string) => {
+						try {
+							const entries = fs.readdirSync(dir, { withFileTypes: true });
+							for (const entry of entries) {
+								if (entry.isDirectory()) {
+									scanOpenCodeDir(path.join(dir, entry.name));
+								} else if (entry.name.startsWith('ses_') && entry.name.endsWith('.json')) {
+									const fullPath = path.join(dir, entry.name);
+									try {
+										const stats = fs.statSync(fullPath);
+										if (stats.size > 0) {
+											sessionFiles.push(fullPath);
+										}
+									} catch {
+										// Ignore file access errors
+									}
+								}
+							}
+						} catch {
+							// Ignore directory access errors
+						}
+					};
+					scanOpenCodeDir(openCodeSessionDir);
+					const openCodeCount = sessionFiles.length - (sessionFiles.filter(f => !this.isOpenCodeSessionFile(f))).length;
+					if (openCodeCount > 0) {
+						this.log(`📄 Found ${openCodeCount} session files in OpenCode storage`);
+					}
+				}
+			} catch (checkError) {
+				this.warn(`Could not check OpenCode session path: ${checkError}`);
+			}
+
+			// Check for OpenCode sessions in SQLite database (opencode.db)
+			// Newer OpenCode versions store sessions in SQLite instead of JSON files
+			try {
+				const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
+				if (fs.existsSync(openCodeDbPath)) {
+					const existingSessionIds = new Set(
+						sessionFiles
+							.filter(f => this.isOpenCodeSessionFile(f))
+							.map(f => this.getOpenCodeSessionId(f))
+							.filter(Boolean)
+					);
+					const dbSessionIds = await this.discoverOpenCodeDbSessions();
+					let dbNewCount = 0;
+					for (const sessionId of dbSessionIds) {
+						if (!existingSessionIds.has(sessionId)) {
+							// Create virtual path for DB session
+							sessionFiles.push(path.join(openCodeDataDir, `opencode.db#${sessionId}`));
+							dbNewCount++;
+						}
+					}
+					if (dbNewCount > 0) {
+						this.log(`📄 Found ${dbNewCount} additional session(s) in OpenCode database`);
+					}
+				}
+			} catch (dbError) {
+				this.warn(`Could not read OpenCode database: ${dbError}`);
+			}
+
 			// Log summary
 			this.log(`✨ Total: ${sessionFiles.length} session file(s) discovered`);
 			if (sessionFiles.length === 0) {
@@ -4909,6 +5427,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number }> {
 		try {
+			// Handle OpenCode sessions - they have actual token counts in message files
+			if (this.isOpenCodeSessionFile(sessionFilePath)) {
+				return this.getTokensFromOpenCodeSession(sessionFilePath);
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -5018,6 +5541,124 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens };
+	}
+
+	/**
+	 * Get OpenCode messages for a session, trying DB first then JSON files.
+	 */
+	private async getOpenCodeMessagesForSession(sessionFilePath: string): Promise<any[]> {
+		const sessionId = this.getOpenCodeSessionId(sessionFilePath);
+		if (!sessionId) { return []; }
+		if (this.isOpenCodeDbSession(sessionFilePath)) {
+			return this.readOpenCodeDbMessages(sessionId);
+		}
+		// Try DB first (may have newer data), fall back to JSON files
+		const dbMessages = await this.readOpenCodeDbMessages(sessionId);
+		if (dbMessages.length > 0) { return dbMessages; }
+		return this.readOpenCodeMessages(sessionId);
+	}
+
+	/**
+	 * Get OpenCode parts for a message, trying DB first then JSON files.
+	 */
+	private async getOpenCodePartsForMessage(messageId: string): Promise<any[]> {
+		const dbParts = await this.readOpenCodeDbParts(messageId);
+		if (dbParts.length > 0) { return dbParts; }
+		return this.readOpenCodeParts(messageId);
+	}
+
+	/**
+	 * Extract actual token counts from an OpenCode session.
+	 * OpenCode stores actual token counts in message files (tokens.input, tokens.output, tokens.reasoning).
+	 */
+	private async getTokensFromOpenCodeSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number }> {
+		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
+		let thinkingTokens = 0;
+
+		// OpenCode messages have a cumulative `total` field that grows with each API call.
+		// The last assistant message's `total` is the session total.
+		// Summing input+output across messages would over-count because each API call
+		// re-sends the full conversation context as input.
+		let sessionTotal = 0;
+		for (const msg of messages) {
+			if (msg.role === 'assistant' && msg.tokens) {
+				if (typeof msg.tokens.total === 'number') {
+					sessionTotal = msg.tokens.total; // cumulative — last one wins
+				}
+				thinkingTokens += msg.tokens.reasoning || 0;
+			}
+		}
+
+		return { tokens: sessionTotal, thinkingTokens };
+	}
+
+	/**
+	 * Extract the session ID from an OpenCode session file path.
+	 * Handles both JSON file paths and DB virtual paths:
+	 * - ".../storage/session/global/ses_abc123.json" -> "ses_abc123"
+	 * - ".../opencode.db#ses_abc123" -> "ses_abc123"
+	 */
+	private getOpenCodeSessionId(sessionFilePath: string): string | null {
+		// Handle DB virtual path: opencode.db#ses_<id>
+		const hashIdx = sessionFilePath.indexOf('opencode.db#');
+		if (hashIdx !== -1) {
+			return sessionFilePath.substring(hashIdx + 'opencode.db#'.length);
+		}
+		const basename = path.basename(sessionFilePath, '.json');
+		return basename.startsWith('ses_') ? basename : null;
+	}
+
+	/**
+	 * Count interactions in an OpenCode session (number of user messages).
+	 */
+	private async countOpenCodeInteractions(sessionFilePath: string): Promise<number> {
+		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
+		return messages.filter(m => m.role === 'user').length;
+	}
+
+	/**
+	 * Get model usage from an OpenCode session.
+	 * Extracts model info from assistant message files.
+	 */
+	private async getOpenCodeModelUsage(sessionFilePath: string): Promise<ModelUsage> {
+		const modelUsage: ModelUsage = {};
+		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
+
+		// OpenCode messages have a cumulative `total` field. To get per-turn tokens,
+		// compute deltas between consecutive user turns using the last assistant message's total.
+		let prevTotal = 0;
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			if (msg.role !== 'user') { continue; }
+			// Find all assistant messages for this turn
+			const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
+			if (turnAssistantMsgs.length === 0) { continue; }
+
+			// Get cumulative total from the last assistant message in this turn
+			let turnCumTotal = prevTotal;
+			for (const am of turnAssistantMsgs) {
+				if (typeof am.tokens?.total === 'number') {
+					turnCumTotal = Math.max(turnCumTotal, am.tokens.total);
+				}
+			}
+			const turnTokens = turnCumTotal - prevTotal;
+			if (turnTokens <= 0) { prevTotal = turnCumTotal; continue; }
+
+			// Attribute to the model used in this turn (from first assistant message)
+			const model = turnAssistantMsgs[0].modelID || turnAssistantMsgs[0].model?.modelID || 'unknown';
+			if (!modelUsage[model]) {
+				modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+			}
+			// Output tokens are the sum of actual output+reasoning across the turn's API calls
+			const turnOutput = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.output || 0) + (m.tokens?.reasoning || 0), 0);
+			const turnInput = Math.max(0, turnTokens - turnOutput);
+			modelUsage[model].inputTokens += turnInput;
+			modelUsage[model].outputTokens += turnOutput;
+
+			prevTotal = turnCumTotal;
+		}
+
+		return modelUsage;
 	}
 
 	private getModelFromRequest(request: any): string {
@@ -7910,7 +8551,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			const sessionFileData: { file: string; size: number; modified: string }[] = [];
 			for (const file of sessionFiles.slice(0, 20)) {
 				try {
-					const stat = await fs.promises.stat(file);
+					const stat = await this.statSessionFile(file);
 					sessionFileData.push({
 						file,
 						size: stat.size,
@@ -7926,6 +8567,12 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			const pathModule = require('path');
 			const copilotSessionStateDir = pathModule.join(os.homedir(), '.copilot', 'session-state');
 			for (const file of sessionFiles) {
+				// Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
+				if (this.isOpenCodeDbSession(file)) {
+					const editorRoot = this.getOpenCodeDataDir();
+					dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+					continue;
+				}
 				const parts = file.split(/[\\\/]/);
 				const userIdx = parts.findIndex((p: string) => p.toLowerCase() === 'user');
 				let editorRoot = '';
@@ -8011,7 +8658,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const fileStats = await Promise.all(
 			sessionFiles.map(async (file) => {
 				try {
-					const stat = await fs.promises.stat(file);
+					const stat = await this.statSessionFile(file);
 					return { file, mtime: stat.mtime.getTime() };
 				} catch {
 					return { file, mtime: 0 };

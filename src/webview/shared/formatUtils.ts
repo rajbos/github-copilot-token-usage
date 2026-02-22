@@ -25,6 +25,7 @@ export function getEditorIcon(editor: string): string {
 		'VSCodium': '🔷',
 		'Cursor': '⚡',
 		'Copilot CLI': '🤖',
+		'OpenCode': '🟢',
 		'Unknown': '❓'
 	};
 	return icons[editor] || '📝';

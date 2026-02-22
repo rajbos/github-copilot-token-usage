@@ -120,6 +120,8 @@ body {
 	color: var(--link-color);
 	text-decoration: underline;
 	transition: color 0.2s;
+	word-break: break-all;
+	overflow-wrap: break-word;
 }
 
 .filename-link:hover {
@@ -140,6 +142,9 @@ body {
 	font-weight: 700;
 	color: var(--link-color);
 	margin-bottom: 8px;
+	word-break: break-all;
+	overflow-wrap: break-word;
+	white-space: normal;
 }
 
 .summary-sub {
