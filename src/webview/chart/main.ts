@@ -2,6 +2,7 @@
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type ChartModule = typeof import('chart.js/auto');
@@ -27,6 +28,7 @@ type InitialChartData = {
 	avgTokensPerDay: number;
 	totalSessions: number;
 	lastUpdated: string;
+	backendConfigured?: boolean;
 };
 
 // VS Code injects this in the webview environment
@@ -65,6 +67,8 @@ function renderLayout(data: InitialChartData): void {
 
 	root.replaceChildren();
 
+	const themeStyle = document.createElement('style');
+	themeStyle.textContent = themeStyles;
 	const style = document.createElement('style');
 	style.textContent = styles;
 
@@ -79,8 +83,12 @@ function renderLayout(data: InitialChartData): void {
 		createButton(BUTTONS['btn-refresh']),
 		createButton(BUTTONS['btn-details']),
 		createButton(BUTTONS['btn-usage']),
-		createButton(BUTTONS['btn-diagnostics'])
+		createButton(BUTTONS['btn-diagnostics']),
+		createButton(BUTTONS['btn-maturity'])
 	);
+	if (data.backendConfigured) {
+		buttons.append(createButton(BUTTONS['btn-dashboard']));
+	}
 	header.append(headerLeft, buttons);
 
 	const summarySection = el('div', 'section');
@@ -125,7 +133,7 @@ function renderLayout(data: InitialChartData): void {
 	const footer = el('div', 'footer', `Day-by-day token usage for the last 30 days\nLast updated: ${new Date(data.lastUpdated).toLocaleString()}\nUpdates automatically every 5 minutes.`);
 
 	container.append(header, summarySection, chartSection, footer);
-	root.append(style, container);
+	root.append(themeStyle, style, container);
 
 	wireInteractions(data);
 	void setupChart(canvas, data);
@@ -161,6 +169,12 @@ function wireInteractions(data: InitialChartData): void {
 
 	const diagnostics = document.getElementById('btn-diagnostics');
 	diagnostics?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+
+	const maturity = document.getElementById('btn-maturity');
+	maturity?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
+
+	const dashboard = document.getElementById('btn-dashboard');
+	dashboard?.addEventListener('click', () => vscode.postMessage({ command: 'showDashboard' }));
 
 	const viewButtons = [
 		{ id: 'view-total', view: 'total' as const },
@@ -223,24 +237,34 @@ function setActive(view: 'total' | 'model' | 'editor' | 'repository'): void {
 }
 
 function createConfig(view: 'total' | 'model' | 'editor' | 'repository', data: InitialChartData): ChartConfig {
+	// Get CSS variables for theme-aware colors
+	const styles = getComputedStyle(document.body);
+	const textColor = styles.getPropertyValue('--text-primary') || '#e0e0e0';
+	const mutedColor = styles.getPropertyValue('--text-muted') || '#999999';
+	const borderColor = styles.getPropertyValue('--border-subtle') || '#3a3a40';
+	const bgColor = styles.getPropertyValue('--bg-tertiary') || '#1e1e1e';
+	
+	// Make grid lines very subtle with low opacity
+	const gridColor = 'rgba(128, 128, 128, 0.15)';
+	
 	const baseOptions = {
 		responsive: true,
 		maintainAspectRatio: false,
 		interaction: { mode: 'index' as const, intersect: false },
 		plugins: {
-			legend: { position: 'top' as const, labels: { color: '#e7e7e7', font: { size: 12 } } },
+			legend: { position: 'top' as const, labels: { color: textColor, font: { size: 12 } } },
 			tooltip: {
-				backgroundColor: 'rgba(0,0,0,0.85)',
-				titleColor: '#ffffff',
-				bodyColor: '#d0d0d0',
-				borderColor: '#2a2a30',
+				backgroundColor: bgColor,
+				titleColor: textColor,
+				bodyColor: textColor,
+				borderColor: borderColor,
 				borderWidth: 1,
 				padding: 10,
 				displayColors: true
 			}
 		},
 		scales: {
-			x: { grid: { color: '#2d2d33' }, ticks: { color: '#c8c8c8', font: { size: 11 } } }
+			x: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 11 } } }
 		} as const
 	};
 
@@ -277,17 +301,17 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository', data: I
 						type: 'linear' as const,
 						display: true,
 						position: 'left' as const,
-						grid: { color: '#2d2d33' },
-						ticks: { color: '#c8c8c8', font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() },
-						title: { display: true, text: 'Tokens', color: '#d0d0d0', font: { size: 12, weight: 'bold' } }
+						grid: { color: gridColor },
+						ticks: { color: textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() },
+						title: { display: true, text: 'Tokens', color: textColor, font: { size: 12, weight: 'bold' } }
 					},
 					y1: {
 						type: 'linear' as const,
 						display: true,
 						position: 'right' as const,
 						grid: { drawOnChartArea: false },
-						ticks: { color: '#c8c8c8', font: { size: 11 } },
-						title: { display: true, text: 'Sessions', color: '#d0d0d0', font: { size: 12, weight: 'bold' } }
+						ticks: { color: textColor, font: { size: 11 } },
+						title: { display: true, text: 'Sessions', color: textColor, font: { size: 12, weight: 'bold' } }
 					}
 				}
 			}
@@ -315,24 +339,24 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository', data: I
 			...baseOptions,
 			plugins: {
 				...baseOptions.plugins,
-				legend: { position: 'top' as const, labels: { color: '#e7e7e7', font: { size: 11 } } }
+				legend: { position: 'top' as const, labels: { color: textColor, font: { size: 11 } } }
 			},
 			scales: {
 				...baseOptions.scales,
 				y: { 
 					stacked: true, 
-					grid: { color: '#2d2d33' }, 
-					ticks: { color: '#c8c8c8', font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() },
-					title: { display: true, text: 'Tokens', color: '#d0d0d0', font: { size: 12, weight: 'bold' } }
+					grid: { color: gridColor }, 
+					ticks: { color: textColor, font: { size: 11 }, callback: (value: any) => Number(value).toLocaleString() },
+					title: { display: true, text: 'Tokens', color: textColor, font: { size: 12, weight: 'bold' } }
 				},
-				x: { stacked: true, grid: { color: '#2d2d33' }, ticks: { color: '#c8c8c8', font: { size: 11 } } },
+				x: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font: { size: 11 } } },
 				y1: {
 					type: 'linear' as const,
 					display: true,
 					position: 'right' as const,
 					grid: { drawOnChartArea: false },
-					ticks: { color: '#c8c8c8', font: { size: 11 } },
-					title: { display: true, text: 'Sessions', color: '#d0d0d0', font: { size: 12, weight: 'bold' } }
+					ticks: { color: textColor, font: { size: 11 } },
+					title: { display: true, text: 'Sessions', color: textColor, font: { size: 12, weight: 'bold' } }
 				}
 			}
 		}
@@ -355,3 +379,4 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+

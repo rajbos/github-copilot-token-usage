@@ -416,6 +416,27 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<div class="field"><label for="lookbackDays">Lookback days <span class="range">(1-90)</span></label><vscode-text-field id="lookbackDays" type="number" placeholder="30" aria-describedby="lookbackDays-help lookbackDays-error"></vscode-text-field><div id="lookbackDays-error" class="error" role="alert" data-error-for="lookbackDays"></div></div>
 					<div id="lookbackDays-help" class="helper">How far back to sync: 7 days = current week, 30 days = current month, 90 days = full quarter. Smaller values sync faster.</div>
 				</div>
+				<div class="card">
+					<h3>Blob Upload</h3>
+					<p class="helper"><strong>What gets uploaded:</strong> The raw Copilot Chat session log files from your local VS Code storage. These JSON/JSONL files contain <em>full conversation content</em> — your prompts, AI responses (including generated code), model names, timestamps, tool calls, and context references.</p>
+					<p class="helper"><strong>Why:</strong> Enables downstream analysis by tools like GitHub Copilot Coding Agent, Power BI, or custom pipelines that need access to the complete session data — not just the aggregated token counts stored in Table Storage.</p>
+					<p class="helper"><strong>Privacy note:</strong> Unlike the table sync (which only stores aggregated token counts), blob upload stores the <em>complete</em> session files. This means anyone with read access to the blob container can see your full Copilot conversations. Only enable this if you are comfortable sharing this data.</p>
+					<p class="helper"><strong>Storage path:</strong> Files are organized as <code>{dataset}/{machineId}/{date}/{sessionFile}</code> in the container, using the same storage account as table sync.</p>
+					<div class="field inline" style="margin-top: 8px;">
+						<vscode-checkbox id="blobUploadEnabled" aria-describedby="blobUploadEnabled-help">Enable blob upload of session log files</vscode-checkbox>
+					</div>
+					<div id="blobUploadEnabled-help" class="helper">Periodically uploads your local Copilot session files to Azure Blob Storage. Uses the same storage account and credentials as the table sync above.</div>
+					<div id="blobSettingsGroup">
+						<div class="field"><label for="blobContainerName">Container name</label><vscode-text-field id="blobContainerName" placeholder="copilot-session-logs" aria-describedby="blobContainerName-help blobContainerName-error"></vscode-text-field><div id="blobContainerName-error" class="error" role="alert" data-error-for="blobContainerName"></div></div>
+						<div id="blobContainerName-help" class="helper">The blob container to store session files in. Created automatically if it doesn't exist. Uses private access (no public access).</div>
+						<div class="field"><label for="blobUploadFrequencyHours">Upload frequency (hours) <span class="range">(1-168)</span></label><vscode-text-field id="blobUploadFrequencyHours" type="number" placeholder="24" aria-describedby="blobUploadFrequencyHours-help blobUploadFrequencyHours-error"></vscode-text-field><div id="blobUploadFrequencyHours-error" class="error" role="alert" data-error-for="blobUploadFrequencyHours"></div></div>
+						<div id="blobUploadFrequencyHours-help" class="helper">All session files within the lookback window are re-uploaded on each cycle (1 = hourly, 24 = daily, 168 = weekly). Existing blobs are overwritten.</div>
+						<div class="field inline">
+							<vscode-checkbox id="blobCompressFiles" aria-describedby="blobCompressFiles-help">Compress files before upload (gzip)</vscode-checkbox>
+						</div>
+						<div id="blobCompressFiles-help" class="helper">Reduces storage costs and bandwidth by compressing files with gzip.</div>
+					</div>
+				</div>
 			</section>
 			<section id="review" class="section">
 				<div class="card">
@@ -458,6 +479,10 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('userIdentityMode').value = state.draft.userIdentityMode;
 			byId('userId').value = state.draft.userId || '';
 			updateUserIdPlaceholder();
+			byId('blobUploadEnabled').checked = !!state.draft.blobUploadEnabled;
+			byId('blobContainerName').value = state.draft.blobContainerName || '';
+			byId('blobUploadFrequencyHours').value = state.draft.blobUploadFrequencyHours ?? '';
+			byId('blobCompressFiles').checked = state.draft.blobCompressFiles !== false;
 			byId('privacyBadge').innerText = 'Privacy: ' + state.privacyBadge;
 			byId('authBadge').innerText = state.authStatus;
 			byId('backendStateBadge').innerText = state.draft.enabled ? 'Backend: Enabled' : 'Backend: Disabled';
@@ -480,6 +505,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 			updateIdentityVisibility();
 			updateAuthUi();
 			updateEnabledState();
+			updateBlobSettingsState();
 			updateReviewSummary();
 		}
 
@@ -520,7 +546,11 @@ export class BackendConfigPanel implements vscode.Disposable {
 				aggTable: byId('aggTable').value,
 				eventsTable: byId('eventsTable').value,
 				userIdentityMode: byId('userIdentityMode').value,
-				userId: byId('userId').value
+				userId: byId('userId').value,
+				blobUploadEnabled: byId('blobUploadEnabled').checked,
+				blobContainerName: byId('blobContainerName').value,
+				blobUploadFrequencyHours: Number(byId('blobUploadFrequencyHours').value),
+				blobCompressFiles: byId('blobCompressFiles').checked
 			};
 		}
 
@@ -538,6 +568,11 @@ export class BackendConfigPanel implements vscode.Disposable {
 			});
 			if (draft.lookbackDays < 1 || draft.lookbackDays > 90 || Number.isNaN(draft.lookbackDays)) {
 				errors.lookbackDays = '1-90';
+			}
+			if (draft.blobUploadEnabled) {
+				if (!draft.blobContainerName || !draft.blobContainerName.trim()) errors.blobContainerName = 'Required';
+				const freq = Number(draft.blobUploadFrequencyHours);
+				if (!Number.isFinite(freq) || freq < 1 || freq > 168) errors.blobUploadFrequencyHours = '1-168';
 			}
 			if (draft.sharingProfile === 'teamIdentified') {
 				const id = (draft.userId || '').trim();
@@ -608,6 +643,18 @@ export class BackendConfigPanel implements vscode.Disposable {
 			}
 		}
 
+		function updateBlobSettingsState() {
+			const blobEnabled = byId('blobUploadEnabled').checked;
+			const group = byId('blobSettingsGroup');
+			if (group) {
+				if (blobEnabled) {
+					group.classList.remove('disabled-section');
+				} else {
+					group.classList.add('disabled-section');
+				}
+			}
+		}
+
 		function updateReviewSummary() {
 			const draft = readDraft();
 			const summary = byId('reviewSummary');
@@ -648,6 +695,10 @@ export class BackendConfigPanel implements vscode.Disposable {
 				}
 				
 				html += '<div class="change-item"><div class="change-label">Dataset & Lookback</div><div class="change-value">Dataset ID: ' + (draft.datasetId || 'default') + '<br>Lookback: ' + (draft.lookbackDays || 30) + ' days</div></div>';
+				
+				if (draft.blobUploadEnabled) {
+					html += '<div class="change-item warning"><div class="change-label">⚠️ Blob Upload</div><div class="change-value">Enabled — full session log files (prompts, responses, code) will be uploaded<br>Container: ' + (draft.blobContainerName || 'copilot-session-logs') + '<br>Frequency: every ' + (draft.blobUploadFrequencyHours || 24) + ' hours<br>Compression: ' + (draft.blobCompressFiles !== false ? 'On' : 'Off') + '</div></div>';
+				}
 			}
 			
 			summary.innerHTML = html;
@@ -701,11 +752,11 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 		function bindActions() {
 			const markDirty = () => vscodeApi.postMessage({ command: 'markDirty' });
-			const trackIds = ['sharingProfile','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId'];
+			const trackIds = ['sharingProfile','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId','blobUploadEnabled','blobContainerName','blobUploadFrequencyHours','blobCompressFiles'];
 			trackIds.forEach(id => {
 				const el = byId(id);
 				if (!el) return;
-				['input','change'].forEach(evt => el.addEventListener(evt, () => { markDirty(); updateIdentityVisibility(); updateAuthUi(); updateEnabledState(); updateReviewSummary(); updateValidity(); }));
+				['input','change'].forEach(evt => el.addEventListener(evt, () => { markDirty(); updateIdentityVisibility(); updateAuthUi(); updateEnabledState(); updateBlobSettingsState(); updateReviewSummary(); updateValidity(); }));
 			});
 			byId('confirmApply').addEventListener('change', updateValidity);
 			byId('saveBtnReview').addEventListener('click', () => vscodeApi.postMessage({ command: 'save', draft: readDraft() }));

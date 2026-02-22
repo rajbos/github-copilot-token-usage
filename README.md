@@ -9,7 +9,12 @@ You can also use a **shared Azure Storage account** (a “shared storage server�
 ## Features
 
 - **Real-time Token Tracking**: Displays current day and month token usage in the status bar
+- **Copilot Fluency Score**: Maturity model dashboard with 4 stages across 6 categories to track your Copilot mastery
+- **Export Fluency Score**: Export your Fluency Score as a PNG image or comprehensive multi-page PDF report
+- **Social Media Sharing**: Share your Fluency Score achievements on LinkedIn, Bluesky, and Mastodon with #CopilotFluencyScore
 - **Usage Analysis Dashboard**: Comprehensive analytics on how you use Copilot (modes, tool calls, context references, MCP tools)
+- **Copilot Fluency Score**: Evaluate your proficiency across 6 categories with actionable tips for improvement
+- **Fluency Level Viewer**: Debug-only tool to explore all scoring rules and thresholds (requires active debugger)
 - **Automatic Updates**: Refreshes every 5 minutes to show the latest usage
 - **Click to Refresh**: Click the status bar item to manually refresh the token count
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
@@ -40,7 +45,7 @@ You can also use a **shared Azure Storage account** (a “shared storage server�
 
 ## Status Bar Display
 
-The extension shows token usage in the format: `# <today> | <this month>` in the status bar:
+The extension shows token usage in the format: `# <today> | <last 30 days>` in the status bar:
 
 ![Status Bar Display](docs/images/01%20Toolbar%20info.png)
 
@@ -77,6 +82,24 @@ This caching significantly reduces the time needed for periodic updates, especia
 ## Cloud Backend (Azure Storage)
 
 The cloud backend is **disabled by default**. When enabled, the extension periodically uploads daily aggregates to Azure Storage Tables and queries them for cross-device reporting.
+
+### Session Log Upload (Optional)
+
+The extension can also upload your local session log files to Azure Blob Storage. This enables:
+- **Team collaboration**: Share logs with your team for analysis
+- **Persistent storage**: Keep logs beyond local VS Code limits
+- **Coding agent access**: Make logs available to GitHub Copilot Coding Agent as reference material
+
+To enable log file uploads:
+```json
+{
+  "copilotTokenTracker.backend.blobUploadEnabled": true,
+  "copilotTokenTracker.backend.blobContainerName": "copilot-session-logs",
+  "copilotTokenTracker.backend.blobUploadFrequencyHours": 24
+}
+```
+
+See [Blob Upload Guide](docs/BLOB-UPLOAD.md) for detailed setup instructions and security considerations.
 
 ### Authentication
 
@@ -189,6 +212,28 @@ The extension includes a comprehensive usage analysis dashboard that helps you u
 3. Or use the Command Palette: "Copilot Token Tracker: Show Usage Analysis Dashboard"
 
 The dashboard provides insights into your prompting patterns and helps you optimize your Copilot workflow. For detailed information about the metrics and how to interpret them, see [Usage Analysis Documentation](docs/USAGE-ANALYSIS.md).
+
+## Copilot Fluency Score & Level Viewer
+
+The extension includes a **Copilot Fluency Score** dashboard that evaluates your GitHub Copilot proficiency across 6 categories with 4 stages each (Skeptic → Explorer → Collaborator → Strategist).
+
+**Categories Evaluated:**
+- 💬 **Prompt Engineering**: How you structure prompts and use modes
+- 📎 **Context Engineering**: Your use of context references
+- 🤖 **Agentic**: Agent mode and autonomous feature usage
+- 🔧 **Tool Usage**: Built-in tools and MCP server integration
+- ⚙️ **Customization**: Repository customization and model selection
+- 🔄 **Workflow Integration**: Regular usage and mode diversity
+
+**Fluency Level Viewer (Debug Mode)**
+
+A debug-only tool that displays all fluency score rules, thresholds, and tips for each category and stage. This feature helps developers understand the scoring system and what actions trigger different fluency levels.
+
+- **Access**: Only available when a VS Code debugger is active
+- **Features**: View all stage requirements and advancement tips for each category
+- **Use Cases**: Test scoring logic, debug scoring issues, plan improvements
+
+For detailed information, see [Fluency Level Viewer Documentation](docs/FLUENCY-LEVEL-VIEWER.md).
 
 ## Known Issues
 

@@ -1,6 +1,7 @@
 // Log Viewer webview - displays session file details and chat turns
 import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 // CSS imported as text via esbuild
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 type PromptTokenDetail = {
@@ -19,7 +20,7 @@ type ActualUsage = {
 type ChatTurn = {
 	turnNumber: number;
 	timestamp: string | null;
-	mode: 'ask' | 'edit' | 'agent';
+	mode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent';
 	userMessage: string;
 	assistantResponse: string;
 	model: string | null;
@@ -28,11 +29,15 @@ type ChatTurn = {
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
 	outputTokensEstimate: number;
+<<<<<<< actual-tokens
 	actualUsage?: ActualUsage;
+=======
+	thinkingTokensEstimate: number;
+>>>>>>> main
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
-type ModeUsage = { ask: number; edit: number; agent: number };
+type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 type SessionUsageAnalysis = {
 	toolCalls: ToolCallUsage;
@@ -227,6 +232,8 @@ function getModeIcon(mode: string): string {
 		case 'ask': return '💬';
 		case 'edit': return '✏️';
 		case 'agent': return '🤖';
+		case 'plan': return '📋';
+		case 'customAgent': return '⚡';
 		default: return '❓';
 	}
 }
@@ -236,6 +243,8 @@ function getModeColor(mode: string): string {
 		case 'ask': return '#3b82f6';
 		case 'edit': return '#10b981';
 		case 'agent': return '#7c3aed';
+		case 'plan': return '#f59e0b';
+		case 'customAgent': return '#ec4899';
 		default: return '#888';
 	}
 }
@@ -251,10 +260,11 @@ function truncateText(text: string, maxLength: number): string {
 }
 
 function renderTurnCard(turn: ChatTurn): string {
-	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate;
+	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate + turn.thinkingTokensEstimate;
 	const hasToolCalls = turn.toolCalls.length > 0;
 	const hasMcpTools = turn.mcpTools.length > 0;
 	const totalRefs = getTotalContextRefs(turn.contextReferences);
+<<<<<<< actual-tokens
 	const hasActualUsage = !!turn.actualUsage;
 	
 	// Build actual usage section
@@ -370,6 +380,9 @@ function renderTurnCard(turn: ChatTurn): string {
 			</div>
 		`;
 	}
+=======
+	const hasThinking = turn.thinkingTokensEstimate > 0;
+>>>>>>> main
 	
 	// Build context file badges for header
 	const contextFileBadges: string[] = [];
@@ -484,7 +497,12 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
+<<<<<<< actual-tokens
 					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} est.${hasActualUsage ? ` | ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual` : ''}</span>
+=======
+					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+					${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
+>>>>>>> main
 					${contextHeaderHtml}
 				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
@@ -514,12 +532,14 @@ function renderLayout(data: SessionLogData): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 	
-	const totalTokens = data.turns.reduce((sum, t) => sum + t.inputTokensEstimate + t.outputTokensEstimate, 0);
+	const totalTokens = data.turns.reduce((sum, t) => sum + t.inputTokensEstimate + t.outputTokensEstimate + t.thinkingTokensEstimate, 0);
+	const totalThinkingTokens = data.turns.reduce((sum, t) => sum + t.thinkingTokensEstimate, 0);
 	const totalToolCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.length, 0);
 	const totalMcpTools = data.turns.reduce((sum, t) => sum + t.mcpTools.length, 0);
+	const turnsWithThinking = data.turns.filter(t => t.thinkingTokensEstimate > 0).length;
 	const totalRefs = getTotalContextRefs(data.contextReferences);
 	const usage = data.usageAnalysis;
-	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0 };
+	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
 	const usageToolTotal = usage?.toolCalls?.total ?? totalToolCalls;
 	const usageTopTools = usage ? getTopEntries(usage.toolCalls.byTool, 3) : [];
 	const usageMcpTotal = usage?.mcpTools?.total ?? totalMcpTools;
@@ -570,7 +590,7 @@ function renderLayout(data: SessionLogData): void {
 	};
 	
 	// Mode usage summary
-	const modeUsage = { ask: 0, edit: 0, agent: 0 };
+	const modeUsage = { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
 	const modelUsage: { [model: string]: number } = {};
 	for (const turn of data.turns) {
 		modeUsage[turn.mode]++;
@@ -581,6 +601,7 @@ function renderLayout(data: SessionLogData): void {
 	const modelNames = Object.keys(modelUsage);
 	
 	root.innerHTML = `
+		<style>${themeStyles}</style>
 		<style>${styles}</style>
 		
 		<div class="container">
@@ -601,7 +622,15 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${actualTotal.toLocaleString()}</div>
 					<div class="summary-sub">↑${actualPromptTotal.toLocaleString()} prompt, ↓${actualCompletionTotal.toLocaleString()} completion</div>
 				</div>
+<<<<<<< actual-tokens
 				` : ''}
+=======
+				${totalThinkingTokens > 0 ? `<div class="summary-card">
+					<div class="summary-label">🧠 Thinking Tokens</div>
+					<div class="summary-value">${totalThinkingTokens.toLocaleString()}</div>
+					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
+				</div>` : ''}
+>>>>>>> main
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
@@ -621,8 +650,11 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">📁 File Name</div>
-					<div class="summary-value" style="font-size: 16px;"><span class="filename-link" id="open-file-link">${escapeHtml(getFileName(data.file))}</span></div>
-					<div class="summary-sub">Click to open in editor</div>
+					<div class="summary-value" style="font-size: 16px;">${data.file.includes('opencode.db#ses_') 
+						? `<span title="${escapeHtml(getFileName(data.file))}">${escapeHtml(truncateText(getFileName(data.file), 30))}</span>`
+						: `<span class="filename-link" id="open-file-link" title="${escapeHtml(getFileName(data.file))}">${escapeHtml(truncateText(getFileName(data.file), 30))}</span>`
+					}</div>
+					<div class="summary-sub">${data.file.includes('opencode.db#ses_') ? 'Stored in SQLite database' : 'Click to open in editor'}</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">💻 Editor</div>

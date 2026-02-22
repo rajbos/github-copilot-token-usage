@@ -13,6 +13,7 @@ import { DataPlaneService } from './services/dataPlaneService';
 import { SyncService } from './services/syncService';
 import { QueryService, type BackendQueryResultLike } from './services/queryService';
 import { BackendUtility } from './services/utilityService';
+import { BlobUploadService } from './services/blobUploadService';
 import { BackendConfigPanel, type BackendConfigPanelState } from './configPanel';
 import { applyDraftToSettings, getPrivacyBadge, needsConsent, toDraft, validateDraft, type BackendConfigDraft } from './configurationFlow';
 import { ConfirmationMessages, SuccessMessages, ErrorMessages } from './ui/messages';
@@ -44,6 +45,7 @@ export class BackendFacade {
 	private readonly dataPlaneService: DataPlaneService;
 	private readonly syncService: SyncService;
 	private readonly queryService: QueryService;
+	private readonly blobUploadService: BlobUploadService;
 	private configPanel: BackendConfigPanel | undefined;
 
 	public constructor(deps: BackendFacadeDeps) {
@@ -51,6 +53,11 @@ export class BackendFacade {
 		
 		// Initialize services
 		this.credentialService = new CredentialService(deps.context);
+		this.blobUploadService = new BlobUploadService(
+			deps.log,
+			deps.warn,
+			deps.context
+		);
 		this.dataPlaneService = new DataPlaneService(
 			BackendUtility,
 			deps.log,
@@ -81,6 +88,7 @@ export class BackendFacade {
 			},
 			this.credentialService,
 			this.dataPlaneService,
+			this.blobUploadService,
 			BackendUtility
 		);
 		this.azureResourceService = new AzureResourceService(
@@ -122,6 +130,49 @@ export class BackendFacade {
 
 	public isConfigured(settings: BackendSettings): boolean {
 		return isBackendConfigured(settings);
+	}
+
+	/**
+	 * Resolves the effective user identity for the current user based on the backend configuration.
+	 * This is the userId that would be used when syncing data to the backend.
+	 * For dashboard purposes, this always attempts resolution to match historical sync behavior.
+	 */
+	public async resolveEffectiveUserId(settings: BackendSettings): Promise<string | undefined> {
+		// Import identity resolution function
+		const { resolveUserIdentityForSync, validateTeamAlias } = await import('./identity.js');
+		const { DefaultAzureCredential } = await import('@azure/identity');
+
+		// Get access token for pseudonymous mode if needed
+		let accessTokenForClaims: string | undefined;
+		if (settings.userIdentityMode === 'pseudonymous' && settings.authMode === 'entraId') {
+			try {
+				const token = await new DefaultAzureCredential().getToken('https://storage.azure.com/.default');
+				accessTokenForClaims = token?.token;
+			} catch {
+				// Best-effort only: fall back to undefined
+			}
+		}
+
+		// Debug logging for team alias mode
+		if (settings.userIdentityMode === 'teamAlias') {
+			const validation = validateTeamAlias(settings.userId);
+			this.deps.log(`[Backend] Team alias validation - input: "${settings.userId}", valid: ${validation.valid}, ${validation.valid ? `alias: "${validation.alias}"` : `error: ${validation.error}`}`);
+		}
+
+		// Always pass shareWithTeam: true to resolve identity for dashboard viewing,
+		// even if current sharing policy excludes user dimension. We want to match
+		// the identity that was used during previous syncs.
+		const resolved = resolveUserIdentityForSync({
+			shareWithTeam: true,
+			userIdentityMode: settings.userIdentityMode,
+			configuredUserId: settings.userId,
+			datasetId: settings.datasetId,
+			accessTokenForClaims
+		});
+
+		this.deps.log(`[Backend] Resolved userId: ${resolved.userId || '(none)'}, userKeyType: ${resolved.userKeyType || '(none)'}`);
+
+		return resolved.userId;
 	}
 
 	public getFilters(): BackendQueryFilters {
@@ -214,6 +265,19 @@ export class BackendFacade {
 		return await this.dataPlaneService.listEntitiesForRange({
 			tableClient,
 			datasetId: settings.datasetId,
+			startDayKey,
+			endDayKey
+		});
+	}
+
+	/**
+	 * Get all entities across ALL datasets for a date range (for cross-team dashboard).
+	 */
+	public async getAllAggEntitiesForRange(settings: BackendSettings, startDayKey: string, endDayKey: string): Promise<BackendAggDailyEntityLike[]> {
+		const creds = await this.credentialService.getBackendDataPlaneCredentialsOrThrow(settings);
+		const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+		return await this.dataPlaneService.listAllEntitiesForRange({
+			tableClient,
 			startDayKey,
 			endDayKey
 		});
@@ -358,7 +422,11 @@ export class BackendFacade {
 			config.update('backend.aggTable', next.aggTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.eventsTable', next.eventsTable, vscode.ConfigurationTarget.Global),
 			config.update('backend.lookbackDays', next.lookbackDays, vscode.ConfigurationTarget.Global),
-			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global)
+			config.update('backend.includeMachineBreakdown', next.includeMachineBreakdown, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobUploadEnabled', next.blobUploadEnabled, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobContainerName', next.blobContainerName, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobUploadFrequencyHours', next.blobUploadFrequencyHours, vscode.ConfigurationTarget.Global),
+			config.update('backend.blobCompressFiles', next.blobCompressFiles, vscode.ConfigurationTarget.Global)
 		]);
 	}
 
@@ -445,7 +513,11 @@ export class BackendFacade {
 			aggTable: 'usageAggDaily',
 			eventsTable: 'usageEvents',
 			userIdentityMode: 'pseudonymous',
-			userId: ''
+			userId: '',
+			blobUploadEnabled: false,
+			blobContainerName: 'copilot-session-logs',
+			blobUploadFrequencyHours: 24,
+			blobCompressFiles: true
 		};
 		
 		const next = applyDraftToSettings(settings, draft, undefined);

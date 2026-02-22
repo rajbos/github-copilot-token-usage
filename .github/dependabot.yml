@@ -65,3 +65,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  - package-ecosystem: npm
+    directory: /.github/scripts
+    schedule:
+      interval: daily
+
+  - package-ecosystem: npm
+    directory: /.github/skills/azure-storage-loader
+    schedule:
+      interval: daily

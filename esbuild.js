@@ -1,4 +1,6 @@
 const esbuild = require("esbuild");
+const fs = require("fs");
+const path = require("path");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -47,6 +49,9 @@ async function main() {
 			usage: 'src/webview/usage/main.ts',
 			diagnostics: 'src/webview/diagnostics/main.ts',
 			logviewer: 'src/webview/logviewer/main.ts',
+			maturity: 'src/webview/maturity/main.ts',
+			dashboard: 'src/webview/dashboard/main.ts',
+			'fluency-level-viewer': 'src/webview/fluency-level-viewer/main.ts',
 		},
 		bundle: true,
 		format: 'iife',
@@ -68,6 +73,13 @@ async function main() {
 		await Promise.all([extensionCtx.rebuild(), webviewCtx.rebuild()]);
 		await extensionCtx.dispose();
 		await webviewCtx.dispose();
+	}
+
+	// Copy sql.js WASM file to dist/ for OpenCode SQLite support
+	const wasmSrc = path.join(__dirname, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+	const wasmDst = path.join(__dirname, 'dist', 'sql-wasm.wasm');
+	if (fs.existsSync(wasmSrc)) {
+		fs.copyFileSync(wasmSrc, wasmDst);
 	}
 }
 

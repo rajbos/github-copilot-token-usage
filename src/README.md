@@ -77,3 +77,38 @@ Note: These are the current GitHub Copilot supported Gemini models. Pricing from
 - After making changes, run `npm run compile` to rebuild
 - Pricing is for reference only - GitHub Copilot may use different pricing structures
 - Cost estimates assume a 50/50 split between input and output tokens
+
+## customizationPatterns.json
+
+Defines repository file patterns that the extension will scan for to discover Copilot customization files (for example: `copilot-instructions.md`, `skills/` folders, `agents.md`). The extension uses these patterns to produce the "Customization Files" section in the Usage Analysis webview.
+
+Structure:
+
+```json
+{
+  "patterns": [
+    {
+      "id": "copilot-instructions",
+      "label": "copilot-instructions.md",
+      "path": "copilot-instructions.md",
+      "scanMode": "exact",
+      "icon": "📋"
+    }
+  ],
+  "stalenessThresholdDays": 90,
+  "excludeDirs": [".git", "node_modules"]
+}
+```
+
+Notes:
+
+- `scanMode` can be `exact`, `oneLevel`, or `recursive`.
+- `stalenessThresholdDays` controls when a file is marked as stale in the UI.
+- `excludeDirs` lists directories to skip during recursive scans.
+
+To update patterns:
+
+1. Edit `src/customizationPatterns.json` and add or adjust entries.
+2. Run `npm run compile` to rebuild the extension.
+
+The usage webview will surface discovered files per workspace and mark files as stale when their last modification time exceeds `stalenessThresholdDays`.

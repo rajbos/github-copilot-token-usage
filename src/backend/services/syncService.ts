@@ -21,6 +21,22 @@ import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
 
 /**
+ * Interface for blob upload service to avoid circular dependency.
+ */
+interface BlobUploadServiceLike {
+	uploadSessionFiles(
+		storageAccount: string,
+		settings: { enabled: boolean; containerName: string; uploadFrequencyHours: number; compressFiles: boolean },
+		credential: any,
+		sessionFiles: string[],
+		machineId: string,
+		datasetId: string
+	): Promise<{ success: boolean; filesUploaded: number; message: string }>;
+	shouldUpload(machineId: string, settings: { enabled: boolean; uploadFrequencyHours: number }): boolean;
+	getUploadStatus(machineId: string): { lastUploadTime: number; filesUploaded: number; lastError?: string } | undefined;
+}
+
+/**
  * Validate and normalize consent timestamp.
  * Returns ISO string if valid, undefined if invalid or in the future.
  */
@@ -78,6 +94,7 @@ export class SyncService {
 		private readonly deps: SyncServiceDeps,
 		private readonly credentialService: CredentialService,
 		private readonly dataPlaneService: DataPlaneService,
+		private readonly blobUploadService: BlobUploadServiceLike | undefined,
 		private readonly utility: typeof BackendUtility
 	) {}
 
@@ -95,10 +112,15 @@ export class SyncService {
 				shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
 			});
 			if (!sharingPolicy.allowCloudSync || !isConfigured) {
+				if (!sharingPolicy.allowCloudSync) {
+					this.deps.log(`Backend sync: not starting timer (cloud sync disabled, profile: ${settings.sharingProfile})`);
+				} else if (!isConfigured) {
+					this.deps.log('Backend sync: not starting timer (backend not configured)');
+				}
 				return;
 			}
-			const intervalMs = Math.max(BACKEND_SYNC_MIN_INTERVAL_MS, settings.lookbackDays * 60 * 1000);
-			this.deps.log(`Backend sync: starting timer with interval ${intervalMs}ms`);
+			const intervalMs = BACKEND_SYNC_MIN_INTERVAL_MS;
+			this.deps.log(`Backend sync: starting timer with interval ${intervalMs}ms (${intervalMs / 60000} minutes)`);
 			this.backendSyncInterval = setInterval(() => {
 				this.syncToBackendStore(false, settings, isConfigured).catch((e) => {
 					this.deps.warn(`Backend sync timer failed: ${e?.message ?? e}`);
@@ -381,6 +403,22 @@ export class SyncService {
 			datasetId: settings.datasetId,
 			accessTokenForClaims
 		});
+		
+		// Warn if user dimension was requested but identity resolution failed
+		if (includeUserDimension && !resolved.userId) {
+			if (settings.userIdentityMode === 'teamAlias') {
+				const { validateTeamAlias } = await import('../identity.js');
+				const validation = validateTeamAlias(settings.userId);
+				if (!validation.valid) {
+					this.deps.warn(`⚠ Backend sync: User identity validation failed. Data will be synced WITHOUT user dimension.`);
+					this.deps.warn(`   Reason: ${validation.error}`);
+					this.deps.warn(`   Fix: Update "Copilot Token Tracker: Backend User Id" in settings to a valid team alias.`);
+				}
+			} else {
+				this.deps.warn(`⚠ Backend sync: Could not resolve user identity for mode ${settings.userIdentityMode}. Data will be synced WITHOUT user dimension.`);
+			}
+		}
+		
 		return resolved;
 	}
 
@@ -388,7 +426,7 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[] }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
@@ -416,7 +454,8 @@ export class SyncService {
 			machineNamesById[machineId] = machineName;
 		}
 
-		const sessionFiles = await this.deps.getCopilotSessionFiles();
+		// Use pre-fetched session files if provided, otherwise fetch them
+		const sessionFiles = args.sessionFiles ?? await this.deps.getCopilotSessionFiles();
 		const useCachedData = !!this.deps.getSessionFileDataCached;
 		let cacheHits = 0;
 		let cacheMisses = 0;
@@ -609,6 +648,11 @@ export class SyncService {
 				shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
 			});
 			if (!sharingPolicy.allowCloudSync || !isConfigured) {
+				if (!sharingPolicy.allowCloudSync) {
+					this.deps.log(`Backend sync: skipping (sharing policy does not allow cloud sync, profile: ${settings.sharingProfile})`);
+				} else if (!isConfigured) {
+					this.deps.log('Backend sync: skipping (backend not configured - missing storage account, subscription, or resource group)');
+				}
 				return;
 			}
 
@@ -626,13 +670,27 @@ export class SyncService {
 				const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
 				if (!creds) {
 					// Shared Key mode selected but key not available (or user canceled). Keep local mode functional.
+					this.deps.warn('Backend sync: skipping (credentials not available - check authentication mode and secrets)');
+					// Update timestamp to prevent stale "last sync" display
+					try {
+						await this.deps.context?.globalState.update('backend.lastSyncAt', Date.now());
+					} catch (e) {
+						this.deps.warn(`Backend sync: failed to update lastSyncAt: ${e}`);
+					}
 					return;
 				}
 				await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);
 				await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
 
+				// Fetch session files once and reuse for both rollups and blob upload
+				const sessionFiles = await this.deps.getCopilotSessionFiles();
+
 				const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(settings, sharingPolicy.includeUserDimension);
-				const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({ lookbackDays: settings.lookbackDays, userId: resolvedIdentity.userId });
+				const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({ 
+					lookbackDays: settings.lookbackDays, 
+					userId: resolvedIdentity.userId,
+					sessionFiles // Pass pre-fetched session files to avoid rescan
+				});
 				
 				// Log day keys being synced for better visibility
 				const dayKeys = new Set<string>();
@@ -697,12 +755,49 @@ export class SyncService {
 				
 				this.deps.log('Backend sync: completed');
 				
-				// Trigger UI refresh to update status bar and panels with latest sync data
-				try {
-					await this.deps.updateTokenStats?.();
-				} catch (e) {
-					this.deps.warn(`Backend sync: failed to update UI: ${e}`);
+				// Upload session files to Blob Storage if enabled
+				// Check if upload is needed BEFORE processing files to avoid redundant work
+				if (settings.blobUploadEnabled && this.blobUploadService) {
+					try {
+						const machineId = vscode.env.machineId;
+						const uploadSettings = {
+							enabled: settings.blobUploadEnabled,
+							containerName: settings.blobContainerName,
+							uploadFrequencyHours: settings.blobUploadFrequencyHours,
+							compressFiles: settings.blobCompressFiles
+						};
+
+						// Only fetch and upload if it's time to upload
+						if (this.blobUploadService.shouldUpload(machineId, uploadSettings)) {
+							this.deps.log('Blob upload: starting');
+							
+							const uploadResult = await this.blobUploadService.uploadSessionFiles(
+								settings.storageAccount,
+								uploadSettings,
+								creds.blobCredential,
+								sessionFiles, // Reuse session files from rollup computation
+								machineId,
+								settings.datasetId
+							);
+							
+							if (uploadResult.success) {
+								this.deps.log(`Blob upload: ${uploadResult.message}`);
+							} else {
+								this.deps.warn(`Blob upload: ${uploadResult.message}`);
+							}
+						} else {
+							// Log the skip reason without fetching session files
+							const status = this.blobUploadService.getUploadStatus(machineId);
+							const hoursSince = status ? Math.round((Date.now() - status.lastUploadTime) / (1000 * 60 * 60)) : 0;
+							this.deps.log(`Blob upload: skipped (last upload ${hoursSince}h ago, frequency: ${settings.blobUploadFrequencyHours}h)`);
+						}
+					} catch (blobError: any) {
+						this.deps.warn(`Blob upload: failed - ${blobError?.message ?? blobError}`);
+					}
 				}
+				
+				// DO NOT trigger UI refresh here - it causes redundant analysis and blocks UI
+				// The periodic timer in extension.ts will handle UI updates
 			} catch (e: any) {
 				// Keep local mode functional.
 				const secretsToRedact = await this.credentialService.getBackendSecretsToRedactForError(settings);

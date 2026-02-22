@@ -17,6 +17,24 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
   4. For each file, it calculates token counts (`estimateTokensFromSession`), interactions (`countInteractionsInSession`), and per-model usage (`getModelUsageFromSession`).
   5. Token counts are *estimated* using character-to-token ratios defined in the `tokenEstimators` class property. This is a key convention.
 
+- **Thinking Token Tracking**: Models that use extended thinking (e.g., Claude) produce `kind: "thinking"` response items in session logs. These are tracked separately:
+  - `estimateTokensFromSession` and `estimateTokensFromJsonlSession` return `{ tokens, thinkingTokens }`. The `tokens` field is the **grand total** (input + output + thinking). The `thinkingTokens` field is a **breakdown** showing what portion of the total was thinking — it is NOT subtracted from `tokens`.
+  - `SessionFileCache` stores `thinkingTokens` alongside `tokens`.
+  - `extractResponseData` separates `responseText` and `thinkingText` so the logviewer can display them independently per turn.
+  - `getModelUsageFromSession` does NOT separate thinking — thinking tokens are counted as `outputTokens` in the per-model breakdown. This is intentional since it keeps cost estimation simple.
+  - **Critical invariant**: When computing token totals for display (per-turn, per-session, per-period), always include thinking tokens. In the logviewer, `totalTokens = input + output + thinking`. In stats aggregation, `sessionData.tokens` already includes thinking. Never subtract thinking from a total.
+  - `CACHE_VERSION` must be bumped when changing how tokens are counted so stale caches are invalidated.
+
+- **OpenCode Support**: The extension also reads session data from [OpenCode](https://opencode.ai), a terminal-based coding agent. OpenCode stores its data in `~/.local/share/opencode/` (Linux/macOS) or the equivalent XDG data directory.
+
+  - **Dual storage backends**: OpenCode originally stored sessions as individual JSON files under `storage/session/`, `storage/message/`, and `storage/part/`. It later migrated to a SQLite database (`opencode.db`) in the same data directory. The extension supports **both** backends — it tries the SQLite DB first and falls back to JSON files.
+  - **SQLite reading**: The extension uses `sql.js` (a pure JS/WASM SQLite reader, no native dependencies) to read `opencode.db`. The WASM binary (`sql-wasm.wasm`) is copied to `dist/` during the esbuild step. The sql.js module is lazy-loaded and cached in `_sqlJsModule`.
+  - **DB schema**: The `opencode.db` database has tables `session` (id, slug, title, directory, time_created, time_updated), `message` (id, session_id, time_created, data JSON), and `part` (id, message_id, session_id, time_created, data JSON). The `data` column in `message` contains JSON with `{role, model: {providerID, modelID}, tokens: {total, input, output, reasoning, cache: {read, write}}}`.
+  - **Virtual path scheme**: Since the existing architecture is file-path-based, DB-stored sessions use virtual paths of the form `<opencode_dir>/opencode.db#ses_<id>`. Detection helpers: `isOpenCodeDbSession()` checks for the `opencode.db#ses_` pattern, `getOpenCodeSessionId()` parses both virtual paths and `ses_<id>.json` filenames.
+  - **Async methods**: `getOpenCodeMessagesForSession(filePath)` and `getOpenCodePartsForMessage(messageId)` are the primary data access methods — they try DB first, fall back to JSON. The OpenCode token/interaction/model methods (`getTokensFromOpenCodeSession`, `countOpenCodeInteractions`, `getOpenCodeModelUsage`) are all async.
+  - **`statSessionFile()`**: A helper that resolves DB virtual paths to `fs.promises.stat()` on the `opencode.db` file itself. **All `fs.promises.stat(sessionFile)` calls in loops that process session files must use `this.statSessionFile()` instead**, to avoid failures on DB virtual paths.
+  - **Key invariant**: When adding new code that processes session file paths (stat calls, path splitting, folder grouping), always check `isOpenCodeDbSession()` first and handle the virtual path appropriately (use `statSessionFile()` for stats, use `getOpenCodeDataDir()` for folder grouping).
+
 - **UI Components**:
   1. **Status Bar**: A `vscode.StatusBarItem` (`statusBarItem`) shows a brief summary. Its tooltip provides more detail.
   2. **Details Panel**: The `copilot-token-tracker.showDetails` command opens a `vscode.WebviewPanel`. The content for this panel is generated dynamically as an HTML string by the `getDetailsHtml` method.
@@ -91,8 +109,25 @@ Prefer VS Code's debugger with breakpoints rather than adding log statements:
 - **`src/README.md`**: **IMPORTANT**: Contains detailed instructions for updating the JSON data files. Always consult this file when updating tokenEstimators.json or modelPricing.json. It includes structure definitions, update procedures, and current pricing information.
 - **`src/tokenEstimators.json`**: Character-to-token ratio estimators for different AI models. See `src/README.md` for update instructions.
 - **`src/modelPricing.json`**: Model pricing data with input/output costs per million tokens. Includes metadata about pricing sources and last update date. See `src/README.md` for detailed update instructions and current pricing sources.
+- **`docs/FLUENCY-LEVELS.md`**: Documents the scoring rules for the Copilot Fluency Score dashboard (4 stages, 6 categories, thresholds, and boosters). **Keep this file up to date** when changing the `calculateMaturityScores()` method in `src/extension.ts`.
 - **`package.json`**: Defines activation events, commands, and build scripts.
-- **`esbuild.js`**: The build script that bundles the TypeScript source and JSON data files.
+- **`esbuild.js`**: The build script that bundles the TypeScript source and JSON data files. Also copies `sql-wasm.wasm` from `node_modules/sql.js/dist/` to `dist/` for OpenCode SQLite support.
+- **`src/types/json.d.ts`**: Type declarations for JSON module imports and the `sql.js` module.
+
+## Coding Agent Data Sources
+
+When running as the GitHub Copilot Coding Agent (bootstrapped via `.github/workflows/copilot-setup-steps.yml`), additional data files may be available in the workspace root. These are downloaded from Azure Storage during the agent's setup phase and are **not** present in local development.
+
+- **`./session-logs/`**: Raw Copilot Chat session log files (last 7 days) from Azure Blob Storage. Contains full conversation history including prompts, responses, and model info.
+- **`./usage-data/usage-agg-daily.json`**: Aggregated daily token usage data (last 30 days) from Azure Table Storage. Contains per-day, per-model, per-workspace token counts and interaction counts.
+
+These files are only available when the repository's `copilot` GitHub environment has `COPILOT_STORAGE_ACCOUNT` configured. See the `session-log-data` skill in `.github/skills/session-log-data/SKILL.md` for data schemas, analysis examples, and cost estimation.
+
+To check if data is available:
+```bash
+[ -d ./session-logs ] && echo "Session logs available"
+[ -f ./usage-data/usage-agg-daily.json ] && echo "Aggregated data available"
+```
 
 ## Webview Navigation Buttons
 
