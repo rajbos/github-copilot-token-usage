@@ -64,6 +64,7 @@
   ,"copilot_insertEdit": "Insert Edit"
   ,"copilot_installExtension": "Install Extension"
   ,"copilot_memory": "Memory"
+  ,"copilot_openIntegratedBrowser": "Open Integrated Browser"
   ,"copilot_openSimpleBrowser": "Open Simple Browser"
   ,"copilot_readNotebookCellOutput": "Read Notebook Cell Output"
   ,"copilot_readProjectStructure": "Read Project Structure"
@@ -96,6 +97,7 @@
   ,"list_dir": "List Dir"
   ,"memory": "Memory"
   ,"multi_replace_string_in_file": "Multi Replace String In File"
+  ,"open_integrated_browser": "Open Integrated Browser"
   ,"open_simple_browser": "Open Simple Browser"
   ,"read_file": "Read File"
   ,"read_notebook_cell_output": "Read Notebook Cell Output"
@@ -112,6 +114,7 @@
   ,"test_failure": "Test Failure"
   ,"test_search": "Test Search"
   ,"tool_replay": "Tool Replay"
+  ,"vscode_askQuestions": "VSCode Ask Questions"
   ,"vscode_get_confirmation": "VSCode Get Confirmation"
   ,"vscode_get_terminal_confirmation": "VSCode Get Terminal Confirmation"
 }
