@@ -46,7 +46,7 @@ suite('Backend Config Panel Webview Integration Tests', () => {
 		return renderBackendConfigHtml(webview as any, initialState);
 	}
 
-	setup(() => {
+	setup(async () => {
 		const html = createPanelHtml();
 		dom = new JSDOM(html, {
 			runScripts: 'dangerously',
@@ -60,10 +60,16 @@ suite('Backend Config Panel Webview Integration Tests', () => {
 					getState: () => ({}),
 					setState: (state: any) => {}
 				});
+				
+				// Set toolkit ready flag immediately (JSDOM doesn't run module scripts properly)
+				(window as any).__toolkitReady = true;
 			}
 		});
 		window = dom.window as unknown as Window;
 		document = window.document;
+		
+		// Wait briefly for init() to run
+		await new Promise(resolve => setTimeout(resolve, 50));
 	});
 
 	teardown(() => {

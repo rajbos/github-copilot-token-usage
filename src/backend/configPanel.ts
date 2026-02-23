@@ -33,6 +33,10 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 	constructor(private readonly extensionUri: vscode.Uri, private readonly callbacks: BackendConfigPanelCallbacks) {}
 
+	public isDisposed(): boolean {
+		return this.disposed;
+	}
+
 	public async show(): Promise<void> {
 		const state = await this.callbacks.getState();
 		if (!this.panel) {
@@ -454,10 +458,17 @@ export class BackendConfigPanel implements vscode.Disposable {
 		</main>
 	</div>
 	<script type="module" nonce="${nonce}">
-		const { provideVSCodeDesignSystem, vsCodeButton, vsCodeBadge } = await import('${toolkitUri}');
-		provideVSCodeDesignSystem().register(vsCodeButton(), vsCodeBadge());
+		// Register toolkit components before main script runs
+		try {
+			const { provideVSCodeDesignSystem, vsCodeButton, vsCodeBadge } = await import('${toolkitUri}');
+			provideVSCodeDesignSystem().register(vsCodeButton(), vsCodeBadge());
+		} catch (error) {
+			console.warn('Failed to load VS Code Webview UI Toolkit:', error);
+		}
+		// Signal that toolkit registration is complete (or has failed)
+		window.__toolkitReady = true;
 	</script>
-		<script nonce="${nonce}">
+	<script nonce="${nonce}">
 		const vscodeApi = acquireVsCodeApi();
 		const initial = ${initialState};
 		let currentState = initial;
@@ -795,11 +806,26 @@ export class BackendConfigPanel implements vscode.Disposable {
 		updateConnectionAvailability();
 		window.addEventListener('offline', updateConnectionAvailability);
 		window.addEventListener('online', updateConnectionAvailability);
-		setFieldValues(initial);
-		setErrors(initial.errors || {});
-		bindNav();
-		bindActions();
-		updateValidity();
+
+		function init() {
+			setFieldValues(initial);
+			setErrors(initial.errors || {});
+			bindNav();
+			bindActions();
+			updateValidity();
+		}
+
+		// Wait for toolkit registration to complete before initializing
+		function waitForToolkit() {
+			if (window.__toolkitReady) {
+				init();
+			} else {
+				// Poll for toolkit readiness (handles async module loading)
+				setTimeout(waitForToolkit, 10);
+			}
+		}
+		
+		waitForToolkit();
 	</script>
 </body>
 </html>`;
