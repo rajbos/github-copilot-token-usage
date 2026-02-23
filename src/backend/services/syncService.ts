@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as os from 'os';
 import { DefaultAzureCredential } from '@azure/identity';
 import { safeStringifyError } from '../../utils/errors';
@@ -94,6 +95,8 @@ export class SyncService {
 	private backendSyncInterval: NodeJS.Timeout | undefined;
 	private consecutiveFailures = 0;
 	private readonly MAX_CONSECUTIVE_FAILURES = 5;
+	/** Stale threshold for the sync lock file (matches the sync timer interval). */
+	private static readonly SYNC_LOCK_STALE_MS = BACKEND_SYNC_MIN_INTERVAL_MS;
 
 	constructor(
 		private readonly deps: SyncServiceDeps,
@@ -102,6 +105,82 @@ export class SyncService {
 		private readonly blobUploadService: BlobUploadServiceLike | undefined,
 		private readonly utility: typeof BackendUtility
 	) {}
+
+	// ── Cross-instance file lock ────────────────────────────────────────
+
+	/**
+	 * Path for the sync lock file.  Uses globalStorageUri which is already
+	 * scoped per VS Code edition (stable vs insiders).
+	 */
+	private getSyncLockPath(): string | undefined {
+		const ctx = this.deps.context;
+		if (!ctx) { return undefined; }
+		return path.join(ctx.globalStorageUri.fsPath, 'backend_sync.lock');
+	}
+
+	/**
+	 * Try to acquire an exclusive file lock so only one VS Code window
+	 * can run a backend sync at a time.
+	 */
+	private async acquireSyncLock(): Promise<boolean> {
+		const lockPath = this.getSyncLockPath();
+		if (!lockPath) { return true; } // No context → allow (tests)
+		try {
+			await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
+			const fd = await fs.promises.open(lockPath, 'wx');
+			await fd.writeFile(JSON.stringify({
+				sessionId: vscode.env.sessionId,
+				timestamp: Date.now()
+			}));
+			await fd.close();
+			return true;
+		} catch (err: any) {
+			if (err.code !== 'EEXIST') {
+				this.deps.warn(`Sync lock: unexpected error acquiring lock: ${err.message}`);
+				return false;
+			}
+			// Lock file exists — check if stale
+			try {
+				const content = await fs.promises.readFile(lockPath, 'utf-8');
+				const lock = JSON.parse(content);
+				if (Date.now() - lock.timestamp > SyncService.SYNC_LOCK_STALE_MS) {
+					this.deps.log('Sync lock: breaking stale lock from another window');
+					await fs.promises.unlink(lockPath);
+					try {
+						const fd = await fs.promises.open(lockPath, 'wx');
+						await fd.writeFile(JSON.stringify({
+							sessionId: vscode.env.sessionId,
+							timestamp: Date.now()
+						}));
+						await fd.close();
+						return true;
+					} catch {
+						return false;
+					}
+				}
+			} catch {
+				// Lock file may have been deleted by its owner
+			}
+			return false;
+		}
+	}
+
+	/**
+	 * Release the sync lock, but only if we own it.
+	 */
+	private async releaseSyncLock(): Promise<void> {
+		const lockPath = this.getSyncLockPath();
+		if (!lockPath) { return; }
+		try {
+			const content = await fs.promises.readFile(lockPath, 'utf-8');
+			const lock = JSON.parse(content);
+			if (lock.sessionId === vscode.env.sessionId) {
+				await fs.promises.unlink(lockPath);
+			}
+		} catch {
+			// Lock file already gone or unreadable
+		}
+	}
 
 	/**
 	 * Start the background sync timer if backend is enabled.
@@ -707,6 +786,13 @@ export class SyncService {
 				return;
 			}
 
+			// Acquire cross-instance file lock to prevent concurrent syncs from multiple VS Code windows
+			const lockAcquired = await this.acquireSyncLock();
+			if (!lockAcquired) {
+				this.deps.log('Backend sync: skipping (another VS Code window is currently syncing)');
+				return;
+			}
+
 			this.backendSyncInProgress = true;
 			try {
 				this.deps.log('Backend sync: starting rollup sync');
@@ -858,6 +944,7 @@ export class SyncService {
 				this.deps.warn(`Backend sync: ${safeStringifyError(e, secretsToRedact)}`);
 			} finally {
 				this.backendSyncInProgress = false;
+				await this.releaseSyncLock();
 			}
 		});
 		return this.syncQueue;
