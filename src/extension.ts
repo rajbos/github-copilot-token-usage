@@ -348,7 +348,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 22; // Force cache rebuild for actualTokens extraction fix
+	private static readonly CACHE_VERSION = 23; // Cache key format changed: per-edition file lock instead of per-session keys
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1165,23 +1165,120 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Generate a cache identifier based on VS Code extension mode.
+	 * VS Code editions (stable vs insiders) already have separate globalState storage,
+	 * so we only need to distinguish between production and development (debug) mode.
+	 */
+	private getCacheIdentifier(): string {
+		return this.context.extensionMode === vscode.ExtensionMode.Development ? 'dev' : 'prod';
+	}
+
+	/**
+	 * Get the path for the cache lock file.
+	 * Uses globalStorageUri which is already scoped per VS Code edition.
+	 */
+	private getCacheLockPath(): string {
+		const cacheId = this.getCacheIdentifier();
+		return path.join(this.context.globalStorageUri.fsPath, `cache_${cacheId}.lock`);
+	}
+
+	/**
+	 * Acquire an exclusive file lock for cache writes.
+	 * Uses atomic file creation (O_EXCL / CREATE_NEW) to prevent concurrent writes
+	 * across multiple VS Code windows of the same edition.
+	 * Returns true if lock acquired, false if another instance holds it.
+	 */
+	private async acquireCacheLock(): Promise<boolean> {
+		const lockPath = this.getCacheLockPath();
+		try {
+			// Ensure the directory exists
+			await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
+
+			// Atomic exclusive create — fails if lock file already exists
+			const fd = await fs.promises.open(lockPath, 'wx');
+			await fd.writeFile(JSON.stringify({
+				sessionId: vscode.env.sessionId,
+				timestamp: Date.now()
+			}));
+			await fd.close();
+			return true;
+		} catch (err: any) {
+			if (err.code !== 'EEXIST') {
+				// Unexpected error (permissions, disk full, etc.)
+				this.warn(`Unexpected error acquiring cache lock: ${err.message}`);
+				return false;
+			}
+
+			// Lock file exists — check if it's stale (owner crashed)
+			try {
+				const content = await fs.promises.readFile(lockPath, 'utf-8');
+				const lock = JSON.parse(content);
+				const staleThreshold = 5 * 60 * 1000; // 5 minutes (matches update interval)
+
+				if (Date.now() - lock.timestamp > staleThreshold) {
+					// Stale lock — break it and retry once
+					this.log('Breaking stale cache lock');
+					await fs.promises.unlink(lockPath);
+					try {
+						const fd = await fs.promises.open(lockPath, 'wx');
+						await fd.writeFile(JSON.stringify({
+							sessionId: vscode.env.sessionId,
+							timestamp: Date.now()
+						}));
+						await fd.close();
+						return true;
+					} catch {
+						return false; // Another instance beat us to it
+					}
+				}
+			} catch {
+				// Can't read lock file — might have been deleted by the owner already
+			}
+			return false;
+		}
+	}
+
+	/**
+	 * Release the cache lock file, but only if we own it.
+	 */
+	private async releaseCacheLock(): Promise<void> {
+		const lockPath = this.getCacheLockPath();
+		try {
+			const content = await fs.promises.readFile(lockPath, 'utf-8');
+			const lock = JSON.parse(content);
+			if (lock.sessionId === vscode.env.sessionId) {
+				await fs.promises.unlink(lockPath);
+			}
+		} catch {
+			// Lock file already gone or unreadable — nothing to do
+		}
+	}
+
 	// Persistent cache storage methods
 	private loadCacheFromStorage(): void {
 		try {
+			const cacheId = this.getCacheIdentifier();
+			const versionKey = `sessionFileCacheVersion_${cacheId}`;
+			const cacheKey = `sessionFileCache_${cacheId}`;
+			
+			// One-time migration: clean up old per-session cache keys from previous versions
+			this.migrateOldCacheKeys(cacheId);
+			
 			// Check cache version first
-			const storedVersion = this.context.globalState.get<number>('sessionFileCacheVersion');
+			const storedVersion = this.context.globalState.get<number>(versionKey);
 			if (storedVersion !== CopilotTokenTracker.CACHE_VERSION) {
-				this.log(`Cache version mismatch (stored: ${storedVersion}, current: ${CopilotTokenTracker.CACHE_VERSION}). Clearing cache.`);
+				this.log(`Cache version mismatch (stored: ${storedVersion}, current: ${CopilotTokenTracker.CACHE_VERSION}) for ${cacheId}. Clearing cache.`);
 				this.sessionFileCache = new Map();
 				return;
 			}
 
-			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
+			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>(cacheKey);
 			if (cacheData) {
 				this.sessionFileCache = new Map(Object.entries(cacheData));
-				this.log(`Loaded ${this.sessionFileCache.size} cached session files from storage`);
+				this.log(`Loaded ${this.sessionFileCache.size} cached session files from storage (${cacheId})`);
 			} else {
-				this.log('No cached session files found in storage');
+				this.log(`No cached session files found in storage for ${cacheId}`);
 			}
 		} catch (error) {
 			this.error('Error loading cache from storage:', error);
@@ -1190,15 +1287,76 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	private async saveCacheToStorage(): Promise<void> {
+	/**
+	 * One-time migration: remove old per-session cache keys that were created by
+	 * earlier versions of the extension (keys containing sessionId or timestamp).
+	 * Also removes the legacy unscoped keys ('sessionFileCache', 'sessionFileCacheVersion').
+	 */
+	private migrateOldCacheKeys(currentCacheId: string): void {
 		try {
+			const allKeys = this.context.globalState.keys();
+			const currentCacheKey = `sessionFileCache_${currentCacheId}`;
+			const currentVersionKey = `sessionFileCacheVersion_${currentCacheId}`;
+			
+			let removedCount = 0;
+			for (const key of allKeys) {
+				// Remove old timestamp keys (no longer used)
+				if (key.startsWith('sessionFileCacheTimestamp_')) {
+					this.context.globalState.update(key, undefined);
+					removedCount++;
+					continue;
+				}
+				// Remove old per-session cache keys that have session IDs embedded
+				// (they contain more than one underscore-separated segment after the prefix)
+				if (key.startsWith('sessionFileCache_') && key !== currentCacheKey) {
+					const suffix = key.replace('sessionFileCache_', '');
+					if (suffix !== 'dev' && suffix !== 'prod') {
+						this.context.globalState.update(key, undefined);
+						removedCount++;
+					}
+				}
+				if (key.startsWith('sessionFileCacheVersion_') && key !== currentVersionKey) {
+					const suffix = key.replace('sessionFileCacheVersion_', '');
+					if (suffix !== 'dev' && suffix !== 'prod') {
+						this.context.globalState.update(key, undefined);
+						removedCount++;
+					}
+				}
+				// Remove legacy unscoped keys from the original code
+				if (key === 'sessionFileCache' || key === 'sessionFileCacheVersion') {
+					this.context.globalState.update(key, undefined);
+					removedCount++;
+				}
+			}
+			
+			if (removedCount > 0) {
+				this.log(`Migrated: removed ${removedCount} old cache keys from globalState`);
+			}
+		} catch (error) {
+			this.error('Error migrating old cache keys:', error);
+		}
+	}
+
+	private async saveCacheToStorage(): Promise<void> {
+		const acquired = await this.acquireCacheLock();
+		if (!acquired) {
+			this.log('Cache lock held by another VS Code window, skipping save');
+			return;
+		}
+		try {
+			const cacheId = this.getCacheIdentifier();
+			const versionKey = `sessionFileCacheVersion_${cacheId}`;
+			const cacheKey = `sessionFileCache_${cacheId}`;
+			
 			// Convert Map to plain object for storage
 			const cacheData = Object.fromEntries(this.sessionFileCache);
-			await this.context.globalState.update('sessionFileCache', cacheData);
-			await this.context.globalState.update('sessionFileCacheVersion', CopilotTokenTracker.CACHE_VERSION);
-			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage (version ${CopilotTokenTracker.CACHE_VERSION})`);
+			await this.context.globalState.update(cacheKey, cacheData);
+			await this.context.globalState.update(versionKey, CopilotTokenTracker.CACHE_VERSION);
+			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage (version ${CopilotTokenTracker.CACHE_VERSION}, ${cacheId})`);
 		} catch (error) {
 			this.error('Error saving cache to storage:', error);
+		} finally {
+			await this.releaseCacheLock();
 		}
 	}
 
@@ -1208,9 +1366,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.outputChannel.show(true);
 			this.log('Clearing session file cache...');
 
+				const cacheId = this.getCacheIdentifier();
+			const cacheKey = `sessionFileCache_${cacheId}`;
+			const versionKey = `sessionFileCacheVersion_${cacheId}`;
+			
 			const cacheSize = this.sessionFileCache.size;
 			this.sessionFileCache.clear();
-			await this.context.globalState.update('sessionFileCache', undefined);
+			await this.context.globalState.update(cacheKey, undefined);
+			await this.context.globalState.update(versionKey, undefined);
 			// Reset diagnostics loaded flag so the diagnostics view will reload files
 			this.diagnosticsHasLoadedFiles = false;
 			this.diagnosticsCachedFiles = [];
