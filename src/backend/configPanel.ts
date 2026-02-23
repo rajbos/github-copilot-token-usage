@@ -33,6 +33,10 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 	constructor(private readonly extensionUri: vscode.Uri, private readonly callbacks: BackendConfigPanelCallbacks) {}
 
+	public isDisposed(): boolean {
+		return this.disposed;
+	}
+
 	public async show(): Promise<void> {
 		const state = await this.callbacks.getState();
 		if (!this.panel) {

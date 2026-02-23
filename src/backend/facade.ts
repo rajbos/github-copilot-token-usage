@@ -443,7 +443,8 @@ export class BackendFacade {
 			vscode.window.showErrorMessage('Extension context is unavailable; cannot open backend configuration.');
 			return;
 		}
-		if (!this.configPanel) {
+		// Create a new panel if we don't have one or if it was disposed
+		if (!this.configPanel || this.configPanel.isDisposed()) {
 				this.configPanel = new BackendConfigPanel(this.deps.context.extensionUri, {
 					getState: () => this.getConfigPanelState(),
 					onSave: async (draft) => this.saveDraft(draft),
