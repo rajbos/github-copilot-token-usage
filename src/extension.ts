@@ -5375,6 +5375,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Returns all candidate paths the extension considers when scanning for session files,
+	 * along with whether each path exists on disk. Used for diagnostics display.
+	 */
+	private getDiagnosticCandidatePaths(): { path: string; exists: boolean; source: string }[] {
+		const candidates: { path: string; exists: boolean; source: string }[] = [];
+
+		// VS Code user paths
+		const allVSCodePaths = this.getVSCodeUserPaths();
+		for (const p of allVSCodePaths) {
+			let exists = false;
+			try { exists = fs.existsSync(p); } catch { /* ignore */ }
+			candidates.push({ path: p, exists, source: 'VS Code' });
+		}
+
+		// Copilot CLI
+		const copilotCliPath = path.join(os.homedir(), '.copilot', 'session-state');
+		let copilotCliExists = false;
+		try { copilotCliExists = fs.existsSync(copilotCliPath); } catch { /* ignore */ }
+		candidates.push({ path: copilotCliPath, exists: copilotCliExists, source: 'Copilot CLI' });
+
+		// OpenCode JSON storage
+		const openCodeDataDir = this.getOpenCodeDataDir();
+		const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
+		let openCodeJsonExists = false;
+		try { openCodeJsonExists = fs.existsSync(openCodeSessionDir); } catch { /* ignore */ }
+		candidates.push({ path: openCodeSessionDir, exists: openCodeJsonExists, source: 'OpenCode (JSON)' });
+
+		// OpenCode SQLite DB
+		const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
+		let openCodeDbExists = false;
+		try { openCodeDbExists = fs.existsSync(openCodeDbPath); } catch { /* ignore */ }
+		candidates.push({ path: openCodeDbPath, exists: openCodeDbExists, source: 'OpenCode (DB)' });
+
+		return candidates;
+	}
+
+	/**
 	 * NOTE: The canonical JavaScript implementation is in:
 	 * .github/skills/copilot-log-analysis/session-file-discovery.js
 	 * This TypeScript implementation should mirror that logic.
@@ -5396,7 +5433,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
 		const allVSCodePaths = this.getVSCodeUserPaths();
-		this.log(`📂 Reading local folders [0/${allVSCodePaths.length}]`);
+		this.log(`📂 Considering ${allVSCodePaths.length} candidate VS Code paths:`);
+		for (const candidatePath of allVSCodePaths) {
+			this.log(`   📁 ${candidatePath}`);
+		}
 
 		// Track which paths we actually found
 		const foundPaths: string[] = [];
@@ -5415,7 +5455,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
-		this.log(`✅ Found ${foundPaths.length} VS Code installation(s)`);
+		this.log(`✅ Found ${foundPaths.length} of ${allVSCodePaths.length} VS Code paths exist on disk:`);
+		for (const fp of foundPaths) {
+			this.log(`   ✅ ${fp}`);
+		}
 
 		try {
 			// Scan all found VS Code paths for session files
@@ -5492,6 +5535,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
+			this.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath} (exists: ${fs.existsSync(copilotCliSessionPath)})`);
 			try {
 				if (fs.existsSync(copilotCliSessionPath)) {
 					try {
@@ -5537,8 +5581,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for OpenCode session files
 			// OpenCode stores session data in ~/.local/share/opencode/storage/session/
 			const openCodeDataDir = this.getOpenCodeDataDir();
+			const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
+			const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
+			this.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir} (exists: ${fs.existsSync(openCodeSessionDir)})`);
+			this.log(`📁 Checking OpenCode DB path: ${openCodeDbPath} (exists: ${fs.existsSync(openCodeDbPath)})`);
 			try {
-				const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
 				if (fs.existsSync(openCodeSessionDir)) {
 					const scanOpenCodeDir = (dir: string) => {
 						try {
@@ -5575,7 +5622,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for OpenCode sessions in SQLite database (opencode.db)
 			// Newer OpenCode versions store sessions in SQLite instead of JSON files
 			try {
-				const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
 				if (fs.existsSync(openCodeDbPath)) {
 					const existingSessionIds = new Set(
 						sessionFiles
@@ -8993,6 +9039,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				editorName: this.getEditorNameFromRoot(dir)
 			}));
 
+			// Build candidate paths list for diagnostics
+			const candidatePaths = this.getDiagnosticCandidatePaths();
+
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
 			this.log(`Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`);
@@ -9010,6 +9059,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				report,
 				sessionFiles: sessionFileData,
 				sessionFolders,
+				candidatePaths,
 				backendStorageInfo
 			});
 
