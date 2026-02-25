@@ -483,21 +483,50 @@ export class SyncService {
 			fluencyMetrics.modelSwitchingJson = JSON.stringify(analysis.modelSwitching);
 		}
 
-		// Extract conversation patterns
-		if (analysis.conversationPatterns) {
-			fluencyMetrics.multiTurnSessions = analysis.conversationPatterns.multiTurnSessions || 0;
-			fluencyMetrics.avgTurnsPerSession = analysis.conversationPatterns.avgTurnsPerSession || 0;
-		}
-
-		// Extract edit scope metrics
+		// NEW: Store editScope for full agentic scoring
 		if (analysis.editScope) {
+			fluencyMetrics.editScopeJson = JSON.stringify(analysis.editScope);
+			// Also store direct fields for easier querying
 			fluencyMetrics.multiFileEdits = analysis.editScope.multiFileEdits || 0;
 			fluencyMetrics.avgFilesPerEdit = analysis.editScope.avgFilesPerSession || 0;
 		}
 
-		// Extract apply usage metrics
+		// NEW: Store agentTypes for tool usage scoring
+		if (analysis.agentTypes) {
+			fluencyMetrics.agentTypesJson = JSON.stringify(analysis.agentTypes);
+		}
+
+		// NEW: Store repositories for customization scoring
+		if (analysis.repositories || analysis.repositoriesWithCustomization) {
+			const repoData = {
+				repositories: analysis.repositories || [],
+				repositoriesWithCustomization: analysis.repositoriesWithCustomization || []
+			};
+			fluencyMetrics.repositoriesJson = JSON.stringify(repoData);
+			
+			// Calculate and store customization rate
+			const totalRepos = (analysis.repositories || []).length;
+			const customizedRepos = (analysis.repositoriesWithCustomization || []).length;
+			if (totalRepos > 0) {
+				fluencyMetrics.repoCustomizationRate = customizedRepos / totalRepos;
+			}
+		}
+
+		// NEW: Store applyUsage for workflow integration scoring
 		if (analysis.applyUsage) {
+			fluencyMetrics.applyUsageJson = JSON.stringify(analysis.applyUsage);
 			fluencyMetrics.codeBlockApplyRate = analysis.applyUsage.applyRate || 0;
+		}
+
+		// NEW: Store sessionDuration data
+		if (analysis.sessionDuration) {
+			fluencyMetrics.sessionDurationJson = JSON.stringify(analysis.sessionDuration);
+		}
+
+		// Extract conversation patterns
+		if (analysis.conversationPatterns) {
+			fluencyMetrics.multiTurnSessions = analysis.conversationPatterns.multiTurnSessions || 0;
+			fluencyMetrics.avgTurnsPerSession = analysis.conversationPatterns.avgTurnsPerSession || 0;
 		}
 
 		// Count this as one session

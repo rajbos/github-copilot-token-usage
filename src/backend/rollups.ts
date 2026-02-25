@@ -42,6 +42,11 @@ export interface DailyRollupValueLike {
 		contextRefsJson?: string;
 		mcpToolsJson?: string;
 		modelSwitchingJson?: string;
+		editScopeJson?: string; // NEW: Edit scope metrics
+		agentTypesJson?: string; // NEW: Agent type distribution
+		repositoriesJson?: string; // NEW: Repository lists
+		applyUsageJson?: string; // NEW: Apply usage metrics
+		sessionDurationJson?: string; // NEW: Session duration data
 		repoCustomizationRate?: number;
 		multiTurnSessions?: number;
 		avgTurnsPerSession?: number;
@@ -139,6 +144,22 @@ export function upsertDailyRollup(
 			if (val.modelSwitchingJson) {
 				ex.modelSwitchingJson = mergeJsonMetrics(ex.modelSwitchingJson, val.modelSwitchingJson);
 			}
+			if (val.editScopeJson) {
+				ex.editScopeJson = mergeJsonMetrics(ex.editScopeJson, val.editScopeJson);
+			}
+			if (val.agentTypesJson) {
+				ex.agentTypesJson = mergeJsonMetrics(ex.agentTypesJson, val.agentTypesJson);
+			}
+			if (val.repositoriesJson) {
+				// For repositories, merge arrays and deduplicate
+				ex.repositoriesJson = mergeRepositoriesJson(ex.repositoriesJson, val.repositoriesJson);
+			}
+			if (val.applyUsageJson) {
+				ex.applyUsageJson = mergeJsonMetrics(ex.applyUsageJson, val.applyUsageJson);
+			}
+			if (val.sessionDurationJson) {
+				ex.sessionDurationJson = mergeJsonMetrics(ex.sessionDurationJson, val.sessionDurationJson);
+			}
 			
 			// Re-calculate averages and rates from totals
 			if (ex.sessionCount && ex.sessionCount > 0) {
@@ -201,6 +222,28 @@ function mergeJsonMetrics(existing: string | undefined, incoming: string): strin
 		return JSON.stringify(merged);
 	} catch {
 		// If parsing fails, return the incoming value
+		return incoming;
+	}
+}
+
+/**
+ * Helper function to merge repository arrays from JSON.
+ * Merges and deduplicates repository lists.
+ */
+function mergeRepositoriesJson(existing: string | undefined, incoming: string): string {
+	try {
+		const existingData = existing ? JSON.parse(existing) : { repositories: [], repositoriesWithCustomization: [] };
+		const incomingData = JSON.parse(incoming);
+		
+		// Merge and deduplicate arrays
+		const mergedRepos = [...new Set([...(existingData.repositories || []), ...(incomingData.repositories || [])])];
+		const mergedCustomized = [...new Set([...(existingData.repositoriesWithCustomization || []), ...(incomingData.repositoriesWithCustomization || [])])];
+		
+		return JSON.stringify({
+			repositories: mergedRepos,
+			repositoriesWithCustomization: mergedCustomized
+		});
+	} catch {
 		return incoming;
 	}
 }

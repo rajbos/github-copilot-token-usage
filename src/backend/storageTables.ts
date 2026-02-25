@@ -51,6 +51,11 @@ export interface BackendAggDailyEntityLike {
 	contextRefsJson?: string; // Serialized ContextReferenceUsage
 	mcpToolsJson?: string; // Serialized McpToolUsage: { total, byServer, byTool }
 	modelSwitchingJson?: string; // Serialized ModelSwitchingAnalysis
+	editScopeJson?: string; // Serialized EditScopeUsage: { multiFileEdits, singleFileEdits, avgFilesPerSession, totalEditedFiles }
+	agentTypesJson?: string; // Serialized AgentTypeUsage: { editsAgent, workspaceAgent, etc. }
+	repositoriesJson?: string; // Serialized string[] of repositories
+	applyUsageJson?: string; // Serialized ApplyButtonUsage: { applyRate, totalApplied, totalCodeBlocks }
+	sessionDurationJson?: string; // Serialized SessionDurationData
 	repoCustomizationRate?: number; // 0-1 indicating % of repos with customization
 	multiTurnSessions?: number;
 	avgTurnsPerSession?: number;

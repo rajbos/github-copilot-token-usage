@@ -30,8 +30,8 @@ interface TeamMemberStats {
 	uniqueWorkspaces: number;
 	daysActive: number;
 	avgTokensPerTurn: number;
-	fluencyStage: number;
-	fluencyLabel: string;
+	fluencyStage?: number; // Optional - only present if fluency data exists
+	fluencyLabel?: string; // Optional - only present if fluency data exists
 	rank: number;
 }
 
@@ -311,12 +311,17 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 		const userCell = el('td', '', isCurrentUser ? `${displayUserId} (You)` : displayUserId);
 		const datasetCell = el('td', 'dataset-cell', displayDatasetId);
 		
-		// Fluency cell with stage indicator
+		// Fluency cell with stage indicator (or empty if no data)
 		const fluencyCell = el('td', 'fluency-cell');
-		const stageIcon = getFluencyStageIcon(member.fluencyStage);
-		const fluencyBadge = el('span', `fluency-badge stage-${member.fluencyStage}`);
-		fluencyBadge.textContent = `${stageIcon} ${member.fluencyLabel}`;
-		fluencyCell.append(fluencyBadge);
+		if (member.fluencyStage && member.fluencyLabel) {
+			const stageIcon = getFluencyStageIcon(member.fluencyStage);
+			const fluencyBadge = el('span', `fluency-badge stage-${member.fluencyStage}`);
+			fluencyBadge.textContent = `${stageIcon} ${member.fluencyLabel}`;
+			fluencyCell.append(fluencyBadge);
+		} else {
+			// Empty cell when no fluency data
+			fluencyCell.textContent = '';
+		}
 		
 		const tokensCell = el('td', 'number-cell', formatNumber(member.totalTokens));
 		const daysCell = el('td', 'number-cell', formatNumber(member.daysActive));

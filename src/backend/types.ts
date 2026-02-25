@@ -42,6 +42,11 @@ export interface DailyRollupValue {
 		contextRefsJson?: string;
 		mcpToolsJson?: string;
 		modelSwitchingJson?: string;
+		editScopeJson?: string; // NEW: Edit scope metrics
+		agentTypesJson?: string; // NEW: Agent type distribution
+		repositoriesJson?: string; // NEW: Repository lists
+		applyUsageJson?: string; // NEW: Apply usage metrics
+		sessionDurationJson?: string; // NEW: Session duration data
 		repoCustomizationRate?: number;
 		multiTurnSessions?: number;
 		avgTurnsPerSession?: number;

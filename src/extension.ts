@@ -8365,11 +8365,17 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			customAgentModeCount: number;
 			toolCalls: { total: number; byTool: { [key: string]: number } };
 			contextRefs: { [key: string]: number };
-			mcpTools: { total: number };
+			mcpTools: { total: number; byServer?: { [key: string]: number } };
 			multiTurnSessions: number;
 			avgTurnsPerSession: number;
 			multiFileEdits: number;
+			avgFilesPerEdit: number;
 			sessionCount: number;
+			// NEW: Deserialized complex fluency metrics
+			editScope?: { multiFileEdits: number; singleFileEdits: number; avgFilesPerSession: number; totalEditedFiles: number };
+			agentTypes?: { editsAgent?: number; workspaceAgent?: number };
+			repositories?: string[];
+			repositoriesWithCustomization?: string[];
 		}>();
 		
 		// Track first and last data points for reference
@@ -8433,11 +8439,14 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 						customAgentModeCount: 0,
 						toolCalls: { total: 0, byTool: {} },
 						contextRefs: {},
-						mcpTools: { total: 0 },
+						mcpTools: { total: 0, byServer: {} },
 						multiTurnSessions: 0,
 						avgTurnsPerSession: 0,
 						multiFileEdits: 0,
-						sessionCount: 0
+						avgFilesPerEdit: 0,
+						sessionCount: 0,
+						repositories: [],
+						repositoriesWithCustomization: []
 					});
 				}
 				const userData = userMap.get(userKey)!;
@@ -8497,6 +8506,57 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 						try {
 							const mcpTools = JSON.parse(entity.mcpToolsJson);
 							userData.mcpTools.total += mcpTools.total || 0;
+							if (mcpTools.byServer) {
+								if (!userData.mcpTools.byServer) {
+									userData.mcpTools.byServer = {};
+								}
+								for (const [server, count] of Object.entries(mcpTools.byServer)) {
+									userData.mcpTools.byServer[server] = (userData.mcpTools.byServer[server] || 0) + (count as number);
+								}
+							}
+						} catch {
+							// Skip malformed JSON
+						}
+					}
+					
+					// NEW: Deserialize editScope, agentTypes, repositories
+					if (entity.editScopeJson) {
+						try {
+							const editScope = JSON.parse(entity.editScopeJson);
+							if (!userData.editScope) {
+								userData.editScope = { multiFileEdits: 0, singleFileEdits: 0, avgFilesPerSession: 0, totalEditedFiles: 0 };
+							}
+							userData.editScope.multiFileEdits += editScope.multiFileEdits || 0;
+							userData.editScope.singleFileEdits += editScope.singleFileEdits || 0;
+							userData.editScope.totalEditedFiles += editScope.totalEditedFiles || 0;
+							// avgFilesPerSession will be recalculated from totals
+						} catch {
+							// Skip malformed JSON
+						}
+					}
+					
+					if (entity.agentTypesJson) {
+						try {
+							const agentTypes = JSON.parse(entity.agentTypesJson);
+							if (!userData.agentTypes) {
+								userData.agentTypes = {};
+							}
+							userData.agentTypes.editsAgent = (userData.agentTypes.editsAgent || 0) + (agentTypes.editsAgent || 0);
+							userData.agentTypes.workspaceAgent = (userData.agentTypes.workspaceAgent || 0) + (agentTypes.workspaceAgent || 0);
+						} catch {
+							// Skip malformed JSON
+						}
+					}
+					
+					if (entity.repositoriesJson) {
+						try {
+							const repoData = JSON.parse(entity.repositoriesJson);
+							if (repoData.repositories) {
+								userData.repositories = [...new Set([...(userData.repositories || []), ...repoData.repositories])];
+							}
+							if (repoData.repositoriesWithCustomization) {
+								userData.repositoriesWithCustomization = [...new Set([...(userData.repositoriesWithCustomization || []), ...repoData.repositoriesWithCustomization])];
+							}
 						} catch {
 							// Skip malformed JSON
 						}
@@ -8523,8 +8583,19 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				const avgTurnsPerSession = sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
 				const avgTokensPerTurn = data.interactions > 0 ? Math.round(data.tokens / data.interactions) : 0;
 				
-				// Calculate fluency score from aggregated metrics
-				const fluencyScore = this.calculateFluencyScoreFromMetrics(data);
+				// Calculate fluency score from aggregated metrics using the same logic as individual scoring
+				// Only calculate if we have fluency data (schema version 4+)
+				const hasFluencyData = data.askModeCount > 0 || data.editModeCount > 0 || data.agentModeCount > 0 ||
+					Object.keys(data.toolCalls.byTool).length > 0 || Object.keys(data.contextRefs).length > 0;
+				
+				let fluencyStage: number | undefined;
+				let fluencyLabel: string | undefined;
+				
+				if (hasFluencyData) {
+					const fluencyScore = this.calculateFluencyScoreForTeamMember(data, sessionCount);
+					fluencyStage = fluencyScore.overallStage;
+					fluencyLabel = fluencyScore.overallLabel;
+				}
 				
 				return {
 					userId,
@@ -8538,8 +8609,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 					uniqueWorkspaces: data.workspaces.size,
 					daysActive: data.days.size,
 					avgTokensPerTurn,
-					fluencyStage: fluencyScore.overallStage,
-					fluencyLabel: fluencyScore.overallLabel,
+					fluencyStage,
+					fluencyLabel,
 					rank: 0
 				};
 			})
@@ -8585,21 +8656,33 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 	}
 
 	/**
-	 * Calculate fluency score from aggregated metrics (simplified version for dashboard).
-	 * Uses the same scoring logic as calculateMaturityScores but works with pre-aggregated data.
+	 * Calculate fluency score for a team member using the SAME logic as individual scoring.
+	 * Reconstructs a UsageAnalysisPeriod-like structure from aggregated data and applies
+	 * the exact same 6-category scoring thresholds as calculateMaturityScores.
+	 * 
+	 * @param data - Aggregated user data from Azure Tables entities
+	 * @param sessionCount - Number of unique sessions for this user
+	 * @returns Fluency score with stage (1-4) and label
 	 */
-	private calculateFluencyScoreFromMetrics(data: {
+	private calculateFluencyScoreForTeamMember(data: {
 		askModeCount: number;
 		editModeCount: number;
 		agentModeCount: number;
 		interactions: number;
 		toolCalls: { total: number; byTool: { [key: string]: number } };
 		contextRefs: { [key: string]: number };
-		mcpTools: { total: number };
+		mcpTools: { total: number; byServer?: { [key: string]: number } };
 		multiTurnSessions: number;
-		sessionCount: number;
+		avgTurnsPerSession: number;
+		multiFileEdits: number;
+		avgFilesPerEdit: number;
 		models: Set<string>;
-	}): { overallStage: number; overallLabel: string } {
+		sessionCount: number;
+		editScope?: { multiFileEdits: number; singleFileEdits: number; avgFilesPerSession: number; totalEditedFiles: number };
+		agentTypes?: { editsAgent?: number; workspaceAgent?: number };
+		repositories?: string[];
+		repositoriesWithCustomization?: string[];
+	}, sessions: number): { overallStage: number; overallLabel: string } {
 		const stageLabels: Record<number, string> = {
 			1: 'Skeptic',
 			2: 'Explorer',
@@ -8609,53 +8692,191 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 
 		const stages: number[] = [];
 
-		// 1. Prompt Engineering - based on interactions and mode diversity
+		// ---------- 1. Prompt Engineering ----------
 		let peStage = 1;
 		const totalInteractions = data.askModeCount + data.editModeCount + data.agentModeCount;
-		if (totalInteractions >= 5) { peStage = 2; }
-		if (totalInteractions >= 30 && (data.toolCalls.total >= 2 || data.agentModeCount > 0)) { peStage = 3; }
-		if (totalInteractions >= 100 && data.agentModeCount > 0) { peStage = 4; }
+		
+		if (totalInteractions >= 5) {
+			peStage = 2;
+		}
+		
+		// Check slash command / tool usage
+		const slashCommands = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
+		const usedSlashCommands = slashCommands.filter(cmd => (data.toolCalls.byTool[cmd] || 0) > 0);
+		const hasAgentMode = data.agentModeCount > 0;
+		
+		if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) {
+			peStage = 3;
+		}
+		
+		// Model switching awareness - check if user has switched models
+		const hasModelSwitching = data.models.size >= 2;
+		if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) {
+			peStage = 4;
+		}
+		
+		// Multi-turn conversation patterns boost stage
+		if (data.avgTurnsPerSession >= 3) {
+			peStage = Math.max(peStage, 2) as 1 | 2 | 3 | 4;
+		}
+		if (data.avgTurnsPerSession >= 5) {
+			peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
+		}
+		
 		stages.push(peStage);
 
-		// 2. Context Engineering - based on context references
+		// ---------- 2. Context Engineering ----------
 		let ceStage = 1;
+		
+		// Count total context references and unique types
 		const totalContextRefs = Object.values(data.contextRefs).reduce((sum, count) => sum + count, 0);
 		const refTypes = Object.keys(data.contextRefs).length;
-		if (totalContextRefs >= 1) { ceStage = 2; }
-		if (refTypes >= 3 && totalContextRefs >= 10) { ceStage = 3; }
-		if (refTypes >= 5 && totalContextRefs >= 30) { ceStage = 4; }
+		
+		if (totalContextRefs >= 1) {
+			ceStage = 2;
+		}
+		if (refTypes >= 3 && totalContextRefs >= 10) {
+			ceStage = 3;
+		}
+		if (refTypes >= 5 && totalContextRefs >= 30) {
+			ceStage = 4;
+		}
+		
+		// Image context boosts to stage 3
+		const imageRefs = data.contextRefs['copilot.image'] || 0;
+		if (imageRefs > 0) {
+			ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
+		}
+		
 		stages.push(ceStage);
 
-		// 3. Agentic - based on agent mode usage
+		// ---------- 3. Agentic ----------
 		let agStage = 1;
-		if (data.agentModeCount >= 1) { agStage = 2; }
-		if (data.agentModeCount >= 10) { agStage = 3; }
-		if (data.agentModeCount >= 50) { agStage = 4; }
+		
+		if (data.agentModeCount > 0) {
+			agStage = 2;
+		}
+		
+		// Edit scope tracking (multi-file edits show advanced agentic behavior)
+		if (data.editScope) {
+			if (data.editScope.multiFileEdits > 0) {
+				agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+			}
+			if (data.editScope.avgFilesPerSession >= 3) {
+				agStage = Math.max(agStage, 3) as 1 | 2 | 3 | 4;
+			}
+		} else if (data.multiFileEdits > 0) {
+			// Fallback to direct fields
+			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+		}
+		
+		// Agent types boost
+		if (data.agentTypes && data.agentTypes.editsAgent && data.agentTypes.editsAgent > 0) {
+			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+		}
+		
+		// Diverse tool usage in agent mode
+		const toolCount = Object.keys(data.toolCalls.byTool).length;
+		if (data.agentModeCount >= 10 && toolCount >= 3) {
+			agStage = 3;
+		}
+		
+		// Heavy agentic use
+		if (data.agentModeCount >= 50 && toolCount >= 5) {
+			agStage = 4;
+		}
+		if (data.editScope && data.editScope.multiFileEdits >= 20 && data.editScope.avgFilesPerSession >= 3) {
+			agStage = Math.max(agStage, 4) as 1 | 2 | 3 | 4;
+		}
+		
 		stages.push(agStage);
 
-		// 4. Tool Usage - based on tool calls and MCP
+		// ---------- 4. Tool Usage ----------
 		let tuStage = 1;
-		const uniqueTools = Object.keys(data.toolCalls.byTool).length;
-		if (uniqueTools >= 1) { tuStage = 2; }
-		if (uniqueTools >= 2 || data.mcpTools.total > 0) { tuStage = 3; }
-		if (data.mcpTools.total >= 2) { tuStage = 4; }
+		
+		if (toolCount > 0) {
+			tuStage = 2;
+		}
+		
+		// Workspace agent shows advanced tool usage
+		if (data.agentTypes && data.agentTypes.workspaceAgent && data.agentTypes.workspaceAgent > 0) {
+			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+		}
+		
+		// Specific advanced tool IDs
+		const advancedTools = ['github_pull_request', 'github_repo', 'run_in_terminal', 'editFiles', 'listFiles'];
+		const usedAdvanced = advancedTools.filter(t => (data.toolCalls.byTool[t] || 0) > 0);
+		if (usedAdvanced.length >= 2) {
+			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+		}
+		
+		// MCP tools
+		if (data.mcpTools.total > 0) {
+			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
+			const mcpServerCount = data.mcpTools.byServer ? Object.keys(data.mcpTools.byServer).length : 0;
+			if (mcpServerCount >= 2) {
+				tuStage = 4;
+			}
+		}
+		
 		stages.push(tuStage);
 
-		// 5. Customization - based on model diversity (simplified)
+		// ---------- 5. Customization ----------
 		let cuStage = 1;
-		if (data.models.size >= 2) { cuStage = 2; }
-		if (data.models.size >= 3) { cuStage = 3; }
-		if (data.models.size >= 5) { cuStage = 4; }
+		
+		// Repository-level customization
+		const totalRepos = data.repositories ? data.repositories.length : 0;
+		const reposWithCustomization = data.repositoriesWithCustomization ? data.repositoriesWithCustomization.length : 0;
+		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
+		
+		if (reposWithCustomization > 0) {
+			cuStage = 2;
+		}
+		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
+			cuStage = 3;
+		}
+		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
+			cuStage = 4;
+		}
+		
+		// Model selection awareness
+		const uniqueModels = data.models.size;
+		if (uniqueModels >= 3) {
+			if (uniqueModels >= 5 && reposWithCustomization >= 3) {
+				cuStage = 4;
+			} else if (uniqueModels >= 5) {
+				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
+			} else {
+				cuStage = Math.max(cuStage, 2) as 1 | 2 | 3 | 4;
+			}
+		}
+		
 		stages.push(cuStage);
 
-		// 6. Workflow Integration - based on session count and patterns
+		// ---------- 6. Workflow Integration ----------
 		let wiStage = 1;
-		if (data.sessionCount >= 3) { wiStage = 2; }
-		if (data.sessionCount >= 10 && data.multiTurnSessions > 0) { wiStage = 3; }
-		if (data.sessionCount >= 15 && data.multiTurnSessions >= 5) { wiStage = 4; }
+		
+		if (sessions >= 3) {
+			wiStage = 2;
+		}
+		if (sessions >= 7) {
+			wiStage = 3;
+		}
+		if (sessions >= 15) {
+			wiStage = 4;
+		}
+		
+		// Multi-turn pattern boost
+		if (data.multiTurnSessions > 0 && sessions > 0) {
+			const multiTurnRate = data.multiTurnSessions / sessions;
+			if (multiTurnRate >= 0.3 && sessions >= 5) {
+				wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
+			}
+		}
+		
 		stages.push(wiStage);
 
-		// Calculate overall stage as median of 6 categories
+		// Calculate overall stage as median of 6 categories (same as individual scoring)
 		stages.sort((a, b) => a - b);
 		const mid = Math.floor(stages.length / 2);
 		const overallStage = stages.length % 2 === 0
