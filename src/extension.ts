@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,91 +13,92 @@ import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
 import { getModelDisplayName } from './webview/shared/modelUtils';
+import { ConfirmationMessages } from "./backend/ui/messages";
 
 interface TokenUsageStats {
-	todayTokens: number;
-	monthTokens: number;
-	lastUpdated: Date;
+  todayTokens: number;
+  monthTokens: number;
+  lastUpdated: Date;
 }
 
 interface ModelUsage {
-	[modelName: string]: {
-		inputTokens: number;
-		outputTokens: number;
-	};
+  [modelName: string]: {
+    inputTokens: number;
+    outputTokens: number;
+  };
 }
 
 interface ModelPricing {
-	inputCostPerMillion: number;
-	outputCostPerMillion: number;
-	category?: string;
-	tier?: 'standard' | 'premium' | 'unknown';
-	multiplier?: number;
-	displayNames?: string[];
+  inputCostPerMillion: number;
+  outputCostPerMillion: number;
+  category?: string;
+  tier?: "standard" | "premium" | "unknown";
+  multiplier?: number;
+  displayNames?: string[];
 }
 
 interface EditorUsage {
-	[editorType: string]: {
-		tokens: number;
-		sessions: number;
-	};
+  [editorType: string]: {
+    tokens: number;
+    sessions: number;
+  };
 }
 
 interface RepositoryUsage {
-	[repository: string]: {
-		tokens: number;
-		sessions: number;
-	};
+  [repository: string]: {
+    tokens: number;
+    sessions: number;
+  };
 }
 
 interface PeriodStats {
-	tokens: number;
-	thinkingTokens: number;
-	estimatedTokens: number; // Text-based estimate (user messages + responses only)
-	actualTokens: number; // Actual LLM API-reported tokens (0 when unavailable)
-	sessions: number;
-	avgInteractionsPerSession: number;
-	avgTokensPerSession: number;
-	modelUsage: ModelUsage;
-	editorUsage: EditorUsage;
-	co2: number;
-	treesEquivalent: number;
-	waterUsage: number;
-	estimatedCost: number;
+  tokens: number;
+  thinkingTokens: number;
+  estimatedTokens: number; // Text-based estimate (user messages + responses only)
+  actualTokens: number; // Actual LLM API-reported tokens (0 when unavailable)
+  sessions: number;
+  avgInteractionsPerSession: number;
+  avgTokensPerSession: number;
+  modelUsage: ModelUsage;
+  editorUsage: EditorUsage;
+  co2: number;
+  treesEquivalent: number;
+  waterUsage: number;
+  estimatedCost: number;
 }
 
 interface DetailedStats {
-	today: PeriodStats;
-	month: PeriodStats;
-	lastMonth: PeriodStats;
-	last30Days: PeriodStats;
-	lastUpdated: Date;
+  today: PeriodStats;
+  month: PeriodStats;
+  lastMonth: PeriodStats;
+  last30Days: PeriodStats;
+  lastUpdated: Date;
 }
 
 interface DailyTokenStats {
-	date: string; // YYYY-MM-DD format
-	tokens: number;
-	sessions: number;
-	interactions: number;
-	modelUsage: ModelUsage;
-	editorUsage: EditorUsage;
-	repositoryUsage: RepositoryUsage;
+  date: string; // YYYY-MM-DD format
+  tokens: number;
+  sessions: number;
+  interactions: number;
+  modelUsage: ModelUsage;
+  editorUsage: EditorUsage;
+  repositoryUsage: RepositoryUsage;
 }
 
 interface SessionFileCache {
-	tokens: number;
-	interactions: number;
-	modelUsage: ModelUsage;
-	mtime: number; // file modification time as timestamp
-	size?: number; // file size in bytes (optional for backward compatibility)
-	usageAnalysis?: SessionUsageAnalysis; // New analysis data
-	firstInteraction?: string | null; // ISO timestamp of first interaction
-	lastInteraction?: string | null; // ISO timestamp of last interaction
-	title?: string; // Session title (customTitle from session file)
-	repository?: string; // Git remote origin URL for the session's workspace
-	workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
-	thinkingTokens?: number; // Estimated thinking/reasoning tokens
-	actualTokens?: number; // Actual token count from LLM API usage data (when available)
+  tokens: number;
+  interactions: number;
+  modelUsage: ModelUsage;
+  mtime: number; // file modification time as timestamp
+  size?: number; // file size in bytes (optional for backward compatibility)
+  usageAnalysis?: SessionUsageAnalysis; // New analysis data
+  firstInteraction?: string | null; // ISO timestamp of first interaction
+  lastInteraction?: string | null; // ISO timestamp of last interaction
+  title?: string; // Session title (customTitle from session file)
+  repository?: string; // Git remote origin URL for the session's workspace
+  workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
+  thinkingTokens?: number; // Estimated thinking/reasoning tokens
+  actualTokens?: number; // Actual token count from LLM API usage data (when available)
 }
 
 // Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)
@@ -115,119 +116,119 @@ interface CustomizationFileEntry {
 
 // New interfaces for usage analysis
 interface SessionUsageAnalysis {
-	toolCalls: ToolCallUsage;
-	modeUsage: ModeUsage;
-	contextReferences: ContextReferenceUsage;
-	mcpTools: McpToolUsage;
-	modelSwitching: {
-		uniqueModels: string[];
-		modelCount: number;
-		switchCount: number;
-		tiers: { standard: string[]; premium: string[]; unknown: string[] };
-		hasMixedTiers: boolean;
-		standardRequests: number;
-		premiumRequests: number;
-		unknownRequests: number;
-		totalRequests: number;
-	};
-	editScope?: EditScopeUsage;
-	applyUsage?: ApplyButtonUsage;
-	sessionDuration?: SessionDurationData;
-	conversationPatterns?: ConversationPatterns;
-	agentTypes?: AgentTypeUsage;
+  toolCalls: ToolCallUsage;
+  modeUsage: ModeUsage;
+  contextReferences: ContextReferenceUsage;
+  mcpTools: McpToolUsage;
+  modelSwitching: {
+    uniqueModels: string[];
+    modelCount: number;
+    switchCount: number;
+    tiers: { standard: string[]; premium: string[]; unknown: string[] };
+    hasMixedTiers: boolean;
+    standardRequests: number;
+    premiumRequests: number;
+    unknownRequests: number;
+    totalRequests: number;
+  };
+  editScope?: EditScopeUsage;
+  applyUsage?: ApplyButtonUsage;
+  sessionDuration?: SessionDurationData;
+  conversationPatterns?: ConversationPatterns;
+  agentTypes?: AgentTypeUsage;
 }
 
 interface ToolCallUsage {
-	total: number;
-	byTool: { [toolName: string]: number };
+  total: number;
+  byTool: { [toolName: string]: number };
 }
 
 interface ModeUsage {
-	ask: number;         // Regular chat mode
-	edit: number;        // Edit mode interactions
-	agent: number;       // Agent mode interactions (standard agent mode)
-	plan: number;        // Plan mode interactions (built-in plan agent)
-	customAgent: number; // Custom agent mode interactions (.agent.md files)
+  ask: number; // Regular chat mode
+  edit: number; // Edit mode interactions
+  agent: number; // Agent mode interactions (standard agent mode)
+  plan: number; // Plan mode interactions (built-in plan agent)
+  customAgent: number; // Custom agent mode interactions (.agent.md files)
 }
 
 interface ContextReferenceUsage {
-	file: number;              // #file references
-	selection: number;         // #selection references
-	implicitSelection: number; // Implicit selections via inputState.selections
-	symbol: number;            // #symbol references
-	codebase: number;          // #codebase references
-	workspace: number;         // @workspace references
-	terminal: number;          // @terminal references
-	vscode: number;            // @vscode references
-	terminalLastCommand: number;  // #terminalLastCommand references
-	terminalSelection: number;    // #terminalSelection references
-	clipboard: number;            // #clipboard references
-	changes: number;              // #changes references
-	outputPanel: number;          // #outputPanel references
-	problemsPanel: number;        // #problemsPanel references
-	// contentReferences tracking from session logs
-	byKind: { [kind: string]: number };           // Count by reference kind
-	copilotInstructions: number;                  // .github/copilot-instructions.md
-	agentsMd: number;                             // agents.md in repo root
-	byPath: { [path: string]: number };           // Count by unique file path
+  file: number; // #file references
+  selection: number; // #selection references
+  implicitSelection: number; // Implicit selections via inputState.selections
+  symbol: number; // #symbol references
+  codebase: number; // #codebase references
+  workspace: number; // @workspace references
+  terminal: number; // @terminal references
+  vscode: number; // @vscode references
+  terminalLastCommand: number; // #terminalLastCommand references
+  terminalSelection: number; // #terminalSelection references
+  clipboard: number; // #clipboard references
+  changes: number; // #changes references
+  outputPanel: number; // #outputPanel references
+  problemsPanel: number; // #problemsPanel references
+  // contentReferences tracking from session logs
+  byKind: { [kind: string]: number }; // Count by reference kind
+  copilotInstructions: number; // .github/copilot-instructions.md
+  agentsMd: number; // agents.md in repo root
+  byPath: { [path: string]: number }; // Count by unique file path
 }
 
 interface McpToolUsage {
-	total: number;
-	byServer: { [serverName: string]: number };
-	byTool: { [toolName: string]: number };
+  total: number;
+  byServer: { [serverName: string]: number };
+  byTool: { [toolName: string]: number };
 }
 
 interface EditScopeUsage {
-	singleFileEdits: number;   // Edit sessions touching 1 file
-	multiFileEdits: number;    // Edit sessions touching 2+ files
-	totalEditedFiles: number;  // Total unique files edited
-	avgFilesPerSession: number; // Average files per edit session
+  singleFileEdits: number; // Edit sessions touching 1 file
+  multiFileEdits: number; // Edit sessions touching 2+ files
+  totalEditedFiles: number; // Total unique files edited
+  avgFilesPerSession: number; // Average files per edit session
 }
 
 interface ApplyButtonUsage {
-	totalApplies: number;      // Total Apply button uses
-	totalCodeBlocks: number;   // Total code blocks shown
-	applyRate: number;         // % of code blocks applied
+  totalApplies: number; // Total Apply button uses
+  totalCodeBlocks: number; // Total code blocks shown
+  applyRate: number; // % of code blocks applied
 }
 
 interface SessionDurationData {
-	totalDurationMs: number;       // Total session time
-	avgDurationMs: number;         // Average session duration
-	avgFirstProgressMs: number;    // Average time to first response
-	avgTotalElapsedMs: number;     // Average total request time
-	avgWaitTimeMs: number;         // Average user wait time between interactions
+  totalDurationMs: number; // Total session time
+  avgDurationMs: number; // Average session duration
+  avgFirstProgressMs: number; // Average time to first response
+  avgTotalElapsedMs: number; // Average total request time
+  avgWaitTimeMs: number; // Average user wait time between interactions
 }
 
 interface ConversationPatterns {
-	multiTurnSessions: number;     // Sessions with >1 request
-	singleTurnSessions: number;    // Sessions with 1 request
-	avgTurnsPerSession: number;    // Average requests per session
-	maxTurnsInSession: number;     // Longest conversation
+  multiTurnSessions: number; // Sessions with >1 request
+  singleTurnSessions: number; // Sessions with 1 request
+  avgTurnsPerSession: number; // Average requests per session
+  maxTurnsInSession: number; // Longest conversation
 }
 
 interface AgentTypeUsage {
-	editsAgent: number;            // github.copilot.editsAgent usage
-	defaultAgent: number;          // github.copilot.default usage
-	workspaceAgent: number;        // github.copilot.workspace usage
-	other: number;                 // Other agents
+  editsAgent: number; // github.copilot.editsAgent usage
+  defaultAgent: number; // github.copilot.default usage
+  workspaceAgent: number; // github.copilot.workspace usage
+  other: number; // Other agents
 }
 
 interface ModelSwitchingAnalysis {
-	modelsPerSession: number[];  // Array of unique model counts per session
-	totalSessions: number;
-	averageModelsPerSession: number;
-	maxModelsPerSession: number;
-	minModelsPerSession: number;
-	switchingFrequency: number;  // % of sessions with >1 model
-	standardModels: string[];    // Unique standard models used
-	premiumModels: string[];     // Unique premium models used
-	unknownModels: string[];     // Unique models with unknown tier
-	mixedTierSessions: number;   // Sessions using both standard and premium
-	standardRequests: number;    // Count of requests using standard models
-	premiumRequests: number;     // Count of requests using premium models
-	unknownRequests: number;     // Count of requests using unknown tier models
-	totalRequests: number;       // Total requests across all tiers
+  modelsPerSession: number[]; // Array of unique model counts per session
+  totalSessions: number;
+  averageModelsPerSession: number;
+  maxModelsPerSession: number;
+  minModelsPerSession: number;
+  switchingFrequency: number; // % of sessions with >1 model
+  standardModels: string[]; // Unique standard models used
+  premiumModels: string[]; // Unique premium models used
+  unknownModels: string[]; // Unique models with unknown tier
+  mixedTierSessions: number; // Sessions using both standard and premium
+  standardRequests: number; // Count of requests using standard models
+  premiumRequests: number; // Count of requests using premium models
+  unknownRequests: number; // Count of requests using unknown tier models
+  totalRequests: number; // Total requests across all tiers
 }
 
 interface MissedPotentialWorkspace {
@@ -249,113 +250,113 @@ interface UsageAnalysisStats {
 }
 
 /** Matrix types used for Usage Analysis customization matrix */
-type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
+type CustomizationTypeStatus = "✅" | "⚠️" | "❌";
 
 interface WorkspaceCustomizationRow {
-	workspacePath: string;
-	workspaceName: string;
-	sessionCount: number;
-	interactionCount: number;
-	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+  workspacePath: string;
+  workspaceName: string;
+  sessionCount: number;
+  interactionCount: number;
+  typeStatuses: { [typeId: string]: CustomizationTypeStatus };
 }
 
 interface WorkspaceCustomizationMatrix {
-	customizationTypes: Array<{ id: string; icon: string; label: string }>;
-	workspaces: WorkspaceCustomizationRow[];
-	totalWorkspaces: number;
-	workspacesWithIssues: number;
+  customizationTypes: Array<{ id: string; icon: string; label: string }>;
+  workspaces: WorkspaceCustomizationRow[];
+  totalWorkspaces: number;
+  workspacesWithIssues: number;
 }
 
 interface UsageAnalysisPeriod {
-	sessions: number;
-	toolCalls: ToolCallUsage;
-	modeUsage: ModeUsage;
-	contextReferences: ContextReferenceUsage;
-	mcpTools: McpToolUsage;
-	modelSwitching: ModelSwitchingAnalysis;
-	repositories: string[]; // Unique repositories worked in during this period
-	repositoriesWithCustomization: string[]; // Repos with copilot-instructions.md or agents.md
-	editScope: EditScopeUsage;
-	applyUsage: ApplyButtonUsage;
-	sessionDuration: SessionDurationData;
-	conversationPatterns: ConversationPatterns;
-	agentTypes: AgentTypeUsage;
+  sessions: number;
+  toolCalls: ToolCallUsage;
+  modeUsage: ModeUsage;
+  contextReferences: ContextReferenceUsage;
+  mcpTools: McpToolUsage;
+  modelSwitching: ModelSwitchingAnalysis;
+  repositories: string[]; // Unique repositories worked in during this period
+  repositoriesWithCustomization: string[]; // Repos with copilot-instructions.md or agents.md
+  editScope: EditScopeUsage;
+  applyUsage: ApplyButtonUsage;
+  sessionDuration: SessionDurationData;
+  conversationPatterns: ConversationPatterns;
+  agentTypes: AgentTypeUsage;
 }
 
 // Detailed session file information for diagnostics view
 interface SessionFileDetails {
-	file: string;
-	size: number;
-	modified: string;
-	interactions: number;
-	contextReferences: ContextReferenceUsage;
-	firstInteraction: string | null;
-	lastInteraction: string | null;
-	editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
-	editorRoot?: string; // top-level editor root path (for display in diagnostics)
-	editorName?: string; // friendly editor name (e.g., 'VS Code')
-	title?: string; // session title (customTitle from session file)
-	repository?: string; // Git remote origin URL for the session's workspace
+  file: string;
+  size: number;
+  modified: string;
+  interactions: number;
+  contextReferences: ContextReferenceUsage;
+  firstInteraction: string | null;
+  lastInteraction: string | null;
+  editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
+  editorRoot?: string; // top-level editor root path (for display in diagnostics)
+  editorName?: string; // friendly editor name (e.g., 'VS Code')
+  title?: string; // session title (customTitle from session file)
+  repository?: string; // Git remote origin URL for the session's workspace
 }
 
 // Prompt token detail from actual LLM usage data
 interface PromptTokenDetail {
-	category: string;
-	label: string;
-	percentageOfPrompt: number;
+  category: string;
+  label: string;
+  percentageOfPrompt: number;
 }
 
 // Actual usage data from the LLM API (when available in JSONL)
 interface ActualUsage {
-	completionTokens: number;
-	promptTokens: number;
-	promptTokenDetails?: PromptTokenDetail[];
-	details?: string; // e.g. "Claude Opus 4.5 • 3x"
+  completionTokens: number;
+  promptTokens: number;
+  promptTokenDetails?: PromptTokenDetail[];
+  details?: string; // e.g. "Claude Opus 4.5 • 3x"
 }
 
 // Chat turn information for log viewer
 interface ChatTurn {
-	turnNumber: number;
-	timestamp: string | null;
-	mode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent';
-	userMessage: string;
-	assistantResponse: string;
-	model: string | null;
-	toolCalls: { toolName: string; arguments?: string; result?: string }[];
-	contextReferences: ContextReferenceUsage;
-	mcpTools: { server: string; tool: string }[];
-	inputTokensEstimate: number;
-	outputTokensEstimate: number;
-	thinkingTokensEstimate: number;
-	actualUsage?: ActualUsage;
+  turnNumber: number;
+  timestamp: string | null;
+  mode: "ask" | "edit" | "agent" | "plan" | "customAgent";
+  userMessage: string;
+  assistantResponse: string;
+  model: string | null;
+  toolCalls: { toolName: string; arguments?: string; result?: string }[];
+  contextReferences: ContextReferenceUsage;
+  mcpTools: { server: string; tool: string }[];
+  inputTokensEstimate: number;
+  outputTokensEstimate: number;
+  thinkingTokensEstimate: number;
+  actualUsage?: ActualUsage;
 }
 
 // Full session log data for the log viewer
 interface SessionLogData {
-	file: string;
-	title: string | null;
-	editorSource: string;
-	editorName: string;
-	size: number;
-	modified: string;
-	interactions: number;
-	contextReferences: ContextReferenceUsage;
-	firstInteraction: string | null;
-	lastInteraction: string | null;
-	turns: ChatTurn[];
-	usageAnalysis?: SessionUsageAnalysis;
+  file: string;
+  title: string | null;
+  editorSource: string;
+  editorName: string;
+  size: number;
+  modified: string;
+  interactions: number;
+  contextReferences: ContextReferenceUsage;
+  firstInteraction: string | null;
+  lastInteraction: string | null;
+  turns: ChatTurn[];
+  usageAnalysis?: SessionUsageAnalysis;
 }
 
 // Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)
 interface WorkspaceCustomizationSummary {
-	workspaces: {
-		[workspacePath: string]: {
-			name: string;
-			files: CustomizationFileEntry[];
-		};
-	};
-	totalFiles: number;
-	staleFiles: number;
+  workspaces: {
+    [workspacePath: string]: {
+      name: string;
+      files: CustomizationFileEntry[];
+    };
+  };
+  totalFiles: number;
+  staleFiles: number;
 }
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -7812,757 +7813,870 @@ Track your Copilot usage and level up your AI-assisted development skills!
 Get the extension: ${marketplaceUrl}
 
 ${hashtag}`;
-	
-	switch (platform) {
-		case 'linkedin': {
-			// LinkedIn share URL - opens in browser for user to add their own commentary
-			const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
-			
-			// Copy share text to clipboard for easy pasting
-			await vscode.env.clipboard.writeText(shareText);
-			await vscode.window.showInformationMessage(
-				'Share text copied to clipboard! Paste it into your LinkedIn post.',
-				'Open LinkedIn'
-			).then(async selection => {
-				if (selection === 'Open LinkedIn') {
-					await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
-				}
-			});
-			break;
-		}
-			
-		case 'bluesky': {
-			// Copy share text to clipboard, then open Bluesky compose
-			await vscode.env.clipboard.writeText(shareText);
-			await vscode.window.showInformationMessage(
-				'Share text copied to clipboard! Paste it into your Bluesky post.',
-				'Open Bluesky'
-			).then(async selection => {
-				if (selection === 'Open Bluesky') {
-					await vscode.env.openExternal(vscode.Uri.parse('https://bsky.app/intent/compose'));
-				}
-			});
-			break;
-		}
-			
-		case 'mastodon': {
-			// Mastodon share - ask user for their instance
-			const instance = await vscode.window.showInputBox({
-				prompt: 'Enter your Mastodon instance (e.g., mastodon.social)',
-				placeHolder: 'mastodon.social',
-				value: 'mastodon.social'
-			});
-			
-			if (instance) {
-				// Copy share text to clipboard, then open Mastodon compose
-				await vscode.env.clipboard.writeText(shareText);
-				await vscode.window.showInformationMessage(
-					'Share text copied to clipboard! Paste it into your Mastodon post.',
-					'Open Mastodon'
-				).then(async selection => {
-					if (selection === 'Open Mastodon') {
-						await vscode.env.openExternal(vscode.Uri.parse(`https://${instance}/share`));
-					}
-				});
-			}
-			break;
-		}
-	}
-	
-	this.log(`Shared fluency score to ${platform}`);
-}
 
-/**
- * Download the fluency chart as an image
- */
-private async downloadChartImage(): Promise<void> {
-	await vscode.window.showInformationMessage(
-		'💡 Click the "Download Chart Image" button to save the radar chart as a PNG file.',
-		'Got it'
-	);
-	this.log('Showed chart download instructions');
-}
+    switch (platform) {
+      case "linkedin": {
+        // LinkedIn share URL - opens in browser for user to add their own commentary
+        const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
 
-private async saveChartImageData(dataUrl: string): Promise<void> {
-	const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
-	if (!base64Match) {
-		void vscode.window.showErrorMessage('Failed to process chart image data.');
-		return;
-	}
+        // Copy share text to clipboard for easy pasting
+        await vscode.env.clipboard.writeText(shareText);
+        await vscode.window
+          .showInformationMessage(
+            "Share text copied to clipboard! Paste it into your LinkedIn post.",
+            "Open LinkedIn",
+          )
+          .then(async (selection) => {
+            if (selection === "Open LinkedIn") {
+              await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+            }
+          });
+        break;
+      }
 
-	const uri = await vscode.window.showSaveDialog({
-		defaultUri: vscode.Uri.file('copilot-fluency-score.png'),
-		filters: { 'PNG Image': ['png'] },
-		title: 'Save Fluency Score Chart'
-	});
+      case "bluesky": {
+        // Copy share text to clipboard, then open Bluesky compose
+        await vscode.env.clipboard.writeText(shareText);
+        await vscode.window
+          .showInformationMessage(
+            "Share text copied to clipboard! Paste it into your Bluesky post.",
+            "Open Bluesky",
+          )
+          .then(async (selection) => {
+            if (selection === "Open Bluesky") {
+              await vscode.env.openExternal(
+                vscode.Uri.parse("https://bsky.app/intent/compose"),
+              );
+            }
+          });
+        break;
+      }
 
-	if (!uri) { return; }
+      case "mastodon": {
+        // Mastodon share - ask user for their instance
+        const instance = await vscode.window.showInputBox({
+          prompt: "Enter your Mastodon instance (e.g., mastodon.social)",
+          placeHolder: "mastodon.social",
+          value: "mastodon.social",
+        });
 
-	const buffer = Buffer.from(base64Match[1], 'base64');
-	await vscode.workspace.fs.writeFile(uri, buffer);
-	void vscode.window.showInformationMessage(`Chart image saved to ${uri.fsPath}`, 'Open Image').then(selection => {
-		if (selection === 'Open Image') {
-			void vscode.env.openExternal(uri);
-		}
-	});
-	this.log(`Chart image saved to ${uri.fsPath}`);
-}
+        if (instance) {
+          // Copy share text to clipboard, then open Mastodon compose
+          await vscode.env.clipboard.writeText(shareText);
+          await vscode.window
+            .showInformationMessage(
+              "Share text copied to clipboard! Paste it into your Mastodon post.",
+              "Open Mastodon",
+            )
+            .then(async (selection) => {
+              if (selection === "Open Mastodon") {
+                await vscode.env.openExternal(
+                  vscode.Uri.parse(`https://${instance}/share`),
+                );
+              }
+            });
+        }
+        break;
+      }
+    }
 
-/**
-	 * Export Copilot Fluency Score as a landscape PDF with screenshot images
-	 */
-	private async exportFluencyScorePdf(images: { label: string; dataUrl: string }[]): Promise<void> {
-		try {
-			const jsPDF = (await import('jspdf')).default;
+    this.log(`Shared fluency score to ${platform}`);
+  }
 
-			const uri = await vscode.window.showSaveDialog({
-				defaultUri: vscode.Uri.file('copilot-fluency-score.pdf'),
-				filters: { 'PDF Document': ['pdf'] },
-				title: 'Export Fluency Score Report'
-			});
+  /**
+   * Download the fluency chart as an image
+   */
+  private async downloadChartImage(): Promise<void> {
+    await vscode.window.showInformationMessage(
+      '💡 Click the "Download Chart Image" button to save the radar chart as a PNG file.',
+      "Got it",
+    );
+    this.log("Showed chart download instructions");
+  }
 
-			if (!uri) { return; }
+  private async saveChartImageData(dataUrl: string): Promise<void> {
+    const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+    if (!base64Match) {
+      void vscode.window.showErrorMessage(
+        "Failed to process chart image data.",
+      );
+      return;
+    }
 
-			const pdf = new jsPDF({
-				orientation: 'landscape',
-				unit: 'mm',
-				format: 'a4'
-			});
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file("copilot-fluency-score.png"),
+      filters: { "PNG Image": ["png"] },
+      title: "Save Fluency Score Chart",
+    });
 
-			const pageWidth = pdf.internal.pageSize.getWidth();   // ~297mm
-			const pageHeight = pdf.internal.pageSize.getHeight();  // ~210mm
-			const margin = 10;
+    if (!uri) {
+      return;
+    }
 
-			for (let i = 0; i < images.length; i++) {
-				if (i > 0) { pdf.addPage(); }
+    const buffer = Buffer.from(base64Match[1], "base64");
+    await vscode.workspace.fs.writeFile(uri, buffer);
+    void vscode.window
+      .showInformationMessage(
+        `Chart image saved to ${uri.fsPath}`,
+        "Open Image",
+      )
+      .then((selection) => {
+        if (selection === "Open Image") {
+          void vscode.env.openExternal(uri);
+        }
+      });
+    this.log(`Chart image saved to ${uri.fsPath}`);
+  }
 
-				// Page header
-				pdf.setFontSize(8);
-				pdf.setTextColor(128, 128, 128);
-				pdf.text(`Copilot Fluency Score Report - Page ${i + 1} of ${images.length}`, margin, 7);
-				pdf.text(new Date().toLocaleDateString(), pageWidth - margin, 7, { align: 'right' });
+  /**
+   * Export Copilot Fluency Score as a landscape PDF with screenshot images
+   */
+  private async exportFluencyScorePdf(
+    images: { label: string; dataUrl: string }[],
+  ): Promise<void> {
+    try {
+      const jsPDF = (await import("jspdf")).default;
 
-				// Insert the screenshot image, fitting within the page
-				const imgData = images[i].dataUrl;
-				const availW = pageWidth - 2 * margin;
-				const availH = pageHeight - 2 * margin - 5; // extra space for header/footer
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file("copilot-fluency-score.pdf"),
+        filters: { "PDF Document": ["pdf"] },
+        title: "Export Fluency Score Report",
+      });
 
-				// Determine image aspect ratio from the base64 PNG header
-				const imgProps = pdf.getImageProperties(imgData);
-				const imgW = imgProps.width;
-				const imgH = imgProps.height;
-				const scale = Math.min(availW / imgW, availH / imgH);
-				const drawW = imgW * scale;
-				const drawH = imgH * scale;
-				const x = margin + (availW - drawW) / 2;
-				const y = margin + 5 + (availH - drawH) / 2;
+      if (!uri) {
+        return;
+      }
 
-				pdf.addImage(imgData, 'PNG', x, y, drawW, drawH);
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
 
-				// Footer
-				pdf.setFontSize(8);
-				pdf.setTextColor(128, 128, 128);
-				pdf.text('Generated by Copilot Token Tracker Extension', pageWidth / 2, pageHeight - 5, { align: 'center' });
-			}
+      const pageWidth = pdf.internal.pageSize.getWidth(); // ~297mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // ~210mm
+      const margin = 10;
 
-			const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
-			await vscode.workspace.fs.writeFile(uri, pdfBuffer);
+      for (let i = 0; i < images.length; i++) {
+        if (i > 0) {
+          pdf.addPage();
+        }
 
-			void vscode.window.showInformationMessage(`Fluency Score PDF saved to ${uri.fsPath}`, 'Open PDF').then(selection => {
-				if (selection === 'Open PDF') {
-					void vscode.env.openExternal(uri);
-				}
-			});
+        // Page header
+        pdf.setFontSize(8);
+        pdf.setTextColor(128, 128, 128);
+        pdf.text(
+          `Copilot Fluency Score Report - Page ${i + 1} of ${images.length}`,
+          margin,
+          7,
+        );
+        pdf.text(new Date().toLocaleDateString(), pageWidth - margin, 7, {
+          align: "right",
+        });
 
-			this.log(`Fluency Score PDF exported to ${uri.fsPath}`);
-		} catch (error) {
-			this.error('Failed to export PDF', error instanceof Error ? error : new Error(String(error)));
-			void vscode.window.showErrorMessage(`Failed to export PDF: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
+        // Insert the screenshot image, fitting within the page
+        const imgData = images[i].dataUrl;
+        const availW = pageWidth - 2 * margin;
+        const availH = pageHeight - 2 * margin - 5; // extra space for header/footer
 
-	/**
-	 * Export Copilot Fluency Score as a PowerPoint presentation with screenshot images
-	 */
-	private async exportFluencyScorePptx(images: { label: string; dataUrl: string }[]): Promise<void> {
-		try {
-			const PptxGenJSModule = await import('pptxgenjs');
-			const PptxGenJS = PptxGenJSModule.default as any;
+        // Determine image aspect ratio from the base64 PNG header
+        const imgProps = pdf.getImageProperties(imgData);
+        const imgW = imgProps.width;
+        const imgH = imgProps.height;
+        const scale = Math.min(availW / imgW, availH / imgH);
+        const drawW = imgW * scale;
+        const drawH = imgH * scale;
+        const x = margin + (availW - drawW) / 2;
+        const y = margin + 5 + (availH - drawH) / 2;
 
-			const uri = await vscode.window.showSaveDialog({
-				defaultUri: vscode.Uri.file('copilot-fluency-score.pptx'),
-				filters: { 'PowerPoint Presentation': ['pptx'] },
-				title: 'Export Fluency Score as PowerPoint'
-			});
+        pdf.addImage(imgData, "PNG", x, y, drawW, drawH);
 
-			if (!uri) { return; }
+        // Footer
+        pdf.setFontSize(8);
+        pdf.setTextColor(128, 128, 128);
+        pdf.text(
+          "Generated by Copilot Token Tracker Extension",
+          pageWidth / 2,
+          pageHeight - 5,
+          { align: "center" },
+        );
+      }
 
-			const pptx = new PptxGenJS();
-			pptx.layout = 'LAYOUT_WIDE'; // 13.33" x 7.5" — great for presentations
-			pptx.author = 'Copilot Token Tracker';
-			pptx.subject = 'Copilot Fluency Score Report';
-			pptx.title = 'Copilot Fluency Score';
+      const pdfBuffer = Buffer.from(pdf.output("arraybuffer"));
+      await vscode.workspace.fs.writeFile(uri, pdfBuffer);
 
-			const slideW = 13.33;
-			const slideH = 7.5;
-			const maxW = slideW - 0.8;  // 0.4" margin each side
-			const maxH = slideH - 1.0;  // room for footer
+      void vscode.window
+        .showInformationMessage(
+          `Fluency Score PDF saved to ${uri.fsPath}`,
+          "Open PDF",
+        )
+        .then((selection) => {
+          if (selection === "Open PDF") {
+            void vscode.env.openExternal(uri);
+          }
+        });
 
-			for (const img of images) {
-				const slide = pptx.addSlide();
-				slide.background = { color: '1b1b1e' };
+      this.log(`Fluency Score PDF exported to ${uri.fsPath}`);
+    } catch (error) {
+      this.error(
+        "Failed to export PDF",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      void vscode.window.showErrorMessage(
+        `Failed to export PDF: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
-				// Decode PNG dimensions from the base64 data to preserve aspect ratio
-				let imgW = maxW;
-				let imgH = maxH;
-				try {
-					const base64 = img.dataUrl.split(',')[1];
-					const buf = Buffer.from(base64, 'base64');
-					// PNG header: width at bytes 16-19, height at bytes 20-23 (big-endian)
-					if (buf.length > 24 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
-						const pxW = buf.readUInt32BE(16);
-						const pxH = buf.readUInt32BE(20);
-						if (pxW > 0 && pxH > 0) {
-							const aspect = pxW / pxH;
-							// Fit within maxW x maxH preserving aspect ratio
-							if (aspect > maxW / maxH) {
-								imgW = maxW;
-								imgH = maxW / aspect;
-							} else {
-								imgH = maxH;
-								imgW = maxH * aspect;
-							}
-						}
-					}
-				} catch { /* fall back to max dimensions */ }
+  /**
+   * Export Copilot Fluency Score as a PowerPoint presentation with screenshot images
+   */
+  private async exportFluencyScorePptx(
+    images: { label: string; dataUrl: string }[],
+  ): Promise<void> {
+    try {
+      const PptxGenJSModule = await import("pptxgenjs");
+      const PptxGenJS = PptxGenJSModule.default as any;
 
-				const x = (slideW - imgW) / 2;
-				const y = (slideH - 1.0 - imgH) / 2 + 0.1; // center in area above footer
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file("copilot-fluency-score.pptx"),
+        filters: { "PowerPoint Presentation": ["pptx"] },
+        title: "Export Fluency Score as PowerPoint",
+      });
 
-				slide.addImage({
-					data: img.dataUrl,
-					x, y, w: imgW, h: imgH
-				});
+      if (!uri) {
+        return;
+      }
 
-				// Footer text
-				slide.addText('Generated by Copilot Token Tracker Extension', {
-					x: 0, y: 7.0, w: 13.33, h: 0.4,
-					fontSize: 8, color: '808080', align: 'center'
-				});
-			}
+      const pptx = new PptxGenJS();
+      pptx.layout = "LAYOUT_WIDE"; // 13.33" x 7.5" — great for presentations
+      pptx.author = "Copilot Token Tracker";
+      pptx.subject = "Copilot Fluency Score Report";
+      pptx.title = "Copilot Fluency Score";
 
-			const pptxBuffer = await pptx.write({ outputType: 'nodebuffer' }) as Buffer;
-			await vscode.workspace.fs.writeFile(uri, pptxBuffer);
+      const slideW = 13.33;
+      const slideH = 7.5;
+      const maxW = slideW - 0.8; // 0.4" margin each side
+      const maxH = slideH - 1.0; // room for footer
 
-			void vscode.window.showInformationMessage(`Fluency Score PPTX saved to ${uri.fsPath}`, 'Open File').then(selection => {
-				if (selection === 'Open File') {
-					void vscode.env.openExternal(uri);
-				}
-			});
+      for (const img of images) {
+        const slide = pptx.addSlide();
+        slide.background = { color: "1b1b1e" };
 
-			this.log(`Fluency Score PPTX exported to ${uri.fsPath}`);
-		} catch (error) {
-			this.error('Failed to export PPTX', error instanceof Error ? error : new Error(String(error)));
-			void vscode.window.showErrorMessage(`Failed to export PPTX: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
+        // Decode PNG dimensions from the base64 data to preserve aspect ratio
+        let imgW = maxW;
+        let imgH = maxH;
+        try {
+          const base64 = img.dataUrl.split(",")[1];
+          const buf = Buffer.from(base64, "base64");
+          // PNG header: width at bytes 16-19, height at bytes 20-23 (big-endian)
+          if (
+            buf.length > 24 &&
+            buf[1] === 0x50 &&
+            buf[2] === 0x4e &&
+            buf[3] === 0x47
+          ) {
+            const pxW = buf.readUInt32BE(16);
+            const pxH = buf.readUInt32BE(20);
+            if (pxW > 0 && pxH > 0) {
+              const aspect = pxW / pxH;
+              // Fit within maxW x maxH preserving aspect ratio
+              if (aspect > maxW / maxH) {
+                imgW = maxW;
+                imgH = maxW / aspect;
+              } else {
+                imgH = maxH;
+                imgW = maxH * aspect;
+              }
+            }
+          }
+        } catch {
+          /* fall back to max dimensions */
+        }
 
-public async showFluencyLevelViewer(): Promise<void> {
-	// Check if debugger is active
-	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+        const x = (slideW - imgW) / 2;
+        const y = (slideH - 1.0 - imgH) / 2 + 0.1; // center in area above footer
 
-	if (!isDebugMode) {
-		this.warn('⚠️ Fluency Level Viewer is only available in debug mode');
-		void vscode.window.showWarningMessage(
-			'Fluency Level Viewer is only available when a debugger is active.',
-			'Learn More'
-		).then(selection => {
-			if (selection === 'Learn More') {
-				void vscode.env.openExternal(vscode.Uri.parse('https://code.visualstudio.com/docs/editor/debugging'));
-			}
-		});
-		return;
-	}
+        slide.addImage({
+          data: img.dataUrl,
+          x,
+          y,
+          w: imgW,
+          h: imgH,
+        });
 
-	this.log('🔍 Opening Fluency Level Viewer (debug mode)');
+        // Footer text
+        slide.addText("Generated by Copilot Token Tracker Extension", {
+          x: 0,
+          y: 7.0,
+          w: 13.33,
+          h: 0.4,
+          fontSize: 8,
+          color: "808080",
+          align: "center",
+        });
+      }
 
-	// If panel already exists, dispose and recreate with fresh data
-	if (this.fluencyLevelViewerPanel) {
-		this.fluencyLevelViewerPanel.dispose();
-		this.fluencyLevelViewerPanel = undefined;
-	}
+      const pptxBuffer = (await pptx.write({
+        outputType: "nodebuffer",
+      })) as Buffer;
+      await vscode.workspace.fs.writeFile(uri, pptxBuffer);
 
-	const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
+      void vscode.window
+        .showInformationMessage(
+          `Fluency Score PPTX saved to ${uri.fsPath}`,
+          "Open File",
+        )
+        .then((selection) => {
+          if (selection === "Open File") {
+            void vscode.env.openExternal(uri);
+          }
+        });
 
-	this.fluencyLevelViewerPanel = vscode.window.createWebviewPanel(
-		'copilotFluencyLevelViewer',
-		'Fluency Level Viewer',
-		{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
-		{
-			enableScripts: true,
-			retainContextWhenHidden: false,
-			localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
-		}
-	);
+      this.log(`Fluency Score PPTX exported to ${uri.fsPath}`);
+    } catch (error) {
+      this.error(
+        "Failed to export PPTX",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      void vscode.window.showErrorMessage(
+        `Failed to export PPTX: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
-	this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(this.fluencyLevelViewerPanel.webview, fluencyLevelData);
+  public async showFluencyLevelViewer(): Promise<void> {
+    // Check if debugger is active
+    const isDebugMode =
+      this.context.extensionMode === vscode.ExtensionMode.Development;
 
-	this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(async (message) => {
-		switch (message.command) {
-			case 'refresh':
-				await this.refreshFluencyLevelViewerPanel();
-				break;
-			case 'showMaturity':
-				await this.showMaturity();
-				break;
-			case 'showDetails':
-				await this.showDetails();
-				break;
-			case 'showChart':
-				await this.showChart();
-				break;
-			case 'showUsageAnalysis':
-				await this.showUsageAnalysis();
-				break;
-			case 'showDiagnostics':
-				await this.showDiagnosticReport();
-				break;
-		}
-	});
+    if (!isDebugMode) {
+      this.warn("⚠️ Fluency Level Viewer is only available in debug mode");
+      void vscode.window
+        .showWarningMessage(
+          "Fluency Level Viewer is only available when a debugger is active.",
+          "Learn More",
+        )
+        .then((selection) => {
+          if (selection === "Learn More") {
+            void vscode.env.openExternal(
+              vscode.Uri.parse(
+                "https://code.visualstudio.com/docs/editor/debugging",
+              ),
+            );
+          }
+        });
+      return;
+    }
 
-	this.fluencyLevelViewerPanel.onDidDispose(() => {
-		this.log('🔍 Fluency Level Viewer closed');
-		this.fluencyLevelViewerPanel = undefined;
-	});
-}
+    this.log("🔍 Opening Fluency Level Viewer (debug mode)");
 
-private async refreshFluencyLevelViewerPanel(): Promise<void> {
-	if (!this.fluencyLevelViewerPanel) {
-		return;
-	}
+    // If panel already exists, dispose and recreate with fresh data
+    if (this.fluencyLevelViewerPanel) {
+      this.fluencyLevelViewerPanel.dispose();
+      this.fluencyLevelViewerPanel = undefined;
+    }
 
-	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
-	this.log('🔄 Refreshing Fluency Level Viewer');
-	const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
-	this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(this.fluencyLevelViewerPanel.webview, fluencyLevelData);
-	this.log('✅ Fluency Level Viewer refreshed');
-}
+    const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
 
-private getFluencyLevelData(isDebugMode: boolean): {
-	categories: Array<{
-		category: string;
-		icon: string;
-		levels: Array<{
-			stage: number;
-			label: string;
-			description: string;
-			thresholds: string[];
-			tips: string[];
-		}>;
-	}>;
-	isDebugMode: boolean;
-} {
-	return {
-		isDebugMode,
-		categories: [
-			{
-				category: 'Prompt Engineering',
-				icon: '💬',
-				levels: [
-					{
-						stage: 1,
-						label: 'Stage 1: Copilot Skeptic',
-						description: 'Rarely uses Copilot or uses only basic features',
-						thresholds: [
-							'Fewer than 5 total interactions in 30 days',
-							'Minimal multi-turn conversations',
-							'No slash commands or agent mode usage'
-						],
-						tips: [
-							'Try asking Copilot a question using the Chat panel',
-							'Start with simple queries to get familiar with the interface'
-						]
-					},
-					{
-						stage: 2,
-						label: 'Stage 2: Copilot Explorer',
-						description: 'Exploring Copilot capabilities with occasional use',
-						thresholds: [
-							'At least 5 total interactions',
-							'Average 3+ exchanges per session shows iterative refinement',
-							'Beginning to use slash commands or agent mode'
-						],
-						tips: [
-							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes',
-							'Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts',
-							'Experiment with multi-turn conversations to refine responses'
-						]
-					},
-					{
-						stage: 3,
-						label: 'Stage 3: Copilot Collaborator',
-						description: 'Regular, purposeful use across multiple features',
-						thresholds: [
-							'At least 30 total interactions',
-							'Using 2+ slash commands or agent mode regularly',
-							'Average 5+ exchanges per session OR model switching in sessions',
-							'Shows model switching awareness (mixed-tier sessions)'
-						],
-						tips: [
-							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks',
-							'Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems',
-							'Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting'
-						]
-					},
-					{
-						stage: 4,
-						label: 'Stage 4: Copilot Strategist',
-						description: 'Strategic, advanced use leveraging the full Copilot ecosystem',
-						thresholds: [
-							'At least 100 total interactions',
-							'Using agent mode regularly',
-							'Active model switching (switches in sessions) OR 3+ diverse slash commands',
-							'Demonstrates strategic choice of models and commands for different tasks'
-						],
-						tips: [
-							'You\'re at the highest level!',
-							'Continue exploring advanced combinations of models, modes, and commands'
-						]
-					}
-				]
-			},
-			{
-				category: 'Context Engineering',
-				icon: '📎',
-				levels: [
-					{
-						stage: 1,
-						label: 'Stage 1: Copilot Skeptic',
-						description: 'Not using explicit context references',
-						thresholds: [
-							'Zero explicit context references (#file, #selection, @workspace, etc.)'
-						],
-						tips: [
-							'Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context',
-							'Start with #file to reference specific files in your prompts'
-						]
-					},
-					{
-						stage: 2,
-						label: 'Stage 2: Copilot Explorer',
-						description: 'Beginning to use basic context references',
-						thresholds: [
-							'At least 1 context reference used',
-							'Exploring basic references like #file or #selection'
-						],
-						tips: [
-							'Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context',
-							'Try combining multiple context types in a single query'
-						]
-					},
-					{
-						stage: 3,
-						label: 'Stage 3: Copilot Collaborator',
-						description: 'Regular use of diverse context types',
-						thresholds: [
-							'At least 3 different context reference types used',
-							'At least 10 total context references',
-							'May include image references (vision capabilities)'
-						],
-						tips: [
-							'Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables',
-							'Experiment with @terminal and @vscode for IDE-level context'
-						]
-					},
-					{
-						stage: 4,
-						label: 'Stage 4: Copilot Strategist',
-						description: 'Strategic use of advanced context engineering',
-						thresholds: [
-							'At least 5 different context reference types used',
-							'At least 30 total context references',
-							'Using specialized references like #changes, #problemsPanel, #outputPanel, etc.'
-						],
-						tips: [
-							'You\'re at the highest level!',
-							'Continue mastering context engineering for optimal results'
-						]
-					}
-				]
-			},
-			{
-				category: 'Agentic',
-				icon: '🤖',
-				levels: [
-					{
-						stage: 1,
-						label: 'Stage 1: Copilot Skeptic',
-						description: 'Not using agent mode or autonomous features',
-						thresholds: [
-							'Zero agent-mode interactions',
-							'No tool calls executed',
-							'Not using edit mode or multi-file capabilities'
-						],
-						tips: [
-							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously',
-							'Start with simple tasks to see how agent mode works'
-						]
-					},
-					{
-						stage: 2,
-						label: 'Stage 2: Copilot Explorer',
-						description: 'Beginning to explore agent mode',
-						thresholds: [
-							'At least 1 agent-mode interaction OR',
-							'Using edit mode OR',
-							'At least 1 multi-file edit session'
-						],
-						tips: [
-							'Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits',
-							'Try edit mode for focused code changes'
-						]
-					},
-					{
-						stage: 3,
-						label: 'Stage 3: Copilot Collaborator',
-						description: 'Regular use of agent mode with diverse tools',
-						thresholds: [
-							'At least 10 agent-mode interactions AND 3+ unique tools used OR',
-							'Average 3+ files per edit session OR',
-							'Using edits agent for focused editing tasks'
-						],
-						tips: [
-							'Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows',
-							'Let agent mode handle multi-step tasks that span multiple files'
-						]
-					},
-					{
-						stage: 4,
-						label: 'Stage 4: Copilot Strategist',
-						description: 'Heavy, strategic use of autonomous features',
-						thresholds: [
-							'At least 50 agent-mode interactions AND 5+ tool types used OR',
-							'At least 20 multi-file edits with 3+ files per session average',
-							'Demonstrates mastery of agent orchestration'
-						],
-						tips: [
-							'You\'re at the highest level!',
-							'Continue leveraging agent mode for complex, multi-step workflows'
-						]
-					}
-				]
-			},
-			{
-				category: 'Tool Usage',
-				icon: '🔧',
-				levels: [
-					{
-						stage: 1,
-						label: 'Stage 1: Copilot Skeptic',
-						description: 'Not using tools beyond basic chat',
-						thresholds: [
-							'Zero unique tools used',
-							'No MCP servers configured',
-							'No workspace agent sessions'
-						],
-						tips: [
-							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands',
-							'Explore the built-in tools available in agent mode'
-						]
-					},
-					{
-						stage: 2,
-						label: 'Stage 2: Copilot Explorer',
-						description: 'Beginning to use basic tools',
-						thresholds: [
-							'At least 1 unique tool used',
-							'Using basic agent mode tools'
-						],
-						tips: [
-							'Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)',
-							'Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal'
-						]
-					},
-					{
-						stage: 3,
-						label: 'Stage 3: Copilot Collaborator',
-						description: 'Regular use of diverse tools and integrations',
-						thresholds: [
-							'Using @workspace agent OR',
-							'Using 2+ advanced tools (GitHub PR, GitHub Repo, terminal, editFiles, listFiles) OR',
-							'Using at least 1 MCP server'
-						],
-						tips: [
-							'Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot\'s capabilities - check the VS Code MCP registry',
-							'Explore advanced tool combinations for complex workflows'
-						]
-					},
-					{
-						stage: 4,
-						label: 'Stage 4: Copilot Strategist',
-						description: 'Strategic use of multiple MCP servers and advanced tools',
-						thresholds: [
-							'Using 2+ MCP servers',
-							'Leveraging multiple advanced tools strategically'
-						],
-						tips: [
-							'You\'re at the highest level!',
-							'Keep exploring advanced tool combinations and new MCP servers'
-						]
-					}
-				]
-			},
-			{
-				category: 'Customization',
-				icon: '⚙️',
-				levels: [
-					{
-						stage: 1,
-						label: 'Stage 1: Copilot Skeptic',
-						description: 'Using default Copilot without customization',
-						thresholds: [
-							'No repositories with custom instructions or agents.md',
-							'Using fewer than 3 different models'
-						],
-						tips: [
-							'Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines',
-							'Start customizing Copilot for your workflow'
-						]
-					},
-					{
-						stage: 2,
-						label: 'Stage 2: Copilot Explorer',
-						description: 'Beginning to customize Copilot',
-						thresholds: [
-							'At least 1 repository with custom instructions or agents.md'
-						],
-						tips: [
-							'Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience',
-							'Experiment with different models for different tasks'
-						]
-					},
-					{
-						stage: 3,
-						label: 'Stage 3: Copilot Collaborator',
-						description: 'Regular customization across repositories',
-						thresholds: [
-							'30%+ of repositories have customization (with 2+ repos) OR',
-							'Using 3+ different models strategically'
-						],
-						tips: [
-							'Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)',
-							'Explore 5+ models to match tasks with optimal model capabilities'
-						]
-					},
-					{
-						stage: 4,
-						label: 'Stage 4: Copilot Strategist',
-						description: 'Comprehensive customization strategy',
-						thresholds: [
-							'70%+ customization adoption rate with 3+ repos OR',
-							'Using 5+ different models with 3+ repos customized'
-						],
-						tips: [
-							'You\'re at the highest level!',
-							'Continue refining your customization strategy'
-						]
-					}
-				]
-			},
-			{
-				category: 'Workflow Integration',
-				icon: '🔄',
-				levels: [
-					{
-						stage: 1,
-						label: 'Stage 1: Copilot Skeptic',
-						description: 'Minimal integration into daily workflow',
-						thresholds: [
-							'Fewer than 3 sessions in 30 days',
-							'Using only 1 mode (ask OR agent)',
-							'Fewer than 10 explicit context references'
-						],
-						tips: [
-							'Use Copilot more regularly - even for quick questions',
-							'Make Copilot part of your daily coding routine'
-						]
-					},
-					{
-						stage: 2,
-						label: 'Stage 2: Copilot Explorer',
-						description: 'Occasional integration with some regularity',
-						thresholds: [
-							'At least 3 sessions in 30 days OR',
-							'50%+ code block apply rate'
-						],
-						tips: [
-							'Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow',
-							'Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection'
-						]
-					},
-					{
-						stage: 3,
-						label: 'Stage 3: Copilot Collaborator',
-						description: 'Regular workflow integration',
-						thresholds: [
-							'Using 2 modes (ask AND agent) OR',
-							'At least 20 explicit context references'
-						],
-						tips: [
-							'Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently',
-							'Make Copilot part of every coding task: planning, coding, testing, and reviewing'
-						]
-					},
-					{
-						stage: 4,
-						label: 'Stage 4: Copilot Strategist',
-						description: 'Deep integration across all development activities',
-						thresholds: [
-							'At least 15 sessions',
-							'Using 2+ modes (ask + agent)',
-							'At least 20 explicit context references',
-							'Shows regular, purposeful usage pattern'
-						],
-						tips: [
-							'You\'re at the highest level!',
-							'Continue integrating Copilot into every aspect of your development workflow'
-						]
-					}
-				]
-			}
-		]
-	};
-}
+    this.fluencyLevelViewerPanel = vscode.window.createWebviewPanel(
+      "copilotFluencyLevelViewer",
+      "Fluency Level Viewer",
+      { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: false,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+        ],
+      },
+    );
 
-private getFluencyLevelViewerHtml(webview: vscode.Webview, data: {
-	categories: Array<{
-		category: string;
-		icon: string;
-		levels: Array<{
-			stage: number;
-			label: string;
-			description: string;
-			thresholds: string[];
-			tips: string[];
-		}>;
-	}>;
-	isDebugMode: boolean;
-}): string {
-	const nonce = this.getNonce();
-	const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'fluency-level-viewer.js'));
+    this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
+      this.fluencyLevelViewerPanel.webview,
+      fluencyLevelData,
+    );
 
-	const csp = [
-		`default-src 'none'`,
-		`img-src ${webview.cspSource} https: data:`,
-		`style-src 'unsafe-inline' ${webview.cspSource}`,
-		`font-src ${webview.cspSource} https: data:`,
-		`script-src 'nonce-${nonce}'`
-	].join('; ');
+    this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case "refresh":
+            await this.refreshFluencyLevelViewerPanel();
+            break;
+          case "showMaturity":
+            await this.showMaturity();
+            break;
+          case "showDetails":
+            await this.showDetails();
+            break;
+          case "showChart":
+            await this.showChart();
+            break;
+          case "showUsageAnalysis":
+            await this.showUsageAnalysis();
+            break;
+          case "showDiagnostics":
+            await this.showDiagnosticReport();
+            break;
+        }
+      },
+    );
 
-	const dataWithBackend = { ...data, backendConfigured: this.isBackendConfigured() };
-	const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
+    this.fluencyLevelViewerPanel.onDidDispose(() => {
+      this.log("🔍 Fluency Level Viewer closed");
+      this.fluencyLevelViewerPanel = undefined;
+    });
+  }
 
-	return `<!DOCTYPE html>
+  private async refreshFluencyLevelViewerPanel(): Promise<void> {
+    if (!this.fluencyLevelViewerPanel) {
+      return;
+    }
+
+    const isDebugMode =
+      this.context.extensionMode === vscode.ExtensionMode.Development;
+    this.log("🔄 Refreshing Fluency Level Viewer");
+    const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
+    this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
+      this.fluencyLevelViewerPanel.webview,
+      fluencyLevelData,
+    );
+    this.log("✅ Fluency Level Viewer refreshed");
+  }
+
+  private getFluencyLevelData(isDebugMode: boolean): {
+    categories: Array<{
+      category: string;
+      icon: string;
+      levels: Array<{
+        stage: number;
+        label: string;
+        description: string;
+        thresholds: string[];
+        tips: string[];
+      }>;
+    }>;
+    isDebugMode: boolean;
+  } {
+    return {
+      isDebugMode,
+      categories: [
+        {
+          category: "Prompt Engineering",
+          icon: "💬",
+          levels: [
+            {
+              stage: 1,
+              label: "Stage 1: Copilot Skeptic",
+              description: "Rarely uses Copilot or uses only basic features",
+              thresholds: [
+                "Fewer than 5 total interactions in 30 days",
+                "Minimal multi-turn conversations",
+                "No slash commands or agent mode usage",
+              ],
+              tips: [
+                "Try asking Copilot a question using the Chat panel",
+                "Start with simple queries to get familiar with the interface",
+              ],
+            },
+            {
+              stage: 2,
+              label: "Stage 2: Copilot Explorer",
+              description: "Exploring Copilot capabilities with occasional use",
+              thresholds: [
+                "At least 5 total interactions",
+                "Average 3+ exchanges per session shows iterative refinement",
+                "Beginning to use slash commands or agent mode",
+              ],
+              tips: [
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes",
+                "Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts",
+                "Experiment with multi-turn conversations to refine responses",
+              ],
+            },
+            {
+              stage: 3,
+              label: "Stage 3: Copilot Collaborator",
+              description: "Regular, purposeful use across multiple features",
+              thresholds: [
+                "At least 30 total interactions",
+                "Using 2+ slash commands or agent mode regularly",
+                "Average 5+ exchanges per session OR model switching in sessions",
+                "Shows model switching awareness (mixed-tier sessions)",
+              ],
+              tips: [
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks",
+                "Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems",
+                "Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting",
+              ],
+            },
+            {
+              stage: 4,
+              label: "Stage 4: Copilot Strategist",
+              description:
+                "Strategic, advanced use leveraging the full Copilot ecosystem",
+              thresholds: [
+                "At least 100 total interactions",
+                "Using agent mode regularly",
+                "Active model switching (switches in sessions) OR 3+ diverse slash commands",
+                "Demonstrates strategic choice of models and commands for different tasks",
+              ],
+              tips: [
+                "You're at the highest level!",
+                "Continue exploring advanced combinations of models, modes, and commands",
+              ],
+            },
+          ],
+        },
+        {
+          category: "Context Engineering",
+          icon: "📎",
+          levels: [
+            {
+              stage: 1,
+              label: "Stage 1: Copilot Skeptic",
+              description: "Not using explicit context references",
+              thresholds: [
+                "Zero explicit context references (#file, #selection, @workspace, etc.)",
+              ],
+              tips: [
+                "Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context",
+                "Start with #file to reference specific files in your prompts",
+              ],
+            },
+            {
+              stage: 2,
+              label: "Stage 2: Copilot Explorer",
+              description: "Beginning to use basic context references",
+              thresholds: [
+                "At least 1 context reference used",
+                "Exploring basic references like #file or #selection",
+              ],
+              tips: [
+                "Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context",
+                "Try combining multiple context types in a single query",
+              ],
+            },
+            {
+              stage: 3,
+              label: "Stage 3: Copilot Collaborator",
+              description: "Regular use of diverse context types",
+              thresholds: [
+                "At least 3 different context reference types used",
+                "At least 10 total context references",
+                "May include image references (vision capabilities)",
+              ],
+              tips: [
+                "Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables",
+                "Experiment with @terminal and @vscode for IDE-level context",
+              ],
+            },
+            {
+              stage: 4,
+              label: "Stage 4: Copilot Strategist",
+              description: "Strategic use of advanced context engineering",
+              thresholds: [
+                "At least 5 different context reference types used",
+                "At least 30 total context references",
+                "Using specialized references like #changes, #problemsPanel, #outputPanel, etc.",
+              ],
+              tips: [
+                "You're at the highest level!",
+                "Continue mastering context engineering for optimal results",
+              ],
+            },
+          ],
+        },
+        {
+          category: "Agentic",
+          icon: "🤖",
+          levels: [
+            {
+              stage: 1,
+              label: "Stage 1: Copilot Skeptic",
+              description: "Not using agent mode or autonomous features",
+              thresholds: [
+                "Zero agent-mode interactions",
+                "No tool calls executed",
+                "Not using edit mode or multi-file capabilities",
+              ],
+              tips: [
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously",
+                "Start with simple tasks to see how agent mode works",
+              ],
+            },
+            {
+              stage: 2,
+              label: "Stage 2: Copilot Explorer",
+              description: "Beginning to explore agent mode",
+              thresholds: [
+                "At least 1 agent-mode interaction OR",
+                "Using edit mode OR",
+                "At least 1 multi-file edit session",
+              ],
+              tips: [
+                "Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits",
+                "Try edit mode for focused code changes",
+              ],
+            },
+            {
+              stage: 3,
+              label: "Stage 3: Copilot Collaborator",
+              description: "Regular use of agent mode with diverse tools",
+              thresholds: [
+                "At least 10 agent-mode interactions AND 3+ unique tools used OR",
+                "Average 3+ files per edit session OR",
+                "Using edits agent for focused editing tasks",
+              ],
+              tips: [
+                "Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows",
+                "Let agent mode handle multi-step tasks that span multiple files",
+              ],
+            },
+            {
+              stage: 4,
+              label: "Stage 4: Copilot Strategist",
+              description: "Heavy, strategic use of autonomous features",
+              thresholds: [
+                "At least 50 agent-mode interactions AND 5+ tool types used OR",
+                "At least 20 multi-file edits with 3+ files per session average",
+                "Demonstrates mastery of agent orchestration",
+              ],
+              tips: [
+                "You're at the highest level!",
+                "Continue leveraging agent mode for complex, multi-step workflows",
+              ],
+            },
+          ],
+        },
+        {
+          category: "Tool Usage",
+          icon: "🔧",
+          levels: [
+            {
+              stage: 1,
+              label: "Stage 1: Copilot Skeptic",
+              description: "Not using tools beyond basic chat",
+              thresholds: [
+                "Zero unique tools used",
+                "No MCP servers configured",
+                "No workspace agent sessions",
+              ],
+              tips: [
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands",
+                "Explore the built-in tools available in agent mode",
+              ],
+            },
+            {
+              stage: 2,
+              label: "Stage 2: Copilot Explorer",
+              description: "Beginning to use basic tools",
+              thresholds: [
+                "At least 1 unique tool used",
+                "Using basic agent mode tools",
+              ],
+              tips: [
+                "Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)",
+                "Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal",
+              ],
+            },
+            {
+              stage: 3,
+              label: "Stage 3: Copilot Collaborator",
+              description: "Regular use of diverse tools and integrations",
+              thresholds: [
+                "Using @workspace agent OR",
+                "Using 2+ advanced tools (GitHub PR, GitHub Repo, terminal, editFiles, listFiles) OR",
+                "Using at least 1 MCP server",
+              ],
+              tips: [
+                "Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot's capabilities - check the VS Code MCP registry",
+                "Explore advanced tool combinations for complex workflows",
+              ],
+            },
+            {
+              stage: 4,
+              label: "Stage 4: Copilot Strategist",
+              description:
+                "Strategic use of multiple MCP servers and advanced tools",
+              thresholds: [
+                "Using 2+ MCP servers",
+                "Leveraging multiple advanced tools strategically",
+              ],
+              tips: [
+                "You're at the highest level!",
+                "Keep exploring advanced tool combinations and new MCP servers",
+              ],
+            },
+          ],
+        },
+        {
+          category: "Customization",
+          icon: "⚙️",
+          levels: [
+            {
+              stage: 1,
+              label: "Stage 1: Copilot Skeptic",
+              description: "Using default Copilot without customization",
+              thresholds: [
+                "No repositories with custom instructions or agents.md",
+                "Using fewer than 3 different models",
+              ],
+              tips: [
+                "Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines",
+                "Start customizing Copilot for your workflow",
+              ],
+            },
+            {
+              stage: 2,
+              label: "Stage 2: Copilot Explorer",
+              description: "Beginning to customize Copilot",
+              thresholds: [
+                "At least 1 repository with custom instructions or agents.md",
+              ],
+              tips: [
+                "Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience",
+                "Experiment with different models for different tasks",
+              ],
+            },
+            {
+              stage: 3,
+              label: "Stage 3: Copilot Collaborator",
+              description: "Regular customization across repositories",
+              thresholds: [
+                "30%+ of repositories have customization (with 2+ repos) OR",
+                "Using 3+ different models strategically",
+              ],
+              tips: [
+                "Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)",
+                "Explore 5+ models to match tasks with optimal model capabilities",
+              ],
+            },
+            {
+              stage: 4,
+              label: "Stage 4: Copilot Strategist",
+              description: "Comprehensive customization strategy",
+              thresholds: [
+                "70%+ customization adoption rate with 3+ repos OR",
+                "Using 5+ different models with 3+ repos customized",
+              ],
+              tips: [
+                "You're at the highest level!",
+                "Continue refining your customization strategy",
+              ],
+            },
+          ],
+        },
+        {
+          category: "Workflow Integration",
+          icon: "🔄",
+          levels: [
+            {
+              stage: 1,
+              label: "Stage 1: Copilot Skeptic",
+              description: "Minimal integration into daily workflow",
+              thresholds: [
+                "Fewer than 3 sessions in 30 days",
+                "Using only 1 mode (ask OR agent)",
+                "Fewer than 10 explicit context references",
+              ],
+              tips: [
+                "Use Copilot more regularly - even for quick questions",
+                "Make Copilot part of your daily coding routine",
+              ],
+            },
+            {
+              stage: 2,
+              label: "Stage 2: Copilot Explorer",
+              description: "Occasional integration with some regularity",
+              thresholds: [
+                "At least 3 sessions in 30 days OR",
+                "50%+ code block apply rate",
+              ],
+              tips: [
+                "Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow",
+                "Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection",
+              ],
+            },
+            {
+              stage: 3,
+              label: "Stage 3: Copilot Collaborator",
+              description: "Regular workflow integration",
+              thresholds: [
+                "Using 2 modes (ask AND agent) OR",
+                "At least 20 explicit context references",
+              ],
+              tips: [
+                "Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently",
+                "Make Copilot part of every coding task: planning, coding, testing, and reviewing",
+              ],
+            },
+            {
+              stage: 4,
+              label: "Stage 4: Copilot Strategist",
+              description: "Deep integration across all development activities",
+              thresholds: [
+                "At least 15 sessions",
+                "Using 2+ modes (ask + agent)",
+                "At least 20 explicit context references",
+                "Shows regular, purposeful usage pattern",
+              ],
+              tips: [
+                "You're at the highest level!",
+                "Continue integrating Copilot into every aspect of your development workflow",
+              ],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private getFluencyLevelViewerHtml(
+    webview: vscode.Webview,
+    data: {
+      categories: Array<{
+        category: string;
+        icon: string;
+        levels: Array<{
+          stage: number;
+          label: string;
+          description: string;
+          thresholds: string[];
+          tips: string[];
+        }>;
+      }>;
+      isDebugMode: boolean;
+    },
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "dist",
+        "webview",
+        "fluency-level-viewer.js",
+      ),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const dataWithBackend = {
+      ...data,
+      backendConfigured: this.isBackendConfigured(),
+    };
+    const initialData = JSON.stringify(dataWithBackend).replace(
+      /</g,
+      "\\u003c",
+    );
+
+    return `<!DOCTYPE html>
 	<html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -8576,37 +8690,60 @@ private getFluencyLevelViewerHtml(webview: vscode.Webview, data: {
 		<script nonce="${nonce}" src="${scriptUri}"></script>
 	</body>
 	</html>`;
-}
+  }
 
-private getMaturityHtml(webview: vscode.Webview, data: {
-		overallStage: number;
-		overallLabel: string;
-		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
-		period: UsageAnalysisPeriod;
-		lastUpdated: string;
-		dismissedTips?: string[];
-		isDebugMode?: boolean;
-		fluencyLevels?: Array<{
-			category: string;
-			icon: string;
-			levels: Array<{ stage: number; label: string; description: string; thresholds: string[]; tips: string[] }>;
-		}>;
-	}): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'maturity.js'));
+  private getMaturityHtml(
+    webview: vscode.Webview,
+    data: {
+      overallStage: number;
+      overallLabel: string;
+      categories: {
+        category: string;
+        icon: string;
+        stage: number;
+        evidence: string[];
+        tips: string[];
+      }[];
+      period: UsageAnalysisPeriod;
+      lastUpdated: string;
+      dismissedTips?: string[];
+      isDebugMode?: boolean;
+      fluencyLevels?: Array<{
+        category: string;
+        icon: string;
+        levels: Array<{
+          stage: number;
+          label: string;
+          description: string;
+          thresholds: string[];
+          tips: string[];
+        }>;
+      }>;
+    },
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "maturity.js"),
+    );
 
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
 
-		const dataWithBackend = { ...data, backendConfigured: this.isBackendConfigured() };
-		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
+    const dataWithBackend = {
+      ...data,
+      backendConfigured: this.isBackendConfigured(),
+    };
+    const initialData = JSON.stringify(dataWithBackend).replace(
+      /</g,
+      "\\u003c",
+    );
 
-		return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8" />
@@ -8620,707 +8757,471 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
-	}
+  }
 
-	/**
-	 * Opens the Team Dashboard panel showing personal and team usage comparison.
-	 */
-	public async showDashboard(): Promise<void> {
-		this.log('📊 Opening Team Dashboard');
+  /**
+   * Opens the Team Dashboard panel showing personal and team usage comparison.
+   */
+  public async showDashboard(): Promise<void> {
+    this.log("📊 Opening Team Dashboard");
 
-		// Check if backend is configured
-		if (!this.backend) {
-			vscode.window.showWarningMessage('Team Dashboard requires backend sync to be configured. Please configure backend settings first.');
-			return;
-		}
+    // Check if backend is configured
+    if (!this.backend) {
+      vscode.window.showWarningMessage(
+        "Team Dashboard requires backend sync to be configured. Please configure backend settings first.",
+      );
+      return;
+    }
 
-		const settings = this.backend.getSettings();
-		if (!this.backend.isConfigured(settings)) {
-			vscode.window.showWarningMessage('Team Dashboard requires backend sync to be configured. Please configure backend settings first.');
-			return;
-		}
+    const settings = this.backend.getSettings();
+    if (!this.backend.isConfigured(settings)) {
+      vscode.window.showWarningMessage(
+        "Team Dashboard requires backend sync to be configured. Please configure backend settings first.",
+      );
+      return;
+    }
 
-		// If panel already exists, just reveal it
-		if (this.dashboardPanel) {
-			this.dashboardPanel.reveal();
-			this.log('📊 Team Dashboard revealed (already exists)');
-			return;
-		}
+    // If panel already exists, just reveal it
+    if (this.dashboardPanel) {
+      this.dashboardPanel.reveal();
+      this.log("📊 Team Dashboard revealed (already exists)");
+      return;
+    }
 
-		// Show panel immediately with loading state
-		this.dashboardPanel = vscode.window.createWebviewPanel(
-			'copilotDashboard',
-			'Team Dashboard',
-			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
-			{
-				enableScripts: true,
-				retainContextWhenHidden: true,
-				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
-			}
-		);
+    // Show panel immediately with loading state
+    this.dashboardPanel = vscode.window.createWebviewPanel(
+      "copilotDashboard",
+      "Team Dashboard",
+      { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+        ],
+      },
+    );
 
-		this.dashboardPanel.webview.html = this.getDashboardHtml(this.dashboardPanel.webview, undefined);
+    this.dashboardPanel.webview.html = this.getDashboardHtml(
+      this.dashboardPanel.webview,
+      undefined,
+    );
 
-		this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
-			switch (message.command) {
-				case 'refresh':
-					await this.refreshDashboardPanel();
-					break;
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showChart':
-					await this.showChart();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
-			}
-		});
+    this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
+      switch (message.command) {
+        case "refresh":
+          await this.refreshDashboardPanel();
+          break;
+        case "showDetails":
+          await this.showDetails();
+          break;
+        case "showChart":
+          await this.showChart();
+          break;
+        case "showUsageAnalysis":
+          await this.showUsageAnalysis();
+          break;
+        case "showDiagnostics":
+          await this.showDiagnosticReport();
+          break;
+        case "showMaturity":
+          await this.showMaturity();
+          break;
+        case "deleteUserDataset":
+          await this.handleDeleteUserDataset(message.userId, message.datasetId);
+          break;
+      }
+    });
 
-		this.dashboardPanel.onDidDispose(() => {
-			this.log('📊 Team Dashboard closed');
-			this.dashboardPanel = undefined;
-		});
+    this.dashboardPanel.onDidDispose(() => {
+      this.log("📊 Team Dashboard closed");
+      this.dashboardPanel = undefined;
+    });
 
-		// Load data asynchronously and send to webview
-		try {
-			const dashboardData = await this.getDashboardData();
-			this.dashboardPanel?.webview.postMessage({ command: 'dashboardData', data: dashboardData });
-		} catch (error) {
-			this.error('Failed to load dashboard data:', error);
-			this.dashboardPanel?.webview.postMessage({ command: 'dashboardError', message: 'Failed to load dashboard data. Please check backend configuration and try again.' });
-		}
-	}
+    // Load data asynchronously and send to webview
+    try {
+      const dashboardData = await this.getDashboardData();
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardData",
+        data: dashboardData,
+      });
+    } catch (error) {
+      this.error("Failed to load dashboard data:", error);
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardError",
+        message:
+          "Failed to load dashboard data. Please check backend configuration and try again.",
+      });
+    }
+  }
 
-	private async refreshDashboardPanel(): Promise<void> {
-		if (!this.dashboardPanel) {
-			return;
-		}
+  private async refreshDashboardPanel(): Promise<void> {
+    if (!this.dashboardPanel) {
+      return;
+    }
 
-		this.log('🔄 Refreshing Team Dashboard');
-		this.dashboardPanel.webview.postMessage({ command: 'dashboardLoading' });
-		try {
-			const dashboardData = await this.getDashboardData();
-			this.dashboardPanel?.webview.postMessage({ command: 'dashboardData', data: dashboardData });
-			this.log('✅ Team Dashboard refreshed');
-		} catch (error) {
-			this.error('Failed to refresh dashboard:', error);
-			this.dashboardPanel?.webview.postMessage({ command: 'dashboardError', message: 'Failed to refresh dashboard data.' });
-		}
-	}
+    this.log("🔄 Refreshing Team Dashboard");
+    this.dashboardPanel.webview.postMessage({ command: "dashboardLoading" });
+    try {
+      const dashboardData = await this.getDashboardData();
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardData",
+        data: dashboardData,
+      });
+      this.log("✅ Team Dashboard refreshed");
+    } catch (error) {
+      this.error("Failed to refresh dashboard:", error);
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardError",
+        message: "Failed to refresh dashboard data.",
+      });
+    }
+  }
 
-	/**
-	 * Fetches and aggregates data for the Team Dashboard.
-	 */
-	private async getDashboardData(): Promise<any> {
-		if (!this.backend) {
-			throw new Error('Backend not configured');
-		}
+  /**
+   * Handle per-row delete from the Team Dashboard.
+   * Shows a confirmation dialog, deletes table entities, then refreshes.
+   */
+  private async handleDeleteUserDataset(
+    userId: string,
+    datasetId: string,
+  ): Promise<void> {
+    if (!this.backend || !userId || !datasetId) {
+      return;
+    }
 
-		const { BackendUtility } = await import('./backend/services/utilityService.js');
-		const settings = this.backend.getSettings();
-		
-		// Log backend settings for debugging
-		this.log(`[Dashboard] Backend settings - userIdentityMode: ${settings.userIdentityMode}, configured userId: "${settings.userId}", datasetId: "${settings.datasetId}"`);
-		
-		// Resolve the effective userId for the current user based on backend config
-		const currentUserId = await this.backend.resolveEffectiveUserId(settings);
-		
-		if (!currentUserId) {
-			this.warn('[Dashboard] No user identity available. Ensure sharing profile includes user dimension.');
-			this.warn(`[Dashboard] Settings: mode=${settings.userIdentityMode}, userId="${settings.userId}"`);
-		}
+    const conf = ConfirmationMessages.deleteUserDataset(userId, datasetId);
+    const choice = await vscode.window.showWarningMessage(
+      conf.message,
+      { modal: true, detail: conf.detail },
+      conf.button,
+    );
 
-		// Query backend for last 30 days
-		const now = new Date();
-		const todayKey = BackendUtility.toUtcDayKey(now);
-		const startKey = BackendUtility.addDaysUtc(todayKey, -29);
+    if (choice !== conf.button) {
+      return;
+    }
 
-		// Fetch ALL entities across all datasets using the facade's public API
-		const allEntities = await this.backend.getAllAggEntitiesForRange(settings, startKey, todayKey);
-		
-		// Log all unique userIds and datasets in the data for debugging
-		const uniqueUserIds = new Set(allEntities.map(e => (e.userId ?? '').toString()).filter(id => id.trim()));
-		const uniqueDatasets = new Set(allEntities.map(e => (e.datasetId ?? '').toString()).filter(id => id.trim()));
-		this.log(`[Dashboard] Fetched ${allEntities.length} entities for date range ${startKey} to ${todayKey}`);
-		this.log(`[Dashboard] Current user ID resolved as: ${currentUserId || '(none)'}`);
-		this.log(`[Dashboard] Datasets found: [${Array.from(uniqueDatasets).map(id => `"${id}"`).join(', ')}]`);
-		this.log(`[Dashboard] UserIds in data: [${Array.from(uniqueUserIds).map(id => `"${id}"`).join(', ')}]`);
+    this.log(`🗑️ Deleting data for user "${userId}" in dataset "${datasetId}"`);
+    this.dashboardPanel?.webview.postMessage({ command: "dashboardLoading" });
 
-		// Aggregate personal data (all machines and workspaces for current user)
-		const personalDevices = new Set<string>();
-		const personalWorkspaces = new Set<string>();
-		const personalModelUsage: { [model: string]: { inputTokens: number; outputTokens: number } } = {};
-		let personalTotalTokens = 0;
-		let personalTotalInteractions = 0;
+    try {
+      const result = await this.backend.deleteUserDataset(userId, datasetId);
+      if (result.errors.length > 0) {
+        this.warn(
+          `Partial deletion: ${result.deletedCount} deleted, ${result.errors.length} errors`,
+        );
+        vscode.window.showWarningMessage(
+          `Deleted ${result.deletedCount} entries with ${result.errors.length} errors. Dashboard will refresh.`,
+        );
+      } else {
+        this.log(
+          `✅ Deleted ${result.deletedCount} entries for user "${userId}" in dataset "${datasetId}"`,
+        );
+        vscode.window.showInformationMessage(
+          `Deleted ${result.deletedCount} data entries for "${userId}".`,
+        );
+      }
 
-		// Aggregate team data (all users across all datasets)
-		const userMap = new Map<string, { 
-			tokens: number; 
-			interactions: number; 
-			cost: number; 
-			datasetId: string;
-			sessions: Set<string>; // Track unique day+workspace+machine as session proxy
-			models: Set<string>; // Track unique models used
-			workspaces: Set<string>; // Track unique workspaces
-			days: Set<string>; // Track unique days active
-			// Fluency metrics (aggregated from entities)
-			askModeCount: number;
-			editModeCount: number;
-			agentModeCount: number;
-			planModeCount: number;
-			customAgentModeCount: number;
-			toolCalls: { total: number; byTool: { [key: string]: number } };
-			contextRefs: { [key: string]: number };
-			mcpTools: { total: number; byServer?: { [key: string]: number } };
-			multiTurnSessions: number;
-			avgTurnsPerSession: number;
-			multiFileEdits: number;
-			avgFilesPerEdit: number;
-			sessionCount: number;
-			// NEW: Deserialized complex fluency metrics
-			editScope?: { multiFileEdits: number; singleFileEdits: number; avgFilesPerSession: number; totalEditedFiles: number };
-			agentTypes?: { editsAgent?: number; workspaceAgent?: number };
-			repositories?: string[];
-			repositoriesWithCustomization?: string[];
-		}>();
-		
-		// Track first and last data points for reference
-		let firstDate: string | null = null;
-		let lastDate: string | null = null;
+      // Refresh the dashboard with fresh data
+      await this.refreshDashboardPanel();
+    } catch (error) {
+      this.error("Failed to delete user dataset:", error);
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardError",
+        message:
+          "Failed to delete data. Please check backend configuration and try again.",
+      });
+    }
+  }
 
-		for (const entity of allEntities) {
-			const userId = (entity.userId ?? '').toString().replace(/^u:/, ''); // Strip u: prefix
-			const datasetId = (entity.datasetId ?? '').toString().replace(/^ds:/, ''); // Strip ds: prefix
-			const machineId = (entity.machineId ?? '').toString();
-			const workspaceId = (entity.workspaceId ?? '').toString();
-			const model = (entity.model ?? '').toString().replace(/^m:/, ''); // Strip m: prefix
-			const inputTokens = Number.isFinite(Number(entity.inputTokens)) ? Number(entity.inputTokens) : 0;
-			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
-			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
-			const tokens = inputTokens + outputTokens;
-			const dayKey = (entity.day ?? '').toString().replace(/^d:/, ''); // Strip d: prefix
+  /**
+   * Fetches and aggregates data for the Team Dashboard.
+   */
+  private async getDashboardData(): Promise<any> {
+    if (!this.backend) {
+      throw new Error("Backend not configured");
+    }
 
-			// Track date range
-			if (dayKey) {
-				if (!firstDate || dayKey < firstDate) {
-					firstDate = dayKey;
-				}
-				if (!lastDate || dayKey > lastDate) {
-					lastDate = dayKey;
-				}
-			}
+    const { BackendUtility } =
+      await import("./backend/services/utilityService.js");
+    const settings = this.backend.getSettings();
 
-			// Personal data aggregation - match against resolved userId
-			if (currentUserId && userId === currentUserId) {
-				personalTotalTokens += tokens;
-				personalTotalInteractions += interactions;
-				personalDevices.add(machineId);
-				personalWorkspaces.add(workspaceId);
+    // Log backend settings for debugging
+    this.log(
+      `[Dashboard] Backend settings - userIdentityMode: ${settings.userIdentityMode}, configured userId: "${settings.userId}", datasetId: "${settings.datasetId}"`,
+    );
 
-				if (!personalModelUsage[model]) {
-					personalModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-				}
-				personalModelUsage[model].inputTokens += inputTokens;
-				personalModelUsage[model].outputTokens += outputTokens;
-			}
+    // Resolve the effective userId for the current user based on backend config
+    const currentUserId = await this.backend.resolveEffectiveUserId(settings);
 
-			// Team data aggregation - use userId|datasetId as key to track users across datasets
-			if (userId && userId.trim()) {
-				const userKey = `${userId}|${datasetId}`;
-				if (!userMap.has(userKey)) {
-					userMap.set(userKey, { 
-						tokens: 0, 
-						interactions: 0, 
-						cost: 0, 
-						datasetId, 
-						sessions: new Set<string>(),
-						models: new Set<string>(),
-						workspaces: new Set<string>(),
-						days: new Set<string>(),
-						// Initialize fluency metrics
-						askModeCount: 0,
-						editModeCount: 0,
-						agentModeCount: 0,
-						planModeCount: 0,
-						customAgentModeCount: 0,
-						toolCalls: { total: 0, byTool: {} },
-						contextRefs: {},
-						mcpTools: { total: 0, byServer: {} },
-						multiTurnSessions: 0,
-						avgTurnsPerSession: 0,
-						multiFileEdits: 0,
-						avgFilesPerEdit: 0,
-						sessionCount: 0,
-						repositories: [],
-						repositoriesWithCustomization: []
-					});
-				}
-				const userData = userMap.get(userKey)!;
-				userData.tokens += tokens;
-				userData.interactions += interactions;
-				// Track unique sessions as day+workspace+machine combinations
-				const sessionKey = `${dayKey}|${workspaceId}|${machineId}`;
-				userData.sessions.add(sessionKey);
-				// Track unique models, workspaces, and days
-				if (model) { userData.models.add(model); }
-				if (workspaceId) { userData.workspaces.add(workspaceId); }
-				if (dayKey) { userData.days.add(dayKey); }
-				
-				// Aggregate fluency metrics from entity (if schema version 4+)
-				if (entity.schemaVersion && entity.schemaVersion >= 4) {
-					// Mode counts
-					userData.askModeCount += Number(entity.askModeCount) || 0;
-					userData.editModeCount += Number(entity.editModeCount) || 0;
-					userData.agentModeCount += Number(entity.agentModeCount) || 0;
-					userData.planModeCount += Number(entity.planModeCount) || 0;
-					userData.customAgentModeCount += Number(entity.customAgentModeCount) || 0;
-					
-					// Session patterns
-					userData.multiTurnSessions += Number(entity.multiTurnSessions) || 0;
-					userData.multiFileEdits += Number(entity.multiFileEdits) || 0;
-					userData.sessionCount += Number(entity.sessionCount) || 0;
-					
-					// Parse and merge JSON fields
-					if (entity.toolCallsJson) {
-						try {
-							const toolCalls = JSON.parse(entity.toolCallsJson);
-							userData.toolCalls.total += toolCalls.total || 0;
-							if (toolCalls.byTool) {
-								for (const [tool, count] of Object.entries(toolCalls.byTool)) {
-									userData.toolCalls.byTool[tool] = (userData.toolCalls.byTool[tool] || 0) + (count as number);
-								}
-							}
-						} catch {
-							// Skip malformed JSON
-						}
-					}
-					
-					if (entity.contextRefsJson) {
-						try {
-							const contextRefs = JSON.parse(entity.contextRefsJson);
-							for (const [ref, count] of Object.entries(contextRefs)) {
-								if (typeof count === 'number') {
-									userData.contextRefs[ref] = (userData.contextRefs[ref] || 0) + count;
-								}
-							}
-						} catch {
-							// Skip malformed JSON
-						}
-					}
-					
-					if (entity.mcpToolsJson) {
-						try {
-							const mcpTools = JSON.parse(entity.mcpToolsJson);
-							userData.mcpTools.total += mcpTools.total || 0;
-							if (mcpTools.byServer) {
-								if (!userData.mcpTools.byServer) {
-									userData.mcpTools.byServer = {};
-								}
-								for (const [server, count] of Object.entries(mcpTools.byServer)) {
-									userData.mcpTools.byServer[server] = (userData.mcpTools.byServer[server] || 0) + (count as number);
-								}
-							}
-						} catch {
-							// Skip malformed JSON
-						}
-					}
-					
-					// NEW: Deserialize editScope, agentTypes, repositories
-					if (entity.editScopeJson) {
-						try {
-							const editScope = JSON.parse(entity.editScopeJson);
-							if (!userData.editScope) {
-								userData.editScope = { multiFileEdits: 0, singleFileEdits: 0, avgFilesPerSession: 0, totalEditedFiles: 0 };
-							}
-							userData.editScope.multiFileEdits += editScope.multiFileEdits || 0;
-							userData.editScope.singleFileEdits += editScope.singleFileEdits || 0;
-							userData.editScope.totalEditedFiles += editScope.totalEditedFiles || 0;
-							// avgFilesPerSession will be recalculated from totals
-						} catch {
-							// Skip malformed JSON
-						}
-					}
-					
-					if (entity.agentTypesJson) {
-						try {
-							const agentTypes = JSON.parse(entity.agentTypesJson);
-							if (!userData.agentTypes) {
-								userData.agentTypes = {};
-							}
-							userData.agentTypes.editsAgent = (userData.agentTypes.editsAgent || 0) + (agentTypes.editsAgent || 0);
-							userData.agentTypes.workspaceAgent = (userData.agentTypes.workspaceAgent || 0) + (agentTypes.workspaceAgent || 0);
-						} catch {
-							// Skip malformed JSON
-						}
-					}
-					
-					if (entity.repositoriesJson) {
-						try {
-							const repoData = JSON.parse(entity.repositoriesJson);
-							if (repoData.repositories) {
-								userData.repositories = [...new Set([...(userData.repositories || []), ...repoData.repositories])];
-							}
-							if (repoData.repositoriesWithCustomization) {
-								userData.repositoriesWithCustomization = [...new Set([...(userData.repositoriesWithCustomization || []), ...repoData.repositoriesWithCustomization])];
-							}
-						} catch {
-							// Skip malformed JSON
-						}
-					}
-				}
-			}
-		}
+    if (!currentUserId) {
+      this.warn(
+        "[Dashboard] No user identity available. Ensure sharing profile includes user dimension.",
+      );
+      this.warn(
+        `[Dashboard] Settings: mode=${settings.userIdentityMode}, userId="${settings.userId}"`,
+      );
+    }
 
-		// Calculate costs
-		const personalCost = this.calculateEstimatedCost(personalModelUsage);
-		
-		// For team members, use a simplified cost estimate since we don't track
-		// per-user model usage in aggregated data yet.
-		// The personal cost uses the accurate model-aware calculation.
-		for (const [userId, userData] of userMap.entries()) {
-			userData.cost = (userData.tokens / 1000000) * 0.05;
-		}
+    // Query backend for last 30 days
+    const now = new Date();
+    const todayKey = BackendUtility.toUtcDayKey(now);
+    const startKey = BackendUtility.addDaysUtc(todayKey, -29);
 
-		// Build team leaderboard grouped by dataset
-		const teamMembers = Array.from(userMap.entries())
-			.map(([userKey, data]) => {
-				const [userId, datasetId] = userKey.split('|');
-				const sessionCount = data.sessions.size;
-				const avgTurnsPerSession = sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
-				const avgTokensPerTurn = data.interactions > 0 ? Math.round(data.tokens / data.interactions) : 0;
-				
-				// Calculate fluency score from aggregated metrics using the same logic as individual scoring
-				// Only calculate if we have fluency data (schema version 4+)
-				const hasFluencyData = data.askModeCount > 0 || data.editModeCount > 0 || data.agentModeCount > 0 ||
-					Object.keys(data.toolCalls.byTool).length > 0 || Object.keys(data.contextRefs).length > 0;
-				
-				let fluencyStage: number | undefined;
-				let fluencyLabel: string | undefined;
-				
-				if (hasFluencyData) {
-					const fluencyScore = this.calculateFluencyScoreForTeamMember(data, sessionCount);
-					fluencyStage = fluencyScore.overallStage;
-					fluencyLabel = fluencyScore.overallLabel;
-				}
-				
-				return {
-					userId,
-					datasetId,
-					totalTokens: data.tokens,
-					totalInteractions: data.interactions,
-					totalCost: data.cost,
-					sessions: sessionCount,
-					avgTurnsPerSession,
-					uniqueModels: data.models.size,
-					uniqueWorkspaces: data.workspaces.size,
-					daysActive: data.days.size,
-					avgTokensPerTurn,
-					fluencyStage,
-					fluencyLabel,
-					rank: 0
-				};
-			})
-			.sort((a, b) => b.totalTokens - a.totalTokens)
-			.map((member, index) => ({
-				...member,
-				rank: index + 1
-			}));
+    // Fetch ALL entities across all datasets using the facade's public API
+    const allEntities = await this.backend.getAllAggEntitiesForRange(
+      settings,
+      startKey,
+      todayKey,
+    );
 
-		const teamTotalTokens = Array.from(userMap.values()).reduce((sum, u) => sum + u.tokens, 0);
-		const teamTotalInteractions = Array.from(userMap.values()).reduce((sum, u) => sum + u.interactions, 0);
-		const averageTokensPerUser = userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
+    // Log all unique userIds and datasets in the data for debugging
+    const uniqueUserIds = new Set(
+      allEntities
+        .map((e) => (e.userId ?? "").toString())
+        .filter((id) => id.trim()),
+    );
+    const uniqueDatasets = new Set(
+      allEntities
+        .map((e) => (e.datasetId ?? "").toString())
+        .filter((id) => id.trim()),
+    );
+    this.log(
+      `[Dashboard] Fetched ${allEntities.length} entities for date range ${startKey} to ${todayKey}`,
+    );
+    this.log(
+      `[Dashboard] Current user ID resolved as: ${currentUserId || "(none)"}`,
+    );
+    this.log(
+      `[Dashboard] Datasets found: [${Array.from(uniqueDatasets)
+        .map((id) => `"${id}"`)
+        .join(", ")}]`,
+    );
+    this.log(
+      `[Dashboard] UserIds in data: [${Array.from(uniqueUserIds)
+        .map((id) => `"${id}"`)
+        .join(", ")}]`,
+    );
 
-		this.log(`[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`);
-		this.log(`[Dashboard] Personal stats: ${personalTotalTokens} tokens, ${personalTotalInteractions} interactions, ${personalDevices.size} devices, ${personalWorkspaces.size} workspaces`);
-		
-		// Log each user's aggregated data for debugging
-		for (const [userKey, data] of userMap.entries()) {
-			const [userId, datasetId] = userKey.split('|');
-			this.log(`[Dashboard] User "${userId}" (dataset: ${datasetId}): ${data.tokens} tokens, ${data.interactions} interactions`);
-		}
+    // Aggregate personal data (all machines and workspaces for current user)
+    const personalDevices = new Set<string>();
+    const personalWorkspaces = new Set<string>();
+    const personalModelUsage: {
+      [model: string]: { inputTokens: number; outputTokens: number };
+    } = {};
+    let personalTotalTokens = 0;
+    let personalTotalInteractions = 0;
 
-		return {
-			personal: {
-				userId: currentUserId || '',
-				totalTokens: personalTotalTokens,
-				totalInteractions: personalTotalInteractions,
-				totalCost: personalCost,
-				devices: Array.from(personalDevices),
-				workspaces: Array.from(personalWorkspaces),
-				modelUsage: personalModelUsage
-			},
-			team: {
-				members: teamMembers,
-				totalTokens: teamTotalTokens,
-				totalInteractions: teamTotalInteractions,
-				averageTokensPerUser,
-				firstDate,
-				lastDate
-			},
-			lastUpdated: new Date().toISOString()
-		};
-	}
+    // Aggregate team data (all users across all datasets)
+    const userMap = new Map<
+      string,
+      {
+        tokens: number;
+        interactions: number;
+        cost: number;
+        datasetId: string;
+        sessions: Set<string>; // Track unique day+workspace+machine as session proxy
+        models: Set<string>; // Track unique models used
+        workspaces: Set<string>; // Track unique workspaces
+        days: Set<string>; // Track unique days active
+      }
+    >();
 
-	/**
-	 * Calculate fluency score for a team member using the SAME logic as individual scoring.
-	 * Reconstructs a UsageAnalysisPeriod-like structure from aggregated data and applies
-	 * the exact same 6-category scoring thresholds as calculateMaturityScores.
-	 * 
-	 * @param data - Aggregated user data from Azure Tables entities
-	 * @param sessionCount - Number of unique sessions for this user
-	 * @returns Fluency score with stage (1-4) and label
-	 */
-	private calculateFluencyScoreForTeamMember(data: {
-		askModeCount: number;
-		editModeCount: number;
-		agentModeCount: number;
-		interactions: number;
-		toolCalls: { total: number; byTool: { [key: string]: number } };
-		contextRefs: { [key: string]: number };
-		mcpTools: { total: number; byServer?: { [key: string]: number } };
-		multiTurnSessions: number;
-		avgTurnsPerSession: number;
-		multiFileEdits: number;
-		avgFilesPerEdit: number;
-		models: Set<string>;
-		sessionCount: number;
-		editScope?: { multiFileEdits: number; singleFileEdits: number; avgFilesPerSession: number; totalEditedFiles: number };
-		agentTypes?: { editsAgent?: number; workspaceAgent?: number };
-		repositories?: string[];
-		repositoriesWithCustomization?: string[];
-	}, sessions: number): { overallStage: number; overallLabel: string } {
-		const stageLabels: Record<number, string> = {
-			1: 'Skeptic',
-			2: 'Explorer',
-			3: 'Collaborator',
-			4: 'Strategist'
-		};
+    // Track first and last data points for reference
+    let firstDate: string | null = null;
+    let lastDate: string | null = null;
 
-		const stages: number[] = [];
+    for (const entity of allEntities) {
+      const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
+      const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
+      const machineId = (entity.machineId ?? "").toString();
+      const workspaceId = (entity.workspaceId ?? "").toString();
+      const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
+      const inputTokens = Number.isFinite(Number(entity.inputTokens))
+        ? Number(entity.inputTokens)
+        : 0;
+      const outputTokens = Number.isFinite(Number(entity.outputTokens))
+        ? Number(entity.outputTokens)
+        : 0;
+      const interactions = Number.isFinite(Number(entity.interactions))
+        ? Number(entity.interactions)
+        : 0;
+      const tokens = inputTokens + outputTokens;
+      const dayKey = (entity.day ?? "").toString().replace(/^d:/, ""); // Strip d: prefix
 
-		// ---------- 1. Prompt Engineering ----------
-		let peStage = 1;
-		const totalInteractions = data.askModeCount + data.editModeCount + data.agentModeCount;
-		
-		if (totalInteractions >= 5) {
-			peStage = 2;
-		}
-		
-		// Check slash command / tool usage
-		const slashCommands = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
-		const usedSlashCommands = slashCommands.filter(cmd => (data.toolCalls.byTool[cmd] || 0) > 0);
-		const hasAgentMode = data.agentModeCount > 0;
-		
-		if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) {
-			peStage = 3;
-		}
-		
-		// Model switching awareness - check if user has switched models
-		const hasModelSwitching = data.models.size >= 2;
-		if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) {
-			peStage = 4;
-		}
-		
-		// Multi-turn conversation patterns boost stage
-		if (data.avgTurnsPerSession >= 3) {
-			peStage = Math.max(peStage, 2) as 1 | 2 | 3 | 4;
-		}
-		if (data.avgTurnsPerSession >= 5) {
-			peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
-		}
-		
-		stages.push(peStage);
+      // Track date range
+      if (dayKey) {
+        if (!firstDate || dayKey < firstDate) {
+          firstDate = dayKey;
+        }
+        if (!lastDate || dayKey > lastDate) {
+          lastDate = dayKey;
+        }
+      }
 
-		// ---------- 2. Context Engineering ----------
-		let ceStage = 1;
-		
-		// Count total context references and unique types
-		const totalContextRefs = Object.values(data.contextRefs).reduce((sum, count) => sum + count, 0);
-		const refTypes = Object.keys(data.contextRefs).length;
-		
-		if (totalContextRefs >= 1) {
-			ceStage = 2;
-		}
-		if (refTypes >= 3 && totalContextRefs >= 10) {
-			ceStage = 3;
-		}
-		if (refTypes >= 5 && totalContextRefs >= 30) {
-			ceStage = 4;
-		}
-		
-		// Image context boosts to stage 3
-		const imageRefs = data.contextRefs['copilot.image'] || 0;
-		if (imageRefs > 0) {
-			ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
-		}
-		
-		stages.push(ceStage);
+      // Personal data aggregation - match against resolved userId
+      if (currentUserId && userId === currentUserId) {
+        personalTotalTokens += tokens;
+        personalTotalInteractions += interactions;
+        personalDevices.add(machineId);
+        personalWorkspaces.add(workspaceId);
 
-		// ---------- 3. Agentic ----------
-		let agStage = 1;
-		
-		if (data.agentModeCount > 0) {
-			agStage = 2;
-		}
-		
-		// Edit scope tracking (multi-file edits show advanced agentic behavior)
-		if (data.editScope) {
-			if (data.editScope.multiFileEdits > 0) {
-				agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
-			}
-			if (data.editScope.avgFilesPerSession >= 3) {
-				agStage = Math.max(agStage, 3) as 1 | 2 | 3 | 4;
-			}
-		} else if (data.multiFileEdits > 0) {
-			// Fallback to direct fields
-			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
-		}
-		
-		// Agent types boost
-		if (data.agentTypes && data.agentTypes.editsAgent && data.agentTypes.editsAgent > 0) {
-			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
-		}
-		
-		// Diverse tool usage in agent mode
-		const toolCount = Object.keys(data.toolCalls.byTool).length;
-		if (data.agentModeCount >= 10 && toolCount >= 3) {
-			agStage = 3;
-		}
-		
-		// Heavy agentic use
-		if (data.agentModeCount >= 50 && toolCount >= 5) {
-			agStage = 4;
-		}
-		if (data.editScope && data.editScope.multiFileEdits >= 20 && data.editScope.avgFilesPerSession >= 3) {
-			agStage = Math.max(agStage, 4) as 1 | 2 | 3 | 4;
-		}
-		
-		stages.push(agStage);
+        if (!personalModelUsage[model]) {
+          personalModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+        }
+        personalModelUsage[model].inputTokens += inputTokens;
+        personalModelUsage[model].outputTokens += outputTokens;
+      }
 
-		// ---------- 4. Tool Usage ----------
-		let tuStage = 1;
-		
-		if (toolCount > 0) {
-			tuStage = 2;
-		}
-		
-		// Workspace agent shows advanced tool usage
-		if (data.agentTypes && data.agentTypes.workspaceAgent && data.agentTypes.workspaceAgent > 0) {
-			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
-		}
-		
-		// Specific advanced tool IDs
-		const advancedTools = ['github_pull_request', 'github_repo', 'run_in_terminal', 'editFiles', 'listFiles'];
-		const usedAdvanced = advancedTools.filter(t => (data.toolCalls.byTool[t] || 0) > 0);
-		if (usedAdvanced.length >= 2) {
-			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
-		}
-		
-		// MCP tools
-		if (data.mcpTools.total > 0) {
-			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
-			const mcpServerCount = data.mcpTools.byServer ? Object.keys(data.mcpTools.byServer).length : 0;
-			if (mcpServerCount >= 2) {
-				tuStage = 4;
-			}
-		}
-		
-		stages.push(tuStage);
+      // Team data aggregation - use userId|datasetId as key to track users across datasets
+      if (userId && userId.trim()) {
+        const userKey = `${userId}|${datasetId}`;
+        if (!userMap.has(userKey)) {
+          userMap.set(userKey, {
+            tokens: 0,
+            interactions: 0,
+            cost: 0,
+            datasetId,
+            sessions: new Set<string>(),
+            models: new Set<string>(),
+            workspaces: new Set<string>(),
+            days: new Set<string>(),
+          });
+        }
+        const userData = userMap.get(userKey)!;
+        userData.tokens += tokens;
+        userData.interactions += interactions;
+        // Track unique sessions as day+workspace+machine combinations
+        const sessionKey = `${dayKey}|${workspaceId}|${machineId}`;
+        userData.sessions.add(sessionKey);
+        // Track unique models, workspaces, and days
+        if (model) {
+          userData.models.add(model);
+        }
+        if (workspaceId) {
+          userData.workspaces.add(workspaceId);
+        }
+        if (dayKey) {
+          userData.days.add(dayKey);
+        }
+      }
+    }
 
-		// ---------- 5. Customization ----------
-		let cuStage = 1;
-		
-		// Repository-level customization
-		const totalRepos = data.repositories ? data.repositories.length : 0;
-		const reposWithCustomization = data.repositoriesWithCustomization ? data.repositoriesWithCustomization.length : 0;
-		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
-		
-		if (reposWithCustomization > 0) {
-			cuStage = 2;
-		}
-		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
-			cuStage = 3;
-		}
-		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
-			cuStage = 4;
-		}
-		
-		// Model selection awareness
-		const uniqueModels = data.models.size;
-		if (uniqueModels >= 3) {
-			if (uniqueModels >= 5 && reposWithCustomization >= 3) {
-				cuStage = 4;
-			} else if (uniqueModels >= 5) {
-				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
-			} else {
-				cuStage = Math.max(cuStage, 2) as 1 | 2 | 3 | 4;
-			}
-		}
-		
-		stages.push(cuStage);
+    // Calculate costs
+    const personalCost = this.calculateEstimatedCost(personalModelUsage);
 
-		// ---------- 6. Workflow Integration ----------
-		let wiStage = 1;
-		
-		if (sessions >= 3) {
-			wiStage = 2;
-		}
-		if (sessions >= 7) {
-			wiStage = 3;
-		}
-		if (sessions >= 15) {
-			wiStage = 4;
-		}
-		
-		// Multi-turn pattern boost
-		if (data.multiTurnSessions > 0 && sessions > 0) {
-			const multiTurnRate = data.multiTurnSessions / sessions;
-			if (multiTurnRate >= 0.3 && sessions >= 5) {
-				wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-		
-		stages.push(wiStage);
+    // For team members, use a simplified cost estimate since we don't track
+    // per-user model usage in aggregated data yet.
+    // The personal cost uses the accurate model-aware calculation.
+    for (const [userId, userData] of userMap.entries()) {
+      userData.cost = (userData.tokens / 1000000) * 0.05;
+    }
 
-		// Calculate overall stage as median of 6 categories (same as individual scoring)
-		stages.sort((a, b) => a - b);
-		const mid = Math.floor(stages.length / 2);
-		const overallStage = stages.length % 2 === 0
-			? Math.round((stages[mid - 1] + stages[mid]) / 2)
-			: stages[mid];
+    // Build team leaderboard grouped by dataset
+    const teamMembers = Array.from(userMap.entries())
+      .map(([userKey, data]) => {
+        const [userId, datasetId] = userKey.split("|");
+        const sessionCount = data.sessions.size;
+        const avgTurnsPerSession =
+          sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
+        const avgTokensPerTurn =
+          data.interactions > 0
+            ? Math.round(data.tokens / data.interactions)
+            : 0;
+        return {
+          userId,
+          datasetId,
+          totalTokens: data.tokens,
+          totalInteractions: data.interactions,
+          totalCost: data.cost,
+          sessions: sessionCount,
+          avgTurnsPerSession,
+          uniqueModels: data.models.size,
+          uniqueWorkspaces: data.workspaces.size,
+          daysActive: data.days.size,
+          avgTokensPerTurn,
+          rank: 0,
+        };
+      })
+      .sort((a, b) => b.totalTokens - a.totalTokens)
+      .map((member, index) => ({
+        ...member,
+        rank: index + 1,
+      }));
 
-		return {
-			overallStage,
-			overallLabel: stageLabels[overallStage] || 'Unknown'
-		};
-	}
+    const teamTotalTokens = Array.from(userMap.values()).reduce(
+      (sum, u) => sum + u.tokens,
+      0,
+    );
+    const teamTotalInteractions = Array.from(userMap.values()).reduce(
+      (sum, u) => sum + u.interactions,
+      0,
+    );
+    const averageTokensPerUser =
+      userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
 
-	private getDashboardHtml(webview: vscode.Webview, data: any | undefined): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'dashboard.js'));
+    this.log(
+      `[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`,
+    );
+    this.log(
+      `[Dashboard] Personal stats: ${personalTotalTokens} tokens, ${personalTotalInteractions} interactions, ${personalDevices.size} devices, ${personalWorkspaces.size} workspaces`,
+    );
 
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
+    // Log each user's aggregated data for debugging
+    for (const [userKey, data] of userMap.entries()) {
+      const [userId, datasetId] = userKey.split("|");
+      this.log(
+        `[Dashboard] User "${userId}" (dataset: ${datasetId}): ${data.tokens} tokens, ${data.interactions} interactions`,
+      );
+    }
 
-		const dataWithBackend = data ? { ...data, backendConfigured: this.isBackendConfigured() } : undefined;
-		const initialDataScript = dataWithBackend
-			? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, '\\u003c')};</script>`
-			: '';
+    return {
+      personal: {
+        userId: currentUserId || "",
+        totalTokens: personalTotalTokens,
+        totalInteractions: personalTotalInteractions,
+        totalCost: personalCost,
+        devices: Array.from(personalDevices),
+        workspaces: Array.from(personalWorkspaces),
+        modelUsage: personalModelUsage,
+      },
+      team: {
+        members: teamMembers,
+        totalTokens: teamTotalTokens,
+        totalInteractions: teamTotalInteractions,
+        averageTokensPerUser,
+        firstDate,
+        lastDate,
+      },
+      lastUpdated: new Date().toISOString(),
+    };
+  }
 
-		return `<!DOCTYPE html>
+  private getDashboardHtml(
+    webview: vscode.Webview,
+    data: any | undefined,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "dashboard.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const dataWithBackend = data
+      ? { ...data, backendConfigured: this.isBackendConfigured() }
+      : undefined;
+    const initialDataScript = dataWithBackend
+      ? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, "\\u003c")};</script>`
+      : "";
+
+    return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8" />
@@ -9334,46 +9235,56 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
-	}
+  }
 
-	private getNonce(): string {
-		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-		let text = '';
-		for (let i = 0; i < 32; i++) {
-			text += possible.charAt(Math.floor(Math.random() * possible.length));
-		}
-		return text;
-	}
+  private getNonce(): string {
+    const possible =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let text = "";
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+  }
 
-	/**
-	 * Check if backend sync is configured for Team Dashboard access.
-	 */
-	private isBackendConfigured(): boolean {
-		if (!this.backend) {
-			return false;
-		}
-		const settings = this.backend.getSettings();
-		return this.backend.isConfigured(settings);
-	}
+  /**
+   * Check if backend sync is configured for Team Dashboard access.
+   */
+  private isBackendConfigured(): boolean {
+    if (!this.backend) {
+      return false;
+    }
+    const settings = this.backend.getSettings();
+    return this.backend.isConfigured(settings);
+  }
 
-	private getDetailsHtml(webview: vscode.Webview, stats: DetailedStats): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(
-			vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'details.js')
-		);
+  private getDetailsHtml(
+    webview: vscode.Webview,
+    stats: DetailedStats,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "details.js"),
+    );
 
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
 
-		const dataWithBackend = { ...stats, backendConfigured: this.isBackendConfigured() };
-		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
+    const dataWithBackend = {
+      ...stats,
+      backendConfigured: this.isBackendConfigured(),
+    };
+    const initialData = JSON.stringify(dataWithBackend).replace(
+      /</g,
+      "\\u003c",
+    );
 
-		return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8" />
@@ -9387,727 +9298,845 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
-	}
-
-
-	public async generateDiagnosticReport(): Promise<string> {
-		this.log('Generating diagnostic report...');
-
-		const report: string[] = [];
-
-		// Header
-		report.push('='.repeat(70));
-		report.push('GitHub Copilot Token Tracker - Diagnostic Report');
-		report.push('='.repeat(70));
-		report.push('');
-
-		// Extension Information
-		report.push('## Extension Information');
-		report.push(`Extension Version: ${vscode.extensions.getExtension('RobBos.copilot-token-tracker')?.packageJSON.version || 'Unknown'}`);
-		report.push(`VS Code Version: ${vscode.version}`);
-		report.push('');
-
-		// System Information
-		report.push('## System Information');
-		report.push(`OS: ${os.platform()} ${os.release()} (${os.arch()})`);
-		report.push(`Node Version: ${process.version}`);
-		report.push(`Home Directory: ${os.homedir()}`);
-		report.push(`Environment: ${process.env.CODESPACES === 'true' ? 'GitHub Codespaces' : (vscode.env.remoteName || 'Local')}`);
-		report.push(`VS Code Machine ID: ${vscode.env.machineId}`);
-		report.push(`VS Code Session ID: ${vscode.env.sessionId}`);
-		report.push(`VS Code UI Kind: ${vscode.env.uiKind === vscode.UIKind.Desktop ? 'Desktop' : 'Web'}`);
-		report.push(`Remote Name: ${vscode.env.remoteName || 'N/A'}`);
-		report.push('');
-
-		// GitHub Copilot Extension Status
-		report.push('## GitHub Copilot Extension Status');
-		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
-		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
-
-		if (copilotExtension) {
-			report.push(`GitHub Copilot Extension:`);
-			report.push(`  - Installed: Yes`);
-			report.push(`  - Version: ${copilotExtension.packageJSON.version}`);
-			report.push(`  - Active: ${copilotExtension.isActive ? 'Yes' : 'No'}`);
-
-			// Try to get Copilot tier information if available
-			try {
-				const copilotApi = copilotExtension.exports;
-				if (copilotApi && copilotApi.status) {
-					const status = copilotApi.status;
-					// Display key status fields in a readable format
-					if (typeof status === 'object') {
-						Object.keys(status).forEach(key => {
-							const value = status[key];
-							if (value !== undefined && value !== null) {
-								report.push(`  - ${key}: ${value}`);
-							}
-						});
-					} else {
-						report.push(`  - Status: ${status}`);
-					}
-				}
-			} catch (error) {
-				this.log(`Could not retrieve Copilot tier information: ${error}`);
-			}
-		} else {
-			report.push(`GitHub Copilot Extension: Not Installed`);
-		}
-
-		if (copilotChatExtension) {
-			report.push(`GitHub Copilot Chat Extension:`);
-			report.push(`  - Installed: Yes`);
-			report.push(`  - Version: ${copilotChatExtension.packageJSON.version}`);
-			report.push(`  - Active: ${copilotChatExtension.isActive ? 'Yes' : 'No'}`);
-		} else {
-			report.push(`GitHub Copilot Chat Extension: Not Installed`);
-		}
-		report.push('');
-
-		// Session Files Discovery
-		report.push('## Session Files Discovery');
-		try {
-			const sessionFiles = await this.getCopilotSessionFiles();
-			report.push(`Total Session Files Found: ${sessionFiles.length}`);
-			report.push('');
-
-			if (sessionFiles.length > 0) {
-				report.push('Session File Locations (first 20):');
-
-				// Use async file stat to avoid blocking the event loop
-				const filesToShow = sessionFiles.slice(0, 20);
-				const fileStats = await Promise.all(
-					filesToShow.map(async (file) => {
-						try {
-							const stat = await fs.promises.stat(file);
-							return { file, stat, error: null };
-						} catch (error) {
-							return { file, stat: null, error };
-						}
-					})
-				);
-
-				fileStats.forEach((result, index) => {
-					if (result.stat) {
-						report.push(`  ${index + 1}. ${result.file}`);
-						report.push(`     - Size: ${result.stat.size} bytes`);
-						report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
-					} else {
-						report.push(`  ${index + 1}. ${result.file}`);
-						report.push(`     - Error: ${result.error}`);
-					}
-				});
-
-				if (sessionFiles.length > 20) {
-					report.push(`  ... and ${sessionFiles.length - 20} more files`);
-				}
-			} else {
-				report.push('No session files found. Possible reasons:');
-				report.push('  - Copilot extensions are not active');
-				report.push('  - No Copilot Chat conversations have been initiated');
-				report.push('  - Sessions stored in unsupported location');
-				report.push('  - Authentication required with GitHub Copilot');
-			}
-			report.push('');
-		} catch (error) {
-			report.push(`Error discovering session files: ${error}`);
-			report.push('');
-		}
-
-		// Cache Statistics
-		report.push('## Cache Statistics');
-		report.push(`Cached Session Files: ${this.sessionFileCache.size}`);
-		report.push(`Cache Storage: Extension Global State`);
-		report.push('');
-		report.push('Cache provides faster loading by storing parsed session data with file modification timestamps.');
-		report.push('Files are only re-parsed when their modification time changes.');
-		report.push('');
-
-		// Token Statistics
-		report.push('## Token Usage Statistics');
-		try {
-			// Use cached session files to avoid redundant scans during diagnostic report generation
-			// DO NOT call calculateDetailedStats here - it triggers expensive re-analysis
-			// The loadDiagnosticDataInBackground method ensures stats are calculated if needed
-			try {
-				const sessionFiles = await this.getCopilotSessionFiles();
-				report.push(`Total Session Files Found: ${sessionFiles.length}`);
-				report.push("");
-
-				// Group session files by their parent directory
-				const dirCounts = new Map<string, number>();
-				for (const file of sessionFiles) {
-					const parent = require('path').dirname(file);
-					dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1);
-				}
-				if (dirCounts.size > 0) {
-					report.push("Session Files by Directory:");
-					for (const [dir, count] of dirCounts.entries()) {
-						report.push(`  ${dir}: ${count}`);
-					}
-					report.push("");
-				}
-
-				if (sessionFiles.length > 0) {
-					report.push('Session File Locations (first 20):');
-					const filesToShow = sessionFiles.slice(0, 20);
-					const fileStats = await Promise.all(
-						filesToShow.map(async (file) => {
-							try {
-								const stat = await fs.promises.stat(file);
-								return { file, stat, error: null };
-							} catch (error) {
-								return { file, stat: null, error };
-							}
-						})
-					);
-					fileStats.forEach((result, index) => {
-						if (result.stat) {
-							report.push(`  ${index + 1}. ${result.file}`);
-							report.push(`     - Size: ${result.stat.size} bytes`);
-							report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
-						} else {
-							report.push(`  ${index + 1}. ${result.file}`);
-							report.push(`     - Error: ${result.error}`);
-						}
-					});
-					if (sessionFiles.length > 20) {
-						report.push(`  ... and ${sessionFiles.length - 20} more files`);
-					}
-				} else {
-					report.push('No session files found. Possible reasons:');
-					report.push('  - Copilot extensions are not active');
-					report.push('  - No Copilot Chat conversations have been initiated');
-					report.push('  - Sessions stored in unsupported location');
-					report.push('  - Authentication required with GitHub Copilot');
-				}
-				report.push('');
-			} catch (error) {
-				report.push(`Error discovering session files: ${error}`);
-				report.push('');
-			}
-		} catch (error) {
-			report.push(`Error calculating token usage statistics: ${error}`);
-			report.push('');
-		}
-
-		// Footer
-		report.push('='.repeat(70));
-		report.push(`Report Generated: ${new Date().toISOString()}`);
-		report.push('='.repeat(70));
-		report.push('');
-		report.push('This report can be shared with the extension maintainers to help');
-		report.push('troubleshoot issues. No sensitive data from your code is included.');
-		report.push('');
-		report.push('Submit issues at:');
-		report.push(`${this.getRepositoryUrl()}/issues`);
-
-		const fullReport = report.join('\n');
-		this.log('Diagnostic report generated successfully');
-		return fullReport;
-	}
-
-	public async showDiagnosticReport(): Promise<void> {
-		this.log('🔍 Opening Diagnostic Report');
-
-		// If panel already exists, just reveal it and trigger a refresh in the background
-		if (this.diagnosticsPanel) {
-			this.diagnosticsPanel.reveal();
-			this.log('🔍 Diagnostic Report revealed (already exists)');
-			// Load data in background and update the webview
-			this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
-			return;
-		}
-
-		// Create the panel immediately with loading state
-		this.diagnosticsPanel = vscode.window.createWebviewPanel(
-			'copilotTokenDiagnostics',
-			'Diagnostic Report',
-			{
-				viewColumn: vscode.ViewColumn.One,
-				preserveFocus: false
-			},
-			{
-				enableScripts: true,
-				retainContextWhenHidden: true, // Keep webview context to avoid reloading session files
-				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
-			}
-		);
-
-		this.log('✅ Diagnostic Report panel created');
-
-		// Set the HTML content immediately with loading state
-		// Note: "Loading..." is the agreed contract between backend and frontend
-		// The webview checks for this value to show a loading indicator
-		this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
-			this.diagnosticsPanel.webview,
-			'Loading...', // Placeholder report
-			[], // Empty session files
-			[], // Empty detailed session files
-			[], // Empty session folders
-			null // No backend info yet
-		);
-
-		// Handle messages from the webview
-		this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
-			switch (message.command) {
-				case 'copyReport':
-					await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
-					vscode.window.showInformationMessage('Diagnostic report copied to clipboard');
-					break;
-				case 'openIssue':
-					await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
-					vscode.window.showInformationMessage('Diagnostic report copied to clipboard. Please paste it into the GitHub issue.');
-					const shortBody = encodeURIComponent('The diagnostic report has been copied to the clipboard. Please paste it below.');
-					const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
-					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
-					break;
-				case 'openSessionFile':
-					if (message.file) {
-						try {
-							// Open the session file in the log viewer
-							await this.showLogViewer(message.file);
-						} catch (err) {
-							vscode.window.showErrorMessage('Could not open log viewer: ' + message.file);
-						}
-					}
-					break;
-
-				case 'openFormattedJsonlFile':
-					if (message.file) {
-						try {
-							await this.showFormattedJsonlFile(message.file);
-						} catch (err) {
-							const errorMsg = err instanceof Error ? err.message : String(err);
-							vscode.window.showErrorMessage('Could not open formatted file: ' + message.file + ' (' + errorMsg + ')');
-						}
-					}
-					break;
-
-				case 'revealPath':
-					if (message.path) {
-						try {
-							const fs = require('fs');
-							const pathModule = require('path');
-							const normalized = pathModule.normalize(message.path);
-
-							// If the path exists and is a directory, open it directly in the OS file manager.
-							// Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
-							try {
-								const stat = await fs.promises.stat(normalized);
-								if (stat.isDirectory()) {
-									await vscode.env.openExternal(vscode.Uri.file(normalized));
-								} else {
-									// For files, reveal the file in OS (select it)
-									await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(normalized));
-								}
-							} catch (err) {
-								// If the stat fails, fallback to revealFileInOS which may still work
-								await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(normalized));
-							}
-						} catch (err) {
-							vscode.window.showErrorMessage('Could not reveal: ' + message.path);
-						}
-					}
-					break;
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showChart':
-					await this.showChart();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
-				case 'clearCache':
-					this.log('clearCache message received from diagnostics webview');
-					await this.clearCache();
-					// After clearing cache, refresh the diagnostic report if it's open
-					if (this.diagnosticsPanel) {
-						// Send completion message to webview before refreshing
-						this.diagnosticsPanel.webview.postMessage({ command: 'cacheCleared' });
-						// Wait a moment for the message to be processed
-						await new Promise(resolve => setTimeout(resolve, 500));
-						// Simply refresh the diagnostic report by revealing it again
-						// This will trigger a rebuild with fresh data
-						await this.showDiagnosticReport();
-					}
-					break;
-				case 'configureBackend':
-					// Execute the configureBackend command if it exists
-					try {
-						await vscode.commands.executeCommand('copilot-token-tracker.configureBackend');
-					} catch (err) {
-						// If command is not registered, show settings
-						vscode.window.showInformationMessage(
-							'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
-							'Open Settings'
-						).then(choice => {
-							if (choice === 'Open Settings') {
-								vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
-							}
-						});
-					}
-					break;
-				case 'openSettings':
-					await vscode.commands.executeCommand('workbench.action.openSettings', 'copilotTokenTracker.backend');
-					break;
-				case 'showDashboard':
-					await this.showDashboard();
-					break;
-			}
-		});
-
-		// Handle panel disposal
-		this.diagnosticsPanel.onDidDispose(() => {
-			this.log('🔍 Diagnostic Report closed');
-			this.diagnosticsPanel = undefined;
-		});
-
-		// Load data in background and update the webview when ready
-		this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
-	}
-
-	/**
-	 * Load all diagnostic data in the background and update the webview progressively.
-	 */
-	private async loadDiagnosticDataInBackground(panel: vscode.WebviewPanel): Promise<void> {
-		try {
-			this.log('🔄 Loading diagnostic data in background...');
-
-			// CRITICAL: Ensure stats have been calculated at least once to populate cache
-			// If this is the first diagnostic panel open and no stats exist yet,
-			// force an update now so the cache is populated before we load session files.
-			// This dramatically improves performance on first load (near 100% cache hit rate).
-			if (!this.lastDetailedStats) {
-				this.log('⚡ No cached stats found - forcing initial stats calculation to populate cache...');
-				await this.updateTokenStats(true);
-				this.log('✅ Cache populated, proceeding with diagnostics load');
-			}
-
-			// Load the diagnostic report
-			const report = await this.generateDiagnosticReport();
-			this.lastDiagnosticReport = report;
-
-			// Get session files
-			const sessionFiles = await this.getCopilotSessionFiles();
-
-			// Get first 20 session files with stats (quick preview)
-			const sessionFileData: { file: string; size: number; modified: string }[] = [];
-			for (const file of sessionFiles.slice(0, 20)) {
-				try {
-					const stat = await this.statSessionFile(file);
-					sessionFileData.push({
-						file,
-						size: stat.size,
-						modified: stat.mtime.toISOString()
-					});
-				} catch {
-					// Skip inaccessible files
-				}
-			}
-
-			// Build folder counts grouped by top-level VS Code user folder (editor roots)
-			const dirCounts = new Map<string, number>();
-			const pathModule = require('path');
-			const copilotSessionStateDir = pathModule.join(os.homedir(), '.copilot', 'session-state');
-			for (const file of sessionFiles) {
-				// Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
-				if (this.isOpenCodeDbSession(file)) {
-					const editorRoot = this.getOpenCodeDataDir();
-					dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-					continue;
-				}
-				const parts = file.split(/[\\\/]/);
-				const userIdx = parts.findIndex((p: string) => p.toLowerCase() === 'user');
-				let editorRoot = '';
-				if (userIdx > 0) {
-					const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
-					editorRoot = pathModule.join(...rootParts);
-				} else {
-					editorRoot = pathModule.dirname(file);
-				}
-				// Group all CLI session-state subdirectories under the common parent
-				if (editorRoot.startsWith(copilotSessionStateDir) && editorRoot !== copilotSessionStateDir) {
-					editorRoot = copilotSessionStateDir;
-				}
-				dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-			}
-			const sessionFolders = Array.from(dirCounts.entries()).map(([dir, count]) => ({
-				dir,
-				count,
-				editorName: this.getEditorNameFromRoot(dir)
-			}));
-
-			// Build candidate paths list for diagnostics
-			const candidatePaths = this.getDiagnosticCandidatePaths();
-
-			// Get backend storage info
-			const backendStorageInfo = await this.getBackendStorageInfo();
-			this.log(`Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`);
-
-			// Check if panel is still open before updating
-			if (!this.isPanelOpen(panel)) {
-				this.log('Diagnostic panel closed during data load, aborting update');
-				return;
-			}
-
-			// Send the loaded data to the webview
-			this.log(`Sending backend info to webview: ${backendStorageInfo ? 'present' : 'missing'}`);
-			panel.webview.postMessage({
-				command: 'diagnosticDataLoaded',
-				report,
-				sessionFiles: sessionFileData,
-				sessionFolders,
-				candidatePaths,
-				backendStorageInfo
-			});
-
-			this.log('✅ Diagnostic data loaded and sent to webview');
-
-			// Now load detailed session files in the background
-			this.loadSessionFilesInBackground(panel, sessionFiles);
-		} catch (error) {
-			this.error(`Failed to load diagnostic data: ${error}`);
-			// Send error to webview if panel is still open
-			if (this.isPanelOpen(panel)) {
-				panel.webview.postMessage({
-					command: 'diagnosticDataError',
-					error: String(error)
-				});
-			}
-		}
-	}
-
-	/**
-	 * Check if a webview panel is still open and accessible.
-	 * A panel is considered open if its viewColumn is defined.
-	 */
-	private isPanelOpen(panel: vscode.WebviewPanel): boolean {
-		return panel.viewColumn !== undefined;
-	}
-
-	/**
-	 * Load session file details in the background and send to webview.
-	 */
-	private async loadSessionFilesInBackground(
-		panel: vscode.WebviewPanel,
-		sessionFiles: string[]
-	): Promise<void> {
-		const fourteenDaysAgo = new Date();
-		fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-		const detailedSessionFiles: SessionFileDetails[] = [];
-
-		// Track cache performance for this load operation
-		const initialCacheHits = this._cacheHits;
-		const initialCacheMisses = this._cacheMisses;
-
-		// Sort files by modification time (most recent first) before taking first 500
-		// This ensures we prioritize recent sessions regardless of their folder location
-		const fileStats = await Promise.all(
-			sessionFiles.map(async (file) => {
-				try {
-					const stat = await this.statSessionFile(file);
-					return { file, mtime: stat.mtime.getTime() };
-				} catch {
-					return { file, mtime: 0 };
-				}
-			})
-		);
-
-		const sortedFiles = fileStats
-			.sort((a, b) => b.mtime - a.mtime)
-			.map(item => item.file);
-
-		// Process up to 500 most recent session files
-		for (const file of sortedFiles.slice(0, 500)) {
-			// Check if panel was disposed
-			if (!this.isPanelOpen(panel)) {
-				this.log('Diagnostic panel closed, stopping background load');
-				return;
-			}
-
-			try {
-				const details = await this.getSessionFileDetails(file);
-				// Only include sessions with activity (lastInteraction or file modified time) within the last x days
-				const lastActivity = details.lastInteraction
-					? new Date(details.lastInteraction)
-					: new Date(details.modified);
-				if (lastActivity >= fourteenDaysAgo) {
-					detailedSessionFiles.push(details);
-				}
-			} catch {
-				// Skip inaccessible files
-			}
-		}
-
-		// Send the loaded data to the webview
-		try {
-			// Cache the loaded session files so we can re-send if the webview is recreated
-			if (panel === this.diagnosticsPanel) {
-				this.diagnosticsCachedFiles = detailedSessionFiles;
-			}
-			// Log summary stats
-			const withRepo = detailedSessionFiles.filter(s => s.repository).length;
-			this.log(`📊 Sending ${detailedSessionFiles.length} sessions to diagnostics (${withRepo} with repository info)`);
-			await panel.webview.postMessage({
-				command: 'sessionFilesLoaded',
-				detailedSessionFiles
-			});
-
-			// Calculate and log cache performance for this operation
-			const cacheHits = this._cacheHits - initialCacheHits;
-			const cacheMisses = this._cacheMisses - initialCacheMisses;
-			const totalAccesses = cacheHits + cacheMisses;
-			const hitRate = totalAccesses > 0 ? ((cacheHits / totalAccesses) * 100).toFixed(1) : '0.0';
-
-			this.log(`Loaded ${detailedSessionFiles.length} session files in background (Cache: ${cacheHits} hits, ${cacheMisses} misses, ${hitRate}% hit rate)`);
-
-			// Mark diagnostics as loaded so we don't reload unnecessarily
-			if (panel === this.diagnosticsPanel) {
-				this.diagnosticsHasLoadedFiles = true;
-			}
-		} catch (err) {
-			// Panel may have been disposed
-			this.log('Could not send session files to panel (may be closed)');
-		}
-	}
-
-	/**
-	 * Get backend storage information for diagnostics
-	 */
-	private async getBackendStorageInfo(): Promise<any> {
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
-		const enabled = config.get<boolean>('backend.enabled', false);
-		const storageAccount = config.get<string>('backend.storageAccount', '');
-		const subscriptionId = config.get<string>('backend.subscriptionId', '');
-		const resourceGroup = config.get<string>('backend.resourceGroup', '');
-		const aggTable = config.get<string>('backend.aggTable', 'usageAggDaily');
-		const eventsTable = config.get<string>('backend.eventsTable', 'usageEvents');
-		const authMode = config.get<string>('backend.authMode', 'entraId');
-		const sharingProfile = config.get<string>('backend.sharingProfile', 'off');
-
-		// Get last sync time from global state
-		const lastSyncAt = this.context.globalState.get<number>('backend.lastSyncAt');
-		const lastSyncTime = lastSyncAt ? new Date(lastSyncAt).toISOString() : null;
-
-		// Check if backend is configured (has required settings)
-		const isConfigured = enabled && storageAccount && subscriptionId && resourceGroup;
-
-		// Get unique device count from session files (estimate based on unique workspace roots)
-		const sessionFiles = await this.getCopilotSessionFiles();
-		const workspaceIds = new Set<string>();
-		const pathModule = require('path');
-
-		for (const file of sessionFiles) {
-			const parts = file.split(/[\\\/]/);
-			const workspaceStorageIdx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
-			if (workspaceStorageIdx >= 0 && workspaceStorageIdx < parts.length - 1) {
-				const workspaceId = parts[workspaceStorageIdx + 1];
-				if (workspaceId && workspaceId.length > 10) {
-					workspaceIds.add(workspaceId);
-				}
-			}
-		}
-
-		return {
-			enabled,
-			isConfigured,
-			storageAccount,
-			subscriptionId: subscriptionId ? subscriptionId.substring(0, 8) + '...' : '',
-			resourceGroup,
-			aggTable,
-			eventsTable,
-			authMode,
-			sharingProfile,
-			lastSyncTime,
-			deviceCount: workspaceIds.size,
-			sessionCount: sessionFiles.length,
-			recordCount: null // Will be populated from Azure if configured
-		};
-	}
-
-	private getDiagnosticReportHtml(
-		webview: vscode.Webview,
-		report: string,
-		sessionFiles: { file: string; size: number; modified: string }[],
-		detailedSessionFiles: SessionFileDetails[],
-		sessionFolders: { dir: string; count: number }[] = [],
-		backendStorageInfo: any = null
-	): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'diagnostics.js'));
-
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
-
-		// Get cache information
-		let cacheSizeInMB = 0;
-		try {
-			// Estimate cache size by serializing to JSON
-			const cacheData = Object.fromEntries(this.sessionFileCache);
-			const jsonString = JSON.stringify(cacheData);
-			cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
-		} catch {
-			cacheSizeInMB = 0;
-		}
-
-		// Try to read the persisted cache from VS Code global state to show its actual storage status
-		let persistedCacheSummary = 'Not found in VS Code Global State';
-		try {
-			const persisted = this.context.globalState.get<Record<string, SessionFileCache>>('sessionFileCache');
-			if (persisted && typeof persisted === 'object') {
-				const count = Object.keys(persisted).length;
-				persistedCacheSummary = `VS Code Global State - sessionFileCache (${count} entr${count === 1 ? 'y' : 'ies'})`;
-			}
-		} catch (e) {
-			persistedCacheSummary = 'Error reading VS Code Global State';
-		}
-
-		// Try to locate the actual storage file (state DB) for the extension global state
-		let storageFilePath: string | null = null;
-		try {
-			const extensionId = 'RobBos.copilot-token-tracker';
-			const userPaths = this.getVSCodeUserPaths();
-			for (const userPath of userPaths) {
-				try {
-					const candidate = path.join(userPath, 'globalStorage', extensionId);
-					if (fs.existsSync(candidate)) {
-						const files = fs.readdirSync(candidate);
-						// Look for likely state files
-						const match = files.find(f => f.includes('state') || f.endsWith('.vscdb') || f.endsWith('.json'));
-						if (match) {
-							storageFilePath = path.join(candidate, match);
-							break;
-						}
-					}
-				} catch (e) {
-					// ignore path access errors
-				}
-			}
-		} catch (e) {
-			// ignore
-		}
-
-		const cacheInfo = {
-			size: this.sessionFileCache.size,
-			sizeInMB: cacheSizeInMB,
-			lastUpdated: this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
-			location: persistedCacheSummary,
-			storagePath: storageFilePath
-		};
-
-		const initialData = JSON.stringify({ report, sessionFiles, detailedSessionFiles, sessionFolders, cacheInfo, backendStorageInfo, backendConfigured: this.isBackendConfigured() }).replace(/</g, '\\u003c');
-
-		return `<!DOCTYPE html>
+  }
+
+  public async generateDiagnosticReport(): Promise<string> {
+    this.log("Generating diagnostic report...");
+
+    const report: string[] = [];
+
+    // Header
+    report.push("=".repeat(70));
+    report.push("GitHub Copilot Token Tracker - Diagnostic Report");
+    report.push("=".repeat(70));
+    report.push("");
+
+    // Extension Information
+    report.push("## Extension Information");
+    report.push(
+      `Extension Version: ${vscode.extensions.getExtension("RobBos.copilot-token-tracker")?.packageJSON.version || "Unknown"}`,
+    );
+    report.push(`VS Code Version: ${vscode.version}`);
+    report.push("");
+
+    // System Information
+    report.push("## System Information");
+    report.push(`OS: ${os.platform()} ${os.release()} (${os.arch()})`);
+    report.push(`Node Version: ${process.version}`);
+    report.push(`Home Directory: ${os.homedir()}`);
+    report.push(
+      `Environment: ${process.env.CODESPACES === "true" ? "GitHub Codespaces" : vscode.env.remoteName || "Local"}`,
+    );
+    report.push(`VS Code Machine ID: ${vscode.env.machineId}`);
+    report.push(`VS Code Session ID: ${vscode.env.sessionId}`);
+    report.push(
+      `VS Code UI Kind: ${vscode.env.uiKind === vscode.UIKind.Desktop ? "Desktop" : "Web"}`,
+    );
+    report.push(`Remote Name: ${vscode.env.remoteName || "N/A"}`);
+    report.push("");
+
+    // GitHub Copilot Extension Status
+    report.push("## GitHub Copilot Extension Status");
+    const copilotExtension = vscode.extensions.getExtension("GitHub.copilot");
+    const copilotChatExtension = vscode.extensions.getExtension(
+      "GitHub.copilot-chat",
+    );
+
+    if (copilotExtension) {
+      report.push(`GitHub Copilot Extension:`);
+      report.push(`  - Installed: Yes`);
+      report.push(`  - Version: ${copilotExtension.packageJSON.version}`);
+      report.push(`  - Active: ${copilotExtension.isActive ? "Yes" : "No"}`);
+
+      // Try to get Copilot tier information if available
+      try {
+        const copilotApi = copilotExtension.exports;
+        if (copilotApi && copilotApi.status) {
+          const status = copilotApi.status;
+          // Display key status fields in a readable format
+          if (typeof status === "object") {
+            Object.keys(status).forEach((key) => {
+              const value = status[key];
+              if (value !== undefined && value !== null) {
+                report.push(`  - ${key}: ${value}`);
+              }
+            });
+          } else {
+            report.push(`  - Status: ${status}`);
+          }
+        }
+      } catch (error) {
+        this.log(`Could not retrieve Copilot tier information: ${error}`);
+      }
+    } else {
+      report.push(`GitHub Copilot Extension: Not Installed`);
+    }
+
+    if (copilotChatExtension) {
+      report.push(`GitHub Copilot Chat Extension:`);
+      report.push(`  - Installed: Yes`);
+      report.push(`  - Version: ${copilotChatExtension.packageJSON.version}`);
+      report.push(
+        `  - Active: ${copilotChatExtension.isActive ? "Yes" : "No"}`,
+      );
+    } else {
+      report.push(`GitHub Copilot Chat Extension: Not Installed`);
+    }
+    report.push("");
+
+    // Session Files Discovery
+    report.push("## Session Files Discovery");
+    try {
+      const sessionFiles = await this.getCopilotSessionFiles();
+      report.push(`Total Session Files Found: ${sessionFiles.length}`);
+      report.push("");
+
+      if (sessionFiles.length > 0) {
+        report.push("Session File Locations (first 20):");
+
+        // Use async file stat to avoid blocking the event loop
+        const filesToShow = sessionFiles.slice(0, 20);
+        const fileStats = await Promise.all(
+          filesToShow.map(async (file) => {
+            try {
+              const stat = await fs.promises.stat(file);
+              return { file, stat, error: null };
+            } catch (error) {
+              return { file, stat: null, error };
+            }
+          }),
+        );
+
+        fileStats.forEach((result, index) => {
+          if (result.stat) {
+            report.push(`  ${index + 1}. ${result.file}`);
+            report.push(`     - Size: ${result.stat.size} bytes`);
+            report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
+          } else {
+            report.push(`  ${index + 1}. ${result.file}`);
+            report.push(`     - Error: ${result.error}`);
+          }
+        });
+
+        if (sessionFiles.length > 20) {
+          report.push(`  ... and ${sessionFiles.length - 20} more files`);
+        }
+      } else {
+        report.push("No session files found. Possible reasons:");
+        report.push("  - Copilot extensions are not active");
+        report.push("  - No Copilot Chat conversations have been initiated");
+        report.push("  - Sessions stored in unsupported location");
+        report.push("  - Authentication required with GitHub Copilot");
+      }
+      report.push("");
+    } catch (error) {
+      report.push(`Error discovering session files: ${error}`);
+      report.push("");
+    }
+
+    // Cache Statistics
+    report.push("## Cache Statistics");
+    report.push(`Cached Session Files: ${this.sessionFileCache.size}`);
+    report.push(`Cache Storage: Extension Global State`);
+    report.push("");
+    report.push(
+      "Cache provides faster loading by storing parsed session data with file modification timestamps.",
+    );
+    report.push(
+      "Files are only re-parsed when their modification time changes.",
+    );
+    report.push("");
+
+    // Token Statistics
+    report.push("## Token Usage Statistics");
+    try {
+      // Use cached session files to avoid redundant scans during diagnostic report generation
+      // DO NOT call calculateDetailedStats here - it triggers expensive re-analysis
+      // The loadDiagnosticDataInBackground method ensures stats are calculated if needed
+      try {
+        const sessionFiles = await this.getCopilotSessionFiles();
+        report.push(`Total Session Files Found: ${sessionFiles.length}`);
+        report.push("");
+
+        // Group session files by their parent directory
+        const dirCounts = new Map<string, number>();
+        for (const file of sessionFiles) {
+          const parent = require("path").dirname(file);
+          dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1);
+        }
+        if (dirCounts.size > 0) {
+          report.push("Session Files by Directory:");
+          for (const [dir, count] of dirCounts.entries()) {
+            report.push(`  ${dir}: ${count}`);
+          }
+          report.push("");
+        }
+
+        if (sessionFiles.length > 0) {
+          report.push("Session File Locations (first 20):");
+          const filesToShow = sessionFiles.slice(0, 20);
+          const fileStats = await Promise.all(
+            filesToShow.map(async (file) => {
+              try {
+                const stat = await fs.promises.stat(file);
+                return { file, stat, error: null };
+              } catch (error) {
+                return { file, stat: null, error };
+              }
+            }),
+          );
+          fileStats.forEach((result, index) => {
+            if (result.stat) {
+              report.push(`  ${index + 1}. ${result.file}`);
+              report.push(`     - Size: ${result.stat.size} bytes`);
+              report.push(
+                `     - Modified: ${result.stat.mtime.toISOString()}`,
+              );
+            } else {
+              report.push(`  ${index + 1}. ${result.file}`);
+              report.push(`     - Error: ${result.error}`);
+            }
+          });
+          if (sessionFiles.length > 20) {
+            report.push(`  ... and ${sessionFiles.length - 20} more files`);
+          }
+        } else {
+          report.push("No session files found. Possible reasons:");
+          report.push("  - Copilot extensions are not active");
+          report.push("  - No Copilot Chat conversations have been initiated");
+          report.push("  - Sessions stored in unsupported location");
+          report.push("  - Authentication required with GitHub Copilot");
+        }
+        report.push("");
+      } catch (error) {
+        report.push(`Error discovering session files: ${error}`);
+        report.push("");
+      }
+    } catch (error) {
+      report.push(`Error calculating token usage statistics: ${error}`);
+      report.push("");
+    }
+
+    // Footer
+    report.push("=".repeat(70));
+    report.push(`Report Generated: ${new Date().toISOString()}`);
+    report.push("=".repeat(70));
+    report.push("");
+    report.push(
+      "This report can be shared with the extension maintainers to help",
+    );
+    report.push(
+      "troubleshoot issues. No sensitive data from your code is included.",
+    );
+    report.push("");
+    report.push("Submit issues at:");
+    report.push(`${this.getRepositoryUrl()}/issues`);
+
+    const fullReport = report.join("\n");
+    this.log("Diagnostic report generated successfully");
+    return fullReport;
+  }
+
+  public async showDiagnosticReport(): Promise<void> {
+    this.log("🔍 Opening Diagnostic Report");
+
+    // If panel already exists, just reveal it and trigger a refresh in the background
+    if (this.diagnosticsPanel) {
+      this.diagnosticsPanel.reveal();
+      this.log("🔍 Diagnostic Report revealed (already exists)");
+      // Load data in background and update the webview
+      this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+      return;
+    }
+
+    // Create the panel immediately with loading state
+    this.diagnosticsPanel = vscode.window.createWebviewPanel(
+      "copilotTokenDiagnostics",
+      "Diagnostic Report",
+      {
+        viewColumn: vscode.ViewColumn.One,
+        preserveFocus: false,
+      },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true, // Keep webview context to avoid reloading session files
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+        ],
+      },
+    );
+
+    this.log("✅ Diagnostic Report panel created");
+
+    // Set the HTML content immediately with loading state
+    // Note: "Loading..." is the agreed contract between backend and frontend
+    // The webview checks for this value to show a loading indicator
+    this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
+      this.diagnosticsPanel.webview,
+      "Loading...", // Placeholder report
+      [], // Empty session files
+      [], // Empty detailed session files
+      [], // Empty session folders
+      null, // No backend info yet
+    );
+
+    // Handle messages from the webview
+    this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+      switch (message.command) {
+        case "copyReport":
+          await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
+          vscode.window.showInformationMessage(
+            "Diagnostic report copied to clipboard",
+          );
+          break;
+        case "openIssue":
+          await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
+          vscode.window.showInformationMessage(
+            "Diagnostic report copied to clipboard. Please paste it into the GitHub issue.",
+          );
+          const shortBody = encodeURIComponent(
+            "The diagnostic report has been copied to the clipboard. Please paste it below.",
+          );
+          const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
+          await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+          break;
+        case "openSessionFile":
+          if (message.file) {
+            try {
+              // Open the session file in the log viewer
+              await this.showLogViewer(message.file);
+            } catch (err) {
+              vscode.window.showErrorMessage(
+                "Could not open log viewer: " + message.file,
+              );
+            }
+          }
+          break;
+
+        case "openFormattedJsonlFile":
+          if (message.file) {
+            try {
+              await this.showFormattedJsonlFile(message.file);
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              vscode.window.showErrorMessage(
+                "Could not open formatted file: " +
+                  message.file +
+                  " (" +
+                  errorMsg +
+                  ")",
+              );
+            }
+          }
+          break;
+
+        case "revealPath":
+          if (message.path) {
+            try {
+              const fs = require("fs");
+              const pathModule = require("path");
+              const normalized = pathModule.normalize(message.path);
+
+              // If the path exists and is a directory, open it directly in the OS file manager.
+              // Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
+              try {
+                const stat = await fs.promises.stat(normalized);
+                if (stat.isDirectory()) {
+                  await vscode.env.openExternal(vscode.Uri.file(normalized));
+                } else {
+                  // For files, reveal the file in OS (select it)
+                  await vscode.commands.executeCommand(
+                    "revealFileInOS",
+                    vscode.Uri.file(normalized),
+                  );
+                }
+              } catch (err) {
+                // If the stat fails, fallback to revealFileInOS which may still work
+                await vscode.commands.executeCommand(
+                  "revealFileInOS",
+                  vscode.Uri.file(normalized),
+                );
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(
+                "Could not reveal: " + message.path,
+              );
+            }
+          }
+          break;
+        case "showDetails":
+          await this.showDetails();
+          break;
+        case "showChart":
+          await this.showChart();
+          break;
+        case "showUsageAnalysis":
+          await this.showUsageAnalysis();
+          break;
+        case "showMaturity":
+          await this.showMaturity();
+          break;
+        case "clearCache":
+          this.log("clearCache message received from diagnostics webview");
+          await this.clearCache();
+          // After clearing cache, refresh the diagnostic report if it's open
+          if (this.diagnosticsPanel) {
+            // Send completion message to webview before refreshing
+            this.diagnosticsPanel.webview.postMessage({
+              command: "cacheCleared",
+            });
+            // Wait a moment for the message to be processed
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            // Simply refresh the diagnostic report by revealing it again
+            // This will trigger a rebuild with fresh data
+            await this.showDiagnosticReport();
+          }
+          break;
+        case "configureBackend":
+          // Execute the configureBackend command if it exists
+          try {
+            await vscode.commands.executeCommand(
+              "copilot-token-tracker.configureBackend",
+            );
+          } catch (err) {
+            // If command is not registered, show settings
+            vscode.window
+              .showInformationMessage(
+                'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
+                "Open Settings",
+              )
+              .then((choice) => {
+                if (choice === "Open Settings") {
+                  vscode.commands.executeCommand(
+                    "workbench.action.openSettings",
+                    "copilotTokenTracker.backend",
+                  );
+                }
+              });
+          }
+          break;
+        case "openSettings":
+          await vscode.commands.executeCommand(
+            "workbench.action.openSettings",
+            "copilotTokenTracker.backend",
+          );
+          break;
+        case "showDashboard":
+          await this.showDashboard();
+          break;
+      }
+    });
+
+    // Handle panel disposal
+    this.diagnosticsPanel.onDidDispose(() => {
+      this.log("🔍 Diagnostic Report closed");
+      this.diagnosticsPanel = undefined;
+    });
+
+    // Load data in background and update the webview when ready
+    this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+  }
+
+  /**
+   * Load all diagnostic data in the background and update the webview progressively.
+   */
+  private async loadDiagnosticDataInBackground(
+    panel: vscode.WebviewPanel,
+  ): Promise<void> {
+    try {
+      this.log("🔄 Loading diagnostic data in background...");
+
+      // CRITICAL: Ensure stats have been calculated at least once to populate cache
+      // If this is the first diagnostic panel open and no stats exist yet,
+      // force an update now so the cache is populated before we load session files.
+      // This dramatically improves performance on first load (near 100% cache hit rate).
+      if (!this.lastDetailedStats) {
+        this.log(
+          "⚡ No cached stats found - forcing initial stats calculation to populate cache...",
+        );
+        await this.updateTokenStats(true);
+        this.log("✅ Cache populated, proceeding with diagnostics load");
+      }
+
+      // Load the diagnostic report
+      const report = await this.generateDiagnosticReport();
+      this.lastDiagnosticReport = report;
+
+      // Get session files
+      const sessionFiles = await this.getCopilotSessionFiles();
+
+      // Get first 20 session files with stats (quick preview)
+      const sessionFileData: {
+        file: string;
+        size: number;
+        modified: string;
+      }[] = [];
+      for (const file of sessionFiles.slice(0, 20)) {
+        try {
+          const stat = await this.statSessionFile(file);
+          sessionFileData.push({
+            file,
+            size: stat.size,
+            modified: stat.mtime.toISOString(),
+          });
+        } catch {
+          // Skip inaccessible files
+        }
+      }
+
+      // Build folder counts grouped by top-level VS Code user folder (editor roots)
+      const dirCounts = new Map<string, number>();
+      const pathModule = require("path");
+      const copilotSessionStateDir = pathModule.join(
+        os.homedir(),
+        ".copilot",
+        "session-state",
+      );
+      for (const file of sessionFiles) {
+        // Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
+        if (this.isOpenCodeDbSession(file)) {
+          const editorRoot = this.getOpenCodeDataDir();
+          dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+          continue;
+        }
+        const parts = file.split(/[\\\/]/);
+        const userIdx = parts.findIndex(
+          (p: string) => p.toLowerCase() === "user",
+        );
+        let editorRoot = "";
+        if (userIdx > 0) {
+          const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
+          editorRoot = pathModule.join(...rootParts);
+        } else {
+          editorRoot = pathModule.dirname(file);
+        }
+        // Group all CLI session-state subdirectories under the common parent
+        if (
+          editorRoot.startsWith(copilotSessionStateDir) &&
+          editorRoot !== copilotSessionStateDir
+        ) {
+          editorRoot = copilotSessionStateDir;
+        }
+        dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+      }
+      const sessionFolders = Array.from(dirCounts.entries()).map(
+        ([dir, count]) => ({
+          dir,
+          count,
+          editorName: this.getEditorNameFromRoot(dir),
+        }),
+      );
+
+      // Build candidate paths list for diagnostics
+      const candidatePaths = this.getDiagnosticCandidatePaths();
+
+      // Get backend storage info
+      const backendStorageInfo = await this.getBackendStorageInfo();
+      this.log(
+        `Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`,
+      );
+
+      // Check if panel is still open before updating
+      if (!this.isPanelOpen(panel)) {
+        this.log("Diagnostic panel closed during data load, aborting update");
+        return;
+      }
+
+      // Send the loaded data to the webview
+      this.log(
+        `Sending backend info to webview: ${backendStorageInfo ? "present" : "missing"}`,
+      );
+      panel.webview.postMessage({
+        command: "diagnosticDataLoaded",
+        report,
+        sessionFiles: sessionFileData,
+        sessionFolders,
+        candidatePaths,
+        backendStorageInfo,
+      });
+
+      this.log("✅ Diagnostic data loaded and sent to webview");
+
+      // Now load detailed session files in the background
+      this.loadSessionFilesInBackground(panel, sessionFiles);
+    } catch (error) {
+      this.error(`Failed to load diagnostic data: ${error}`);
+      // Send error to webview if panel is still open
+      if (this.isPanelOpen(panel)) {
+        panel.webview.postMessage({
+          command: "diagnosticDataError",
+          error: String(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if a webview panel is still open and accessible.
+   * A panel is considered open if its viewColumn is defined.
+   */
+  private isPanelOpen(panel: vscode.WebviewPanel): boolean {
+    return panel.viewColumn !== undefined;
+  }
+
+  /**
+   * Load session file details in the background and send to webview.
+   */
+  private async loadSessionFilesInBackground(
+    panel: vscode.WebviewPanel,
+    sessionFiles: string[],
+  ): Promise<void> {
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const detailedSessionFiles: SessionFileDetails[] = [];
+
+    // Track cache performance for this load operation
+    const initialCacheHits = this._cacheHits;
+    const initialCacheMisses = this._cacheMisses;
+
+    // Sort files by modification time (most recent first) before taking first 500
+    // This ensures we prioritize recent sessions regardless of their folder location
+    const fileStats = await Promise.all(
+      sessionFiles.map(async (file) => {
+        try {
+          const stat = await this.statSessionFile(file);
+          return { file, mtime: stat.mtime.getTime() };
+        } catch {
+          return { file, mtime: 0 };
+        }
+      }),
+    );
+
+    const sortedFiles = fileStats
+      .sort((a, b) => b.mtime - a.mtime)
+      .map((item) => item.file);
+
+    // Process up to 500 most recent session files
+    for (const file of sortedFiles.slice(0, 500)) {
+      // Check if panel was disposed
+      if (!this.isPanelOpen(panel)) {
+        this.log("Diagnostic panel closed, stopping background load");
+        return;
+      }
+
+      try {
+        const details = await this.getSessionFileDetails(file);
+        // Only include sessions with activity (lastInteraction or file modified time) within the last x days
+        const lastActivity = details.lastInteraction
+          ? new Date(details.lastInteraction)
+          : new Date(details.modified);
+        if (lastActivity >= fourteenDaysAgo) {
+          detailedSessionFiles.push(details);
+        }
+      } catch {
+        // Skip inaccessible files
+      }
+    }
+
+    // Send the loaded data to the webview
+    try {
+      // Cache the loaded session files so we can re-send if the webview is recreated
+      if (panel === this.diagnosticsPanel) {
+        this.diagnosticsCachedFiles = detailedSessionFiles;
+      }
+      // Log summary stats
+      const withRepo = detailedSessionFiles.filter((s) => s.repository).length;
+      this.log(
+        `📊 Sending ${detailedSessionFiles.length} sessions to diagnostics (${withRepo} with repository info)`,
+      );
+      await panel.webview.postMessage({
+        command: "sessionFilesLoaded",
+        detailedSessionFiles,
+      });
+
+      // Calculate and log cache performance for this operation
+      const cacheHits = this._cacheHits - initialCacheHits;
+      const cacheMisses = this._cacheMisses - initialCacheMisses;
+      const totalAccesses = cacheHits + cacheMisses;
+      const hitRate =
+        totalAccesses > 0
+          ? ((cacheHits / totalAccesses) * 100).toFixed(1)
+          : "0.0";
+
+      this.log(
+        `Loaded ${detailedSessionFiles.length} session files in background (Cache: ${cacheHits} hits, ${cacheMisses} misses, ${hitRate}% hit rate)`,
+      );
+
+      // Mark diagnostics as loaded so we don't reload unnecessarily
+      if (panel === this.diagnosticsPanel) {
+        this.diagnosticsHasLoadedFiles = true;
+      }
+    } catch (err) {
+      // Panel may have been disposed
+      this.log("Could not send session files to panel (may be closed)");
+    }
+  }
+
+  /**
+   * Get backend storage information for diagnostics
+   */
+  private async getBackendStorageInfo(): Promise<any> {
+    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const enabled = config.get<boolean>("backend.enabled", false);
+    const storageAccount = config.get<string>("backend.storageAccount", "");
+    const subscriptionId = config.get<string>("backend.subscriptionId", "");
+    const resourceGroup = config.get<string>("backend.resourceGroup", "");
+    const aggTable = config.get<string>("backend.aggTable", "usageAggDaily");
+    const eventsTable = config.get<string>(
+      "backend.eventsTable",
+      "usageEvents",
+    );
+    const authMode = config.get<string>("backend.authMode", "entraId");
+    const sharingProfile = config.get<string>("backend.sharingProfile", "off");
+
+    // Get last sync time from global state
+    const lastSyncAt =
+      this.context.globalState.get<number>("backend.lastSyncAt");
+    const lastSyncTime = lastSyncAt ? new Date(lastSyncAt).toISOString() : null;
+
+    // Check if backend is configured (has required settings)
+    const isConfigured =
+      enabled && storageAccount && subscriptionId && resourceGroup;
+
+    // Get unique device count from session files (estimate based on unique workspace roots)
+    const sessionFiles = await this.getCopilotSessionFiles();
+    const workspaceIds = new Set<string>();
+    const pathModule = require("path");
+
+    for (const file of sessionFiles) {
+      const parts = file.split(/[\\\/]/);
+      const workspaceStorageIdx = parts.findIndex(
+        (p) => p.toLowerCase() === "workspacestorage",
+      );
+      if (workspaceStorageIdx >= 0 && workspaceStorageIdx < parts.length - 1) {
+        const workspaceId = parts[workspaceStorageIdx + 1];
+        if (workspaceId && workspaceId.length > 10) {
+          workspaceIds.add(workspaceId);
+        }
+      }
+    }
+
+    return {
+      enabled,
+      isConfigured,
+      storageAccount,
+      subscriptionId: subscriptionId
+        ? subscriptionId.substring(0, 8) + "..."
+        : "",
+      resourceGroup,
+      aggTable,
+      eventsTable,
+      authMode,
+      sharingProfile,
+      lastSyncTime,
+      deviceCount: workspaceIds.size,
+      sessionCount: sessionFiles.length,
+      recordCount: null, // Will be populated from Azure if configured
+    };
+  }
+
+  private getDiagnosticReportHtml(
+    webview: vscode.Webview,
+    report: string,
+    sessionFiles: { file: string; size: number; modified: string }[],
+    detailedSessionFiles: SessionFileDetails[],
+    sessionFolders: { dir: string; count: number }[] = [],
+    backendStorageInfo: any = null,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "dist",
+        "webview",
+        "diagnostics.js",
+      ),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    // Get cache information
+    let cacheSizeInMB = 0;
+    try {
+      // Estimate cache size by serializing to JSON
+      const cacheData = Object.fromEntries(this.sessionFileCache);
+      const jsonString = JSON.stringify(cacheData);
+      cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
+    } catch {
+      cacheSizeInMB = 0;
+    }
+
+    // Try to read the persisted cache from VS Code global state to show its actual storage status
+    let persistedCacheSummary = "Not found in VS Code Global State";
+    try {
+      const persisted =
+        this.context.globalState.get<Record<string, SessionFileCache>>(
+          "sessionFileCache",
+        );
+      if (persisted && typeof persisted === "object") {
+        const count = Object.keys(persisted).length;
+        persistedCacheSummary = `VS Code Global State - sessionFileCache (${count} entr${count === 1 ? "y" : "ies"})`;
+      }
+    } catch (e) {
+      persistedCacheSummary = "Error reading VS Code Global State";
+    }
+
+    // Try to locate the actual storage file (state DB) for the extension global state
+    let storageFilePath: string | null = null;
+    try {
+      const extensionId = "RobBos.copilot-token-tracker";
+      const userPaths = this.getVSCodeUserPaths();
+      for (const userPath of userPaths) {
+        try {
+          const candidate = path.join(userPath, "globalStorage", extensionId);
+          if (fs.existsSync(candidate)) {
+            const files = fs.readdirSync(candidate);
+            // Look for likely state files
+            const match = files.find(
+              (f) =>
+                f.includes("state") ||
+                f.endsWith(".vscdb") ||
+                f.endsWith(".json"),
+            );
+            if (match) {
+              storageFilePath = path.join(candidate, match);
+              break;
+            }
+          }
+        } catch (e) {
+          // ignore path access errors
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const cacheInfo = {
+      size: this.sessionFileCache.size,
+      sizeInMB: cacheSizeInMB,
+      lastUpdated:
+        this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
+      location: persistedCacheSummary,
+      storagePath: storageFilePath,
+    };
+
+    const initialData = JSON.stringify({
+      report,
+      sessionFiles,
+      detailedSessionFiles,
+      sessionFolders,
+      cacheInfo,
+      backendStorageInfo,
+      backendConfigured: this.isBackendConfigured(),
+    }).replace(/</g, "\\u003c");
+
+    return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8" />
@@ -10121,127 +10150,140 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
-	}
+  }
 
-	private getChartHtml(webview: vscode.Webview, dailyStats: DailyTokenStats[]): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'chart.js'));
+  private getChartHtml(
+    webview: vscode.Webview,
+    dailyStats: DailyTokenStats[],
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "chart.js"),
+    );
 
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
 
-		// Transform dailyStats into the structure expected by the webview
-		const labels = dailyStats.map(d => d.date);
-		const tokensData = dailyStats.map(d => d.tokens);
-		const sessionsData = dailyStats.map(d => d.sessions);
+    // Transform dailyStats into the structure expected by the webview
+    const labels = dailyStats.map((d) => d.date);
+    const tokensData = dailyStats.map((d) => d.tokens);
+    const sessionsData = dailyStats.map((d) => d.sessions);
 
-		// Aggregate model usage across all days
-		const allModels = new Set<string>();
-		dailyStats.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
+    // Aggregate model usage across all days
+    const allModels = new Set<string>();
+    dailyStats.forEach((d) =>
+      Object.keys(d.modelUsage).forEach((m) => allModels.add(m)),
+    );
 
-		const modelColors = [
-			{ bg: 'rgba(54, 162, 235, 0.6)', border: 'rgba(54, 162, 235, 1)' },
-			{ bg: 'rgba(255, 99, 132, 0.6)', border: 'rgba(255, 99, 132, 1)' },
-			{ bg: 'rgba(75, 192, 192, 0.6)', border: 'rgba(75, 192, 192, 1)' },
-			{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
-			{ bg: 'rgba(255, 159, 64, 0.6)', border: 'rgba(255, 159, 64, 1)' },
-			{ bg: 'rgba(255, 205, 86, 0.6)', border: 'rgba(255, 205, 86, 1)' },
-			{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
-			{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' }
-		];
+    const modelColors = [
+      { bg: "rgba(54, 162, 235, 0.6)", border: "rgba(54, 162, 235, 1)" },
+      { bg: "rgba(255, 99, 132, 0.6)", border: "rgba(255, 99, 132, 1)" },
+      { bg: "rgba(75, 192, 192, 0.6)", border: "rgba(75, 192, 192, 1)" },
+      { bg: "rgba(153, 102, 255, 0.6)", border: "rgba(153, 102, 255, 1)" },
+      { bg: "rgba(255, 159, 64, 0.6)", border: "rgba(255, 159, 64, 1)" },
+      { bg: "rgba(255, 205, 86, 0.6)", border: "rgba(255, 205, 86, 1)" },
+      { bg: "rgba(201, 203, 207, 0.6)", border: "rgba(201, 203, 207, 1)" },
+      { bg: "rgba(100, 181, 246, 0.6)", border: "rgba(100, 181, 246, 1)" },
+    ];
 
-		const modelDatasets = Array.from(allModels).map((model, idx) => {
-			const color = modelColors[idx % modelColors.length];
-			return {
-				label: getModelDisplayName(model),
-				data: dailyStats.map(d => {
-					const usage = d.modelUsage[model];
-					return usage ? usage.inputTokens + usage.outputTokens : 0;
-				}),
-				backgroundColor: color.bg,
-				borderColor: color.border,
-				borderWidth: 1
-			};
-		});
+    const modelDatasets = Array.from(allModels).map((model, idx) => {
+      const color = modelColors[idx % modelColors.length];
+      return {
+        label: getModelDisplayName(model),
+        data: dailyStats.map((d) => {
+          const usage = d.modelUsage[model];
+          return usage ? usage.inputTokens + usage.outputTokens : 0;
+        }),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
 
-		// Aggregate editor usage across all days
-		const allEditors = new Set<string>();
-		dailyStats.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
+    // Aggregate editor usage across all days
+    const allEditors = new Set<string>();
+    dailyStats.forEach((d) =>
+      Object.keys(d.editorUsage).forEach((e) => allEditors.add(e)),
+    );
 
-		const editorDatasets = Array.from(allEditors).map((editor, idx) => {
-			const color = modelColors[idx % modelColors.length];
-			return {
-				label: editor,
-				data: dailyStats.map(d => d.editorUsage[editor]?.tokens || 0),
-				backgroundColor: color.bg,
-				borderColor: color.border,
-				borderWidth: 1
-			};
-		});
+    const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+      const color = modelColors[idx % modelColors.length];
+      return {
+        label: editor,
+        data: dailyStats.map((d) => d.editorUsage[editor]?.tokens || 0),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
 
-		// Aggregate repository usage across all days
-		const allRepositories = new Set<string>();
-		dailyStats.forEach(d => Object.keys(d.repositoryUsage).forEach(r => allRepositories.add(r)));
+    // Aggregate repository usage across all days
+    const allRepositories = new Set<string>();
+    dailyStats.forEach((d) =>
+      Object.keys(d.repositoryUsage).forEach((r) => allRepositories.add(r)),
+    );
 
-		const repositoryDatasets = Array.from(allRepositories).map((repo, idx) => {
-			const color = modelColors[idx % modelColors.length];
-			// Shorten repository URL for display (e.g., "owner/repo")
-			const label = this.getRepoDisplayName(repo);
-			return {
-				label,
-				fullRepo: repo,
-				data: dailyStats.map(d => d.repositoryUsage[repo]?.tokens || 0),
-				backgroundColor: color.bg,
-				borderColor: color.border,
-				borderWidth: 1
-			};
-		});
+    const repositoryDatasets = Array.from(allRepositories).map((repo, idx) => {
+      const color = modelColors[idx % modelColors.length];
+      // Shorten repository URL for display (e.g., "owner/repo")
+      const label = this.getRepoDisplayName(repo);
+      return {
+        label,
+        fullRepo: repo,
+        data: dailyStats.map((d) => d.repositoryUsage[repo]?.tokens || 0),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
 
-		// Calculate repository totals for summary
-		const repositoryTotalsMap: Record<string, number> = {};
-		dailyStats.forEach(d => {
-			Object.entries(d.repositoryUsage).forEach(([repo, usage]) => {
-				const displayName = this.getRepoDisplayName(repo);
-				repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
-			});
-		});
+    // Calculate repository totals for summary
+    const repositoryTotalsMap: Record<string, number> = {};
+    dailyStats.forEach((d) => {
+      Object.entries(d.repositoryUsage).forEach(([repo, usage]) => {
+        const displayName = this.getRepoDisplayName(repo);
+        repositoryTotalsMap[displayName] =
+          (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+      });
+    });
 
-		// Calculate editor totals for summary cards
-		const editorTotalsMap: Record<string, number> = {};
-		dailyStats.forEach(d => {
-			Object.entries(d.editorUsage).forEach(([editor, usage]) => {
-				editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
-			});
-		});
+    // Calculate editor totals for summary cards
+    const editorTotalsMap: Record<string, number> = {};
+    dailyStats.forEach((d) => {
+      Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+        editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
+      });
+    });
 
-		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
-		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+    const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+    const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
 
-		const chartData = {
-			labels,
-			tokensData,
-			sessionsData,
-			modelDatasets,
-			editorDatasets,
-			editorTotalsMap,
-			repositoryDatasets,
-			repositoryTotalsMap,
-			dailyCount: dailyStats.length,
-			totalTokens,
-			avgTokensPerDay: dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
-			totalSessions,
-			lastUpdated: new Date().toISOString(),
-			backendConfigured: this.isBackendConfigured()
-		};
+    const chartData = {
+      labels,
+      tokensData,
+      sessionsData,
+      modelDatasets,
+      editorDatasets,
+      editorTotalsMap,
+      repositoryDatasets,
+      repositoryTotalsMap,
+      dailyCount: dailyStats.length,
+      totalTokens,
+      avgTokensPerDay:
+        dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
+      totalSessions,
+      lastUpdated: new Date().toISOString(),
+      backendConfigured: this.isBackendConfigured(),
+    };
 
-		const initialData = JSON.stringify(chartData).replace(/</g, '\\u003c');
+    const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
 
-		return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8" />
@@ -10255,45 +10297,54 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
-	}
+  }
 
-	private getUsageAnalysisHtml(webview: vscode.Webview, stats: UsageAnalysisStats): string {
-		const nonce = this.getNonce();
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'usage.js'));
+  private getUsageAnalysisHtml(
+    webview: vscode.Webview,
+    stats: UsageAnalysisStats,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "usage.js"),
+    );
 
-		const csp = [
-			`default-src 'none'`,
-			`img-src ${webview.cspSource} https: data:`,
-			`style-src 'unsafe-inline' ${webview.cspSource}`,
-			`font-src ${webview.cspSource} https: data:`,
-			`script-src 'nonce-${nonce}'`
-		].join('; ');
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
 
-		// Detect user's locale for number formatting
-		const localeFromEnv = process.env.LC_ALL || process.env.LC_NUMERIC || process.env.LANG;
-		const vscodeLanguage = vscode.env.language; // e.g., 'en', 'nl', 'de'
-		const intlLocale = Intl.DateTimeFormat().resolvedOptions().locale;
-		
-		this.log(`[Locale Detection] VS Code language: ${vscodeLanguage}`);
-		this.log(`[Locale Detection] Environment locale: ${localeFromEnv || 'not set'}`);
-		this.log(`[Locale Detection] Intl default: ${intlLocale}`);
-		
-		const detectedLocale = stats.locale || localeFromEnv || intlLocale;
-		this.log(`[Usage Analysis] Extension detected locale: ${detectedLocale}`);
-		this.log(`[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`);
-		
-		const initialData = JSON.stringify({
-			today: stats.today,
-			last30Days: stats.last30Days,
-			month: stats.month,
-			locale: detectedLocale,
-			customizationMatrix: stats.customizationMatrix || null,
-			missedPotential: stats.missedPotential || [],
-			lastUpdated: stats.lastUpdated.toISOString(),
-			backendConfigured: this.isBackendConfigured()
-		}).replace(/</g, '\\u003c');
+    // Detect user's locale for number formatting
+    const localeFromEnv =
+      process.env.LC_ALL || process.env.LC_NUMERIC || process.env.LANG;
+    const vscodeLanguage = vscode.env.language; // e.g., 'en', 'nl', 'de'
+    const intlLocale = Intl.DateTimeFormat().resolvedOptions().locale;
 
-		return `<!DOCTYPE html>
+    this.log(`[Locale Detection] VS Code language: ${vscodeLanguage}`);
+    this.log(
+      `[Locale Detection] Environment locale: ${localeFromEnv || "not set"}`,
+    );
+    this.log(`[Locale Detection] Intl default: ${intlLocale}`);
+
+    const detectedLocale = stats.locale || localeFromEnv || intlLocale;
+    this.log(`[Usage Analysis] Extension detected locale: ${detectedLocale}`);
+    this.log(
+      `[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`,
+    );
+
+    const initialData = JSON.stringify({
+      today: stats.today,
+      last30Days: stats.last30Days,
+      month: stats.month,
+      locale: detectedLocale,
+      customizationMatrix: stats.customizationMatrix || null,
+      lastUpdated: stats.lastUpdated.toISOString(),
+      backendConfigured: this.isBackendConfigured(),
+    }).replace(/</g, "\\u003c");
+
+    return `<!DOCTYPE html>
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8" />
@@ -10307,167 +10358,225 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
-	}
+  }
 
-	public dispose(): void {
-		if (this.updateInterval) {
-			clearInterval(this.updateInterval);
-		}
-		if (this.initialDelayTimeout) {
-			clearTimeout(this.initialDelayTimeout);
-			this.log('Cleared initial delay timeout during disposal');
-		}
-		if (this.detailsPanel) {
-			this.detailsPanel.dispose();
-		}
-		if (this.chartPanel) {
-			this.chartPanel.dispose();
-		}
-		if (this.analysisPanel) {
-			this.analysisPanel.dispose();
-		}
-		if (this.maturityPanel) {
-			this.maturityPanel.dispose();
-		}
-		// Save cache to storage before disposing (fire-and-forget async operation)
-		// Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
-		// We can't await here since dispose() is synchronous
-		this.saveCacheToStorage().catch(err => {
-			// Output channel will be disposed, so log to console as fallback
-			console.error('Error saving cache during disposal:', err);
-		});
-		if (this.logViewerPanel) {
-			this.logViewerPanel.dispose();
-		}
-		if (this.diagnosticsPanel) {
-			this.diagnosticsPanel.dispose();
-		}
-		this.statusBarItem.dispose();
-		this.outputChannel.dispose();
-	}
+  public dispose(): void {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+    }
+    if (this.initialDelayTimeout) {
+      clearTimeout(this.initialDelayTimeout);
+      this.log("Cleared initial delay timeout during disposal");
+    }
+    if (this.detailsPanel) {
+      this.detailsPanel.dispose();
+    }
+    if (this.chartPanel) {
+      this.chartPanel.dispose();
+    }
+    if (this.analysisPanel) {
+      this.analysisPanel.dispose();
+    }
+    if (this.maturityPanel) {
+      this.maturityPanel.dispose();
+    }
+    // Save cache to storage before disposing (fire-and-forget async operation)
+    // Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
+    // We can't await here since dispose() is synchronous
+    this.saveCacheToStorage().catch((err) => {
+      // Output channel will be disposed, so log to console as fallback
+      console.error("Error saving cache during disposal:", err);
+    });
+    if (this.logViewerPanel) {
+      this.logViewerPanel.dispose();
+    }
+    if (this.diagnosticsPanel) {
+      this.diagnosticsPanel.dispose();
+    }
+    this.statusBarItem.dispose();
+    this.outputChannel.dispose();
+  }
 }
 
 export function activate(context: vscode.ExtensionContext) {
-	// Create the token tracker
-	const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+  // Create the token tracker
+  const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
 
-	// Wire up backend facade and commands so the diagnostics webview can launch the
-	// configuration wizard. Uses tokenTracker logging and helpers via casting to any.
-	try {
-		const backendFacade = new BackendFacade({
-			context,
-			log: (m: string) => (tokenTracker as any).log(m),
-			warn: (m: string) => (tokenTracker as any).warn(m),
-			updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
-			calculateEstimatedCost: (modelUsage: any) => {
-				let total = 0;
-				const pricing = (modelPricingData as any).pricing || {};
-				for (const [model, usage] of Object.entries(modelUsage || {})) {
-					const p = pricing[model] || pricing['gpt-4o-mini'];
-					if (!p) { continue; }
-					const usageData = usage as { inputTokens?: number; outputTokens?: number };
-					total += ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
-					total += ((usageData.outputTokens || 0) / 1_000_000) * p.outputCostPerMillion;
-				}
-				return total;
-			},
-			co2Per1kTokens: 0.2,
-			waterUsagePer1kTokens: 0.3,
-			co2AbsorptionPerTreePerYear: 21000,
-			getCopilotSessionFiles: () => (tokenTracker as any).getCopilotSessionFiles(),
-			estimateTokensFromText: (text: string, model?: string) => (tokenTracker as any).estimateTokensFromText(text, model),
-			getModelFromRequest: (req: any) => (tokenTracker as any).getModelFromRequest(req),
-			getSessionFileDataCached: (p: string, m: number, s: number) => (tokenTracker as any).getSessionFileDataCached(p, m, s),
-			statSessionFile: (sessionFile: string) => (tokenTracker as any).statSessionFile(sessionFile),
-			isOpenCodeSession: (sessionFile: string) => (tokenTracker as any).isOpenCodeSessionFile(sessionFile),
-			getOpenCodeSessionData: (sessionFile: string) => (tokenTracker as any).getOpenCodeSessionData(sessionFile)
-		});
+  // Wire up backend facade and commands so the diagnostics webview can launch the
+  // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
+  try {
+    const backendFacade = new BackendFacade({
+      context,
+      log: (m: string) => (tokenTracker as any).log(m),
+      warn: (m: string) => (tokenTracker as any).warn(m),
+      updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
+      calculateEstimatedCost: (modelUsage: any) => {
+        let total = 0;
+        const pricing = (modelPricingData as any).pricing || {};
+        for (const [model, usage] of Object.entries(modelUsage || {})) {
+          const p = pricing[model] || pricing["gpt-4o-mini"];
+          if (!p) {
+            continue;
+          }
+          const usageData = usage as {
+            inputTokens?: number;
+            outputTokens?: number;
+          };
+          total +=
+            ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
+          total +=
+            ((usageData.outputTokens || 0) / 1_000_000) *
+            p.outputCostPerMillion;
+        }
+        return total;
+      },
+      co2Per1kTokens: 0.2,
+      waterUsagePer1kTokens: 0.3,
+      co2AbsorptionPerTreePerYear: 21000,
+      getCopilotSessionFiles: () =>
+        (tokenTracker as any).getCopilotSessionFiles(),
+      estimateTokensFromText: (text: string, model?: string) =>
+        (tokenTracker as any).estimateTokensFromText(text, model),
+      getModelFromRequest: (req: any) =>
+        (tokenTracker as any).getModelFromRequest(req),
+      getSessionFileDataCached: (p: string, m: number, s: number) =>
+        (tokenTracker as any).getSessionFileDataCached(p, m, s),
+      statSessionFile: (sessionFile: string) =>
+        (tokenTracker as any).statSessionFile(sessionFile),
+      isOpenCodeSession: (sessionFile: string) =>
+        (tokenTracker as any).isOpenCodeSessionFile(sessionFile),
+      getOpenCodeSessionData: (sessionFile: string) =>
+        (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+    });
 
-		const backendHandler = new BackendCommandHandler({
-			facade: backendFacade as any,
-			integration: undefined,
-			calculateEstimatedCost: (mu: any) => 0,
-			warn: (m: string) => (tokenTracker as any).warn(m),
-			log: (m: string) => (tokenTracker as any).log(m)
-		});
+    const backendHandler = new BackendCommandHandler({
+      facade: backendFacade as any,
+      integration: undefined,
+      calculateEstimatedCost: (mu: any) => 0,
+      warn: (m: string) => (tokenTracker as any).warn(m),
+      log: (m: string) => (tokenTracker as any).log(m),
+    });
 
-		// Store backend facade in the tracker instance for dashboard access
-		(tokenTracker as any).backend = backendFacade;
+    // Store backend facade in the tracker instance for dashboard access
+    (tokenTracker as any).backend = backendFacade;
 
-		// Backend sync timer will be started after initial token analysis completes
-		// (see startBackendSyncAfterInitialAnalysis method)
+    // Backend sync timer will be started after initial token analysis completes
+    // (see startBackendSyncAfterInitialAnalysis method)
 
-		const configureBackendCommand = vscode.commands.registerCommand('copilot-token-tracker.configureBackend', async () => {
-			await backendHandler.handleConfigureBackend();
-		});
+    const configureBackendCommand = vscode.commands.registerCommand(
+      "copilot-token-tracker.configureBackend",
+      async () => {
+        await backendHandler.handleConfigureBackend();
+      },
+    );
 
-		context.subscriptions.push(configureBackendCommand);
-	} catch (err) {
-		// If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
-		(tokenTracker as any).warn('Failed to wire backend commands: ' + String(err));
-	}
+    context.subscriptions.push(configureBackendCommand);
+  } catch (err) {
+    // If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
+    (tokenTracker as any).warn(
+      "Failed to wire backend commands: " + String(err),
+    );
+  }
 
-	// Register the refresh command
-	const refreshCommand = vscode.commands.registerCommand('copilot-token-tracker.refresh', async () => {
-		tokenTracker.log('Refresh command called');
-		await tokenTracker.updateTokenStats();
-		vscode.window.showInformationMessage('Copilot token usage refreshed');
-	});
+  // Register the refresh command
+  const refreshCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.refresh",
+    async () => {
+      tokenTracker.log("Refresh command called");
+      await tokenTracker.updateTokenStats();
+      vscode.window.showInformationMessage("Copilot token usage refreshed");
+    },
+  );
 
-	// Register the show details command
-	const showDetailsCommand = vscode.commands.registerCommand('copilot-token-tracker.showDetails', async () => {
-		tokenTracker.log('Show details command called');
-		await tokenTracker.showDetails();
-	});
+  // Register the show details command
+  const showDetailsCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showDetails",
+    async () => {
+      tokenTracker.log("Show details command called");
+      await tokenTracker.showDetails();
+    },
+  );
 
-	// Register the show chart command
-	const showChartCommand = vscode.commands.registerCommand('copilot-token-tracker.showChart', async () => {
-		tokenTracker.log('Show chart command called');
-		await tokenTracker.showChart();
-	});
+  // Register the show chart command
+  const showChartCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showChart",
+    async () => {
+      tokenTracker.log("Show chart command called");
+      await tokenTracker.showChart();
+    },
+  );
 
-	// Register the show usage analysis command
-	const showUsageAnalysisCommand = vscode.commands.registerCommand('copilot-token-tracker.showUsageAnalysis', async () => {
-		tokenTracker.log('Show usage analysis command called');
-		await tokenTracker.showUsageAnalysis();
-	});
+  // Register the show usage analysis command
+  const showUsageAnalysisCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showUsageAnalysis",
+    async () => {
+      tokenTracker.log("Show usage analysis command called");
+      await tokenTracker.showUsageAnalysis();
+    },
+  );
 
-	// Register the show maturity / fluency score command
-	const showMaturityCommand = vscode.commands.registerCommand('copilot-token-tracker.showMaturity', async () => {
-		tokenTracker.log('Show maturity command called');
-		await tokenTracker.showMaturity();
-	});
+  // Register the show maturity / fluency score command
+  const showMaturityCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showMaturity",
+    async () => {
+      tokenTracker.log("Show maturity command called");
+      await tokenTracker.showMaturity();
+    },
+  );
 
-	// Register the show dashboard command
-	const showDashboardCommand = vscode.commands.registerCommand('copilot-token-tracker.showDashboard', async () => {
-		tokenTracker.log('Show dashboard command called');
-		await tokenTracker.showDashboard();
-	});
-  
-	// Register the show fluency level viewer command (debug-only)
-	const showFluencyLevelViewerCommand = vscode.commands.registerCommand('copilot-token-tracker.showFluencyLevelViewer', async () => {
-		tokenTracker.log('Show fluency level viewer command called');
-		await tokenTracker.showFluencyLevelViewer();
-	});
+  // Register the show dashboard command
+  const showDashboardCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showDashboard",
+    async () => {
+      tokenTracker.log("Show dashboard command called");
+      await tokenTracker.showDashboard();
+    },
+  );
 
-	// Register the generate diagnostic report command
-	const generateDiagnosticReportCommand = vscode.commands.registerCommand('copilot-token-tracker.generateDiagnosticReport', async () => {
-		tokenTracker.log('Generate diagnostic report command called');
-		await tokenTracker.showDiagnosticReport();
-	});
+  // Register the show fluency level viewer command (debug-only)
+  const showFluencyLevelViewerCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showFluencyLevelViewer",
+    async () => {
+      tokenTracker.log("Show fluency level viewer command called");
+      await tokenTracker.showFluencyLevelViewer();
+    },
+  );
 
-	// Register the clear cache command
-	const clearCacheCommand = vscode.commands.registerCommand('copilot-token-tracker.clearCache', async () => {
-		tokenTracker.log('Clear cache command called');
-		await tokenTracker.clearCache();
-	});
+  // Register the generate diagnostic report command
+  const generateDiagnosticReportCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.generateDiagnosticReport",
+    async () => {
+      tokenTracker.log("Generate diagnostic report command called");
+      await tokenTracker.showDiagnosticReport();
+    },
+  );
 
-	// Add to subscriptions for proper cleanup
-	context.subscriptions.push(refreshCommand, showDetailsCommand, showChartCommand, showUsageAnalysisCommand, showMaturityCommand, showFluencyLevelViewerCommand, showDashboardCommand, generateDiagnosticReportCommand, clearCacheCommand, tokenTracker);
+  // Register the clear cache command
+  const clearCacheCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.clearCache",
+    async () => {
+      tokenTracker.log("Clear cache command called");
+      await tokenTracker.clearCache();
+    },
+  );
 
-	tokenTracker.log('Extension activation complete');
+  // Add to subscriptions for proper cleanup
+  context.subscriptions.push(
+    refreshCommand,
+    showDetailsCommand,
+    showChartCommand,
+    showUsageAnalysisCommand,
+    showMaturityCommand,
+    showFluencyLevelViewerCommand,
+    showDashboardCommand,
+    generateDiagnosticReportCommand,
+    clearCacheCommand,
+    tokenTracker,
+  );
+
+  tokenTracker.log("Extension activation complete");
 }
 
 export function deactivate() {
-	// Extension cleanup is handled in the CopilotTokenTracker class
+  // Extension cleanup is handled in the CopilotTokenTracker class
 }
