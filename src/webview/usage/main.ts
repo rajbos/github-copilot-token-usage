@@ -70,6 +70,7 @@ interface WorkspaceCustomizationRow {
 	workspacePath: string;
 	workspaceName: string;
 	sessionCount: number;
+	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
 }
 
@@ -406,13 +407,35 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			<!-- Repository Setup Section -->
 			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
-					🏗️ Repository Setup
+					🏗️ Repository Hygiene Analysis
 				</div>
 				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
 					Analyze repository hygiene and structure to identify missing configuration files and best practices.
 				</div>
-				<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
-				<div id="repo-analysis-results" style="margin-top: 12px;"></div>
+				${matrix && matrix.workspaces && matrix.workspaces.length > 0 ? `
+					<div style="margin-bottom: 12px;">
+						<vscode-button id="btn-analyse-all" style="margin-bottom: 8px;">Analyze All Repositories (${matrix.workspaces.length})</vscode-button>
+					</div>
+					<div style="max-height: 300px; overflow-y: auto; border: 1px solid #2a2a30; border-radius: 4px;">
+						${matrix.workspaces.map((ws, idx) => `
+							<div class="repo-item" data-workspace-path="${escapeHtml(ws.workspacePath)}" style="padding: 8px 12px; border-bottom: ${idx < matrix.workspaces.length - 1 ? '1px solid #2a2a30' : 'none'}; display: flex; align-items: center; justify-content: space-between;">
+								<div style="flex: 1; min-width: 0;">
+									<div style="font-size: 12px; font-weight: 600; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
+										${escapeHtml(ws.workspaceName)}
+									</div>
+									<div style="font-size: 10px; color: #999; margin-top: 2px;">
+										${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'}
+									</div>
+								</div>
+								<vscode-button class="btn-analyse-single" data-workspace-path="${escapeHtml(ws.workspacePath)}" style="min-width: 80px;">Analyze</vscode-button>
+							</div>
+							<div class="repo-analysis-result" data-workspace-path="${escapeHtml(ws.workspacePath)}" style="display: none; padding: 12px; background: #0d0d0f; border-bottom: ${idx < matrix.workspaces.length - 1 ? '1px solid #2a2a30' : 'none'};"></div>
+						`).join('')}
+					</div>
+				` : `
+					<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
+					<div id="repo-analysis-results" style="margin-top: 12px;"></div>
+				`}
 			</div>
 
 			<!-- Tool Calls Section -->
@@ -752,6 +775,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
 	});
+	
+	// Repository analysis buttons
 	document.getElementById('btn-analyse-repo')?.addEventListener('click', () => {
 		const btn = document.getElementById('btn-analyse-repo') as any;
 		if (btn) {
@@ -759,6 +784,38 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			btn.textContent = 'Analyzing...';
 		}
 		vscode.postMessage({ command: 'analyseRepository' });
+	});
+	
+	document.getElementById('btn-analyse-all')?.addEventListener('click', () => {
+		const btn = document.getElementById('btn-analyse-all') as any;
+		if (btn) {
+			btn.disabled = true;
+			btn.textContent = 'Analyzing All...';
+		}
+		// Disable all individual buttons
+		Array.from(document.getElementsByClassName('btn-analyse-single')).forEach((el) => {
+			(el as any).disabled = true;
+		});
+		vscode.postMessage({ command: 'analyseAllRepositories' });
+	});
+	
+	// Wire up individual repository analyze buttons
+	Array.from(document.getElementsByClassName('btn-analyse-single')).forEach((el) => {
+		el.addEventListener('click', (e) => {
+			const target = e.currentTarget as HTMLElement;
+			const workspacePath = target.getAttribute('data-workspace-path');
+			if (!workspacePath) {
+				return;
+			}
+			
+			(target as any).disabled = true;
+			(target as any).textContent = 'Analyzing...';
+			
+			vscode.postMessage({ 
+				command: 'analyseRepository', 
+				workspacePath 
+			});
+		});
 	});
 
 	// Copy path buttons in customization list
@@ -783,22 +840,46 @@ window.addEventListener('message', (event) => {
 	const message = event.data;
 	switch (message.command) {
 		case 'repoAnalysisResults':
-			displayRepoAnalysisResults(message.data);
+			displayRepoAnalysisResults(message.data, message.workspacePath);
 			break;
 		case 'repoAnalysisError':
-			displayRepoAnalysisError(message.error);
+			displayRepoAnalysisError(message.error, message.workspacePath);
+			break;
+		case 'repoAnalysisBatchComplete':
+			handleBatchAnalysisComplete();
 			break;
 	}
 });
 
-function displayRepoAnalysisResults(data: any): void {
-	const btn = document.getElementById('btn-analyse-repo') as any;
-	if (btn) {
-		btn.disabled = false;
-		btn.textContent = 'Analyse Repository';
+function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
+	// Reset button state
+	if (workspacePath) {
+		// Single workspace analysis - update specific button
+		const btn = document.querySelector(`.btn-analyse-single[data-workspace-path="${CSS.escape(workspacePath)}"]`) as any;
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = 'Analyze';
+		}
+	} else {
+		// Legacy single repository mode
+		const btn = document.getElementById('btn-analyse-repo') as any;
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = 'Analyse Repository';
+		}
 	}
 
-	const resultsDiv = document.getElementById('repo-analysis-results');
+	// Determine where to display results
+	let resultsDiv: HTMLElement | null;
+	if (workspacePath) {
+		resultsDiv = document.querySelector(`.repo-analysis-result[data-workspace-path="${CSS.escape(workspacePath)}"]`);
+		if (resultsDiv) {
+			resultsDiv.style.display = 'block';
+		}
+	} else {
+		resultsDiv = document.getElementById('repo-analysis-results');
+	}
+	
 	if (!resultsDiv) {
 		return;
 	}
@@ -914,14 +995,33 @@ function displayRepoAnalysisResults(data: any): void {
 	`;
 }
 
-function displayRepoAnalysisError(error: string): void {
-	const btn = document.getElementById('btn-analyse-repo') as any;
-	if (btn) {
-		btn.disabled = false;
-		btn.textContent = 'Analyse Repository';
+function displayRepoAnalysisError(error: string, workspacePath?: string): void {
+	// Reset button state
+	if (workspacePath) {
+		const btn = document.querySelector(`.btn-analyse-single[data-workspace-path="${CSS.escape(workspacePath)}"]`) as any;
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = 'Analyze';
+		}
+	} else {
+		const btn = document.getElementById('btn-analyse-repo') as any;
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = 'Analyse Repository';
+		}
 	}
 
-	const resultsDiv = document.getElementById('repo-analysis-results');
+	// Determine where to display error
+	let resultsDiv: HTMLElement | null;
+	if (workspacePath) {
+		resultsDiv = document.querySelector(`.repo-analysis-result[data-workspace-path="${CSS.escape(workspacePath)}"]`);
+		if (resultsDiv) {
+			resultsDiv.style.display = 'block';
+		}
+	} else {
+		resultsDiv = document.getElementById('repo-analysis-results');
+	}
+	
 	if (!resultsDiv) {
 		return;
 	}
@@ -932,6 +1032,23 @@ function displayRepoAnalysisError(error: string): void {
 			<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(error)}</div>
 		</div>
 	`;
+}
+
+function handleBatchAnalysisComplete(): void {
+	// Re-enable the "Analyze All" button
+	const btn = document.getElementById('btn-analyse-all') as any;
+	if (btn) {
+		btn.disabled = false;
+		const matrix = (initialData as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined;
+		const count = matrix?.workspaces?.length || 0;
+		btn.textContent = `Analyze All Repositories (${count})`;
+	}
+	
+	// Re-enable all individual buttons
+	Array.from(document.getElementsByClassName('btn-analyse-single')).forEach((el) => {
+		(el as any).disabled = false;
+		(el as any).textContent = 'Analyze';
+	});
 }
 
 async function bootstrap(): Promise<void> {
