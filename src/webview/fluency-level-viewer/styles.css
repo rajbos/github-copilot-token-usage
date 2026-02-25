@@ -229,6 +229,17 @@
 	margin-top: 2px;
 }
 
+.tip-item-viewer a {
+	color: #60a5fa;
+	text-decoration: none;
+	border-bottom: 1px solid transparent;
+	transition: border-color 0.2s ease;
+}
+
+.tip-item-viewer a:hover {
+	border-bottom-color: #60a5fa;
+}
+
 .footer {
 	margin-top: 24px;
 	padding-top: 16px;
