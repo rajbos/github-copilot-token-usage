@@ -8357,6 +8357,19 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			models: Set<string>; // Track unique models used
 			workspaces: Set<string>; // Track unique workspaces
 			days: Set<string>; // Track unique days active
+			// Fluency metrics (aggregated from entities)
+			askModeCount: number;
+			editModeCount: number;
+			agentModeCount: number;
+			planModeCount: number;
+			customAgentModeCount: number;
+			toolCalls: { total: number; byTool: { [key: string]: number } };
+			contextRefs: { [key: string]: number };
+			mcpTools: { total: number };
+			multiTurnSessions: number;
+			avgTurnsPerSession: number;
+			multiFileEdits: number;
+			sessionCount: number;
 		}>();
 		
 		// Track first and last data points for reference
@@ -8411,7 +8424,20 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 						sessions: new Set<string>(),
 						models: new Set<string>(),
 						workspaces: new Set<string>(),
-						days: new Set<string>()
+						days: new Set<string>(),
+						// Initialize fluency metrics
+						askModeCount: 0,
+						editModeCount: 0,
+						agentModeCount: 0,
+						planModeCount: 0,
+						customAgentModeCount: 0,
+						toolCalls: { total: 0, byTool: {} },
+						contextRefs: {},
+						mcpTools: { total: 0 },
+						multiTurnSessions: 0,
+						avgTurnsPerSession: 0,
+						multiFileEdits: 0,
+						sessionCount: 0
 					});
 				}
 				const userData = userMap.get(userKey)!;
@@ -8424,6 +8450,58 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				if (model) { userData.models.add(model); }
 				if (workspaceId) { userData.workspaces.add(workspaceId); }
 				if (dayKey) { userData.days.add(dayKey); }
+				
+				// Aggregate fluency metrics from entity (if schema version 4+)
+				if (entity.schemaVersion && entity.schemaVersion >= 4) {
+					// Mode counts
+					userData.askModeCount += Number(entity.askModeCount) || 0;
+					userData.editModeCount += Number(entity.editModeCount) || 0;
+					userData.agentModeCount += Number(entity.agentModeCount) || 0;
+					userData.planModeCount += Number(entity.planModeCount) || 0;
+					userData.customAgentModeCount += Number(entity.customAgentModeCount) || 0;
+					
+					// Session patterns
+					userData.multiTurnSessions += Number(entity.multiTurnSessions) || 0;
+					userData.multiFileEdits += Number(entity.multiFileEdits) || 0;
+					userData.sessionCount += Number(entity.sessionCount) || 0;
+					
+					// Parse and merge JSON fields
+					if (entity.toolCallsJson) {
+						try {
+							const toolCalls = JSON.parse(entity.toolCallsJson);
+							userData.toolCalls.total += toolCalls.total || 0;
+							if (toolCalls.byTool) {
+								for (const [tool, count] of Object.entries(toolCalls.byTool)) {
+									userData.toolCalls.byTool[tool] = (userData.toolCalls.byTool[tool] || 0) + (count as number);
+								}
+							}
+						} catch {
+							// Skip malformed JSON
+						}
+					}
+					
+					if (entity.contextRefsJson) {
+						try {
+							const contextRefs = JSON.parse(entity.contextRefsJson);
+							for (const [ref, count] of Object.entries(contextRefs)) {
+								if (typeof count === 'number') {
+									userData.contextRefs[ref] = (userData.contextRefs[ref] || 0) + count;
+								}
+							}
+						} catch {
+							// Skip malformed JSON
+						}
+					}
+					
+					if (entity.mcpToolsJson) {
+						try {
+							const mcpTools = JSON.parse(entity.mcpToolsJson);
+							userData.mcpTools.total += mcpTools.total || 0;
+						} catch {
+							// Skip malformed JSON
+						}
+					}
+				}
 			}
 		}
 
@@ -8444,6 +8522,10 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				const sessionCount = data.sessions.size;
 				const avgTurnsPerSession = sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
 				const avgTokensPerTurn = data.interactions > 0 ? Math.round(data.tokens / data.interactions) : 0;
+				
+				// Calculate fluency score from aggregated metrics
+				const fluencyScore = this.calculateFluencyScoreFromMetrics(data);
+				
 				return {
 					userId,
 					datasetId,
@@ -8456,6 +8538,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 					uniqueWorkspaces: data.workspaces.size,
 					daysActive: data.days.size,
 					avgTokensPerTurn,
+					fluencyStage: fluencyScore.overallStage,
+					fluencyLabel: fluencyScore.overallLabel,
 					rank: 0
 				};
 			})
@@ -8497,6 +8581,90 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				lastDate
 			},
 			lastUpdated: new Date().toISOString()
+		};
+	}
+
+	/**
+	 * Calculate fluency score from aggregated metrics (simplified version for dashboard).
+	 * Uses the same scoring logic as calculateMaturityScores but works with pre-aggregated data.
+	 */
+	private calculateFluencyScoreFromMetrics(data: {
+		askModeCount: number;
+		editModeCount: number;
+		agentModeCount: number;
+		interactions: number;
+		toolCalls: { total: number; byTool: { [key: string]: number } };
+		contextRefs: { [key: string]: number };
+		mcpTools: { total: number };
+		multiTurnSessions: number;
+		sessionCount: number;
+		models: Set<string>;
+	}): { overallStage: number; overallLabel: string } {
+		const stageLabels: Record<number, string> = {
+			1: 'Skeptic',
+			2: 'Explorer',
+			3: 'Collaborator',
+			4: 'Strategist'
+		};
+
+		const stages: number[] = [];
+
+		// 1. Prompt Engineering - based on interactions and mode diversity
+		let peStage = 1;
+		const totalInteractions = data.askModeCount + data.editModeCount + data.agentModeCount;
+		if (totalInteractions >= 5) { peStage = 2; }
+		if (totalInteractions >= 30 && (data.toolCalls.total >= 2 || data.agentModeCount > 0)) { peStage = 3; }
+		if (totalInteractions >= 100 && data.agentModeCount > 0) { peStage = 4; }
+		stages.push(peStage);
+
+		// 2. Context Engineering - based on context references
+		let ceStage = 1;
+		const totalContextRefs = Object.values(data.contextRefs).reduce((sum, count) => sum + count, 0);
+		const refTypes = Object.keys(data.contextRefs).length;
+		if (totalContextRefs >= 1) { ceStage = 2; }
+		if (refTypes >= 3 && totalContextRefs >= 10) { ceStage = 3; }
+		if (refTypes >= 5 && totalContextRefs >= 30) { ceStage = 4; }
+		stages.push(ceStage);
+
+		// 3. Agentic - based on agent mode usage
+		let agStage = 1;
+		if (data.agentModeCount >= 1) { agStage = 2; }
+		if (data.agentModeCount >= 10) { agStage = 3; }
+		if (data.agentModeCount >= 50) { agStage = 4; }
+		stages.push(agStage);
+
+		// 4. Tool Usage - based on tool calls and MCP
+		let tuStage = 1;
+		const uniqueTools = Object.keys(data.toolCalls.byTool).length;
+		if (uniqueTools >= 1) { tuStage = 2; }
+		if (uniqueTools >= 2 || data.mcpTools.total > 0) { tuStage = 3; }
+		if (data.mcpTools.total >= 2) { tuStage = 4; }
+		stages.push(tuStage);
+
+		// 5. Customization - based on model diversity (simplified)
+		let cuStage = 1;
+		if (data.models.size >= 2) { cuStage = 2; }
+		if (data.models.size >= 3) { cuStage = 3; }
+		if (data.models.size >= 5) { cuStage = 4; }
+		stages.push(cuStage);
+
+		// 6. Workflow Integration - based on session count and patterns
+		let wiStage = 1;
+		if (data.sessionCount >= 3) { wiStage = 2; }
+		if (data.sessionCount >= 10 && data.multiTurnSessions > 0) { wiStage = 3; }
+		if (data.sessionCount >= 15 && data.multiTurnSessions >= 5) { wiStage = 4; }
+		stages.push(wiStage);
+
+		// Calculate overall stage as median of 6 categories
+		stages.sort((a, b) => a - b);
+		const mid = Math.floor(stages.length / 2);
+		const overallStage = stages.length % 2 === 0
+			? Math.round((stages[mid - 1] + stages[mid]) / 2)
+			: stages[mid];
+
+		return {
+			overallStage,
+			overallLabel: stageLabels[overallStage] || 'Unknown'
 		};
 	}
 

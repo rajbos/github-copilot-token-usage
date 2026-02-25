@@ -30,6 +30,8 @@ interface TeamMemberStats {
 	uniqueWorkspaces: number;
 	daysActive: number;
 	avgTokensPerTurn: number;
+	fluencyStage: number;
+	fluencyLabel: string;
 	rank: number;
 }
 
@@ -273,6 +275,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 		{ text: '#', class: 'rank-header' },
 		{ text: 'User', class: '' },
 		{ text: 'Dataset', class: '' },
+		{ text: 'Fluency', class: '' },
 		{ text: 'Tokens', class: 'number-header' },
 		{ text: 'Days', class: 'number-header' },
 		{ text: 'Sessions', class: 'number-header' },
@@ -307,6 +310,14 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 		const rankCell = el('td', 'rank-cell', `${member.rank}`);
 		const userCell = el('td', '', isCurrentUser ? `${displayUserId} (You)` : displayUserId);
 		const datasetCell = el('td', 'dataset-cell', displayDatasetId);
+		
+		// Fluency cell with stage indicator
+		const fluencyCell = el('td', 'fluency-cell');
+		const stageIcon = getFluencyStageIcon(member.fluencyStage);
+		const fluencyBadge = el('span', `fluency-badge stage-${member.fluencyStage}`);
+		fluencyBadge.textContent = `${stageIcon} ${member.fluencyLabel}`;
+		fluencyCell.append(fluencyBadge);
+		
 		const tokensCell = el('td', 'number-cell', formatNumber(member.totalTokens));
 		const daysCell = el('td', 'number-cell', formatNumber(member.daysActive));
 		const sessionsCell = el('td', 'number-cell', formatNumber(member.sessions));
@@ -316,13 +327,24 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 		const tokPerTurnCell = el('td', 'number-cell', formatNumber(member.avgTokensPerTurn));
 		const costCell = el('td', 'number-cell', formatCost(member.totalCost));
 		
-		row.append(rankCell, userCell, datasetCell, tokensCell, daysCell, sessionsCell, avgTurnsCell, modelsCell, projectsCell, tokPerTurnCell, costCell);
+		row.append(rankCell, userCell, datasetCell, fluencyCell, tokensCell, daysCell, sessionsCell, avgTurnsCell, modelsCell, projectsCell, tokPerTurnCell, costCell);
 		tbody.append(row);
 	}
 	
 	table.append(thead, tbody);
 	container.append(title, table);
 	return container;
+}
+
+function getFluencyStageIcon(stage: number): string {
+	// Return emoji icons for each stage
+	const icons: Record<number, string> = {
+		1: '🌱', // Skeptic
+		2: '🔍', // Explorer
+		3: '🤝', // Collaborator
+		4: '🎯'  // Strategist
+	};
+	return icons[stage] || '❓';
 }
 
 function wireButtons(): void {

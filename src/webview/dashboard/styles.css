@@ -225,3 +225,41 @@
 	color: var(--vscode-errorForeground);
 	font-size: 14px;
 }
+
+/* Fluency score badges */
+.fluency-cell {
+	text-align: center;
+}
+
+.fluency-badge {
+	display: inline-block;
+	padding: 4px 10px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.fluency-badge.stage-1 {
+	background-color: rgba(150, 150, 150, 0.2);
+	color: #999;
+	border: 1px solid rgba(150, 150, 150, 0.4);
+}
+
+.fluency-badge.stage-2 {
+	background-color: rgba(100, 150, 200, 0.2);
+	color: #7caed4;
+	border: 1px solid rgba(100, 150, 200, 0.4);
+}
+
+.fluency-badge.stage-3 {
+	background-color: rgba(100, 200, 150, 0.2);
+	color: #6bc997;
+	border: 1px solid rgba(100, 200, 150, 0.4);
+}
+
+.fluency-badge.stage-4 {
+	background-color: rgba(220, 170, 50, 0.2);
+	color: #daa520;
+	border: 1px solid rgba(220, 170, 50, 0.4);
+}
