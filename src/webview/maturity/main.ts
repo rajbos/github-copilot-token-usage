@@ -453,7 +453,9 @@ function renderLayout(data: MaturityData): void {
 			</div>
 
 			<div class="footer">
-				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
+				<span class="footer-info">
+					Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
+				</span>
 				${dismissedTips.length > 0 ? `
 					<button id="btn-reset-tips" class="reset-tips-btn" title="Show all dismissed improvement suggestions again">
 						🔄 Reset Dismissed Tips

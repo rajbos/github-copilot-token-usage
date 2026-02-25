@@ -380,14 +380,20 @@ body {
 	margin-top: 6px;
 	padding-top: 12px;
 	border-top: 1px solid #2a2a30;
-	text-align: left;
 	font-size: 11px;
 	color: #a0a0a0;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 16px;
+}
+
+.footer-info {
+	flex: 1;
 }
 
 .reset-tips-btn {
 	display: inline-block;
-	margin-left: 12px;
 	padding: 4px 10px;
 	background: linear-gradient(135deg, #1e3a5f 0%, #2a4a70 100%);
 	border: 1px solid #3b82f6;
