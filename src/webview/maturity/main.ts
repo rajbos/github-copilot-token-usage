@@ -100,7 +100,7 @@ const STAGE_DESCRIPTIONS: Record<number, string> = {
 // ── Radar chart SVG ────────────────────────────────────────────────────
 
 function renderRadarChart(categories: CategoryScore[]): string {
-	const cx = 275, cy = 275, maxR = 150;
+	const cx = 325, cy = 325, maxR = 150;
 	const n = categories.length;
 	const angleStep = (2 * Math.PI) / n;
 	// Start from top (- PI/2)
@@ -134,7 +134,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 	// Labels
 	const labels = categories.map((cat, i) => {
 		const angle = startAngle + i * angleStep;
-		const labelR = maxR + 28;
+		const labelR = maxR + 35;
 		const x = cx + labelR * Math.cos(angle);
 		const y = cy + labelR * Math.sin(angle);
 		// Adjust anchor based on position
@@ -161,7 +161,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 		return `<text x="${cx + 4}" y="${cy - r + 3}" font-size="9" fill="#555">${level}</text>`;
 	}).join('');
 
-	return `<svg viewBox="0 0 550 550" class="radar-svg" xmlns="http://www.w3.org/2000/svg">
+	return `<svg viewBox="0 0 650 650" class="radar-svg" xmlns="http://www.w3.org/2000/svg">
 		${rings}
 		${axes}
 		<polygon points="${dataPoints}" fill="rgba(59,130,246,0.15)" stroke="#3b82f6" stroke-width="2" />
@@ -188,6 +188,19 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
+}
+
+/**
+ * Convert markdown links to HTML links while escaping other HTML.
+ * Converts [text](url) to <a href="url" target="_blank" rel="noopener noreferrer">text</a>
+ */
+function markdownToHtml(text: string): string {
+	// First escape all HTML
+	let escaped = escapeHtml(text);
+	// Then convert markdown links to HTML links
+	// Pattern: [text](url) where text and url are already escaped
+	escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+	return escaped;
 }
 
 // ── Demo controls ──────────────────────────────────────────────────────
@@ -290,7 +303,7 @@ function renderLayout(data: MaturityData): void {
 				: '<li class="evidence-item"><span class="evidence-icon">-</span><span>No thresholds defined</span></li>';
 
 			const tipsHtml = stageInfo && stageInfo.tips.length > 0
-				? stageInfo.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
+				? stageInfo.tips.map(t => `<div class="tip-item">${markdownToHtml(t)}</div>`).join('')
 				: '<div class="tip-item" style="color:#666;">No tips for this stage</div>';
 
 			return `
@@ -326,14 +339,14 @@ function renderLayout(data: MaturityData): void {
 						const hasHeader = lines.length > 1 && lines[1].toLowerCase().includes('top repos');
 						if (hasHeader && lines.length > 2) {
 							const header = lines[1];
-							const listItems = lines.slice(2).map(item => `<li>${escapeHtml(item)}</li>`).join('');
-							return `<div class="tip-item">${escapeHtml(summary)}<div style="margin-top: 8px; font-weight: 600; font-size: 11px; color: #999;">${escapeHtml(header)}</div><ul style="margin: 6px 0 0 0; padding-left: 18px; list-style: disc;">${listItems}</ul></div>`;
+							const listItems = lines.slice(2).map(item => `<li>${markdownToHtml(item)}</li>`).join('');
+							return `<div class="tip-item">${markdownToHtml(summary)}<div style="margin-top: 8px; font-weight: 600; font-size: 11px; color: #999;">${markdownToHtml(header)}</div><ul style="margin: 6px 0 0 0; padding-left: 18px; list-style: disc;">${listItems}</ul></div>`;
 						} else {
 							// Just split lines without special list formatting
-							return `<div class="tip-item">${lines.map(line => escapeHtml(line)).join('<br>')}</div>`;
+							return `<div class="tip-item">${lines.map(line => markdownToHtml(line)).join('<br>')}</div>`;
 						}
 					} else {
-						return `<div class="tip-item">${escapeHtml(t)}</div>`;
+						return `<div class="tip-item">${markdownToHtml(t)}</div>`;
 					}
 				}).join('')
 			: '<div class="tip-item" style="color:#666;">No specific suggestions - you\'re doing great!</div>';
@@ -453,7 +466,14 @@ function renderLayout(data: MaturityData): void {
 			</div>
 
 			<div class="footer">
-				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
+				<span class="footer-info">
+					Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
+				</span>
+				${dismissedTips.length > 0 ? `
+					<button id="btn-reset-tips" class="reset-tips-btn" title="Show all dismissed improvement suggestions again">
+						🔄 Reset Dismissed Tips
+					</button>
+				` : ''}
 			</div>
 
 			<!-- Share to social media section -->
@@ -555,6 +575,11 @@ function renderLayout(data: MaturityData): void {
 				vscode.postMessage({ command: 'dismissTips', category });
 			}
 		});
+	});
+
+	// Wire up reset tips button
+	document.getElementById('btn-reset-tips')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'resetDismissedTips' });
 	});
 
 	// Wire up share buttons

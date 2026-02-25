@@ -50,7 +50,8 @@ For missing models in modelPricing.json:
 
 ## Metadata Updates
 
-- Update `lastUpdated` field in `src/modelPricing.json` to today's date (YYYY-MM-DD format)
+- **ONLY** update `lastUpdated` field in `src/modelPricing.json` to today's date (YYYY-MM-DD format) **if you added new models to the pricing file**
+- If no models were added, do NOT update the `lastUpdated` field
 - Do NOT modify the `sources` section unless you have specific pricing data
 
 ## Output Format

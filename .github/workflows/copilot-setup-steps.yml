@@ -133,7 +133,7 @@ jobs:
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
         run: |
           cd .github/skills/azure-storage-loader
-          npm install --production
+          npm ci --production
 
       - name: Download aggregated usage data from Azure Table Storage
         if: ${{ vars.COPILOT_STORAGE_ACCOUNT != '' }}
