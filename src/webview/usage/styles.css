@@ -249,6 +249,47 @@ body {
 	margin-bottom: 6px;
 }
 
+.repo-hygiene-list {
+	max-height: none;
+	overflow: visible;
+}
+
+.repo-hygiene-results {
+	margin-top: 4px;
+}
+
+.repo-analysis-card {
+	margin: 0;
+}
+
+.repo-hygiene-pane {
+	border: 1px solid #2a2a30;
+	border-radius: 6px;
+	margin-bottom: 12px;
+	background: #121216;
+}
+
+.repo-hygiene-pane-header {
+	padding: 8px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #f3f4f6;
+	border-bottom: 1px solid #2a2a30;
+	background: #17171c;
+}
+
+.repo-hygiene-pane-body {
+	display: block;
+}
+
+.repo-hygiene-pane-collapsed .repo-hygiene-pane-body {
+	display: none;
+}
+
+.btn-repo-action[disabled] {
+	opacity: 0.7;
+}
+
 .footer {
 	margin-top: 6px;
 	padding-top: 12px;

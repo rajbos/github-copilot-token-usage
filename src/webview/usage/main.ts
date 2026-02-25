@@ -85,8 +85,18 @@ declare global {
 	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null } }
 }
 
+interface RepoAnalysisRecord {
+	data?: any;
+	error?: string;
+}
+
 const vscode = acquireVsCodeApi();
 const initialData = window.__INITIAL_USAGE__;
+let hygieneMatrixState: WorkspaceCustomizationMatrix | null = null;
+const repoAnalysisState = new Map<string, RepoAnalysisRecord>();
+let selectedRepoPath: string | null = null;
+let isSwitchingRepository = false;
+let isBatchAnalysisInProgress = false;
 
 function escapeHtml(text: string): string {
 	return text
@@ -189,6 +199,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const matrix =
 		((stats as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null) ??
 		((window.__INITIAL_USAGE__ as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null);
+	hygieneMatrixState = matrix ?? null;
+	if (!hygieneMatrixState || hygieneMatrixState.workspaces.length === 0) {
+		selectedRepoPath = null;
+	}
 	let customizationHtml = '';
 	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
 		customizationHtml = `
@@ -405,7 +419,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			${customizationHtml}
 
 			<!-- Repository Setup Section -->
-			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+			<div class="repo-hygiene-section" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
 					🏗️ Repository Hygiene Analysis
 				</div>
@@ -416,25 +430,17 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<div style="margin-bottom: 12px;">
 						<vscode-button id="btn-analyse-all" style="margin-bottom: 8px;">Analyze All Repositories (${matrix.workspaces.length})</vscode-button>
 					</div>
-					<div style="max-height: 300px; overflow-y: auto; border: 1px solid #2a2a30; border-radius: 4px;">
-						${matrix.workspaces.map((ws, idx) => `
-							<div class="repo-item" data-workspace-path="${escapeHtml(ws.workspacePath)}" style="padding: 8px 12px; border-bottom: ${idx < matrix.workspaces.length - 1 ? '1px solid #2a2a30' : 'none'}; display: flex; align-items: center; justify-content: space-between;">
-								<div style="flex: 1; min-width: 0;">
-									<div style="font-size: 12px; font-weight: 600; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
-										${escapeHtml(ws.workspaceName)}
-									</div>
-									<div style="font-size: 10px; color: #999; margin-top: 2px;">
-										${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'}
-									</div>
-								</div>
-								<vscode-button class="btn-analyse-single" data-workspace-path="${escapeHtml(ws.workspacePath)}" style="min-width: 80px;">Analyze</vscode-button>
-							</div>
-							<div class="repo-analysis-result" data-workspace-path="${escapeHtml(ws.workspacePath)}" style="display: none; padding: 12px; background: #0d0d0f; border-bottom: ${idx < matrix.workspaces.length - 1 ? '1px solid #2a2a30' : 'none'};"></div>
-						`).join('')}
+					<div id="repo-list-pane-container" class="repo-hygiene-pane">
+						<div class="repo-hygiene-pane-header">📁 Repository List</div>
+						<div id="repo-list-pane" class="repo-hygiene-pane-body"></div>
+					</div>
+					<div id="repo-details-pane-container" class="repo-hygiene-pane repo-hygiene-pane-collapsed">
+						<div class="repo-hygiene-pane-header">📊 Repository Details</div>
+						<div id="repo-details-pane" class="repo-hygiene-pane-body"></div>
 					</div>
 				` : `
 					<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
-					<div id="repo-analysis-results" style="margin-top: 12px;"></div>
+					<div id="repo-analysis-results" class="repo-hygiene-results" style="margin-top: 12px;"></div>
 				`}
 			</div>
 
@@ -792,31 +798,50 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			btn.disabled = true;
 			btn.textContent = 'Analyzing All...';
 		}
-		// Disable all individual buttons
-		Array.from(document.getElementsByClassName('btn-analyse-single')).forEach((el) => {
-			(el as any).disabled = true;
-		});
+		isBatchAnalysisInProgress = true;
+		isSwitchingRepository = true;
+		selectedRepoPath = null;
+		renderRepositoryHygienePanels();
 		vscode.postMessage({ command: 'analyseAllRepositories' });
 	});
-	
-	// Wire up individual repository analyze buttons
-	Array.from(document.getElementsByClassName('btn-analyse-single')).forEach((el) => {
-		el.addEventListener('click', (e) => {
-			const target = e.currentTarget as HTMLElement;
-			const workspacePath = target.getAttribute('data-workspace-path');
-			if (!workspacePath) {
-				return;
-			}
-			
-			(target as any).disabled = true;
-			(target as any).textContent = 'Analyzing...';
-			
-			vscode.postMessage({ 
-				command: 'analyseRepository', 
-				workspacePath 
-			});
-		});
+
+	document.getElementById('repo-list-pane')?.addEventListener('click', (e) => {
+		const target = e.target as HTMLElement;
+		const actionButton = target.closest<HTMLElement>('.btn-repo-action');
+		if (!actionButton) {
+			return;
+		}
+
+		const workspacePath = actionButton.getAttribute('data-workspace-path');
+		const action = actionButton.getAttribute('data-action');
+		if (!workspacePath || !action) {
+			return;
+		}
+
+		if (action === 'details') {
+			selectedRepoPath = workspacePath;
+			isSwitchingRepository = false;
+			renderRepositoryHygienePanels();
+			return;
+		}
+
+		if (action === 'analyze') {
+			(actionButton as any).disabled = true;
+			(actionButton as any).textContent = 'Analyzing...';
+			isBatchAnalysisInProgress = false;
+			vscode.postMessage({ command: 'analyseRepository', workspacePath });
+		}
 	});
+
+	document.getElementById('repo-details-pane')?.addEventListener('click', (e) => {
+		const target = e.target as HTMLElement;
+		if (target.closest('#btn-switch-repository')) {
+			isSwitchingRepository = true;
+			renderRepositoryHygienePanels();
+		}
+	});
+
+	renderRepositoryHygienePanels();
 
 	// Copy path buttons in customization list
 	Array.from(document.getElementsByClassName('cf-copy')).forEach((el) => {
@@ -851,48 +876,30 @@ window.addEventListener('message', (event) => {
 	}
 });
 
-function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
-	// Reset button state
-	if (workspacePath) {
-		// Single workspace analysis - update specific button
-		const btn = document.querySelector(`.btn-analyse-single[data-workspace-path="${CSS.escape(workspacePath)}"]`) as any;
-		if (btn) {
-			btn.disabled = false;
-			btn.textContent = 'Analyze';
-		}
-	} else {
-		// Legacy single repository mode
-		const btn = document.getElementById('btn-analyse-repo') as any;
-		if (btn) {
-			btn.disabled = false;
-			btn.textContent = 'Analyse Repository';
-		}
-	}
+function getWorkspaceName(workspacePath: string): string {
+	const workspace = hygieneMatrixState?.workspaces.find((ws) => ws.workspacePath === workspacePath);
+	return workspace?.workspaceName || workspacePath;
+}
 
-	// Determine where to display results
-	let resultsDiv: HTMLElement | null;
-	if (workspacePath) {
-		resultsDiv = document.querySelector(`.repo-analysis-result[data-workspace-path="${CSS.escape(workspacePath)}"]`);
-		if (resultsDiv) {
-			resultsDiv.style.display = 'block';
-		}
-	} else {
-		resultsDiv = document.getElementById('repo-analysis-results');
+function getScoreLabel(workspacePath: string): string {
+	const record = repoAnalysisState.get(workspacePath);
+	if (record?.data?.summary) {
+		return `${Math.round(record.data.summary.percentage)}%`;
 	}
-	
-	if (!resultsDiv) {
-		return;
+	if (record?.error) {
+		return 'Error';
 	}
+	return '—';
+}
 
+function buildRepoAnalysisBodyHtml(data: any): string {
 	const summary = data.summary;
 	const checks = data.checks || [];
 	const recommendations = data.recommendations || [];
 
-	// Sort recommendations by priority
 	const priorityOrder: { [key: string]: number } = { high: 1, medium: 2, low: 3 };
 	recommendations.sort((a: any, b: any) => (priorityOrder[a.priority as string] || 99) - (priorityOrder[b.priority as string] || 99));
 
-	// Group checks by category
 	const categories: { [key: string]: any[] } = {};
 	checks.forEach((check: any) => {
 		if (!categories[check.category]) {
@@ -957,84 +964,191 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 		`;
 	}).join('');
 
-	resultsDiv.innerHTML = `
-		<div style="margin-top: 12px; padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
-			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-				<div style="font-size: 14px; font-weight: 600; color: #fff;">📊 Repository Hygiene Score</div>
-				<div style="font-size: 24px; font-weight: 700; color: #60a5fa;">${Math.round(summary.percentage)}%</div>
-			</div>
-			<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
-				<div style="text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;">
-					<div style="font-size: 18px; font-weight: 600; color: #22c55e;">${summary.passedChecks}</div>
-					<div style="font-size: 10px; color: #b8b8b8;">Passed</div>
-				</div>
-				<div style="text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;">
-					<div style="font-size: 18px; font-weight: 600; color: #f59e0b;">${summary.warningChecks}</div>
-					<div style="font-size: 10px; color: #b8b8b8;">Warnings</div>
-				</div>
-				<div style="text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;">
-					<div style="font-size: 18px; font-weight: 600; color: #ef4444;">${summary.failedChecks}</div>
-					<div style="font-size: 10px; color: #b8b8b8;">Failed</div>
-				</div>
-			</div>
-			<div style="font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;">
-				Score: ${summary.totalScore} / ${summary.maxScore} points
-			</div>
-
-			${categoriesHtml}
-
-			${recommendations.length > 0 ? `
-				<div style="margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;">
-					<div style="padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;">
-						<span style="font-size: 12px; font-weight: 600; color: #fff;">💡 Top Recommendations</span>
-					</div>
-					${recommendationsHtml}
-				</div>
-			` : ''}
+	return `
+		<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+			<div style="font-size: 14px; font-weight: 600; color: #fff;">📊 Repository Hygiene Score</div>
+			<div style="font-size: 24px; font-weight: 700; color: #60a5fa;">${Math.round(summary.percentage)}%</div>
 		</div>
+		<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
+			<div style="text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;">
+				<div style="font-size: 18px; font-weight: 600; color: #22c55e;">${summary.passedChecks}</div>
+				<div style="font-size: 10px; color: #b8b8b8;">Passed</div>
+			</div>
+			<div style="text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;">
+				<div style="font-size: 18px; font-weight: 600; color: #f59e0b;">${summary.warningChecks}</div>
+				<div style="font-size: 10px; color: #b8b8b8;">Warnings</div>
+			</div>
+			<div style="text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;">
+				<div style="font-size: 18px; font-weight: 600; color: #ef4444;">${summary.failedChecks}</div>
+				<div style="font-size: 10px; color: #b8b8b8;">Failed</div>
+			</div>
+		</div>
+		<div style="font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;">
+			Score: ${summary.totalScore} / ${summary.maxScore} points
+		</div>
+
+		${categoriesHtml}
+
+		${recommendations.length > 0 ? `
+			<div style="margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;">
+				<div style="padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;">
+					<span style="font-size: 12px; font-weight: 600; color: #fff;">💡 Top Recommendations</span>
+				</div>
+				${recommendationsHtml}
+			</div>
+		` : ''}
 	`;
 }
 
-function displayRepoAnalysisError(error: string, workspacePath?: string): void {
-	// Reset button state
-	if (workspacePath) {
-		const btn = document.querySelector(`.btn-analyse-single[data-workspace-path="${CSS.escape(workspacePath)}"]`) as any;
-		if (btn) {
-			btn.disabled = false;
-			btn.textContent = 'Analyze';
-		}
-	} else {
-		const btn = document.getElementById('btn-analyse-repo') as any;
-		if (btn) {
-			btn.disabled = false;
-			btn.textContent = 'Analyse Repository';
-		}
-	}
-
-	// Determine where to display error
-	let resultsDiv: HTMLElement | null;
-	if (workspacePath) {
-		resultsDiv = document.querySelector(`.repo-analysis-result[data-workspace-path="${CSS.escape(workspacePath)}"]`);
-		if (resultsDiv) {
-			resultsDiv.style.display = 'block';
-		}
-	} else {
-		resultsDiv = document.getElementById('repo-analysis-results');
-	}
-	
-	if (!resultsDiv) {
+function renderRepositoryHygienePanels(): void {
+	const listPane = document.getElementById('repo-list-pane');
+	const listContainer = document.getElementById('repo-list-pane-container');
+	const detailsPane = document.getElementById('repo-details-pane');
+	const detailsContainer = document.getElementById('repo-details-pane-container');
+	if (!listPane || !listContainer || !detailsPane || !detailsContainer || !hygieneMatrixState) {
 		return;
 	}
 
-	resultsDiv.innerHTML = `
-		<div style="margin-top: 12px; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px;">
-			<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">❌ Analysis Failed</div>
-			<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(error)}</div>
+	const hasSelectedRepository = !!selectedRepoPath && !isSwitchingRepository;
+	const visibleWorkspaces = hasSelectedRepository
+		? hygieneMatrixState.workspaces.filter((ws) => ws.workspacePath === selectedRepoPath)
+		: hygieneMatrixState.workspaces;
+
+	listContainer.classList.remove('repo-hygiene-pane-collapsed');
+	detailsContainer.classList.toggle('repo-hygiene-pane-collapsed', !hasSelectedRepository);
+
+	listPane.innerHTML = visibleWorkspaces.map((ws, idx) => {
+		const record = repoAnalysisState.get(ws.workspacePath);
+		const hasResult = !!record?.data?.summary;
+		const scoreLabel = getScoreLabel(ws.workspacePath);
+		const buttonLabel = hasResult ? 'Details' : 'Analyze';
+		const buttonAction = hasResult ? 'details' : 'analyze';
+		const isCurrentSelection = selectedRepoPath === ws.workspacePath && hasSelectedRepository;
+		return `
+			<div class="repo-item" style="padding: 8px 12px; border-bottom: ${idx < visibleWorkspaces.length - 1 ? '1px solid #2a2a30' : 'none'}; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+				<div style="flex: 1; min-width: 0;">
+					<div class="repo-name" style="font-size: 12px; font-weight: 600; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
+						${escapeHtml(ws.workspaceName)}
+					</div>
+					<div style="font-size: 10px; color: #999; margin-top: 2px;">
+						${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${scoreLabel}
+					</div>
+				</div>
+				<vscode-button class="btn-repo-action" data-action="${buttonAction}" data-workspace-path="${escapeHtml(ws.workspacePath)}" ${isCurrentSelection ? 'disabled="true"' : ''} style="min-width: 80px;">
+					${buttonLabel}
+				</vscode-button>
+			</div>
+		`;
+	}).join('');
+
+	if (!hasSelectedRepository || !selectedRepoPath) {
+		detailsPane.innerHTML = '';
+		return;
+	}
+
+	const workspaceName = getWorkspaceName(selectedRepoPath);
+	const record = repoAnalysisState.get(selectedRepoPath);
+	if (record?.data) {
+		detailsPane.innerHTML = `
+			<div class="repo-details-card" style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
+				<div class="repo-details-card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;">
+					<div style="font-size: 12px; color: #b8b8b8;">
+						Repository: <span style="color: #fff; font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span>
+					</div>
+					<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
+				</div>
+				${buildRepoAnalysisBodyHtml(record.data)}
+			</div>
+		`;
+		return;
+	}
+
+	if (record?.error) {
+		detailsPane.innerHTML = `
+			<div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px;">
+				<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+					<div style="font-size: 11px; color: #fca5a5;">Repository: ${escapeHtml(workspaceName)}</div>
+					<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
+				</div>
+				<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">❌ Analysis Failed</div>
+				<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(record.error)}</div>
+			</div>
+		`;
+		return;
+	}
+
+	detailsPane.innerHTML = `
+		<div style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
+			<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+				<div style="font-size: 12px; color: #b8b8b8;">Repository: <span style="color: #fff; font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span></div>
+				<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
+			</div>
+			<div style="font-size: 11px; color: #999;">No analysis data yet. Click Analyze in the list.</div>
 		</div>
 	`;
 }
 
+function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
+	if (workspacePath) {
+		repoAnalysisState.set(workspacePath, { data, error: undefined });
+		if (!isBatchAnalysisInProgress) {
+			selectedRepoPath = workspacePath;
+			isSwitchingRepository = false;
+		}
+		renderRepositoryHygienePanels();
+		return;
+	}
+
+	const btn = document.getElementById('btn-analyse-repo') as any;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = 'Analyse Repository';
+	}
+
+	const resultsHost = document.getElementById('repo-analysis-results');
+	if (resultsHost) {
+		resultsHost.innerHTML = `
+			<div class="repo-analysis-card" style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;">
+				${buildRepoAnalysisBodyHtml(data)}
+			</div>
+		`;
+	}
+}
+
+function displayRepoAnalysisError(error: string, workspacePath?: string): void {
+	if (workspacePath) {
+		repoAnalysisState.set(workspacePath, { data: undefined, error });
+		if (!isBatchAnalysisInProgress) {
+			selectedRepoPath = workspacePath;
+			isSwitchingRepository = false;
+		}
+		renderRepositoryHygienePanels();
+		return;
+	}
+
+	const btn = document.getElementById('btn-analyse-repo') as any;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = 'Analyse Repository';
+	}
+
+	const resultsHost = document.getElementById('repo-analysis-results');
+	if (resultsHost) {
+		resultsHost.innerHTML = `
+			<div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; margin-bottom: 12px;">
+				<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">❌ Analysis Failed</div>
+				<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(error)}</div>
+			</div>
+		`;
+	}
+}
+
 function handleBatchAnalysisComplete(): void {
+	isBatchAnalysisInProgress = false;
+	isSwitchingRepository = true;
+	selectedRepoPath = null;
+	renderRepositoryHygienePanels();
+
 	// Re-enable the "Analyze All" button
 	const btn = document.getElementById('btn-analyse-all') as any;
 	if (btn) {
@@ -1043,12 +1157,6 @@ function handleBatchAnalysisComplete(): void {
 		const count = matrix?.workspaces?.length || 0;
 		btn.textContent = `Analyze All Repositories (${count})`;
 	}
-	
-	// Re-enable all individual buttons
-	Array.from(document.getElementsByClassName('btn-analyse-single')).forEach((el) => {
-		(el as any).disabled = false;
-		(el as any).textContent = 'Analyze';
-	});
 }
 
 async function bootstrap(): Promise<void> {
