@@ -689,12 +689,15 @@ function renderLayout(data: SessionLogData): void {
 				const systemTokens = breakdownEntries.filter(e => e.category === 'System').reduce((s, e) => s + e.totalTokens, 0);
 				const userTokens = breakdownEntries.filter(e => e.category !== 'System').reduce((s, e) => s + e.totalTokens, 0);
 				const estimateRatio = totalTokens > 0 ? (actualTotal / totalTokens).toFixed(1) : 'N/A';
+				const hasComparison = actualTotal > 0 || totalTokens > 0;
+				const hasBreakdown = breakdownEntries.length > 0;
+				const gridClass = hasComparison && hasBreakdown ? 'session-usage-grid' : 'session-usage-grid session-usage-grid--single';
 				
 				return `
 			<div class="session-actual-usage">
 				<div class="session-usage-header">📊 Session Actual LLM Usage (${turnsWithActual.length}/${data.turns.length} turns with data)</div>
-				<div class="session-usage-grid">
-					<div class="session-usage-comparison">
+				<div class="${gridClass}">
+					${hasComparison ? `<div class="session-usage-comparison">
 						<table class="usage-comparison-table">
 							<thead><tr><th>Metric</th><th>Estimated</th><th>Actual</th><th>Ratio</th></tr></thead>
 							<tbody>
@@ -703,8 +706,8 @@ function renderLayout(data: SessionLogData): void {
 								<tr class="usage-total-row"><td><strong>Σ Total</strong></td><td class="count-cell"><strong>${totalTokens.toLocaleString()}</strong></td><td class="count-cell"><strong>${actualTotal.toLocaleString()}</strong></td><td class="count-cell"><strong>${estimateRatio}x</strong></td></tr>
 							</tbody>
 						</table>
-					</div>
-					<div class="session-usage-breakdown">
+					</div>` : ''}
+					${hasBreakdown ? `<div class="session-usage-breakdown">
 						<div class="breakdown-summary">
 							<span class="category-system">System: ~${systemTokens.toLocaleString()} tokens</span>
 							<span class="category-user">User Context: ~${userTokens.toLocaleString()} tokens</span>
@@ -713,7 +716,7 @@ function renderLayout(data: SessionLogData): void {
 							<thead><tr><th>Category</th><th>Label</th><th>Avg %</th><th>Total ~Tokens</th><th>Distribution</th></tr></thead>
 							<tbody>${breakdownRows}</tbody>
 						</table>
-					</div>
+					</div>` : ''}
 				</div>
 			</div>
 			`;
