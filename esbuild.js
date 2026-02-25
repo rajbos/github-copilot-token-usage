@@ -81,6 +81,21 @@ async function main() {
 	if (fs.existsSync(wasmSrc)) {
 		fs.copyFileSync(wasmSrc, wasmDst);
 	}
+
+	// Copy VS Code Webview UI Toolkit to dist/ for webview usage
+	const toolkitDir = path.join(__dirname, 'dist', 'toolkit');
+	if (!fs.existsSync(toolkitDir)) {
+		fs.mkdirSync(toolkitDir, { recursive: true });
+	}
+	const toolkitSrc = path.join(__dirname, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist');
+	const toolkitFiles = ['toolkit.js', 'toolkit.min.js'];
+	toolkitFiles.forEach(file => {
+		const src = path.join(toolkitSrc, file);
+		const dst = path.join(toolkitDir, file);
+		if (fs.existsSync(src)) {
+			fs.copyFileSync(src, dst);
+		}
+	});
 }
 
 main().catch(e => {
