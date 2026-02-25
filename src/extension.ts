@@ -9222,10 +9222,16 @@ ${hashtag}`;
         customAgentModeCount: number;
         toolCalls: { total: number; byTool: { [key: string]: number } };
         contextRefs: { [key: string]: number };
-        mcpTools: { total: number };
+        mcpTools: { total: number; byServer?: { [key: string]: number } };
         multiTurnSessions: number;
+        avgTurnsPerSession: number;
         multiFileEdits: number;
+        avgFilesPerEdit: number;
         sessionCount: number;
+        editScope?: { multiFileEdits: number; singleFileEdits: number; avgFilesPerSession: number; totalEditedFiles: number };
+        agentTypes?: { editsAgent?: number; workspaceAgent?: number };
+        repositories?: string[];
+        repositoriesWithCustomization?: string[];
       }
     >();
 
@@ -9318,10 +9324,14 @@ ${hashtag}`;
             customAgentModeCount: 0,
             toolCalls: { total: 0, byTool: {} },
             contextRefs: {},
-            mcpTools: { total: 0 },
+            mcpTools: { total: 0, byServer: {} },
             multiTurnSessions: 0,
+            avgTurnsPerSession: 0,
             multiFileEdits: 0,
+            avgFilesPerEdit: 0,
             sessionCount: 0,
+            repositories: [],
+            repositoriesWithCustomization: [],
           });
         }
         const userData = userMap.get(userKey)!;
