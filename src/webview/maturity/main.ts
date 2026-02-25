@@ -100,7 +100,7 @@ const STAGE_DESCRIPTIONS: Record<number, string> = {
 // ── Radar chart SVG ────────────────────────────────────────────────────
 
 function renderRadarChart(categories: CategoryScore[]): string {
-	const cx = 275, cy = 275, maxR = 150;
+	const cx = 325, cy = 325, maxR = 150;
 	const n = categories.length;
 	const angleStep = (2 * Math.PI) / n;
 	// Start from top (- PI/2)
@@ -134,7 +134,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 	// Labels
 	const labels = categories.map((cat, i) => {
 		const angle = startAngle + i * angleStep;
-		const labelR = maxR + 28;
+		const labelR = maxR + 35;
 		const x = cx + labelR * Math.cos(angle);
 		const y = cy + labelR * Math.sin(angle);
 		// Adjust anchor based on position
@@ -161,7 +161,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 		return `<text x="${cx + 4}" y="${cy - r + 3}" font-size="9" fill="#555">${level}</text>`;
 	}).join('');
 
-	return `<svg viewBox="0 0 550 550" class="radar-svg" xmlns="http://www.w3.org/2000/svg">
+	return `<svg viewBox="0 0 650 650" class="radar-svg" xmlns="http://www.w3.org/2000/svg">
 		${rings}
 		${axes}
 		<polygon points="${dataPoints}" fill="rgba(59,130,246,0.15)" stroke="#3b82f6" stroke-width="2" />
