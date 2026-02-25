@@ -348,7 +348,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 23; // Cache key format changed: per-edition file lock instead of per-session keys
+	private static readonly CACHE_VERSION = 27; // Support result.metadata.promptTokens/outputTokens (Insiders format)
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1169,9 +1169,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Generate a cache identifier based on VS Code extension mode.
 	 * VS Code editions (stable vs insiders) already have separate globalState storage,
 	 * so we only need to distinguish between production and development (debug) mode.
+	 * In development mode, each VS Code window gets a unique cache identifier using
+	 * the session ID, preventing the Extension Development Host from sharing/fighting
+	 * with the main dev window's cache.
 	 */
 	private getCacheIdentifier(): string {
-		return this.context.extensionMode === vscode.ExtensionMode.Development ? 'dev' : 'prod';
+		if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+			// Use a short hash of the session ID to keep the key short but unique per window
+			const sessionId = vscode.env.sessionId;
+			const hash = sessionId.substring(0, 8);
+			return `dev-${hash}`;
+		}
+		return 'prod';
 	}
 
 	/**
@@ -2736,9 +2745,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						// Use actual usage if available, otherwise estimate from text
 						if (request.result?.usage) {
+							// OLD FORMAT (pre-Feb 2026)
 							const u = request.result.usage;
 							modelUsage[requestModel].inputTokens += typeof u.promptTokens === 'number' ? u.promptTokens : 0;
 							modelUsage[requestModel].outputTokens += typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+						} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
+							// NEW FORMAT (Feb 2026+)
+							modelUsage[requestModel].inputTokens += request.result.promptTokens;
+							modelUsage[requestModel].outputTokens += request.result.outputTokens;
 						} else {
 							// Fallback to text-based estimation
 							if (request.message?.text) {
@@ -2753,6 +2767,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 					}
+				}
+
+				// FALLBACK: If reconstruction missed result data, use regex extraction from raw lines
+				const rawModelUsage = this.extractPerRequestUsageFromRawLines(lines);
+				for (const [reqIdx, extracted] of rawModelUsage) {
+					const request = sessionState.requests?.[reqIdx];
+					if (!request) { continue; }
+					// Only use regex fallback if reconstruction didn't already provide usage
+					if (request.result?.usage || (typeof request.result?.promptTokens === 'number') || (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number')) { continue; }
+					let requestModel = defaultModel;
+					if (request.modelId) { requestModel = request.modelId.replace(/^copilot\//, ''); }
+					if (!modelUsage[requestModel]) { modelUsage[requestModel] = { inputTokens: 0, outputTokens: 0 }; }
+					modelUsage[requestModel].inputTokens += extracted.promptTokens;
+					modelUsage[requestModel].outputTokens += extracted.outputTokens;
 				}
 
 				return modelUsage;
@@ -2773,9 +2801,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Use actual usage if available, otherwise estimate from text
 					if (request.result?.usage) {
+						// OLD FORMAT (pre-Feb 2026)
 						const u = request.result.usage;
 						modelUsage[model].inputTokens += typeof u.promptTokens === 'number' ? u.promptTokens : 0;
 						modelUsage[model].outputTokens += typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+					} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
+						// NEW FORMAT (Feb 2026+)
+						modelUsage[model].inputTokens += request.result.promptTokens;
+						modelUsage[model].outputTokens += request.result.outputTokens;
+					} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						modelUsage[model].inputTokens += request.result.metadata.promptTokens;
+						modelUsage[model].outputTokens += request.result.metadata.outputTokens;
 					} else {
 						// Fallback to text-based estimation
 						// Estimate tokens from user message (input)
@@ -4911,6 +4948,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Extract turns from reconstructed requests array
 					const requests = sessionState.requests || [];
+					// Pre-compute regex-based token extraction for lines that failed JSON.parse
+					const rawUsageFallback = this.extractPerRequestUsageFromRawLines(lines);
 					for (let i = 0; i < requests.length; i++) {
 						const request = requests[i];
 						if (!request || !request.requestId) { continue; }
@@ -4933,6 +4972,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Extract actual usage data from request.result if available
 						let actualUsage: ActualUsage | undefined;
 						if (request.result?.usage) {
+							// OLD FORMAT (pre-Feb 2026): Tokens nested under request.result.usage
 							const u = request.result.usage;
 							actualUsage = {
 								completionTokens: typeof u.completionTokens === 'number' ? u.completionTokens : 0,
@@ -4940,6 +4980,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 								promptTokenDetails: Array.isArray(u.promptTokenDetails) ? u.promptTokenDetails : undefined,
 								details: typeof request.result.details === 'string' ? request.result.details : undefined
 							};
+						} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
+							// NEW FORMAT (Feb 2026+): Tokens directly at request.result level
+							actualUsage = {
+								completionTokens: request.result.outputTokens,
+								promptTokens: request.result.promptTokens,
+								details: typeof request.result.details === 'string' ? request.result.details : undefined
+							};
+						} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
+							// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+							actualUsage = {
+								completionTokens: request.result.metadata.outputTokens,
+								promptTokens: request.result.metadata.promptTokens,
+								details: typeof request.result.details === 'string' ? request.result.details : undefined
+							};
+						}
+
+						// FALLBACK: If reconstruction missed result data (bad escape chars), use regex extraction
+						if (!actualUsage) {
+							const extracted = rawUsageFallback.get(i);
+							if (extracted) {
+								actualUsage = {
+									completionTokens: extracted.outputTokens,
+									promptTokens: extracted.promptTokens
+								};
+							}
 						}
 
 					const turn: ChatTurn = {
@@ -5704,10 +5769,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					// Extract actual token counts from LLM API usage data
 					if (request.result?.usage) {
+						// OLD FORMAT (pre-Feb 2026)
 						const u = request.result.usage;
 						const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
 						const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
 						totalActualTokens += prompt + completion;
+					} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
+						// NEW FORMAT (Feb 2026+)
+						totalActualTokens += request.result.promptTokens + request.result.outputTokens;
+					} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						totalActualTokens += request.result.metadata.promptTokens + request.result.metadata.outputTokens;
 					}
 				}
 			}
@@ -5733,6 +5805,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// is fragile. Reconstructing the state (like the logviewer does) is the reliable approach.
 		let sessionState: any = {};
 		let isDeltaBased = false;
+		let parseFailedLines = 0;
 
 		for (const line of lines) {
 			if (!line.trim()) { continue; }
@@ -5782,24 +5855,80 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 				}
 			} catch (e) {
-				// Skip malformed lines
+				// Track parse failures for regex fallback
+				parseFailedLines++;
 			}
 		}
 
 		// Extract actual tokens from the reconstructed state (handles all delta path patterns)
+		// Use per-request regex fallback (like the logviewer) so that requests whose result
+		// lines failed JSON.parse still contribute actual tokens instead of being silently lost.
 		let totalActualTokens = 0;
-		if (isDeltaBased && sessionState.requests && Array.isArray(sessionState.requests)) {
-			for (const request of sessionState.requests) {
-				if (request?.result?.usage) {
-					const u = request.result.usage;
-					const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
-					const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
-					totalActualTokens += prompt + completion;
+		if (isDeltaBased) {
+			const rawUsageFallback = parseFailedLines > 0 ? this.extractPerRequestUsageFromRawLines(lines) : new Map<number, { promptTokens: number; outputTokens: number }>();
+			const requests = (sessionState.requests && Array.isArray(sessionState.requests)) ? sessionState.requests : [];
+			// Determine highest request index: max of reconstructed array length and regex-extracted keys
+			let maxIndex = requests.length;
+			for (const idx of rawUsageFallback.keys()) {
+				if (idx + 1 > maxIndex) { maxIndex = idx + 1; }
+			}
+			for (let i = 0; i < maxIndex; i++) {
+				const request = requests[i];
+				let found = false;
+				// Try reconstructed state first
+				if (request?.result) {
+					const result = request.result;
+					if (typeof result.promptTokens === 'number' && typeof result.outputTokens === 'number') {
+						totalActualTokens += result.promptTokens + result.outputTokens;
+						found = true;
+					} else if (result.metadata && typeof result.metadata.promptTokens === 'number' && typeof result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						totalActualTokens += result.metadata.promptTokens + result.metadata.outputTokens;
+						found = true;
+					} else if (result.usage) {
+						const u = result.usage;
+						const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+						const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+						totalActualTokens += prompt + completion;
+						found = true;
+					}
+				}
+				// Per-request fallback: if reconstruction missed this request's result, use regex
+				if (!found) {
+					const extracted = rawUsageFallback.get(i);
+					if (extracted) {
+						totalActualTokens += extracted.promptTokens + extracted.outputTokens;
+					}
 				}
 			}
 		}
 
 		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: totalActualTokens };
+	}
+
+	/**
+	 * Extract per-request actual token usage from raw JSONL lines using regex.
+	 * Handles cases where lines with result data fail JSON.parse due to bad escape characters.
+	 * Supports both old format (usage.promptTokens/completionTokens) and new format (promptTokens/outputTokens).
+	 */
+	private extractPerRequestUsageFromRawLines(lines: string[]): Map<number, { promptTokens: number; outputTokens: number }> {
+		const usage = new Map<number, { promptTokens: number; outputTokens: number }>();
+		for (const line of lines) {
+			if (!line.includes('"result"')) { continue; }
+			const resultMatch = line.match(/"k":\s*\["requests",\s*(\d+),\s*"result"\]/);
+			if (!resultMatch) { continue; }
+			const requestIndex = parseInt(resultMatch[1], 10);
+			const promptMatch = line.match(/"promptTokens":(\d+)/);
+			const outputMatch = line.match(/"outputTokens":(\d+)/);
+			const completionMatch = line.match(/"completionTokens":(\d+)/);
+			if (promptMatch && (outputMatch || completionMatch)) {
+				usage.set(requestIndex, {
+					promptTokens: parseInt(promptMatch[1], 10),
+					outputTokens: parseInt(outputMatch?.[1] || completionMatch![1], 10)
+				});
+			}
+		}
+		return usage;
 	}
 
 	/**
