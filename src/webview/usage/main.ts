@@ -892,21 +892,84 @@ function getScoreLabel(workspacePath: string): string {
 	return '—';
 }
 
-function buildRepoAnalysisBodyHtml(data: any): string {
-	const summary = data.summary;
-	const checks = data.checks || [];
-	const recommendations = data.recommendations || [];
+function toFiniteNumber(value: unknown): number {
+	const numeric = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function buildRepoAnalysisBodyElement(data: any): HTMLElement {
+	const summary = data?.summary || {};
+	const checks = Array.isArray(data?.checks) ? data.checks : [];
+	const recommendations = Array.isArray(data?.recommendations) ? [...data.recommendations] : [];
+
+	const container = el('div');
+
+	const header = el('div');
+	header.setAttribute('style', 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;');
+	const title = el('div');
+	title.setAttribute('style', 'font-size: 14px; font-weight: 600; color: #fff;');
+	title.textContent = '📊 Repository Hygiene Score';
+	const score = el('div');
+	score.setAttribute('style', 'font-size: 24px; font-weight: 700; color: #60a5fa;');
+	score.textContent = `${Math.round(toFiniteNumber(summary.percentage))}%`;
+	header.append(title, score);
+	container.appendChild(header);
+
+	const statsGrid = el('div');
+	statsGrid.setAttribute('style', 'display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;');
+
+	const statCards: Array<{ count: unknown; label: string; cardStyle: string; countStyle: string }> = [
+		{
+			count: summary.passedChecks,
+			label: 'Passed',
+			cardStyle: 'text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;',
+			countStyle: 'font-size: 18px; font-weight: 600; color: #22c55e;'
+		},
+		{
+			count: summary.warningChecks,
+			label: 'Warnings',
+			cardStyle: 'text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;',
+			countStyle: 'font-size: 18px; font-weight: 600; color: #f59e0b;'
+		},
+		{
+			count: summary.failedChecks,
+			label: 'Failed',
+			cardStyle: 'text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;',
+			countStyle: 'font-size: 18px; font-weight: 600; color: #ef4444;'
+		}
+	];
+
+	for (const statCard of statCards) {
+		const card = el('div');
+		card.setAttribute('style', statCard.cardStyle);
+		const count = el('div');
+		count.setAttribute('style', statCard.countStyle);
+		count.textContent = String(toFiniteNumber(statCard.count));
+		const label = el('div');
+		label.setAttribute('style', 'font-size: 10px; color: #b8b8b8;');
+		label.textContent = statCard.label;
+		card.append(count, label);
+		statsGrid.appendChild(card);
+	}
+
+	container.appendChild(statsGrid);
+
+	const scoreSummary = el('div');
+	scoreSummary.setAttribute('style', 'font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;');
+	scoreSummary.textContent = `Score: ${toFiniteNumber(summary.totalScore)} / ${toFiniteNumber(summary.maxScore)} points`;
+	container.appendChild(scoreSummary);
 
 	const priorityOrder: { [key: string]: number } = { high: 1, medium: 2, low: 3 };
-	recommendations.sort((a: any, b: any) => (priorityOrder[a.priority as string] || 99) - (priorityOrder[b.priority as string] || 99));
+	recommendations.sort((a: any, b: any) => (priorityOrder[a?.priority as string] || 99) - (priorityOrder[b?.priority as string] || 99));
 
 	const categories: { [key: string]: any[] } = {};
-	checks.forEach((check: any) => {
-		if (!categories[check.category]) {
-			categories[check.category] = [];
+	for (const check of checks) {
+		const categoryId = typeof check?.category === 'string' && check.category.length > 0 ? check.category : 'other';
+		if (!categories[categoryId]) {
+			categories[categoryId] = [];
 		}
-		categories[check.category].push(check);
-	});
+		categories[categoryId].push(check);
+	}
 
 	const categoryLabels: { [key: string]: string } = {
 		versionControl: '🔄 Version Control',
@@ -916,88 +979,116 @@ function buildRepoAnalysisBodyHtml(data: any): string {
 		documentation: '📚 Documentation'
 	};
 
-	let categoriesHtml = '';
 	for (const [categoryId, categoryChecks] of Object.entries(categories)) {
-		const catLabel = categoryLabels[categoryId] || categoryId;
-		const catSummary = summary.categories[categoryId];
-		const catPercentage = catSummary ? Math.round(catSummary.percentage) : 0;
+		const section = el('div');
+		section.setAttribute('style', 'margin-bottom: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;');
 
-		const checksHtml = categoryChecks.map((check: any) => {
-			const statusIcon = check.status === 'pass' ? '✅' : check.status === 'warning' ? '⚠️' : '❌';
-			const statusColor = check.status === 'pass' ? '#22c55e' : check.status === 'warning' ? '#f59e0b' : '#ef4444';
-			return `
-				<div style="padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; align-items: flex-start; gap: 8px;">
-					<span style="font-size: 16px;">${statusIcon}</span>
-					<div style="flex: 1;">
-						<div style="font-size: 12px; font-weight: 600; color: ${statusColor};">${escapeHtml(check.label)}</div>
-						<div style="font-size: 11px; color: #b8b8b8; margin-top: 2px;">${escapeHtml(check.detail)}</div>
-						${check.hint ? `<div style="font-size: 10px; color: #60a5fa; margin-top: 4px; font-style: italic;">💡 ${escapeHtml(check.hint)}</div>` : ''}
-					</div>
-					<span style="font-size: 10px; color: #999; min-width: 30px; text-align: right;">+${check.weight}</span>
-				</div>
-			`;
-		}).join('');
+		const sectionHeader = el('div');
+		sectionHeader.setAttribute('style', 'padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30; display: flex; justify-content: space-between; align-items: center;');
 
-		categoriesHtml += `
-			<div style="margin-bottom: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;">
-				<div style="padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30; display: flex; justify-content: space-between; align-items: center;">
-					<span style="font-size: 12px; font-weight: 600; color: #fff;">${catLabel}</span>
-					<span style="font-size: 11px; color: #60a5fa; font-weight: 600;">${catPercentage}%</span>
-				</div>
-				${checksHtml}
-			</div>
-		`;
+		const categoryName = el('span');
+		categoryName.setAttribute('style', 'font-size: 12px; font-weight: 600; color: #fff;');
+		categoryName.textContent = categoryLabels[categoryId] || categoryId;
+
+		const categorySummary = summary?.categories?.[categoryId];
+		const categoryPct = el('span');
+		categoryPct.setAttribute('style', 'font-size: 11px; color: #60a5fa; font-weight: 600;');
+		categoryPct.textContent = `${Math.round(toFiniteNumber(categorySummary?.percentage))}%`;
+
+		sectionHeader.append(categoryName, categoryPct);
+		section.appendChild(sectionHeader);
+
+		for (const check of categoryChecks) {
+			const status = check?.status === 'pass' || check?.status === 'warning' ? check.status : 'fail';
+			const statusIcon = status === 'pass' ? '✅' : status === 'warning' ? '⚠️' : '❌';
+			const statusColor = status === 'pass' ? '#22c55e' : status === 'warning' ? '#f59e0b' : '#ef4444';
+
+			const checkRow = el('div');
+			checkRow.setAttribute('style', 'padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; align-items: flex-start; gap: 8px;');
+
+			const icon = el('span');
+			icon.setAttribute('style', 'font-size: 16px;');
+			icon.textContent = statusIcon;
+
+			const content = el('div');
+			content.setAttribute('style', 'flex: 1;');
+
+			const checkLabel = el('div');
+			checkLabel.setAttribute('style', `font-size: 12px; font-weight: 600; color: ${statusColor};`);
+			checkLabel.textContent = typeof check?.label === 'string' ? check.label : '';
+
+			const checkDetail = el('div');
+			checkDetail.setAttribute('style', 'font-size: 11px; color: #b8b8b8; margin-top: 2px;');
+			checkDetail.textContent = typeof check?.detail === 'string' ? check.detail : '';
+
+			content.append(checkLabel, checkDetail);
+
+			if (typeof check?.hint === 'string' && check.hint.length > 0) {
+				const hint = el('div');
+				hint.setAttribute('style', 'font-size: 10px; color: #60a5fa; margin-top: 4px; font-style: italic;');
+				hint.textContent = `💡 ${check.hint}`;
+				content.appendChild(hint);
+			}
+
+			const weight = el('span');
+			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
+			weight.textContent = `+${toFiniteNumber(check?.weight)}`;
+
+			checkRow.append(icon, content, weight);
+			section.appendChild(checkRow);
+		}
+
+		container.appendChild(section);
 	}
 
-	const recommendationsHtml = recommendations.slice(0, 5).map((rec: any) => {
-		const priorityColor = rec.priority === 'high' ? '#ef4444' : rec.priority === 'medium' ? '#f59e0b' : '#60a5fa';
-		const priorityLabel = rec.priority.toUpperCase();
-		return `
-			<div style="padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; gap: 8px;">
-				<span style="font-size: 10px; font-weight: 600; color: ${priorityColor}; min-width: 50px;">${priorityLabel}</span>
-				<div style="flex: 1;">
-					<div style="font-size: 11px; color: #fff;">${escapeHtml(rec.action)}</div>
-					<div style="font-size: 10px; color: #999; margin-top: 2px;">${escapeHtml(rec.impact)}</div>
-				</div>
-				<span style="font-size: 10px; color: #999; min-width: 30px; text-align: right;">+${rec.weight}</span>
-			</div>
-		`;
-	}).join('');
+	if (recommendations.length > 0) {
+		const recommendationsSection = el('div');
+		recommendationsSection.setAttribute('style', 'margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;');
 
-	return `
-		<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-			<div style="font-size: 14px; font-weight: 600; color: #fff;">📊 Repository Hygiene Score</div>
-			<div style="font-size: 24px; font-weight: 700; color: #60a5fa;">${Math.round(summary.percentage)}%</div>
-		</div>
-		<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
-			<div style="text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;">
-				<div style="font-size: 18px; font-weight: 600; color: #22c55e;">${summary.passedChecks}</div>
-				<div style="font-size: 10px; color: #b8b8b8;">Passed</div>
-			</div>
-			<div style="text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;">
-				<div style="font-size: 18px; font-weight: 600; color: #f59e0b;">${summary.warningChecks}</div>
-				<div style="font-size: 10px; color: #b8b8b8;">Warnings</div>
-			</div>
-			<div style="text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;">
-				<div style="font-size: 18px; font-weight: 600; color: #ef4444;">${summary.failedChecks}</div>
-				<div style="font-size: 10px; color: #b8b8b8;">Failed</div>
-			</div>
-		</div>
-		<div style="font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;">
-			Score: ${summary.totalScore} / ${summary.maxScore} points
-		</div>
+		const recommendationsHeader = el('div');
+		recommendationsHeader.setAttribute('style', 'padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;');
+		const recommendationsTitle = el('span');
+		recommendationsTitle.setAttribute('style', 'font-size: 12px; font-weight: 600; color: #fff;');
+		recommendationsTitle.textContent = '💡 Top Recommendations';
+		recommendationsHeader.appendChild(recommendationsTitle);
+		recommendationsSection.appendChild(recommendationsHeader);
 
-		${categoriesHtml}
+		for (const recommendation of recommendations.slice(0, 5)) {
+			const priority = recommendation?.priority === 'high' || recommendation?.priority === 'medium' ? recommendation.priority : 'low';
+			const priorityColor = priority === 'high' ? '#ef4444' : priority === 'medium' ? '#f59e0b' : '#60a5fa';
 
-		${recommendations.length > 0 ? `
-			<div style="margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;">
-				<div style="padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;">
-					<span style="font-size: 12px; font-weight: 600; color: #fff;">💡 Top Recommendations</span>
-				</div>
-				${recommendationsHtml}
-			</div>
-		` : ''}
-	`;
+			const row = el('div');
+			row.setAttribute('style', 'padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; gap: 8px;');
+
+			const priorityLabel = el('span');
+			priorityLabel.setAttribute('style', `font-size: 10px; font-weight: 600; color: ${priorityColor}; min-width: 50px;`);
+			priorityLabel.textContent = String(priority).toUpperCase();
+
+			const content = el('div');
+			content.setAttribute('style', 'flex: 1;');
+
+			const action = el('div');
+			action.setAttribute('style', 'font-size: 11px; color: #fff;');
+			action.textContent = typeof recommendation?.action === 'string' ? recommendation.action : '';
+
+			const impact = el('div');
+			impact.setAttribute('style', 'font-size: 10px; color: #999; margin-top: 2px;');
+			impact.textContent = typeof recommendation?.impact === 'string' ? recommendation.impact : '';
+
+			content.append(action, impact);
+
+			const weight = el('span');
+			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
+			weight.textContent = `+${toFiniteNumber(recommendation?.weight)}`;
+
+			row.append(priorityLabel, content, weight);
+			recommendationsSection.appendChild(row);
+		}
+
+		container.appendChild(recommendationsSection);
+	}
+
+	return container;
 }
 
 function renderRepositoryHygienePanels(): void {
@@ -1042,24 +1133,37 @@ function renderRepositoryHygienePanels(): void {
 	}).join('');
 
 	if (!hasSelectedRepository || !selectedRepoPath) {
-		detailsPane.innerHTML = '';
+		detailsPane.replaceChildren();
 		return;
 	}
 
 	const workspaceName = getWorkspaceName(selectedRepoPath);
 	const record = repoAnalysisState.get(selectedRepoPath);
 	if (record?.data) {
-		detailsPane.innerHTML = `
-			<div class="repo-details-card" style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
-				<div class="repo-details-card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;">
-					<div style="font-size: 12px; color: #b8b8b8;">
-						Repository: <span style="color: #fff; font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span>
-					</div>
-					<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
-				</div>
-				${buildRepoAnalysisBodyHtml(record.data)}
-			</div>
-		`;
+		detailsPane.replaceChildren();
+		const card = el('div', 'repo-details-card');
+		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;');
+
+		const header = el('div', 'repo-details-card-header');
+		header.setAttribute('style', 'display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;');
+
+		const label = el('div');
+		label.setAttribute('style', 'font-size: 12px; color: #b8b8b8;');
+		label.textContent = 'Repository: ';
+
+		const repoName = el('span');
+		repoName.setAttribute('style', "color: #fff; font-weight: 600; font-family: 'Courier New', monospace;");
+		repoName.textContent = workspaceName;
+		label.appendChild(repoName);
+
+		const switchButton = document.createElement('vscode-button');
+		switchButton.id = 'btn-switch-repository';
+		switchButton.setAttribute('style', 'min-width: 120px;');
+		switchButton.textContent = 'Switch Repository';
+
+		header.append(label, switchButton);
+		card.append(header, buildRepoAnalysisBodyElement(record.data));
+		detailsPane.appendChild(card);
 		return;
 	}
 
@@ -1107,11 +1211,11 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 
 	const resultsHost = document.getElementById('repo-analysis-results');
 	if (resultsHost) {
-		resultsHost.innerHTML = `
-			<div class="repo-analysis-card" style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;">
-				${buildRepoAnalysisBodyHtml(data)}
-			</div>
-		`;
+		resultsHost.replaceChildren();
+		const card = el('div', 'repo-analysis-card');
+		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;');
+		card.appendChild(buildRepoAnalysisBodyElement(data));
+		resultsHost.appendChild(card);
 	}
 }
 
