@@ -225,3 +225,28 @@
 	color: var(--vscode-errorForeground);
 	font-size: 14px;
 }
+
+.action-header {
+	width: 40px;
+}
+
+.action-cell {
+	text-align: center;
+	width: 40px;
+}
+
+.delete-row-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	font-size: 14px;
+	padding: 4px 8px;
+	border-radius: 4px;
+	opacity: 0.6;
+	transition: opacity 0.15s, background-color 0.15s;
+}
+
+.delete-row-btn:hover {
+	opacity: 1;
+	background-color: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.15));
+}
