@@ -65,14 +65,15 @@ jobs:
           exit 1
         fi
 
-    - name: Check Copilot CLI installed
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Check Copilot CLI version
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
         COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       run: |
-        npm install -g @github/copilot
-
-        copilot --version
+        npx @github/copilot --version
         
     - name: Run Copilot CLI with prompt
       id: copilot_run
@@ -117,7 +118,7 @@ jobs:
         # Read the prompt into a variable for safer handling
         COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
         # > /tmp/copilot-output.txt
-        copilot -p "$COPILOT_PROMPT_TEXT" --silent --allow-all --add-dir "${UPSTREAM_PATH}" --add-dir "${GITHUB_WORKSPACE}/current-repo" --no-ask-user  2>&1 || {
+        npx @github/copilot -p "$COPILOT_PROMPT_TEXT" --silent --allow-all --add-dir "${UPSTREAM_PATH}" --add-dir "${GITHUB_WORKSPACE}/current-repo" --no-ask-user  2>&1 || {
           EXIT_CODE=$?
           echo "Warning: gh copilot command exited with code $EXIT_CODE, but continuing to check output"
           cat /tmp/copilot-output.txt

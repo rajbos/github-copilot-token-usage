@@ -60,13 +60,15 @@ jobs:
             exit 1
           fi
 
-      - name: Check Copilot CLI installed
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Check Copilot CLI version
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          npm install -g @github/copilot
-          copilot --version
+          npx @github/copilot --version
         
       - name: Run Copilot CLI to update model data
         id: copilot_run
@@ -100,7 +102,7 @@ jobs:
           
           # Run copilot with the prompt using non-interactive mode
           COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
-          copilot -p "$COPILOT_PROMPT_TEXT" --silent --allow-all --no-ask-user 2>&1 || {
+          npx @github/copilot -p "$COPILOT_PROMPT_TEXT" --silent --allow-all --no-ask-user 2>&1 || {
             EXIT_CODE=$?
             echo "Warning: copilot command exited with code $EXIT_CODE, but continuing to check output"
           }
