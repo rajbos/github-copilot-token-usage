@@ -82,16 +82,6 @@
       "maxDepth": 3
     },
     {
-      "id": "claude-code",
-      "type": "non-copilot-instructions",
-      "category": "non-copilot",
-      "icon": "🎭",
-      "label": "Claude Code",
-      "path": "CLAUDE.md",
-      "scanMode": "exact",
-      "caseInsensitive": true
-    },
-    {
       "id": "gemini-cli",
       "type": "non-copilot-instructions",
       "category": "non-copilot",
