@@ -163,6 +163,81 @@ function sanitizeNumber(value: number | undefined | null): string {
   return value.toString();
 }
 
+/**
+ * Build a DOM element showing all candidate paths the extension considers,
+ * with their existence status. Helps users understand why data may be missing.
+ */
+function buildCandidatePathsElement(
+  candidatePaths: { path: string; exists: boolean; source: string }[],
+): HTMLElement {
+  const container = document.createElement("div");
+  container.className = "candidate-paths-table";
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Scanned Paths (all candidate locations):";
+  container.appendChild(heading);
+
+  const description = document.createElement("p");
+  description.style.cssText = "color: #999; font-size: 12px; margin: 4px 0 8px 0;";
+  description.textContent = "These are all the paths the extension checks for session files. Paths marked with ✅ exist on this system.";
+  container.appendChild(description);
+
+  const table = document.createElement("table");
+  table.className = "session-table";
+  container.appendChild(table);
+
+  const thead = document.createElement("thead");
+  table.appendChild(thead);
+  const headerRow = document.createElement("tr");
+  thead.appendChild(headerRow);
+  for (const text of ["Status", "Source", "Path"]) {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headerRow.appendChild(th);
+  }
+
+  const tbody = document.createElement("tbody");
+  table.appendChild(tbody);
+
+  // Show found paths first, then missing paths
+  const sorted = [...candidatePaths].sort((a, b) => {
+    if (a.exists !== b.exists) {
+      return a.exists ? -1 : 1;
+    }
+    return a.source.localeCompare(b.source);
+  });
+
+  for (const cp of sorted) {
+    const row = document.createElement("tr");
+    if (!cp.exists) {
+      row.style.opacity = "0.5";
+    }
+
+    const statusCell = document.createElement("td");
+    statusCell.textContent = cp.exists ? "✅" : "❌";
+    statusCell.style.textAlign = "center";
+    row.appendChild(statusCell);
+
+    const sourceCell = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = "editor-badge";
+    badge.textContent = cp.source;
+    sourceCell.appendChild(badge);
+    row.appendChild(sourceCell);
+
+    const pathCell = document.createElement("td");
+    pathCell.setAttribute("title", cp.path);
+    pathCell.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
+    pathCell.style.fontSize = "12px";
+    pathCell.textContent = cp.path;
+    row.appendChild(pathCell);
+
+    tbody.appendChild(row);
+  }
+
+  return container;
+}
+
 function getFileName(filePath: string): string {
   const parts = filePath.split(/[/\\]/);
   return parts[parts.length - 1];
@@ -1005,6 +1080,33 @@ function renderLayout(data: DiagnosticsData): void {
           }
 
           setupStorageLinkHandlers();
+        }
+      }
+
+      // Update candidate paths if provided
+      if (message.candidatePaths && message.candidatePaths.length > 0) {
+        const reportTabContent = document.getElementById("tab-report");
+        if (reportTabContent) {
+          // Remove existing candidate paths table if present
+          const existing = reportTabContent.querySelector(".candidate-paths-table");
+          if (existing) {
+            existing.remove();
+          }
+
+          const candidateEl = buildCandidatePathsElement(message.candidatePaths);
+
+          // Insert after session-folders-table if it exists, otherwise after report-content
+          const foldersTable = reportTabContent.querySelector(".session-folders-table");
+          if (foldersTable) {
+            foldersTable.insertAdjacentElement("afterend", candidateEl);
+          } else {
+            const reportContent = reportTabContent.querySelector(".report-content");
+            if (reportContent) {
+              reportContent.insertAdjacentElement("afterend", candidateEl);
+            } else {
+              reportTabContent.appendChild(candidateEl);
+            }
+          }
         }
       }
 

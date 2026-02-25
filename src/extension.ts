@@ -5310,6 +5310,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Returns all candidate paths the extension considers when scanning for session files,
+	 * along with whether each path exists on disk. Used for diagnostics display.
+	 */
+	private getDiagnosticCandidatePaths(): { path: string; exists: boolean; source: string }[] {
+		const candidates: { path: string; exists: boolean; source: string }[] = [];
+
+		// VS Code user paths
+		const allVSCodePaths = this.getVSCodeUserPaths();
+		for (const p of allVSCodePaths) {
+			let exists = false;
+			try { exists = fs.existsSync(p); } catch { /* ignore */ }
+			candidates.push({ path: p, exists, source: 'VS Code' });
+		}
+
+		// Copilot CLI
+		const copilotCliPath = path.join(os.homedir(), '.copilot', 'session-state');
+		let copilotCliExists = false;
+		try { copilotCliExists = fs.existsSync(copilotCliPath); } catch { /* ignore */ }
+		candidates.push({ path: copilotCliPath, exists: copilotCliExists, source: 'Copilot CLI' });
+
+		// OpenCode JSON storage
+		const openCodeDataDir = this.getOpenCodeDataDir();
+		const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
+		let openCodeJsonExists = false;
+		try { openCodeJsonExists = fs.existsSync(openCodeSessionDir); } catch { /* ignore */ }
+		candidates.push({ path: openCodeSessionDir, exists: openCodeJsonExists, source: 'OpenCode (JSON)' });
+
+		// OpenCode SQLite DB
+		const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
+		let openCodeDbExists = false;
+		try { openCodeDbExists = fs.existsSync(openCodeDbPath); } catch { /* ignore */ }
+		candidates.push({ path: openCodeDbPath, exists: openCodeDbExists, source: 'OpenCode (DB)' });
+
+		return candidates;
+	}
+
+	/**
 	 * NOTE: The canonical JavaScript implementation is in:
 	 * .github/skills/copilot-log-analysis/session-file-discovery.js
 	 * This TypeScript implementation should mirror that logic.
@@ -8873,6 +8910,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				editorName: this.getEditorNameFromRoot(dir)
 			}));
 
+			// Build candidate paths list for diagnostics
+			const candidatePaths = this.getDiagnosticCandidatePaths();
+
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
 			this.log(`Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`);
@@ -8890,6 +8930,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				report,
 				sessionFiles: sessionFileData,
 				sessionFolders,
+				candidatePaths,
 				backendStorageInfo
 			});
 
