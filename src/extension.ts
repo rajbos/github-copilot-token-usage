@@ -6481,7 +6481,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.showDashboard();
 					break;
 				case 'analyseRepository':
-					await this.handleAnalyseRepository();
+					await this.handleAnalyseRepository(message.workspacePath);
+					break;
+				case 'analyseAllRepositories':
+					await this.handleAnalyseAllRepositories();
 					break;
 			}
 		});
@@ -6493,32 +6496,88 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 	}
 
-	private async handleAnalyseRepository(): Promise<void> {
+	private async handleAnalyseRepository(workspacePath?: string): Promise<void> {
 		if (!this.analysisPanel) {
 			return;
 		}
 
 		try {
-			this.log('🏗️ Running repository hygiene analysis');
-			const results = await this.runRepoHygieneAnalysis();
+			this.log(`🏗️ Running repository hygiene analysis${workspacePath ? ` for ${workspacePath}` : ''}`);
+			const results = await this.runRepoHygieneAnalysis(workspacePath);
 			this.analysisPanel.webview.postMessage({
 				command: 'repoAnalysisResults',
-				data: results
+				data: results,
+				workspacePath
 			});
-			this.log('✅ Repository hygiene analysis complete');
+			this.log(`✅ Repository hygiene analysis complete${workspacePath ? ` for ${workspacePath}` : ''}`);
 		} catch (error) {
 			this.error(`Repository analysis failed: ${error}`);
 			this.analysisPanel.webview.postMessage({
 				command: 'repoAnalysisError',
-				error: error instanceof Error ? error.message : String(error)
+				error: error instanceof Error ? error.message : String(error),
+				workspacePath
 			});
 		}
 	}
 
-	private async runRepoHygieneAnalysis(): Promise<any> {
-		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-		if (!workspaceRoot) {
-			throw new Error('No workspace folder open');
+	private async handleAnalyseAllRepositories(): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
+
+		// Get all workspaces from the customization matrix
+		const matrix = this._lastCustomizationMatrix;
+		if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
+			this.warn('No workspaces available for batch analysis');
+			this.analysisPanel.webview.postMessage({
+				command: 'repoAnalysisBatchComplete'
+			});
+			return;
+		}
+
+		// Filter out unresolved workspaces (those with paths starting with '<unresolved:')
+		const workspaces = matrix.workspaces.filter(ws => !ws.workspacePath.startsWith('<unresolved:'));
+		
+		this.log(`🏗️ Starting batch repository analysis for ${workspaces.length} workspace(s)`);
+
+		// Run analyses in parallel with a concurrency limit
+		const CONCURRENCY_LIMIT = 3; // Analyze up to 3 repos at a time
+		const analyzeWorkspace = async (workspace: WorkspaceCustomizationRow) => {
+			try {
+				await this.handleAnalyseRepository(workspace.workspacePath);
+			} catch (error) {
+				this.warn(`Failed to analyze workspace ${workspace.workspacePath}: ${error}`);
+			}
+		};
+
+		// Process workspaces in batches
+		for (let i = 0; i < workspaces.length; i += CONCURRENCY_LIMIT) {
+			const batch = workspaces.slice(i, i + CONCURRENCY_LIMIT);
+			await Promise.all(batch.map(analyzeWorkspace));
+		}
+
+		this.log(`✅ Batch repository analysis complete for ${workspaces.length} workspace(s)`);
+		
+		// Notify the webview that all analyses are complete
+		this.analysisPanel.webview.postMessage({
+			command: 'repoAnalysisBatchComplete'
+		});
+	}
+
+	private async runRepoHygieneAnalysis(workspacePath?: string): Promise<any> {
+		// Determine which workspace to analyze
+		let workspaceRoot: string;
+		
+		if (workspacePath) {
+			// Use the provided workspace path
+			workspaceRoot = workspacePath;
+		} else {
+			// Fall back to the first open workspace folder
+			const firstFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!firstFolder) {
+				throw new Error('No workspace folder open');
+			}
+			workspaceRoot = firstFolder;
 		}
 
 		// Get repository info
