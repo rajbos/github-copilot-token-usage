@@ -491,12 +491,9 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
-<<<<<<< actual-tokens
-					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} est.${hasActualUsage ? ` | ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual` : ''}</span>
-=======
-					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
-					${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
->>>>>>> main
+				<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
+				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual</span>` : ''}
 					${contextHeaderHtml}
 				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
@@ -616,15 +613,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${actualTotal.toLocaleString()}</div>
 					<div class="summary-sub">↑${actualPromptTotal.toLocaleString()} prompt, ↓${actualCompletionTotal.toLocaleString()} completion</div>
 				</div>
-<<<<<<< actual-tokens
 				` : ''}
-=======
 				${totalThinkingTokens > 0 ? `<div class="summary-card">
 					<div class="summary-label">🧠 Thinking Tokens</div>
 					<div class="summary-value">${totalThinkingTokens.toLocaleString()}</div>
 					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
 				</div>` : ''}
->>>>>>> main
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
