@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as childProcess from 'child_process';
 import initSqlJs from 'sql.js';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
 import customizationPatternsData from './customizationPatterns.json';
+import { REPO_HYGIENE_SKILL } from './backend/repoHygieneSkill';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
@@ -6349,6 +6351,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDashboard':
 					await this.showDashboard();
 					break;
+				case 'analyseRepository':
+					await this.handleAnalyseRepository();
+					break;
 			}
 		});
 
@@ -6357,6 +6362,236 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.log('📊 Usage Analysis dashboard closed');
 			this.analysisPanel = undefined;
 		});
+	}
+
+	private async handleAnalyseRepository(): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
+
+		try {
+			this.log('🏗️ Running repository hygiene analysis');
+			const results = await this.runRepoHygieneAnalysis();
+			this.analysisPanel.webview.postMessage({
+				command: 'repoAnalysisResults',
+				data: results
+			});
+			this.log('✅ Repository hygiene analysis complete');
+		} catch (error) {
+			this.error(`Repository analysis failed: ${error}`);
+			this.analysisPanel.webview.postMessage({
+				command: 'repoAnalysisError',
+				error: error instanceof Error ? error.message : String(error)
+			});
+		}
+	}
+
+	private async runRepoHygieneAnalysis(): Promise<any> {
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		if (!workspaceRoot) {
+			throw new Error('No workspace folder open');
+		}
+
+		// Get repository info
+		let branchName = 'unknown';
+		let repoName = path.basename(workspaceRoot);
+		try {
+			const branch = childProcess.execSync('git rev-parse --abbrev-ref HEAD', {
+				cwd: workspaceRoot,
+				encoding: 'utf8',
+				timeout: 5000,
+				stdio: ['pipe', 'pipe', 'pipe']
+			}).trim();
+			branchName = branch;
+
+			try {
+				const remote = childProcess.execSync('git remote get-url origin', {
+					cwd: workspaceRoot,
+					encoding: 'utf8',
+					timeout: 5000,
+					stdio: ['pipe', 'pipe', 'pipe']
+				}).trim();
+				const match = remote.match(/[:/]([^/]+\/[^/]+?)(\.git)?$/);
+				if (match) {
+					repoName = match[1];
+				}
+			} catch {
+				// Ignore remote fetch errors
+			}
+		} catch {
+			// Ignore git errors
+		}
+
+		// Get workspace file tree for context
+		const fileTree = await this.getWorkspaceFileTree(workspaceRoot);
+
+		// Prepare the prompt for Copilot
+		const prompt = `You are a repository analyzer. Analyze this repository for hygiene and best practices.
+
+Use these skill instructions:
+
+${REPO_HYGIENE_SKILL}
+
+Repository: ${repoName}
+Branch: ${branchName}
+Workspace root: ${workspaceRoot}
+
+File tree (showing configuration files):
+${fileTree}
+
+Perform the 17 hygiene checks as specified in the skill instructions. Return ONLY a valid JSON object matching this exact schema:
+
+{
+  "summary": {
+    "totalScore": <number>,
+    "maxScore": 76,
+    "percentage": <number>,
+    "passedChecks": <number>,
+    "failedChecks": <number>,
+    "warningChecks": <number>,
+    "totalChecks": 17,
+    "categories": {
+      "versionControl": { "score": <number>, "maxScore": 13, "percentage": <number> },
+      "codeQuality": { "score": <number>, "maxScore": 17, "percentage": <number> },
+      "cicd": { "score": <number>, "maxScore": 10, "percentage": <number> },
+      "environment": { "score": <number>, "maxScore": 9, "percentage": <number> },
+      "documentation": { "score": <number>, "maxScore": 5, "percentage": <number> }
+    }
+  },
+  "checks": [
+    {
+      "id": "<string>",
+      "category": "<versionControl|codeQuality|cicd|environment|documentation>",
+      "label": "<string>",
+      "status": "<pass|fail|warning>",
+      "weight": <number>,
+      "found": <boolean>,
+      "detail": "<string>",
+      "hint": "<string or null>"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "<high|medium|low>",
+      "category": "<string>",
+      "action": "<string>",
+      "weight": <number>,
+      "impact": "<string>"
+    }
+  ],
+  "metadata": {
+    "scanVersion": "1.0.0",
+    "timestamp": "${new Date().toISOString()}",
+    "repository": "${repoName}",
+    "branch": "${branchName}",
+    "skillName": "repo-hygiene"
+  }
+}
+
+Return ONLY the JSON object, no markdown formatting, no explanations.`;
+
+		try {
+			// Use VS Code Language Model API to invoke Copilot
+			const models = await vscode.lm.selectChatModels({
+				vendor: 'copilot',
+				family: 'gpt-4o'
+			});
+
+			if (models.length === 0) {
+				throw new Error('No Copilot models available. Please ensure GitHub Copilot is installed and activated.');
+			}
+
+			const model = models[0];
+			this.log(`🤖 Using Copilot model: ${model.id} for repository analysis`);
+
+			const messages = [
+				vscode.LanguageModelChatMessage.User(prompt)
+			];
+
+			const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+			let fullResponse = '';
+			for await (const chunk of response.text) {
+				fullResponse += chunk;
+			}
+
+			this.log(`📋 Copilot analysis response length: ${fullResponse.length} characters`);
+
+			// Extract JSON from response (in case it's wrapped in markdown code blocks)
+			let jsonText = fullResponse.trim();
+			const jsonMatch = jsonText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+			if (jsonMatch) {
+				jsonText = jsonMatch[1].trim();
+			}
+
+			// Parse the JSON response
+			const results = JSON.parse(jsonText);
+
+			// Validate the structure
+			if (!results.summary || !results.checks || !results.metadata) {
+				throw new Error('Invalid response structure from Copilot');
+			}
+
+			return results;
+		} catch (error) {
+			this.error(`Failed to get analysis from Copilot: ${error}`);
+			throw new Error(`AI analysis failed: ${error instanceof Error ? error.message : String(error)}. Please try again or check that GitHub Copilot is properly configured.`);
+		}
+	}
+
+	private async getWorkspaceFileTree(workspaceRoot: string): Promise<string> {
+		// Get a filtered file tree showing only configuration files
+		const configPatterns = [
+			'.git', '.gitignore', '.env.example', '.env.sample', '.editorconfig',
+			'.eslintrc', 'eslint.config', '.prettierrc', 'prettier.config',
+			'tsconfig.json', 'jsconfig.json', 'package.json', 'Makefile',
+			'Dockerfile', 'docker-compose', '.github/workflows', '.devcontainer',
+			'LICENSE', '.nvmrc', '.node-version'
+		];
+
+		try {
+			const files: string[] = [];
+			const maxDepth = 3;
+
+			const scanDir = (dir: string, depth: number = 0) => {
+				if (depth > maxDepth) {
+					return;
+				}
+
+				try {
+					const entries = fs.readdirSync(dir, { withFileTypes: true });
+					for (const entry of entries) {
+						const fullPath = path.join(dir, entry.name);
+						const relativePath = path.relative(workspaceRoot, fullPath);
+
+						// Skip node_modules and other large directories
+						if (entry.name === 'node_modules' || entry.name === '.git' || 
+						    entry.name === 'dist' || entry.name === 'build' || entry.name === 'out') {
+							continue;
+						}
+
+						// Check if this file matches any config pattern
+						const isConfig = configPatterns.some(pattern => relativePath.includes(pattern));
+
+						if (isConfig) {
+							files.push(relativePath);
+						}
+
+						if (entry.isDirectory() && depth < maxDepth) {
+							scanDir(fullPath, depth + 1);
+						}
+					}
+				} catch (error) {
+					// Ignore permission errors
+				}
+			};
+
+			scanDir(workspaceRoot);
+
+			return files.length > 0 ? files.join('\n') : '(No configuration files detected)';
+		} catch (error) {
+			return '(Unable to scan workspace)';
+		}
 	}
 
 	public async showLogViewer(sessionFilePath: string): Promise<void> {
