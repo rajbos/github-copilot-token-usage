@@ -515,6 +515,63 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Resolve an exact relative path in a workspace.
+	 * When `caseInsensitive` is true, path segments are matched case-insensitively.
+	 */
+	private resolveExactWorkspacePath(workspaceFolderPath: string, relativePattern: string, caseInsensitive: boolean): string | undefined {
+		const directPath = path.join(workspaceFolderPath, relativePattern);
+		if (!caseInsensitive) {
+			return fs.existsSync(directPath) ? directPath : undefined;
+		}
+
+		if (fs.existsSync(directPath)) {
+			return directPath;
+		}
+
+		const normalized = relativePattern.replace(/\\/g, '/');
+		const segments = normalized.split('/').filter(seg => seg.length > 0 && seg !== '.');
+
+		let current = workspaceFolderPath;
+		for (let index = 0; index < segments.length; index++) {
+			const segment = segments[index];
+			const isLast = index === segments.length - 1;
+
+			if (!fs.existsSync(current)) {
+				return undefined;
+			}
+
+			let entries: fs.Dirent[] = [];
+			try {
+				entries = fs.readdirSync(current, { withFileTypes: true });
+			} catch {
+				return undefined;
+			}
+
+			const matchedEntry = entries.find(entry => entry.name.toLowerCase() === segment.toLowerCase());
+			if (!matchedEntry) {
+				return undefined;
+			}
+
+			const matchedPath = path.join(current, matchedEntry.name);
+			if (!isLast) {
+				let stat: fs.Stats;
+				try {
+					stat = fs.statSync(matchedPath);
+				} catch {
+					return undefined;
+				}
+				if (!stat.isDirectory()) {
+					return undefined;
+				}
+			}
+
+			current = matchedPath;
+		}
+
+		return fs.existsSync(current) ? current : undefined;
+	}
+
+	/**
 	 * Scan a workspace folder for customization files according to `customizationPatterns.json`.
 	 */
 	private scanWorkspaceCustomizationFiles(workspaceFolderPath: string): CustomizationFileEntry[] {
@@ -530,8 +587,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const scanMode = pattern.scanMode || 'exact';
 				const relativePattern = pattern.path as string;
 				if (scanMode === 'exact') {
-					const absPath = path.join(workspaceFolderPath, relativePattern);
-					if (fs.existsSync(absPath)) {
+					const caseInsensitive = !!pattern.caseInsensitive;
+					const absPath = this.resolveExactWorkspacePath(workspaceFolderPath, relativePattern, caseInsensitive);
+					if (absPath) {
 						const stat = fs.statSync(absPath);
 						results.push({
 							path: absPath,
