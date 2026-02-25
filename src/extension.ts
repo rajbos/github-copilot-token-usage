@@ -1676,21 +1676,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			for (const sessionFile of sessionFiles) {
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-					} else {
-						// Not in cache - need to stat the file
-						const fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Only process files modified in the current month
 					if (mtime >= monthStart.getTime()) {
@@ -1755,24 +1744,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-					let wasCached: boolean;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-						wasCached = true;
-					} else {
-						// Not in cache - need to stat the file
-						const fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-						wasCached = false;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Skip files modified before last 30 days (quick filter)
 					// This is the main performance optimization - filters out old sessions without reading file content
@@ -1781,7 +1756,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						continue;
 					}
 
-					// Get all session data in one call to avoid multiple cache lookups
+					// Get all session data in one call (cache validates via mtime+size comparison)
+					const cachedData = this.getCachedSessionData(sessionFile);
+					const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
 					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 					const interactions = sessionData.interactions;
 					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
@@ -2029,23 +2006,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			for (const sessionFile of sessionFiles) {
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					// The cache contains mtime and size, so we can skip stat if cached
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-					let fileStats: fs.Stats | undefined;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call (major performance win)
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-					} else {
-						// Not in cache - need to stat the file
-						fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Only process files modified in the last 30 days
 					if (mtime >= thirtyDaysAgo.getTime()) {
@@ -2056,8 +2020,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const modelUsage = sessionData.modelUsage;
 						const editorType = this.getEditorTypeFromPath(sessionFile);
 
-						// Repository was already retrieved from cache above (cachedData)
-						const repository = cachedData?.repository || 'Unknown';
+						// Get repository from cached session data
+						const repository = sessionData.repository || 'Unknown';
 
 						// Get the date in YYYY-MM-DD format
 						const dateKey = this.formatDateKey(new Date(mtime));
@@ -2305,21 +2269,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			for (const sessionFile of sessionFiles) {
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-					} else {
-						// Not in cache - need to stat the file
-						const fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Check if file is within the last 30 days (widest range)
 					if (mtime >= last30DaysStart.getTime()) {
@@ -5469,6 +5422,43 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Returns all candidate paths the extension considers when scanning for session files,
+	 * along with whether each path exists on disk. Used for diagnostics display.
+	 */
+	private getDiagnosticCandidatePaths(): { path: string; exists: boolean; source: string }[] {
+		const candidates: { path: string; exists: boolean; source: string }[] = [];
+
+		// VS Code user paths
+		const allVSCodePaths = this.getVSCodeUserPaths();
+		for (const p of allVSCodePaths) {
+			let exists = false;
+			try { exists = fs.existsSync(p); } catch { /* ignore */ }
+			candidates.push({ path: p, exists, source: 'VS Code' });
+		}
+
+		// Copilot CLI
+		const copilotCliPath = path.join(os.homedir(), '.copilot', 'session-state');
+		let copilotCliExists = false;
+		try { copilotCliExists = fs.existsSync(copilotCliPath); } catch { /* ignore */ }
+		candidates.push({ path: copilotCliPath, exists: copilotCliExists, source: 'Copilot CLI' });
+
+		// OpenCode JSON storage
+		const openCodeDataDir = this.getOpenCodeDataDir();
+		const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
+		let openCodeJsonExists = false;
+		try { openCodeJsonExists = fs.existsSync(openCodeSessionDir); } catch { /* ignore */ }
+		candidates.push({ path: openCodeSessionDir, exists: openCodeJsonExists, source: 'OpenCode (JSON)' });
+
+		// OpenCode SQLite DB
+		const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
+		let openCodeDbExists = false;
+		try { openCodeDbExists = fs.existsSync(openCodeDbPath); } catch { /* ignore */ }
+		candidates.push({ path: openCodeDbPath, exists: openCodeDbExists, source: 'OpenCode (DB)' });
+
+		return candidates;
+	}
+
+	/**
 	 * NOTE: The canonical JavaScript implementation is in:
 	 * .github/skills/copilot-log-analysis/session-file-discovery.js
 	 * This TypeScript implementation should mirror that logic.
@@ -5490,7 +5480,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
 		const allVSCodePaths = this.getVSCodeUserPaths();
-		this.log(`📂 Reading local folders [0/${allVSCodePaths.length}]`);
+		this.log(`📂 Considering ${allVSCodePaths.length} candidate VS Code paths:`);
+		for (const candidatePath of allVSCodePaths) {
+			this.log(`   📁 ${candidatePath}`);
+		}
 
 		// Track which paths we actually found
 		const foundPaths: string[] = [];
@@ -5509,7 +5502,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
-		this.log(`✅ Found ${foundPaths.length} VS Code installation(s)`);
+		this.log(`✅ Found ${foundPaths.length} of ${allVSCodePaths.length} VS Code paths exist on disk:`);
+		for (const fp of foundPaths) {
+			this.log(`   ✅ ${fp}`);
+		}
 
 		try {
 			// Scan all found VS Code paths for session files
@@ -5586,6 +5582,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
+			this.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath} (exists: ${fs.existsSync(copilotCliSessionPath)})`);
 			try {
 				if (fs.existsSync(copilotCliSessionPath)) {
 					try {
@@ -5631,8 +5628,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for OpenCode session files
 			// OpenCode stores session data in ~/.local/share/opencode/storage/session/
 			const openCodeDataDir = this.getOpenCodeDataDir();
+			const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
+			const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
+			this.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir} (exists: ${fs.existsSync(openCodeSessionDir)})`);
+			this.log(`📁 Checking OpenCode DB path: ${openCodeDbPath} (exists: ${fs.existsSync(openCodeDbPath)})`);
 			try {
-				const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
 				if (fs.existsSync(openCodeSessionDir)) {
 					const scanOpenCodeDir = (dir: string) => {
 						try {
@@ -5669,7 +5669,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Check for OpenCode sessions in SQLite database (opencode.db)
 			// Newer OpenCode versions store sessions in SQLite instead of JSON files
 			try {
-				const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
 				if (fs.existsSync(openCodeDbPath)) {
 					const existingSessionIds = new Set(
 						sessionFiles
@@ -6868,13 +6867,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Context-aware tips
 		if (peStage < 2) { peTips.push('Try asking Copilot a question using the Chat panel'); }
 		if (peStage < 3) {
-			if (!hasAgentMode) { peTips.push('Try agent mode for multi-file changes'); }
-			if (usedSlashCommands.length < 2) { peTips.push('Use slash commands like /explain, /fix, or /tests to give structured prompts'); }
+			if (!hasAgentMode) { peTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes'); }
+			if (usedSlashCommands.length < 2) { peTips.push('Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts'); }
 		}
 		if (peStage < 4) {
-			if (!hasAgentMode) { peTips.push('Try agent mode for autonomous, multi-step coding tasks'); }
-			if (!hasModelSwitching) { peTips.push('Experiment with different models for different tasks - use fast models for simple queries and reasoning models for complex problems'); }
-			if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push('Explore more slash commands like /explain, /tests, or /doc to diversify your prompting'); }
+			if (!hasAgentMode) { peTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks'); }
+			if (!hasModelSwitching) { peTips.push('Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems'); }
+			if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push('Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting'); }
 		}
 
 		// ---------- 2. Context Engineering ----------
@@ -6918,9 +6917,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
 		}
 
-		if (ceStage < 2) { ceTips.push('Try adding #file or #selection references to give Copilot more context'); }
-		if (ceStage < 3) { ceTips.push('Explore @workspace, #codebase, and @terminal for broader context'); }
-		if (ceStage < 4) { ceTips.push('Try image attachments, #changes, #problemsPanel, and other specialized context variables'); }
+		if (ceStage < 2) { ceTips.push('Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context'); }
+		if (ceStage < 3) { ceTips.push('Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context'); }
+		if (ceStage < 4) { ceTips.push('Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables'); }
 
 		// ---------- 3. Agentic ----------
 		const agEvidence: string[] = [];
@@ -6973,9 +6972,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			agStage = Math.max(agStage, 4) as 1 | 2 | 3 | 4;
 		}
 
-		if (agStage < 2) { agTips.push('Try agent mode — it can run terminal commands, edit files, and explore your codebase autonomously'); }
-		if (agStage < 3) { agTips.push('Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits'); }
-		if (agStage < 4) { agTips.push('Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows'); }
+		if (agStage < 2) { agTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously'); }
+		if (agStage < 3) { agTips.push('Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits'); }
+		if (agStage < 4) { agTips.push('Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows'); }
 
 		// ---------- 4. Tool Usage ----------
 		const tuEvidence: string[] = [];
@@ -7024,20 +7023,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Tips based on current state
 		if (tuStage < 2) {
-			tuTips.push('Try agent mode to let Copilot use built-in tools for file operations and terminal commands');
+			tuTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands');
 		}
 		if (tuStage < 3) {
 			if (mcpServers.length === 0) {
-				tuTips.push('Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)');
+				tuTips.push('Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)');
 			} else {
-				tuTips.push('Explore GitHub integrations and advanced tools like editFiles and run_in_terminal');
+				tuTips.push('Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal');
 			}
 		}
 		if (tuStage < 4) {
 			if (mcpServers.length === 1) {
-				tuTips.push('Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry');
+				tuTips.push('Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot\'s capabilities - check the VS Code MCP registry');
 			} else if (mcpServers.length === 0) {
-				tuTips.push('Explore the VS Code MCP registry for tools that integrate with your workflow');
+				tuTips.push('Explore the [VS Code MCP registry](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for tools that integrate with your workflow');
 			} else {
 				tuTips.push('You\'re using multiple MCP servers - keep exploring advanced tool combinations');
 			}
@@ -7099,14 +7098,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos with custom instructions or agents.md`);
 		}
 
-		if (cuStage < 2) { cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines'); }
-		if (cuStage < 3) { cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience'); }
+		if (cuStage < 2) { cuTips.push('Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines'); }
+		if (cuStage < 3) { cuTips.push('Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience'); }
 		if (cuStage < 4) {
 			const uncustomized = totalRepos - reposWithCustomization;
 			if (totalRepos > 0 && uncustomized > 0) {
-				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add instructions and agents.md to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
+				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
 			} else {
-				cuTips.push('Aim for consistent customization across all projects with instructions and agents.md');
+				cuTips.push('Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)');
 			}
 		}
 		if (cuStage >= 4) {
@@ -7124,7 +7123,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					})
 					.slice(0, 3);
 
-				const summaryTip = `${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage.`;
+				const summaryTip = `${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add [instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), [agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), or [MCP configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for full coverage.`;
 				if (prioritizedMissingRepos.length > 0) {
 					const repoLines = prioritizedMissingRepos.map(row => 
 						`${row.workspaceName} (${row.interactionCount} interaction${row.interactionCount === 1 ? '' : 's'})`
@@ -7134,7 +7133,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					cuTips.push(summaryTip);
 				}
 			} else {
-				cuTips.push('All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration');
+				cuTips.push('All repos customized! Keep instructions up to date and add [skill files](https://code.visualstudio.com/docs/copilot/customization/agent-skills) or [MCP server configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for deeper integration');
 			}
 		}
 
@@ -7188,11 +7187,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
 		if (wiStage < 3) { 
-			if (modesUsed < 2) { wiTips.push('Combine ask mode with agent mode in your daily workflow'); }
-			if (totalContextRefs < 10) { wiTips.push('Use explicit context references like #file, @workspace, and #selection'); }
+			if (modesUsed < 2) { wiTips.push('Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow'); }
+			if (totalContextRefs < 10) { wiTips.push('Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection'); }
 		}
 		if (wiStage < 4) { 
-			if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use #file, @workspace, and other references consistently'); }
+			if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently'); }
 			wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); 
 		}
 
@@ -7766,8 +7765,8 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Beginning to use slash commands or agent mode'
 						],
 						tips: [
-							'Try agent mode for multi-file changes',
-							'Use slash commands like /explain, /fix, or /tests to give structured prompts',
+							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes',
+							'Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts',
 							'Experiment with multi-turn conversations to refine responses'
 						]
 					},
@@ -7782,9 +7781,9 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Shows model switching awareness (mixed-tier sessions)'
 						],
 						tips: [
-							'Try agent mode for autonomous, multi-step coding tasks',
-							'Experiment with different models for different tasks - use fast models for simple queries and reasoning models for complex problems',
-							'Explore more slash commands like /explain, /tests, or /doc to diversify your prompting'
+							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks',
+							'Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems',
+							'Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting'
 						]
 					},
 					{
@@ -7816,7 +7815,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Zero explicit context references (#file, #selection, @workspace, etc.)'
 						],
 						tips: [
-							'Try adding #file or #selection references to give Copilot more context',
+							'Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context',
 							'Start with #file to reference specific files in your prompts'
 						]
 					},
@@ -7829,7 +7828,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Exploring basic references like #file or #selection'
 						],
 						tips: [
-							'Explore @workspace, #codebase, and @terminal for broader context',
+							'Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context',
 							'Try combining multiple context types in a single query'
 						]
 					},
@@ -7843,7 +7842,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'May include image references (vision capabilities)'
 						],
 						tips: [
-							'Try image attachments, #changes, #problemsPanel, and other specialized context variables',
+							'Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables',
 							'Experiment with @terminal and @vscode for IDE-level context'
 						]
 					},
@@ -7877,7 +7876,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Not using edit mode or multi-file capabilities'
 						],
 						tips: [
-							'Try agent mode — it can run terminal commands, edit files, and explore your codebase autonomously',
+							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously',
 							'Start with simple tasks to see how agent mode works'
 						]
 					},
@@ -7891,7 +7890,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'At least 1 multi-file edit session'
 						],
 						tips: [
-							'Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits',
+							'Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits',
 							'Try edit mode for focused code changes'
 						]
 					},
@@ -7905,7 +7904,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Using edits agent for focused editing tasks'
 						],
 						tips: [
-							'Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows',
+							'Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows',
 							'Let agent mode handle multi-step tasks that span multiple files'
 						]
 					},
@@ -7939,7 +7938,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'No workspace agent sessions'
 						],
 						tips: [
-							'Try agent mode to let Copilot use built-in tools for file operations and terminal commands',
+							'Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands',
 							'Explore the built-in tools available in agent mode'
 						]
 					},
@@ -7952,8 +7951,8 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Using basic agent mode tools'
 						],
 						tips: [
-							'Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)',
-							'Explore GitHub integrations and advanced tools like editFiles and run_in_terminal'
+							'Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)',
+							'Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal'
 						]
 					},
 					{
@@ -7966,7 +7965,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Using at least 1 MCP server'
 						],
 						tips: [
-							'Add more MCP servers to expand Copilot\'s capabilities - check the VS Code MCP registry',
+							'Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot\'s capabilities - check the VS Code MCP registry',
 							'Explore advanced tool combinations for complex workflows'
 						]
 					},
@@ -7998,7 +7997,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Using fewer than 3 different models'
 						],
 						tips: [
-							'Create a .github/copilot-instructions.md file with project-specific guidelines',
+							'Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines',
 							'Start customizing Copilot for your workflow'
 						]
 					},
@@ -8010,7 +8009,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'At least 1 repository with custom instructions or agents.md'
 						],
 						tips: [
-							'Add custom instructions to more repositories to standardize your Copilot experience',
+							'Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience',
 							'Experiment with different models for different tasks'
 						]
 					},
@@ -8023,7 +8022,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'Using 3+ different models strategically'
 						],
 						tips: [
-							'Aim for consistent customization across all projects with instructions and agents.md',
+							'Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)',
 							'Explore 5+ models to match tasks with optimal model capabilities'
 						]
 					},
@@ -8069,8 +8068,8 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'50%+ code block apply rate'
 						],
 						tips: [
-							'Combine ask mode with agent mode in your daily workflow',
-							'Use explicit context references like #file, @workspace, and #selection'
+							'Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow',
+							'Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection'
 						]
 					},
 					{
@@ -8082,7 +8081,7 @@ private getFluencyLevelData(isDebugMode: boolean): {
 							'At least 20 explicit context references'
 						],
 						tips: [
-							'Make explicit context a habit - use #file, @workspace, and other references consistently',
+							'Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently',
 							'Make Copilot part of every coding task: planning, coding, testing, and reviewing'
 						]
 					},
@@ -9026,6 +9025,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				editorName: this.getEditorNameFromRoot(dir)
 			}));
 
+			// Build candidate paths list for diagnostics
+			const candidatePaths = this.getDiagnosticCandidatePaths();
+
 			// Get backend storage info
 			const backendStorageInfo = await this.getBackendStorageInfo();
 			this.log(`Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`);
@@ -9043,6 +9045,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				report,
 				sessionFiles: sessionFileData,
 				sessionFolders,
+				candidatePaths,
 				backendStorageInfo
 			});
 

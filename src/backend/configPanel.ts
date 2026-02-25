@@ -185,14 +185,14 @@ export class BackendConfigPanel implements vscode.Disposable {
 	private renderHtml(webview: vscode.Webview, state: BackendConfigPanelState): string {
 		// Use cryptographically secure random for CSP nonce
 		const nonce = crypto.randomBytes(16).toString('base64');
-		const toolkitUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js'));
+		const toolkitUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'toolkit', 'toolkit.js'));
 		const initialState = safeJsonForInlineScript(state);
  		return `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
 	<title>Configure Backend</title>
 		<style>
 			body { font-family: 'Segoe UI', sans-serif; background: #1e1e1e; color: #e5e5e5; margin: 0; padding: 0; }

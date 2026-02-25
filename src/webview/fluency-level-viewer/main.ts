@@ -64,6 +64,19 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+/**
+ * Convert markdown links to HTML links while escaping other HTML.
+ * Converts [text](url) to <a href="url" target="_blank" rel="noopener noreferrer">text</a>
+ */
+function markdownToHtml(text: string): string {
+	// First escape all HTML
+	let escaped = escapeHtml(text);
+	// Then convert markdown links to HTML links
+	// Pattern: [text](url) where text and url are already escaped
+	escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+	return escaped;
+}
+
 // ── Main render ────────────────────────────────────────────────────────
 
 function renderCategorySelector(categories: CategoryLevelData[]): string {
@@ -90,7 +103,7 @@ function renderLevelCards(category: CategoryLevelData): string {
 			? level.tips.map(tip => `
 				<li class="tip-item-viewer">
 					<span class="tip-icon">💡</span>
-					<span>${escapeHtml(tip)}</span>
+					<span>${markdownToHtml(tip)}</span>
 				</li>
 			`).join('')
 			: '<li class="tip-item-viewer"><span class="tip-icon">✓</span><span>No specific suggestions - you\'re at the highest level!</span></li>';
