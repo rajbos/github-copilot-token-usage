@@ -104,7 +104,7 @@ body {
 }
 
 .radar-svg {
-	max-width: 420px;
+	max-width: 650px;
 	width: 100%;
 	height: auto;
 }
@@ -626,6 +626,11 @@ body {
 	.legend-panel {
 		max-width: 100%;
 		min-width: 0;
+	}
+
+	/* Allow chart to be larger on small screens since legend is stacked below */
+	.radar-svg {
+		max-width: 100%;
 	}
 }
 
