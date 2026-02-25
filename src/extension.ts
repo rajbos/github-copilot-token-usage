@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -229,6 +229,14 @@ interface ModelSwitchingAnalysis {
   premiumRequests: number; // Count of requests using premium models
   unknownRequests: number; // Count of requests using unknown tier models
   totalRequests: number; // Total requests across all tiers
+}
+
+interface MissedPotentialWorkspace {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	interactionCount: number;
+	nonCopilotFiles: CustomizationFileEntry[];
 }
 
 interface MissedPotentialWorkspace {
@@ -10706,6 +10714,7 @@ ${hashtag}`;
       month: stats.month,
       locale: detectedLocale,
       customizationMatrix: stats.customizationMatrix || null,
+      missedPotential: stats.missedPotential || [],
       lastUpdated: stats.lastUpdated.toISOString(),
       backendConfigured: this.isBackendConfigured(),
     }).replace(/</g, "\\u003c");
