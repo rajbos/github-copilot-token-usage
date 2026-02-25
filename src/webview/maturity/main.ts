@@ -190,6 +190,19 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+/**
+ * Convert markdown links to HTML links while escaping other HTML.
+ * Converts [text](url) to <a href="url" target="_blank" rel="noopener noreferrer">text</a>
+ */
+function markdownToHtml(text: string): string {
+	// First escape all HTML
+	let escaped = escapeHtml(text);
+	// Then convert markdown links to HTML links
+	// Pattern: [text](url) where text and url are already escaped
+	escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+	return escaped;
+}
+
 // ── Demo controls ──────────────────────────────────────────────────────
 
 function renderDemoControls(categories: CategoryScore[]): string {
@@ -290,7 +303,7 @@ function renderLayout(data: MaturityData): void {
 				: '<li class="evidence-item"><span class="evidence-icon">-</span><span>No thresholds defined</span></li>';
 
 			const tipsHtml = stageInfo && stageInfo.tips.length > 0
-				? stageInfo.tips.map(t => `<div class="tip-item">${escapeHtml(t)}</div>`).join('')
+				? stageInfo.tips.map(t => `<div class="tip-item">${markdownToHtml(t)}</div>`).join('')
 				: '<div class="tip-item" style="color:#666;">No tips for this stage</div>';
 
 			return `
@@ -326,14 +339,14 @@ function renderLayout(data: MaturityData): void {
 						const hasHeader = lines.length > 1 && lines[1].toLowerCase().includes('top repos');
 						if (hasHeader && lines.length > 2) {
 							const header = lines[1];
-							const listItems = lines.slice(2).map(item => `<li>${escapeHtml(item)}</li>`).join('');
-							return `<div class="tip-item">${escapeHtml(summary)}<div style="margin-top: 8px; font-weight: 600; font-size: 11px; color: #999;">${escapeHtml(header)}</div><ul style="margin: 6px 0 0 0; padding-left: 18px; list-style: disc;">${listItems}</ul></div>`;
+							const listItems = lines.slice(2).map(item => `<li>${markdownToHtml(item)}</li>`).join('');
+							return `<div class="tip-item">${markdownToHtml(summary)}<div style="margin-top: 8px; font-weight: 600; font-size: 11px; color: #999;">${markdownToHtml(header)}</div><ul style="margin: 6px 0 0 0; padding-left: 18px; list-style: disc;">${listItems}</ul></div>`;
 						} else {
 							// Just split lines without special list formatting
-							return `<div class="tip-item">${lines.map(line => escapeHtml(line)).join('<br>')}</div>`;
+							return `<div class="tip-item">${lines.map(line => markdownToHtml(line)).join('<br>')}</div>`;
 						}
 					} else {
-						return `<div class="tip-item">${escapeHtml(t)}</div>`;
+						return `<div class="tip-item">${markdownToHtml(t)}</div>`;
 					}
 				}).join('')
 			: '<div class="tip-item" style="color:#666;">No specific suggestions - you\'re doing great!</div>';
