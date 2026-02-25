@@ -190,15 +190,6 @@
       "scanMode": "exact"
     },
     {
-      "id": "continue-config",
-      "type": "non-copilot-config",
-      "category": "non-copilot",
-      "icon": "➡️",
-      "label": "Continue Config",
-      "path": "config.json",
-      "scanMode": "exact"
-    },
-    {
       "id": "cline-rules",
       "type": "non-copilot-instructions",
       "category": "non-copilot",
