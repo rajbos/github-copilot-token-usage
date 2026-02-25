@@ -44,6 +44,7 @@ type UsageAnalysisStats = {
 	locale?: string;
 	lastUpdated: string;
 	customizationMatrix?: WorkspaceCustomizationMatrix | null;
+	missedPotential?: MissedPotentialWorkspace[];
 	backendConfigured?: boolean;
 };
 
@@ -62,6 +63,7 @@ interface CustomizationFileEntry {
 	name?: string;
 	lastModified?: string;
 	isStale?: boolean;
+	category?: 'copilot' | 'non-copilot';
 }
 
 type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
@@ -80,8 +82,21 @@ interface WorkspaceCustomizationMatrix {
 	workspacesWithIssues: number;
 }
 
+interface MissedPotentialWorkspace {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	interactionCount: number;
+	nonCopilotFiles: CustomizationFileEntry[];
+}
+
 declare global {
-	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null } }
+	interface Window { 
+		__INITIAL_USAGE__?: UsageAnalysisStats & { 
+			customizationMatrix?: WorkspaceCustomizationMatrix | null;
+			missedPotential?: MissedPotentialWorkspace[];
+		} 
+	}
 }
 
 const vscode = acquireVsCodeApi();
@@ -142,6 +157,74 @@ function createMcpToolIssueUrl(unknownTools: string[]): string {
 	const labels = encodeURIComponent('MCP Toolnames');
 	
 	return `${repoUrl}/issues/new?title=${title}&body=${body}&labels=${labels}`;
+}
+
+function renderMissedPotential(stats: UsageAnalysisStats): string {
+	const missed = stats.missedPotential || window.__INITIAL_USAGE__?.missedPotential || [];
+	if (missed.length === 0) {
+		return `
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #fbbf24; margin-bottom: 8px;">
+					⚠️ Missed Potential: Non-Copilot Instruction Files
+				</div>
+				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
+					No missed-potential workspaces detected in the last 30 days.
+				</div>
+				<div style="font-size: 11px; color: var(--text-secondary);">
+					A workspace appears here only when it has non-Copilot AI instruction files and no Copilot customization files. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+				</div>
+			</div>
+		`;
+	}
+
+	return `
+        <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
+            <div style="font-size: 13px; font-weight: 600; color: #fbbf24; margin-bottom: 8px;">
+                ⚠️ Missed Potential: Non-Copilot Instruction Files
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
+                These active workspaces use other AI tools but lack Copilot customizations. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+            </div>
+            <div class="customization-matrix-container">
+                <table class="customization-matrix">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">📂 Workspace</th>
+                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Sessions</th>
+                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Interactions</th>
+                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Non-Copilot Files Found</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${missed.map(ws => `
+                            <tr style="background: rgba(251, 191, 36, 0.05);">
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); font-family: 'Courier New', monospace; font-size: 12px;">
+                                    ${escapeHtml(ws.workspaceName)} <span title="Missed Potential" style="cursor: help;">⚠️</span>
+                                </td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
+                                    ${formatNumber(ws.sessionCount)}
+                                </td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
+                                    ${formatNumber(ws.interactionCount)}
+                                </td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2);">
+                                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                                        ${ws.nonCopilotFiles.map(f => `
+                                            <div style="font-size: 11px; display: flex; align-items: center; gap: 6px;">
+                                                <span>${f.icon || '📄'}</span>
+                                                <span style="font-weight: 500;">${escapeHtml(f.label || '')}:</span>
+                                                <span style="font-family: monospace; color: var(--text-muted);">${escapeHtml(f.relativePath)}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
 }
 
 function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName): string {
@@ -402,6 +485,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			</div>
 
 			${customizationHtml}
+			${renderMissedPotential(stats)}
 
 			<!-- Tool Calls Section -->
 			<div class="section">

@@ -108,6 +108,7 @@ interface CustomizationFileEntry {
 	name: string;
 	lastModified: string | null;
 	isStale: boolean;
+	category?: 'copilot' | 'non-copilot';
 }
 
 // New interfaces for usage analysis
@@ -227,6 +228,14 @@ interface ModelSwitchingAnalysis {
 	totalRequests: number;       // Total requests across all tiers
 }
 
+interface MissedPotentialWorkspace {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	interactionCount: number;
+	nonCopilotFiles: CustomizationFileEntry[];
+}
+
 interface UsageAnalysisStats {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
@@ -234,6 +243,7 @@ interface UsageAnalysisStats {
 	locale?: string;
 	lastUpdated: Date;
 	customizationMatrix?: WorkspaceCustomizationMatrix;
+	missedPotential?: MissedPotentialWorkspace[];
 }
 
 /** Matrix types used for Usage Analysis customization matrix */
@@ -529,7 +539,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 							label: pattern.label || path.basename(absPath),
 							name: path.basename(absPath),
 							lastModified: stat.mtime.toISOString(),
-							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000,
+							category: pattern.category as 'copilot' | 'non-copilot' | undefined
 						});
 					}
 				} else if (scanMode === 'oneLevel') {
@@ -576,6 +587,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 									label: pattern.label || displayName,
 									name: displayName,
 									lastModified: stat.mtime.toISOString(),
+									category: pattern.category as 'copilot' | 'non-copilot' | undefined,
 									isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
 								});
 							}
@@ -608,7 +620,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 										label: pattern.label || path.basename(abs),
 										name: path.basename(abs),
 										lastModified: stat.mtime.toISOString(),
-										isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
+										isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000,
+										category: pattern.category as 'copilot' | 'non-copilot' | undefined
 									});
 								}
 							}
@@ -660,6 +673,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Last computed customization matrix for usage analysis (typed)
 	private _lastCustomizationMatrix?: WorkspaceCustomizationMatrix;
+	private _lastMissedPotential?: MissedPotentialWorkspace[];
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
@@ -2079,6 +2093,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return dailyStatsArray;
 	}
 
+	private detectMissedPotential(
+		workspaceSessionCounts: Map<string, number>,
+		workspaceInteractionCounts: Map<string, number>
+	): MissedPotentialWorkspace[] {
+		const missedPotential: MissedPotentialWorkspace[] = [];
+
+		for (const [workspacePath, sessionCount] of workspaceSessionCounts) {
+			const files = this._customizationFilesCache.get(workspacePath) || [];
+			
+			// Check for Copilot files (category "copilot" or undefined for backward compatibility)
+			const hasCopilotFiles = files.some(f => !f.category || f.category === 'copilot');
+			
+			// Check for non-Copilot files (must be explicitly "non-copilot")
+			const nonCopilotFiles = files.filter(f => f.category === 'non-copilot');
+			
+			// Missed potential = has non-Copilot files AND NO Copilot files
+			if (nonCopilotFiles.length > 0 && !hasCopilotFiles) {
+				missedPotential.push({
+					workspacePath,
+					workspaceName: path.basename(workspacePath),
+					sessionCount,
+					interactionCount: workspaceInteractionCounts.get(workspacePath) || 0,
+					nonCopilotFiles
+				});
+			}
+		}
+
+		// Sort by interaction count (descending) so most active "missed" repos are first
+		missedPotential.sort((a, b) => b.interactionCount - a.interactionCount);
+
+		return missedPotential;
+	}
+
 	/**
 	 * Calculate usage analysis statistics for today and last 30 days
 	 * @param useCache If true, return cached stats if available. If false, force recalculation.
@@ -2329,9 +2376,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Build the customization matrix using scanned workspace data and session counts
 			try {
-				// Unique customization types based on patterns JSON
+				// Unique customization types based on Copilot patterns only
 				const uniqueTypes = new Map<string, { icon: string; label: string }>();
 				for (const pattern of (customizationPatternsData as any).patterns || []) {
+					if (pattern.category && pattern.category !== 'copilot') {
+						continue;
+					}
 					if (!uniqueTypes.has(pattern.type)) {
 						uniqueTypes.set(pattern.type, { icon: pattern.icon || '', label: pattern.label || pattern.type });
 					}
@@ -2410,6 +2460,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 
 				this._lastCustomizationMatrix = customizationMatrix;
+				
+				// Calculate missed potential (workspaces with non-Copilot instruction files but no Copilot files)
+				this._lastMissedPotential = this.detectMissedPotential(workspaceSessionCounts, workspaceInteractionCounts);
 			} catch (e) {
 				// ignore overall customization scanning errors
 			}
@@ -2426,7 +2479,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			month: monthStats,
 			locale: Intl.DateTimeFormat().resolvedOptions().locale,
 			lastUpdated: now,
-			customizationMatrix: this._lastCustomizationMatrix
+			customizationMatrix: this._lastCustomizationMatrix,
+			missedPotential: this._lastMissedPotential || []
 		};
 
 		// Cache the result for future use
@@ -6656,7 +6710,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		this.log('🔄 Refreshing Usage Analysis dashboard');
-		// Refresh all stats so the status bar and tooltip stay in sync
+		// Force fresh usage analysis stats and re-render the webview
+		const analysisStats = await this.calculateUsageAnalysisStats(false);
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+		// Refresh token stats so the status bar and tooltip stay in sync
 		await this.updateTokenStats();
 		this.log('✅ Usage Analysis dashboard refreshed');
 	}
@@ -9353,6 +9410,7 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 			month: stats.month,
 			locale: detectedLocale,
 			customizationMatrix: stats.customizationMatrix || null,
+			missedPotential: stats.missedPotential || [],
 			lastUpdated: stats.lastUpdated.toISOString(),
 			backendConfigured: this.isBackendConfigured()
 		}).replace(/</g, '\\u003c');
