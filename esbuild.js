@@ -88,14 +88,13 @@ async function main() {
 		fs.mkdirSync(toolkitDir, { recursive: true });
 	}
 	const toolkitSrc = path.join(__dirname, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist');
-	const toolkitFiles = ['toolkit.js', 'toolkit.min.js'];
-	toolkitFiles.forEach(file => {
-		const src = path.join(toolkitSrc, file);
-		const dst = path.join(toolkitDir, file);
-		if (fs.existsSync(src)) {
-			fs.copyFileSync(src, dst);
-		}
-	});
+	// Use minified version in production, regular version in development
+	const toolkitFile = production ? 'toolkit.min.js' : 'toolkit.js';
+	const src = path.join(toolkitSrc, toolkitFile);
+	const dst = path.join(toolkitDir, 'toolkit.js'); // Always name it toolkit.js for consistent loading
+	if (fs.existsSync(src)) {
+		fs.copyFileSync(src, dst);
+	}
 }
 
 main().catch(e => {
