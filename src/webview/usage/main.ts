@@ -403,6 +403,18 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 			${customizationHtml}
 
+			<!-- Repository Setup Section -->
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+					🏗️ Repository Setup
+				</div>
+				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
+					Analyze repository hygiene and structure to identify missing configuration files and best practices.
+				</div>
+				<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
+				<div id="repo-analysis-results" style="margin-top: 12px;"></div>
+			</div>
+
 			<!-- Tool Calls Section -->
 			<div class="section">
 				<div class="section-title"><span>🔧</span><span>Tool Usage</span></div>
@@ -740,6 +752,14 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
 	});
+	document.getElementById('btn-analyse-repo')?.addEventListener('click', () => {
+		const btn = document.getElementById('btn-analyse-repo') as any;
+		if (btn) {
+			btn.disabled = true;
+			btn.textContent = 'Analyzing...';
+		}
+		vscode.postMessage({ command: 'analyseRepository' });
+	});
 
 	// Copy path buttons in customization list
 	Array.from(document.getElementsByClassName('cf-copy')).forEach((el) => {
@@ -756,6 +776,162 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			}
 		});
 	});
+}
+
+// Listen for messages from the extension
+window.addEventListener('message', (event) => {
+	const message = event.data;
+	switch (message.command) {
+		case 'repoAnalysisResults':
+			displayRepoAnalysisResults(message.data);
+			break;
+		case 'repoAnalysisError':
+			displayRepoAnalysisError(message.error);
+			break;
+	}
+});
+
+function displayRepoAnalysisResults(data: any): void {
+	const btn = document.getElementById('btn-analyse-repo') as any;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = 'Analyse Repository';
+	}
+
+	const resultsDiv = document.getElementById('repo-analysis-results');
+	if (!resultsDiv) {
+		return;
+	}
+
+	const summary = data.summary;
+	const checks = data.checks || [];
+	const recommendations = data.recommendations || [];
+
+	// Sort recommendations by priority
+	const priorityOrder: { [key: string]: number } = { high: 1, medium: 2, low: 3 };
+	recommendations.sort((a: any, b: any) => (priorityOrder[a.priority as string] || 99) - (priorityOrder[b.priority as string] || 99));
+
+	// Group checks by category
+	const categories: { [key: string]: any[] } = {};
+	checks.forEach((check: any) => {
+		if (!categories[check.category]) {
+			categories[check.category] = [];
+		}
+		categories[check.category].push(check);
+	});
+
+	const categoryLabels: { [key: string]: string } = {
+		versionControl: '🔄 Version Control',
+		codeQuality: '✨ Code Quality',
+		cicd: '🚀 CI/CD',
+		environment: '🔧 Environment',
+		documentation: '📚 Documentation'
+	};
+
+	let categoriesHtml = '';
+	for (const [categoryId, categoryChecks] of Object.entries(categories)) {
+		const catLabel = categoryLabels[categoryId] || categoryId;
+		const catSummary = summary.categories[categoryId];
+		const catPercentage = catSummary ? Math.round(catSummary.percentage) : 0;
+
+		const checksHtml = categoryChecks.map((check: any) => {
+			const statusIcon = check.status === 'pass' ? '✅' : check.status === 'warning' ? '⚠️' : '❌';
+			const statusColor = check.status === 'pass' ? '#22c55e' : check.status === 'warning' ? '#f59e0b' : '#ef4444';
+			return `
+				<div style="padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; align-items: flex-start; gap: 8px;">
+					<span style="font-size: 16px;">${statusIcon}</span>
+					<div style="flex: 1;">
+						<div style="font-size: 12px; font-weight: 600; color: ${statusColor};">${escapeHtml(check.label)}</div>
+						<div style="font-size: 11px; color: #b8b8b8; margin-top: 2px;">${escapeHtml(check.detail)}</div>
+						${check.hint ? `<div style="font-size: 10px; color: #60a5fa; margin-top: 4px; font-style: italic;">💡 ${escapeHtml(check.hint)}</div>` : ''}
+					</div>
+					<span style="font-size: 10px; color: #999; min-width: 30px; text-align: right;">+${check.weight}</span>
+				</div>
+			`;
+		}).join('');
+
+		categoriesHtml += `
+			<div style="margin-bottom: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;">
+				<div style="padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30; display: flex; justify-content: space-between; align-items: center;">
+					<span style="font-size: 12px; font-weight: 600; color: #fff;">${catLabel}</span>
+					<span style="font-size: 11px; color: #60a5fa; font-weight: 600;">${catPercentage}%</span>
+				</div>
+				${checksHtml}
+			</div>
+		`;
+	}
+
+	const recommendationsHtml = recommendations.slice(0, 5).map((rec: any) => {
+		const priorityColor = rec.priority === 'high' ? '#ef4444' : rec.priority === 'medium' ? '#f59e0b' : '#60a5fa';
+		const priorityLabel = rec.priority.toUpperCase();
+		return `
+			<div style="padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; gap: 8px;">
+				<span style="font-size: 10px; font-weight: 600; color: ${priorityColor}; min-width: 50px;">${priorityLabel}</span>
+				<div style="flex: 1;">
+					<div style="font-size: 11px; color: #fff;">${escapeHtml(rec.action)}</div>
+					<div style="font-size: 10px; color: #999; margin-top: 2px;">${escapeHtml(rec.impact)}</div>
+				</div>
+				<span style="font-size: 10px; color: #999; min-width: 30px; text-align: right;">+${rec.weight}</span>
+			</div>
+		`;
+	}).join('');
+
+	resultsDiv.innerHTML = `
+		<div style="margin-top: 12px; padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+				<div style="font-size: 14px; font-weight: 600; color: #fff;">📊 Repository Hygiene Score</div>
+				<div style="font-size: 24px; font-weight: 700; color: #60a5fa;">${Math.round(summary.percentage)}%</div>
+			</div>
+			<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
+				<div style="text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;">
+					<div style="font-size: 18px; font-weight: 600; color: #22c55e;">${summary.passedChecks}</div>
+					<div style="font-size: 10px; color: #b8b8b8;">Passed</div>
+				</div>
+				<div style="text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;">
+					<div style="font-size: 18px; font-weight: 600; color: #f59e0b;">${summary.warningChecks}</div>
+					<div style="font-size: 10px; color: #b8b8b8;">Warnings</div>
+				</div>
+				<div style="text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;">
+					<div style="font-size: 18px; font-weight: 600; color: #ef4444;">${summary.failedChecks}</div>
+					<div style="font-size: 10px; color: #b8b8b8;">Failed</div>
+				</div>
+			</div>
+			<div style="font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;">
+				Score: ${summary.totalScore} / ${summary.maxScore} points
+			</div>
+
+			${categoriesHtml}
+
+			${recommendations.length > 0 ? `
+				<div style="margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;">
+					<div style="padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;">
+						<span style="font-size: 12px; font-weight: 600; color: #fff;">💡 Top Recommendations</span>
+					</div>
+					${recommendationsHtml}
+				</div>
+			` : ''}
+		</div>
+	`;
+}
+
+function displayRepoAnalysisError(error: string): void {
+	const btn = document.getElementById('btn-analyse-repo') as any;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = 'Analyse Repository';
+	}
+
+	const resultsDiv = document.getElementById('repo-analysis-results');
+	if (!resultsDiv) {
+		return;
+	}
+
+	resultsDiv.innerHTML = `
+		<div style="margin-top: 12px; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px;">
+			<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">❌ Analysis Failed</div>
+			<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(error)}</div>
+		</div>
+	`;
 }
 
 async function bootstrap(): Promise<void> {
