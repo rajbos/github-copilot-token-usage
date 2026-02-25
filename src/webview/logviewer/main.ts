@@ -646,7 +646,7 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">💻 Editor</div>
-					<div class="summary-value" style="font-size: 20px;">${escapeHtml(data.editorName)}</div>
+					<div class="summary-value" style="font-size: 20px; word-break: keep-all;">${escapeHtml(data.editorName)}</div>
 					<div class="summary-sub">Source editor</div>
 				</div>
 				<div class="summary-card">
@@ -656,17 +656,17 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🕒 Modified</div>
-					<div class="summary-value" style="font-size: 14px;">${formatDate(data.modified)}</div>
+					<div class="summary-value" style="font-size: 14px; word-break: keep-all;">${formatDate(data.modified)}</div>
 					<div class="summary-sub">Last file modification</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">▶️ First Interaction</div>
-					<div class="summary-value" style="font-size: 14px;">${formatDate(data.firstInteraction)}</div>
+					<div class="summary-value" style="font-size: 14px; word-break: keep-all;">${formatDate(data.firstInteraction)}</div>
 					<div class="summary-sub">Session started</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">⏹️ Last Interaction</div>
-					<div class="summary-value" style="font-size: 14px;">${formatDate(data.lastInteraction)}</div>
+					<div class="summary-value" style="font-size: 14px; word-break: keep-all;">${formatDate(data.lastInteraction)}</div>
 					<div class="summary-sub">Most recent activity</div>
 				</div>
 			</div>
@@ -721,7 +721,7 @@ function renderLayout(data: SessionLogData): void {
 			
 			<div class="turns-header">
 				<span>📝</span>
-				<span>Chat Turns (${data.turns.length})</span>
+				<span>Chat Turns (${data.turns.length})${data.title ? ` - ${data.title}` : ''}</span>
 			</div>
 			
 			<div class="turns-list">
