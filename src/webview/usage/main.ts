@@ -209,9 +209,9 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
                     <tbody>
                         ${missed.map(ws => `
                             <tr style="background: rgba(251, 191, 36, 0.05);">
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); font-family: 'Courier New', monospace; font-size: 12px;">
-                                    ${escapeHtml(ws.workspaceName)} <span title="Missed Potential" style="cursor: help;">⚠️</span>
-                                </td>
+								<td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); font-family: 'Courier New', monospace; font-size: 12px;">
+									${escapeHtml(ws.workspaceName)}
+								</td>
                                 <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
                                     ${formatNumber(ws.sessionCount)}
                                 </td>
