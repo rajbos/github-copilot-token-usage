@@ -1604,21 +1604,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			for (const sessionFile of sessionFiles) {
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-					} else {
-						// Not in cache - need to stat the file
-						const fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Only process files modified in the current month
 					if (mtime >= monthStart.getTime()) {
@@ -1683,24 +1672,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-					let wasCached: boolean;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-						wasCached = true;
-					} else {
-						// Not in cache - need to stat the file
-						const fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-						wasCached = false;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Skip files modified before last 30 days (quick filter)
 					// This is the main performance optimization - filters out old sessions without reading file content
@@ -1709,7 +1684,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 						continue;
 					}
 
-					// Get all session data in one call to avoid multiple cache lookups
+					// Get all session data in one call (cache validates via mtime+size comparison)
+					const cachedData = this.getCachedSessionData(sessionFile);
+					const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
 					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 					const interactions = sessionData.interactions;
 					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
@@ -1957,23 +1934,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			for (const sessionFile of sessionFiles) {
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					// The cache contains mtime and size, so we can skip stat if cached
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-					let fileStats: fs.Stats | undefined;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call (major performance win)
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-					} else {
-						// Not in cache - need to stat the file
-						fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Only process files modified in the last 30 days
 					if (mtime >= thirtyDaysAgo.getTime()) {
@@ -1984,8 +1948,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const modelUsage = sessionData.modelUsage;
 						const editorType = this.getEditorTypeFromPath(sessionFile);
 
-						// Repository was already retrieved from cache above (cachedData)
-						const repository = cachedData?.repository || 'Unknown';
+						// Get repository from cached session data
+						const repository = sessionData.repository || 'Unknown';
 
 						// Get the date in YYYY-MM-DD format
 						const dateKey = this.formatDateKey(new Date(mtime));
@@ -2200,21 +2164,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			for (const sessionFile of sessionFiles) {
 				try {
-					// OPTIMIZATION: Check cache first to avoid unnecessary stat calls
-					const cachedData = this.getCachedSessionData(sessionFile);
-					let mtime: number;
-					let fileSize: number;
-
-					if (cachedData && typeof cachedData.mtime === 'number' && typeof cachedData.size === 'number') {
-						// Use cached mtime/size - avoid stat call
-						mtime = cachedData.mtime;
-						fileSize = cachedData.size;
-					} else {
-						// Not in cache - need to stat the file
-						const fileStats = await this.statSessionFile(sessionFile);
-						mtime = fileStats.mtime.getTime();
-						fileSize = fileStats.size;
-					}
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
 
 					// Check if file is within the last 30 days (widest range)
 					if (mtime >= last30DaysStart.getTime()) {
