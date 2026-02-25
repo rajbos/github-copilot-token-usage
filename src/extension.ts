@@ -9214,6 +9214,18 @@ ${hashtag}`;
         models: Set<string>; // Track unique models used
         workspaces: Set<string>; // Track unique workspaces
         days: Set<string>; // Track unique days active
+        // Fluency metrics (aggregated from entities)
+        askModeCount: number;
+        editModeCount: number;
+        agentModeCount: number;
+        planModeCount: number;
+        customAgentModeCount: number;
+        toolCalls: { total: number; byTool: { [key: string]: number } };
+        contextRefs: { [key: string]: number };
+        mcpTools: { total: number };
+        multiTurnSessions: number;
+        multiFileEdits: number;
+        sessionCount: number;
       }
     >();
 
@@ -9298,6 +9310,18 @@ ${hashtag}`;
             models: new Set<string>(),
             workspaces: new Set<string>(),
             days: new Set<string>(),
+            // Initialize fluency metrics
+            askModeCount: 0,
+            editModeCount: 0,
+            agentModeCount: 0,
+            planModeCount: 0,
+            customAgentModeCount: 0,
+            toolCalls: { total: 0, byTool: {} },
+            contextRefs: {},
+            mcpTools: { total: 0 },
+            multiTurnSessions: 0,
+            multiFileEdits: 0,
+            sessionCount: 0,
           });
         }
         const userData = userMap.get(userKey)!;
@@ -9570,6 +9594,7 @@ ${hashtag}`;
       lastUpdated: new Date().toISOString(),
     };
   }
+
   private getDashboardHtml(
     webview: vscode.Webview,
     data: any | undefined,
