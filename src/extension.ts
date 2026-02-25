@@ -7173,6 +7173,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 						await this.refreshMaturityPanel();
 					}
 					break;
+				case 'resetDismissedTips':
+					await this.resetDismissedFluencyTips();
+					await this.refreshMaturityPanel();
+					break;
 				case 'showDashboard':
 					await this.showDashboard();
 					break;
@@ -7237,6 +7241,11 @@ private async dismissFluencyTips(category: string): Promise<void> {
 		await this.context.globalState.update('dismissedFluencyTips', dismissed);
 		this.log(`Dismissed fluency tips for category: ${category}`);
 	}
+}
+
+private async resetDismissedFluencyTips(): Promise<void> {
+	await this.context.globalState.update('dismissedFluencyTips', []);
+	this.log('Reset all dismissed fluency tips');
 }
 
 /**
