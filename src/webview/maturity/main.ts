@@ -454,6 +454,11 @@ function renderLayout(data: MaturityData): void {
 
 			<div class="footer">
 				Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes
+				${dismissedTips.length > 0 ? `
+					<button id="btn-reset-tips" class="reset-tips-btn" title="Show all dismissed improvement suggestions again">
+						🔄 Reset Dismissed Tips
+					</button>
+				` : ''}
 			</div>
 
 			<!-- Share to social media section -->
@@ -555,6 +560,11 @@ function renderLayout(data: MaturityData): void {
 				vscode.postMessage({ command: 'dismissTips', category });
 			}
 		});
+	});
+
+	// Wire up reset tips button
+	document.getElementById('btn-reset-tips')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'resetDismissedTips' });
 	});
 
 	// Wire up share buttons
