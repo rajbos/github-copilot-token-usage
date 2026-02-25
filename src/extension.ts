@@ -9570,7 +9570,6 @@ ${hashtag}`;
       lastUpdated: new Date().toISOString(),
     };
   }
-
   private getDashboardHtml(
     webview: vscode.Webview,
     data: any | undefined,
