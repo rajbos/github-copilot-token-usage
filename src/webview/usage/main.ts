@@ -44,6 +44,7 @@ type UsageAnalysisStats = {
 	locale?: string;
 	lastUpdated: string;
 	customizationMatrix?: WorkspaceCustomizationMatrix | null;
+	missedPotential?: MissedPotentialWorkspace[];
 	backendConfigured?: boolean;
 };
 
@@ -62,6 +63,7 @@ interface CustomizationFileEntry {
 	name?: string;
 	lastModified?: string;
 	isStale?: boolean;
+	category?: 'copilot' | 'non-copilot';
 }
 
 type CustomizationTypeStatus = '✅' | '⚠️' | '❌';
@@ -70,6 +72,7 @@ interface WorkspaceCustomizationRow {
 	workspacePath: string;
 	workspaceName: string;
 	sessionCount: number;
+	interactionCount: number;
 	typeStatuses: { [typeId: string]: CustomizationTypeStatus };
 }
 
@@ -80,12 +83,35 @@ interface WorkspaceCustomizationMatrix {
 	workspacesWithIssues: number;
 }
 
+interface MissedPotentialWorkspace {
+	workspacePath: string;
+	workspaceName: string;
+	sessionCount: number;
+	interactionCount: number;
+	nonCopilotFiles: CustomizationFileEntry[];
+}
+
 declare global {
-	interface Window { __INITIAL_USAGE__?: UsageAnalysisStats & { customizationMatrix?: WorkspaceCustomizationMatrix | null } }
+	interface Window { 
+		__INITIAL_USAGE__?: UsageAnalysisStats & { 
+			customizationMatrix?: WorkspaceCustomizationMatrix | null;
+			missedPotential?: MissedPotentialWorkspace[];
+		} 
+	}
+}
+
+interface RepoAnalysisRecord {
+	data?: any;
+	error?: string;
 }
 
 const vscode = acquireVsCodeApi();
 const initialData = window.__INITIAL_USAGE__;
+let hygieneMatrixState: WorkspaceCustomizationMatrix | null = null;
+const repoAnalysisState = new Map<string, RepoAnalysisRecord>();
+let selectedRepoPath: string | null = null;
+let isSwitchingRepository = false;
+let isBatchAnalysisInProgress = false;
 
 function escapeHtml(text: string): string {
 	return text
@@ -144,6 +170,74 @@ function createMcpToolIssueUrl(unknownTools: string[]): string {
 	return `${repoUrl}/issues/new?title=${title}&body=${body}&labels=${labels}`;
 }
 
+function renderMissedPotential(stats: UsageAnalysisStats): string {
+	const missed = stats.missedPotential || window.__INITIAL_USAGE__?.missedPotential || [];
+	if (missed.length === 0) {
+		return `
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #22c55e; margin-bottom: 8px;">
+					✅ All Good: No Missed Potential Detected
+				</div>
+				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
+					All active workspaces in the last 30 days already have Copilot customization files, or don't use other AI instruction files.
+				</div>
+				<div style="font-size: 11px; color: var(--text-secondary);">
+					A workspace would appear here if it had non-Copilot AI instruction files but no Copilot customization files. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+				</div>
+			</div>
+		`;
+	}
+
+	return `
+        <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
+            <div style="font-size: 13px; font-weight: 600; color: #fbbf24; margin-bottom: 8px;">
+                ⚠️ Missed Potential: Non-Copilot Instruction Files
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
+                These active workspaces use other AI tools but lack Copilot customizations. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+            </div>
+            <div class="customization-matrix-container">
+                <table class="customization-matrix">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">📂 Workspace</th>
+                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Sessions</th>
+                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Interactions</th>
+                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Non-Copilot Files Found</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${missed.map(ws => `
+                            <tr style="background: rgba(251, 191, 36, 0.05);">
+								<td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); font-family: 'Courier New', monospace; font-size: 12px;">
+									${escapeHtml(ws.workspaceName)}
+								</td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
+                                    ${formatNumber(ws.sessionCount)}
+                                </td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
+                                    ${formatNumber(ws.interactionCount)}
+                                </td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2);">
+                                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                                        ${ws.nonCopilotFiles.map(f => `
+                                            <div style="font-size: 11px; display: flex; align-items: center; gap: 6px;">
+                                                <span>${f.icon || '📄'}</span>
+                                                <span style="font-weight: 500;">${escapeHtml(f.label || '')}:</span>
+                                                <span style="font-family: monospace; color: var(--text-muted);">${escapeHtml(f.relativePath)}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
 function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName): string {
 	const sortedTools = Object.entries(byTool)
 		.sort(([, a], [, b]) => b - a)
@@ -188,6 +282,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const matrix =
 		((stats as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null) ??
 		((window.__INITIAL_USAGE__ as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined | null);
+	hygieneMatrixState = matrix ?? null;
+	if (!hygieneMatrixState || hygieneMatrixState.workspaces.length === 0) {
+		selectedRepoPath = null;
+	}
 	let customizationHtml = '';
 	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
 		customizationHtml = `
@@ -402,6 +500,33 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			</div>
 
 			${customizationHtml}
+			${renderMissedPotential(stats)}
+
+			<!-- Repository Setup Section -->
+			<div class="repo-hygiene-section" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+					🏗️ Repository Hygiene Analysis
+				</div>
+				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
+					Analyze repository hygiene and structure to identify missing configuration files and best practices.
+				</div>
+				${matrix && matrix.workspaces && matrix.workspaces.length > 0 ? `
+					<div style="margin-bottom: 12px;">
+						<vscode-button id="btn-analyse-all" style="margin-bottom: 8px;">Analyze All Repositories (${matrix.workspaces.length})</vscode-button>
+					</div>
+					<div id="repo-list-pane-container" class="repo-hygiene-pane">
+						<div class="repo-hygiene-pane-header">📁 Repository List</div>
+						<div id="repo-list-pane" class="repo-hygiene-pane-body"></div>
+					</div>
+					<div id="repo-details-pane-container" class="repo-hygiene-pane repo-hygiene-pane-collapsed">
+						<div class="repo-hygiene-pane-header">📊 Repository Details</div>
+						<div id="repo-details-pane" class="repo-hygiene-pane-body"></div>
+					</div>
+				` : `
+					<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
+					<div id="repo-analysis-results" class="repo-hygiene-results" style="margin-top: 12px;"></div>
+				`}
+			</div>
 
 			<!-- Tool Calls Section -->
 			<div class="section">
@@ -740,6 +865,67 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
 	});
+	
+	// Repository analysis buttons
+	document.getElementById('btn-analyse-repo')?.addEventListener('click', () => {
+		const btn = document.getElementById('btn-analyse-repo') as any;
+		if (btn) {
+			btn.disabled = true;
+			btn.textContent = 'Analyzing...';
+		}
+		vscode.postMessage({ command: 'analyseRepository' });
+	});
+	
+	document.getElementById('btn-analyse-all')?.addEventListener('click', () => {
+		const btn = document.getElementById('btn-analyse-all') as any;
+		if (btn) {
+			btn.disabled = true;
+			btn.textContent = 'Analyzing All...';
+		}
+		isBatchAnalysisInProgress = true;
+		isSwitchingRepository = true;
+		selectedRepoPath = null;
+		renderRepositoryHygienePanels();
+		vscode.postMessage({ command: 'analyseAllRepositories' });
+	});
+
+	document.getElementById('repo-list-pane')?.addEventListener('click', (e) => {
+		const target = e.target as HTMLElement;
+		const actionButton = target.closest<HTMLElement>('.btn-repo-action');
+		if (!actionButton) {
+			return;
+		}
+
+		const workspacePath = actionButton.getAttribute('data-workspace-path');
+		const action = actionButton.getAttribute('data-action');
+		if (!workspacePath || !action) {
+			return;
+		}
+
+		if (action === 'details') {
+			selectedRepoPath = workspacePath;
+			isSwitchingRepository = false;
+			renderRepositoryHygienePanels();
+			return;
+		}
+
+		if (action === 'analyze') {
+			(actionButton as any).disabled = true;
+			(actionButton as any).textContent = 'Analyzing...';
+			isBatchAnalysisInProgress = false;
+			vscode.postMessage({ command: 'analyseRepository', workspacePath });
+		}
+	});
+
+	document.getElementById('repo-details-pane')?.addEventListener('click', (e) => {
+		const target = e.target as HTMLElement;
+		if (target.closest('#btn-switch-repository')) {
+			isSwitchingRepository = true;
+			renderRepositoryHygienePanels();
+		}
+	});
+
+	renderRepositoryHygienePanels();
 
 	// Copy path buttons in customization list
 	Array.from(document.getElementsByClassName('cf-copy')).forEach((el) => {
@@ -756,6 +942,410 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			}
 		});
 	});
+}
+
+// Listen for messages from the extension
+window.addEventListener('message', (event) => {
+	const message = event.data;
+	switch (message.command) {
+		case 'repoAnalysisResults':
+			displayRepoAnalysisResults(message.data, message.workspacePath);
+			break;
+		case 'repoAnalysisError':
+			displayRepoAnalysisError(message.error, message.workspacePath);
+			break;
+		case 'repoAnalysisBatchComplete':
+			handleBatchAnalysisComplete();
+			break;
+	}
+});
+
+function getWorkspaceName(workspacePath: string): string {
+	const workspace = hygieneMatrixState?.workspaces.find((ws) => ws.workspacePath === workspacePath);
+	return workspace?.workspaceName || workspacePath;
+}
+
+function getScoreLabel(workspacePath: string): string {
+	const record = repoAnalysisState.get(workspacePath);
+	if (record?.data?.summary) {
+		const percentage = toFiniteNumber(record.data.summary.percentage);
+		return `${Math.round(percentage)}%`;
+	}
+	if (record?.error) {
+		return 'Error';
+	}
+	return '—';
+}
+
+function toFiniteNumber(value: unknown): number {
+	const numeric = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function buildRepoAnalysisBodyElement(data: any): HTMLElement {
+	const summary = data?.summary || {};
+	const checks = Array.isArray(data?.checks) ? data.checks : [];
+	const recommendations = Array.isArray(data?.recommendations) ? [...data.recommendations] : [];
+
+	const container = el('div');
+
+	const header = el('div');
+	header.setAttribute('style', 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;');
+	const title = el('div');
+	title.setAttribute('style', 'font-size: 14px; font-weight: 600; color: #fff;');
+	title.textContent = '📊 Repository Hygiene Score';
+	const score = el('div');
+	score.setAttribute('style', 'font-size: 24px; font-weight: 700; color: #60a5fa;');
+	score.textContent = `${Math.round(toFiniteNumber(summary.percentage))}%`;
+	header.append(title, score);
+	container.appendChild(header);
+
+	const statsGrid = el('div');
+	statsGrid.setAttribute('style', 'display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;');
+
+	const statCards: Array<{ count: unknown; label: string; cardStyle: string; countStyle: string }> = [
+		{
+			count: summary.passedChecks,
+			label: 'Passed',
+			cardStyle: 'text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;',
+			countStyle: 'font-size: 18px; font-weight: 600; color: #22c55e;'
+		},
+		{
+			count: summary.warningChecks,
+			label: 'Warnings',
+			cardStyle: 'text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;',
+			countStyle: 'font-size: 18px; font-weight: 600; color: #f59e0b;'
+		},
+		{
+			count: summary.failedChecks,
+			label: 'Failed',
+			cardStyle: 'text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;',
+			countStyle: 'font-size: 18px; font-weight: 600; color: #ef4444;'
+		}
+	];
+
+	for (const statCard of statCards) {
+		const card = el('div');
+		card.setAttribute('style', statCard.cardStyle);
+		const count = el('div');
+		count.setAttribute('style', statCard.countStyle);
+		count.textContent = String(toFiniteNumber(statCard.count));
+		const label = el('div');
+		label.setAttribute('style', 'font-size: 10px; color: #b8b8b8;');
+		label.textContent = statCard.label;
+		card.append(count, label);
+		statsGrid.appendChild(card);
+	}
+
+	container.appendChild(statsGrid);
+
+	const scoreSummary = el('div');
+	scoreSummary.setAttribute('style', 'font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;');
+	scoreSummary.textContent = `Score: ${toFiniteNumber(summary.totalScore)} / ${toFiniteNumber(summary.maxScore)} points`;
+	container.appendChild(scoreSummary);
+
+	const priorityOrder: { [key: string]: number } = { high: 1, medium: 2, low: 3 };
+	recommendations.sort((a: any, b: any) => (priorityOrder[a?.priority as string] || 99) - (priorityOrder[b?.priority as string] || 99));
+
+	const categories: { [key: string]: any[] } = {};
+	for (const check of checks) {
+		const categoryId = typeof check?.category === 'string' && check.category.length > 0 ? check.category : 'other';
+		if (!categories[categoryId]) {
+			categories[categoryId] = [];
+		}
+		categories[categoryId].push(check);
+	}
+
+	const categoryLabels: { [key: string]: string } = {
+		versionControl: '🔄 Version Control',
+		codeQuality: '✨ Code Quality',
+		cicd: '🚀 CI/CD',
+		environment: '🔧 Environment',
+		documentation: '📚 Documentation'
+	};
+
+	for (const [categoryId, categoryChecks] of Object.entries(categories)) {
+		const section = el('div');
+		section.setAttribute('style', 'margin-bottom: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;');
+
+		const sectionHeader = el('div');
+		sectionHeader.setAttribute('style', 'padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30; display: flex; justify-content: space-between; align-items: center;');
+
+		const categoryName = el('span');
+		categoryName.setAttribute('style', 'font-size: 12px; font-weight: 600; color: #fff;');
+		categoryName.textContent = categoryLabels[categoryId] || categoryId;
+
+		const categorySummary = summary?.categories?.[categoryId];
+		const categoryPct = el('span');
+		categoryPct.setAttribute('style', 'font-size: 11px; color: #60a5fa; font-weight: 600;');
+		categoryPct.textContent = `${Math.round(toFiniteNumber(categorySummary?.percentage))}%`;
+
+		sectionHeader.append(categoryName, categoryPct);
+		section.appendChild(sectionHeader);
+
+		for (const check of categoryChecks) {
+			const status = check?.status === 'pass' || check?.status === 'warning' ? check.status : 'fail';
+			const statusIcon = status === 'pass' ? '✅' : status === 'warning' ? '⚠️' : '❌';
+			const statusColor = status === 'pass' ? '#22c55e' : status === 'warning' ? '#f59e0b' : '#ef4444';
+
+			const checkRow = el('div');
+			checkRow.setAttribute('style', 'padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; align-items: flex-start; gap: 8px;');
+
+			const icon = el('span');
+			icon.setAttribute('style', 'font-size: 16px;');
+			icon.textContent = statusIcon;
+
+			const content = el('div');
+			content.setAttribute('style', 'flex: 1;');
+
+			const checkLabel = el('div');
+			checkLabel.setAttribute('style', `font-size: 12px; font-weight: 600; color: ${statusColor};`);
+			checkLabel.textContent = typeof check?.label === 'string' ? check.label : '';
+
+			const checkDetail = el('div');
+			checkDetail.setAttribute('style', 'font-size: 11px; color: #b8b8b8; margin-top: 2px;');
+			checkDetail.textContent = typeof check?.detail === 'string' ? check.detail : '';
+
+			content.append(checkLabel, checkDetail);
+
+			if (typeof check?.hint === 'string' && check.hint.length > 0) {
+				const hint = el('div');
+				hint.setAttribute('style', 'font-size: 10px; color: #60a5fa; margin-top: 4px; font-style: italic;');
+				hint.textContent = `💡 ${check.hint}`;
+				content.appendChild(hint);
+			}
+
+			const weight = el('span');
+			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
+			weight.textContent = `+${toFiniteNumber(check?.weight)}`;
+
+			checkRow.append(icon, content, weight);
+			section.appendChild(checkRow);
+		}
+
+		container.appendChild(section);
+	}
+
+	if (recommendations.length > 0) {
+		const recommendationsSection = el('div');
+		recommendationsSection.setAttribute('style', 'margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;');
+
+		const recommendationsHeader = el('div');
+		recommendationsHeader.setAttribute('style', 'padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;');
+		const recommendationsTitle = el('span');
+		recommendationsTitle.setAttribute('style', 'font-size: 12px; font-weight: 600; color: #fff;');
+		recommendationsTitle.textContent = '💡 Top Recommendations';
+		recommendationsHeader.appendChild(recommendationsTitle);
+		recommendationsSection.appendChild(recommendationsHeader);
+
+		for (const recommendation of recommendations.slice(0, 5)) {
+			const priority = recommendation?.priority === 'high' || recommendation?.priority === 'medium' ? recommendation.priority : 'low';
+			const priorityColor = priority === 'high' ? '#ef4444' : priority === 'medium' ? '#f59e0b' : '#60a5fa';
+
+			const row = el('div');
+			row.setAttribute('style', 'padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; gap: 8px;');
+
+			const priorityLabel = el('span');
+			priorityLabel.setAttribute('style', `font-size: 10px; font-weight: 600; color: ${priorityColor}; min-width: 50px;`);
+			priorityLabel.textContent = String(priority).toUpperCase();
+
+			const content = el('div');
+			content.setAttribute('style', 'flex: 1;');
+
+			const action = el('div');
+			action.setAttribute('style', 'font-size: 11px; color: #fff;');
+			action.textContent = typeof recommendation?.action === 'string' ? recommendation.action : '';
+
+			const impact = el('div');
+			impact.setAttribute('style', 'font-size: 10px; color: #999; margin-top: 2px;');
+			impact.textContent = typeof recommendation?.impact === 'string' ? recommendation.impact : '';
+
+			content.append(action, impact);
+
+			const weight = el('span');
+			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
+			weight.textContent = `+${toFiniteNumber(recommendation?.weight)}`;
+
+			row.append(priorityLabel, content, weight);
+			recommendationsSection.appendChild(row);
+		}
+
+		container.appendChild(recommendationsSection);
+	}
+
+	return container;
+}
+
+function renderRepositoryHygienePanels(): void {
+	const listPane = document.getElementById('repo-list-pane');
+	const listContainer = document.getElementById('repo-list-pane-container');
+	const detailsPane = document.getElementById('repo-details-pane');
+	const detailsContainer = document.getElementById('repo-details-pane-container');
+	if (!listPane || !listContainer || !detailsPane || !detailsContainer || !hygieneMatrixState) {
+		return;
+	}
+
+	const hasSelectedRepository = !!selectedRepoPath && !isSwitchingRepository;
+	const visibleWorkspaces = hasSelectedRepository
+		? hygieneMatrixState.workspaces.filter((ws) => ws.workspacePath === selectedRepoPath)
+		: hygieneMatrixState.workspaces;
+
+	listContainer.classList.remove('repo-hygiene-pane-collapsed');
+	detailsContainer.classList.toggle('repo-hygiene-pane-collapsed', !hasSelectedRepository);
+
+	listPane.innerHTML = visibleWorkspaces.map((ws, idx) => {
+		const record = repoAnalysisState.get(ws.workspacePath);
+		const hasResult = !!record?.data?.summary;
+		const scoreLabel = getScoreLabel(ws.workspacePath);
+		const buttonLabel = hasResult ? 'Details' : 'Analyze';
+		const buttonAction = hasResult ? 'details' : 'analyze';
+		const isCurrentSelection = selectedRepoPath === ws.workspacePath && hasSelectedRepository;
+		return `
+			<div class="repo-item" style="padding: 8px 12px; border-bottom: ${idx < visibleWorkspaces.length - 1 ? '1px solid #2a2a30' : 'none'}; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+				<div style="flex: 1; min-width: 0;">
+					<div class="repo-name" style="font-size: 12px; font-weight: 600; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
+						${escapeHtml(ws.workspaceName)}
+					</div>
+					<div style="font-size: 10px; color: #999; margin-top: 2px;">
+						${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${scoreLabel}
+					</div>
+				</div>
+				<vscode-button class="btn-repo-action" data-action="${buttonAction}" data-workspace-path="${escapeHtml(ws.workspacePath)}" ${isCurrentSelection ? 'disabled="true"' : ''} style="min-width: 80px;">
+					${buttonLabel}
+				</vscode-button>
+			</div>
+		`;
+	}).join('');
+
+	if (!hasSelectedRepository || !selectedRepoPath) {
+		detailsPane.replaceChildren();
+		return;
+	}
+
+	const workspaceName = getWorkspaceName(selectedRepoPath);
+	const record = repoAnalysisState.get(selectedRepoPath);
+	if (record?.data) {
+		detailsPane.replaceChildren();
+		const card = el('div', 'repo-details-card');
+		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;');
+
+		const header = el('div', 'repo-details-card-header');
+		header.setAttribute('style', 'display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;');
+
+		const label = el('div');
+		label.setAttribute('style', 'font-size: 12px; color: #b8b8b8;');
+		label.textContent = 'Repository: ';
+
+		const repoName = el('span');
+		repoName.setAttribute('style', "color: #fff; font-weight: 600; font-family: 'Courier New', monospace;");
+		repoName.textContent = workspaceName;
+		label.appendChild(repoName);
+
+		const switchButton = document.createElement('vscode-button');
+		switchButton.id = 'btn-switch-repository';
+		switchButton.setAttribute('style', 'min-width: 120px;');
+		switchButton.textContent = 'Switch Repository';
+
+		header.append(label, switchButton);
+		card.append(header, buildRepoAnalysisBodyElement(record.data));
+		detailsPane.appendChild(card);
+		return;
+	}
+
+	if (record?.error) {
+		detailsPane.innerHTML = `
+			<div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px;">
+				<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+					<div style="font-size: 11px; color: #fca5a5;">Repository: ${escapeHtml(workspaceName)}</div>
+					<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
+				</div>
+				<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">❌ Analysis Failed</div>
+				<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(record.error)}</div>
+			</div>
+		`;
+		return;
+	}
+
+	detailsPane.innerHTML = `
+		<div style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
+			<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+				<div style="font-size: 12px; color: #b8b8b8;">Repository: <span style="color: #fff; font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span></div>
+				<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
+			</div>
+			<div style="font-size: 11px; color: #999;">No analysis data yet. Click Analyze in the list.</div>
+		</div>
+	`;
+}
+
+function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
+	if (workspacePath) {
+		repoAnalysisState.set(workspacePath, { data, error: undefined });
+		if (!isBatchAnalysisInProgress) {
+			selectedRepoPath = workspacePath;
+			isSwitchingRepository = false;
+		}
+		renderRepositoryHygienePanels();
+		return;
+	}
+
+	const btn = document.getElementById('btn-analyse-repo') as any;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = 'Analyse Repository';
+	}
+
+	const resultsHost = document.getElementById('repo-analysis-results');
+	if (resultsHost) {
+		resultsHost.replaceChildren();
+		const card = el('div', 'repo-analysis-card');
+		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;');
+		card.appendChild(buildRepoAnalysisBodyElement(data));
+		resultsHost.appendChild(card);
+	}
+}
+
+function displayRepoAnalysisError(error: string, workspacePath?: string): void {
+	if (workspacePath) {
+		repoAnalysisState.set(workspacePath, { data: undefined, error });
+		if (!isBatchAnalysisInProgress) {
+			selectedRepoPath = workspacePath;
+			isSwitchingRepository = false;
+		}
+		renderRepositoryHygienePanels();
+		return;
+	}
+
+	const btn = document.getElementById('btn-analyse-repo') as any;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = 'Analyse Repository';
+	}
+
+	const resultsHost = document.getElementById('repo-analysis-results');
+	if (resultsHost) {
+		resultsHost.innerHTML = `
+			<div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; margin-bottom: 12px;">
+				<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">❌ Analysis Failed</div>
+				<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(error)}</div>
+			</div>
+		`;
+	}
+}
+
+function handleBatchAnalysisComplete(): void {
+	isBatchAnalysisInProgress = false;
+	isSwitchingRepository = true;
+	selectedRepoPath = null;
+	renderRepositoryHygienePanels();
+
+	// Re-enable the "Analyze All" button
+	const btn = document.getElementById('btn-analyse-all') as any;
+	if (btn) {
+		btn.disabled = false;
+		const matrix = (initialData as any)?.customizationMatrix as WorkspaceCustomizationMatrix | undefined;
+		const count = matrix?.workspaces?.length || 0;
+		btn.textContent = `Analyze All Repositories (${count})`;
+	}
 }
 
 async function bootstrap(): Promise<void> {

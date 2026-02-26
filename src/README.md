@@ -103,6 +103,7 @@ Structure:
 Notes:
 
 - `scanMode` can be `exact`, `oneLevel`, or `recursive`.
+- `caseInsensitive` (optional) enables case-insensitive matching for `exact` and `recursive` patterns.
 - `stalenessThresholdDays` controls when a file is marked as stale in the UI.
 - `excludeDirs` lists directories to skip during recursive scans.
 
