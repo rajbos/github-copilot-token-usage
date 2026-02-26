@@ -174,15 +174,15 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 	const missed = stats.missedPotential || window.__INITIAL_USAGE__?.missedPotential || [];
 	if (missed.length === 0) {
 		return `
-			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: #fbbf24; margin-bottom: 8px;">
-					⚠️ Missed Potential: Non-Copilot Instruction Files
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: #22c55e; margin-bottom: 8px;">
+					✅ All Good: No Missed Potential Detected
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-					No missed-potential workspaces detected in the last 30 days.
+					All active workspaces in the last 30 days already have Copilot customization files, or don't use other AI instruction files.
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary);">
-					A workspace appears here only when it has non-Copilot AI instruction files and no Copilot customization files. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+					A workspace would appear here if it had non-Copilot AI instruction files but no Copilot customization files. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
 				</div>
 			</div>
 		`;
