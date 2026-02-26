@@ -491,12 +491,9 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
-<<<<<<< actual-tokens
-					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} est.${hasActualUsage ? ` | ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual` : ''}</span>
-=======
-					<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
-					${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
->>>>>>> main
+				<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
+				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual</span>` : ''}
 					${contextHeaderHtml}
 				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
@@ -616,15 +613,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${actualTotal.toLocaleString()}</div>
 					<div class="summary-sub">↑${actualPromptTotal.toLocaleString()} prompt, ↓${actualCompletionTotal.toLocaleString()} completion</div>
 				</div>
-<<<<<<< actual-tokens
 				` : ''}
-=======
 				${totalThinkingTokens > 0 ? `<div class="summary-card">
 					<div class="summary-label">🧠 Thinking Tokens</div>
 					<div class="summary-value">${totalThinkingTokens.toLocaleString()}</div>
 					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
 				</div>` : ''}
->>>>>>> main
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
 					<div class="summary-value">${usageToolTotal}</div>
@@ -652,7 +646,7 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">💻 Editor</div>
-					<div class="summary-value" style="font-size: 20px;">${escapeHtml(data.editorName)}</div>
+					<div class="summary-value" style="font-size: 20px; word-break: keep-all;">${escapeHtml(data.editorName)}</div>
 					<div class="summary-sub">Source editor</div>
 				</div>
 				<div class="summary-card">
@@ -662,17 +656,17 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">🕒 Modified</div>
-					<div class="summary-value" style="font-size: 14px;">${formatDate(data.modified)}</div>
+					<div class="summary-value" style="font-size: 14px; word-break: keep-all;">${formatDate(data.modified)}</div>
 					<div class="summary-sub">Last file modification</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">▶️ First Interaction</div>
-					<div class="summary-value" style="font-size: 14px;">${formatDate(data.firstInteraction)}</div>
+					<div class="summary-value" style="font-size: 14px; word-break: keep-all;">${formatDate(data.firstInteraction)}</div>
 					<div class="summary-sub">Session started</div>
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">⏹️ Last Interaction</div>
-					<div class="summary-value" style="font-size: 14px;">${formatDate(data.lastInteraction)}</div>
+					<div class="summary-value" style="font-size: 14px; word-break: keep-all;">${formatDate(data.lastInteraction)}</div>
 					<div class="summary-sub">Most recent activity</div>
 				</div>
 			</div>
@@ -695,12 +689,15 @@ function renderLayout(data: SessionLogData): void {
 				const systemTokens = breakdownEntries.filter(e => e.category === 'System').reduce((s, e) => s + e.totalTokens, 0);
 				const userTokens = breakdownEntries.filter(e => e.category !== 'System').reduce((s, e) => s + e.totalTokens, 0);
 				const estimateRatio = totalTokens > 0 ? (actualTotal / totalTokens).toFixed(1) : 'N/A';
+				const hasComparison = actualTotal > 0 || totalTokens > 0;
+				const hasBreakdown = breakdownEntries.length > 0;
+				const gridClass = hasComparison && hasBreakdown ? 'session-usage-grid' : 'session-usage-grid session-usage-grid--single';
 				
 				return `
 			<div class="session-actual-usage">
 				<div class="session-usage-header">📊 Session Actual LLM Usage (${turnsWithActual.length}/${data.turns.length} turns with data)</div>
-				<div class="session-usage-grid">
-					<div class="session-usage-comparison">
+				<div class="${gridClass}">
+					${hasComparison ? `<div class="session-usage-comparison">
 						<table class="usage-comparison-table">
 							<thead><tr><th>Metric</th><th>Estimated</th><th>Actual</th><th>Ratio</th></tr></thead>
 							<tbody>
@@ -709,8 +706,8 @@ function renderLayout(data: SessionLogData): void {
 								<tr class="usage-total-row"><td><strong>Σ Total</strong></td><td class="count-cell"><strong>${totalTokens.toLocaleString()}</strong></td><td class="count-cell"><strong>${actualTotal.toLocaleString()}</strong></td><td class="count-cell"><strong>${estimateRatio}x</strong></td></tr>
 							</tbody>
 						</table>
-					</div>
-					<div class="session-usage-breakdown">
+					</div>` : ''}
+					${hasBreakdown ? `<div class="session-usage-breakdown">
 						<div class="breakdown-summary">
 							<span class="category-system">System: ~${systemTokens.toLocaleString()} tokens</span>
 							<span class="category-user">User Context: ~${userTokens.toLocaleString()} tokens</span>
@@ -719,7 +716,7 @@ function renderLayout(data: SessionLogData): void {
 							<thead><tr><th>Category</th><th>Label</th><th>Avg %</th><th>Total ~Tokens</th><th>Distribution</th></tr></thead>
 							<tbody>${breakdownRows}</tbody>
 						</table>
-					</div>
+					</div>` : ''}
 				</div>
 			</div>
 			`;
@@ -727,7 +724,7 @@ function renderLayout(data: SessionLogData): void {
 			
 			<div class="turns-header">
 				<span>📝</span>
-				<span>Chat Turns (${data.turns.length})</span>
+				<span>Chat Turns (${data.turns.length})${data.title ? ` - ${data.title}` : ''}</span>
 			</div>
 			
 			<div class="turns-list">
