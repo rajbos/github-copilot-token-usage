@@ -884,7 +884,8 @@ function getWorkspaceName(workspacePath: string): string {
 function getScoreLabel(workspacePath: string): string {
 	const record = repoAnalysisState.get(workspacePath);
 	if (record?.data?.summary) {
-		return `${Math.round(record.data.summary.percentage)}%`;
+		const percentage = toFiniteNumber(record.data.summary.percentage);
+		return `${Math.round(percentage)}%`;
 	}
 	if (record?.error) {
 		return 'Error';

@@ -14,13 +14,12 @@ This skill analyzes repository structure and configuration to identify hygiene i
 
 ## Overview
 
-The skill performs 17 automated checks across 5 categories:
+The skill performs 16 automated checks across 4 categories:
 
 - **Version Control**: Git setup, ignore files, environment templates
 - **Code Quality**: Linters, formatters, type safety configuration
 - **CI/CD & Automation**: Continuous integration, standard scripts, task runners
 - **Environment**: Dev containers, Docker, runtime version pinning
-- **Documentation**: License files, commit message quality
 
 Each check has a weight (2-5) indicating its importance. The skill returns a structured JSON report with:
 
@@ -153,17 +152,18 @@ Each check has a weight (2-5) indicating its importance. The skill returns a str
 - **Description**: License file clarifies usage rights for contributors and agents
 - **Paths**: \`['LICENSE', 'LICENSE.md', 'LICENCE']\`
 
-## Total Weights: 76 points
-- Version Control: 13 points (17%)
-- Code Quality: 17 points (22%)
-- CI/CD & Automation: 10 points (13%)
-- Environment: 9 points (12%)
+## Total Weights: 81 points
+- Version Control: 13 points (16%)
+- Code Quality: 17 points (21%)
+- CI/CD & Automation: 10 points (12%)
+- Environment: 9 points (11%)
+- Documentation: 5 points (6%)
 
 ## Expected JSON Output Schema
 
 Return a structured JSON object with:
 - summary: Overall scores and category breakdowns
-- checks: Array of 17 check results (id, category, label, status, weight, found, detail, hint)
+- checks: Array of 16 check results (id, category, label, status, weight, found, detail, hint)
 - recommendations: Prioritized action items (priority, category, action, weight, impact)
 - metadata: Scan version, timestamp, repository info
 

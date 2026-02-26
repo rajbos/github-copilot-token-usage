@@ -6696,31 +6696,36 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 				vscode.LanguageModelChatMessage.User(prompt)
 			];
 
-			const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+			const cts = new vscode.CancellationTokenSource();
+			try {
+				const response = await model.sendRequest(messages, {}, cts.token);
 
-			let fullResponse = '';
-			for await (const chunk of response.text) {
-				fullResponse += chunk;
+				let fullResponse = '';
+				for await (const chunk of response.text) {
+					fullResponse += chunk;
+				}
+
+				this.log(`📋 Copilot analysis response length: ${fullResponse.length} characters`);
+
+				// Extract JSON from response (in case it's wrapped in markdown code blocks)
+				let jsonText = fullResponse.trim();
+				const jsonMatch = jsonText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+				if (jsonMatch) {
+					jsonText = jsonMatch[1].trim();
+				}
+
+				// Parse the JSON response
+				const results = JSON.parse(jsonText);
+
+				// Validate the structure
+				if (!results.summary || !results.checks || !results.metadata) {
+					throw new Error('Invalid response structure from Copilot');
+				}
+
+				return results;
+			} finally {
+				cts.dispose();
 			}
-
-			this.log(`📋 Copilot analysis response length: ${fullResponse.length} characters`);
-
-			// Extract JSON from response (in case it's wrapped in markdown code blocks)
-			let jsonText = fullResponse.trim();
-			const jsonMatch = jsonText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-			if (jsonMatch) {
-				jsonText = jsonMatch[1].trim();
-			}
-
-			// Parse the JSON response
-			const results = JSON.parse(jsonText);
-
-			// Validate the structure
-			if (!results.summary || !results.checks || !results.metadata) {
-				throw new Error('Invalid response structure from Copilot');
-			}
-
-			return results;
 		} catch (error) {
 			this.error(`Failed to get analysis from Copilot: ${error}`);
 			throw new Error(`AI analysis failed: ${error instanceof Error ? error.message : String(error)}. Please try again or check that GitHub Copilot is properly configured.`);
