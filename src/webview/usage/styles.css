@@ -249,10 +249,6 @@ body {
 	margin-bottom: 6px;
 }
 
-.repo-hygiene-list {
-	max-height: none;
-	overflow: visible;
-}
 
 .repo-hygiene-results {
 	margin-top: 4px;
