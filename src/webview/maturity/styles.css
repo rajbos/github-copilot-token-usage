@@ -84,8 +84,8 @@ body {
 	color: #b8b8c8;
 }
 
-.stage-1 { color: #ef4444; }
-.stage-2 { color: #f59e0b; }
+.stage-1 { color: #93c5fd; }
+.stage-2 { color: #6ee7b7; }
 .stage-3 { color: #3b82f6; }
 .stage-4 { color: #10b981; }
 
@@ -149,8 +149,8 @@ body {
 	border: 2px solid #fff;
 }
 
-.stage-1-dot { background: #ef4444; }
-.stage-2-dot { background: #f59e0b; }
+.stage-1-dot { background: #93c5fd; }
+.stage-2-dot { background: #6ee7b7; }
 .stage-3-dot { background: #3b82f6; }
 .stage-4-dot { background: #10b981; }
 
@@ -209,15 +209,15 @@ body {
 }
 
 .badge-1 {
-	background: #3b1515;
-	color: #ef4444;
-	border: 1px solid #ef444480;
+	background: #152040;
+	color: #93c5fd;
+	border: 1px solid #93c5fd80;
 }
 
 .badge-2 {
-	background: #3b2c10;
-	color: #f59e0b;
-	border: 1px solid #f59e0b80;
+	background: #0d2d20;
+	color: #6ee7b7;
+	border: 1px solid #6ee7b780;
 }
 
 .badge-3 {
@@ -825,8 +825,8 @@ body {
 	color: #ccc;
 }
 
-.demo-step-active.demo-step-1 { background: #3b1515; color: #ef4444; }
-.demo-step-active.demo-step-2 { background: #3b2c10; color: #f59e0b; }
+.demo-step-active.demo-step-1 { background: #152040; color: #93c5fd; }
+.demo-step-active.demo-step-2 { background: #0d2d20; color: #6ee7b7; }
 .demo-step-active.demo-step-3 { background: #152040; color: #3b82f6; }
 .demo-step-active.demo-step-4 { background: #0d2d20; color: #10b981; }
 
