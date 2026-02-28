@@ -86,7 +86,7 @@ function showLoading(): void {
 
   const container = el("div", "container");
   const header = el("div", "header");
-  const title = el("div", "title", "Γëí╞Æ├┤├¿ Team Dashboard");
+  const title = el("div", "title", "≡ƒôè Team Dashboard");
   header.append(title);
 
   const loading = el("div", "loading-indicator");
@@ -114,7 +114,7 @@ function showError(message: string): void {
 
   const container = el("div", "container");
   const header = el("div", "header");
-  const title = el("div", "title", "Γëí╞Æ├┤├¿ Team Dashboard");
+  const title = el("div", "title", "≡ƒôè Team Dashboard");
   const buttonRow = el("div", "button-row");
   buttonRow.append(createButton(BUTTONS["btn-refresh"]));
   header.append(title, buttonRow);
@@ -150,7 +150,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   const container = el("div", "container");
   const header = el("div", "header");
   const titleGroup = el("div", "title-group");
-  const title = el("div", "title", "Γëí╞Æ├┤├¿ Team Dashboard");
+  const title = el("div", "title", "≡ƒôè Team Dashboard");
   const period = el("div", "period", "Last 30 days");
   titleGroup.append(title, period);
   const buttonRow = el("div", "button-row");
@@ -185,7 +185,7 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
   const sectionTitle = el(
     "h2",
     "",
-    "Γëí╞Æ├ª├▒ Your Summary (All Devices & Workspaces)",
+    "≡ƒæñ Your Summary (All Devices & Workspaces)",
   );
 
   const grid = el("div", "stats-grid");
@@ -206,7 +206,7 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
 
 function buildTeamSection(stats: DashboardStats): HTMLElement {
   const section = el("div", "section");
-  const sectionTitle = el("h2", "", "Γëí╞Æ├ª├æ Team Comparison");
+  const sectionTitle = el("h2", "", "≡ƒæÑ Team Comparison");
 
   const teamGrid = el("div", "stats-grid");
   teamGrid.append(
@@ -236,11 +236,11 @@ function buildTeamSection(stats: DashboardStats): HTMLElement {
     const firstDate = stats.team.firstDate;
     const lastDate = stats.team.lastDate;
     if (firstDate && lastDate) {
-      dateInfo.textContent = `Γëí╞Æ├┤├á Data Range: ${firstDate} to ${lastDate}`;
+      dateInfo.textContent = `≡ƒôà Data Range: ${firstDate} to ${lastDate}`;
     } else if (firstDate) {
-      dateInfo.textContent = `Γëí╞Æ├┤├á First Data: ${firstDate}`;
+      dateInfo.textContent = `≡ƒôà First Data: ${firstDate}`;
     } else if (lastDate) {
-      dateInfo.textContent = `Γëí╞Æ├┤├á Last Data: ${lastDate}`;
+      dateInfo.textContent = `≡ƒôà Last Data: ${lastDate}`;
     }
     console.log("Date info element created");
   } else {
@@ -346,7 +346,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
     const rankCell = el("td", "rank-cell", `${member.rank}`);
     // Expand toggle indicator in rank cell
     if (hasCategories) {
-      const toggle = el("span", "expand-toggle", "╬ô├╗Γòó");
+      const toggle = el("span", "expand-toggle", "Γû╢");
       rankCell.prepend(toggle);
     }
 
@@ -401,7 +401,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "delete-row-btn";
     deleteBtn.title = `Delete data for ${displayUserId} in dataset ${displayDatasetId}`;
-    deleteBtn.textContent = "Γëí╞Æ├╣├ªΓê⌐Γòò├à";
+    deleteBtn.textContent = "≡ƒùæ∩╕Å";
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       vscode.postMessage({
@@ -441,7 +441,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
         const expanded = row.getAttribute("aria-expanded") === "true";
         row.setAttribute("aria-expanded", expanded ? "false" : "true");
         const toggle = row.querySelector(".expand-toggle");
-        if (toggle) { toggle.textContent = expanded ? "╬ô├╗Γòó" : "╬ô├╗Γò¥"; }
+        if (toggle) { toggle.textContent = expanded ? "Γû╢" : "Γû╝"; }
         detailRow.classList.toggle("hidden", expanded);
       });
     }
@@ -458,7 +458,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
 function buildFluencyDetailPanel(member: TeamMemberStats): HTMLElement {
   const panel = el("div", "fluency-detail-panel");
 
-  const heading = el("div", "fluency-detail-heading", "Γëí╞Æ├┤├¿ Fluency Score Breakdown");
+  const heading = el("div", "fluency-detail-heading", "≡ƒôè Fluency Score Breakdown");
   panel.append(heading);
 
   const grid = el("div", "fluency-categories-grid");
@@ -483,7 +483,7 @@ function buildFluencyDetailPanel(member: TeamMemberStats): HTMLElement {
 
     if (cat.tips.length > 0) {
       const tipsSection = el("div", "fluency-tips");
-      const tipsLabel = el("div", "fluency-tips-label", "Γëí╞Æ├å├¡ Next steps to level up:");
+      const tipsLabel = el("div", "fluency-tips-label", "≡ƒÆí Next steps to level up:");
       tipsSection.append(tipsLabel);
       for (const tip of cat.tips) {
         const tipEl = document.createElement("div");
@@ -493,7 +493,7 @@ function buildFluencyDetailPanel(member: TeamMemberStats): HTMLElement {
       }
       card.append(tipsSection);
     } else if (cat.stage === 4) {
-      const achieved = el("div", "fluency-achieved", "╬ô┬ú├á Stage 4 achieved!");
+      const achieved = el("div", "fluency-achieved", "Γ£à Stage 4 achieved!");
       card.append(achieved);
     }
 
@@ -507,12 +507,12 @@ function buildFluencyDetailPanel(member: TeamMemberStats): HTMLElement {
 function getFluencyStageIcon(stage: number): string {
 	// Return emoji icons for each stage
 	const icons: Record<number, string> = {
-		1: 'Γëí╞Æ├«ΓûÆ', // Skeptic
-		2: 'Γëí╞Æ├╢├¼', // Explorer
-		3: 'Γëí╞Æ├▒┬Ñ', // Collaborator
-		4: 'Γëí╞Æ├ä┬╗'  // Strategist
+		1: '≡ƒî▒', // Skeptic
+		2: '≡ƒöì', // Explorer
+		3: '≡ƒñ¥', // Collaborator
+		4: '≡ƒÄ»'  // Strategist
 	};
-	return icons[stage] || '╬ô┬Ñ├┤';
+	return icons[stage] || 'Γ¥ô';
 }
 
 function escapeHtml(text: string): string {

@@ -9214,24 +9214,6 @@ ${hashtag}`;
         models: Set<string>; // Track unique models used
         workspaces: Set<string>; // Track unique workspaces
         days: Set<string>; // Track unique days active
-        // Fluency metrics (aggregated from entities)
-        askModeCount: number;
-        editModeCount: number;
-        agentModeCount: number;
-        planModeCount: number;
-        customAgentModeCount: number;
-        toolCalls: { total: number; byTool: { [key: string]: number } };
-        contextRefs: { [key: string]: number };
-        mcpTools: { total: number; byServer?: { [key: string]: number } };
-        multiTurnSessions: number;
-        avgTurnsPerSession: number;
-        multiFileEdits: number;
-        avgFilesPerEdit: number;
-        sessionCount: number;
-        editScope?: { multiFileEdits: number; singleFileEdits: number; avgFilesPerSession: number; totalEditedFiles: number };
-        agentTypes?: { editsAgent?: number; workspaceAgent?: number };
-        repositories?: string[];
-        repositoriesWithCustomization?: string[];
       }
     >();
 
@@ -9245,6 +9227,270 @@ ${hashtag}`;
       ctxVscode: number; ctxClipboard: number; ctxChanges: number;
       ctxProblemsPanel: number; ctxOutputPanel: number;
       ctxTerminalLastCommand: number; ctxTerminalSelection: number;
+      ctxByKind: Record<string, number>;
+      mcpTotal: number; mcpByServer: Record<string, number>;
+      mixedTierSessions: number; switchingFreqSum: number; switchingFreqCount: number;
+      standardModels: Set<string>; premiumModels: Set<string>;
+      multiFileEdits: number; filesPerEditSum: number; filesPerEditCount: number;
+      editsAgentCount: number; workspaceAgentCount: number;
+      repositories: Set<string>; repositoriesWithCustomization: Set<string>;
+      applyRateSum: number; applyRateCount: number;
+      multiTurnSessions: number; turnsPerSessionSum: number; turnsPerSessionCount: number;
+      sessionCount: number; durationMsSum: number; durationMsCount: number;
+    }>();
+
+    // Track first and last data points for reference
+    let firstDate: string | null = null;
+    let lastDate: string | null = null;
+
+    for (const entity of allEntities) {
+      const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
+      const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
+      const machineId = (entity.machineId ?? "").toString();
+      const workspaceId = (entity.workspaceId ?? "").toString();
+      const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
+      const inputTokens = Number.isFinite(Number(entity.inputTokens))
+        ? Number(entity.inputTokens)
+        : 0;
+      const outputTokens = Number.isFinite(Number(entity.outputTokens))
+        ? Number(entity.outputTokens)
+        : 0;
+      const interactions = Number.isFinite(Number(entity.interactions))
+        ? Number(entity.interactions)
+        : 0;
+      const tokens = inputTokens + outputTokens;
+      const dayKey = (entity.day ?? "").toString().replace(/^d:/, ""); // Strip d: prefix
+
+      // Track date range
+      if (dayKey) {
+        if (!firstDate || dayKey < firstDate) {
+          firstDate = dayKey;
+        }
+        if (!lastDate || dayKey > lastDate) {
+          lastDate = dayKey;
+        }
+      }
+
+      // Personal data aggregation - match against resolved userId
+      if (currentUserId && userId === currentUserId) {
+        personalTotalTokens += tokens;
+        personalTotalInteractions += interactions;
+        personalDevices.add(machineId);
+        personalWorkspaces.add(workspaceId);
+
+        if (!personalModelUsage[model]) {
+          personalModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+        }
+        personalModelUsage[model].inputTokens += inputTokens;
+        personalModelUsage[model].outputTokens += outputTokens;
+      }
+
+      // Team data aggregation - use userId|datasetId as key to track users across datasets
+      if (userId && userId.trim()) {
+        const userKey = `${userId}|${datasetId}`;
+        if (!userMap.has(userKey)) {
+          userMap.set(userKey, {
+            tokens: 0,
+            interactions: 0,
+            cost: 0,
+            datasetId,
+            sessions: new Set<string>(),
+            models: new Set<string>(),
+            workspaces: new Set<string>(),
+            days: new Set<string>(),
+          });
+        }
+        const userData = userMap.get(userKey)!;
+        userData.tokens += tokens;
+        userData.interactions += interactions;
+        // Track unique sessions as day+workspace+machine combinations
+        const sessionKey = `${dayKey}|${workspaceId}|${machineId}`;
+        userData.sessions.add(sessionKey);
+        // Track unique models, workspaces, and days
+        if (model) {
+          userData.models.add(model);
+        }
+        if (workspaceId) {
+          userData.workspaces.add(workspaceId);
+        }
+        if (dayKey) {
+          userData.days.add(dayKey);
+        }
+
+        // Fluency data accumulation (schema version 4+)
+        if ((entity.schemaVersion ?? 0) >= 4) {
+          if (!userFluencyMap.has(userKey)) {
+            userFluencyMap.set(userKey, {
+              askModeCount: 0, editModeCount: 0, agentModeCount: 0,
+              planModeCount: 0, customAgentModeCount: 0,
+              toolCallsTotal: 0, toolCallsByTool: {},
+              ctxFile: 0, ctxSelection: 0, ctxSymbol: 0,
+              ctxCodebase: 0, ctxWorkspace: 0, ctxTerminal: 0,
+              ctxVscode: 0, ctxClipboard: 0, ctxChanges: 0,
+              ctxProblemsPanel: 0, ctxOutputPanel: 0,
+              ctxTerminalLastCommand: 0, ctxTerminalSelection: 0,
+              ctxByKind: {},
+              mcpTotal: 0, mcpByServer: {},
+              mixedTierSessions: 0, switchingFreqSum: 0, switchingFreqCount: 0,
+              standardModels: new Set(), premiumModels: new Set(),
+              multiFileEdits: 0, filesPerEditSum: 0, filesPerEditCount: 0,
+              editsAgentCount: 0, workspaceAgentCount: 0,
+              repositories: new Set(), repositoriesWithCustomization: new Set(),
+              applyRateSum: 0, applyRateCount: 0,
+              multiTurnSessions: 0, turnsPerSessionSum: 0, turnsPerSessionCount: 0,
+              sessionCount: 0, durationMsSum: 0, durationMsCount: 0,
+            });
+          }
+          const fd = userFluencyMap.get(userKey)!;
+          fd.askModeCount += typeof entity.askModeCount === "number" ? entity.askModeCount : 0;
+          fd.editModeCount += typeof entity.editModeCount === "number" ? entity.editModeCount : 0;
+          fd.agentModeCount += typeof entity.agentModeCount === "number" ? entity.agentModeCount : 0;
+          fd.planModeCount += typeof entity.planModeCount === "number" ? entity.planModeCount : 0;
+          fd.customAgentModeCount += typeof entity.customAgentModeCount === "number" ? entity.customAgentModeCount : 0;
+          if (entity.toolCallsJson) {
+            try {
+              const tc = JSON.parse(entity.toolCallsJson);
+              fd.toolCallsTotal += tc.total ?? 0;
+              for (const [tool, count] of Object.entries(tc.byTool ?? {})) {
+                fd.toolCallsByTool[tool] = (fd.toolCallsByTool[tool] ?? 0) + Number(count);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.contextRefsJson) {
+            try {
+              const cr = JSON.parse(entity.contextRefsJson);
+              fd.ctxFile += cr.file ?? 0;
+              fd.ctxSelection += cr.selection ?? 0;
+              fd.ctxSymbol += cr.symbol ?? 0;
+              fd.ctxCodebase += cr.codebase ?? 0;
+              fd.ctxWorkspace += cr.workspace ?? 0;
+              fd.ctxTerminal += cr.terminal ?? 0;
+              fd.ctxVscode += cr.vscode ?? 0;
+              fd.ctxClipboard += cr.clipboard ?? 0;
+              fd.ctxChanges += cr.changes ?? 0;
+              fd.ctxProblemsPanel += cr.problemsPanel ?? 0;
+              fd.ctxOutputPanel += cr.outputPanel ?? 0;
+              fd.ctxTerminalLastCommand += cr.terminalLastCommand ?? 0;
+              fd.ctxTerminalSelection += cr.terminalSelection ?? 0;
+              for (const [kind, count] of Object.entries(cr.byKind ?? {})) {
+                fd.ctxByKind[kind] = (fd.ctxByKind[kind] ?? 0) + Number(count);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.mcpToolsJson) {
+            try {
+              const mcp = JSON.parse(entity.mcpToolsJson);
+              fd.mcpTotal += mcp.total ?? 0;
+              for (const [server, data] of Object.entries(mcp.byServer ?? {})) {
+                fd.mcpByServer[server] = (fd.mcpByServer[server] ?? 0) + Number((data as { total?: number })?.total ?? data ?? 0);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.modelSwitchingJson) {
+            try {
+              const ms = JSON.parse(entity.modelSwitchingJson);
+              fd.mixedTierSessions += ms.mixedTierSessions ?? 0;
+              if (typeof ms.switchingFrequency === "number") {
+                fd.switchingFreqSum += ms.switchingFrequency;
+                fd.switchingFreqCount++;
+              }
+              for (const m of ms.standardModels ?? []) { fd.standardModels.add(m as string); }
+              for (const m of ms.premiumModels ?? []) { fd.premiumModels.add(m as string); }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.editScopeJson) {
+            try {
+              const es = JSON.parse(entity.editScopeJson);
+              fd.multiFileEdits += es.multiFileEdits ?? 0;
+              if (typeof es.avgFilesPerSession === "number" && es.avgFilesPerSession > 0) {
+                fd.filesPerEditSum += es.avgFilesPerSession;
+                fd.filesPerEditCount++;
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.agentTypesJson) {
+            try {
+              const at = JSON.parse(entity.agentTypesJson);
+              fd.editsAgentCount += at.editsAgent ?? 0;
+              fd.workspaceAgentCount += at.workspaceAgent ?? 0;
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.repositoriesJson) {
+            try {
+              const rj = JSON.parse(entity.repositoriesJson);
+              for (const r of rj.repositories ?? []) { fd.repositories.add(r as string); }
+              for (const r of rj.repositoriesWithCustomization ?? []) { fd.repositoriesWithCustomization.add(r as string); }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.applyUsageJson) {
+            try {
+              const au = JSON.parse(entity.applyUsageJson);
+              if (typeof au.applyRate === "number") {
+                fd.applyRateSum += au.applyRate;
+                fd.applyRateCount++;
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (typeof entity.multiTurnSessions === "number") { fd.multiTurnSessions += entity.multiTurnSessions; }
+          if (typeof entity.avgTurnsPerSession === "number" && entity.avgTurnsPerSession > 0) {
+            fd.turnsPerSessionSum += entity.avgTurnsPerSession;
+            fd.turnsPerSessionCount++;
+          }
+          if (typeof entity.sessionCount === "number") { fd.sessionCount += entity.sessionCount; }
+          if (entity.sessionDurationJson) {
+            try {
+              const sd = JSON.parse(entity.sessionDurationJson);
+              if (typeof sd.avgDurationMs === "number" && sd.avgDurationMs > 0) {
+                fd.durationMsSum += sd.avgDurationMs;
+                fd.durationMsCount++;
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+        }
+      }
+    }
+
+    // Calculate costs
+    const personalCost = this.calculateEstimatedCost(personalModelUsage);
+
+    // For team members, use a simplified cost estimate since we don't track
+    // per-user model usage in aggregated data yet.
+    // The personal cost uses the accurate model-aware calculation.
+    for (const [userId, userData] of userMap.entries()) {
+      userData.cost = (userData.tokens / 1000000) * 0.05;
+    }
+
+    // Build team leaderboard grouped by dataset
+    const teamMembers = Array.from(userMap.entries())
+      .map(([userKey, data]) => {
+        const [userId, datasetId] = userKey.split("|");
+        const sessionCount = data.sessions.size;
+        const avgTurnsPerSession =
+          sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
+        const avgTokensPerTurn =
+          data.interactions > 0
+            ? Math.round(data.tokens / data.interactions)
+            : 0;
+        const fluencyData = userFluencyMap.get(userKey);
+        const fluencyScore = fluencyData ? this.calculateFluencyScoreForTeamMember(fluencyData, sessionCount) : undefined;
+        return {
+          userId,
+          datasetId,
+          totalTokens: data.tokens,
+          totalInteractions: data.interactions,
+          totalCost: data.cost,
+          sessions: sessionCount,
+          avgTurnsPerSession,
+          uniqueModels: data.models.size,
+          uniqueWorkspaces: data.workspaces.size,
+          daysActive: data.days.size,
+          avgTokensPerTurn,
+          rank: 0,
+          ...(fluencyScore ? {
+            fluencyStage: fluencyScore.stage,
+            fluencyLabel: fluencyScore.label,
+            fluencyCategories: fluencyScore.categories,
+          } : {}),
         };
       })
       .sort((a, b) => b.totalTokens - a.totalTokens)
@@ -9324,7 +9570,6 @@ ${hashtag}`;
       lastUpdated: new Date().toISOString(),
     };
   }
-
   private getDashboardHtml(
     webview: vscode.Webview,
     data: any | undefined,
