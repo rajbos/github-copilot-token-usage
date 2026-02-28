@@ -58,6 +58,11 @@ export const SCHEMA_VERSION_WITH_USER = 2;
 export const SCHEMA_VERSION_WITH_USER_AND_CONSENT = 3;
 
 /**
+ * Schema version for rollups with userId + consent + fluency metrics.
+ */
+export const SCHEMA_VERSION_WITH_FLUENCY_METRICS = 4;
+
+/**
  * Default dataset ID.
  */
 export const DEFAULT_DATASET_ID = 'default';

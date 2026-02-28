@@ -410,10 +410,14 @@ export class SyncService {
 					
 					const tokenRatio = totalInteractionsForModel > 0 ? interactions / totalInteractionsForModel : 1;
 					
+					// Extract fluency metrics from cached usage analysis (if available)
+					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, tokenRatio);
+					
 					upsertDailyRollup(rollups, key, {
 						inputTokens: Math.round(cachedUsage.inputTokens * tokenRatio),
 						outputTokens: Math.round(cachedUsage.outputTokens * tokenRatio),
-						interactions: interactions
+						interactions: interactions,
+						fluencyMetrics
 					});
 				}
 			}
@@ -437,6 +441,99 @@ export class SyncService {
 				return false;
 			}
 		}
+	}
+
+	/**
+	 * Extract fluency metrics from cached session data and serialize for storage.
+	 * @param cachedData - The cached session file data
+	 * @param ratio - Optional ratio to proportionally distribute metrics (for multi-day sessions)
+	 * @returns Fluency metrics object ready for storage
+	 */
+	private extractFluencyMetricsFromCache(cachedData: any, ratio: number = 1): any {
+		if (!cachedData.usageAnalysis) {
+			return undefined;
+		}
+
+		const analysis = cachedData.usageAnalysis;
+		const fluencyMetrics: any = {};
+
+		// Extract mode usage counts
+		if (analysis.modeUsage) {
+			fluencyMetrics.askModeCount = Math.round((analysis.modeUsage.ask || 0) * ratio);
+			fluencyMetrics.editModeCount = Math.round((analysis.modeUsage.edit || 0) * ratio);
+			fluencyMetrics.agentModeCount = Math.round((analysis.modeUsage.agent || 0) * ratio);
+			fluencyMetrics.planModeCount = Math.round((analysis.modeUsage.plan || 0) * ratio);
+			fluencyMetrics.customAgentModeCount = Math.round((analysis.modeUsage.customAgent || 0) * ratio);
+		}
+
+		// Serialize complex objects as JSON
+		if (analysis.toolCalls) {
+			fluencyMetrics.toolCallsJson = JSON.stringify(analysis.toolCalls);
+		}
+
+		if (analysis.contextReferences) {
+			fluencyMetrics.contextRefsJson = JSON.stringify(analysis.contextReferences);
+		}
+
+		if (analysis.mcpTools) {
+			fluencyMetrics.mcpToolsJson = JSON.stringify(analysis.mcpTools);
+		}
+
+		if (analysis.modelSwitching) {
+			fluencyMetrics.modelSwitchingJson = JSON.stringify(analysis.modelSwitching);
+		}
+
+		// NEW: Store editScope for full agentic scoring
+		if (analysis.editScope) {
+			fluencyMetrics.editScopeJson = JSON.stringify(analysis.editScope);
+			// Also store direct fields for easier querying
+			fluencyMetrics.multiFileEdits = analysis.editScope.multiFileEdits || 0;
+			fluencyMetrics.avgFilesPerEdit = analysis.editScope.avgFilesPerSession || 0;
+		}
+
+		// NEW: Store agentTypes for tool usage scoring
+		if (analysis.agentTypes) {
+			fluencyMetrics.agentTypesJson = JSON.stringify(analysis.agentTypes);
+		}
+
+		// NEW: Store repositories for customization scoring
+		if (analysis.repositories || analysis.repositoriesWithCustomization) {
+			const repoData = {
+				repositories: analysis.repositories || [],
+				repositoriesWithCustomization: analysis.repositoriesWithCustomization || []
+			};
+			fluencyMetrics.repositoriesJson = JSON.stringify(repoData);
+			
+			// Calculate and store customization rate
+			const totalRepos = (analysis.repositories || []).length;
+			const customizedRepos = (analysis.repositoriesWithCustomization || []).length;
+			if (totalRepos > 0) {
+				fluencyMetrics.repoCustomizationRate = customizedRepos / totalRepos;
+			}
+		}
+
+		// NEW: Store applyUsage for workflow integration scoring
+		if (analysis.applyUsage) {
+			fluencyMetrics.applyUsageJson = JSON.stringify(analysis.applyUsage);
+			fluencyMetrics.codeBlockApplyRate = analysis.applyUsage.applyRate || 0;
+		}
+
+		// NEW: Store sessionDuration data
+		if (analysis.sessionDuration) {
+			fluencyMetrics.sessionDurationJson = JSON.stringify(analysis.sessionDuration);
+		}
+
+		// Extract conversation patterns
+		if (analysis.conversationPatterns) {
+			fluencyMetrics.multiTurnSessions = analysis.conversationPatterns.multiTurnSessions || 0;
+			fluencyMetrics.avgTurnsPerSession = analysis.conversationPatterns.avgTurnsPerSession || 0;
+		}
+
+		// Count this as one session
+		fluencyMetrics.sessionCount = 1;
+
+		// Only return if we have at least some fluency metrics
+		return Object.keys(fluencyMetrics).length > 0 ? fluencyMetrics : undefined;
 	}
 
 	/**
@@ -881,7 +978,8 @@ export class SyncService {
 						consentAt: validateConsentTimestamp(settings.shareConsentAt, this.deps.log),
 						inputTokens: value.inputTokens,
 						outputTokens: value.outputTokens,
-						interactions: value.interactions
+						interactions: value.interactions,
+						fluencyMetrics: value.fluencyMetrics
 					});
 					entities.push(entity);
 				}
