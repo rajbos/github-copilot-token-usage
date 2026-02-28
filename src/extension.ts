@@ -8944,6 +8944,9 @@ ${hashtag}`;
     toolCallsTotal: number; toolCallsByTool: Record<string, number>;
     ctxFile: number; ctxSelection: number; ctxSymbol: number;
     ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
+    ctxVscode: number; ctxClipboard: number; ctxChanges: number;
+    ctxProblemsPanel: number; ctxOutputPanel: number;
+    ctxTerminalLastCommand: number; ctxTerminalSelection: number;
     ctxByKind: Record<string, number>;
     mcpTotal: number; mcpByServer: Record<string, number>;
     mixedTierSessions: number; switchingFreqSum: number; switchingFreqCount: number;
@@ -8954,7 +8957,7 @@ ${hashtag}`;
     applyRateSum: number; applyRateCount: number;
     multiTurnSessions: number; turnsPerSessionSum: number; turnsPerSessionCount: number;
     sessionCount: number; durationMsSum: number; durationMsCount: number;
-  }): { stage: number; label: string } {
+  }, dashboardSessions: number): { stage: number; label: string; categories: { category: string; icon: string; stage: number; tips: string[] }[] } {
     const stageLabels: Record<number, string> = {
       1: "Stage 1: Copilot Skeptic",
       2: "Stage 2: Copilot Explorer",
@@ -8982,14 +8985,33 @@ ${hashtag}`;
     if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) { peStage = Math.max(peStage, 3); }
     if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) { peStage = 4; }
     if (hasModelSwitching && fd.mixedTierSessions > 0) { peStage = Math.max(peStage, 3); }
+    const peTips: string[] = [];
+    if (peStage < 2) { peTips.push("Try asking Copilot a question using the Chat panel"); }
+    if (peStage < 3) {
+      if (!hasAgentMode) { peTips.push("Try agent mode for multi-file changes"); }
+      if (usedSlashCommands.length < 2) { peTips.push("Use slash commands like /explain, /fix, or /tests for structured prompts"); }
+    }
+    if (peStage < 4) {
+      if (!hasAgentMode) { peTips.push("Try agent mode for autonomous, multi-step coding tasks"); }
+      if (!hasModelSwitching) { peTips.push("Experiment with different models — fast models for simple queries, reasoning models for complex problems"); }
+      if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push("Explore more slash commands like /explain, /tests, or /doc"); }
+    }
 
     // 2. Context Engineering
     let ceStage = 1;
-    const usedRefTypeCount = [fd.ctxFile, fd.ctxSelection, fd.ctxSymbol, fd.ctxCodebase, fd.ctxWorkspace, fd.ctxTerminal].filter(v => v > 0).length;
+    const usedRefTypeCount = [
+      fd.ctxFile, fd.ctxSelection, fd.ctxSymbol, fd.ctxCodebase, fd.ctxWorkspace,
+      fd.ctxTerminal, fd.ctxVscode, fd.ctxClipboard, fd.ctxChanges,
+      fd.ctxProblemsPanel, fd.ctxOutputPanel, fd.ctxTerminalLastCommand, fd.ctxTerminalSelection,
+    ].filter(v => v > 0).length;
     if (totalContextRefs >= 1) { ceStage = 2; }
     if (usedRefTypeCount >= 3 && totalContextRefs >= 10) { ceStage = 3; }
     if (usedRefTypeCount >= 5 && totalContextRefs >= 30) { ceStage = 4; }
     if ((fd.ctxByKind["copilot.image"] ?? 0) > 0) { ceStage = Math.max(ceStage, 3); }
+    const ceTips: string[] = [];
+    if (ceStage < 2) { ceTips.push("Add #file or #selection references to give Copilot more context"); }
+    if (ceStage < 3) { ceTips.push("Explore @workspace, #codebase, and @terminal for broader context"); }
+    if (ceStage < 4) { ceTips.push("Try image attachments, #changes, #problemsPanel, and other specialized context variables"); }
 
     // 3. Agentic
     let agStage = 1;
@@ -9000,6 +9022,10 @@ ${hashtag}`;
     if (fd.agentModeCount >= 10 && toolCount >= 3) { agStage = Math.max(agStage, 3); }
     if (fd.agentModeCount >= 50 && toolCount >= 5) { agStage = 4; }
     if (fd.multiFileEdits >= 20 && avgFilesPerSession >= 3) { agStage = Math.max(agStage, 4); }
+    const agTips: string[] = [];
+    if (agStage < 2) { agTips.push("Try agent mode — it can run terminal commands, edit files, and explore codebases autonomously"); }
+    if (agStage < 3) { agTips.push("Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits"); }
+    if (agStage < 4) { agTips.push("Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows"); }
 
     // 4. Tool Usage
     let tuStage = 1;
@@ -9010,6 +9036,16 @@ ${hashtag}`;
     if (usedAdvancedCount >= 2) { tuStage = Math.max(tuStage, 3); }
     if (fd.mcpTotal > 0) { tuStage = Math.max(tuStage, 3); }
     if (Object.keys(fd.mcpByServer).length >= 2) { tuStage = 4; }
+    const tuTips: string[] = [];
+    if (tuStage < 2) { tuTips.push("Try agent mode to let Copilot use built-in tools for file operations and terminal commands"); }
+    if (tuStage < 3) {
+      if (fd.mcpTotal === 0) { tuTips.push("Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)"); }
+      else { tuTips.push("Explore GitHub integrations and advanced tools like editFiles and run_in_terminal"); }
+    }
+    if (tuStage < 4) {
+      if (Object.keys(fd.mcpByServer).length === 1) { tuTips.push("Add more MCP servers to expand Copilot's capabilities"); }
+      else if (fd.mcpTotal === 0) { tuTips.push("Explore MCP servers for tools that integrate with your workflow"); }
+    }
 
     // 5. Customization
     let cuStage = 1;
@@ -9022,15 +9058,42 @@ ${hashtag}`;
     const uniqueModels = new Set([...fd.standardModels, ...fd.premiumModels]);
     if (uniqueModels.size >= 3) { cuStage = Math.max(cuStage, 3); }
     if (uniqueModels.size >= 5 && reposWithCustomization >= 3) { cuStage = 4; }
+    const cuTips: string[] = [];
+    if (cuStage < 2) { cuTips.push("Create a .github/copilot-instructions.md file with project-specific guidelines"); }
+    if (cuStage < 3) { cuTips.push("Add custom instructions to more repositories to standardize your Copilot experience"); }
+    if (cuStage < 4) {
+      const uncustomized = totalRepos - reposWithCustomization;
+      if (uncustomized > 0) { cuTips.push(`${reposWithCustomization} of ${totalRepos} repos customized — add instructions to the remaining ${uncustomized} for Stage 4`); }
+      else { cuTips.push("Aim for consistent customization across all projects with instructions and agents.md"); }
+    }
+    if (cuStage >= 4) {
+      const uncustomized = totalRepos - reposWithCustomization;
+      if (uncustomized > 0) {
+        cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+      } else {
+        cuTips.push("All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration");
+      }
+    }
 
     // 6. Workflow Integration
+    const effectiveSessions = Math.max(dashboardSessions, fd.sessionCount);
     let wiStage = 1;
-    if (fd.sessionCount >= 3) { wiStage = 2; }
+    if (effectiveSessions >= 3) { wiStage = 2; }
     if (avgApplyRate >= 50) { wiStage = Math.max(wiStage, 2); }
     const modesUsed = [fd.askModeCount > 0, fd.agentModeCount > 0].filter(Boolean).length;
     if (modesUsed >= 2) { wiStage = Math.max(wiStage, 3); }
     if (totalContextRefs >= 20) { wiStage = Math.max(wiStage, 3); }
-    if (fd.sessionCount >= 15 && modesUsed >= 2 && totalContextRefs >= 20) { wiStage = 4; }
+    if (effectiveSessions >= 15 && modesUsed >= 2 && totalContextRefs >= 20) { wiStage = 4; }
+    const wiTips: string[] = [];
+    if (wiStage < 2) { wiTips.push("Use Copilot more regularly — even for quick questions"); }
+    if (wiStage < 3) {
+      if (modesUsed < 2) { wiTips.push("Combine ask mode with agent mode in your daily workflow"); }
+      if (totalContextRefs < 10) { wiTips.push("Use explicit context references like #file, @workspace, and #selection"); }
+    }
+    if (wiStage < 4) {
+      if (totalContextRefs < 20) { wiTips.push("Make explicit context a habit — use #file, @workspace, and other references consistently"); }
+      wiTips.push("Make Copilot part of every coding task: planning, coding, testing, and reviewing");
+    }
 
     // Overall: median of 6 category stages
     const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
@@ -9039,7 +9102,18 @@ ${hashtag}`;
       ? Math.round((scores[mid - 1] + scores[mid]) / 2)
       : scores[mid];
 
-    return { stage: overallStage, label: stageLabels[overallStage] ?? `Stage ${overallStage}` };
+    return {
+      stage: overallStage,
+      label: stageLabels[overallStage] ?? `Stage ${overallStage}`,
+      categories: [
+        { category: "Prompt Engineering", icon: "💬", stage: peStage, tips: peTips },
+        { category: "Context Engineering", icon: "📎", stage: ceStage, tips: ceTips },
+        { category: "Agentic", icon: "🤖", stage: agStage, tips: agTips },
+        { category: "Tool Usage", icon: "🔧", stage: tuStage, tips: tuTips },
+        { category: "Customization", icon: "⚙️", stage: cuStage, tips: cuTips },
+        { category: "Workflow Integration", icon: "🔄", stage: wiStage, tips: wiTips },
+      ],
+    };
   }
 
   /**
@@ -9142,6 +9216,9 @@ ${hashtag}`;
       toolCallsTotal: number; toolCallsByTool: Record<string, number>;
       ctxFile: number; ctxSelection: number; ctxSymbol: number;
       ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
+      ctxVscode: number; ctxClipboard: number; ctxChanges: number;
+      ctxProblemsPanel: number; ctxOutputPanel: number;
+      ctxTerminalLastCommand: number; ctxTerminalSelection: number;
       ctxByKind: Record<string, number>;
       mcpTotal: number; mcpByServer: Record<string, number>;
       mixedTierSessions: number; switchingFreqSum: number; switchingFreqCount: number;
@@ -9240,7 +9317,11 @@ ${hashtag}`;
               planModeCount: 0, customAgentModeCount: 0,
               toolCallsTotal: 0, toolCallsByTool: {},
               ctxFile: 0, ctxSelection: 0, ctxSymbol: 0,
-              ctxCodebase: 0, ctxWorkspace: 0, ctxTerminal: 0, ctxByKind: {},
+              ctxCodebase: 0, ctxWorkspace: 0, ctxTerminal: 0,
+              ctxVscode: 0, ctxClipboard: 0, ctxChanges: 0,
+              ctxProblemsPanel: 0, ctxOutputPanel: 0,
+              ctxTerminalLastCommand: 0, ctxTerminalSelection: 0,
+              ctxByKind: {},
               mcpTotal: 0, mcpByServer: {},
               mixedTierSessions: 0, switchingFreqSum: 0, switchingFreqCount: 0,
               standardModels: new Set(), premiumModels: new Set(),
@@ -9276,6 +9357,13 @@ ${hashtag}`;
               fd.ctxCodebase += cr.codebase ?? 0;
               fd.ctxWorkspace += cr.workspace ?? 0;
               fd.ctxTerminal += cr.terminal ?? 0;
+              fd.ctxVscode += cr.vscode ?? 0;
+              fd.ctxClipboard += cr.clipboard ?? 0;
+              fd.ctxChanges += cr.changes ?? 0;
+              fd.ctxProblemsPanel += cr.problemsPanel ?? 0;
+              fd.ctxOutputPanel += cr.outputPanel ?? 0;
+              fd.ctxTerminalLastCommand += cr.terminalLastCommand ?? 0;
+              fd.ctxTerminalSelection += cr.terminalSelection ?? 0;
               for (const [kind, count] of Object.entries(cr.byKind ?? {})) {
                 fd.ctxByKind[kind] = (fd.ctxByKind[kind] ?? 0) + Number(count);
               }
@@ -9376,7 +9464,7 @@ ${hashtag}`;
             ? Math.round(data.tokens / data.interactions)
             : 0;
         const fluencyData = userFluencyMap.get(userKey);
-        const fluencyScore = fluencyData ? this.calculateFluencyScoreForTeamMember(fluencyData) : undefined;
+        const fluencyScore = fluencyData ? this.calculateFluencyScoreForTeamMember(fluencyData, sessionCount) : undefined;
         return {
           userId,
           datasetId,
@@ -9390,7 +9478,11 @@ ${hashtag}`;
           daysActive: data.days.size,
           avgTokensPerTurn,
           rank: 0,
-          ...(fluencyScore ? { fluencyStage: fluencyScore.stage, fluencyLabel: fluencyScore.label } : {}),
+          ...(fluencyScore ? {
+            fluencyStage: fluencyScore.stage,
+            fluencyLabel: fluencyScore.label,
+            fluencyCategories: fluencyScore.categories,
+          } : {}),
         };
       })
       .sort((a, b) => b.totalTokens - a.totalTokens)
@@ -9423,6 +9515,30 @@ ${hashtag}`;
       this.log(
         `[Dashboard] User "${userId}" (dataset: ${datasetId}): ${data.tokens} tokens, ${data.interactions} interactions`,
       );
+    }
+
+    // For the current user, override the fluency score with the locally-computed one.
+    // Azure Table Storage only contains recently-synced schema-v4 entities (a small window),
+    // while calculateMaturityScores() uses the full local session log history.
+    if (currentUserId) {
+      try {
+        const localMaturity = await this.calculateMaturityScores(true);
+        for (const member of teamMembers) {
+          if (member.userId === currentUserId) {
+            member.fluencyStage = localMaturity.overallStage;
+            member.fluencyLabel = localMaturity.overallLabel;
+            member.fluencyCategories = localMaturity.categories.map(c => ({
+              category: c.category,
+              icon: c.icon,
+              stage: c.stage,
+              tips: c.tips,
+            }));
+            break;
+          }
+        }
+      } catch {
+        // Non-critical: leave whatever fluency score was already computed
+      }
     }
 
     return {

@@ -32,6 +32,7 @@ interface TeamMemberStats {
   avgTokensPerTurn: number;
   fluencyStage?: number; // Optional - only present if fluency data exists
   fluencyLabel?: string; // Optional - only present if fluency data exists
+  fluencyCategories?: { category: string; icon: string; stage: number; tips: string[] }[];
   rank: number;
 }
 
@@ -320,9 +321,10 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
   thead.append(headerRow);
 
   const tbody = el("tbody", "");
+  const colSpan = headers.length;
 
   for (const member of stats.team.members) {
-    const row = el("tr", "");
+    const row = el("tr", "leaderboard-row");
 
     // Strip prefixes for display (u:, ds:)
     const displayUserId = member.userId.replace(/^u:/, "");
@@ -334,7 +336,20 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
       row.classList.add("current-user");
     }
 
+    // Mark as expandable if fluency categories are available
+    const hasCategories = !!member.fluencyCategories?.length;
+    if (hasCategories) {
+      row.classList.add("expandable");
+      row.setAttribute("aria-expanded", "false");
+    }
+
     const rankCell = el("td", "rank-cell", `${member.rank}`);
+    // Expand toggle indicator in rank cell
+    if (hasCategories) {
+      const toggle = el("span", "expand-toggle", "▶");
+      rankCell.prepend(toggle);
+    }
+
     const userCell = el(
       "td",
       "",
@@ -412,12 +427,81 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
       costCell,
       actionCell,
     );
-    tbody.append(row);
+
+    // Detail expand row (hidden by default)
+    const detailRow = el("tr", "detail-row hidden");
+    const detailCell = document.createElement("td");
+    detailCell.colSpan = colSpan;
+    detailCell.className = "detail-cell";
+
+    if (hasCategories) {
+      detailCell.append(buildFluencyDetailPanel(member));
+      // Toggle on row click
+      row.addEventListener("click", () => {
+        const expanded = row.getAttribute("aria-expanded") === "true";
+        row.setAttribute("aria-expanded", expanded ? "false" : "true");
+        const toggle = row.querySelector(".expand-toggle");
+        if (toggle) { toggle.textContent = expanded ? "▶" : "▼"; }
+        detailRow.classList.toggle("hidden", expanded);
+      });
+    }
+
+    detailRow.append(detailCell);
+    tbody.append(row, detailRow);
   }
 
   table.append(thead, tbody);
   container.append(title, table);
   return container;
+}
+
+function buildFluencyDetailPanel(member: TeamMemberStats): HTMLElement {
+  const panel = el("div", "fluency-detail-panel");
+
+  const heading = el("div", "fluency-detail-heading", "📊 Fluency Score Breakdown");
+  panel.append(heading);
+
+  const grid = el("div", "fluency-categories-grid");
+
+  for (const cat of member.fluencyCategories ?? []) {
+    const card = el("div", `fluency-category-card stage-border-${cat.stage}`);
+
+    const cardHeader = el("div", "fluency-category-header");
+    const catLabel = el("span", "fluency-category-label", `${cat.icon} ${cat.category}`);
+    const stageBadge = el("span", `fluency-category-badge stage-${cat.stage}`);
+    const stageIcon = getFluencyStageIcon(cat.stage);
+    stageBadge.textContent = `${stageIcon} Stage ${cat.stage}`;
+    cardHeader.append(catLabel, stageBadge);
+
+    const stageBar = el("div", "fluency-stage-bar");
+    for (let s = 1; s <= 4; s++) {
+      const pip = el("div", `stage-pip${s <= cat.stage ? " filled stage-pip-" + cat.stage : ""}`);
+      stageBar.append(pip);
+    }
+
+    card.append(cardHeader, stageBar);
+
+    if (cat.tips.length > 0) {
+      const tipsSection = el("div", "fluency-tips");
+      const tipsLabel = el("div", "fluency-tips-label", "💡 Next steps to level up:");
+      tipsSection.append(tipsLabel);
+      for (const tip of cat.tips) {
+        const tipEl = document.createElement("div");
+        tipEl.className = "fluency-tip";
+        tipEl.innerHTML = renderTipHtml(tip);
+        tipsSection.append(tipEl);
+      }
+      card.append(tipsSection);
+    } else if (cat.stage === 4) {
+      const achieved = el("div", "fluency-achieved", "✅ Stage 4 achieved!");
+      card.append(achieved);
+    }
+
+    grid.append(card);
+  }
+
+  panel.append(grid);
+  return panel;
 }
 
 function getFluencyStageIcon(stage: number): string {
@@ -429,6 +513,36 @@ function getFluencyStageIcon(stage: number): string {
 		4: '🎯'  // Strategist
 	};
 	return icons[stage] || '❓';
+}
+
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
+function markdownToHtml(text: string): string {
+	const escaped = escapeHtml(text);
+	return escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+		'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+/** Render a tip string as HTML, handling markdown links and multi-line repo lists. */
+function renderTipHtml(tip: string): string {
+	if (!tip.includes('\n')) {
+		return markdownToHtml(tip);
+	}
+	const lines = tip.split('\n').filter(line => line.trim());
+	const summary = markdownToHtml(lines[0]);
+	const hasHeader = lines.length > 1 && lines[1].toLowerCase().includes('top repos');
+	if (hasHeader && lines.length > 2) {
+		const header = escapeHtml(lines[1]);
+		const listItems = lines.slice(2).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+		return `${summary}<div style="margin-top:8px;font-weight:600;font-size:11px;color:#999;">${header}</div><ul style="margin:6px 0 0 0;padding-left:18px;list-style:disc;">${listItems}</ul>`;
+	}
+	return lines.map(line => markdownToHtml(line)).join('<br>');
 }
 
 function wireButtons(): void {
