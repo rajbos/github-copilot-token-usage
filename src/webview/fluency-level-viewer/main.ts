@@ -161,7 +161,7 @@ function renderLayout(data: FluencyLevelData): void {
 			<div class="info-box">
 				<div class="info-box-title">📋 About This Tool</div>
 				<div>
-					This debug-only tool shows all fluency score rules, thresholds, and tips for each category and stage.
+					This tool shows all fluency score rules, thresholds, and tips for each category and stage.
 					Use it to understand how the scoring system works and what actions trigger different fluency levels.
 					Select a category below to view its stage definitions and advancement criteria.
 				</div>
@@ -176,7 +176,7 @@ function renderLayout(data: FluencyLevelData): void {
 			</div>
 
 			<div class="footer">
-				🐛 Debug Tool - Only available when a debugger is active &middot; ${data.categories.length} categories &middot; 4 stages each
+				🔍 Fluency Level Viewer &middot; ${data.categories.length} categories &middot; 4 stages each
 			</div>
 		</div>
 	`;
