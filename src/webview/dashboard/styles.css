@@ -152,12 +152,11 @@
 }
 
 .leaderboard-table tr.current-user {
-	background-color: var(--vscode-list-activeSelectionBackground);
 	font-weight: bold;
 }
 
 .leaderboard-table tr.current-user:hover {
-	background-color: var(--vscode-list-focusBackground);
+	background-color: var(--vscode-list-hoverBackground);
 }
 
 .rank-cell {
@@ -300,7 +299,7 @@
 }
 
 .leaderboard-row[aria-expanded="true"] {
-	background-color: var(--vscode-list-activeSelectionBackground);
+	background-color: var(--vscode-list-hoverBackground);
 }
 
 .expand-toggle {

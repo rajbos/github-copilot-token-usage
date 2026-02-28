@@ -353,7 +353,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
     const userCell = el(
       "td",
       "",
-      isCurrentUser ? `${displayUserId} (You)` : displayUserId,
+      isCurrentUser ? `${displayUserId} 👈` : displayUserId,
     );
     const datasetCell = el("td", "dataset-cell", displayDatasetId);
 
