@@ -8154,30 +8154,10 @@ ${hashtag}`;
   }
 
   public async showFluencyLevelViewer(): Promise<void> {
-    // Check if debugger is active
     const isDebugMode =
       this.context.extensionMode === vscode.ExtensionMode.Development;
 
-    if (!isDebugMode) {
-      this.warn("⚠️ Fluency Level Viewer is only available in debug mode");
-      void vscode.window
-        .showWarningMessage(
-          "Fluency Level Viewer is only available when a debugger is active.",
-          "Learn More",
-        )
-        .then((selection) => {
-          if (selection === "Learn More") {
-            void vscode.env.openExternal(
-              vscode.Uri.parse(
-                "https://code.visualstudio.com/docs/editor/debugging",
-              ),
-            );
-          }
-        });
-      return;
-    }
-
-    this.log("🔍 Opening Fluency Level Viewer (debug mode)");
+    this.log("🔍 Opening Fluency Level Viewer");
 
     // If panel already exists, dispose and recreate with fresh data
     if (this.fluencyLevelViewerPanel) {
