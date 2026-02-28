@@ -78,7 +78,8 @@
       "icon": "🟠",
       "label": "Amazon Q Rules",
       "path": ".amazonq/rules/*.md",
-      "scanMode": "oneLevel"
+      "scanMode": "recursive",
+      "maxDepth": 3
     },
     {
       "id": "claude-code",
