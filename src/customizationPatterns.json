@@ -82,6 +82,16 @@
       "maxDepth": 3
     },
     {
+      "id": "claude-code",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🎭",
+      "label": "Claude Code",
+      "path": "CLAUDE.md",
+      "scanMode": "exact",
+      "caseInsensitive": true
+    },
+    {
       "id": "gemini-cli",
       "type": "non-copilot-instructions",
       "category": "non-copilot",
@@ -177,6 +187,15 @@
       "icon": "➡️",
       "label": "Continue Config",
       "path": ".continuerc.json",
+      "scanMode": "exact"
+    },
+    {
+      "id": "continue-config",
+      "type": "non-copilot-config",
+      "category": "non-copilot",
+      "icon": "➡️",
+      "label": "Continue Config",
+      "path": "config.json",
       "scanMode": "exact"
     },
     {

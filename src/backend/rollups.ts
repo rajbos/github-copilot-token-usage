@@ -31,6 +31,30 @@ export interface DailyRollupValueLike {
 	inputTokens: number;
 	outputTokens: number;
 	interactions: number;
+	// Fluency metrics (optional, aggregated from session analysis)
+	fluencyMetrics?: {
+		askModeCount?: number;
+		editModeCount?: number;
+		agentModeCount?: number;
+		planModeCount?: number;
+		customAgentModeCount?: number;
+		toolCallsJson?: string;
+		contextRefsJson?: string;
+		mcpToolsJson?: string;
+		modelSwitchingJson?: string;
+		editScopeJson?: string; // NEW: Edit scope metrics
+		agentTypesJson?: string; // NEW: Agent type distribution
+		repositoriesJson?: string; // NEW: Repository lists
+		applyUsageJson?: string; // NEW: Apply usage metrics
+		sessionDurationJson?: string; // NEW: Session duration data
+		repoCustomizationRate?: number;
+		multiTurnSessions?: number;
+		avgTurnsPerSession?: number;
+		multiFileEdits?: number;
+		avgFilesPerEdit?: number;
+		codeBlockApplyRate?: number;
+		sessionCount?: number;
+	};
 }
 
 /**
@@ -63,7 +87,7 @@ export function dailyRollupMapKey(key: DailyRollupKey): string {
 export function upsertDailyRollup(
 	map: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>,
 	key: DailyRollupKey,
-	value: { inputTokens: number; outputTokens: number; interactions: number }
+	value: { inputTokens: number; outputTokens: number; interactions: number; fluencyMetrics?: DailyRollupValue['fluencyMetrics'] }
 ): void {
 	const mapKey = dailyRollupMapKey(key);
 	const existing = map.get(mapKey);
@@ -72,15 +96,155 @@ export function upsertDailyRollup(
 		existing.value.inputTokens += value.inputTokens;
 		existing.value.outputTokens += value.outputTokens;
 		existing.value.interactions += value.interactions;
+		
+		// Merge fluency metrics if provided
+		if (value.fluencyMetrics) {
+			if (!existing.value.fluencyMetrics) {
+				existing.value.fluencyMetrics = {};
+			}
+			const ex = existing.value.fluencyMetrics;
+			const val = value.fluencyMetrics;
+			
+			// Add numeric counts
+			if (val.askModeCount !== undefined) {
+				ex.askModeCount = (ex.askModeCount || 0) + val.askModeCount;
+			}
+			if (val.editModeCount !== undefined) {
+				ex.editModeCount = (ex.editModeCount || 0) + val.editModeCount;
+			}
+			if (val.agentModeCount !== undefined) {
+				ex.agentModeCount = (ex.agentModeCount || 0) + val.agentModeCount;
+			}
+			if (val.planModeCount !== undefined) {
+				ex.planModeCount = (ex.planModeCount || 0) + val.planModeCount;
+			}
+			if (val.customAgentModeCount !== undefined) {
+				ex.customAgentModeCount = (ex.customAgentModeCount || 0) + val.customAgentModeCount;
+			}
+			if (val.multiTurnSessions !== undefined) {
+				ex.multiTurnSessions = (ex.multiTurnSessions || 0) + val.multiTurnSessions;
+			}
+			if (val.multiFileEdits !== undefined) {
+				ex.multiFileEdits = (ex.multiFileEdits || 0) + val.multiFileEdits;
+			}
+			if (val.sessionCount !== undefined) {
+				ex.sessionCount = (ex.sessionCount || 0) + val.sessionCount;
+			}
+			
+			// Merge JSON objects (parse, merge, serialize)
+			if (val.toolCallsJson) {
+				ex.toolCallsJson = mergeJsonMetrics(ex.toolCallsJson, val.toolCallsJson);
+			}
+			if (val.contextRefsJson) {
+				ex.contextRefsJson = mergeJsonMetrics(ex.contextRefsJson, val.contextRefsJson);
+			}
+			if (val.mcpToolsJson) {
+				ex.mcpToolsJson = mergeJsonMetrics(ex.mcpToolsJson, val.mcpToolsJson);
+			}
+			if (val.modelSwitchingJson) {
+				ex.modelSwitchingJson = mergeJsonMetrics(ex.modelSwitchingJson, val.modelSwitchingJson);
+			}
+			if (val.editScopeJson) {
+				ex.editScopeJson = mergeJsonMetrics(ex.editScopeJson, val.editScopeJson);
+			}
+			if (val.agentTypesJson) {
+				ex.agentTypesJson = mergeJsonMetrics(ex.agentTypesJson, val.agentTypesJson);
+			}
+			if (val.repositoriesJson) {
+				// For repositories, merge arrays and deduplicate
+				ex.repositoriesJson = mergeRepositoriesJson(ex.repositoriesJson, val.repositoriesJson);
+			}
+			if (val.applyUsageJson) {
+				ex.applyUsageJson = mergeJsonMetrics(ex.applyUsageJson, val.applyUsageJson);
+			}
+			if (val.sessionDurationJson) {
+				ex.sessionDurationJson = mergeJsonMetrics(ex.sessionDurationJson, val.sessionDurationJson);
+			}
+			
+			// Re-calculate averages and rates from totals
+			if (ex.sessionCount && ex.sessionCount > 0) {
+				if (ex.multiTurnSessions !== undefined) {
+					// avgTurnsPerSession will be recalculated from aggregated data
+				}
+				if (ex.multiFileEdits !== undefined) {
+					// avgFilesPerEdit will be recalculated from aggregated data
+				}
+			}
+		}
 	} else {
 		map.set(mapKey, {
 			key: { ...key },
 			value: {
 				inputTokens: value.inputTokens,
 				outputTokens: value.outputTokens,
-				interactions: value.interactions
+				interactions: value.interactions,
+				...(value.fluencyMetrics ? { fluencyMetrics: { ...value.fluencyMetrics } } : {})
 			}
 		});
+	}
+}
+
+/**
+ * Helper function to merge JSON-serialized metrics objects.
+ * Parses both JSONs, merges numeric values by adding them, and re-serializes.
+ */
+function mergeJsonMetrics(existing: string | undefined, incoming: string): string {
+	try {
+		const existingObj = existing ? JSON.parse(existing) : {};
+		const incomingObj = JSON.parse(incoming);
+		
+		// Merge objects by adding numeric values
+		const merged: any = { ...existingObj };
+		for (const key in incomingObj) {
+			if (typeof incomingObj[key] === 'number') {
+				merged[key] = (merged[key] || 0) + incomingObj[key];
+			} else if (typeof incomingObj[key] === 'object' && incomingObj[key] !== null) {
+				// Recursively merge nested objects
+				if (typeof merged[key] === 'object' && merged[key] !== null) {
+					for (const subKey in incomingObj[key]) {
+						if (typeof incomingObj[key][subKey] === 'number') {
+							if (typeof merged[key][subKey] !== 'number') {
+								merged[key][subKey] = 0;
+							}
+							merged[key][subKey] += incomingObj[key][subKey];
+						} else {
+							merged[key][subKey] = incomingObj[key][subKey];
+						}
+					}
+				} else {
+					merged[key] = incomingObj[key];
+				}
+			} else {
+				merged[key] = incomingObj[key];
+			}
+		}
+		
+		return JSON.stringify(merged);
+	} catch {
+		// If parsing fails, return the incoming value
+		return incoming;
+	}
+}
+
+/**
+ * Helper function to merge repository arrays from JSON.
+ * Merges and deduplicates repository lists.
+ */
+function mergeRepositoriesJson(existing: string | undefined, incoming: string): string {
+	try {
+		const existingData = existing ? JSON.parse(existing) : { repositories: [], repositoriesWithCustomization: [] };
+		const incomingData = JSON.parse(incoming);
+		
+		// Merge and deduplicate arrays
+		const mergedRepos = [...new Set([...(existingData.repositories || []), ...(incomingData.repositories || [])])];
+		const mergedCustomized = [...new Set([...(existingData.repositoriesWithCustomization || []), ...(incomingData.repositoriesWithCustomization || [])])];
+		
+		return JSON.stringify({
+			repositories: mergedRepos,
+			repositoriesWithCustomization: mergedCustomized
+		});
+	} catch {
+		return incoming;
 	}
 }
 
