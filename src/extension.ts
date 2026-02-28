@@ -6607,6 +6607,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'analyseAllRepositories':
 					await this.handleAnalyseAllRepositories();
 					break;
+				case 'openCopilotChatWithPrompt':
+					await vscode.commands.executeCommand('workbench.action.chat.open', message.prompt);
+					break;
 			}
 		});
 

@@ -523,7 +523,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div id="repo-details-pane" class="repo-hygiene-pane-body"></div>
 					</div>
 				` : `
-					<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
+					<vscode-button id="btn-analyse-repo">Analyze Repo for Best Practices</vscode-button>
 					<div id="repo-analysis-results" class="repo-hygiene-results" style="margin-top: 12px;"></div>
 				`}
 			</div>
@@ -987,6 +987,26 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 	const checks = Array.isArray(data?.checks) ? data.checks : [];
 	const recommendations = Array.isArray(data?.recommendations) ? [...data.recommendations] : [];
 
+	// Documentation links for each check ID
+	const docsLinks: { [key: string]: string } = {
+		'git-repo': 'https://docs.github.com/en/get-started/using-git/about-git',
+		'gitignore': 'https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files',
+		'env-example': 'https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions',
+		'editorconfig': 'https://editorconfig.org/',
+		'linter': 'https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning',
+		'formatter': 'https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide',
+		'type-safety': 'https://www.typescriptlang.org/docs/handbook/2/basic-types.html',
+		'commit-messages': 'https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/about-commits',
+		'conventional-commits': 'https://www.conventionalcommits.org/en/v1.0.0/',
+		'ci-config': 'https://docs.github.com/en/actions/about-github-actions/understanding-github-actions',
+		'scripts': 'https://docs.npmjs.com/cli/v10/configuring-npm/package-json#scripts',
+		'task-runner': 'https://www.gnu.org/software/make/manual/make.html',
+		'devcontainer': 'https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration',
+		'dockerfile': 'https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry',
+		'version-pinning': 'https://github.com/nvm-sh/nvm#nvmrc',
+		'license': 'https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository'
+	};
+
 	const container = el('div');
 
 	const header = el('div');
@@ -1115,6 +1135,17 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 				content.appendChild(hint);
 			}
 
+			const checkId = typeof check?.id === 'string' ? check.id : '';
+			const docUrl = docsLinks[checkId];
+			if (docUrl) {
+				const docLink = el('a');
+				docLink.setAttribute('href', docUrl);
+				docLink.setAttribute('style', 'font-size: 10px; color: #60a5fa; margin-top: 4px; display: inline-block;');
+				docLink.setAttribute('title', 'View official documentation');
+				docLink.textContent = '📖 View documentation';
+				content.appendChild(docLink);
+			}
+
 			const weight = el('span');
 			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
 			weight.textContent = `+${toFiniteNumber(check?.weight)}`;
@@ -1171,6 +1202,29 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 		}
 
 		container.appendChild(recommendationsSection);
+	}
+
+	// Build a prompt summarizing the failed/warning checks for Copilot
+	const failedChecks = checks.filter((c: any) => c?.status === 'fail' || c?.status === 'warning');
+	if (failedChecks.length > 0) {
+		const copilotSection = el('div');
+		copilotSection.setAttribute('style', 'margin-top: 16px; padding: 12px; background: rgba(96, 165, 250, 0.07); border: 1px solid rgba(96, 165, 250, 0.3); border-radius: 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px;');
+
+		const copilotText = el('div');
+		copilotText.setAttribute('style', 'font-size: 11px; color: #b8b8b8; flex: 1;');
+		copilotText.textContent = 'Let Copilot help you fix the identified issues in this repository.';
+
+		const copilotBtn = document.createElement('vscode-button');
+		copilotBtn.setAttribute('style', 'min-width: 180px;');
+		copilotBtn.textContent = '🤖 Ask Copilot to Improve';
+		copilotBtn.addEventListener('click', () => {
+			const failedLines = failedChecks.map((c: any) => `- ${c.label}: ${c.detail || ''}${c.hint ? ` (${c.hint})` : ''}`).join('\n');
+			const prompt = `Please help me improve this repository by addressing the following best practice issues:\n\n${failedLines}\n\nFor each issue, please provide specific steps or code changes to fix it.`;
+			vscode.postMessage({ command: 'openCopilotChatWithPrompt', prompt });
+		});
+
+		copilotSection.append(copilotText, copilotBtn);
+		container.appendChild(copilotSection);
 	}
 
 	return container;
@@ -1291,7 +1345,7 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 	const btn = document.getElementById('btn-analyse-repo') as any;
 	if (btn) {
 		btn.disabled = false;
-		btn.textContent = 'Analyse Repository';
+		btn.textContent = 'Analyze Repo for Best Practices';
 	}
 
 	const resultsHost = document.getElementById('repo-analysis-results');
@@ -1318,7 +1372,7 @@ function displayRepoAnalysisError(error: string, workspacePath?: string): void {
 	const btn = document.getElementById('btn-analyse-repo') as any;
 	if (btn) {
 		btn.disabled = false;
-		btn.textContent = 'Analyse Repository';
+		btn.textContent = 'Analyze Repo for Best Practices';
 	}
 
 	const resultsHost = document.getElementById('repo-analysis-results');
