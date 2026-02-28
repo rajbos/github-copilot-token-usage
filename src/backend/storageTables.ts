@@ -40,6 +40,29 @@ export interface BackendAggDailyEntityLike {
 	outputTokens?: number;
 	interactions?: number;
 	updatedAt?: string;
+	
+	// Fluency metrics (schema version 4+)
+	askModeCount?: number;
+	editModeCount?: number;
+	agentModeCount?: number;
+	planModeCount?: number;
+	customAgentModeCount?: number;
+	toolCallsJson?: string; // Serialized ToolCallUsage: { total, byTool: {...} }
+	contextRefsJson?: string; // Serialized ContextReferenceUsage
+	mcpToolsJson?: string; // Serialized McpToolUsage: { total, byServer, byTool }
+	modelSwitchingJson?: string; // Serialized ModelSwitchingAnalysis
+	editScopeJson?: string; // Serialized EditScopeUsage: { multiFileEdits, singleFileEdits, avgFilesPerSession, totalEditedFiles }
+	agentTypesJson?: string; // Serialized AgentTypeUsage: { editsAgent, workspaceAgent, etc. }
+	repositoriesJson?: string; // Serialized string[] of repositories
+	applyUsageJson?: string; // Serialized ApplyButtonUsage: { applyRate, totalApplied, totalCodeBlocks }
+	sessionDurationJson?: string; // Serialized SessionDurationData
+	repoCustomizationRate?: number; // 0-1 indicating % of repos with customization
+	multiTurnSessions?: number;
+	avgTurnsPerSession?: number;
+	multiFileEdits?: number;
+	avgFilesPerEdit?: number;
+	codeBlockApplyRate?: number;
+	sessionCount?: number; // Number of unique sessions for this rollup
 }
 
 /**
@@ -165,7 +188,29 @@ export async function listAggDailyEntitiesFromTableClient(args: {
 				inputTokens,
 				outputTokens,
 				interactions,
-				updatedAt: entity.updatedAt?.toString() || new Date().toISOString()
+				updatedAt: entity.updatedAt?.toString() || new Date().toISOString(),
+				// Fluency metrics (schema version 4+)
+				...(typeof entity.askModeCount === 'number' ? { askModeCount: entity.askModeCount } : {}),
+				...(typeof entity.editModeCount === 'number' ? { editModeCount: entity.editModeCount } : {}),
+				...(typeof entity.agentModeCount === 'number' ? { agentModeCount: entity.agentModeCount } : {}),
+				...(typeof entity.planModeCount === 'number' ? { planModeCount: entity.planModeCount } : {}),
+				...(typeof entity.customAgentModeCount === 'number' ? { customAgentModeCount: entity.customAgentModeCount } : {}),
+				...(entity.toolCallsJson ? { toolCallsJson: entity.toolCallsJson.toString() } : {}),
+				...(entity.contextRefsJson ? { contextRefsJson: entity.contextRefsJson.toString() } : {}),
+				...(entity.mcpToolsJson ? { mcpToolsJson: entity.mcpToolsJson.toString() } : {}),
+				...(entity.modelSwitchingJson ? { modelSwitchingJson: entity.modelSwitchingJson.toString() } : {}),
+				...(entity.editScopeJson ? { editScopeJson: entity.editScopeJson.toString() } : {}),
+				...(entity.agentTypesJson ? { agentTypesJson: entity.agentTypesJson.toString() } : {}),
+				...(entity.repositoriesJson ? { repositoriesJson: entity.repositoriesJson.toString() } : {}),
+				...(entity.applyUsageJson ? { applyUsageJson: entity.applyUsageJson.toString() } : {}),
+				...(entity.sessionDurationJson ? { sessionDurationJson: entity.sessionDurationJson.toString() } : {}),
+				...(typeof entity.repoCustomizationRate === 'number' ? { repoCustomizationRate: entity.repoCustomizationRate } : {}),
+				...(typeof entity.multiTurnSessions === 'number' ? { multiTurnSessions: entity.multiTurnSessions } : {}),
+				...(typeof entity.avgTurnsPerSession === 'number' ? { avgTurnsPerSession: entity.avgTurnsPerSession } : {}),
+				...(typeof entity.multiFileEdits === 'number' ? { multiFileEdits: entity.multiFileEdits } : {}),
+				...(typeof entity.avgFilesPerEdit === 'number' ? { avgFilesPerEdit: entity.avgFilesPerEdit } : {}),
+				...(typeof entity.codeBlockApplyRate === 'number' ? { codeBlockApplyRate: entity.codeBlockApplyRate } : {}),
+				...(typeof entity.sessionCount === 'number' ? { sessionCount: entity.sessionCount } : {}),
 			};
 
 			results.push(normalized);
@@ -198,8 +243,32 @@ export function createDailyAggEntity(args: {
 	inputTokens: number;
 	outputTokens: number;
 	interactions: number;
+	// Fluency metrics (optional)
+	fluencyMetrics?: {
+		askModeCount?: number;
+		editModeCount?: number;
+		agentModeCount?: number;
+		planModeCount?: number;
+		customAgentModeCount?: number;
+		toolCallsJson?: string;
+		contextRefsJson?: string;
+		mcpToolsJson?: string;
+		modelSwitchingJson?: string;
+		editScopeJson?: string;
+		agentTypesJson?: string;
+		repositoriesJson?: string;
+		applyUsageJson?: string;
+		sessionDurationJson?: string;
+		repoCustomizationRate?: number;
+		multiTurnSessions?: number;
+		avgTurnsPerSession?: number;
+		multiFileEdits?: number;
+		avgFilesPerEdit?: number;
+		codeBlockApplyRate?: number;
+		sessionCount?: number;
+	};
 }): any {
-	const { datasetId, day, model, workspaceId, workspaceName, machineId, machineName, userId, userKeyType, shareWithTeam, consentAt, inputTokens, outputTokens, interactions } = args;
+	const { datasetId, day, model, workspaceId, workspaceName, machineId, machineName, userId, userKeyType, shareWithTeam, consentAt, inputTokens, outputTokens, interactions, fluencyMetrics } = args;
 	
 	const effectiveUserId = (userId ?? '').trim();
 	const key: DailyRollupKey = {
@@ -213,10 +282,19 @@ export function createDailyAggEntity(args: {
 	const partitionKey = buildAggPartitionKey(datasetId, day);
 	const rowKey = stableDailyRollupRowKey(key);
 
+	const hasFluencyMetrics = fluencyMetrics && Object.keys(fluencyMetrics).length > 0;
+	const schemaVersion = hasFluencyMetrics
+		? 4 // SCHEMA_VERSION_WITH_FLUENCY_METRICS
+		: effectiveUserId && shareWithTeam
+			? 3 // SCHEMA_VERSION_WITH_USER_AND_CONSENT
+			: effectiveUserId
+				? 2 // SCHEMA_VERSION_WITH_USER
+				: 1; // SCHEMA_VERSION_NO_USER
+
 	return {
 		partitionKey,
 		rowKey,
-		schemaVersion: effectiveUserId && shareWithTeam ? SCHEMA_VERSION_WITH_USER_AND_CONSENT : (effectiveUserId ? SCHEMA_VERSION_WITH_USER : SCHEMA_VERSION_NO_USER),
+		schemaVersion,
 		datasetId,
 		day,
 		model,
@@ -229,6 +307,28 @@ export function createDailyAggEntity(args: {
 		inputTokens,
 		outputTokens,
 		interactions,
-		updatedAt: new Date().toISOString()
+		updatedAt: new Date().toISOString(),
+		// Add fluency metrics if provided
+		...(fluencyMetrics?.askModeCount !== undefined ? { askModeCount: fluencyMetrics.askModeCount } : {}),
+		...(fluencyMetrics?.editModeCount !== undefined ? { editModeCount: fluencyMetrics.editModeCount } : {}),
+		...(fluencyMetrics?.agentModeCount !== undefined ? { agentModeCount: fluencyMetrics.agentModeCount } : {}),
+		...(fluencyMetrics?.planModeCount !== undefined ? { planModeCount: fluencyMetrics.planModeCount } : {}),
+		...(fluencyMetrics?.customAgentModeCount !== undefined ? { customAgentModeCount: fluencyMetrics.customAgentModeCount } : {}),
+		...(fluencyMetrics?.toolCallsJson ? { toolCallsJson: fluencyMetrics.toolCallsJson } : {}),
+		...(fluencyMetrics?.contextRefsJson ? { contextRefsJson: fluencyMetrics.contextRefsJson } : {}),
+		...(fluencyMetrics?.mcpToolsJson ? { mcpToolsJson: fluencyMetrics.mcpToolsJson } : {}),
+		...(fluencyMetrics?.modelSwitchingJson ? { modelSwitchingJson: fluencyMetrics.modelSwitchingJson } : {}),
+		...(fluencyMetrics?.editScopeJson ? { editScopeJson: fluencyMetrics.editScopeJson } : {}),
+		...(fluencyMetrics?.agentTypesJson ? { agentTypesJson: fluencyMetrics.agentTypesJson } : {}),
+		...(fluencyMetrics?.repositoriesJson ? { repositoriesJson: fluencyMetrics.repositoriesJson } : {}),
+		...(fluencyMetrics?.applyUsageJson ? { applyUsageJson: fluencyMetrics.applyUsageJson } : {}),
+		...(fluencyMetrics?.sessionDurationJson ? { sessionDurationJson: fluencyMetrics.sessionDurationJson } : {}),
+		...(fluencyMetrics?.repoCustomizationRate !== undefined ? { repoCustomizationRate: fluencyMetrics.repoCustomizationRate } : {}),
+		...(fluencyMetrics?.multiTurnSessions !== undefined ? { multiTurnSessions: fluencyMetrics.multiTurnSessions } : {}),
+		...(fluencyMetrics?.avgTurnsPerSession !== undefined ? { avgTurnsPerSession: fluencyMetrics.avgTurnsPerSession } : {}),
+		...(fluencyMetrics?.multiFileEdits !== undefined ? { multiFileEdits: fluencyMetrics.multiFileEdits } : {}),
+		...(fluencyMetrics?.avgFilesPerEdit !== undefined ? { avgFilesPerEdit: fluencyMetrics.avgFilesPerEdit } : {}),
+		...(fluencyMetrics?.codeBlockApplyRate !== undefined ? { codeBlockApplyRate: fluencyMetrics.codeBlockApplyRate } : {}),
+		...(fluencyMetrics?.sessionCount !== undefined ? { sessionCount: fluencyMetrics.sessionCount } : {})
 	};
 }
