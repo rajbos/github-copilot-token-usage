@@ -304,41 +304,58 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 		symbol: coerceNumber(refs?.symbol),
 		codebase: coerceNumber(refs?.codebase),
 		workspace: coerceNumber(refs?.workspace),
+		terminal: coerceNumber(refs?.terminal),
+		vscode: coerceNumber(refs?.vscode),
+		terminalLastCommand: coerceNumber(refs?.terminalLastCommand),
+		terminalSelection: coerceNumber(refs?.terminalSelection),
+		clipboard: coerceNumber(refs?.clipboard),
+		changes: coerceNumber(refs?.changes),
+		outputPanel: coerceNumber(refs?.outputPanel),
+		problemsPanel: coerceNumber(refs?.problemsPanel),
+		byKind: refs?.byKind ?? {},
+		copilotInstructions: coerceNumber(refs?.copilotInstructions),
+		agentsMd: coerceNumber(refs?.agentsMd),
+		byPath: refs?.byPath ?? {},
+	});
+
+	const sanitizePeriod = (period: any): UsageAnalysisPeriod => ({
+		sessions: coerceNumber(period?.sessions),
+		modeUsage: sanitizeModeUsage(period?.modeUsage ?? {}),
+		contextReferences: sanitizeContextRefs(period?.contextReferences ?? {}),
+		toolCalls: {
+			total: coerceNumber(period?.toolCalls?.total),
+			byTool: period?.toolCalls?.byTool ?? {},
+		},
+		mcpTools: {
+			total: coerceNumber(period?.mcpTools?.total),
+			byServer: period?.mcpTools?.byServer ?? {},
+			byTool: period?.mcpTools?.byTool ?? {},
+		},
+		modelSwitching: period?.modelSwitching ?? {
+			modelsPerSession: [],
+			totalSessions: 0,
+			averageModelsPerSession: 0,
+			maxModelsPerSession: 0,
+			minModelsPerSession: 0,
+			switchingFrequency: 0,
+			standardModels: [],
+			premiumModels: [],
+			unknownModels: [],
+			mixedTierSessions: 0,
+			standardRequests: 0,
+			premiumRequests: 0,
+			unknownRequests: 0,
+			totalRequests: 0,
+		},
 	});
 
 	try {
-		const today = raw.today ?? {};
-		const last30Days = raw.last30Days ?? {};
-
 		const sanitized: UsageAnalysisStats = {
-			today: {
-				modeUsage: sanitizeModeUsage(today.modeUsage ?? {}),
-				contextReferences: sanitizeContextRefs(today.contextReferences ?? {}),
-				toolUsage: {
-					total: coerceNumber(today.toolUsage?.total),
-					byTool: today.toolUsage?.byTool ?? {},
-				},
-				mcpToolUsage: {
-					total: coerceNumber(today.mcpToolUsage?.total),
-					byServer: today.mcpToolUsage?.byServer ?? {},
-					byTool: today.mcpToolUsage?.byTool ?? {},
-				},
-			},
-			last30Days: {
-				modeUsage: sanitizeModeUsage(last30Days.modeUsage ?? {}),
-				contextReferences: sanitizeContextRefs(last30Days.contextReferences ?? {}),
-				toolUsage: {
-					total: coerceNumber(last30Days.toolUsage?.total),
-					byTool: last30Days.toolUsage?.byTool ?? {},
-				},
-				mcpToolUsage: {
-					total: coerceNumber(last30Days.mcpToolUsage?.total),
-					byServer: last30Days.mcpToolUsage?.byServer ?? {},
-					byTool: last30Days.mcpToolUsage?.byTool ?? {},
-				},
-			},
+			today: sanitizePeriod(raw.today),
+			last30Days: sanitizePeriod(raw.last30Days),
+			month: sanitizePeriod(raw.month),
+			lastUpdated: typeof raw.lastUpdated === 'string' ? raw.lastUpdated : '',
 			backendConfigured: !!raw.backendConfigured,
-			repoAnalysis: raw.repoAnalysis,
 		};
 
 		return sanitized;
