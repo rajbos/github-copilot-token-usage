@@ -137,16 +137,6 @@ async function main() {
     updateContributingChecklist(path.join(ROOT, 'CONTRIBUTING.md'), version);
     ok(`CONTRIBUTING.md updated (version ${version}, date ${now.toISOString().split('T')[0]})`);
 
-    // ── Step 5: Sync changelog ────────────────────────────────────────────────
-    step('Syncing CHANGELOG.md from GitHub releases');
-    try {
-        const { syncReleaseNotes } = require('./sync-changelog');
-        await syncReleaseNotes();
-        ok('CHANGELOG.md synced');
-    } catch {
-        warn('CHANGELOG sync failed (may be OK if the GitHub release does not exist yet)');
-    }
-
     // ── Done ──────────────────────────────────────────────────────────────────
     console.log('');
     console.log('════════════════════════════════════════════════════════════');
@@ -159,8 +149,9 @@ async function main() {
     console.log('  3. Push to main branch');
     console.log('  4. Trigger GitHub Actions Release workflow:');
     console.log('     https://github.com/rajbos/github-copilot-token-usage/actions');
-    console.log('  5. Download .vsix from the GitHub release assets');
-    console.log('  6. Run ./publish.ps1 to publish to the VS Code Marketplace');
+    console.log('  5. Once the release exists, run ./publish.ps1 — it will sync');
+    console.log('     CHANGELOG.md from the new release, build, and publish the VSIX.');
+    console.log('  6. Commit and push the updated CHANGELOG.md after publishing.');
     console.log('');
 }
 
@@ -171,14 +162,14 @@ function updateContributingChecklist(filePath, version) {
     const newSection =
         `## Pre-Release Checklist\n\n` +
         `Version: ${version} | Last run: ${today}\n\n` +
-        `Run \`npm run pre-release\` to automate steps 1–4 below.\n\n` +
+        `Run \`npm run pre-release\` to automate steps 1–3 below.\n\n` +
         `- [ ] Version bumped in \`package.json\`\n` +
         `- [ ] \`npm run compile\` completed successfully\n` +
         `- [ ] Screenshots updated in \`docs/images/\` (run \`npm run pre-release\` or update manually)\n` +
-        `- [ ] \`CHANGELOG.md\` synced via \`npm run sync-changelog\`\n` +
+        `- [ ] Commit and push to main branch\n` +
         `- [ ] Trigger GitHub Actions Release workflow (Method 1: GitHub UI → Actions → Release → Run workflow)\n` +
-        `- [ ] Download \`.vsix\` from GitHub release assets\n` +
-        `- [ ] Run \`./publish.ps1\` to publish to VS Code Marketplace\n`;
+        `- [ ] Run \`./publish.ps1\` — syncs \`CHANGELOG.md\` from the new release, builds the VSIX, and publishes to the marketplace\n` +
+        `- [ ] Commit and push the updated \`CHANGELOG.md\`\n`;
 
     let content = fs.readFileSync(filePath, 'utf8');
 

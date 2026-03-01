@@ -396,15 +396,15 @@ All builds must pass these checks before merging.
 
 Version: 0.0.13 | Last run: 2026-03-01
 
-Run `npm run pre-release` to automate steps 1–4 below.
+Run `npm run pre-release` to automate steps 1–3 below.
 
 - [ ] Version bumped in `package.json`
 - [ ] `npm run compile` completed successfully
 - [ ] Screenshots updated in `docs/images/` (run `npm run pre-release` or update manually)
-- [ ] `CHANGELOG.md` synced via `npm run sync-changelog`
+- [ ] Commit and push to main branch
 - [ ] Trigger GitHub Actions Release workflow (Method 1: GitHub UI → Actions → Release → Run workflow)
-- [ ] Download `.vsix` from GitHub release assets
-- [ ] Run `.\publish.ps1` to publish to VS Code Marketplace
+- [ ] Run `./publish.ps1` — syncs `CHANGELOG.md` from the new release, builds the VSIX, and publishes to the marketplace
+- [ ] Commit and push the updated `CHANGELOG.md`
 
 ## Release Process
 
