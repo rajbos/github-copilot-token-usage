@@ -387,7 +387,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 27; // Support result.metadata.promptTokens/outputTokens (Insiders format)
+	private static readonly CACHE_VERSION = 28; // Fix actualTokens/thinkingTokens lost by updateCacheWithSessionDetails
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -4691,6 +4691,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			modelUsage: existingCache?.modelUsage || {},
 			mtime: stat.mtime.getTime(),
 			size: stat.size,
+			actualTokens: existingCache?.actualTokens,
+			thinkingTokens: existingCache?.thinkingTokens,
 			usageAnalysis: existingCache?.usageAnalysis || {
 				toolCalls: { total: 0, byTool: {} },
 				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
