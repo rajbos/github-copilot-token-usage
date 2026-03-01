@@ -278,6 +278,10 @@ body {
 	display: block;
 }
 
+.repo-hygiene-pane-collapsed {
+	display: none;
+}
+
 .repo-hygiene-pane-collapsed .repo-hygiene-pane-body {
 	display: none;
 }
