@@ -577,13 +577,20 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					if (unknownTools.length > 0) {
 						const issueUrl = createMcpToolIssueUrl(unknownTools);
 						const toolListHtml = unknownTools.map(tool => {
-							const count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
-							return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${count > 0 ? `<span style="color:var(--text-muted);">(${count})</span>` : ''}</span>`;
+							const todayCount = (stats.today.toolCalls.byTool[tool] || 0) + (stats.today.mcpTools.byTool[tool] || 0);
+							const last30Count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
+							const monthCount = (stats.month.toolCalls.byTool[tool] || 0) + (stats.month.mcpTools.byTool[tool] || 0);
+							const countParts: string[] = [];
+							if (todayCount > 0) { countParts.push(`${todayCount} today`); }
+							if (last30Count > todayCount) { countParts.push(`${last30Count} in the last 30d`); }
+							if (monthCount > last30Count) { countParts.push(`${monthCount} this month`); }
+							const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${countParts.join(' | ')})</span>` : '';
+							return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${countHtml}</span>`;
 						}).join(' ');
 						return `
 							<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
 								<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-									Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names — these are not included in the top-10 tables above
+									Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names — might not be included in the top-10 tables above
 								</div>
 								<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
 									${toolListHtml}
