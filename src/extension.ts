@@ -10226,7 +10226,7 @@ ${hashtag}`;
           await this.context.globalState.update('extension.openCount', 0);
           await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
           await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
-          await this.context.globalState.update('news.unknownMcpTools.v1.dismissed', false);
+          await this.context.globalState.update('news.unknownMcpTools.dismissedVersion', undefined);
           vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
           await this.showDiagnosticReport();
           break;
@@ -10652,7 +10652,7 @@ ${hashtag}`;
       openCount: this.context.globalState.get<number>('extension.openCount') ?? 0,
       unknownMcpOpenCount: this.context.globalState.get<number>('extension.unknownMcpOpenCount') ?? 0,
       fluencyBannerDismissed: this.context.globalState.get<boolean>('news.fluencyScoreBanner.v1.dismissed') ?? false,
-      unknownMcpDismissed: this.context.globalState.get<boolean>('news.unknownMcpTools.v1.dismissed') ?? false,
+      unknownMcpDismissedVersion: this.context.globalState.get<string>('news.unknownMcpTools.dismissedVersion') ?? '',
     };
 
     const initialData = JSON.stringify({
