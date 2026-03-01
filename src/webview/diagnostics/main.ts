@@ -156,13 +156,18 @@ function getTimeSince(isoString: string): string {
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
+  const numericBytes = Number(bytes);
+  if (!Number.isFinite(numericBytes) || numericBytes < 0) {
+    // Fallback for unexpected or untrusted values
+    return "N/A";
   }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+  if (numericBytes < 1024) {
+    return `${numericBytes} B`;
   }
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (numericBytes < 1024 * 1024) {
+    return `${(numericBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(numericBytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function sanitizeNumber(value: number | undefined | null): string {
