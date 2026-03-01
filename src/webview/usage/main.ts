@@ -958,10 +958,12 @@ window.addEventListener('message', (event) => {
 			handleBatchAnalysisComplete();
 			break;
 		case 'updateStats':
-			// Background update: re-render stats without resetting user-generated content.
-			// repoAnalysisState and selectedRepoPath are module-level and persist across re-renders,
-			// so renderRepositoryHygienePanels() (called inside renderLayout) will restore them.
+			// Re-render the layout with fresh stats, then restore repo analysis results
+			if (message.data?.locale) {
+				setFormatLocale(message.data.locale);
+			}
 			renderLayout(message.data as UsageAnalysisStats);
+			renderRepositoryHygienePanels();
 			break;
 	}
 });
