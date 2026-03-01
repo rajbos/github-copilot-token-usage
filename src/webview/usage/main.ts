@@ -46,6 +46,7 @@ type UsageAnalysisStats = {
 	customizationMatrix?: WorkspaceCustomizationMatrix | null;
 	missedPotential?: MissedPotentialWorkspace[];
 	backendConfigured?: boolean;
+	currentWorkspacePaths?: string[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -112,6 +113,7 @@ const repoAnalysisState = new Map<string, RepoAnalysisRecord>();
 let selectedRepoPath: string | null = null;
 let isSwitchingRepository = false;
 let isBatchAnalysisInProgress = false;
+let currentWorkspacePaths: string[] = [];
 
 function escapeHtml(text: string): string {
 	return text
@@ -285,6 +287,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	hygieneMatrixState = matrix ?? null;
 	if (!hygieneMatrixState || hygieneMatrixState.workspaces.length === 0) {
 		selectedRepoPath = null;
+	}
+	if (Array.isArray(stats.currentWorkspacePaths)) {
+		currentWorkspacePaths = stats.currentWorkspacePaths;
 	}
 	let customizationHtml = '';
 	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
@@ -523,7 +528,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div id="repo-details-pane" class="repo-hygiene-pane-body"></div>
 					</div>
 				` : `
-					<vscode-button id="btn-analyse-repo">Analyse Repository</vscode-button>
+					<vscode-button id="btn-analyse-repo">Analyze Repo for Best Practices</vscode-button>
 					<div id="repo-analysis-results" class="repo-hygiene-results" style="margin-top: 12px;"></div>
 				`}
 			</div>
@@ -990,10 +995,30 @@ function toFiniteNumber(value: unknown): number {
 	return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function buildRepoAnalysisBodyElement(data: any): HTMLElement {
+function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLElement {
 	const summary = data?.summary || {};
 	const checks = Array.isArray(data?.checks) ? data.checks : [];
 	const recommendations = Array.isArray(data?.recommendations) ? [...data.recommendations] : [];
+
+	// Documentation links for each check ID
+	const docsLinks: { [key: string]: string } = {
+		'git-repo': 'https://docs.github.com/en/get-started/using-git/about-git',
+		'gitignore': 'https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files',
+		'env-example': 'https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions',
+		'editorconfig': 'https://editorconfig.org/',
+		'linter': 'https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning',
+		'formatter': 'https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide',
+		'type-safety': 'https://docs.github.com/en/code-security/code-scanning/reference/code-ql-built-in-queries/javascript-typescript-built-in-queries',
+		'commit-messages': 'https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/about-commits',
+		'conventional-commits': 'https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets',
+		'ci-config': 'https://docs.github.com/en/actions/about-github-actions/understanding-github-actions',
+		'scripts': 'https://docs.github.com/en/actions/tutorials/build-and-test-code/nodejs',
+		'task-runner': 'https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/add-scripts',
+		'devcontainer': 'https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration',
+		'dockerfile': 'https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry',
+		'version-pinning': 'https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/setting-up-your-nodejs-project-for-codespaces',
+		'license': 'https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository'
+	};
 
 	const container = el('div');
 
@@ -1123,6 +1148,17 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 				content.appendChild(hint);
 			}
 
+			const checkId = typeof check?.id === 'string' ? check.id : '';
+			const docUrl = docsLinks[checkId];
+			if (docUrl) {
+				const docLink = el('a');
+				docLink.setAttribute('href', docUrl);
+				docLink.setAttribute('style', 'font-size: 10px; color: #60a5fa; margin-top: 4px; display: inline-block;');
+				docLink.setAttribute('title', 'View official documentation');
+				docLink.textContent = '📖 View documentation';
+				content.appendChild(docLink);
+			}
+
 			const weight = el('span');
 			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
 			weight.textContent = `+${toFiniteNumber(check?.weight)}`;
@@ -1179,6 +1215,61 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 		}
 
 		container.appendChild(recommendationsSection);
+	}
+
+	// Build a prompt summarizing the failed/warning checks for Copilot
+	const failedChecks = checks.filter((c: any) => c?.status === 'fail' || c?.status === 'warning');
+	if (failedChecks.length > 0) {
+		const copilotSection = el('div');
+		copilotSection.setAttribute('style', 'margin-top: 16px; padding: 12px; background: rgba(96, 165, 250, 0.07); border: 1px solid rgba(96, 165, 250, 0.3); border-radius: 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px;');
+
+		const copilotText = el('div');
+		copilotText.setAttribute('style', 'font-size: 11px; color: #b8b8b8; flex: 1;');
+		copilotText.textContent = 'Let Copilot help you fix the identified issues in this repository.';
+
+		const copilotBtn = document.createElement('vscode-button');
+		copilotBtn.setAttribute('style', 'min-width: 180px;');
+		copilotBtn.textContent = '🤖 Ask Copilot to Improve';
+		copilotBtn.addEventListener('click', () => {
+			const failedLines = failedChecks.map((c: any) => `- ${c.label}: ${c.detail || ''}${c.hint ? ` (${c.hint})` : ''}`).join('\n');
+			const prompt = `Please help me improve this repository by addressing the following best practice issues:\n\n${failedLines}\n\nFor each issue, please provide specific steps or code changes to fix it.`;
+
+			const isRepoOpen = !workspacePath || currentWorkspacePaths.some(
+				p => p.toLowerCase() === workspacePath.toLowerCase()
+			);
+
+			if (isRepoOpen) {
+				vscode.postMessage({ command: 'openCopilotChatWithPrompt', prompt });
+			} else {
+				// Repo is not currently open — show instructions + prompt + copy button
+				const repoFolderName = workspacePath.split(/[/\\]/).filter(Boolean).pop() ?? workspacePath;
+				copilotSection.replaceChildren();
+				copilotSection.setAttribute('style', 'margin-top: 16px; padding: 12px; background: rgba(251, 191, 36, 0.07); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 4px; display: flex; flex-direction: column; gap: 8px;');
+
+				const instructions = el('div');
+				instructions.setAttribute('style', 'font-size: 11px; color: #fbbf24;');
+				instructions.textContent = `⚠️ Open "${repoFolderName}" in VS Code first, then paste this prompt into Copilot Chat:`;
+
+				const promptBox = el('pre');
+				promptBox.setAttribute('style', 'font-size: 10px; color: #b8b8b8; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; padding: 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; font-family: monospace; margin: 0;');
+				promptBox.textContent = prompt;
+
+				const copyBtn = document.createElement('vscode-button');
+				copyBtn.setAttribute('appearance', 'secondary');
+				copyBtn.textContent = '📋 Copy prompt';
+				copyBtn.addEventListener('click', () => {
+					navigator.clipboard.writeText(prompt).then(() => {
+						copyBtn.textContent = '✅ Copied!';
+						setTimeout(() => { copyBtn.textContent = '📋 Copy prompt'; }, 2000);
+					});
+				});
+
+				copilotSection.append(instructions, promptBox, copyBtn);
+			}
+		});
+
+		copilotSection.append(copilotText, copilotBtn);
+		container.appendChild(copilotSection);
 	}
 
 	return container;
@@ -1255,7 +1346,7 @@ function renderRepositoryHygienePanels(): void {
 		switchButton.textContent = 'Switch Repository';
 
 		header.append(label, switchButton);
-		card.append(header, buildRepoAnalysisBodyElement(record.data));
+		card.append(header, buildRepoAnalysisBodyElement(record.data, selectedRepoPath ?? undefined));
 		detailsPane.appendChild(card);
 		return;
 	}
@@ -1299,7 +1390,7 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 	const btn = document.getElementById('btn-analyse-repo') as any;
 	if (btn) {
 		btn.disabled = false;
-		btn.textContent = 'Analyse Repository';
+		btn.textContent = 'Analyze Repo for Best Practices';
 	}
 
 	const resultsHost = document.getElementById('repo-analysis-results');
@@ -1307,7 +1398,7 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 		resultsHost.replaceChildren();
 		const card = el('div', 'repo-analysis-card');
 		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;');
-		card.appendChild(buildRepoAnalysisBodyElement(data));
+		card.appendChild(buildRepoAnalysisBodyElement(data, workspacePath));
 		resultsHost.appendChild(card);
 	}
 }
@@ -1326,7 +1417,7 @@ function displayRepoAnalysisError(error: string, workspacePath?: string): void {
 	const btn = document.getElementById('btn-analyse-repo') as any;
 	if (btn) {
 		btn.disabled = false;
-		btn.textContent = 'Analyse Repository';
+		btn.textContent = 'Analyze Repo for Best Practices';
 	}
 
 	const resultsHost = document.getElementById('repo-analysis-results');

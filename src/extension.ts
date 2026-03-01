@@ -1737,6 +1737,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							missedPotential: analysisStats.missedPotential || [],
 							lastUpdated: analysisStats.lastUpdated.toISOString(),
 							backendConfigured: this.isBackendConfigured(),
+							currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
 						},
 					});
 				} else {
@@ -6697,6 +6698,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'analyseAllRepositories':
 					await this.handleAnalyseAllRepositories();
 					break;
+				case 'openCopilotChatWithPrompt':
+					await vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true });
+					break;
 			}
 		});
 
@@ -10790,6 +10794,7 @@ ${hashtag}`;
       missedPotential: stats.missedPotential || [],
       lastUpdated: stats.lastUpdated.toISOString(),
       backendConfigured: this.isBackendConfigured(),
+      currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
     }).replace(/</g, "\\u003c");
 
     return `<!DOCTYPE html>
