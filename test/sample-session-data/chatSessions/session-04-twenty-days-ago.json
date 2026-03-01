@@ -1,0 +1,54 @@
+{
+  "requests": [
+    {
+      "requestId": "req_20d_001",
+      "modelId": "copilot/claude-sonnet-4.5",
+      "message": {
+        "text": "I want to export the token usage data as a CSV file. What would be the cleanest way to implement this export feature?",
+        "parts": [
+          {
+            "text": "I want to export the token usage data as a CSV file. What would be the cleanest way to implement this export feature?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## CSV Export Feature Implementation\n\n### 1. Add the Command\n\n```json\n// package.json\n{\n  \"command\": \"copilot-token-tracker.exportCsv\",\n  \"title\": \"Export Token Usage as CSV\",\n  \"category\": \"Copilot Token Tracker\"\n}\n```\n\n### 2. Implement the Export Method\n\n```typescript\nprivate async exportTokenUsageAsCsv() {\n  const stats = await this.calculateDetailedStats();\n  if (!stats) {\n    vscode.window.showWarningMessage('No token usage data available to export.');\n    return;\n  }\n\n  // Build CSV rows\n  const rows: string[] = [\n    'Date,Model,Tokens,ThinkingTokens,Interactions,EstimatedCost',\n  ];\n\n  for (const [date, dayData] of Object.entries(stats.dailyBreakdown)) {\n    for (const [model, modelData] of Object.entries(dayData.models)) {\n      rows.push([\n        date,\n        model,\n        modelData.tokens.toString(),\n        (modelData.thinkingTokens ?? 0).toString(),\n        modelData.interactions.toString(),\n        modelData.estimatedCost.toFixed(6),\n      ].join(','));\n    }\n  }\n\n  const csvContent = rows.join('\\n');\n\n  // Prompt for save location\n  const uri = await vscode.window.showSaveDialog({\n    defaultUri: vscode.Uri.file('copilot-token-usage.csv'),\n    filters: { 'CSV Files': ['csv'], 'All Files': ['*'] },\n  });\n\n  if (!uri) { return; }\n\n  await vscode.workspace.fs.writeFile(uri, Buffer.from(csvContent, 'utf8'));\n  vscode.window.showInformationMessage(`Exported token usage to ${uri.fsPath}`);\n}\n```\n\n### 3. Per-Day Breakdown Structure\n\nThe export works best if `dailyBreakdown` is a `Map<string, DayStats>` keyed by ISO date string (`YYYY-MM-DD`). If this property doesn't exist yet, derive it from `calculateDetailedStats()`:\n\n```typescript\nconst dailyBreakdown = new Map<string, DayStats>();\nfor (const sessionFile of sessionFiles) {\n  const dateKey = getDateKey(fileStats.mtime);\n  const existing = dailyBreakdown.get(dateKey) ?? { models: {} };\n  // merge session data...\n  dailyBreakdown.set(dateKey, existing);\n}\n```"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 32,
+        "outputTokens": 420
+      }
+    },
+    {
+      "requestId": "req_20d_002",
+      "modelId": "copilot/gpt-4o",
+      "message": {
+        "text": "How can I make the extension work offline? Right now it seems to require network access to validate the backend configuration.",
+        "parts": [
+          {
+            "text": "How can I make the extension work offline? Right now it seems to require network access to validate the backend configuration.",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Offline Support\n\nThe core token tracking (reading local session files) is already fully offline. Backend sync requires network, but here's how to ensure offline resilience:\n\n### What Works Offline\n\n- Reading local Copilot session files from AppData\n- Token estimation via character ratios\n- Status bar display and all webview panels\n- Caching (the extension cache is file-based in memory)\n- OpenCode session reading\n\n### What Requires Network\n\n- Azure Table Storage sync (backend aggregation)\n- Azure Blob Storage session upload\n- Backend configuration validation (Entra ID token fetch)\n\n### Making Backend Operations Resilient\n\n```typescript\nprivate async syncToBackend(data: UsageData): Promise<void> {\n  if (!this.isBackendEnabled()) { return; }\n  \n  try {\n    await this.backendClient.upsertRow(data);\n  } catch (error) {\n    if (this.isNetworkError(error)) {\n      // Queue for retry when back online\n      this.pendingSyncQueue.push(data);\n      this.log('Backend sync queued (offline)');\n    } else {\n      this.warn(`Backend sync failed: ${error}`);\n    }\n  }\n}\n\nprivate isNetworkError(error: unknown): boolean {\n  const msg = String(error);\n  return msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') ||\n         msg.includes('ECONNREFUSED') || msg.includes('network');\n}\n```\n\n### VS Code Network Status API\n\n```typescript\n// VS Code doesn't expose a direct online/offline API, but you can check:\nconst isOnline = vscode.env.appHost !== 'desktop' ||\n                 await testConnectivity('https://management.azure.com');\n```"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 36,
+        "outputTokens": 380
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "requests": [
+    {
+      "requestId": "req_27d_001",
+      "modelId": "copilot/gpt-4o",
+      "message": {
+        "text": "Can you help me set up the Azure Storage backend for the Copilot Token Tracker? I want to share usage data across my dev machine, laptop, and work desktop.",
+        "parts": [
+          {
+            "text": "Can you help me set up the Azure Storage backend for the Copilot Token Tracker? I want to share usage data across my dev machine, laptop, and work desktop.",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Setting Up the Azure Storage Backend\n\nThe backend allows you to aggregate Copilot usage across multiple machines. Here's the setup process:\n\n### Prerequisites\n\n1. An Azure subscription\n2. An Azure Storage account (LRS is sufficient, cheapest tier)\n3. VS Code signed in with the same Azure account on all machines\n\n### Quick Setup via the Config Wizard\n\n1. Open the Command Palette (`Ctrl+Shift+P`)\n2. Run `Copilot Token Tracker: Configure Backend`\n3. Follow the interactive wizard:\n   - Select your Azure subscription\n   - Select or create a resource group\n   - Select or create a Storage account\n   - The wizard creates the required tables automatically\n\n### Manual Setup\n\nIf you prefer to configure manually via `settings.json`:\n\n```json\n{\n  \"copilotTokenTracker.backend.enabled\": true,\n  \"copilotTokenTracker.backend.storageAccount\": \"mystorageaccount\",\n  \"copilotTokenTracker.backend.authMode\": \"entraId\",\n  \"copilotTokenTracker.backend.datasetId\": \"my-team\",\n  \"copilotTokenTracker.backend.lookbackDays\": 30\n}\n```\n\n### Cross-Device Sync Behavior\n\n- Each device syncs its local session data to Azure Tables every 5 minutes (when the extension is active)\n- Data is keyed by `date + machineId + workspaceId`\n- When you open the details panel on any machine, it reads from the Azure backend to show combined totals\n- Local data is still tracked by reading session files; the backend is an overlay\n\n### Cost Estimate\n\nAzure Table Storage costs approximately $0.045 per GB-month of storage. For personal use (one developer, 30 days of data), you're looking at less than $0.01/month.\n\n### Identity Modes\n\nFor a solo setup, the default `pseudonymous` mode works well. For teams:\n- `teamAlias`: Uses a user-defined identifier (no PII)\n- `entraObjectId`: Uses your Azure AD object ID (allows cross-device linking)"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 48,
+        "outputTokens": 416
+      }
+    },
+    {
+      "requestId": "req_27d_002",
+      "modelId": "copilot/claude-sonnet-4.5",
+      "message": {
+        "text": "What's the difference between the Usage Analysis dashboard and the Details panel? When should I use each one?",
+        "parts": [
+          {
+            "text": "What's the difference between the Usage Analysis dashboard and the Details panel? When should I use each one?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Details Panel vs. Usage Analysis Dashboard\n\n### Details Panel\n\nThe **Details Panel** (`Show Token Usage Details`) focuses on **token counts and cost**:\n\n| What it shows | Example |\n|---|---|\n| Tokens today / last 30 days / last month | 15,840 / 1.2M / 130K |\n| Thinking tokens breakdown | 2,400 thinking / 13,440 regular |\n| Estimated cost by period | $0.28 / $62.50 / $7.80 |\n| Per-model breakdown | claude-sonnet: 800K, gpt-4o: 400K |\n| Cloud backend totals (if configured) | 1.3M total from all devices |\n\n**Use it when**: You want to know how much you've spent, which models you use most, and whether token usage is trending up.\n\n### Usage Analysis Dashboard\n\nThe **Usage Analysis Dashboard** (`Show Usage Analysis Dashboard`) focuses on **behavior patterns**:\n\n| What it shows | Example |\n|---|---|\n| Mode breakdown (chat vs agent vs edit) | 45% agent, 40% chat, 15% edit |\n| Tool call patterns | 340 tool calls, top: read_file (120) |\n| Context references | 280 file references, 45 workspace |\n| MCP tool usage | 12 MCP calls: github, playwright |\n| Agent iteration depth | avg 4.2 tool calls per agent turn |\n\n**Use it when**: You want to understand *how* you're using Copilot — are you leveraging agent mode, using context effectively, which tools you rely on?\n\n### When to Use Each\n\n- **Budget tracking**: Details Panel\n- **Productivity insights**: Usage Analysis Dashboard\n- **Model comparison**: Details Panel (per-model section)\n- **Workflow optimization**: Usage Analysis Dashboard\n- **Before/after comparison** (e.g., starting to use MCP tools): Both panels"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 30,
+        "outputTokens": 372
+      }
+    },
+    {
+      "requestId": "req_27d_003",
+      "modelId": "copilot/o3-mini",
+      "message": {
+        "text": "Is there a way to set a monthly token budget alert? I want to be notified when I'm approaching my limit.",
+        "parts": [
+          {
+            "text": "Is there a way to set a monthly token budget alert? I want to be notified when I'm approaching my limit.",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Token Budget Alerts\n\nBudget alerts aren't built into the extension yet, but here's how you could implement them:\n\n### Feature Design\n\n```typescript\n// New settings to add:\n\"copilot-token-tracker.budgetAlert.enabled\": true,\n\"copilot-token-tracker.budgetAlert.monthlyTokenLimit\": 2000000,\n\"copilot-token-tracker.budgetAlert.warnAtPercent\": 80,\n\"copilot-token-tracker.budgetAlert.monthlyCostLimit\": 100.00\n```\n\n### Implementation Sketch\n\n```typescript\nprivate checkBudgetAlerts(stats: DetailedStats): void {\n  const config = vscode.workspace.getConfiguration('copilot-token-tracker.budgetAlert');\n  if (!config.get('enabled')) { return; }\n\n  const tokenLimit = config.get<number>('monthlyTokenLimit') ?? 0;\n  const warnPercent = config.get<number>('warnAtPercent') ?? 80;\n\n  if (tokenLimit > 0) {\n    const usage = stats.lastMonth.tokens;\n    const percent = (usage / tokenLimit) * 100;\n\n    if (percent >= 100 && !this._budgetAlertShown.get('token-limit')) {\n      vscode.window.showWarningMessage(\n        `⚠️ Copilot: Monthly token limit reached (${formatTokens(usage)} / ${formatTokens(tokenLimit)})`\n      );\n      this._budgetAlertShown.set('token-limit', true);\n    } else if (percent >= warnPercent && !this._budgetAlertShown.get('token-warn')) {\n      vscode.window.showInformationMessage(\n        `ℹ️ Copilot: ${percent.toFixed(0)}% of monthly token budget used`\n      );\n      this._budgetAlertShown.set('token-warn', true);\n    }\n  }\n}\n```\n\n### Status Bar Color Change\n\nA simpler approach: change status bar background color when approaching the limit:\n\n```typescript\nif (percentUsed >= 100) {\n  this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');\n} else if (percentUsed >= 80) {\n  this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');\n}\n```\n\nWould you like me to implement this as a full PR?"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 28,
+        "outputTokens": 408
+      }
+    }
+  ]
+}

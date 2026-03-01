@@ -48,12 +48,28 @@ async function fetchGitHubReleases() {
     return TEST_RELEASES;
   }
   
-  // Try GitHub CLI first
+  // Try GitHub CLI first (use `gh api` which supports the full release body field)
   try {
     execSync('gh --version', { stdio: 'ignore' });
-    console.log('📡 Fetching GitHub releases using GitHub CLI...');
-    const releasesJson = execSync('gh release list --json tagName,name,body,createdAt,isPrerelease --limit 50', { encoding: 'utf8' });
-    return JSON.parse(releasesJson);
+    // Extract repo slug from package.json for the gh api path
+    const pkgForCli = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+    const repoUrlForCli = pkgForCli.repository?.url || '';
+    const matchForCli = repoUrlForCli.match(/github\.com[\/:](.+?)\/(.+?)(?:\.git)?$/);
+    if (!matchForCli) throw new Error('Could not extract repository info from package.json');
+    const [, ownerCli, repoCli] = matchForCli;
+    console.log('📡 Fetching GitHub releases using GitHub CLI (gh api)...');
+    const releasesJson = execSync(
+      `gh api repos/${ownerCli}/${repoCli}/releases?per_page=50`,
+      { encoding: 'utf8' }
+    );
+    const apiReleases = JSON.parse(releasesJson);
+    return apiReleases.map(r => ({
+      tagName:      r.tag_name,
+      name:         r.name,
+      body:         r.body,
+      createdAt:    r.created_at,
+      isPrerelease: r.prerelease,
+    }));
   } catch (error) {
     console.log('⚠️ GitHub CLI not available or not authenticated, falling back to GitHub API...');
   }
