@@ -46,6 +46,7 @@ type UsageAnalysisStats = {
 	customizationMatrix?: WorkspaceCustomizationMatrix | null;
 	missedPotential?: MissedPotentialWorkspace[];
 	backendConfigured?: boolean;
+	currentWorkspacePaths?: string[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -112,6 +113,7 @@ const repoAnalysisState = new Map<string, RepoAnalysisRecord>();
 let selectedRepoPath: string | null = null;
 let isSwitchingRepository = false;
 let isBatchAnalysisInProgress = false;
+let currentWorkspacePaths: string[] = [];
 
 function escapeHtml(text: string): string {
 	return text
@@ -285,6 +287,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	hygieneMatrixState = matrix ?? null;
 	if (!hygieneMatrixState || hygieneMatrixState.workspaces.length === 0) {
 		selectedRepoPath = null;
+	}
+	if (Array.isArray(stats.currentWorkspacePaths)) {
+		currentWorkspacePaths = stats.currentWorkspacePaths;
 	}
 	let customizationHtml = '';
 	if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
@@ -990,7 +995,7 @@ function toFiniteNumber(value: unknown): number {
 	return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function buildRepoAnalysisBodyElement(data: any): HTMLElement {
+function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLElement {
 	const summary = data?.summary || {};
 	const checks = Array.isArray(data?.checks) ? data.checks : [];
 	const recommendations = Array.isArray(data?.recommendations) ? [...data.recommendations] : [];
@@ -1003,15 +1008,15 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 		'editorconfig': 'https://editorconfig.org/',
 		'linter': 'https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning',
 		'formatter': 'https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide',
-		'type-safety': 'https://www.typescriptlang.org/docs/handbook/2/basic-types.html',
+		'type-safety': 'https://docs.github.com/en/code-security/code-scanning/reference/code-ql-built-in-queries/javascript-typescript-built-in-queries',
 		'commit-messages': 'https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/about-commits',
-		'conventional-commits': 'https://www.conventionalcommits.org/en/v1.0.0/',
+		'conventional-commits': 'https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets',
 		'ci-config': 'https://docs.github.com/en/actions/about-github-actions/understanding-github-actions',
-		'scripts': 'https://docs.npmjs.com/cli/v10/configuring-npm/package-json#scripts',
-		'task-runner': 'https://www.gnu.org/software/make/manual/make.html',
+		'scripts': 'https://docs.github.com/en/actions/tutorials/build-and-test-code/nodejs',
+		'task-runner': 'https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/add-scripts',
 		'devcontainer': 'https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration',
 		'dockerfile': 'https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry',
-		'version-pinning': 'https://github.com/nvm-sh/nvm#nvmrc',
+		'version-pinning': 'https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/setting-up-your-nodejs-project-for-codespaces',
 		'license': 'https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository'
 	};
 
@@ -1228,7 +1233,39 @@ function buildRepoAnalysisBodyElement(data: any): HTMLElement {
 		copilotBtn.addEventListener('click', () => {
 			const failedLines = failedChecks.map((c: any) => `- ${c.label}: ${c.detail || ''}${c.hint ? ` (${c.hint})` : ''}`).join('\n');
 			const prompt = `Please help me improve this repository by addressing the following best practice issues:\n\n${failedLines}\n\nFor each issue, please provide specific steps or code changes to fix it.`;
-			vscode.postMessage({ command: 'openCopilotChatWithPrompt', prompt });
+
+			const isRepoOpen = !workspacePath || currentWorkspacePaths.some(
+				p => p.toLowerCase() === workspacePath.toLowerCase()
+			);
+
+			if (isRepoOpen) {
+				vscode.postMessage({ command: 'openCopilotChatWithPrompt', prompt });
+			} else {
+				// Repo is not currently open — show instructions + prompt + copy button
+				const repoFolderName = workspacePath.split(/[/\\]/).filter(Boolean).pop() ?? workspacePath;
+				copilotSection.replaceChildren();
+				copilotSection.setAttribute('style', 'margin-top: 16px; padding: 12px; background: rgba(251, 191, 36, 0.07); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 4px; display: flex; flex-direction: column; gap: 8px;');
+
+				const instructions = el('div');
+				instructions.setAttribute('style', 'font-size: 11px; color: #fbbf24;');
+				instructions.textContent = `⚠️ Open "${repoFolderName}" in VS Code first, then paste this prompt into Copilot Chat:`;
+
+				const promptBox = el('pre');
+				promptBox.setAttribute('style', 'font-size: 10px; color: #b8b8b8; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; padding: 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; font-family: monospace; margin: 0;');
+				promptBox.textContent = prompt;
+
+				const copyBtn = document.createElement('vscode-button');
+				copyBtn.setAttribute('appearance', 'secondary');
+				copyBtn.textContent = '📋 Copy prompt';
+				copyBtn.addEventListener('click', () => {
+					navigator.clipboard.writeText(prompt).then(() => {
+						copyBtn.textContent = '✅ Copied!';
+						setTimeout(() => { copyBtn.textContent = '📋 Copy prompt'; }, 2000);
+					});
+				});
+
+				copilotSection.append(instructions, promptBox, copyBtn);
+			}
 		});
 
 		copilotSection.append(copilotText, copilotBtn);
@@ -1309,7 +1346,7 @@ function renderRepositoryHygienePanels(): void {
 		switchButton.textContent = 'Switch Repository';
 
 		header.append(label, switchButton);
-		card.append(header, buildRepoAnalysisBodyElement(record.data));
+		card.append(header, buildRepoAnalysisBodyElement(record.data, selectedRepoPath ?? undefined));
 		detailsPane.appendChild(card);
 		return;
 	}
@@ -1361,7 +1398,7 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 		resultsHost.replaceChildren();
 		const card = el('div', 'repo-analysis-card');
 		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;');
-		card.appendChild(buildRepoAnalysisBodyElement(data));
+		card.appendChild(buildRepoAnalysisBodyElement(data, workspacePath));
 		resultsHost.appendChild(card);
 	}
 }
