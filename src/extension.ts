@@ -1544,6 +1544,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.recheckCopilotExtensionsAfterDelay();
 					await this.updateTokenStats();
 					this.startBackendSyncAfterInitialAnalysis();
+					await this.showFluencyScoreNewsBanner();
 				} catch (error) {
 					this.error('Error in delayed initial update:', error);
 				}
@@ -1553,12 +1554,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			setTimeout(async () => {
 				await this.updateTokenStats();
 				this.startBackendSyncAfterInitialAnalysis();
+				await this.showFluencyScoreNewsBanner();
 			}, 100);
 		} else {
 			this.log('✅ Copilot extensions are active - starting token analysis');
 			setTimeout(async () => {
 				await this.updateTokenStats();
 				this.startBackendSyncAfterInitialAnalysis();
+				await this.showFluencyScoreNewsBanner();
 			}, 100);
 		}
 	}
@@ -1589,6 +1592,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		} catch (error) {
 			this.warn('Failed to start backend sync timer: ' + error);
+		}
+	}
+
+	private async showFluencyScoreNewsBanner(): Promise<void> {
+		const dismissedKey = 'news.fluencyScoreBanner.v1.dismissed';
+		if (this.context.globalState.get<boolean>(dismissedKey)) {
+			return;
+		}
+		// If the user already opened the fluency view themselves, no need to prompt them
+		const fluencyViewedKey = 'fluencyScore.everOpened';
+		if (this.context.globalState.get<boolean>(fluencyViewedKey)) {
+			await this.context.globalState.update(dismissedKey, true);
+			return;
+		}
+		const openCountKey = 'extension.openCount';
+		const openCount = (this.context.globalState.get<number>(openCountKey) ?? 0) + 1;
+		await this.context.globalState.update(openCountKey, openCount);
+		if (openCount < 5) {
+			return;
+		}
+		const open = 'Open Fluency Score';
+		const dismiss = 'Dismiss';
+		const choice = await vscode.window.showInformationMessage(
+			'🎯 New: Copilot Fluency Score dashboard — track how deeply your team uses GitHub Copilot across 6 categories and 4 stages.',
+			open,
+			dismiss
+		);
+		await this.context.globalState.update(dismissedKey, true);
+		if (choice === open) {
+			await this.showMaturity();
 		}
 	}
 
@@ -1649,10 +1682,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 			}
 
-			// If the analysis panel is open, update its content
+			// If the analysis panel is open, update its content via postMessage to preserve repo hygiene results
 			if (this.analysisPanel) {
-				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation on refresh
-				this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation
+				const detectedLocale = analysisStats.locale || Intl.DateTimeFormat().resolvedOptions().locale;
+				this.analysisPanel.webview.postMessage({
+					command: 'updateStats',
+					data: {
+						today: analysisStats.today,
+						last30Days: analysisStats.last30Days,
+						month: analysisStats.month,
+						locale: detectedLocale,
+						customizationMatrix: analysisStats.customizationMatrix || null,
+						missedPotential: analysisStats.missedPotential || [],
+						lastUpdated: analysisStats.lastUpdated.toISOString(),
+						backendConfigured: this.isBackendConfigured(),
+					}
+				});
 			} else {
 				// Pre-populate the cache even when panel isn't open, so first open is fast
 				await this.calculateUsageAnalysisStats(false);
@@ -6570,7 +6616,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			},
 			{
 				enableScripts: true,
-				retainContextWhenHidden: false,
+				retainContextWhenHidden: true, // Keep webview context to preserve analysis results when switching tabs
 				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
 			}
 		);
@@ -7657,6 +7703,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 
 	public async showMaturity(): Promise<void> {
 		this.log('🎯 Opening Copilot Fluency Score dashboard');
+		await this.context.globalState.update('fluencyScore.everOpened', true);
 
 		// If panel already exists, dispose and recreate with fresh data
 		if (this.maturityPanel) {
