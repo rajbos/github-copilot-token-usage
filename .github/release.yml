@@ -1,16 +1,19 @@
 changelog:
+  exclude-contributors:
+    - dependabot
+    - github-actions
   categories:
     - title: Changes
+      labels:
+        - '*'
       exclude:
         labels:
           - dependencies
     - title: 📦 npm Dependencies
       labels:
-        - dependencies
         - npm
     - title: 📦 GitHub Actions Dependencies
       labels:
-        - dependencies
         - github-actions
     - title: 📦 Other Dependencies
       labels:
