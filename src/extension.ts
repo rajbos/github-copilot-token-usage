@@ -1658,8 +1658,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private async showUnknownMcpToolsBanner(): Promise<void> {
-		const dismissedKey = 'news.unknownMcpTools.v1.dismissed';
-		if (this.context.globalState.get<boolean>(dismissedKey)) {
+		const dismissedKey = 'news.unknownMcpTools.dismissedVersion';
+		const dismissedVersion = this.context.globalState.get<string>(dismissedKey);
+		if (dismissedVersion === packageJson.version) {
 			return;
 		}
 		const openCountKey = 'extension.unknownMcpOpenCount';
@@ -1681,7 +1682,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			open,
 			dismiss
 		);
-		await this.context.globalState.update(dismissedKey, true);
+		await this.context.globalState.update(dismissedKey, packageJson.version);
 		if (choice === open) {
 			await this.showUsageAnalysis();
 			setTimeout(() => {
