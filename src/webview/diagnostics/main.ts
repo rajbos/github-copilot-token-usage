@@ -174,7 +174,11 @@ function sanitizeNumber(value: number | undefined | null): string {
   if (value === undefined || value === null) {
     return "0";
   }
-  return value.toString();
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return "0";
+  }
+  return Math.floor(n).toString();
 }
 
 /**
