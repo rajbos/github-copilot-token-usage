@@ -178,13 +178,13 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 		return `
 			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: #22c55e; margin-bottom: 8px;">
-					✅ All Good: No Missed Potential Detected
+					✅ No Other AI Tool Configs Missing a Copilot Counterpart
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-					All active workspaces in the last 30 days already have Copilot customization files, or don't use other AI instruction files.
+					All active workspaces that contain instruction files for other AI tools (e.g. .cursorrules, CLAUDE.md, AGENTS.md) also have Copilot customization files configured.
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary);">
-					A workspace would appear here if it had non-Copilot AI instruction files but no Copilot customization files. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+					A workspace appears here when it has instruction files for other AI tools but no Copilot customization files — indicating Copilot may be under-configured compared to other tools. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
 				</div>
 			</div>
 		`;
