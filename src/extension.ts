@@ -387,7 +387,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 27; // Support result.metadata.promptTokens/outputTokens (Insiders format)
+	private static readonly CACHE_VERSION = 28; // Fix actualTokens/thinkingTokens lost by updateCacheWithSessionDetails
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1651,12 +1651,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 		Object.keys(stats.today.mcpTools.byTool).forEach(tool => allTools.add(tool));
 		Object.keys(stats.last30Days.mcpTools.byTool).forEach(tool => allTools.add(tool));
 		Object.keys(stats.month.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.today.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.last30Days.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.month.toolCalls.byTool).forEach(tool => allTools.add(tool));
 		return Array.from(allTools).filter(tool => !this.toolNameMap[tool]).sort();
 	}
 
 	private async showUnknownMcpToolsBanner(): Promise<void> {
-		const dismissedKey = 'news.unknownMcpTools.v1.dismissed';
-		if (this.context.globalState.get<boolean>(dismissedKey)) {
+		const dismissedKey = 'news.unknownMcpTools.dismissedVersion';
+		const dismissedVersion = this.context.globalState.get<string>(dismissedKey);
+		if (dismissedVersion === packageJson.version) {
 			return;
 		}
 		const openCountKey = 'extension.unknownMcpOpenCount';
@@ -1673,11 +1677,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const open = 'Open Usage Analysis';
 		const dismiss = 'Dismiss';
 		const choice = await vscode.window.showInformationMessage(
-			`🔌 Found ${unknownTools.length} unknown MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names. Help improve the extension by reporting them.`,
+			`🔌 Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names. Help improve the extension by reporting them.`,
+
 			open,
 			dismiss
 		);
-		await this.context.globalState.update(dismissedKey, true);
+		await this.context.globalState.update(dismissedKey, packageJson.version);
 		if (choice === open) {
 			await this.showUsageAnalysis();
 			setTimeout(() => {
@@ -4691,6 +4696,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			modelUsage: existingCache?.modelUsage || {},
 			mtime: stat.mtime.getTime(),
 			size: stat.size,
+			actualTokens: existingCache?.actualTokens,
+			thinkingTokens: existingCache?.thinkingTokens,
 			usageAnalysis: existingCache?.usageAnalysis || {
 				toolCalls: { total: 0, byTool: {} },
 				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
@@ -10219,7 +10226,7 @@ ${hashtag}`;
           await this.context.globalState.update('extension.openCount', 0);
           await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
           await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
-          await this.context.globalState.update('news.unknownMcpTools.v1.dismissed', false);
+          await this.context.globalState.update('news.unknownMcpTools.dismissedVersion', undefined);
           vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
           await this.showDiagnosticReport();
           break;
@@ -10645,7 +10652,7 @@ ${hashtag}`;
       openCount: this.context.globalState.get<number>('extension.openCount') ?? 0,
       unknownMcpOpenCount: this.context.globalState.get<number>('extension.unknownMcpOpenCount') ?? 0,
       fluencyBannerDismissed: this.context.globalState.get<boolean>('news.fluencyScoreBanner.v1.dismissed') ?? false,
-      unknownMcpDismissed: this.context.globalState.get<boolean>('news.unknownMcpTools.v1.dismissed') ?? false,
+      unknownMcpDismissedVersion: this.context.globalState.get<string>('news.unknownMcpTools.dismissedVersion') ?? '',
     };
 
     const initialData = JSON.stringify({

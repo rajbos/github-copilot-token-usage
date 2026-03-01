@@ -152,6 +152,10 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	// Also collect all general tool calls so non-MCP tools without friendly names are caught
+	Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	
 	// Filter to only unknown tools (where lookupToolName returns the same value)
 	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool).sort();
@@ -159,11 +163,11 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 
 function createMcpToolIssueUrl(unknownTools: string[]): string {
 	const repoUrl = 'https://github.com/rajbos/github-copilot-token-usage';
-	const title = encodeURIComponent('Add missing friendly names for MCP tools');
+	const title = encodeURIComponent('Add missing friendly names for tools');
 	const toolList = unknownTools.map(tool => `- \`${tool}\``).join('\n');
 	const body = encodeURIComponent(
-		`## Unknown MCP Tools Found\n\n` +
-		`The following MCP tools were detected but don't have friendly display names:\n\n` +
+		`## Unknown Tools Found\n\n` +
+		`The following tools were detected but don't have friendly display names:\n\n` +
 		`${toolList}\n\n` +
 		`Please add friendly names for these tools to improve the user experience.`
 	);
@@ -178,13 +182,13 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 		return `
 			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
 				<div style="font-size: 13px; font-weight: 600; color: #22c55e; margin-bottom: 8px;">
-					✅ All Good: No Missed Potential Detected
+					✅ No other AI tool configs missing a Copilot counterpart
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-					All active workspaces in the last 30 days already have Copilot customization files, or don't use other AI instruction files.
+					All active workspaces that contain instruction files for other AI tools (e.g. .cursorrules, CLAUDE.md, AGENTS.md) also have Copilot customization files configured.
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary);">
-					A workspace would appear here if it had non-Copilot AI instruction files but no Copilot customization files. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
+					A workspace appears here when it has instruction files for other AI tools but no Copilot customization files — indicating Copilot may be under-configured compared to other tools. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
 				</div>
 			</div>
 		`;
@@ -325,10 +329,12 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							</tr>
 						</thead>
 						<tbody>
-							${matrix.workspaces.map(ws => `
+							${matrix.workspaces.map(ws => {
+								const hasNoCustomization = Object.values(ws.typeStatuses).every(s => s === '❌');
+								return `
 								<tr>
 									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; font-family: 'Courier New', monospace; font-size: 12px;">
-										${escapeHtml(ws.workspaceName)}
+										${escapeHtml(ws.workspaceName)}${hasNoCustomization ? ' <span title="No customization files" style="font-family: sans-serif;">⚠️</span>' : ''}
 									</td>
 									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; color: #60a5fa; font-weight: 600;">
 										${ws.sessionCount}
@@ -351,7 +357,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 										`;
 									}).join('')}
 								</tr>
-							`).join('')}
+							`; }).join('')}
 						</tbody>
 					</table>
 				</div>
@@ -570,10 +576,24 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					const unknownTools = getUnknownMcpTools(stats);
 					if (unknownTools.length > 0) {
 						const issueUrl = createMcpToolIssueUrl(unknownTools);
+						const toolListHtml = unknownTools.map(tool => {
+							const todayCount = (stats.today.toolCalls.byTool[tool] || 0) + (stats.today.mcpTools.byTool[tool] || 0);
+							const last30Count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
+							const monthCount = (stats.month.toolCalls.byTool[tool] || 0) + (stats.month.mcpTools.byTool[tool] || 0);
+							const countParts: string[] = [];
+							if (todayCount > 0) { countParts.push(`${todayCount} today`); }
+							if (last30Count > todayCount) { countParts.push(`${last30Count} in the last 30d`); }
+							if (monthCount > last30Count) { countParts.push(`${monthCount} this month`); }
+							const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${countParts.join(' | ')})</span>` : '';
+							return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${countHtml}</span>`;
+						}).join(' ');
 						return `
 							<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
 								<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-									Found ${unknownTools.length} MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names
+									Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names — might not be included in the top-10 tables above
+								</div>
+								<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
+									${toolListHtml}
 								</div>
 								<a href="${issueUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--button-bg); color: var(--button-fg); border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 500;">
 									<span>📝</span>
@@ -591,7 +611,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
 							${stats.today.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -601,7 +620,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
 							${stats.last30Days.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -611,9 +629,31 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
 							${stats.month.mcpTools.total > 0 ? `
 								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
-								<div style="margin-top: 12px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
+					</div>
+				</div>
+				<div class="three-column" style="margin-top: 12px;">
+					<div>
+						${stats.today.mcpTools.total > 0 ? `
+							<div class="list">
+								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+							</div>
+						` : ''}
+					</div>
+					<div>
+						${stats.last30Days.mcpTools.total > 0 ? `
+							<div class="list">
+								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+							</div>
+						` : ''}
+					</div>
+					<div>
+						${stats.month.mcpTools.total > 0 ? `
+							<div class="list">
+								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+							</div>
+						` : ''}
 					</div>
 				</div>
 			</div>

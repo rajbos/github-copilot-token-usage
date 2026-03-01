@@ -62,7 +62,7 @@ type GlobalStateCounters = {
   openCount: number;
   unknownMcpOpenCount: number;
   fluencyBannerDismissed: boolean;
-  unknownMcpDismissed: boolean;
+  unknownMcpDismissedVersion: string;
 };
 
 type DiagnosticsData = {
@@ -564,6 +564,17 @@ function counterRow(key: string, label: string, value: number): string {
     </tr>`;
 }
 
+function stringRow(key: string, label: string, value: string): string {
+  const display = value ? `✅ ${escapeHtml(value)}` : '❌ (not set)';
+  return `
+    <tr>
+      <td style="padding: 6px 12px 6px 0; color: var(--vscode-descriptionForeground); white-space: nowrap;">${escapeHtml(label)}</td>
+      <td style="padding: 6px 8px 6px 0;" colspan="2">
+        <span style="font-family: var(--vscode-editor-font-family, monospace);">${display}</span>
+      </td>
+    </tr>`;
+}
+
 function flagRow(key: string, label: string, value: boolean): string {
   return `
     <tr>
@@ -579,7 +590,7 @@ function flagRow(key: string, label: string, value: boolean): string {
 }
 
 function renderDebugTab(counters: GlobalStateCounters | undefined): string {
-  const c = counters ?? { openCount: 0, unknownMcpOpenCount: 0, fluencyBannerDismissed: false, unknownMcpDismissed: false };
+  const c = counters ?? { openCount: 0, unknownMcpOpenCount: 0, fluencyBannerDismissed: false, unknownMcpDismissedVersion: '' };
   return `
     <div id="tab-debug" class="tab-content">
       <div class="info-box">
@@ -595,7 +606,7 @@ function renderDebugTab(counters: GlobalStateCounters | undefined): string {
         <h4 style="margin-top:16px;">Dismissed Flags</h4>
         <table><tbody>
           ${flagRow('news.fluencyScoreBanner.v1.dismissed', 'news.fluencyScoreBanner.v1.dismissed', c.fluencyBannerDismissed)}
-          ${flagRow('news.unknownMcpTools.v1.dismissed', 'news.unknownMcpTools.v1.dismissed', c.unknownMcpDismissed)}
+          ${stringRow('news.unknownMcpTools.dismissedVersion', 'news.unknownMcpTools.dismissedVersion', c.unknownMcpDismissedVersion)}
         </tbody></table>
         <div style="margin-top: 16px;">
           <button class="button secondary" id="btn-reset-debug-counters"><span>🔄</span><span>Reset All Counters &amp; Dismissed Flags</span></button>
