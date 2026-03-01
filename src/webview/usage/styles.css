@@ -231,6 +231,16 @@ body {
 	display: grid;
 	grid-template-columns: 1fr 1fr 1fr;
 	gap: 16px;
+	align-items: stretch;
+}
+
+.three-column > div {
+	display: flex;
+	flex-direction: column;
+}
+
+.three-column > div > .list {
+	flex: 1;
 }
 
 .info-box {
