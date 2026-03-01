@@ -37,87 +37,96 @@ function Write-Warn([string]$Message) { Write-Host "   ⚠️  $Message" -Foregr
 function Write-Note([string]$Message) { Write-Host "   ℹ️  $Message" -ForegroundColor Gray }
 
 # ─── Load Win32 APIs ────────────────────────────────────────────────────────
+# Only bare P/Invoke signatures — no generics, no Drawing types.
+# Higher-level logic (window enumeration, capture) is done in PowerShell so
+# that .NET type-forwarding issues on .NET 6+ don't affect compilation.
 
 $win32Code = @"
 using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
-using System.Text;
 
-public class Win32ScreenCapture {
+public class Win32 {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern int  GetWindowText(IntPtr h, StringBuilder s, int n);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
-
-    public static List<IntPtr> FindWindowsWithTitle(string contains) {
-        var result = new List<IntPtr>();
-        EnumWindows((hWnd, _) => {
-            if (!IsWindowVisible(hWnd)) return true;
-            var sb = new StringBuilder(256);
-            GetWindowText(hWnd, sb, 256);
-            if (sb.ToString().Contains(contains)) result.Add(hWnd);
-            return true;
-        }, IntPtr.Zero);
-        return result;
-    }
-
-    public static void CaptureWindow(IntPtr hWnd, string filePath) {
-        if (IsIconic(hWnd)) ShowWindow(hWnd, 9); // SW_RESTORE
-        RECT rect;
-        GetWindowRect(hWnd, out rect);
-        int w = rect.Right  - rect.Left;
-        int h = rect.Bottom - rect.Top;
-        using (var bmp = new Bitmap(w, h))
-        using (var g   = Graphics.FromImage(bmp)) {
-            g.CopyFromScreen(rect.Left, rect.Top, 0, 0, new Size(w, h));
-            bmp.Save(filePath, ImageFormat.Png);
-        }
-    }
-
-    public static void MoveMouseTo(int x, int y) {
-        SetCursorPos(x, y);
-    }
 }
 "@
 
 try {
-    Add-Type -TypeDefinition $win32Code -ReferencedAssemblies "System.Drawing"
+    Add-Type -TypeDefinition $win32Code
+    Add-Type -AssemblyName "System.Drawing"
+    Add-Type -AssemblyName "System.Windows.Forms"
 } catch {
     Write-Warn "Could not load Win32 screenshot helper: $_"
     Write-Warn "Install .NET Desktop Runtime if System.Drawing is missing."
     exit 1
 }
 
-Add-Type -AssemblyName System.Windows.Forms
+# ─── PowerShell wrappers for Win32 helpers ──────────────────────────────────
 
-# ─── Launch VS Code Extension Development Host ───────────────────────────────
+function Find-WindowsWithTitle([string]$Title) {
+    # Use the Process API instead of EnumWindows to avoid delegate/GC issues.
+    return @(Get-Process -Name "Code" -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -like "*$Title*" } |
+        Select-Object -ExpandProperty MainWindowHandle |
+        Where-Object { $_ -ne [IntPtr]::Zero })
+}
 
-Write-Note "Opening VS Code Extension Development Host"
-Write-Note "  Extension : $ExtensionPath"
-Write-Note "  Workspace : $ScreenshotsWorkspace"
-Start-Process "code" -ArgumentList "--extensionDevelopmentPath=`"$ExtensionPath`"", "`"$ScreenshotsWorkspace`""
+function Invoke-CaptureWindow([IntPtr]$hWnd, [string]$FilePath) {
+    if ([Win32]::IsIconic($hWnd)) { [Win32]::ShowWindow($hWnd, 9) | Out-Null }  # SW_RESTORE
+    $rect = New-Object Win32+RECT
+    [Win32]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
+    $w = $rect.Right  - $rect.Left
+    $h = $rect.Bottom - $rect.Top
+    $bmp = New-Object System.Drawing.Bitmap($w, $h)
+    $g   = [System.Drawing.Graphics]::FromImage($bmp)
+    try {
+        $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+        $bmp.Save($FilePath, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        $g.Dispose()
+        $bmp.Dispose()
+    }
+}
 
-Write-Note "Waiting $VsCodeStartupWait seconds for VS Code to initialize..."
-Start-Sleep -Seconds $VsCodeStartupWait
+
+# ─── Wait for Extension Development Host ────────────────────────────────────
+
+Write-Host ""
+Write-Host "   👉 Press F5 in your current VS Code window to launch the Extension Development Host." -ForegroundColor Cyan
+Write-Host "      Then switch back here and press Enter to continue." -ForegroundColor Cyan
+Read-Host "   Press Enter when the Extension Development Host is ready"
+
+Write-Note "Looking for Extension Development Host window..."
+
+# Poll for up to $VsCodeStartupWait seconds in case it's still loading
+$deadline = (Get-Date).AddSeconds($VsCodeStartupWait)
+$hwnd = [IntPtr]::Zero
+do {
+    $found = Find-WindowsWithTitle "Extension Development Host"
+    if ($found.Count -gt 0) { $hwnd = $found[0]; break }
+    Start-Sleep -Seconds 1
+} while ((Get-Date) -lt $deadline)
+
+if ($hwnd -eq [IntPtr]::Zero) {
+    Write-Warn "Could not find an Extension Development Host window."
+    Write-Warn "Make sure you pressed F5 in VS Code and the host finished loading."
+    exit 1
+}
+Write-Ok "Found Extension Development Host window (handle: $hwnd)"
+
+Write-Note "Waiting $PanelRenderWait more seconds for the extension to fully initialize..."
+Start-Sleep -Seconds $PanelRenderWait
 
 # ─── Window helpers ─────────────────────────────────────────────────────────
 
 function Get-DevHostWindow {
-    $w = [Win32ScreenCapture]::FindWindowsWithTitle("Extension Development Host")
-    if ($w.Count -gt 0) { return $w[0] }
-    $w = [Win32ScreenCapture]::FindWindowsWithTitle("Visual Studio Code")
+    $w = Find-WindowsWithTitle "Extension Development Host"
     if ($w.Count -gt 0) { return $w[0] }
     return [IntPtr]::Zero
 }
@@ -130,7 +139,7 @@ function Invoke-PanelScreenshot {
         [string]$Label
     )
     Write-Note "Opening panel: $Label"
-    [Win32ScreenCapture]::SetForegroundWindow($Window) | Out-Null
+    [Win32]::SetForegroundWindow($Window) | Out-Null
     Start-Sleep -Milliseconds 500
 
     [System.Windows.Forms.SendKeys]::SendWait("^+p")   # Ctrl+Shift+P
@@ -145,44 +154,35 @@ function Invoke-PanelScreenshot {
     $w = Get-DevHostWindow
     if ($w -ne [IntPtr]::Zero) { $Window = $w }
 
-    [Win32ScreenCapture]::CaptureWindow($Window, $OutputFile)
+    Invoke-CaptureWindow $Window $OutputFile
     Write-Ok "Screenshot saved: $(Split-Path $OutputFile -Leaf)"
 }
 
 # ─── Capture screenshots ─────────────────────────────────────────────────────
 
-$hwnd = Get-DevHostWindow
-if ($hwnd -eq [IntPtr]::Zero) {
-    Write-Warn "Could not find VS Code Extension Development Host window."
-    Write-Warn "Make sure 'code' is in PATH and VS Code is running."
-    Write-Warn "Re-run with a larger --startup-wait if needed (e.g. npm run pre-release -- --startup-wait=15)."
-    exit 1
-}
-Write-Ok "Found VS Code window (handle: $hwnd)"
-
 # ── 01: Status bar (full window) ─────────────────────────────────────────────
 Write-Note "Taking full window screenshot for status bar reference (01 Toolbar info)"
-[Win32ScreenCapture]::SetForegroundWindow($hwnd) | Out-Null
+[Win32]::SetForegroundWindow($hwnd) | Out-Null
 Start-Sleep -Milliseconds 800
-[Win32ScreenCapture]::CaptureWindow($hwnd, (Join-Path $ImagesOutputPath "01 Toolbar info.png"))
+Invoke-CaptureWindow $hwnd (Join-Path $ImagesOutputPath "01 Toolbar info.png")
 Write-Ok "Screenshot saved: 01 Toolbar info.png"
 
 # ── 02: Hover popup ───────────────────────────────────────────────────────────
 Write-Note "Attempting status bar hover screenshot (02 Popup)"
-[Win32ScreenCapture]::SetForegroundWindow($hwnd) | Out-Null
+[Win32]::SetForegroundWindow($hwnd) | Out-Null
 Start-Sleep -Milliseconds 500
 
 try {
-    $rect = New-Object Win32ScreenCapture+RECT
-    [Win32ScreenCapture]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+    $rect = New-Object Win32+RECT
+    [Win32]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
     # Status bar is at the very bottom; token tracker is right-aligned.
     # Aim for ~85% from left, 12px from bottom.
     $targetX = [int]($rect.Left + ($rect.Right - $rect.Left) * 0.85)
     $targetY = [int]($rect.Bottom - 12)
-    [Win32ScreenCapture]::MoveMouseTo($targetX, $targetY)
+    [Win32]::SetCursorPos($targetX, $targetY) | Out-Null
     Write-Note "Mouse moved to status bar area ($targetX, $targetY) — waiting for tooltip..."
     Start-Sleep -Seconds 3
-    [Win32ScreenCapture]::CaptureWindow($hwnd, (Join-Path $ImagesOutputPath "02 Popup.png"))
+    Invoke-CaptureWindow $hwnd (Join-Path $ImagesOutputPath "02 Popup.png")
     Write-Ok "Screenshot saved: 02 Popup.png"
 } catch {
     Write-Warn "Could not capture status bar hover screenshot: $_"
@@ -210,9 +210,9 @@ Write-Note "(Click position is approximate — verify the screenshot manually.)"
 
 try {
     if ($hwnd -ne [IntPtr]::Zero) {
-        $rect = New-Object Win32ScreenCapture+RECT
-        [Win32ScreenCapture]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
-        [Win32ScreenCapture]::SetForegroundWindow($hwnd) | Out-Null
+        $rect = New-Object Win32+RECT
+        [Win32]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+        [Win32]::SetForegroundWindow($hwnd) | Out-Null
         Start-Sleep -Milliseconds 500
 
         # Approximate position of "By Editor" button: ~30% from left, ~15% from top
@@ -231,7 +231,7 @@ try {
         [MouseClick]::mouse_event(4, 0, 0, 0, 0)   # MOUSEEVENTF_LEFTUP
         Start-Sleep -Seconds $PanelRenderWait
 
-        [Win32ScreenCapture]::CaptureWindow($hwnd, (Join-Path $ImagesOutputPath "04 Chart_02.png"))
+        Invoke-CaptureWindow $hwnd (Join-Path $ImagesOutputPath "04 Chart_02.png")
         Write-Ok "Screenshot saved: 04 Chart_02.png"
         Write-Note "Verify this screenshot — the click position is approximate."
     }
