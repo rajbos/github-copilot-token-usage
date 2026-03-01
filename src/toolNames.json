@@ -117,4 +117,10 @@
   ,"vscode_askQuestions": "VSCode Ask Questions"
   ,"vscode_get_confirmation": "VSCode Get Confirmation"
   ,"vscode_get_terminal_confirmation": "VSCode Get Terminal Confirmation"
+  ,"mcp_io_github_ups_get-library-docs": "GitHub Upstream MCP: Get Library Docs"
+  ,"mcp_io_github_ups_resolve-library-id": "GitHub Upstream MCP: Resolve Library ID"
+  ,"mcp_microsoft_pla_browser_evaluate": "Playwright MCP: Browser Evaluate"
+  ,"mcp_microsoft_pla_browser_install": "Playwright MCP: Browser Install"
+  ,"mcp_microsoft_pla_browser_navigate": "Playwright MCP: Browser Navigate"
+  ,"mcp_microsoft_pla_browser_run_code": "Playwright MCP: Browser Run Code"
 }
