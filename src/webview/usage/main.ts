@@ -279,6 +279,74 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 		</table>`;
 }
 
+function sanitizeStats(raw: any): UsageAnalysisStats | null {
+	if (!raw || typeof raw !== 'object') {
+		return null;
+	}
+
+	const coerceNumber = (value: any): number => {
+		const n = Number(value);
+		return Number.isFinite(n) ? n : 0;
+	};
+
+	const sanitizeModeUsage = (mode: any): ModeUsage => ({
+		ask: coerceNumber(mode?.ask),
+		edit: coerceNumber(mode?.edit),
+		agent: coerceNumber(mode?.agent),
+		plan: coerceNumber(mode?.plan),
+		customAgent: coerceNumber(mode?.customAgent),
+	});
+
+	const sanitizeContextRefs = (refs: any): ContextReferenceUsage => ({
+		file: coerceNumber(refs?.file),
+		selection: coerceNumber(refs?.selection),
+		implicitSelection: coerceNumber(refs?.implicitSelection),
+		symbol: coerceNumber(refs?.symbol),
+		codebase: coerceNumber(refs?.codebase),
+		workspace: coerceNumber(refs?.workspace),
+	});
+
+	try {
+		const today = raw.today ?? {};
+		const last30Days = raw.last30Days ?? {};
+
+		const sanitized: UsageAnalysisStats = {
+			today: {
+				modeUsage: sanitizeModeUsage(today.modeUsage ?? {}),
+				contextReferences: sanitizeContextRefs(today.contextReferences ?? {}),
+				toolUsage: {
+					total: coerceNumber(today.toolUsage?.total),
+					byTool: today.toolUsage?.byTool ?? {},
+				},
+				mcpToolUsage: {
+					total: coerceNumber(today.mcpToolUsage?.total),
+					byServer: today.mcpToolUsage?.byServer ?? {},
+					byTool: today.mcpToolUsage?.byTool ?? {},
+				},
+			},
+			last30Days: {
+				modeUsage: sanitizeModeUsage(last30Days.modeUsage ?? {}),
+				contextReferences: sanitizeContextRefs(last30Days.contextReferences ?? {}),
+				toolUsage: {
+					total: coerceNumber(last30Days.toolUsage?.total),
+					byTool: last30Days.toolUsage?.byTool ?? {},
+				},
+				mcpToolUsage: {
+					total: coerceNumber(last30Days.mcpToolUsage?.total),
+					byServer: last30Days.mcpToolUsage?.byServer ?? {},
+					byTool: last30Days.mcpToolUsage?.byTool ?? {},
+				},
+			},
+			backendConfigured: !!raw.backendConfigured,
+			repoAnalysis: raw.repoAnalysis,
+		};
+
+		return sanitized;
+	} catch {
+		return null;
+	}
+}
+
 function renderLayout(stats: UsageAnalysisStats): void {
 	const root = document.getElementById('root');
 	if (!root) {
@@ -1007,8 +1075,13 @@ window.addEventListener('message', (event) => {
 			if (message.data?.locale) {
 				setFormatLocale(message.data.locale);
 			}
-			renderLayout(message.data as UsageAnalysisStats);
-			renderRepositoryHygienePanels();
+			{
+				const sanitized = sanitizeStats(message.data);
+				if (sanitized) {
+					renderLayout(sanitized);
+					renderRepositoryHygienePanels();
+				}
+			}
 			break;
 		case 'highlightUnknownTools': {
 			const el = document.getElementById('unknown-mcp-tools-section');
