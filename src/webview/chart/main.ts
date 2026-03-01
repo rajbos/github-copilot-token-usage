@@ -58,6 +58,8 @@ async function loadChartModule(): Promise<void> {
 	Chart = mod.default;
 }
 let currentView: 'total' | 'model' | 'editor' | 'repository' = 'total';
+// Stores the view to restore after a background data update re-initializes the chart
+let pendingView: typeof currentView | null = null;
 
 function renderLayout(data: InitialChartData): void {
 	const root = document.getElementById('root');
@@ -199,6 +201,13 @@ async function setupChart(canvas: HTMLCanvasElement, data: InitialChartData): Pr
 		return;
 	}
 	chart = new Chart(ctx, createConfig('total', data));
+	// Restore the previously active view if a background update triggered a re-render
+	if (pendingView !== null && pendingView !== 'total') {
+		const viewToRestore = pendingView;
+		currentView = 'total'; // Reset so switchView does not short-circuit
+		await switchView(viewToRestore, data);
+	}
+	pendingView = null;
 }
 
 async function switchView(view: 'total' | 'model' | 'editor' | 'repository', data: InitialChartData): Promise<void> {
@@ -379,4 +388,13 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+
+// Listen for background data updates from the extension
+window.addEventListener('message', (event: MessageEvent) => {
+	const message = event.data;
+	if (message.command === 'updateChartData') {
+		pendingView = currentView; // Save current toggle view for restoration after chart re-initializes
+		renderLayout(message.data as InitialChartData);
+	}
+});
 

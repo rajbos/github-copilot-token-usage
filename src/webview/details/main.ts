@@ -503,4 +503,12 @@ async function bootstrap(): Promise<void> {
 	}
 }
 
+// Listen for background stat updates from the extension
+window.addEventListener('message', (event: MessageEvent) => {
+	const message = event.data;
+	if (message.command === 'updateStats') {
+		render(message.data as DetailedStats);
+	}
+});
+
 void bootstrap();
