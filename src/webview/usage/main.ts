@@ -962,7 +962,7 @@ window.addEventListener('message', (event) => {
 			if (message.data?.locale) {
 				setFormatLocale(message.data.locale);
 			}
-			renderLayout(message.data);
+			renderLayout(message.data as UsageAnalysisStats);
 			renderRepositoryHygienePanels();
 			break;
 	}

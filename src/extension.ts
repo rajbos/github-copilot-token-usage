@@ -85,6 +85,24 @@ interface DailyTokenStats {
   repositoryUsage: RepositoryUsage;
 }
 
+/** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
+interface ChartDataPayload {
+  labels: string[];
+  tokensData: number[];
+  sessionsData: number[];
+  modelDatasets: object[];
+  editorDatasets: object[];
+  editorTotalsMap: Record<string, number>;
+  repositoryDatasets: object[];
+  repositoryTotalsMap: Record<string, number>;
+  dailyCount: number;
+  totalTokens: number;
+  avgTokensPerDay: number;
+  totalSessions: number;
+  lastUpdated: string;
+  backendConfigured: boolean;
+}
+
 interface SessionFileCache {
   tokens: number;
   interactions: number;
@@ -1673,39 +1691,65 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the details panel is open, update its content
 			if (this.detailsPanel) {
-				this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, detailedStats);
+				if (silent) {
+					// Background update: send data via postMessage to preserve UI state (scroll position, open sections)
+					void this.detailsPanel.webview.postMessage({
+						command: 'updateStats',
+						data: {
+							today: detailedStats.today,
+							month: detailedStats.month,
+							lastMonth: detailedStats.lastMonth,
+							last30Days: detailedStats.last30Days,
+							lastUpdated: detailedStats.lastUpdated.toISOString(),
+							backendConfigured: this.isBackendConfigured(),
+						},
+					});
+				} else {
+					this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, detailedStats);
+				}
 			}
 
 			// If the chart panel is open, update its content
 			if (this.chartPanel) {
 				const dailyStats = await this.calculateDailyStats();
-				this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+				if (silent) {
+					// Background update: send data via postMessage to preserve the active chart view toggle
+					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: this.buildChartData(dailyStats) });
+				} else {
+					this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+				}
 			}
 
 			// If the analysis panel is open, update its content via postMessage to preserve repo hygiene results
 			if (this.analysisPanel) {
-				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation
-				const detectedLocale = analysisStats.locale || Intl.DateTimeFormat().resolvedOptions().locale;
-				this.analysisPanel.webview.postMessage({
-					command: 'updateStats',
-					data: {
-						today: analysisStats.today,
-						last30Days: analysisStats.last30Days,
-						month: analysisStats.month,
-						locale: detectedLocale,
-						customizationMatrix: analysisStats.customizationMatrix || null,
-						missedPotential: analysisStats.missedPotential || [],
-						lastUpdated: analysisStats.lastUpdated.toISOString(),
-						backendConfigured: this.isBackendConfigured(),
-					}
-				});
+				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation on refresh
+				if (silent) {
+					// Background update: send data via postMessage so repo analysis results are preserved.
+					// The webview re-renders stats but repoAnalysisState (module-level) restores analysis results.
+					void this.analysisPanel.webview.postMessage({
+						command: 'updateStats',
+						data: {
+							today: analysisStats.today,
+							last30Days: analysisStats.last30Days,
+							month: analysisStats.month,
+							locale: analysisStats.locale,
+							customizationMatrix: analysisStats.customizationMatrix || null,
+							missedPotential: analysisStats.missedPotential || [],
+							lastUpdated: analysisStats.lastUpdated.toISOString(),
+							backendConfigured: this.isBackendConfigured(),
+						},
+					});
+				} else {
+					this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+				}
 			} else {
 				// Pre-populate the cache even when panel isn't open, so first open is fast
 				await this.calculateUsageAnalysisStats(false);
 			}
 
-			// If the maturity panel is open, update its content
-			if (this.maturityPanel) {
+			// If the maturity panel is open, update its content.
+			// During background (silent) updates, skip to preserve demo panel state and user overrides.
+			if (this.maturityPanel && !silent) {
 				const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
 				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
 			}
@@ -10552,23 +10596,7 @@ ${hashtag}`;
 		</html>`;
   }
 
-  private getChartHtml(
-    webview: vscode.Webview,
-    dailyStats: DailyTokenStats[],
-  ): string {
-    const nonce = this.getNonce();
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "chart.js"),
-    );
-
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} https: data:`,
-      `style-src 'unsafe-inline' ${webview.cspSource}`,
-      `font-src ${webview.cspSource} https: data:`,
-      `script-src 'nonce-${nonce}'`,
-    ].join("; ");
-
+  private buildChartData(dailyStats: DailyTokenStats[]): ChartDataPayload {
     // Transform dailyStats into the structure expected by the webview
     const labels = dailyStats.map((d) => d.date);
     const tokensData = dailyStats.map((d) => d.tokens);
@@ -10630,7 +10658,6 @@ ${hashtag}`;
 
     const repositoryDatasets = Array.from(allRepositories).map((repo, idx) => {
       const color = modelColors[idx % modelColors.length];
-      // Shorten repository URL for display (e.g., "owner/repo")
       const label = this.getRepoDisplayName(repo);
       return {
         label,
@@ -10663,7 +10690,7 @@ ${hashtag}`;
     const totalTokens = tokensData.reduce((a, b) => a + b, 0);
     const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
 
-    const chartData = {
+    return {
       labels,
       tokensData,
       sessionsData,
@@ -10680,6 +10707,26 @@ ${hashtag}`;
       lastUpdated: new Date().toISOString(),
       backendConfigured: this.isBackendConfigured(),
     };
+  }
+
+  private getChartHtml(
+    webview: vscode.Webview,
+    dailyStats: DailyTokenStats[],
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "chart.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const chartData = this.buildChartData(dailyStats);
 
     const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
 
