@@ -1,0 +1,84 @@
+{
+  "requests": [
+    {
+      "requestId": "req_12d_001",
+      "modelId": "copilot/claude-sonnet-4.5",
+      "message": {
+        "text": "I'm building a script to automate screenshots before each release. What's the best way to launch VS Code Extension Development Host from a PowerShell script and wait for it to fully load?",
+        "parts": [
+          {
+            "text": "I'm building a script to automate screenshots before each release. What's the best way to launch VS Code Extension Development Host from a PowerShell script and wait for it to fully load?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Launching VS Code Extension Development Host from PowerShell\n\n### Basic Launch\n\n```powershell\n# Launch dev host with a specific workspace folder\n$extensionPath = Get-Location\n$workspacePath = Join-Path $extensionPath 'screenshots'\n\ncode --extensionDevelopmentPath=\"$extensionPath\" \"$workspacePath\"\n```\n\n### Waiting for VS Code to Load\n\nVS Code doesn't have a programmatic ready signal you can poll from outside. Practical approaches:\n\n**Option 1: Fixed Wait (simplest)**\n```powershell\ncode --extensionDevelopmentPath=\"$extensionPath\" \"$workspacePath\"\nStart-Sleep -Seconds 8  # Adjust based on your machine speed\n```\n\n**Option 2: Poll for the Window**\n```powershell\n$timeout = 30\n$elapsed = 0\n$vsCodeWindow = $null\n\nwhile (-not $vsCodeWindow -and $elapsed -lt $timeout) {\n    Start-Sleep -Seconds 1\n    $elapsed++\n    $vsCodeWindow = Get-Process -Name 'Code' -ErrorAction SilentlyContinue |\n        Where-Object { $_.MainWindowTitle -like '*Extension Development Host*' }\n}\n\nif (-not $vsCodeWindow) {\n    Write-Error 'VS Code did not open within timeout'\n    exit 1\n}\n```\n\n**Option 3: Wait for Window with Title (Win32)**\n```powershell\nAdd-Type @'\n  using System;\n  using System.Runtime.InteropServices;\n  public class Win32 {\n    [DllImport(\"user32.dll\")]\n    public static extern IntPtr FindWindow(string cls, string title);\n  }\n'@\n\n# Poll until the window appears\n$handle = [IntPtr]::Zero\n$attempts = 0\nwhile ($handle -eq [IntPtr]::Zero -and $attempts -lt 30) {\n    Start-Sleep -Seconds 1\n    $attempts++\n    # GetProcess then check MainWindowHandle\n    $proc = Get-Process Code -ErrorAction SilentlyContinue |\n        Where-Object { $_.MainWindowTitle -like '*Extension Development Host*' } |\n        Select-Object -First 1\n    if ($proc) { $handle = $proc.MainWindowHandle }\n}\n```\n\n### Tips\n\n- Add `-n` flag to open a new VS Code window: `code -n --extensionDevelopmentPath=...`\n- The Extension Development Host window has 'Extension Development Host' in its title bar\n- Extensions activate via `onStartupFinished`, which fires a few seconds after the window opens"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 52,
+        "outputTokens": 462
+      }
+    },
+    {
+      "requestId": "req_12d_002",
+      "modelId": "copilot/o3",
+      "message": {
+        "text": "Analyze the Copilot Fluency Score algorithm. What are the edge cases that could cause a user to get a lower score than expected?",
+        "parts": [
+          {
+            "text": "Analyze the Copilot Fluency Score algorithm. What are the edge cases that could cause a user to get a lower score than expected?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "thinking",
+          "value": "The user wants me to analyze the Copilot Fluency Score algorithm and find edge cases where users might score lower than expected. I should look at the scoring dimensions: Frequency, Depth, Breadth, Context Usage, Tool Calls, MCP Tools. Each has thresholds and the final score depends on how many stages/categories are reached.",
+          "id": "thinking_analyse_fluency"
+        },
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Copilot Fluency Score: Edge Cases and Low-Score Scenarios\n\n### Understanding the Scoring Model\n\nThe Fluency Score measures 6 categories across 4 stages (Aware → Adopter → Champion → Evangelist). A user advances through stages by meeting thresholds in enough categories.\n\n### Edge Case 1: Weekend Warrior Pattern\n\n**Scenario**: User has 50 interactions on Saturday but 0 for Monday–Friday.\n\n**Impact**: \"Frequency\" dimension measures daily active days, not total interactions. A single heavy-use day scores the same as zero for consistency metrics.\n\n**Expectation gap**: User thinks \"I did 50 interactions this week\" but scores low on Frequency because they only used it 1 day.\n\n### Edge Case 2: Long Single Conversations\n\n**Scenario**: User has 3 interactions per session but each conversation is 2 hours long with many follow-ups.\n\n**Impact**: `countInteractionsInSession()` counts `requests.length`, so a 40-turn session still counts as 40 interactions — this is actually correct! But users who have deep conversations may have fewer total sessions (lower Breadth score) despite high engagement.\n\n### Edge Case 3: Mixed Editor Usage\n\n**Scenario**: Developer uses Cursor and VS Code interchangeably, 50/50 split.\n\n**Impact**: Session files from Cursor are stored separately. The extension aggregates both, but if only VS Code is configured, Cursor sessions may be missed, deflating the score.\n\n### Edge Case 4: Agent Mode vs Chat Mode\n\n**Scenario**: User exclusively uses agent mode for complex tasks (fewer but higher-value interactions).\n\n**Impact**: Tool call tracking counts all tool invocations within a session. Agent mode heavy users may actually score *higher* on Tool Calls/MCP dimensions but lower on raw interaction count.\n\n### Edge Case 5: Model Switching Mid-Session\n\n**Scenario**: User switches from GPT-4o to Claude mid-conversation (one session contains multiple models).\n\n**Impact**: `getModelUsageFromSession()` tracks per-model token counts correctly. The Breadth dimension that counts distinct models used should handle this, but the first model in a session takes precedence for some calculations.\n\n### Recommendations\n\n1. Add a tooltip explaining what each category measures\n2. Show the raw metric values alongside the stage indicators\n3. Surface the specific threshold the user needs to reach for the next stage"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 38,
+        "outputTokens": 478
+      }
+    },
+    {
+      "requestId": "req_12d_003",
+      "modelId": "copilot/gpt-4o",
+      "message": {
+        "text": "How do I add a 'copy to clipboard' button to the diagnostic report webview?",
+        "parts": [
+          {
+            "text": "How do I add a 'copy to clipboard' button to the diagnostic report webview?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "kind": "markdownContent",
+          "content": {
+            "value": "## Adding a Copy Button to the Diagnostic Report Webview\n\n### In the Webview HTML/JS (`src/webview/diagnostics/main.ts`)\n\n```typescript\n// Add button near the report content\nconst copyBtn = document.createElement('vscode-button');\ncopyBtn.textContent = '📋 Copy Report';\ncopyBtn.setAttribute('appearance', 'secondary');\ncopyBtn.addEventListener('click', async () => {\n  const reportText = document.getElementById('report-content')?.innerText || '';\n  try {\n    await navigator.clipboard.writeText(reportText);\n    copyBtn.textContent = '✅ Copied!';\n    setTimeout(() => { copyBtn.textContent = '📋 Copy Report'; }, 2000);\n  } catch {\n    // Fallback: post message to extension host\n    vscode.postMessage({ command: 'copyToClipboard', text: reportText });\n  }\n});\n\ndocument.getElementById('actions-bar')?.appendChild(copyBtn);\n```\n\n### Clipboard API in Webview Context\n\n`navigator.clipboard.writeText()` works in VS Code webviews when the webview is focused. If it fails (permissions), fall back to the extension host:\n\n```typescript\n// In extension.ts message handler:\ncase 'copyToClipboard':\n  await vscode.env.clipboard.writeText(message.text);\n  break;\n```\n\n### Using `vscode.env.clipboard` (Extension Host)\n\nThis is the most reliable approach since it doesn't depend on webview focus:\n\n```typescript\n// Extension tells webview to request copy, webview posts message, extension copies\npanel.webview.onDidReceiveMessage(async (message) => {\n  if (message.command === 'copyToClipboard') {\n    await vscode.env.clipboard.writeText(message.text);\n    // Notify webview that copy succeeded\n    panel.webview.postMessage({ command: 'copySuccess' });\n  }\n});\n```"
+          }
+        }
+      ],
+      "result": {
+        "promptTokens": 28,
+        "outputTokens": 348
+      }
+    }
+  ]
+}

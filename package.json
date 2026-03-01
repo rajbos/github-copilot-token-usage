@@ -254,6 +254,11 @@
           "type": "boolean",
           "default": true,
           "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
+        },
+        "copilot-token-tracker.sampleDataDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation."
         }
       }
     }
@@ -275,6 +280,7 @@
     "test": "vscode-test",
     "test:node": "npm run compile-tests && node --test out/test/test-node/backend-identity.test.js",
     "test:coverage": "npm run compile-tests && node --require ./out/test/test-node/vscode-shim-register.js --experimental-test-coverage --test --test-coverage-lines=60 --test-coverage-functions=60 --test-coverage-branches=60 --test-coverage-include=out/test/backend/**/*.js --test-coverage-include=out/test/utils/**/*.js out/test/test-node/backend-identity.test.js out/test/test-node/utils-errors.test.js out/test/test-node/backend-settings.test.js out/test/test-node/backend-copyConfig.test.js out/test/test-node/backend-integration.test.js out/test/test-node/backend-commands.test.js out/test/test-node/backend-facade-helpers.test.js out/test/test-node/backend-facade-rollups.test.js out/test/test-node/backend-facade-query.test.js",
+    "pre-release": "node scripts/pre-release.js",
     "sync-changelog": "node scripts/sync-changelog.js",
     "sync-changelog:test": "node scripts/sync-changelog.js --test"
   },

@@ -5688,6 +5688,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return this._sessionFilesCache;
 		}
 
+		// Screenshot/demo mode: if a sample data directory is configured, use it exclusively
+		const sampleDir = vscode.workspace.getConfiguration('copilot-token-tracker').get<string>('sampleDataDirectory');
+		if (sampleDir && sampleDir.trim().length > 0) {
+			const resolvedSampleDir = sampleDir.trim();
+			try {
+				if (fs.existsSync(resolvedSampleDir)) {
+					const sampleFiles = fs.readdirSync(resolvedSampleDir)
+						.filter(f => f.endsWith('.json') || f.endsWith('.jsonl'))
+						.map(f => path.join(resolvedSampleDir, f));
+					this.log(`📸 Sample data mode: using ${sampleFiles.length} file(s) from ${resolvedSampleDir}`);
+					this._sessionFilesCache = sampleFiles;
+					this._sessionFilesCacheTime = now;
+					return sampleFiles;
+				} else {
+					this.warn(`Sample data directory not found: ${resolvedSampleDir}`);
+				}
+			} catch (err) {
+				this.warn(`Error reading sample data directory: ${err}`);
+			}
+		}
+
 		const sessionFiles: string[] = [];
 
 		const platform = os.platform();

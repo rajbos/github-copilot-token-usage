@@ -13,6 +13,7 @@ Thank you for your interest in contributing to the Copilot Token Tracker extensi
 - [Code Guidelines](#code-guidelines)
 - [Testing](#testing)
 - [CI/CD](#cicd)
+- [Pre-Release Checklist](#pre-release-checklist)
 - [Release Process](#release-process)
 - [Submitting Changes](#submitting-changes)
 
@@ -390,6 +391,20 @@ The project includes comprehensive GitHub Actions workflows:
 6. **Extension Tests:** VS Code extension tests run in CI
 
 All builds must pass these checks before merging.
+
+## Pre-Release Checklist
+
+Version: 0.0.13 | Last run: 2026-03-01
+
+Run `npm run pre-release` to automate steps 1–4 below.
+
+- [ ] Version bumped in `package.json`
+- [ ] `npm run compile` completed successfully
+- [ ] Screenshots updated in `docs/images/` (run `npm run pre-release` or update manually)
+- [ ] `CHANGELOG.md` synced via `npm run sync-changelog`
+- [ ] Trigger GitHub Actions Release workflow (Method 1: GitHub UI → Actions → Release → Run workflow)
+- [ ] Download `.vsix` from GitHub release assets
+- [ ] Run `.\publish.ps1` to publish to VS Code Marketplace
 
 ## Release Process
 
