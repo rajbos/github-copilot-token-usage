@@ -323,7 +323,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;">Sessions</th>
 								${matrix.customizationTypes.map(type => `
 									<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;" title="${escapeHtml(type.label)}">
-										${type.icon}
+										${escapeHtml(type.icon)}
 									</th>
 								`).join('')}
 							</tr>
@@ -351,7 +351,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 														: 'Status unknown';
 										return `
 										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
-											<span aria-hidden="true">${status}</span>
+											<span aria-hidden="true">${escapeHtml(status)}</span>
 											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${statusLabel}</span>
 										</td>
 										`;
@@ -364,7 +364,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<div style="margin-top: 12px; font-size: 10px; color: #999; border-top: 1px solid #2a2a30; padding-top: 8px;">
 					<div style="display: flex; gap: 16px; flex-wrap: wrap;">
 						${matrix.customizationTypes.map(type => `
-							<span>${type.icon} ${escapeHtml(type.label)}</span>
+							<span>${escapeHtml(type.icon)} ${escapeHtml(type.label)}</span>
 						`).join('')}
 					</div>
 					<div style="margin-top: 8px;">
@@ -884,7 +884,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			</div>
 
 			<div class="footer">
-				Last updated: ${new Date(stats.lastUpdated).toLocaleString()} · Updates every 5 minutes
+				Last updated: ${escapeHtml(new Date(stats.lastUpdated).toLocaleString())} · Updates every 5 minutes
 			</div>
 		</div>
 	`;
@@ -1358,7 +1358,7 @@ function renderRepositoryHygienePanels(): void {
 						${escapeHtml(ws.workspaceName)}
 					</div>
 					<div style="font-size: 10px; color: #999; margin-top: 2px;">
-						${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${escapeHtml(scoreLabel)}
+						${Number(ws.sessionCount) || 0} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${Number(ws.interactionCount) || 0} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${escapeHtml(scoreLabel)}
 					</div>
 				</div>
 				<vscode-button class="btn-repo-action" data-action="${buttonAction}" data-workspace-path="${escapeHtml(ws.workspacePath)}" ${isCurrentSelection ? 'disabled="true"' : ''} style="min-width: 80px;">

@@ -119,7 +119,7 @@ function formatDate(isoString: string | null): string {
     return "N/A";
   }
   try {
-    return new Date(isoString).toLocaleString();
+    return escapeHtml(new Date(isoString).toLocaleString());
   } catch {
     return escapeHtml(isoString);
   }
@@ -535,7 +535,7 @@ function renderSessionTable(
 							<td class="repository-cell" title="${sf.repository ? escapeHtml(sf.repository) : "No repository detected"}">${sf.repository ? escapeHtml(getRepoDisplayName(sf.repository)) : '<span style="color: #666;">—</span>'}</td>
 							<td>${formatFileSize(sf.size)}</td>
 							<td>${sanitizeNumber(sf.interactions)}</td>
-							<td title="${getContextRefsSummary(sf.contextReferences)}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
+							<td title="${escapeHtml(getContextRefsSummary(sf.contextReferences))}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
 							<td>${formatDate(sf.lastInteraction)}</td>
 							<td>
 								<a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>
