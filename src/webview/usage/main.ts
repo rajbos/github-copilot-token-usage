@@ -686,19 +686,19 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								${stats.today.modelSwitching.standardModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--link-color);">🔵 Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.standardModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.standardModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.today.modelSwitching.premiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: #fbbf24;">⭐ Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.premiumModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.today.modelSwitching.unknownModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--text-muted);">❓ Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.unknownModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.unknownModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : ''}
 							</div>
@@ -755,19 +755,19 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								${stats.last30Days.modelSwitching.standardModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--link-color);">🔵 Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.standardModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.standardModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.last30Days.modelSwitching.premiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: #fbbf24;">⭐ Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.last30Days.modelSwitching.unknownModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--text-muted);">❓ Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : ''}
 							</div>
@@ -824,19 +824,19 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								${stats.month.modelSwitching.standardModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--link-color);">🔵 Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.standardModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.standardModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.month.modelSwitching.premiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: #fbbf24;">⭐ Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.month.modelSwitching.unknownModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--text-muted);">❓ Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : ''}
 							</div>
@@ -1358,7 +1358,7 @@ function renderRepositoryHygienePanels(): void {
 						${escapeHtml(ws.workspaceName)}
 					</div>
 					<div style="font-size: 10px; color: #999; margin-top: 2px;">
-						${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${scoreLabel}
+						${ws.sessionCount} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${ws.interactionCount} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${escapeHtml(scoreLabel)}
 					</div>
 				</div>
 				<vscode-button class="btn-repo-action" data-action="${buttonAction}" data-workspace-path="${escapeHtml(ws.workspacePath)}" ${isCurrentSelection ? 'disabled="true"' : ''} style="min-width: 80px;">
