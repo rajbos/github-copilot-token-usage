@@ -571,7 +571,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					if (unknownTools.length > 0) {
 						const issueUrl = createMcpToolIssueUrl(unknownTools);
 						return `
-							<div style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
+							<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
 								<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
 									Found ${unknownTools.length} MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names
 								</div>
@@ -970,6 +970,18 @@ window.addEventListener('message', (event) => {
 			renderLayout(message.data as UsageAnalysisStats);
 			renderRepositoryHygienePanels();
 			break;
+		case 'highlightUnknownTools': {
+			const el = document.getElementById('unknown-mcp-tools-section');
+			if (el) {
+				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				el.style.transition = 'box-shadow 0.3s ease';
+				el.style.boxShadow = '0 0 0 3px var(--vscode-focusBorder)';
+				setTimeout(() => {
+					el.style.boxShadow = '';
+				}, 2000);
+			}
+			break;
+		}
 	}
 });
 
