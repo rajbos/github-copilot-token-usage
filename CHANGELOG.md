@@ -4,7 +4,60 @@ All notable changes to the "copilot-token-tracker" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.0.14]
+
+## What's Changed
+### ✨ Features & Improvements
+* Add reset button to restore dismissed fluency tips by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/292
+* Improve radar chart size and label positioning by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/293
+* Enhance tips and fluency guidance with documentation links by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/296
+* Improve logging for VS Code and OpenCode session path discovery by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/301
+* Add per-row data cleanup button in Team Dashboard by @Virginia-Hamra in https://github.com/rajbos/github-copilot-token-usage/pull/302
+* Add fluency metrics to Azure Table Storage with unified team scoring by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/303
+* Add non-Copilot customization file detection (Cursor, Windsurf, Claude, etc.) by @FokkoVeegens in https://github.com/rajbos/github-copilot-token-usage/pull/304
+* Add repo hygiene scanner for Copilot best practices by @UncleBats in https://github.com/rajbos/github-copilot-token-usage/pull/305
+* Fix token totals: support new API formats and add regex fallback for malformed logs by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/306
+* Soften fluency level 1 & 2 colors from red/orange to lighter blue/green by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/309
+* Make Fluency Level Viewer available to all users (not just debug mode) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/311
+* Enhance repo hygiene: add docs links and "Ask Copilot to Improve" button by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/314
+* Preserve webview UI state during background timer updates by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/315
+* Add Fluency Score news banner shown after 5 extension opens by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/316
+* Show notification for unknown tools after 8 extension opens by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/317
+* Add missing friendly names for MCP tools (Context7, Playwright) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/319
+* Update Context7 MCP tool display names by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/320
+* Add missing friendly names for 14 tools (bash, claude-code, glob, grep, etc.) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/323
+* Expand unknown tool detection to all tools, not just MCP by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/324
+* Add pre-release checklist, screenshot/demo mode config, automate pre-release steps by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/326
+* Add screenshot capture scripts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/334
+### 🐛 Bug Fixes
+* Fix CSP violation and button rendering issues in production builds by @UncleBats in https://github.com/rajbos/github-copilot-token-usage/pull/295
+* Refactor file stat handling to always check for file modifications by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/299
+### 📝 Documentation
+* Document WSL environment requirements for session data tracking by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/300
+* Update README Known Issues to reflect actual (not estimated) token usage by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/321
+### 🔒 Security
+* Sanitize model names and dynamic content to prevent XSS vulnerabilities by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/325
+* Escape HTML in diagnostics and usage analysis webviews to prevent XSS by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/327
+* Fix code scanning alert #32: harden formatFileSize against DOM-based XSS by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/329
+* Fix code scanning alert #45: add sanitizeStats to validate postMessage data by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/330
+* Fix TypeScript errors in sanitizeStats XSS security fix by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/331
+* Fix code scanning alert #32: escape editorName and title fields in session table by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/332
+* Fix 4 npm dependency vulnerabilities (ajv, markdown-it, diff, serialize-javascript) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/333
+### 🔧 CI / Workflow
+* Pin @github/copilot CLI version in package.json for Dependabot tracking by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/294
+* Skip model-sync PR creation when only lastUpdated metadata changes by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/297
+* Fix Pinned-Dependencies scorecard alert: use npm ci in copilot-setup-steps by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/298
+* Fix npm ci usage in scrape-models.sh to comply with OpenSSF scorecard by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/308
+### 📦 Dependencies
+* Bump basic-ftp from 5.1.0 to 5.2.0 by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/307
+* Bump minimatch from 3.1.2 to 3.1.5 by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/310
+* Bump fast-xml-parser from 5.3.6 to 5.4.1 by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/312
+* Bump fast-xml-parser from 5.3.6 to 5.4.1 in azure-storage-loader by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/313
+## New Contributors
+* @Virginia-Hamra made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/302
+* @FokkoVeegens made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/304
+* @UncleBats made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/295
+
 ## [0.0.13]
 
 ### Changed

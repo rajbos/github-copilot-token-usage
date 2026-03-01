@@ -91,9 +91,32 @@ if (-not $isLoggedIn) {
     Write-Host "Already logged in to the marketplace." -ForegroundColor Green
 }
 
+# ── Step 3b: Validate PAT ─────────────────────────────────────────────────────
+Write-Host "`nValidating Personal Access Token (PAT)..." -ForegroundColor Cyan
+$pat = $env:VSCE_PAT
+if ([string]::IsNullOrWhiteSpace($pat)) {
+    Write-Host "VSCE_PAT environment variable is not set." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "You need a Personal Access Token from Azure DevOps:" -ForegroundColor Yellow
+    Write-Host "  1. Go to https://dev.azure.com" -ForegroundColor Gray
+    Write-Host "  2. User Settings → Personal Access Tokens" -ForegroundColor Gray
+    Write-Host "  3. New token with 'Marketplace (Publish)' scope, all organisations" -ForegroundColor Gray
+    Write-Host ""
+    $pat = Read-Host "Enter your PAT (input is hidden)" -AsSecureString | ForEach-Object {
+        [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($_))
+    }
+    if ([string]::IsNullOrWhiteSpace($pat)) {
+        Write-Host "`n❌ No PAT provided. Cannot publish without a valid token." -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "✅ VSCE_PAT environment variable found." -ForegroundColor Green
+}
+
 # ── Step 4: Publish the downloaded VSIX ──────────────────────────────────────
 Write-Host "`nPublishing $VsixPath to the VS Code Marketplace..." -ForegroundColor Cyan
-npx vsce publish --packagePath $VsixPath
+npx vsce publish --packagePath $VsixPath --pat $pat
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`n✅ Extension published successfully!" -ForegroundColor Green
