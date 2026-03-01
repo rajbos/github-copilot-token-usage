@@ -10215,6 +10215,28 @@ ${hashtag}`;
         case "showDashboard":
           await this.showDashboard();
           break;
+        case "resetDebugCounters":
+          await this.context.globalState.update('extension.openCount', 0);
+          await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
+          await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
+          await this.context.globalState.update('news.unknownMcpTools.v1.dismissed', false);
+          vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
+          await this.showDiagnosticReport();
+          break;
+        case "setDebugCounter":
+          if (typeof message.key === 'string' && typeof message.value === 'number') {
+            await this.context.globalState.update(message.key, message.value);
+            vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+            await this.showDiagnosticReport();
+          }
+          break;
+        case "setDebugFlag":
+          if (typeof message.key === 'string' && typeof message.value === 'boolean') {
+            await this.context.globalState.update(message.key, message.value);
+            vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+            await this.showDiagnosticReport();
+          }
+          break;
       }
     });
 
@@ -10617,6 +10639,15 @@ ${hashtag}`;
       storagePath: storageFilePath,
     };
 
+    const inspector = require('inspector') as { url(): string | undefined };
+    const isDebugMode = inspector.url() !== undefined;
+    const globalStateCounters = {
+      openCount: this.context.globalState.get<number>('extension.openCount') ?? 0,
+      unknownMcpOpenCount: this.context.globalState.get<number>('extension.unknownMcpOpenCount') ?? 0,
+      fluencyBannerDismissed: this.context.globalState.get<boolean>('news.fluencyScoreBanner.v1.dismissed') ?? false,
+      unknownMcpDismissed: this.context.globalState.get<boolean>('news.unknownMcpTools.v1.dismissed') ?? false,
+    };
+
     const initialData = JSON.stringify({
       report,
       sessionFiles,
@@ -10625,6 +10656,8 @@ ${hashtag}`;
       cacheInfo,
       backendStorageInfo,
       backendConfigured: this.isBackendConfigured(),
+      isDebugMode,
+      globalStateCounters,
     }).replace(/</g, "\\u003c");
 
     return `<!DOCTYPE html>

@@ -58,6 +58,13 @@ type BackendStorageInfo = {
   recordCount: number | null;
 };
 
+type GlobalStateCounters = {
+  openCount: number;
+  unknownMcpOpenCount: number;
+  fluencyBannerDismissed: boolean;
+  unknownMcpDismissed: boolean;
+};
+
 type DiagnosticsData = {
   report: string;
   sessionFiles: { file: string; size: number; modified: string }[];
@@ -65,6 +72,8 @@ type DiagnosticsData = {
   cacheInfo?: CacheInfo;
   backendStorageInfo?: BackendStorageInfo;
   backendConfigured?: boolean;
+  isDebugMode?: boolean;
+  globalStateCounters?: GlobalStateCounters;
 };
 
 type DiagnosticsViewState = {
@@ -541,6 +550,60 @@ function renderSessionTable(
 	`;
 }
 
+function counterRow(key: string, label: string, value: number): string {
+  return `
+    <tr>
+      <td style="padding: 6px 12px 6px 0; color: var(--vscode-descriptionForeground); white-space: nowrap;">${escapeHtml(label)}</td>
+      <td style="padding: 6px 8px 6px 0;">
+        <input type="number" class="debug-counter-input" data-key="${escapeHtml(key)}" value="${value}" min="0" step="1"
+          style="width:70px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 2px 6px; font-family: var(--vscode-editor-font-family, monospace);" />
+      </td>
+      <td style="padding: 6px 0;">
+        <button class="button secondary debug-counter-set" data-key="${escapeHtml(key)}" style="padding: 2px 10px; font-size: 12px;">Set</button>
+      </td>
+    </tr>`;
+}
+
+function flagRow(key: string, label: string, value: boolean): string {
+  return `
+    <tr>
+      <td style="padding: 6px 12px 6px 0; color: var(--vscode-descriptionForeground); white-space: nowrap;">${escapeHtml(label)}</td>
+      <td style="padding: 6px 8px 6px 0;">
+        <input type="checkbox" class="debug-flag-input" data-key="${escapeHtml(key)}" ${value ? 'checked' : ''} />
+        <span style="margin-left:6px; font-family: var(--vscode-editor-font-family, monospace);">${value ? '✅ true' : '❌ false'}</span>
+      </td>
+      <td style="padding: 6px 0;">
+        <button class="button secondary debug-flag-set" data-key="${escapeHtml(key)}" style="padding: 2px 10px; font-size: 12px;">Set</button>
+      </td>
+    </tr>`;
+}
+
+function renderDebugTab(counters: GlobalStateCounters | undefined): string {
+  const c = counters ?? { openCount: 0, unknownMcpOpenCount: 0, fluencyBannerDismissed: false, unknownMcpDismissed: false };
+  return `
+    <div id="tab-debug" class="tab-content">
+      <div class="info-box">
+        <div class="info-box-title">🐛 Debug — Global State Counters</div>
+        <div>Visible only when a debugger is attached. Edit counters and dismissed flags stored in VS Code global state, then click Set to apply. Changes take effect immediately.</div>
+      </div>
+      <div class="cache-details">
+        <h4>Notification Counters</h4>
+        <table><tbody>
+          ${counterRow('extension.openCount', 'extension.openCount (fluency banner threshold: 5)', c.openCount)}
+          ${counterRow('extension.unknownMcpOpenCount', 'extension.unknownMcpOpenCount (unknown MCP threshold: 8)', c.unknownMcpOpenCount)}
+        </tbody></table>
+        <h4 style="margin-top:16px;">Dismissed Flags</h4>
+        <table><tbody>
+          ${flagRow('news.fluencyScoreBanner.v1.dismissed', 'news.fluencyScoreBanner.v1.dismissed', c.fluencyBannerDismissed)}
+          ${flagRow('news.unknownMcpTools.v1.dismissed', 'news.unknownMcpTools.v1.dismissed', c.unknownMcpDismissed)}
+        </tbody></table>
+        <div style="margin-top: 16px;">
+          <button class="button secondary" id="btn-reset-debug-counters"><span>🔄</span><span>Reset All Counters &amp; Dismissed Flags</span></button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderBackendStoragePanel(
   backendInfo: BackendStorageInfo | undefined,
 ): string {
@@ -820,6 +883,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
 				<button class="tab" data-tab="cache">💾 Cache</button>
 				<button class="tab" data-tab="backend">☁️ Azure Storage</button>
+				${data.isDebugMode ? '<button class="tab" data-tab="debug">🐛 Debug</button>' : ''}
 			</div>
 
 			<div id="tab-report" class="tab-content active">
@@ -909,6 +973,7 @@ function renderLayout(data: DiagnosticsData): void {
 			<div id="tab-backend" class="tab-content">
 				${renderBackendStoragePanel(data.backendStorageInfo)}
 			</div>
+			${data.isDebugMode ? renderDebugTab(data.globalStateCounters) : ''}
 		</div>
 	`;
 
@@ -1465,6 +1530,28 @@ function renderLayout(data: DiagnosticsData): void {
       // Immediately update cache numbers (optimistic update)
       updateCacheNumbers();
       vscode.postMessage({ command: "clearCache" });
+    }
+    if (target.id === "btn-reset-debug-counters") {
+      vscode.postMessage({ command: "resetDebugCounters" });
+    }
+    if (target.classList.contains("debug-counter-set")) {
+      const key = target.getAttribute("data-key");
+      const row = target.closest("tr");
+      const input = row?.querySelector(".debug-counter-input") as HTMLInputElement | null;
+      if (key && input) {
+        const value = parseInt(input.value, 10);
+        if (!isNaN(value)) {
+          vscode.postMessage({ command: "setDebugCounter", key, value });
+        }
+      }
+    }
+    if (target.classList.contains("debug-flag-set")) {
+      const key = target.getAttribute("data-key");
+      const row = target.closest("tr");
+      const input = row?.querySelector(".debug-flag-input") as HTMLInputElement | null;
+      if (key && input) {
+        vscode.postMessage({ command: "setDebugFlag", key, value: input.checked });
+      }
     }
   });
 
