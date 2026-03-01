@@ -1563,6 +1563,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					await this.updateTokenStats();
 					this.startBackendSyncAfterInitialAnalysis();
 					await this.showFluencyScoreNewsBanner();
+					await this.showUnknownMcpToolsBanner();
 				} catch (error) {
 					this.error('Error in delayed initial update:', error);
 				}
@@ -1573,6 +1574,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				await this.updateTokenStats();
 				this.startBackendSyncAfterInitialAnalysis();
 				await this.showFluencyScoreNewsBanner();
+				await this.showUnknownMcpToolsBanner();
 			}, 100);
 		} else {
 			this.log('✅ Copilot extensions are active - starting token analysis');
@@ -1580,6 +1582,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				await this.updateTokenStats();
 				this.startBackendSyncAfterInitialAnalysis();
 				await this.showFluencyScoreNewsBanner();
+				await this.showUnknownMcpToolsBanner();
 			}, 100);
 		}
 	}
@@ -1640,6 +1643,46 @@ class CopilotTokenTracker implements vscode.Disposable {
 		await this.context.globalState.update(dismissedKey, true);
 		if (choice === open) {
 			await this.showMaturity();
+		}
+	}
+
+	private getUnknownMcpToolsFromStats(stats: UsageAnalysisStats): string[] {
+		const allTools = new Set<string>();
+		Object.keys(stats.today.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.last30Days.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.month.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		return Array.from(allTools).filter(tool => !this.toolNameMap[tool]).sort();
+	}
+
+	private async showUnknownMcpToolsBanner(): Promise<void> {
+		const dismissedKey = 'news.unknownMcpTools.v1.dismissed';
+		if (this.context.globalState.get<boolean>(dismissedKey)) {
+			return;
+		}
+		const openCountKey = 'extension.unknownMcpOpenCount';
+		const openCount = (this.context.globalState.get<number>(openCountKey) ?? 0) + 1;
+		await this.context.globalState.update(openCountKey, openCount);
+		if (openCount < 8) {
+			return;
+		}
+		const stats = await this.calculateUsageAnalysisStats(true);
+		const unknownTools = this.getUnknownMcpToolsFromStats(stats);
+		if (unknownTools.length === 0) {
+			return;
+		}
+		const open = 'Open Usage Analysis';
+		const dismiss = 'Dismiss';
+		const choice = await vscode.window.showInformationMessage(
+			`🔌 Found ${unknownTools.length} unknown MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names. Help improve the extension by reporting them.`,
+			open,
+			dismiss
+		);
+		await this.context.globalState.update(dismissedKey, true);
+		if (choice === open) {
+			await this.showUsageAnalysis();
+			setTimeout(() => {
+				this.analysisPanel?.webview.postMessage({ command: 'highlightUnknownTools' });
+			}, 500);
 		}
 	}
 
@@ -10172,6 +10215,28 @@ ${hashtag}`;
         case "showDashboard":
           await this.showDashboard();
           break;
+        case "resetDebugCounters":
+          await this.context.globalState.update('extension.openCount', 0);
+          await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
+          await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
+          await this.context.globalState.update('news.unknownMcpTools.v1.dismissed', false);
+          vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
+          await this.showDiagnosticReport();
+          break;
+        case "setDebugCounter":
+          if (typeof message.key === 'string' && typeof message.value === 'number') {
+            await this.context.globalState.update(message.key, message.value);
+            vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+            await this.showDiagnosticReport();
+          }
+          break;
+        case "setDebugFlag":
+          if (typeof message.key === 'string' && typeof message.value === 'boolean') {
+            await this.context.globalState.update(message.key, message.value);
+            vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+            await this.showDiagnosticReport();
+          }
+          break;
       }
     });
 
@@ -10574,6 +10639,15 @@ ${hashtag}`;
       storagePath: storageFilePath,
     };
 
+    const inspector = require('inspector') as { url(): string | undefined };
+    const isDebugMode = inspector.url() !== undefined;
+    const globalStateCounters = {
+      openCount: this.context.globalState.get<number>('extension.openCount') ?? 0,
+      unknownMcpOpenCount: this.context.globalState.get<number>('extension.unknownMcpOpenCount') ?? 0,
+      fluencyBannerDismissed: this.context.globalState.get<boolean>('news.fluencyScoreBanner.v1.dismissed') ?? false,
+      unknownMcpDismissed: this.context.globalState.get<boolean>('news.unknownMcpTools.v1.dismissed') ?? false,
+    };
+
     const initialData = JSON.stringify({
       report,
       sessionFiles,
@@ -10582,6 +10656,8 @@ ${hashtag}`;
       cacheInfo,
       backendStorageInfo,
       backendConfigured: this.isBackendConfigured(),
+      isDebugMode,
+      globalStateCounters,
     }).replace(/</g, "\\u003c");
 
     return `<!DOCTYPE html>
