@@ -121,7 +121,7 @@ function formatDate(isoString: string | null): string {
   try {
     return new Date(isoString).toLocaleString();
   } catch {
-    return isoString;
+    return escapeHtml(isoString);
   }
 }
 
