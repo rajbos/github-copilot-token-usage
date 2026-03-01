@@ -1651,6 +1651,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		Object.keys(stats.today.mcpTools.byTool).forEach(tool => allTools.add(tool));
 		Object.keys(stats.last30Days.mcpTools.byTool).forEach(tool => allTools.add(tool));
 		Object.keys(stats.month.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.today.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.last30Days.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.month.toolCalls.byTool).forEach(tool => allTools.add(tool));
 		return Array.from(allTools).filter(tool => !this.toolNameMap[tool]).sort();
 	}
 
@@ -1673,7 +1676,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const open = 'Open Usage Analysis';
 		const dismiss = 'Dismiss';
 		const choice = await vscode.window.showInformationMessage(
-			`🔌 Found ${unknownTools.length} unknown MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names. Help improve the extension by reporting them.`,
+			`🔌 Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names. Help improve the extension by reporting them.`,
+
 			open,
 			dismiss
 		);

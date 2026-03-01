@@ -152,6 +152,10 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	// Also collect all general tool calls so non-MCP tools without friendly names are caught
+	Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	
 	// Filter to only unknown tools (where lookupToolName returns the same value)
 	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool).sort();
@@ -159,11 +163,11 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 
 function createMcpToolIssueUrl(unknownTools: string[]): string {
 	const repoUrl = 'https://github.com/rajbos/github-copilot-token-usage';
-	const title = encodeURIComponent('Add missing friendly names for MCP tools');
+	const title = encodeURIComponent('Add missing friendly names for tools');
 	const toolList = unknownTools.map(tool => `- \`${tool}\``).join('\n');
 	const body = encodeURIComponent(
-		`## Unknown MCP Tools Found\n\n` +
-		`The following MCP tools were detected but don't have friendly display names:\n\n` +
+		`## Unknown Tools Found\n\n` +
+		`The following tools were detected but don't have friendly display names:\n\n` +
 		`${toolList}\n\n` +
 		`Please add friendly names for these tools to improve the user experience.`
 	);
