@@ -957,6 +957,14 @@ window.addEventListener('message', (event) => {
 		case 'repoAnalysisBatchComplete':
 			handleBatchAnalysisComplete();
 			break;
+		case 'updateStats':
+			// Re-render the layout with fresh stats, then restore repo analysis results
+			if (message.data?.locale) {
+				setFormatLocale(message.data.locale);
+			}
+			renderLayout(message.data);
+			renderRepositoryHygienePanels();
+			break;
 	}
 });
 
