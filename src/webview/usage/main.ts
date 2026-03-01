@@ -325,10 +325,12 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							</tr>
 						</thead>
 						<tbody>
-							${matrix.workspaces.map(ws => `
+							${matrix.workspaces.map(ws => {
+								const hasNoCustomization = Object.values(ws.typeStatuses).every(s => s === '❌');
+								return `
 								<tr>
 									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; font-family: 'Courier New', monospace; font-size: 12px;">
-										${escapeHtml(ws.workspaceName)}
+										${escapeHtml(ws.workspaceName)}${hasNoCustomization ? ' <span title="No customization files" style="font-family: sans-serif;">⚠️</span>' : ''}
 									</td>
 									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; color: #60a5fa; font-weight: 600;">
 										${ws.sessionCount}
@@ -351,7 +353,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 										`;
 									}).join('')}
 								</tr>
-							`).join('')}
+							`; }).join('')}
 						</tbody>
 					</table>
 				</div>
