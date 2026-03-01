@@ -576,10 +576,17 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					const unknownTools = getUnknownMcpTools(stats);
 					if (unknownTools.length > 0) {
 						const issueUrl = createMcpToolIssueUrl(unknownTools);
+						const toolListHtml = unknownTools.map(tool => {
+							const count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
+							return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${count > 0 ? `<span style="color:var(--text-muted);">(${count})</span>` : ''}</span>`;
+						}).join(' ');
 						return `
 							<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
 								<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-									Found ${unknownTools.length} MCP tool${unknownTools.length > 1 ? 's' : ''} without friendly names
+									Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names — these are not included in the top-10 tables above
+								</div>
+								<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
+									${toolListHtml}
 								</div>
 								<a href="${issueUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--button-bg); color: var(--button-fg); border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 500;">
 									<span>📝</span>
