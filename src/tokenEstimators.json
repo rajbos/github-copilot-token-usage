@@ -4,6 +4,7 @@
   "estimators": {
     "gpt-4": 0.25,
     "gpt-4.1": 0.25,
+    "gpt-4.1-mini": 0.25,
     "gpt-4o": 0.25,
     "gpt-4o-mini": 0.25,
     "gpt-4-turbo": 0.25,
@@ -42,6 +43,7 @@
     "gemini-3-pro-preview": 0.25,
     "gemini-3.1-pro": 0.25,
     "grok-code-fast-1": 0.25,
+    "qwen2.5": 0.25,
     "raptor-mini": 0.25,
     "goldeneye": 0.25,
     "o1-preview": 0.25,

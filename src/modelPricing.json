@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-02-20",
+    "lastUpdated": "2026-03-02",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -369,6 +369,13 @@
       "category": "xAI Grok models",
       "tier": "premium",
       "multiplier": 0.25
+    },
+    "qwen2.5": {
+      "inputCostPerMillion": 0.00,
+      "outputCostPerMillion": 0.00,
+      "category": "Alibaba Qwen models",
+      "tier": "standard",
+      "multiplier": 0
     },
     "raptor-mini": {
       "inputCostPerMillion": 0.25,
