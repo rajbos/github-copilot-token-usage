@@ -4,6 +4,7 @@
   "estimators": {
     "gpt-4": 0.25,
     "gpt-4.1": 0.25,
+    "gpt-4.1-mini": 0.25,
     "gpt-4o": 0.25,
     "gpt-4o-mini": 0.25,
     "gpt-4-turbo": 0.25,
