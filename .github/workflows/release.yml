@@ -160,22 +160,19 @@ jobs:
         echo "VSIX file: $VSIX_FILE"
         
     - name: Generate release notes
-      id: release_notes
       run: |
         # Extract the latest changes from CHANGELOG.md if it has been updated
-        # If not, create basic release notes
+        # Write to a file to avoid shell interpretation issues with special characters
         if grep -q "## \[.*\]" CHANGELOG.md; then
           # Try to extract the latest version section from changelog
           NOTES=$(sed -n '/## \[.*\]/,/## \[.*\]/p' CHANGELOG.md | head -n -1 | tail -n +2)
           if [ -n "$NOTES" ]; then
-            echo "notes<<EOF" >> $GITHUB_OUTPUT
-            echo "$NOTES" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            echo "$NOTES" > /tmp/release_notes.md
           else
-            echo "notes=Release ${{ steps.extract_version.outputs.tag_version }}" >> $GITHUB_OUTPUT
+            echo "Release ${{ steps.extract_version.outputs.tag_version }}" > /tmp/release_notes.md
           fi
         else
-          echo "notes=Release ${{ steps.extract_version.outputs.tag_version }}" >> $GITHUB_OUTPUT
+          echo "Release ${{ steps.extract_version.outputs.tag_version }}" > /tmp/release_notes.md
         fi
         
     - name: Create Release
@@ -188,10 +185,10 @@ jobs:
         set -o pipefail
         echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
         
-        # Create release with notes and upload VSIX file
+        # Create release with notes from file and upload VSIX file
         gh release create "${{ steps.tag_name.outputs.tag_name }}" \
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
-          --notes "${{ steps.release_notes.outputs.notes }}" \
+          --notes-file /tmp/release_notes.md \
           ./${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
         
     - name: Release Summary
