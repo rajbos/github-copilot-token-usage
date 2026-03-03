@@ -198,10 +198,11 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 			getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
 			getSessionFileDataCached: async (): Promise<SessionFileCache> => {
 				return invalidCache as any; // Return invalid cache data
-			}
-		,
-		statSessionFile: async (f: string) => fs.promises.stat(f)
-	});
+			},
+			statSessionFile: async (f: string) => fs.promises.stat(f)
+		});
+		// Trigger the cache validation by running the rollup computation
+		await facade.computeDailyRollupsFromLocalSessions({ lookbackDays: 1, userId: 'u1' });
 		// Should fall back to parsing when cache validation fails
 		// Empty requests array means no rollups from fallback, but validation warning should be logged
 		assert.ok(

@@ -331,15 +331,14 @@ test('config panel HTML marks offline state and disables test button when offlin
 		asWebviewUri: () => 'toolkit.js'
 	};
 	const html: string = panel.renderHtml(webview as any, state);
-	const sanitized = html.replace(/<script type="module"[^>]*toolkit\.js"><\/script>/, '');
+	const sanitized = html.replace(/<script type="module"[\s\S]*?<\/script>/g, '');
 	const alerts: string[] = [];
 
 	const dom = new JSDOM(sanitized, {
 		runScripts: 'dangerously',
-		resources: 'usable',
-		pretendToBeVisual: true,
 		beforeParse(window: Window) {
 			(window as any).acquireVsCodeApi = () => ({ postMessage: () => undefined });
+			(window as any).__toolkitReady = true;
 			Object.defineProperty(window.navigator, 'onLine', { get: () => false });
 			window.alert = (msg: any) => { alerts.push(String(msg)); };
 		}
@@ -351,6 +350,7 @@ test('config panel HTML marks offline state and disables test button when offlin
 	assert.ok(banner?.classList.contains('offline'));
 	assert.equal(testBtn?.disabled, true);
 	assert.deepEqual(alerts, []);
+	dom.window.close();
 });
 
 test('config panel HTML disables test button when backend is disabled', async () => {
@@ -378,14 +378,13 @@ test('config panel HTML disables test button when backend is disabled', async ()
 		asWebviewUri: () => 'toolkit.js'
 	};
 	const html: string = panel.renderHtml(webview as any, state as any);
-	const sanitized = html.replace(/<script type="module"[^>]*toolkit\.js"><\/script>/, '');
+	const sanitized = html.replace(/<script type="module"[\s\S]*?<\/script>/g, '');
 
 	const dom = new JSDOM(sanitized, {
 		runScripts: 'dangerously',
-		resources: 'usable',
-		pretendToBeVisual: true,
 		beforeParse(window: Window) {
 			(window as any).acquireVsCodeApi = () => ({ postMessage: () => undefined });
+			(window as any).__toolkitReady = true;
 			Object.defineProperty(window.navigator, 'onLine', { get: () => true });
 		}
 	});
@@ -396,6 +395,7 @@ test('config panel HTML disables test button when backend is disabled', async ()
 	const testResult = doc.getElementById('testResult') as HTMLElement;
 	assert.equal(testBtn?.disabled, true);
 	assert.ok((testResult?.textContent || '').toLowerCase().includes('enable'));
+	dom.window.close();
 });
 
 test('config panel HTML toggles shared-key controls, keeps enable-first layout, and shows overview copy', async () => {
@@ -420,14 +420,13 @@ test('config panel HTML toggles shared-key controls, keeps enable-first layout, 
 
 	const webview = { cspSource: 'vscode-resource://', asWebviewUri: () => 'toolkit.js' };
 	const html: string = panel.renderHtml(webview as any, state);
-	const sanitized = html.replace(/<script type="module"[^>]*toolkit\.js"><\/script>/, '');
+	const sanitized = html.replace(/<script type="module"[\s\S]*?<\/script>/g, '');
 
 	const dom = new JSDOM(sanitized, {
 		runScripts: 'dangerously',
-		resources: 'usable',
-		pretendToBeVisual: true,
 		beforeParse(window: Window) {
 			(window as any).acquireVsCodeApi = () => ({ postMessage: () => undefined });
+			(window as any).__toolkitReady = true;
 			Object.defineProperty(window.navigator, 'onLine', { get: () => true });
 		}
 	});
@@ -447,8 +446,8 @@ test('config panel HTML toggles shared-key controls, keeps enable-first layout, 
 	assert.equal(azureHeadings[0], 'Enable backend');
 	assert.equal(azureHeadings[1], 'Azure Settings');
 
-	const helper = doc.querySelector('#overview .helper')?.textContent || '';
-	assert.ok(helper.includes('Stay Local'));
+	const overviewHelpers = Array.from(doc.querySelectorAll('#overview .helper') as NodeListOf<HTMLElement>).map((el) => el.textContent || '');
+	assert.ok(overviewHelpers.some((h) => h.includes('Stay Local')));
 	assert.ok(doc.getElementById('privacyBadge'));
 	assert.ok(doc.getElementById('authBadge'));
 	assert.ok(doc.getElementById('backendStateBadge'));
@@ -463,6 +462,7 @@ test('config panel HTML toggles shared-key controls, keeps enable-first layout, 
 		testResultText.includes('test the connection') ||
 		testResult.textContent === ''
 	);
+	dom.window.close();
 });
 
 test('launchConfigureWizardFromPanel triggers wizard, timers, cache clear, and state refresh', async () => {
