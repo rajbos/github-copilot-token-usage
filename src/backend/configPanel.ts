@@ -246,6 +246,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<p class="helper"><strong>Multi-device sync:</strong> Work on multiple machines? Backend keeps your token usage history synced across all devices automatically.</p>
 					<p class="helper"><strong>Long-term tracking:</strong> Local data lives in VS Code session files that can be cleaned up. Backend provides durable, queryable storage for trend analysis and compliance reporting.</p>
 					<p class="helper"><strong>Privacy-first:</strong> Choose your sharing level from Solo (just you) to Team Identified (full analytics). You control what's shared and how you're identified.</p>
+					<p class="helper">Not ready to sync? Use <strong>Stay Local</strong> mode to keep all data on this machine only.</p>
 				</div>
 				<div class="card">
 					<h3>Current status</h3>

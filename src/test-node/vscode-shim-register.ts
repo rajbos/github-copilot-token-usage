@@ -113,6 +113,7 @@ function attachMock(target: any): void {
 
 	target.ConfigurationTarget = target.ConfigurationTarget ?? { Global: 1 };
 	target.ProgressLocation = target.ProgressLocation ?? { Notification: 15 };
+	target.ViewColumn = target.ViewColumn ?? { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3 };
 
 	// Add Uri class for tests
 	target.Uri = target.Uri ?? class Uri {
@@ -130,6 +131,11 @@ function attachMock(target: any): void {
 					toString: () => uriString
 				};
 			}
+		}
+		static joinPath(base: any, ...pathSegments: string[]): any {
+			const basePath = typeof base === 'string' ? base : (base?.fsPath ?? base?.toString() ?? '');
+			const joined = [basePath, ...pathSegments].join('/').replace(/\/+/g, '/');
+			return { fsPath: joined, toString: () => joined };
 		}
 	};
 
