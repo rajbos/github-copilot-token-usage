@@ -53,6 +53,7 @@ For missing models in modelPricing.json:
 - **ONLY** update `lastUpdated` field in `src/modelPricing.json` to today's date (YYYY-MM-DD format) **if you added new models to the pricing file**
 - If no models were added, do NOT update the `lastUpdated` field
 - Do NOT modify the `sources` section unless you have specific pricing data
+- Do not make up new model names. If they are not in any of the lists in the documentation, then we do not add them to the json
 
 ## Output Format
 
