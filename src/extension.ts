@@ -737,6 +737,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private outputChannel: vscode.OutputChannel;
 	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
+	private lastDailyStats: DailyTokenStats[] | undefined;
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
@@ -1489,6 +1490,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.diagnosticsCachedFiles = [];
 			// Clear cached computed stats so details panel doesn't show stale data
 			this.lastDetailedStats = undefined;
+			this.lastDailyStats = undefined;
 			this.lastUsageAnalysisStats = undefined;
 
 			this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
@@ -1757,9 +1759,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			// If the chart panel is open, update its content
-			if (this.chartPanel) {
-				const dailyStats = await this.calculateDailyStats();
+			// If the chart panel is open, update its content (daily stats were computed in calculateDetailedStats)
+			if (this.chartPanel && this.lastDailyStats) {
+				const dailyStats = this.lastDailyStats;
 				if (silent) {
 					// Background update: send data via postMessage to preserve the active chart view toggle
 					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: this.buildChartData(dailyStats) });
@@ -1880,6 +1882,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const lastMonthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const last30DaysStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
+		// Also compute daily stats for the chart as a byproduct (avoids a second full file scan)
+		const dailyStatsMap = new Map<string, DailyTokenStats>();
+
 		try {
 			// Clean expired cache entries
 			this.clearExpiredCache();
@@ -1969,6 +1974,42 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 							last30DaysStats.modelUsage[model].inputTokens += usage.inputTokens;
 							last30DaysStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+
+						// Accumulate daily stats for the chart view
+						const dateKey = this.formatDateKey(lastActivity);
+						const repository = sessionData.repository || 'Unknown';
+						if (!dailyStatsMap.has(dateKey)) {
+							dailyStatsMap.set(dateKey, {
+								date: dateKey,
+								tokens: 0,
+								sessions: 0,
+								interactions: 0,
+								modelUsage: {},
+								editorUsage: {},
+								repositoryUsage: {}
+							});
+						}
+						const dailyEntry = dailyStatsMap.get(dateKey)!;
+						dailyEntry.tokens += tokens;
+						dailyEntry.sessions += 1;
+						dailyEntry.interactions += interactions;
+						if (!dailyEntry.editorUsage[editorType]) {
+							dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						dailyEntry.editorUsage[editorType].tokens += tokens;
+						dailyEntry.editorUsage[editorType].sessions += 1;
+						if (!dailyEntry.repositoryUsage[repository]) {
+							dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
+						}
+						dailyEntry.repositoryUsage[repository].tokens += tokens;
+						dailyEntry.repositoryUsage[repository].sessions += 1;
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!dailyEntry.modelUsage[model]) {
+								dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
+							dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
 						}
 					}
 
@@ -2064,6 +2105,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 		} catch (error) {
 			this.error('Error calculating detailed stats:', error);
 		}
+
+		// Finalize daily stats: fill in missing days with zero values
+		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const existingDates = new Set(dailyStatsMap.keys());
+		const fillDate = new Date(thirtyDaysAgo);
+		while (fillDate <= today) {
+			const dateKey = this.formatDateKey(fillDate);
+			if (!existingDates.has(dateKey)) {
+				dailyStatsMap.set(dateKey, {
+					date: dateKey,
+					tokens: 0,
+					sessions: 0,
+					interactions: 0,
+					modelUsage: {},
+					editorUsage: {},
+					repositoryUsage: {}
+				});
+			}
+			fillDate.setDate(fillDate.getDate() + 1);
+		}
+		this.lastDailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
@@ -6655,8 +6718,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Get daily stats
-		const dailyStats = await this.calculateDailyStats();
+		// Use daily stats computed by calculateDetailedStats if available, otherwise compute them
+		const dailyStats = this.lastDailyStats ?? await this.calculateDailyStats();
 
 		// Create webview panel
 		this.chartPanel = vscode.window.createWebviewPanel(
