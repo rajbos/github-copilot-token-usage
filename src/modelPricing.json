@@ -370,13 +370,6 @@
       "tier": "premium",
       "multiplier": 0.25
     },
-    "qwen2.5": {
-      "inputCostPerMillion": 0.00,
-      "outputCostPerMillion": 0.00,
-      "category": "Alibaba Qwen models",
-      "tier": "standard",
-      "multiplier": 0
-    },
     "raptor-mini": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 2.0,
