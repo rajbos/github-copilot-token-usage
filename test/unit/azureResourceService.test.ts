@@ -205,8 +205,8 @@ test.skip('configureBackendWizard handles policy-blocked storage creation and fa
 		clearQueryCache: () => {}
 	};
 
-	delete requireCjs.cache[requireCjs.resolve('../backend/services/azureResourceService')];
-	const { AzureResourceService } = requireCjs('../backend/services/azureResourceService');
+	delete requireCjs.cache[requireCjs.resolve('../../src/backend/services/azureResourceService')];
+	const { AzureResourceService } = requireCjs('../../src/backend/services/azureResourceService');
 	const svc = new AzureResourceService(deps as any, credentialService, dataPlaneService);
 	await svc.configureBackendWizard();
 
@@ -371,8 +371,8 @@ test.skip('configureBackendWizard disables Shared Key when Entra ID auth is sele
 		clearQueryCache: () => {}
 	};
 
-	delete requireCjs.cache[requireCjs.resolve('../backend/services/azureResourceService')];
-	const { AzureResourceService } = requireCjs('../backend/services/azureResourceService');
+	delete requireCjs.cache[requireCjs.resolve('../../src/backend/services/azureResourceService')];
+	const { AzureResourceService } = requireCjs('../../src/backend/services/azureResourceService');
 	const svc = new AzureResourceService(deps as any, credentialService, dataPlaneService);
 
 	await svc.configureBackendWizard();
@@ -535,8 +535,8 @@ test.skip('configureBackendWizard enables Shared Key when shared-key auth is sel
 		clearQueryCache: () => {}
 	};
 
-	delete requireCjs.cache[requireCjs.resolve('../backend/services/azureResourceService')];
-	const { AzureResourceService } = requireCjs('../backend/services/azureResourceService');
+	delete requireCjs.cache[requireCjs.resolve('../../src/backend/services/azureResourceService')];
+	const { AzureResourceService } = requireCjs('../../src/backend/services/azureResourceService');
 	const svc = new AzureResourceService(deps as any, credentialService, dataPlaneService);
 
 	await svc.configureBackendWizard();
@@ -601,8 +601,8 @@ test('setSharingProfileCommand clears identity when downgrading to non-identifyi
 		clearQueryCache: () => {}
 	};
 
-	delete requireCjs.cache[requireCjs.resolve('../backend/services/azureResourceService')];
-	const { AzureResourceService } = requireCjs('../backend/services/azureResourceService');
+	delete requireCjs.cache[requireCjs.resolve('../../src/backend/services/azureResourceService')];
+	const { AzureResourceService } = requireCjs('../../src/backend/services/azureResourceService');
 	const svc = new AzureResourceService(deps as any, {} as any, {} as any);
 
 	await svc.setSharingProfileCommand();
