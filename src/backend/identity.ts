@@ -12,7 +12,7 @@ const MAX_TEAM_ALIAS_LENGTH = 32;
 const COMMON_NAME_PATTERNS = /\b(john|jane|smith|doe|admin|user|dev|test|demo)\b/i;
 
 export function validateTeamAlias(input: string): TeamAliasValidationResult {
-	const alias = (input ?? '').trim();
+	const alias = (input ?? '').trim().toLowerCase();
 	if (!alias) {
 		return { 
 			valid: false, 
