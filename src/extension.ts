@@ -726,6 +726,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		for (const r of results) { uniq[path.normalize(r.path)] = r; }
 		return Object.values(uniq);
 	}
+	private _disposed = false;
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
@@ -1184,16 +1185,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Logging methods
 	public log(message: string): void {
+		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
 	}
 
 	private warn(message: string): void {
+		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
 	}
 
 	private error(message: string, error?: any): void {
+		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
 		if (error) {
@@ -11047,6 +11051,7 @@ ${hashtag}`;
       this.diagnosticsPanel.dispose();
     }
     this.statusBarItem.dispose();
+    this._disposed = true;
     this.outputChannel.dispose();
   }
 }
