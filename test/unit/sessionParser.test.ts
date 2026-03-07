@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { parseSessionFileContent } from '../sessionParser';
+import { parseSessionFileContent } from '../../src/sessionParser';
 
 function estimateTokensByLength(text: string): number {
 	return text.length;

@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { JSDOM } from 'jsdom';
-import { renderBackendConfigHtml } from '../backend/configPanel';
+import { renderBackendConfigHtml } from '../../src/backend/configPanel';
 
 suite('Backend Config Panel Webview Integration Tests', () => {
 	let dom: JSDOM;

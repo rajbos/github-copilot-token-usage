@@ -4,8 +4,8 @@ import * as assert from 'node:assert/strict';
 
 import * as vscode from 'vscode';
 
-import { BackendCommandHandler } from '../backend/commands';
-import type { BackendFacadeInterface } from '../backend/types';
+import { BackendCommandHandler } from '../../src/backend/commands';
+import type { BackendFacadeInterface } from '../../src/backend/types';
 
 // Helper to create a mock facade with all required methods
 function createMockFacade(overrides: Partial<BackendFacadeInterface> = {}): BackendFacadeInterface {

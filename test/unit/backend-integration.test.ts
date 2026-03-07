@@ -20,8 +20,8 @@ import {
 	showBackendSuccess,
 	showBackendWarning,
 	validateAzureResourceName
-} from '../backend/integration';
-import type { BackendSettings } from '../backend/settings';
+} from '../../src/backend/integration';
+import type { BackendSettings } from '../../src/backend/settings';
 
 test('formatTimestamp returns Never for invalid dates', () => {
 	assert.equal(formatTimestamp('not-a-date'), 'Never');

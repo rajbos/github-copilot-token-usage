@@ -7,16 +7,16 @@ import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
 
-import { BackendConfigPanel, type BackendConfigPanelState } from '../backend/configPanel';
+import { BackendConfigPanel, type BackendConfigPanelState } from '../../src/backend/configPanel';
 import {
 	applyDraftToSettings,
 	needsConsent,
 	toDraft,
 	validateDraft,
 	type BackendConfigDraft
-} from '../backend/configurationFlow';
-import { BackendFacade } from '../backend/facade';
-import type { BackendSettings } from '../backend/settings';
+} from '../../src/backend/configurationFlow';
+import { BackendFacade } from '../../src/backend/facade';
+import type { BackendSettings } from '../../src/backend/settings';
 
 const baseSettings: BackendSettings = {
 	enabled: true,

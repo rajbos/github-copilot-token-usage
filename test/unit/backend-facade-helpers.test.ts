@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { BackendFacade } from '../backend/facade';
+import { BackendFacade } from '../../src/backend/facade';
 
 function createFacade(): BackendFacade {
 	return new BackendFacade({

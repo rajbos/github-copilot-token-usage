@@ -10,8 +10,6 @@ out
 out/**
 test
 test/**
-test-node
-test-node/**
 node_modules
 node_modules/**
 .github

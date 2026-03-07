@@ -4,7 +4,7 @@
 
 import { describe, it } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { ValidationMessages, ErrorMessages, SuccessMessages, HelpText, ConfirmationMessages } from '../backend/ui/messages';
+import { ValidationMessages, ErrorMessages, SuccessMessages, HelpText, ConfirmationMessages } from '../../src/backend/ui/messages';
 
 describe('ValidationMessages', () => {
 	it('should generate required field message without example', () => {

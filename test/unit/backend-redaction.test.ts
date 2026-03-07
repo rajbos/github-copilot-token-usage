@@ -2,8 +2,8 @@ import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { buildBackendConfigClipboardPayload } from '../backend/copyConfig';
-import type { BackendSettings } from '../backend/settings';
+import { buildBackendConfigClipboardPayload } from '../../src/backend/copyConfig';
+import type { BackendSettings } from '../../src/backend/settings';
 
 test('config export fully redacts machineId', () => {
 	const settings: BackendSettings = {

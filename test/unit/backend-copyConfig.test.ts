@@ -8,7 +8,7 @@ import {
 	buildBackendConfigClipboardPayload,
 	copyBackendConfigToClipboard,
 	getBackendConfigSummary
-} from '../backend/copyConfig';
+} from '../../src/backend/copyConfig';
 
 const baseSettings: any = {
 	enabled: true,

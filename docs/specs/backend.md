@@ -514,7 +514,7 @@ All settings in VS Code user settings (global scope, Settings Sync compatible):
 ### Test Organization
 
 ```
-src/test-node/
+test/unit/
 ├── backend-identity.test.ts          # Identity & validation (317 lines)
 ├── backend-settings.test.ts          # Configuration parsing
 ├── backend-rollups.test.ts           # Aggregation logic (117 lines)

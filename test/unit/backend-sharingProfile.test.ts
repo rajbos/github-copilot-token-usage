@@ -8,7 +8,7 @@ import {
 	hashWorkspaceIdForTeam,
 	hashMachineIdForTeam,
 	type BackendSharingProfile
-} from '../backend/sharingProfile';
+} from '../../src/backend/sharingProfile';
 
 test('parseBackendSharingProfile validates profile values', () => {
 	assert.equal(parseBackendSharingProfile('off'), 'off');

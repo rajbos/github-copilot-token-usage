@@ -3,16 +3,16 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { parseSessionFileContent } from '../sessionParser';
+import { parseSessionFileContent } from '../../src/sessionParser';
 
 /**
  * Integration tests that feed real sample session files through parseSessionFileContent.
  *
  * These exercise the full JSON parsing pipeline end-to-end using the sample
- * data in test/sample-session-data/chatSessions/.
+ * data in test/fixtures/sample-session-data/chatSessions/.
  */
 
-const SAMPLES_DIR = path.resolve(__dirname, '..', '..', '..', 'test', 'sample-session-data', 'chatSessions');
+const SAMPLES_DIR = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'sample-session-data', 'chatSessions');
 
 function estimateTokensByLength(text: string): number {
 	return text.length;

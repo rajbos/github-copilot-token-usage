@@ -8,7 +8,7 @@ import {
 	redactSecretsInText,
 	safeStringifyError,
 	withErrorHandling
-} from '../utils/errors';
+} from '../../src/utils/errors';
 
 test('redactSecretsInText is no-op for empty inputs and skips blank secrets', () => {
 	assert.equal(redactSecretsInText('', ['a']), '');

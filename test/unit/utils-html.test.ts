@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { escapeHtml, escapeAttr, safeJsonForInlineScript } from '../utils/html';
+import { escapeHtml, escapeAttr, safeJsonForInlineScript } from '../../src/utils/html';
 
 // ── escapeHtml ──────────────────────────────────────────────────────────
 

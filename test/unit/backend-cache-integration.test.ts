@@ -5,8 +5,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { BackendFacade } from '../backend/facade';
-import type { SessionFileCache } from '../backend/types';
+import { BackendFacade } from '../../src/backend/facade';
+import type { SessionFileCache } from '../../src/backend/types';
 
 /**
  * Comprehensive tests for cache integration in backend sync.

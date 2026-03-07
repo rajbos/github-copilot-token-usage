@@ -4,7 +4,7 @@ import * as assert from 'node:assert/strict';
 
 import * as vscode from 'vscode';
 
-import { getBackendSettings, isBackendConfigured, shouldPromptToSetSharedKey } from '../backend/settings';
+import { getBackendSettings, isBackendConfigured, shouldPromptToSetSharedKey } from '../../src/backend/settings';
 
 test('shouldPromptToSetSharedKey gates on authMode/storageAccount/sharedKey presence', () => {
 	assert.equal(shouldPromptToSetSharedKey('entraId', 'acct', undefined), false);

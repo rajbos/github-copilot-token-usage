@@ -4,7 +4,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { DisplayNameStore } from '../backend/displayNames';
+import { DisplayNameStore } from '../../src/backend/displayNames';
 
 
 suite('DisplayNameStore', () => {

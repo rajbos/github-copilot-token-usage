@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { AzureNamedKeyCredential } from '@azure/data-tables';
 import { StorageSharedKeyCredential } from '@azure/storage-blob';
 
-import { CredentialService } from '../backend/services/credentialService';
+import { CredentialService } from '../../src/backend/services/credentialService';
 
 const makeContext = () => {
 	const store = new Map<string, string>();

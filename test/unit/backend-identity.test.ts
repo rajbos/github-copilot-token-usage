@@ -6,7 +6,7 @@ import {
 	resolveUserIdentityForSync,
 	tryParseJwtClaims,
 	validateTeamAlias
-} from '../backend/identity';
+} from '../../src/backend/identity';
 
 import {
 	buildAggPartitionKey,
@@ -15,7 +15,7 @@ import {
 	listAggDailyEntitiesFromTableClient,
 	sanitizeTableKey,
 	stableDailyRollupRowKey
-} from '../backend/storageTables';
+} from '../../src/backend/storageTables';
 
 import {
 	aggregateByDimension,
@@ -23,7 +23,7 @@ import {
 	filterByDimension,
 	isoWeekKeyFromUtcDayKey,
 	upsertDailyRollup
-} from '../backend/rollups';
+} from '../../src/backend/rollups';
 
 test('validateTeamAlias accepts lowercase/digits/dash only', () => {
 	assert.deepStrictEqual(validateTeamAlias('alice-01'), { valid: true, alias: 'alice-01' });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { getModelDisplayName } from '../webview/shared/modelUtils';
+import { getModelDisplayName } from '../../src/webview/shared/modelUtils';
 import {
 	setFormatLocale,
 	getEditorIcon,
@@ -10,7 +10,7 @@ import {
 	formatPercent,
 	formatNumber,
 	formatCost
-} from '../webview/shared/formatUtils';
+} from '../../src/webview/shared/formatUtils';
 
 // ── getModelDisplayName ─────────────────────────────────────────────────
 

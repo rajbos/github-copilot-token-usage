@@ -153,7 +153,7 @@ Do not enter retry loops trying to capture terminal output. These patterns waste
 
 3. **Run tests in small batches.** Instead of running all 25+ test files in one command, run one file at a time:
    ```bash
-   node --require ./out/test/test-node/vscode-shim-register.js --test out/test/test-node/sessionParser.test.js
+   node --require ./out/test/unit/vscode-shim-register.js --test out/test/unit/sessionParser.test.js
    ```
    Small commands are more likely to return output before the capture times out.
 

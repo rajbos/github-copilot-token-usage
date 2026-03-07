@@ -2,7 +2,7 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 
-import { BackendFacade } from '../backend/facade';
+import { BackendFacade } from '../../src/backend/facade';
 
 test('BackendFacade queryBackendRollups aggregates, filters, and caches results', async () => {
 	const facade: any = new BackendFacade({
