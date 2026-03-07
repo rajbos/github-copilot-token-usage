@@ -27,8 +27,12 @@
   "initializeCommand": "powershell -ExecutionPolicy Bypass -File .devcontainer/init-mounts.ps1",
   "mounts": [
     "source=${localEnv:APPDATA}/Code/User,target=/home/node/.config/Code/User,type=bind,readonly=true",
-    "source=${localEnv:APPDATA}/Code - Insiders/User,target=/home/node/.config/Code - Insiders/User,type=bind,readonly=true"
+    "source=${localEnv:APPDATA}/Code - Insiders/User,target=/home/node/.config/Code - Insiders/User,type=bind,readonly=true",
+    "source=github-copilot-token-usage-nodemodules,target=/workspaces/github-copilot-token-usage/node_modules,type=volume"
   ],
+  "containerEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096"
+  },
   "postCreateCommand": "npm ci",
   "remoteUser": "node"
 }
