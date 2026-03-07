@@ -55,7 +55,7 @@ jobs:
       run: npm run compile-tests
 
     - name: Run Node.js unit tests
-      timeout-minutes: 5
+      timeout-minutes: 2
       run: |
         FORCE_EXIT=""
         if node -e "process.exit(process.versions.node.split('.')[0] >= 22 ? 0 : 1)"; then
