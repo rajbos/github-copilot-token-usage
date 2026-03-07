@@ -1,4 +1,4 @@
-/// <reference path="../types/jsdom.d.ts" />
+/// <reference path="../../src/types/jsdom.d.ts" />
 import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
@@ -7,16 +7,16 @@ import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
 
-import { BackendConfigPanel, type BackendConfigPanelState } from '../backend/configPanel';
+import { BackendConfigPanel, type BackendConfigPanelState } from '../../src/backend/configPanel';
 import {
 	applyDraftToSettings,
 	needsConsent,
 	toDraft,
 	validateDraft,
 	type BackendConfigDraft
-} from '../backend/configurationFlow';
-import { BackendFacade } from '../backend/facade';
-import type { BackendSettings } from '../backend/settings';
+} from '../../src/backend/configurationFlow';
+import { BackendFacade } from '../../src/backend/facade';
+import type { BackendSettings } from '../../src/backend/settings';
 
 const baseSettings: BackendSettings = {
 	enabled: true,

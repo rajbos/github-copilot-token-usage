@@ -1,9 +1,9 @@
 import * as assert from 'assert';
 
-import { shouldPromptToSetSharedKey } from '../backend/settings';
+import { shouldPromptToSetSharedKey } from '../../src/backend/settings';
 
-import { buildBackendConfigClipboardPayload } from '../backend/copyConfig';
-import { isBackendConfigured } from '../backend/settings';
+import { buildBackendConfigClipboardPayload } from '../../src/backend/copyConfig';
+import { isBackendConfigured } from '../../src/backend/settings';
 
 suite('Extension Test Suite', () => {
 	suite('Backend', () => {

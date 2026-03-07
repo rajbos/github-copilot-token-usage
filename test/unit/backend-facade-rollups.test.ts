@@ -4,8 +4,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { BackendFacade } from '../backend/facade';
-import type { DailyRollupMapEntryLike } from '../backend/rollups';
+import { BackendFacade } from '../../src/backend/facade';
+import type { DailyRollupMapEntryLike } from '../../src/backend/rollups';
 
 test('BackendFacade computes daily rollups from JSONL and JSON sessions (and skips malformed/out-of-range)', async () => {
 	const warnings: string[] = [];

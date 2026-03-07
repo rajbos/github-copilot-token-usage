@@ -4,7 +4,7 @@
 
 import { describe, it } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { ValidationMessages, ErrorMessages, SuccessMessages, HelpText, ConfirmationMessages } from '../backend/ui/messages';
+import { ValidationMessages, ErrorMessages, SuccessMessages, HelpText, ConfirmationMessages } from '../../src/backend/ui/messages';
 
 describe('ValidationMessages', () => {
 	it('should generate required field message without example', () => {
@@ -269,5 +269,13 @@ describe('ConfirmationMessages', () => {
 	it('should handle empty reasons array', () => {
 		const conf = ConfirmationMessages.privacyUpgrade([]);
 		assert.ok(conf.detail.includes('sharing settings are changing'));
+	});
+
+	it('should generate delete user dataset confirmation', () => {
+		const conf = ConfirmationMessages.deleteUserDataset('user123', 'ds-test');
+		assert.ok(conf.message.includes('user123'));
+		assert.ok(conf.message.includes('ds-test'));
+		assert.ok(conf.detail.includes('permanently delete'));
+		assert.equal(conf.button, 'Delete Data');
 	});
 });

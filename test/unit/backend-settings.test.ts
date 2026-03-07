@@ -4,7 +4,7 @@ import * as assert from 'node:assert/strict';
 
 import * as vscode from 'vscode';
 
-import { getBackendSettings, isBackendConfigured, shouldPromptToSetSharedKey } from '../backend/settings';
+import { getBackendSettings, isBackendConfigured, shouldPromptToSetSharedKey } from '../../src/backend/settings';
 
 test('shouldPromptToSetSharedKey gates on authMode/storageAccount/sharedKey presence', () => {
 	assert.equal(shouldPromptToSetSharedKey('entraId', 'acct', undefined), false);
@@ -44,6 +44,57 @@ test('getBackendSettings reads config defaults and clamps lookbackDays', () => {
 	assert.equal(s.sharingProfile, 'teamAnonymized');
 	assert.equal(s.shareWorkspaceMachineNames, false);
 	assert.equal(s.lookbackDays, 90);
+});
+
+test('getBackendSettings sharingProfile is off when backend disabled', () => {
+	(vscode as any).__mock.reset();
+	(vscode as any).__mock.setConfig({
+		'copilotTokenTracker.backend.enabled': false,
+		'copilotTokenTracker.backend.shareWithTeam': true,
+		'copilotTokenTracker.backend.userIdentityMode': 'alias',
+	});
+	const s = getBackendSettings();
+	assert.equal(s.sharingProfile, 'off');
+});
+
+test('getBackendSettings sharingProfile is teamIdentified when shareWithTeam and non-pseudonymous', () => {
+	(vscode as any).__mock.reset();
+	(vscode as any).__mock.setConfig({
+		'copilotTokenTracker.backend.enabled': true,
+		'copilotTokenTracker.backend.shareWithTeam': true,
+		'copilotTokenTracker.backend.userIdentityMode': 'alias',
+	});
+	const s = getBackendSettings();
+	assert.equal(s.sharingProfile, 'teamIdentified');
+});
+
+test('getBackendSettings sharingProfile is teamPseudonymous when shareWithTeam and pseudonymous', () => {
+	(vscode as any).__mock.reset();
+	(vscode as any).__mock.setConfig({
+		'copilotTokenTracker.backend.enabled': true,
+		'copilotTokenTracker.backend.shareWithTeam': true,
+		'copilotTokenTracker.backend.userIdentityMode': 'pseudonymous',
+	});
+	const s = getBackendSettings();
+	assert.equal(s.sharingProfile, 'teamPseudonymous');
+});
+
+test('getBackendSettings clamps lookbackDays to minimum', () => {
+	(vscode as any).__mock.reset();
+	(vscode as any).__mock.setConfig({
+		'copilotTokenTracker.backend.lookbackDays': 0,
+	});
+	const s = getBackendSettings();
+	assert.ok(s.lookbackDays >= 1);
+});
+
+test('getBackendSettings defaults empty datasetId to "default"', () => {
+	(vscode as any).__mock.reset();
+	(vscode as any).__mock.setConfig({
+		'copilotTokenTracker.backend.datasetId': '   ',
+	});
+	const s = getBackendSettings();
+	assert.equal(s.datasetId, 'default');
 });
 
 test('isBackendConfigured checks required fields', () => {

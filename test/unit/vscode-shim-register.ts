@@ -40,8 +40,9 @@ function createConfiguration(section: string) {
 			}
 			return defaultValue as T;
 		},
-		async update(_key: string, _value: unknown, _target?: unknown): Promise<void> {
-			// No-op for tests.
+		async update(key: string, value: unknown, _target?: unknown): Promise<void> {
+			const fullKey = section ? `${section}.${normalizeGetKey(key)}` : normalizeGetKey(key);
+			state.config[fullKey] = value;
 		}
 	};
 }
@@ -132,6 +133,13 @@ function attachMock(target: any): void {
 				};
 			}
 		}
+		static file(path: string): any {
+			return {
+				fsPath: path,
+				scheme: 'file',
+				toString: () => `file://${path.replace(/\\/g, '/')}`
+			};
+		}
 		static joinPath(base: any, ...pathSegments: string[]): any {
 			const basePath = typeof base === 'string' ? base : (base?.fsPath ?? base?.toString() ?? '');
 			const joined = [basePath, ...pathSegments].join('/').replace(/\/+/g, '/');
@@ -154,7 +162,50 @@ function attachMock(target: any): void {
 	target.window.showInformationMessage = (message: string, optionsOrItem?: any, ...items: any[]) => showMessage('info', message, optionsOrItem, ...items);
 	target.window.showWarningMessage = (message: string, optionsOrItem?: any, ...items: any[]) => showMessage('warn', message, optionsOrItem, ...items);
 	target.window.showErrorMessage = (message: string, optionsOrItem?: any, ...items: any[]) => showMessage('error', message, optionsOrItem, ...items);
+	target.window.showInputBox = async (_options?: any): Promise<string | undefined> => {
+		return consumeNextPick();
+	};
+	target.window.showQuickPick = async (items: any[], _options?: any): Promise<any> => {
+		const pick = consumeNextPick();
+		if (typeof pick === 'string' && Array.isArray(items)) {
+			return items.find((i: any) => (typeof i === 'string' ? i : i?.label) === pick);
+		}
+		return undefined;
+	};
 	target.window.withProgress = async (_options: any, task: () => any): Promise<any> => await task();
+	target.window.createWebviewPanel = (_viewType: string, _title: string, _showOptions: any, _options?: any) => {
+		const listeners: Record<string, ((...args: any[]) => any)[]> = {};
+		const webviewPanel: any = {
+			webview: {
+				html: '',
+				cspSource: 'test-csp',
+				asWebviewUri: (uri: any) => uri,
+				postMessage: async (msg: any) => { webviewPanel._lastPostedMessage = msg; return true; },
+				onDidReceiveMessage: (listener: (msg: any) => any) => {
+					if (!listeners['message']) { listeners['message'] = []; }
+					listeners['message'].push(listener);
+					return { dispose: () => {} };
+				}
+			},
+			_lastPostedMessage: undefined as any,
+			_simulateMessage: async (msg: any) => {
+				for (const l of listeners['message'] ?? []) { await l(msg); }
+			},
+			reveal: () => {},
+			onDidDispose: (listener: () => any) => {
+				if (!listeners['dispose']) { listeners['dispose'] = []; }
+				listeners['dispose'].push(listener);
+				return { dispose: () => {} };
+			},
+			_simulateDispose: () => {
+				for (const l of listeners['dispose'] ?? []) { l(); }
+			},
+			dispose: () => {
+				webviewPanel._simulateDispose();
+			}
+		};
+		return webviewPanel;
+	};
 	target.window.createOutputChannel = (_name: string) => ({
 		appendLine(_line: string) {
 			// no-op
@@ -255,3 +306,8 @@ try {
 } catch {
 	// ignore
 }
+
+// Safety net: force exit after 30 s if open handles (e.g. timers from
+// imported extension code) prevent the process from exiting after tests.
+// The timer is unref()'d so it won't keep the process alive on its own.
+setTimeout(() => process.exit(process.exitCode ?? 0), 30_000).unref();

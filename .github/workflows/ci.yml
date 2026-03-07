@@ -14,8 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x, 22.x, 24.x]
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -52,6 +53,9 @@ jobs:
       
     - name: Compile tests
       run: npm run compile-tests
+
+    - name: Run Node.js unit tests
+      run: node --require ./out/test/unit/vscode-shim-register.js --test out/test/unit/*.test.js
       
     - name: Run tests
       uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1.0.1

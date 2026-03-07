@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { AzureNamedKeyCredential } from '@azure/data-tables';
 import { StorageSharedKeyCredential } from '@azure/storage-blob';
 
-import { CredentialService } from '../backend/services/credentialService';
+import { CredentialService } from '../../src/backend/services/credentialService';
 
 const makeContext = () => {
 	const store = new Map<string, string>();
@@ -94,4 +94,43 @@ test('getBackendSecretsToRedactForError falls back to empty list on failures', a
 	const svc = new CredentialService(ctx);
 	const secrets = await svc.getBackendSecretsToRedactForError(sharedKeySettings);
 	assert.deepEqual(secrets, []);
+});
+
+test('getStoredStorageSharedKey throws when context is undefined', async () => {
+	(vscode as any).__mock.reset();
+	const svc = new CredentialService(undefined as any);
+	await assert.rejects(() => svc.getStoredStorageSharedKey('sa'), /Extension context/);
+});
+
+test('clearStoredStorageSharedKey deletes the stored key', async () => {
+	(vscode as any).__mock.reset();
+	const ctx = makeContext();
+	const svc = new CredentialService(ctx);
+	await ctx.secrets.store('copilotTokenTracker.backend.storageSharedKey:sa', 'mykey');
+	// Verify it exists
+	const before = await svc.getStoredStorageSharedKey('sa');
+	assert.equal(before, 'mykey');
+	// Delete it
+	await svc.clearStoredStorageSharedKey('sa');
+	// Verify it's gone
+	const after = await svc.getStoredStorageSharedKey('sa');
+	assert.equal(after, undefined);
+});
+
+test('clearStoredStorageSharedKey throws when SecretStorage is unavailable', async () => {
+	(vscode as any).__mock.reset();
+	const svc = new CredentialService(undefined as any);
+	await assert.rejects(() => svc.clearStoredStorageSharedKey('sa'), /SecretStorage is unavailable/);
+});
+
+test('getBackendDataPlaneCredentials returns existing shared key without prompting', async () => {
+	(vscode as any).__mock.reset();
+	const ctx = makeContext();
+	await ctx.secrets.store('copilotTokenTracker.backend.storageSharedKey:sa', 'preexisting-key');
+	const svc = new CredentialService(ctx);
+	const creds = await svc.getBackendDataPlaneCredentials(sharedKeySettings);
+	assert.ok(creds);
+	assert.equal(creds?.secretsToRedact[0], 'preexisting-key');
+	assert.ok(creds?.tableCredential instanceof AzureNamedKeyCredential);
+	assert.ok(creds?.blobCredential instanceof StorageSharedKeyCredential);
 });
