@@ -286,7 +286,7 @@
     "sync-changelog:test": "node scripts/sync-changelog.js --test"
   },
   "devDependencies": {
-    "@github/copilot": "^0.0.420",
+    "@github/copilot": "^0.0.423",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.3.3",
     "@types/vscode": "1.109.0",
