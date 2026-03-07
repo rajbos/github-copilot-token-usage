@@ -1,4 +1,4 @@
-/// <reference path="../types/jsdom.d.ts" />
+/// <reference path="../../src/types/jsdom.d.ts" />
 import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';

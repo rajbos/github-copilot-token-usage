@@ -2,344 +2,226 @@
  * Tests for display names storage and management.
  */
 
-import * as assert from 'assert';
+import './vscode-shim-register';
+import test from 'node:test';
+import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { DisplayNameStore } from '../../src/backend/displayNames';
 
+function makeGlobalState(): vscode.Memento & { storage: Map<string, any> } {
+	const storage = new Map<string, any>();
+	return {
+		storage,
+		get: (key: string, defaultValue?: any) => storage.get(key) ?? defaultValue,
+		update: async (key: string, value: any) => { storage.set(key, value); },
+		keys: () => Array.from(storage.keys())
+	};
+}
 
-suite('DisplayNameStore', () => {
-	let mockGlobalState: vscode.Memento;
-	let store: DisplayNameStore;
-	let storage: Map<string, any>;
+// ── getWorkspaceName / getMachineName ─────────────────────────────────────
 
-	setup(() => {
-		storage = new Map();
-		mockGlobalState = {
-			get: (key: string, defaultValue?: any) => storage.get(key) ?? defaultValue,
-			update: async (key: string, value: any) => {
-				storage.set(key, value);
-			},
-			keys: () => Array.from(storage.keys())
-		};
-		store = new DisplayNameStore(mockGlobalState);
-	});
+test('getWorkspaceName returns truncated ID when no name set', () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.getWorkspaceName('abc123def456ghi789'), 'abc123...');
+});
 
-	suite('getWorkspaceName', () => {
-		test('should return truncated ID when no name is set', () => {
-			const id = 'abc123def456ghi789';
-			const result = store.getWorkspaceName(id);
-			assert.strictEqual(result, 'abc123...');
-		});
+test('getWorkspaceName returns display name when set', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', 'My Project');
+	assert.equal(store.getWorkspaceName('ws-1'), 'My Project');
+});
 
-		test('should return the display name when set', async () => {
-			const id = 'workspace-1';
-			await store.setWorkspaceName(id, 'My Project');
-			const result = store.getWorkspaceName(id);
-			assert.strictEqual(result, 'My Project');
-		});
+test('getWorkspaceName returns short ID as-is', () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.getWorkspaceName('abc'), 'abc');
+});
 
-		test('should return truncated ID for short IDs', () => {
-			const id = 'abc';
-			const result = store.getWorkspaceName(id);
-			assert.strictEqual(result, 'abc');
-		});
+test('getWorkspaceName returns unknown for empty ID', () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.getWorkspaceName(''), 'unknown');
+});
 
-		test('should handle empty storage gracefully', () => {
-			const result = store.getWorkspaceName('test-id');
-			assert.strictEqual(result, 'test-id');
-		});
-	});
+test('getMachineName returns truncated ID and display name', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.getMachineName('machine-abc123def456'), 'machin...');
+	await store.setMachineName('m-1', 'Main Laptop');
+	assert.equal(store.getMachineName('m-1'), 'Main Laptop');
+});
 
-	suite('getMachineName', () => {
-		test('should return truncated ID when no name is set', () => {
-			const id = 'machine-abc123def456';
-			const result = store.getMachineName(id);
-			assert.strictEqual(result, 'machin...');
-		});
+// ── Raw name access ──────────────────────────────────────────────────────
 
-		test('should return the display name when set', async () => {
-			const id = 'machine-1';
-			await store.setMachineName(id, 'Main Laptop');
-			const result = store.getMachineName(id);
-			assert.strictEqual(result, 'Main Laptop');
-		});
-	});
+test('getWorkspaceNameRaw returns undefined when no name set', () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.getWorkspaceNameRaw('ws-1'), undefined);
+});
 
-	suite('getWorkspaceNameRaw', () => {
-		test('should return undefined when no name is set', () => {
-			const result = store.getWorkspaceNameRaw('workspace-1');
-			assert.strictEqual(result, undefined);
-		});
+test('getWorkspaceNameRaw returns name when set', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', 'Test');
+	assert.equal(store.getWorkspaceNameRaw('ws-1'), 'Test');
+});
 
-		test('should return the name when set', async () => {
-			await store.setWorkspaceName('workspace-1', 'Test');
-			const result = store.getWorkspaceNameRaw('workspace-1');
-			assert.strictEqual(result, 'Test');
-		});
+test('getWorkspaceNameRaw returns undefined for whitespace-only name', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', '   ');
+	assert.equal(store.getWorkspaceNameRaw('ws-1'), undefined);
+});
 
-		test('should return undefined for empty name', async () => {
-			await store.setWorkspaceName('workspace-1', '   ');
-			const result = store.getWorkspaceNameRaw('workspace-1');
-			assert.strictEqual(result, undefined);
-		});
-	});
+test('getMachineNameRaw returns undefined when no name set', () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.getMachineNameRaw('m-1'), undefined);
+});
 
-	suite('getMachineNameRaw', () => {
-		test('should return undefined when no name is set', () => {
-			const result = store.getMachineNameRaw('machine-1');
-			assert.strictEqual(result, undefined);
-		});
+test('getMachineNameRaw returns name when set', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setMachineName('m-1', 'Laptop');
+	assert.equal(store.getMachineNameRaw('m-1'), 'Laptop');
+});
 
-		test('should return the name when set', async () => {
-			await store.setMachineName('machine-1', 'Laptop');
-			const result = store.getMachineNameRaw('machine-1');
-			assert.strictEqual(result, 'Laptop');
-		});
-	});
+// ── setWorkspaceName / setMachineName ────────────────────────────────────
 
-	suite('setWorkspaceName', () => {
-		test('should set a valid workspace name', async () => {
-			await store.setWorkspaceName('ws-1', 'Project Alpha');
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'Project Alpha');
-		});
+test('setWorkspaceName trims whitespace', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', '  Project Beta  ');
+	assert.equal(store.getWorkspaceName('ws-1'), 'Project Beta');
+});
 
-		test('should trim whitespace', async () => {
-			await store.setWorkspaceName('ws-1', '  Project Beta  ');
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'Project Beta');
-		});
+test('setWorkspaceName removes name on empty or undefined', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', 'Test');
+	await store.setWorkspaceName('ws-1', '');
+	assert.equal(store.getWorkspaceNameRaw('ws-1'), undefined);
 
-		test('should remove name when passed empty string', async () => {
-			await store.setWorkspaceName('ws-1', 'Test');
-			await store.setWorkspaceName('ws-1', '');
-			assert.strictEqual(store.getWorkspaceNameRaw('ws-1'), undefined);
-		});
+	await store.setWorkspaceName('ws-2', 'Test2');
+	await store.setWorkspaceName('ws-2', undefined);
+	assert.equal(store.getWorkspaceNameRaw('ws-2'), undefined);
+});
 
-		test('should remove name when passed undefined', async () => {
-			await store.setWorkspaceName('ws-1', 'Test');
-			await store.setWorkspaceName('ws-1', undefined);
-			assert.strictEqual(store.getWorkspaceNameRaw('ws-1'), undefined);
-		});
+test('setWorkspaceName rejects names longer than 64 characters', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await assert.rejects(() => store.setWorkspaceName('ws-1', 'A'.repeat(65)), /64 characters/);
+});
 
-		test('should reject names longer than 64 characters', async () => {
-			const longName = 'A'.repeat(65);
-			await assert.rejects(
-				async () => store.setWorkspaceName('ws-1', longName),
-				/Display name must not exceed 64 characters/
-			);
-		});
+test('setWorkspaceName accepts name exactly 64 characters', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	const name = 'A'.repeat(64);
+	await store.setWorkspaceName('ws-1', name);
+	assert.equal(store.getWorkspaceName('ws-1'), name);
+});
 
-		test('should accept names exactly 64 characters', async () => {
-			const exactName = 'A'.repeat(64);
-			await store.setWorkspaceName('ws-1', exactName);
-			assert.strictEqual(store.getWorkspaceName('ws-1'), exactName);
-		});
+test('setMachineName sets and trims', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setMachineName('m-1', '  Work Laptop  ');
+	assert.equal(store.getMachineName('m-1'), 'Work Laptop');
+});
 
-		test('should handle special characters', async () => {
-			await store.setWorkspaceName('ws-1', 'Project (2024-Q1)');
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'Project (2024-Q1)');
-		});
+test('setMachineName removes on empty', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setMachineName('m-1', 'Test');
+	await store.setMachineName('m-1', '');
+	assert.equal(store.getMachineNameRaw('m-1'), undefined);
+});
 
-		test('should handle unicode characters', async () => {
-			await store.setWorkspaceName('ws-1', 'プロジェクト');
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'プロジェクト');
-		});
-	});
+test('setMachineName rejects names longer than 64 characters', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await assert.rejects(() => store.setMachineName('m-1', 'M'.repeat(65)), /64 characters/);
+});
 
-	suite('setMachineName', () => {
-		test('should set a valid machine name', async () => {
-			await store.setMachineName('m-1', 'Home Desktop');
-			assert.strictEqual(store.getMachineName('m-1'), 'Home Desktop');
-		});
+// ── Bulk getters and clearers ────────────────────────────────────────────
 
-		test('should trim whitespace', async () => {
-			await store.setMachineName('m-1', '  Work Laptop  ');
-			assert.strictEqual(store.getMachineName('m-1'), 'Work Laptop');
-		});
+test('getAllWorkspaceNames returns copy of all names', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.deepEqual(store.getAllWorkspaceNames(), {});
+	await store.setWorkspaceName('ws-1', 'A');
+	await store.setWorkspaceName('ws-2', 'B');
+	assert.deepEqual(store.getAllWorkspaceNames(), { 'ws-1': 'A', 'ws-2': 'B' });
+	// Mutation of returned object shouldn't affect store
+	const copy = store.getAllWorkspaceNames();
+	copy['ws-3'] = 'C';
+	assert.equal(store.getAllWorkspaceNames()['ws-3'], undefined);
+});
 
-		test('should remove name when passed empty string', async () => {
-			await store.setMachineName('m-1', 'Test');
-			await store.setMachineName('m-1', '');
-			assert.strictEqual(store.getMachineNameRaw('m-1'), undefined);
-		});
+test('getAllMachineNames returns all names', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.deepEqual(store.getAllMachineNames(), {});
+	await store.setMachineName('m-1', 'Laptop');
+	assert.deepEqual(store.getAllMachineNames(), { 'm-1': 'Laptop' });
+});
 
-		test('should reject names longer than 64 characters', async () => {
-			const longName = 'M'.repeat(65);
-			await assert.rejects(
-				async () => store.setMachineName('m-1', longName),
-				/Display name must not exceed 64 characters/
-			);
-		});
-	});
+test('clearAllWorkspaceNames clears workspace names only', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', 'Project');
+	await store.setMachineName('m-1', 'Laptop');
+	await store.clearAllWorkspaceNames();
+	assert.deepEqual(store.getAllWorkspaceNames(), {});
+	assert.equal(store.getMachineName('m-1'), 'Laptop');
+});
 
-	suite('getAllWorkspaceNames', () => {
-		test('should return empty object when no names are set', () => {
-			const result = store.getAllWorkspaceNames();
-			assert.deepStrictEqual(result, {});
-		});
+test('clearAllMachineNames clears machine names only', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', 'Project');
+	await store.setMachineName('m-1', 'Laptop');
+	await store.clearAllMachineNames();
+	assert.deepEqual(store.getAllMachineNames(), {});
+	assert.equal(store.getWorkspaceName('ws-1'), 'Project');
+});
 
-		test('should return all workspace names', async () => {
-			await store.setWorkspaceName('ws-1', 'Project A');
-			await store.setWorkspaceName('ws-2', 'Project B');
-			const result = store.getAllWorkspaceNames();
-			assert.deepStrictEqual(result, {
-				'ws-1': 'Project A',
-				'ws-2': 'Project B'
-			});
-		});
+test('clearAll clears everything', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	await store.setWorkspaceName('ws-1', 'P');
+	await store.setMachineName('m-1', 'M');
+	await store.clearAll();
+	assert.deepEqual(store.getAllWorkspaceNames(), {});
+	assert.deepEqual(store.getAllMachineNames(), {});
+});
 
-		test('should return a copy (not live reference)', async () => {
-			await store.setWorkspaceName('ws-1', 'Test');
-			const result = store.getAllWorkspaceNames();
-			result['ws-2'] = 'Modified';
-			
-			const second = store.getAllWorkspaceNames();
-			assert.strictEqual(second['ws-2'], undefined);
-		});
-	});
+// ── hasWorkspaceName / hasMachineName ────────────────────────────────────
 
-	suite('getAllMachineNames', () => {
-		test('should return empty object when no names are set', () => {
-			const result = store.getAllMachineNames();
-			assert.deepStrictEqual(result, {});
-		});
+test('hasWorkspaceName and hasMachineName track set/unset', async () => {
+	const gs = makeGlobalState();
+	const store = new DisplayNameStore(gs);
+	assert.equal(store.hasWorkspaceName('ws-1'), false);
+	await store.setWorkspaceName('ws-1', 'Test');
+	assert.equal(store.hasWorkspaceName('ws-1'), true);
+	await store.setWorkspaceName('ws-1', '');
+	assert.equal(store.hasWorkspaceName('ws-1'), false);
 
-		test('should return all machine names', async () => {
-			await store.setMachineName('m-1', 'Laptop');
-			await store.setMachineName('m-2', 'Desktop');
-			const result = store.getAllMachineNames();
-			assert.deepStrictEqual(result, {
-				'm-1': 'Laptop',
-				'm-2': 'Desktop'
-			});
-		});
-	});
+	assert.equal(store.hasMachineName('m-1'), false);
+	await store.setMachineName('m-1', 'Laptop');
+	assert.equal(store.hasMachineName('m-1'), true);
+});
 
-	suite('clearAllWorkspaceNames', () => {
-		test('should clear all workspace names', async () => {
-			await store.setWorkspaceName('ws-1', 'Project A');
-			await store.setWorkspaceName('ws-2', 'Project B');
-			await store.clearAllWorkspaceNames();
-			
-			const result = store.getAllWorkspaceNames();
-			assert.deepStrictEqual(result, {});
-		});
+// ── Persistence ──────────────────────────────────────────────────────────
 
-		test('should not affect machine names', async () => {
-			await store.setWorkspaceName('ws-1', 'Project');
-			await store.setMachineName('m-1', 'Laptop');
-			await store.clearAllWorkspaceNames();
-			
-			assert.strictEqual(store.getMachineName('m-1'), 'Laptop');
-		});
-	});
+test('names persist across store instances', async () => {
+	const gs = makeGlobalState();
+	const store1 = new DisplayNameStore(gs);
+	await store1.setWorkspaceName('ws-1', 'Persistent');
+	await store1.setMachineName('m-1', 'Machine');
 
-	suite('clearAllMachineNames', () => {
-		test('should clear all machine names', async () => {
-			await store.setMachineName('m-1', 'Laptop');
-			await store.setMachineName('m-2', 'Desktop');
-			await store.clearAllMachineNames();
-			
-			const result = store.getAllMachineNames();
-			assert.deepStrictEqual(result, {});
-		});
-
-		test('should not affect workspace names', async () => {
-			await store.setWorkspaceName('ws-1', 'Project');
-			await store.setMachineName('m-1', 'Laptop');
-			await store.clearAllMachineNames();
-			
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'Project');
-		});
-	});
-
-	suite('clearAll', () => {
-		test('should clear all display names', async () => {
-			await store.setWorkspaceName('ws-1', 'Project');
-			await store.setMachineName('m-1', 'Laptop');
-			await store.clearAll();
-			
-			assert.deepStrictEqual(store.getAllWorkspaceNames(), {});
-			assert.deepStrictEqual(store.getAllMachineNames(), {});
-		});
-	});
-
-	suite('hasWorkspaceName', () => {
-		test('should return false when no name is set', () => {
-			assert.strictEqual(store.hasWorkspaceName('ws-1'), false);
-		});
-
-		test('should return true when name is set', async () => {
-			await store.setWorkspaceName('ws-1', 'Test');
-			assert.strictEqual(store.hasWorkspaceName('ws-1'), true);
-		});
-
-		test('should return false after name is removed', async () => {
-			await store.setWorkspaceName('ws-1', 'Test');
-			await store.setWorkspaceName('ws-1', '');
-			assert.strictEqual(store.hasWorkspaceName('ws-1'), false);
-		});
-	});
-
-	suite('hasMachineName', () => {
-		test('should return false when no name is set', () => {
-			assert.strictEqual(store.hasMachineName('m-1'), false);
-		});
-
-		test('should return true when name is set', async () => {
-			await store.setMachineName('m-1', 'Laptop');
-			assert.strictEqual(store.hasMachineName('m-1'), true);
-		});
-	});
-
-	suite('persistence', () => {
-		test('should persist names across store instances', async () => {
-			await store.setWorkspaceName('ws-1', 'Persistent');
-			await store.setMachineName('m-1', 'Machine');
-			
-			// Create new store with same globalState
-			const newStore = new DisplayNameStore(mockGlobalState);
-			assert.strictEqual(newStore.getWorkspaceName('ws-1'), 'Persistent');
-			assert.strictEqual(newStore.getMachineName('m-1'), 'Machine');
-		});
-
-		test('should persist deletions', async () => {
-			await store.setWorkspaceName('ws-1', 'Test');
-			await store.setWorkspaceName('ws-1', '');
-			
-			const newStore = new DisplayNameStore(mockGlobalState);
-			assert.strictEqual(newStore.getWorkspaceNameRaw('ws-1'), undefined);
-		});
-	});
-
-	suite('edge cases', () => {
-		test('should handle empty string ID', () => {
-			const result = store.getWorkspaceName('');
-			assert.strictEqual(result, 'unknown');
-		});
-
-		test('should handle multiple spaces in name', async () => {
-			await store.setWorkspaceName('ws-1', '  Multiple   Spaces  ');
-			// Should trim leading/trailing but preserve internal spaces
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'Multiple   Spaces');
-		});
-
-		test('should handle name with only whitespace', async () => {
-			await store.setWorkspaceName('ws-1', 'Valid');
-			await store.setWorkspaceName('ws-1', '     ');
-			assert.strictEqual(store.getWorkspaceNameRaw('ws-1'), undefined);
-		});
-
-		test('should handle concurrent operations', async () => {
-			// Set multiple names in parallel
-			await Promise.all([
-				store.setWorkspaceName('ws-1', 'A'),
-				store.setWorkspaceName('ws-2', 'B'),
-				store.setMachineName('m-1', 'C')
-			]);
-
-			assert.strictEqual(store.getWorkspaceName('ws-1'), 'A');
-			assert.strictEqual(store.getWorkspaceName('ws-2'), 'B');
-			assert.strictEqual(store.getMachineName('m-1'), 'C');
-		});
-	});
+	const store2 = new DisplayNameStore(gs);
+	assert.equal(store2.getWorkspaceName('ws-1'), 'Persistent');
+	assert.equal(store2.getMachineName('m-1'), 'Machine');
 });

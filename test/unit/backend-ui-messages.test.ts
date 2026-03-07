@@ -270,4 +270,12 @@ describe('ConfirmationMessages', () => {
 		const conf = ConfirmationMessages.privacyUpgrade([]);
 		assert.ok(conf.detail.includes('sharing settings are changing'));
 	});
+
+	it('should generate delete user dataset confirmation', () => {
+		const conf = ConfirmationMessages.deleteUserDataset('user123', 'ds-test');
+		assert.ok(conf.message.includes('user123'));
+		assert.ok(conf.message.includes('ds-test'));
+		assert.ok(conf.detail.includes('permanently delete'));
+		assert.equal(conf.button, 'Delete Data');
+	});
 });

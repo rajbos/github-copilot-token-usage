@@ -3,12 +3,30 @@ import * as assert from 'node:assert/strict';
 
 import {
 	BackendError,
+	BackendConfigError,
+	BackendAuthError,
+	BackendSyncError,
 	isAzurePolicyDisallowedError,
 	isStorageLocalAuthDisallowedByPolicyError,
 	redactSecretsInText,
 	safeStringifyError,
 	withErrorHandling
 } from '../../src/utils/errors';
+
+test('BackendConfigError/BackendAuthError/BackendSyncError set name and cause', () => {
+	const configErr = new BackendConfigError('config bad', new Error('cause'));
+	assert.equal(configErr.name, 'BackendConfigError');
+	assert.equal(configErr.message, 'config bad');
+	assert.ok(configErr instanceof BackendError);
+
+	const authErr = new BackendAuthError('auth bad');
+	assert.equal(authErr.name, 'BackendAuthError');
+	assert.ok(authErr instanceof BackendError);
+
+	const syncErr = new BackendSyncError('sync bad', 'original');
+	assert.equal(syncErr.name, 'BackendSyncError');
+	assert.ok(syncErr instanceof BackendError);
+});
 
 test('redactSecretsInText is no-op for empty inputs and skips blank secrets', () => {
 	assert.equal(redactSecretsInText('', ['a']), '');
