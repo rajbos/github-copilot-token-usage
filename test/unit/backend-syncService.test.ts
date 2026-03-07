@@ -904,3 +904,87 @@ test('syncToBackendStore handles ensureTableExists or validateAccess failure gra
 	} as any, true);
 	assert.ok(warns.some(m => m.includes('network error')));
 });
+
+// ── Sync lock management ─────────────────────────────────────────────────
+
+test('acquireSyncLock succeeds when no context is provided', async () => {
+	const svc = makeService({ context: undefined });
+	// With no context, acquireSyncLock should return true (allow sync)
+	const result = await (svc as any).acquireSyncLock();
+	assert.equal(result, true);
+});
+
+test('acquireSyncLock creates lock file and releaseSyncLock removes it', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const mockContext = {
+			globalStorageUri: { fsPath: dir },
+		};
+		const svc = makeService({ context: mockContext as any });
+
+		const acquired = await (svc as any).acquireSyncLock();
+		assert.equal(acquired, true);
+
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		assert.ok(fs.existsSync(lockPath));
+
+		await (svc as any).releaseSyncLock();
+		assert.ok(!fs.existsSync(lockPath));
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('acquireSyncLock returns false when lock is held by another session', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		// Write a lock file from a different session that is recent
+		fs.writeFileSync(lockPath, JSON.stringify({
+			sessionId: 'other-session',
+			timestamp: Date.now()
+		}));
+
+		const mockContext = {
+			globalStorageUri: { fsPath: dir },
+		};
+		const svc = makeService({ context: mockContext as any });
+
+		const acquired = await (svc as any).acquireSyncLock();
+		assert.equal(acquired, false);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('acquireSyncLock breaks stale lock', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		// Write a lock file that is stale (older than SYNC_LOCK_STALE_MS)
+		fs.writeFileSync(lockPath, JSON.stringify({
+			sessionId: 'old-session',
+			timestamp: Date.now() - (10 * 60 * 1000) // 10 minutes ago
+		}));
+
+		const mockContext = {
+			globalStorageUri: { fsPath: dir },
+		};
+		const svc = makeService({ context: mockContext as any });
+
+		const acquired = await (svc as any).acquireSyncLock();
+		assert.equal(acquired, true);
+
+		// Lock should be from our session now
+		const content = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+		assert.equal(content.sessionId, vscode.env.sessionId);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('releaseSyncLock does nothing when no context', async () => {
+	const svc = makeService({ context: undefined });
+	// Should not throw
+	await (svc as any).releaseSyncLock();
+});

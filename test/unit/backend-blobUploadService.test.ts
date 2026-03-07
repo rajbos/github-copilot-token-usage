@@ -174,3 +174,150 @@ test('uploadSessionFiles returns failure when getContainerClient throws', async 
 	assert.equal(result.filesUploaded, 0);
 	assert.ok(result.message.includes('failed'));
 });
+
+// ── uploadSessionFiles: authorization error handling ─────────────────────
+
+test('uploadSessionFiles stops on 403 auth error with Entra ID credential', async () => {
+	const warnings: string[] = [];
+	const logs: string[] = [];
+	const svc = new BlobUploadService((m) => logs.push(m), (m) => warnings.push(m), makeContext());
+
+	// Mock getContainerClient and uploadFile to throw 403
+	(svc as any).getContainerClient = async () => ({});
+	(svc as any).uploadFile = async () => {
+		const err: any = new Error('Forbidden');
+		err.statusCode = 403;
+		throw err;
+	};
+
+	// Entra ID credential (no accountName property)
+	const entraCredential = { getToken: async () => ({ token: 'test', expiresOnTimestamp: Date.now() + 3600000 }) };
+
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		entraCredential as any,
+		['/fake/session1.json', '/fake/session2.json'],
+		'm1',
+		'ds1'
+	);
+
+	assert.equal(result.success, false);
+	assert.ok(result.message.includes('Storage Blob Data Contributor'));
+});
+
+test('uploadSessionFiles stops on AuthorizationPermissionMismatch with shared key', async () => {
+	const warnings: string[] = [];
+	const svc = new BlobUploadService(() => {}, (m) => warnings.push(m), makeContext());
+
+	(svc as any).getContainerClient = async () => ({});
+	(svc as any).uploadFile = async () => {
+		const err: any = new Error('AuthorizationPermissionMismatch');
+		err.code = 'AuthorizationPermissionMismatch';
+		throw err;
+	};
+
+	// Shared key credential (has accountName property)
+	const sharedKeyCredential = { accountName: 'teststorage' };
+
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		sharedKeyCredential as any,
+		['/fake/session1.json'],
+		'm1',
+		'ds1'
+	);
+
+	assert.equal(result.success, false);
+	assert.ok(result.message.includes('shared key'));
+});
+
+test('uploadSessionFiles handles partial upload with some file errors', async () => {
+	const logs: string[] = [];
+	const svc = new BlobUploadService((m) => logs.push(m), () => {}, makeContext());
+
+	let callCount = 0;
+	const mockContainerClient = {
+		getBlockBlobClient: () => ({
+			upload: async () => {
+				callCount++;
+				if (callCount === 2) {
+					throw new Error('upload failed for file 2');
+				}
+			}
+		})
+	};
+	(svc as any).getContainerClient = async () => mockContainerClient;
+
+	// We need real files for fs.statSync and fs.promises.readFile inside uploadFile
+	// Instead, mock the private uploadFile method
+	let uploadCalls = 0;
+	(svc as any).uploadFile = async (_cc: any, _path: string) => {
+		uploadCalls++;
+		if (uploadCalls === 2) {
+			throw new Error('upload error on file 2');
+		}
+	};
+
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		{ getToken: async () => ({ token: 'test', expiresOnTimestamp: 0 }) } as any,
+		['/fake/a.json', '/fake/b.json', '/fake/c.json'],
+		'm1',
+		'ds1'
+	);
+
+	assert.equal(result.filesUploaded, 2);
+	assert.equal(result.success, false);
+	assert.ok(result.message.includes('2/3'));
+	// Upload status should have been saved since filesUploaded > 0
+	const status = svc.getUploadStatus('m1');
+	assert.ok(status);
+	assert.equal(status!.filesUploaded, 2);
+});
+
+test('uploadSessionFiles updates status on successful upload', async () => {
+	const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+
+	(svc as any).getContainerClient = async () => ({});
+	(svc as any).uploadFile = async () => {};
+
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		{ getToken: async () => ({ token: 't', expiresOnTimestamp: 0 }) } as any,
+		['/fake/a.json', '/fake/b.json'],
+		'm1',
+		'ds1'
+	);
+
+	assert.equal(result.success, true);
+	assert.equal(result.filesUploaded, 2);
+	assert.ok(result.message.includes('Successfully uploaded 2'));
+	const status = svc.getUploadStatus('m1');
+	assert.ok(status);
+	assert.equal(status!.filesUploaded, 2);
+});
+
+test('uploadSessionFiles does not update status when all uploads fail', async () => {
+	const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+
+	(svc as any).getContainerClient = async () => ({});
+	(svc as any).uploadFile = async () => { throw new Error('fail'); };
+
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		{ getToken: async () => ({ token: 't', expiresOnTimestamp: 0 }) } as any,
+		['/fake/a.json'],
+		'm1',
+		'ds1'
+	);
+
+	assert.equal(result.filesUploaded, 0);
+	assert.equal(result.success, false);
+	// Status should not be set since no files were uploaded
+	assert.equal(svc.getUploadStatus('m1'), undefined);
+});

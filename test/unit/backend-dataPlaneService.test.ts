@@ -329,3 +329,85 @@ test('upsertEntitiesBatch groups entities by partition key', async () => {
 	// All three were upserted
 	assert.equal(upserted.length, 3);
 });
+
+// ── upsertEntitiesBatch: retry behavior ──────────────────────────────────
+
+test('upsertEntitiesBatch throws immediately for non-retryable errors (e.g. 400)', async () => {
+	const svc = makeService();
+	const mockClient = makeMockTableClient({
+		upsertFn: async () => {
+			const err: any = new Error('Bad request');
+			err.statusCode = 400;
+			throw err;
+		},
+	});
+
+	const result = await svc.upsertEntitiesBatch(mockClient, [
+		{ partitionKey: 'pk1', rowKey: 'rk1' },
+	]);
+	assert.equal(result.successCount, 0);
+	assert.equal(result.errors.length, 1);
+	assert.equal(result.errors[0].error.message, 'Bad request');
+});
+
+test('upsertEntitiesBatch wraps non-Error throwables', async () => {
+	const svc = makeService();
+	const mockClient = makeMockTableClient({
+		upsertFn: async () => { throw 'string error'; },
+	});
+
+	const result = await svc.upsertEntitiesBatch(mockClient, [
+		{ partitionKey: 'pk1', rowKey: 'rk1' },
+	]);
+	assert.equal(result.errors.length, 1);
+	assert.ok(result.errors[0].error instanceof Error);
+	assert.ok(result.errors[0].error.message.includes('string error'));
+});
+
+// ── listAllEntitiesForRange: edge cases ──────────────────────────────────
+
+test('listAllEntitiesForRange handles entity with single-segment partitionKey', async () => {
+	const svc = makeService();
+	const mockClient = makeMockTableClient({
+		entities: [{
+			partitionKey: 'noPipe',
+			rowKey: 'gpt-4o|ws1|m1|',
+			inputTokens: 10,
+			outputTokens: 20,
+			interactions: 1,
+		}],
+	});
+
+	const result = await svc.listAllEntitiesForRange({
+		tableClient: mockClient,
+		startDayKey: '2024-06-15',
+		endDayKey: '2024-06-15',
+	});
+
+	assert.equal(result.length, 1);
+	assert.equal(result[0].datasetId, 'noPipe');
+	assert.equal(result[0].day, '');
+});
+
+test('listAllEntitiesForRange handles missing partitionKey and rowKey', async () => {
+	const svc = makeService();
+	const mockClient = makeMockTableClient({
+		entities: [{
+			partitionKey: undefined,
+			rowKey: undefined,
+			inputTokens: 10,
+			outputTokens: 20,
+			interactions: 1,
+		}],
+	});
+
+	const result = await svc.listAllEntitiesForRange({
+		tableClient: mockClient,
+		startDayKey: '2024-06-15',
+		endDayKey: '2024-06-15',
+	});
+
+	assert.equal(result.length, 1);
+	assert.equal(result[0].partitionKey, '');
+	assert.equal(result[0].rowKey, '');
+});
