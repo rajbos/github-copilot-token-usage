@@ -129,6 +129,40 @@ To check if data is available:
 [ -f ./usage-data/usage-agg-daily.json ] && echo "Aggregated data available"
 ```
 
+## DevContainer Terminal Behavior
+
+This repository uses a devcontainer (`.devcontainer/devcontainer.json`). When working inside the devcontainer, **terminal output capture is unreliable** — commands execute successfully but the `run_in_terminal` tool often returns empty or truncated output. This is a known limitation of the remote filesystem layer.
+
+### What NOT to do
+
+Do not enter retry loops trying to capture terminal output. These patterns waste turns and never converge:
+- Running commands repeatedly hoping output will appear
+- Redirecting output to `/tmp/` files and using `read_file` to read them (the remote FS often fails on newly-written temp files)
+- Spawning background terminals with `sleep && tail` to poll for results
+- Delegating to subagents to "run tests in a clean way"
+
+### What to do instead
+
+1. **Use `npm` scripts for standard operations.** The project defines scripts for common tasks:
+   - `npm run compile` — lint + build
+   - `npm run compile-tests` — compile test files to `out/`
+   - `npm run test:node` — compile + run a single test file
+   - `npm run test:coverage` — compile + run tests with coverage thresholds
+
+2. **Use `get_errors` to validate compilation.** After edits, call `get_errors` on the changed files instead of running `tsc` in the terminal. This is more reliable than parsing terminal output.
+
+3. **Run tests in small batches.** Instead of running all 25+ test files in one command, run one file at a time:
+   ```bash
+   node --require ./out/test/test-node/vscode-shim-register.js --test out/test/test-node/sessionParser.test.js
+   ```
+   Small commands are more likely to return output before the capture times out.
+
+4. **Accept a single run.** If a test command runs without returning output, do **not** re-run it. Instead, move on and note that the tests were executed but output was not captured. The user can verify locally.
+
+5. **Use `runTests` tool when available.** Prefer the dedicated test-runner tool over terminal commands for running tests, though note it may not support the Node.js built-in test runner (`node --test`).
+
+6. **Write output to the workspace (not `/tmp/`).** If you must capture output to a file, write it inside the workspace (e.g., `test-results.txt` in the repo root) where `read_file` can reliably access it. Add the file to `.gitignore` if it doesn't already match. Clean it up after reading.
+
 ## Webview Navigation Buttons
 
 To maintain a consistent, VS Code-native look across all webview panels (Details, Chart, Usage Analysis, Diagnostics), use the VS Code Webview UI Toolkit for top-level navigation buttons.
