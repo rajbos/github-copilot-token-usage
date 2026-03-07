@@ -306,3 +306,11 @@ try {
 } catch {
 	// ignore
 }
+
+// Safety net for Node < 22 which lacks --test-force-exit.
+// Without this, open handles (e.g. timers from imported extension code)
+// prevent the process from exiting after tests complete.
+const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+if (nodeMajor < 22) {
+	setTimeout(() => process.exit(process.exitCode ?? 0), 30_000).unref();
+}
