@@ -127,6 +127,8 @@
   ,"mcp_microsoft_pla_browser_install": "Playwright MCP: Browser Install"
   ,"mcp_microsoft_pla_browser_navigate": "Playwright MCP: Browser Navigate"
   ,"mcp_microsoft_pla_browser_run_code": "Playwright MCP: Browser Run Code"
+  ,"mcp_oraios_serena_activate_project": "Serena: Activate Project"
+  ,"mcp_oraios_serena_get_current_config": "Serena: Get Current Config"
   ,"bash": "Bash"
   ,"claude-code": "Claude Code"
   ,"copilot-cloud-agent": "Copilot Cloud Agent"
