@@ -387,7 +387,7 @@ interface WorkspaceCustomizationSummary {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 28; // Fix actualTokens/thinkingTokens lost by updateCacheWithSessionDetails
+	private static readonly CACHE_VERSION = 29; // Use actual token counts from CLI session.shutdown events
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -726,6 +726,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		for (const r of results) { uniq[path.normalize(r.path)] = r; }
 		return Object.values(uniq);
 	}
+	private _disposed = false;
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
@@ -1184,16 +1185,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Logging methods
 	public log(message: string): void {
+		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
 	}
 
 	private warn(message: string): void {
+		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
 	}
 
 	private error(message: string, error?: any): void {
+		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
 		if (error) {
@@ -2993,6 +2997,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// For delta-based formats, reconstruct state to extract actual usage
 				let sessionState: any = {};
 				let isDeltaBased = false;
+				// For CLI (non-delta) sessions: capture exact per-model usage from session.shutdown
+				let cliShutdownModelUsage: ModelUsage | null = null;
 
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
@@ -3034,8 +3040,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						// For non-delta formats, estimate from event text (CLI format)
 						if (!isDeltaBased) {
-							// Handle Copilot CLI format
-							if (event.type === 'user.message' && event.data?.content) {
+							// Copilot CLI: session.shutdown has exact per-model token totals
+							if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
+								cliShutdownModelUsage = {};
+								for (const [modelName, metrics] of Object.entries(event.data.modelMetrics) as [string, any][]) {
+									const usage = metrics?.usage;
+									if (usage) {
+										cliShutdownModelUsage[modelName] = {
+											inputTokens: typeof usage.inputTokens === 'number' ? usage.inputTokens : 0,
+											outputTokens: typeof usage.outputTokens === 'number' ? usage.outputTokens : 0,
+										};
+									}
+								}
+							} else if (event.type === 'user.message' && event.data?.content) {
 								modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
 							} else if (event.type === 'assistant.message' && event.data?.content) {
 								modelUsage[model].outputTokens += this.estimateTokensFromText(event.data.content, model);
@@ -3047,6 +3064,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					} catch (e) {
 						// Skip malformed lines
 					}
+				}
+
+				// If CLI session.shutdown provided exact per-model data, use it instead of estimates
+				if (!isDeltaBased && cliShutdownModelUsage) {
+					return cliShutdownModelUsage;
 				}
 
 				// For delta-based formats, extract actual usage from reconstructed state
@@ -6154,6 +6176,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		let sessionState: any = {};
 		let isDeltaBased = false;
 		let parseFailedLines = 0;
+		// For CLI (non-delta) format: accumulate actual token totals from session.shutdown
+		let cliActualTokens = 0;
 
 		for (const line of lines) {
 			if (!line.trim()) { continue; }
@@ -6165,6 +6189,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (typeof event.kind === 'number') {
 					isDeltaBased = true;
 					sessionState = this.applyDelta(sessionState, event);
+				}
+
+				// Copilot CLI: session.shutdown contains exact token totals per model
+				if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
+					for (const metrics of Object.values(event.data.modelMetrics) as any[]) {
+						const usage = metrics?.usage;
+						if (usage) {
+							cliActualTokens += (typeof usage.inputTokens === 'number' ? usage.inputTokens : 0)
+								+ (typeof usage.outputTokens === 'number' ? usage.outputTokens : 0);
+						}
+					}
 				}
 
 				// Handle Copilot CLI event types
@@ -6251,7 +6286,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
-		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: totalActualTokens };
+		// If CLI session.shutdown provided actual totals, use them; otherwise fall back to per-request delta totals
+		const finalActualTokens = !isDeltaBased && cliActualTokens > 0 ? cliActualTokens : totalActualTokens;
+		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens };
 	}
 
 	/**
@@ -11014,6 +11051,7 @@ ${hashtag}`;
       this.diagnosticsPanel.dispose();
     }
     this.statusBarItem.dispose();
+    this._disposed = true;
     this.outputChannel.dispose();
   }
 }
