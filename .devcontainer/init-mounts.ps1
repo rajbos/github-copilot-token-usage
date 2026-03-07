@@ -42,7 +42,8 @@ if ($launchedFrom -eq "Unknown") {
     Write-Host "VS Code edition (fallback detection): $launchedFrom"
 }
 
-$activePath = Join-Path $env:APPDATA (if ($launchedFrom -match 'Insiders') { "Code - Insiders\User" } else { "Code\User" })
+$activeSubPath = if ($launchedFrom -match 'Insiders') { "Code - Insiders\User" } else { "Code\User" }
+$activePath = Join-Path $env:APPDATA $activeSubPath
 Write-Host "Active VS Code session data: $activePath"
 
 # ── Ensure both mount source directories exist ───────────────────────────────
