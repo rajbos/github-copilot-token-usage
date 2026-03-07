@@ -35,6 +35,21 @@ function makeService(depsOverrides?: Partial<SyncServiceDeps>): SyncService {
 }
 
 /**
+ * Create a SyncService with custom credential/data-plane/blob services for integration-level tests.
+ */
+function makeServiceWithServices(
+	depsOverrides?: Partial<SyncServiceDeps>,
+	credSvcOverride?: any,
+	dataSvcOverride?: any,
+	blobSvcOverride?: any
+): SyncService {
+	const deps = makeDeps(depsOverrides);
+	const credSvc = credSvcOverride ?? new CredentialService(undefined as any);
+	const dataSvc = dataSvcOverride ?? new DataPlaneService(BackendUtility, () => {}, async () => []);
+	return new SyncService(deps, credSvc, dataSvc, blobSvcOverride ?? undefined, BackendUtility);
+}
+
+/**
  * Helper to create a temp file with given content.
  * Returns { filePath, cleanup }.
  */
@@ -708,4 +723,184 @@ test('computeDailyRollupsFromLocalSessions handles malformed JSON gracefully', a
 test('getSyncQueue returns resolved promise initially', async () => {
 	const svc = makeService();
 	await svc.getSyncQueue(); // Should not throw
+});
+
+// ── syncToBackendStore: credential and data-plane flow ───────────────────
+
+test('syncToBackendStore skips when credentials are not available', async () => {
+	const logs: string[] = [];
+	const warns: string[] = [];
+	const svc = makeServiceWithServices(
+		{ log: (m) => logs.push(m), warn: (m) => warns.push(m) },
+		{
+			getBackendDataPlaneCredentials: async () => undefined,
+			getBackendSecretsToRedactForError: async () => [],
+		}
+	);
+	await svc.syncToBackendStore(true, {
+		enabled: true,
+		sharingProfile: 'soloFull',
+		shareWorkspaceMachineNames: false,
+		storageAccount: 'sa1',
+		aggTable: 'usageAgg',
+		datasetId: 'ds1',
+		lookbackDays: 7,
+	} as any, true);
+	assert.ok(warns.some(m => m.includes('credentials not available')));
+});
+
+test('syncToBackendStore completes full sync flow with mocked services', async () => {
+	const now = new Date();
+	const timestamp = now.getTime() - 60000;
+	const sessionContent = JSON.stringify({
+		requests: [{
+			timestamp,
+			message: { parts: [{ text: 'hello world' }] },
+			response: [{ value: 'response text' }]
+		}]
+	});
+	const tmpFile = createTempFile(sessionContent);
+	try {
+		const logs: string[] = [];
+		let upsertedEntities: any[] = [];
+		const svc = makeServiceWithServices(
+			{
+				log: (m) => logs.push(m),
+				warn: () => {},
+				getCopilotSessionFiles: async () => [tmpFile.filePath],
+				estimateTokensFromText: (text: string) => text.length,
+				getModelFromRequest: () => 'gpt-4o',
+				statSessionFile: async () => ({ mtimeMs: Date.now(), size: 100 } as any),
+			},
+			{
+				getBackendDataPlaneCredentials: async () => ({
+					tableCredential: { getToken: async () => ({ token: 'test', expiresOnTimestamp: Date.now() + 3600000 }) },
+					blobCredential: {},
+					secretsToRedact: [],
+				}),
+				getBackendSecretsToRedactForError: async () => [],
+			},
+			{
+				ensureTableExists: async () => {},
+				validateAccess: async () => {},
+				createTableClient: () => ({
+					async *listEntities() {},
+					upsertEntity: async (entity: any) => { upsertedEntities.push(entity); },
+					deleteEntity: async () => ({}),
+				}),
+				upsertEntitiesBatch: async (_tc: any, entities: any[]) => {
+					upsertedEntities = entities;
+					return { successCount: entities.length, errors: [] };
+				},
+				getStorageBlobEndpoint: () => 'https://sa1.blob.core.windows.net',
+			}
+		);
+		await svc.syncToBackendStore(true, {
+			enabled: true,
+			sharingProfile: 'soloFull',
+			shareWorkspaceMachineNames: false,
+			storageAccount: 'sa1',
+			aggTable: 'usageAgg',
+			datasetId: 'ds1',
+			lookbackDays: 7,
+			blobUploadEnabled: false,
+		} as any, true);
+		assert.ok(logs.some(m => m.includes('completed')));
+		assert.ok(upsertedEntities.length > 0);
+	} finally {
+		tmpFile.cleanup();
+	}
+});
+
+test('syncToBackendStore logs warning when upsertEntitiesBatch has errors', async () => {
+	const now = new Date();
+	const timestamp = now.getTime() - 60000;
+	const sessionContent = JSON.stringify({
+		requests: [{
+			timestamp,
+			message: { parts: [{ text: 'hello' }] },
+			response: [{ value: 'world' }]
+		}]
+	});
+	const tmpFile = createTempFile(sessionContent);
+	try {
+		const warns: string[] = [];
+		const svc = makeServiceWithServices(
+			{
+				log: () => {},
+				warn: (m) => warns.push(m),
+				getCopilotSessionFiles: async () => [tmpFile.filePath],
+				estimateTokensFromText: (text: string) => text.length,
+				getModelFromRequest: () => 'gpt-4o',
+				statSessionFile: async () => ({ mtimeMs: Date.now(), size: 100 } as any),
+			},
+			{
+				getBackendDataPlaneCredentials: async () => ({
+					tableCredential: {},
+					blobCredential: {},
+					secretsToRedact: [],
+				}),
+				getBackendSecretsToRedactForError: async () => [],
+			},
+			{
+				ensureTableExists: async () => {},
+				validateAccess: async () => {},
+				createTableClient: () => ({}),
+				upsertEntitiesBatch: async (_tc: any, entities: any[]) => ({
+					successCount: 0,
+					errors: entities.map((e: any) => ({ entity: e, error: new Error('write failed') })),
+				}),
+				getStorageBlobEndpoint: () => 'https://sa.blob.core.windows.net',
+			}
+		);
+		await svc.syncToBackendStore(true, {
+			enabled: true,
+			sharingProfile: 'soloFull',
+			shareWorkspaceMachineNames: false,
+			storageAccount: 'sa1',
+			aggTable: 'usageAgg',
+			datasetId: 'ds1',
+			lookbackDays: 7,
+			blobUploadEnabled: false,
+		} as any, true);
+		assert.ok(warns.some(m => m.includes('failed')));
+	} finally {
+		tmpFile.cleanup();
+	}
+});
+
+test('syncToBackendStore handles ensureTableExists or validateAccess failure gracefully', async () => {
+	const warns: string[] = [];
+	const svc = makeServiceWithServices(
+		{
+			log: () => {},
+			warn: (m) => warns.push(m),
+		},
+		{
+			getBackendDataPlaneCredentials: async () => ({
+				tableCredential: {},
+				blobCredential: {},
+				secretsToRedact: [],
+			}),
+			getBackendSecretsToRedactForError: async () => [],
+		},
+		{
+			ensureTableExists: async () => { throw new Error('network error'); },
+			validateAccess: async () => {},
+			createTableClient: () => ({}),
+			upsertEntitiesBatch: async () => ({ successCount: 0, errors: [] }),
+			getStorageBlobEndpoint: () => 'https://sa.blob.core.windows.net',
+		}
+	);
+	await svc.syncToBackendStore(true, {
+		enabled: true,
+		sharingProfile: 'soloFull',
+		shareWorkspaceMachineNames: false,
+		storageAccount: 'sa1',
+		aggTable: 'usageAgg',
+		datasetId: 'ds1',
+		lookbackDays: 7,
+		blobUploadEnabled: false,
+	} as any, true);
+	assert.ok(warns.some(m => m.includes('network error')));
 });

@@ -119,3 +119,58 @@ test('constructor handles missing context gracefully', () => {
 	const svc = new BlobUploadService(() => {}, () => {}, undefined as any);
 	assert.equal(svc.getUploadStatus('m1'), undefined);
 });
+
+// ── uploadSessionFiles ───────────────────────────────────────────────────
+
+test('uploadSessionFiles returns disabled message when not enabled', async () => {
+	const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		{ ...enabledSettings, enabled: false },
+		{} as any,
+		['/fake/session.json'],
+		'm1',
+		'ds1'
+	);
+	assert.equal(result.success, false);
+	assert.equal(result.filesUploaded, 0);
+	assert.ok(result.message.includes('disabled'));
+});
+
+test('uploadSessionFiles skips upload when within frequency window', async () => {
+	const svc = new BlobUploadService(() => {}, () => {}, makeContext());
+	// Set a recent upload so shouldUpload returns false
+	(svc as any).uploadStatus.set('m1', {
+		lastUploadTime: Date.now() - (1000 * 60 * 30), // 30 min ago
+		filesUploaded: 5
+	});
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		{} as any,
+		['/fake/session.json'],
+		'm1',
+		'ds1'
+	);
+	assert.equal(result.success, true);
+	assert.equal(result.filesUploaded, 0);
+	assert.ok(result.message.includes('skipped'));
+});
+
+test('uploadSessionFiles returns failure when getContainerClient throws', async () => {
+	const warnings: string[] = [];
+	const svc = new BlobUploadService(() => {}, (m) => warnings.push(m), makeContext());
+	// Force the containerClient creation to fail
+	const badCredential = {} as any; // Will fail when BlobServiceClient tries to use it
+	const result = await svc.uploadSessionFiles(
+		'teststorage',
+		enabledSettings,
+		badCredential,
+		['/fake/session.json'],
+		'm1',
+		'ds1'
+	);
+	assert.equal(result.success, false);
+	assert.equal(result.filesUploaded, 0);
+	assert.ok(result.message.includes('failed'));
+});
