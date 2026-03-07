@@ -55,7 +55,13 @@ jobs:
       run: npm run compile-tests
 
     - name: Run Node.js unit tests
-      run: node --require ./out/test/unit/vscode-shim-register.js --test out/test/unit/*.test.js
+      timeout-minutes: 5
+      run: |
+        FORCE_EXIT=""
+        if node -e "process.exit(process.versions.node.split('.')[0] >= 22 ? 0 : 1)"; then
+          FORCE_EXIT="--test-force-exit"
+        fi
+        node --require ./out/test/unit/vscode-shim-register.js --test $FORCE_EXIT out/test/unit/*.test.js
       
     - name: Run tests
       uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1.0.1
