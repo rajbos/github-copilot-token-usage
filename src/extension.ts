@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as childProcess from 'child_process';
-import initSqlJs from 'sql.js';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
@@ -15,375 +14,96 @@ import * as packageJson from '../package.json';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { ConfirmationMessages } from "./backend/ui/messages";
 
-interface TokenUsageStats {
-  todayTokens: number;
-  monthTokens: number;
-  lastUpdated: Date;
-}
-
-interface ModelUsage {
-  [modelName: string]: {
-    inputTokens: number;
-    outputTokens: number;
-  };
-}
-
-interface ModelPricing {
-  inputCostPerMillion: number;
-  outputCostPerMillion: number;
-  category?: string;
-  tier?: "standard" | "premium" | "unknown";
-  multiplier?: number;
-  displayNames?: string[];
-}
-
-interface EditorUsage {
-  [editorType: string]: {
-    tokens: number;
-    sessions: number;
-  };
-}
-
-interface RepositoryUsage {
-  [repository: string]: {
-    tokens: number;
-    sessions: number;
-  };
-}
-
-interface PeriodStats {
-  tokens: number;
-  thinkingTokens: number;
-  estimatedTokens: number; // Text-based estimate (user messages + responses only)
-  actualTokens: number; // Actual LLM API-reported tokens (0 when unavailable)
-  sessions: number;
-  avgInteractionsPerSession: number;
-  avgTokensPerSession: number;
-  modelUsage: ModelUsage;
-  editorUsage: EditorUsage;
-  co2: number;
-  treesEquivalent: number;
-  waterUsage: number;
-  estimatedCost: number;
-}
-
-interface DetailedStats {
-  today: PeriodStats;
-  month: PeriodStats;
-  lastMonth: PeriodStats;
-  last30Days: PeriodStats;
-  lastUpdated: Date;
-}
-
-interface DailyTokenStats {
-  date: string; // YYYY-MM-DD format
-  tokens: number;
-  sessions: number;
-  interactions: number;
-  modelUsage: ModelUsage;
-  editorUsage: EditorUsage;
-  repositoryUsage: RepositoryUsage;
-}
-
-/** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
-interface ChartDataPayload {
-  labels: string[];
-  tokensData: number[];
-  sessionsData: number[];
-  modelDatasets: object[];
-  editorDatasets: object[];
-  editorTotalsMap: Record<string, number>;
-  repositoryDatasets: object[];
-  repositoryTotalsMap: Record<string, number>;
-  dailyCount: number;
-  totalTokens: number;
-  avgTokensPerDay: number;
-  totalSessions: number;
-  lastUpdated: string;
-  backendConfigured: boolean;
-}
-
-interface SessionFileCache {
-  tokens: number;
-  interactions: number;
-  modelUsage: ModelUsage;
-  mtime: number; // file modification time as timestamp
-  size?: number; // file size in bytes (optional for backward compatibility)
-  usageAnalysis?: SessionUsageAnalysis; // New analysis data
-  firstInteraction?: string | null; // ISO timestamp of first interaction
-  lastInteraction?: string | null; // ISO timestamp of last interaction
-  title?: string; // Session title (customTitle from session file)
-  repository?: string; // Git remote origin URL for the session's workspace
-  workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
-  thinkingTokens?: number; // Estimated thinking/reasoning tokens
-  actualTokens?: number; // Actual token count from LLM API usage data (when available)
-}
-
-// Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)
-interface CustomizationFileEntry {
-	path: string;
-	relativePath: string;
-	type: string;
-	icon: string;
-	label: string;
-	name: string;
-	lastModified: string | null;
-	isStale: boolean;
-	category?: 'copilot' | 'non-copilot';
-}
-
-// New interfaces for usage analysis
-interface SessionUsageAnalysis {
-  toolCalls: ToolCallUsage;
-  modeUsage: ModeUsage;
-  contextReferences: ContextReferenceUsage;
-  mcpTools: McpToolUsage;
-  modelSwitching: {
-    uniqueModels: string[];
-    modelCount: number;
-    switchCount: number;
-    tiers: { standard: string[]; premium: string[]; unknown: string[] };
-    hasMixedTiers: boolean;
-    standardRequests: number;
-    premiumRequests: number;
-    unknownRequests: number;
-    totalRequests: number;
-  };
-  editScope?: EditScopeUsage;
-  applyUsage?: ApplyButtonUsage;
-  sessionDuration?: SessionDurationData;
-  conversationPatterns?: ConversationPatterns;
-  agentTypes?: AgentTypeUsage;
-}
-
-interface ToolCallUsage {
-  total: number;
-  byTool: { [toolName: string]: number };
-}
-
-interface ModeUsage {
-  ask: number; // Regular chat mode
-  edit: number; // Edit mode interactions
-  agent: number; // Agent mode interactions (standard agent mode)
-  plan: number; // Plan mode interactions (built-in plan agent)
-  customAgent: number; // Custom agent mode interactions (.agent.md files)
-}
-
-interface ContextReferenceUsage {
-  file: number; // #file references
-  selection: number; // #selection references
-  implicitSelection: number; // Implicit selections via inputState.selections
-  symbol: number; // #symbol references
-  codebase: number; // #codebase references
-  workspace: number; // @workspace references
-  terminal: number; // @terminal references
-  vscode: number; // @vscode references
-  terminalLastCommand: number; // #terminalLastCommand references
-  terminalSelection: number; // #terminalSelection references
-  clipboard: number; // #clipboard references
-  changes: number; // #changes references
-  outputPanel: number; // #outputPanel references
-  problemsPanel: number; // #problemsPanel references
-  // contentReferences tracking from session logs
-  byKind: { [kind: string]: number }; // Count by reference kind
-  copilotInstructions: number; // .github/copilot-instructions.md
-  agentsMd: number; // agents.md in repo root
-  byPath: { [path: string]: number }; // Count by unique file path
-}
-
-interface McpToolUsage {
-  total: number;
-  byServer: { [serverName: string]: number };
-  byTool: { [toolName: string]: number };
-}
-
-interface EditScopeUsage {
-  singleFileEdits: number; // Edit sessions touching 1 file
-  multiFileEdits: number; // Edit sessions touching 2+ files
-  totalEditedFiles: number; // Total unique files edited
-  avgFilesPerSession: number; // Average files per edit session
-}
-
-interface ApplyButtonUsage {
-  totalApplies: number; // Total Apply button uses
-  totalCodeBlocks: number; // Total code blocks shown
-  applyRate: number; // % of code blocks applied
-}
-
-interface SessionDurationData {
-  totalDurationMs: number; // Total session time
-  avgDurationMs: number; // Average session duration
-  avgFirstProgressMs: number; // Average time to first response
-  avgTotalElapsedMs: number; // Average total request time
-  avgWaitTimeMs: number; // Average user wait time between interactions
-}
-
-interface ConversationPatterns {
-  multiTurnSessions: number; // Sessions with >1 request
-  singleTurnSessions: number; // Sessions with 1 request
-  avgTurnsPerSession: number; // Average requests per session
-  maxTurnsInSession: number; // Longest conversation
-}
-
-interface AgentTypeUsage {
-  editsAgent: number; // github.copilot.editsAgent usage
-  defaultAgent: number; // github.copilot.default usage
-  workspaceAgent: number; // github.copilot.workspace usage
-  other: number; // Other agents
-}
-
-interface ModelSwitchingAnalysis {
-  modelsPerSession: number[]; // Array of unique model counts per session
-  totalSessions: number;
-  averageModelsPerSession: number;
-  maxModelsPerSession: number;
-  minModelsPerSession: number;
-  switchingFrequency: number; // % of sessions with >1 model
-  standardModels: string[]; // Unique standard models used
-  premiumModels: string[]; // Unique premium models used
-  unknownModels: string[]; // Unique models with unknown tier
-  mixedTierSessions: number; // Sessions using both standard and premium
-  standardRequests: number; // Count of requests using standard models
-  premiumRequests: number; // Count of requests using premium models
-  unknownRequests: number; // Count of requests using unknown tier models
-  totalRequests: number; // Total requests across all tiers
-}
-
-interface MissedPotentialWorkspace {
-	workspacePath: string;
-	workspaceName: string;
-	sessionCount: number;
-	interactionCount: number;
-	nonCopilotFiles: CustomizationFileEntry[];
-}
-
-interface MissedPotentialWorkspace {
-	workspacePath: string;
-	workspaceName: string;
-	sessionCount: number;
-	interactionCount: number;
-	nonCopilotFiles: CustomizationFileEntry[];
-}
-
-interface UsageAnalysisStats {
-	today: UsageAnalysisPeriod;
-	last30Days: UsageAnalysisPeriod;
-	month: UsageAnalysisPeriod;
-	locale?: string;
-	lastUpdated: Date;
-	customizationMatrix?: WorkspaceCustomizationMatrix;
-	missedPotential?: MissedPotentialWorkspace[];
-}
-
-/** Matrix types used for Usage Analysis customization matrix */
-type CustomizationTypeStatus = "✅" | "⚠️" | "❌";
-
-interface WorkspaceCustomizationRow {
-  workspacePath: string;
-  workspaceName: string;
-  sessionCount: number;
-  interactionCount: number;
-  typeStatuses: { [typeId: string]: CustomizationTypeStatus };
-}
-
-interface WorkspaceCustomizationMatrix {
-  customizationTypes: Array<{ id: string; icon: string; label: string }>;
-  workspaces: WorkspaceCustomizationRow[];
-  totalWorkspaces: number;
-  workspacesWithIssues: number;
-}
-
-interface UsageAnalysisPeriod {
-  sessions: number;
-  toolCalls: ToolCallUsage;
-  modeUsage: ModeUsage;
-  contextReferences: ContextReferenceUsage;
-  mcpTools: McpToolUsage;
-  modelSwitching: ModelSwitchingAnalysis;
-  repositories: string[]; // Unique repositories worked in during this period
-  repositoriesWithCustomization: string[]; // Repos with copilot-instructions.md or agents.md
-  editScope: EditScopeUsage;
-  applyUsage: ApplyButtonUsage;
-  sessionDuration: SessionDurationData;
-  conversationPatterns: ConversationPatterns;
-  agentTypes: AgentTypeUsage;
-}
-
-// Detailed session file information for diagnostics view
-interface SessionFileDetails {
-  file: string;
-  size: number;
-  modified: string;
-  interactions: number;
-  contextReferences: ContextReferenceUsage;
-  firstInteraction: string | null;
-  lastInteraction: string | null;
-  editorSource: string; // 'vscode', 'vscode-insiders', 'cursor', etc.
-  editorRoot?: string; // top-level editor root path (for display in diagnostics)
-  editorName?: string; // friendly editor name (e.g., 'VS Code')
-  title?: string; // session title (customTitle from session file)
-  repository?: string; // Git remote origin URL for the session's workspace
-}
-
-// Prompt token detail from actual LLM usage data
-interface PromptTokenDetail {
-  category: string;
-  label: string;
-  percentageOfPrompt: number;
-}
-
-// Actual usage data from the LLM API (when available in JSONL)
-interface ActualUsage {
-  completionTokens: number;
-  promptTokens: number;
-  promptTokenDetails?: PromptTokenDetail[];
-  details?: string; // e.g. "Claude Opus 4.5 • 3x"
-}
-
-// Chat turn information for log viewer
-interface ChatTurn {
-  turnNumber: number;
-  timestamp: string | null;
-  mode: "ask" | "edit" | "agent" | "plan" | "customAgent";
-  userMessage: string;
-  assistantResponse: string;
-  model: string | null;
-  toolCalls: { toolName: string; arguments?: string; result?: string }[];
-  contextReferences: ContextReferenceUsage;
-  mcpTools: { server: string; tool: string }[];
-  inputTokensEstimate: number;
-  outputTokensEstimate: number;
-  thinkingTokensEstimate: number;
-  actualUsage?: ActualUsage;
-}
-
-// Full session log data for the log viewer
-interface SessionLogData {
-  file: string;
-  title: string | null;
-  editorSource: string;
-  editorName: string;
-  size: number;
-  modified: string;
-  interactions: number;
-  contextReferences: ContextReferenceUsage;
-  firstInteraction: string | null;
-  lastInteraction: string | null;
-  turns: ChatTurn[];
-  usageAnalysis?: SessionUsageAnalysis;
-}
-
-// Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)
-interface WorkspaceCustomizationSummary {
-  workspaces: {
-    [workspacePath: string]: {
-      name: string;
-      files: CustomizationFileEntry[];
-    };
-  };
-  totalFiles: number;
-  staleFiles: number;
-}
+import type {
+  TokenUsageStats,
+  ModelUsage,
+  ModelPricing,
+  EditorUsage,
+  RepositoryUsage,
+  PeriodStats,
+  DetailedStats,
+  DailyTokenStats,
+  ChartDataPayload,
+  SessionFileCache,
+  CustomizationFileEntry,
+  SessionUsageAnalysis,
+  ToolCallUsage,
+  ModeUsage,
+  ContextReferenceUsage,
+  McpToolUsage,
+  EditScopeUsage,
+  ApplyButtonUsage,
+  SessionDurationData,
+  ConversationPatterns,
+  AgentTypeUsage,
+  ModelSwitchingAnalysis,
+  MissedPotentialWorkspace,
+  UsageAnalysisStats,
+  CustomizationTypeStatus,
+  WorkspaceCustomizationRow,
+  WorkspaceCustomizationMatrix,
+  UsageAnalysisPeriod,
+  SessionFileDetails,
+  PromptTokenDetail,
+  ActualUsage,
+  ChatTurn,
+  SessionLogData,
+  WorkspaceCustomizationSummary
+} from './types';
+import { OpenCodeDataAccess } from './opencode';
+import {
+  estimateTokensFromText as _estimateTokensFromText,
+  estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
+  extractPerRequestUsageFromRawLines as _extractPerRequestUsageFromRawLines,
+  getModelFromRequest as _getModelFromRequest,
+  isJsonlContent as _isJsonlContent,
+  isUuidPointerFile as _isUuidPointerFile,
+  applyDelta as _applyDelta,
+  getModelTier as _getModelTier,
+  calculateEstimatedCost as _calculateEstimatedCost,
+  createEmptyContextRefs as _createEmptyContextRefs,
+  getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
+} from './tokenEstimation';
+import { SessionDiscovery } from './sessionDiscovery';
+import { CacheManager } from './cacheManager';
+import {
+  mergeUsageAnalysis as _mergeUsageAnalysis,
+  analyzeContextReferences as _analyzeContextReferences,
+  analyzeContentReferences as _analyzeContentReferences,
+  analyzeVariableData as _analyzeVariableData,
+  deriveConversationPatterns as _deriveConversationPatterns,
+  analyzeRequestContext as _analyzeRequestContext,
+  calculateModelSwitching as _calculateModelSwitching,
+  trackEnhancedMetrics as _trackEnhancedMetrics,
+  analyzeSessionUsage as _analyzeSessionUsage,
+  getModelUsageFromSession as _getModelUsageFromSession,
+  type UsageAnalysisDeps,
+} from './usageAnalysis';
+import {
+  getFluencyLevelData as _getFluencyLevelData,
+  calculateFluencyScoreForTeamMember as _calculateFluencyScoreForTeamMember,
+  calculateMaturityScores as _calculateMaturityScores,
+} from './maturityScoring';
+import {
+  parseWorkspaceStorageJsonFile as _parseWorkspaceStorageJsonFile,
+  extractWorkspaceIdFromSessionPath as _extractWorkspaceIdFromSessionPath,
+  resolveWorkspaceFolderFromSessionPath as _resolveWorkspaceFolderFromSessionPath,
+  globToRegExp as _globToRegExp,
+  resolveExactWorkspacePath as _resolveExactWorkspacePath,
+  scanWorkspaceCustomizationFiles as _scanWorkspaceCustomizationFiles,
+  getRepositoryUrl as _getRepositoryUrl,
+  getModeType as _getModeType,
+  extractCustomAgentName as _extractCustomAgentName,
+  getEditorTypeFromPath as _getEditorTypeFromPath,
+  getEditorNameFromRoot as _getEditorNameFromRoot,
+  getRepoDisplayName as _getRepoDisplayName,
+  detectEditorSource as _detectEditorSource,
+  parseGitRemoteUrl as _parseGitRemoteUrl,
+  extractRepositoryFromContentReferences as _extractRepositoryFromContentReferences,
+  isMcpTool as _isMcpTool,
+  normalizeMcpToolName as _normalizeMcpToolName,
+  extractMcpServerName as _extractMcpServerName,
+} from './workspaceHelpers';
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
@@ -399,14 +119,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Cache of the last diagnostic report text for copy/issue operations
 	private lastDiagnosticReport: string = '';
 	private logViewerPanel?: vscode.WebviewPanel;
+	private openCode: OpenCodeDataAccess;
+	private cacheManager: CacheManager;
+
+	private get usageAnalysisDeps(): UsageAnalysisDeps {
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+	}
+	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 	private readonly context: vscode.ExtensionContext;
 
-	// Helper method to get total tokens from ModelUsage
-	private getTotalTokensFromModelUsage(modelUsage: ModelUsage): number {
-		return Object.values(modelUsage).reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0);
-	}
 
 	/**
 	 * Resolve the workspace folder full path from a session file path.
@@ -414,318 +137,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Synchronous by design to keep the analysis flow simple and cached.
 	 */
 	// Helper: read a workspaceStorage JSON file and extract a candidate folder path from configured keys
-	private parseWorkspaceStorageJsonFile(jsonPath: string, candidateKeys: string[]): string | undefined {
-		try {
-			const raw = fs.readFileSync(jsonPath, 'utf8');
-			const obj = JSON.parse(raw);
-			for (const key of candidateKeys) {
-				const candidate = obj[key];
-				if (typeof candidate !== 'string') { continue; }
-				const pathCandidate = candidate.replace(/^file:\/\//, '');
-				// Prefer vscode.Uri.parse -> fsPath when possible
-				try {
-					const uri = vscode.Uri.parse(candidate);
-					if (uri.fsPath && uri.fsPath.length > 0) {
-						return uri.fsPath;
-					}
-				} catch { }
-				try {
-					return decodeURIComponent(pathCandidate);
-				} catch {
-					return pathCandidate;
-				}
-			}
-		} catch {
-			// ignore parse/read errors
-		}
-		return undefined;
-	}
 
 	/**
 	 * Extract workspace ID from a session file path, if it's workspace-scoped.
 	 * Returns the workspace ID or undefined if not a workspace-scoped session.
 	 */
-	private extractWorkspaceIdFromSessionPath(sessionFilePath: string): string | undefined {
-		try {
-			const normalized = sessionFilePath.replace(/\\/g, '/');
-			const parts = normalized.split('/').filter(p => p.length > 0);
-			const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
-			if (idx === -1 || idx + 1 >= parts.length) {
-				return undefined; // Not a workspace-scoped session file
-			}
-			return parts[idx + 1];
-		} catch {
-			return undefined;
-		}
-	}
 
-	private resolveWorkspaceFolderFromSessionPath(sessionFilePath: string): string | undefined {
-		try {
-			// Normalize and split path into segments
-			const normalized = sessionFilePath.replace(/\\/g, '/');
-			const parts = normalized.split('/').filter(p => p.length > 0);
-			const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
-			if (idx === -1 || idx + 1 >= parts.length) {
-				return undefined; // Not a workspace-scoped session file
-			}
-
-			const workspaceId = parts[idx + 1];
-			// Return cached value if present
-			if (this._workspaceIdToFolderCache.has(workspaceId)) {
-				return this._workspaceIdToFolderCache.get(workspaceId);
-			}
-
-			// Construct the workspaceStorage folder path by slicing the original normalized path
-			// This preserves absolute-root semantics on both Windows and Unix.
-			const workspaceSegment = `workspaceStorage/${workspaceId}`;
-			const lowerNormalized = normalized.toLowerCase();
-			const segmentIndex = lowerNormalized.indexOf(workspaceSegment.toLowerCase());
-			if (segmentIndex === -1) {
-				// Should not happen if parts detection succeeded, but guard just in case
-				this._workspaceIdToFolderCache.set(workspaceId, undefined);
-				return undefined;
-			}
-			const folderPathNormalized = normalized.substring(0, segmentIndex + workspaceSegment.length);
-			const workspaceStorageFolder = path.normalize(folderPathNormalized);
-
-			const workspaceJsonPath = path.join(workspaceStorageFolder, 'workspace.json');
-			const metaJsonPath = path.join(workspaceStorageFolder, 'meta.json');
-
-			let folderFsPath: string | undefined;
-
-			if (fs.existsSync(workspaceJsonPath)) {
-				folderFsPath = this.parseWorkspaceStorageJsonFile(workspaceJsonPath, ['folder', 'workspace', 'configuration', 'uri', 'path']);
-			} else if (fs.existsSync(metaJsonPath)) {
-				folderFsPath = this.parseWorkspaceStorageJsonFile(metaJsonPath, ['folder', 'uri', 'workspace', 'path']);
-			}
-
-			// Normalize to undefined if folderFsPath is falsy
-			if (!folderFsPath || folderFsPath.length === 0) {
-				this._workspaceIdToFolderCache.set(workspaceId, undefined);
-				return undefined;
-			}
-
-			this._workspaceIdToFolderCache.set(workspaceId, folderFsPath);
-			return folderFsPath;
-		} catch (err) {
-			// On any error, cache undefined to avoid repeated failures
-			try {
-				const parts = sessionFilePath.replace(/\\/g, '/').split('/').filter(p => p.length > 0);
-				const idx = parts.findIndex(p => p.toLowerCase() === 'workspacestorage');
-				if (idx !== -1 && idx + 1 < parts.length) {
-					this._workspaceIdToFolderCache.set(parts[idx + 1], undefined);
-				}
-			} catch { }
-			return undefined;
-		}
-	}
 
 	/**
 	 * Convert a simple glob pattern to a RegExp.
 	 * Supports: ** (match multiple path segments), * (match within a segment), ?.
 	 */
-	private globToRegExp(glob: string, caseInsensitive: boolean = false): RegExp {
-		// Normalize to posix-style
-		let pattern = glob.replace(/\\/g, '/');
-		// Escape regex special chars
-		pattern = pattern.replace(/([.+^=!:${}()|[\]\\])/g, '\\$1');
-		// Replace /**/ or ** with placeholder
-		pattern = pattern.replace(/(^|\/)\*\*\/(?!$)/g, '$1__GLOBSTAR__/');
-		pattern = pattern.replace(/\*\*/g, '__GLOBSTAR__');
-		// Replace single * with [^/]* and ? with .
-		pattern = pattern.replace(/\*/g, '[^/]*').replace(/\?/g, '.');
-		// Replace globstar placeholder with .* (allow path separators)
-		pattern = pattern.replace(/__GLOBSTAR__\//g, '(?:.*?/?)').replace(/__GLOBSTAR__/g, '.*');
-		// Anchor
-		const flags = caseInsensitive ? 'i' : '';
-		return new RegExp('^' + pattern + '$', flags);
-	}
 
 	/**
 	 * Resolve an exact relative path in a workspace.
 	 * When `caseInsensitive` is true, path segments are matched case-insensitively.
 	 */
-	private resolveExactWorkspacePath(workspaceFolderPath: string, relativePattern: string, caseInsensitive: boolean): string | undefined {
-		const directPath = path.join(workspaceFolderPath, relativePattern);
-		if (!caseInsensitive) {
-			return fs.existsSync(directPath) ? directPath : undefined;
-		}
-
-		if (fs.existsSync(directPath)) {
-			return directPath;
-		}
-
-		const normalized = relativePattern.replace(/\\/g, '/');
-		const segments = normalized.split('/').filter(seg => seg.length > 0 && seg !== '.');
-
-		let current = workspaceFolderPath;
-		for (let index = 0; index < segments.length; index++) {
-			const segment = segments[index];
-			const isLast = index === segments.length - 1;
-
-			if (!fs.existsSync(current)) {
-				return undefined;
-			}
-
-			let entries: fs.Dirent[] = [];
-			try {
-				entries = fs.readdirSync(current, { withFileTypes: true });
-			} catch {
-				return undefined;
-			}
-
-			const matchedEntry = entries.find(entry => entry.name.toLowerCase() === segment.toLowerCase());
-			if (!matchedEntry) {
-				return undefined;
-			}
-
-			const matchedPath = path.join(current, matchedEntry.name);
-			if (!isLast) {
-				let stat: fs.Stats;
-				try {
-					stat = fs.statSync(matchedPath);
-				} catch {
-					return undefined;
-				}
-				if (!stat.isDirectory()) {
-					return undefined;
-				}
-			}
-
-			current = matchedPath;
-		}
-
-		return fs.existsSync(current) ? current : undefined;
-	}
 
 	/**
 	 * Scan a workspace folder for customization files according to `customizationPatterns.json`.
 	 */
-	private scanWorkspaceCustomizationFiles(workspaceFolderPath: string): CustomizationFileEntry[] {
-		const results: CustomizationFileEntry[] = [];
-		if (!workspaceFolderPath || !fs.existsSync(workspaceFolderPath)) { return results; }
-
-		const cfg = customizationPatternsData as any;
-		const stalenessDays = typeof cfg.stalenessThresholdDays === 'number' ? cfg.stalenessThresholdDays : 90;
-		const excludeDirs: string[] = Array.isArray(cfg.excludeDirs) ? cfg.excludeDirs : [];
-
-		for (const pattern of (cfg.patterns || [])) {
-			try {
-				const scanMode = pattern.scanMode || 'exact';
-				const relativePattern = pattern.path as string;
-				if (scanMode === 'exact') {
-					const caseInsensitive = !!pattern.caseInsensitive;
-					const absPath = this.resolveExactWorkspacePath(workspaceFolderPath, relativePattern, caseInsensitive);
-					if (absPath) {
-						const stat = fs.statSync(absPath);
-						results.push({
-							path: absPath,
-							relativePath: path.relative(workspaceFolderPath, absPath).replace(/\\/g, '/'),
-							type: pattern.type || 'unknown',
-							icon: pattern.icon || '',
-							label: pattern.label || path.basename(absPath),
-							name: path.basename(absPath),
-							lastModified: stat.mtime.toISOString(),
-							isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000,
-							category: pattern.category as 'copilot' | 'non-copilot' | undefined
-						});
-					}
-				} else if (scanMode === 'oneLevel') {
-					// Split at the first '*' wildcard to find base directory and remaining path
-					// e.g., ".github/skills/*/SKILL.md" -> base: ".github/skills/", remaining: "/SKILL.md"
-					const normalizedPattern = relativePattern.replace(/\\/g, '/');
-					const starIndex = normalizedPattern.indexOf('*');
-					if (starIndex === -1) { continue; } // No wildcard, skip
-
-					// Split the pattern at the '*'
-					const beforeStar = normalizedPattern.substring(0, starIndex);
-					const afterStar = normalizedPattern.substring(starIndex + 1);
-
-					// The base directory is everything before the '*' (trim trailing slash)
-					const baseDirPath = beforeStar.replace(/\/$/, '');
-					const baseDir = baseDirPath ? path.join(workspaceFolderPath, baseDirPath) : workspaceFolderPath;
-
-					if (!fs.existsSync(baseDir)) { continue; }
-					const baseStat = fs.statSync(baseDir);
-					if (!baseStat.isDirectory()) { continue; }
-
-					// Enumerate directories in the base directory
-					const entries = fs.readdirSync(baseDir, { withFileTypes: true });
-					const fullPattern = afterStar.startsWith('/') ? afterStar.substring(1) : afterStar;
-					for (const entry of entries) {
-						// Only consider directories at this level (unless afterStar is just a filename)
-						if (excludeDirs.includes(entry.name)) { continue; }
-
-						// Construct the full path with this entry replacing the '*'
-						const candidatePath = path.join(baseDir, entry.name, fullPattern);
-
-						// Check if this path exists
-						if (fs.existsSync(candidatePath)) {
-							const stat = fs.statSync(candidatePath);
-							if (stat.isFile()) {
-								// For skills, use the directory name (parent of SKILL.md) as the display name
-								const displayName = pattern.type === 'skill' ? entry.name : path.basename(candidatePath);
-
-								results.push({
-									path: candidatePath,
-									relativePath: path.relative(workspaceFolderPath, candidatePath).replace(/\\/g, '/'),
-									type: pattern.type || 'unknown',
-									icon: pattern.icon || '',
-									label: pattern.label || displayName,
-									name: displayName,
-									lastModified: stat.mtime.toISOString(),
-									category: pattern.category as 'copilot' | 'non-copilot' | undefined,
-									isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000
-								});
-							}
-						}
-					}
-				} else if (scanMode === 'recursive') {
-					const maxDepth = typeof pattern.maxDepth === 'number' ? pattern.maxDepth : 6;
-					const caseInsensitive = !!pattern.caseInsensitive;
-					const regex = this.globToRegExp(relativePattern, caseInsensitive);
-					// Walk recursively
-					const walk = (dir: string, depth: number) => {
-						if (depth < 0) { return; }
-						let children: fs.Dirent[] = [];
-						try { children = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-						for (const child of children) {
-							const name = child.name;
-							if (child.isDirectory()) {
-								if (excludeDirs.includes(name)) { continue; }
-								walk(path.join(dir, name), depth - 1);
-							} else if (child.isFile()) {
-								const rel = path.relative(workspaceFolderPath, path.join(dir, name)).replace(/\\/g, '/');
-								if (regex.test(rel)) {
-									const abs = path.join(dir, name);
-									const stat = fs.statSync(abs);
-									results.push({
-										path: abs,
-										relativePath: rel,
-										type: pattern.type || 'unknown',
-										icon: pattern.icon || '',
-										label: pattern.label || path.basename(abs),
-										name: path.basename(abs),
-										lastModified: stat.mtime.toISOString(),
-										isStale: (Date.now() - stat.mtime.getTime()) > stalenessDays * 24 * 60 * 60 * 1000,
-										category: pattern.category as 'copilot' | 'non-copilot' | undefined
-									});
-								}
-							}
-						}
-					};
-					walk(workspaceFolderPath, maxDepth);
-				}
-			} catch (e) {
-				// ignore per-pattern errors
-			}
-		}
-
-		// Deduplicate by absolute path
-		const uniq: { [p: string]: CustomizationFileEntry } = {};
-		for (const r of results) { uniq[path.normalize(r.path)] = r; }
-		return Object.values(uniq);
-	}
 	private _disposed = false;
 	private updateInterval: NodeJS.Timeout | undefined;
 	private initialDelayTimeout: NodeJS.Timeout | undefined;
@@ -736,7 +167,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private dashboardPanel: vscode.WebviewPanel | undefined;
 	private fluencyLevelViewerPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
-	private sessionFileCache: Map<string, SessionFileCache> = new Map();
 	private lastDetailedStats: DetailedStats | undefined;
 	private lastDailyStats: DailyTokenStats[] | undefined;
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
@@ -747,12 +177,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _cacheHits = 0; // Counter for cache hits during usage analysis
 	private _cacheMisses = 0; // Counter for cache misses during usage analysis
 	// Short-term cache to avoid rescanning filesystem during rapid successive calls (e.g., diagnostics load)
-	private _sessionFilesCache: string[] | null = null;
-	private _sessionFilesCacheTime: number = 0;
-	private static readonly SESSION_FILES_CACHE_TTL = 60000; // Cache for 60 seconds
 
 	// Cached sql.js SQL module (lazy initialized)
-	private _sqlJsModule: any = null;
 
 	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
 	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
@@ -779,8 +205,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
-		const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
-		return repoUrl || 'https://github.com/rajbos/github-copilot-token-usage';
+		return _getRepositoryUrl();
 	}
 
 	/**
@@ -792,333 +217,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Returns 'ask', 'edit', 'agent', 'plan', or 'customAgent'.
 	 */
 	private getModeType(mode: any): 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' {
-		if (!mode || !mode.kind) {
-			return 'ask';
-		}
-
-		// Check kind first - edit and ask are straightforward
-		if (mode.kind === 'edit') { return 'edit'; }
-		if (mode.kind === 'ask') { return 'ask'; }
-
-		// For agent kind, check the mode.id to differentiate
-		if (mode.kind === 'agent') {
-			if (!mode.id || mode.id === 'agent') {
-				// Standard agent mode (no special id or id='agent')
-				return 'agent';
-			}
-
-			// Check for plan mode (vscode-userdata:/.../plan-agent/Plan.agent.md)
-			if (typeof mode.id === 'string' && mode.id.includes('plan-agent/Plan.agent.md')) {
-				return 'plan';
-			}
-
-			// Check for custom agent (file:// URI to .agent.md)
-			if (typeof mode.id === 'string' && mode.id.includes('.agent.md')) {
-				return 'customAgent';
-			}
-
-			// Fallback to standard agent for any other agent kind
-			return 'agent';
-		}
-
-		// Default to ask for unknown modes
-		return 'ask';
+		return _getModeType(mode);
 	}
 
 	/**
 	 * Extract custom agent name from a file:// URI pointing to a .agent.md file.
 	 * Returns the filename without the .agent.md extension.
 	 */
-	private extractCustomAgentName(modeId: string): string | null {
-		if (!modeId || !modeId.includes('.agent.md')) {
-			return null;
-		}
 
-		try {
-			// Handle both file:/// URIs and regular paths
-			const cleanPath = modeId.replace('file:///', '').replace('file://', '');
-			const decodedPath = decodeURIComponent(cleanPath);
-			const parts = decodedPath.split(/[\\/]/);
-			const filename = parts[parts.length - 1];
 
-			// Remove .agent.md extension
-			if (filename.endsWith('.agent.md')) {
-				return filename.slice(0, -10); // Remove '.agent.md'
-			}
-			if (filename.endsWith('.md.agent.md')) {
-				// Handle case like TestEngineerAgent.md.agent.md
-				return filename.slice(0, -10).replace('.md', '');
-			}
-		} catch (e) {
-			return null;
-		}
 
-		return null;
-	}
 
-	/**
-	 * Get the OpenCode data directory path.
-	 * OpenCode follows XDG Base Directory Specification:
-	 * - Windows: %USERPROFILE%\.local\share\opencode\
-	 * - Linux/macOS: ~/.local/share/opencode/
-	 */
-	private getOpenCodeDataDir(): string {
-		const platform = os.platform();
-		const homedir = os.homedir();
-		if (platform === 'win32') {
-			return path.join(homedir, '.local', 'share', 'opencode');
-		}
-		const xdgDataHome = process.env.XDG_DATA_HOME || path.join(homedir, '.local', 'share');
-		return path.join(xdgDataHome, 'opencode');
-	}
 
-	/**
-	 * Check if a session file is an OpenCode session file.
-	 * OpenCode sessions are stored in ~/.local/share/opencode/storage/session/ (JSON)
-	 * or referenced via virtual paths like opencode.db#ses_<id> (SQLite).
-	 */
-	private isOpenCodeSessionFile(filePath: string): boolean {
-		const normalized = filePath.toLowerCase().replace(/\\/g, '/');
-		return normalized.includes('/opencode/storage/session/') || normalized.includes('/opencode/opencode.db#ses_');
-	}
 
-	/**
-	 * Check if a session is stored in the OpenCode SQLite database.
-	 * Virtual path format: <opencode_dir>/opencode.db#ses_<id>
-	 */
-	private isOpenCodeDbSession(filePath: string): boolean {
-		return filePath.includes('opencode.db#ses_');
-	}
 
-	/**
-	 * Lazily initialize and return the sql.js SQL module.
-	 */
-	private async initSqlJs(): Promise<any> {
-		if (this._sqlJsModule) { return this._sqlJsModule; }
-		const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
-		let wasmBinary: Uint8Array | undefined;
-		if (fs.existsSync(wasmPath)) {
-			wasmBinary = fs.readFileSync(wasmPath);
-		}
-		this._sqlJsModule = await initSqlJs(wasmBinary ? { wasmBinary } : undefined);
-		return this._sqlJsModule;
-	}
 
-	/**
-	 * Read session metadata from the OpenCode SQLite database.
-	 */
-	private async readOpenCodeDbSession(sessionId: string): Promise<any | null> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return null; }
-		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id, slug, title, time_created, time_updated, project_id, directory FROM session WHERE id = ?', [sessionId]);
-				if (result.length === 0 || result[0].values.length === 0) { return null; }
-				const row = result[0].values[0];
-				const cols = result[0].columns;
-				const obj: any = {};
-				for (let i = 0; i < cols.length; i++) { obj[cols[i]] = row[i]; }
-				return {
-					id: obj.id,
-					slug: obj.slug,
-					title: obj.title,
-					projectID: obj.project_id,
-					directory: obj.directory,
-					time: { created: obj.time_created, updated: obj.time_updated }
-				};
-			} finally {
-				db.close();
-			}
-		} catch {
-			return null;
-		}
-	}
 
-	/**
-	 * Read all OpenCode messages from the SQLite database for a given session.
-	 */
-	private async readOpenCodeDbMessages(sessionId: string): Promise<any[]> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return []; }
-		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id, data, time_created FROM message WHERE session_id = ? ORDER BY time_created ASC', [sessionId]);
-				if (result.length === 0) { return []; }
-				return result[0].values.map((row: unknown[]) => {
-					const data = JSON.parse(row[1] as string);
-					data.id = row[0];
-					data.time = data.time || {};
-					data.time.created = data.time.created || row[2];
-					return data;
-				});
-			} finally {
-				db.close();
-			}
-		} catch {
-			return [];
-		}
-	}
 
-	/**
-	 * Read all OpenCode parts from the SQLite database for a given message.
-	 */
-	private async readOpenCodeDbParts(messageId: string): Promise<any[]> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return []; }
-		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id, data, time_created FROM part WHERE message_id = ? ORDER BY time_created ASC', [messageId]);
-				if (result.length === 0) { return []; }
-				return result[0].values.map((row: unknown[]) => {
-					const data = JSON.parse(row[1] as string);
-					data.id = row[0];
-					data.time = data.time || {};
-					data.time.created = data.time.created || row[2];
-					return data;
-				});
-			} finally {
-				db.close();
-			}
-		} catch {
-			return [];
-		}
-	}
 
-	/**
-	 * Discover all session IDs from the OpenCode SQLite database.
-	 */
-	private async discoverOpenCodeDbSessions(): Promise<string[]> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return []; }
-		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id FROM session');
-				if (result.length === 0) { return []; }
-				return result[0].values.map((row: unknown[]) => row[0] as string);
-			} finally {
-				db.close();
-			}
-		} catch {
-			return [];
-		}
-	}
-
-	/**
-	 * Get file stats for a session, handling OpenCode DB virtual paths.
-	 * For DB sessions, returns the stat of the opencode.db file itself.
-	 */
-	private async statSessionFile(sessionFile: string): Promise<fs.Stats> {
-		if (this.isOpenCodeDbSession(sessionFile)) {
-			const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-			return fs.promises.stat(dbPath);
-		}
-		return fs.promises.stat(sessionFile);
-	}
-
-	/**
-	 * Read all OpenCode message files for a given session.
-	 * Messages are stored in ~/.local/share/opencode/storage/message/ses_<id>/
-	 * Returns an array of parsed message objects sorted by creation time.
-	 */
-	private readOpenCodeMessages(sessionId: string): any[] {
-		const dataDir = this.getOpenCodeDataDir();
-		const messageDir = path.join(dataDir, 'storage', 'message', sessionId);
-		const messages: any[] = [];
-		try {
-			if (!fs.existsSync(messageDir)) { return messages; }
-			const entries = fs.readdirSync(messageDir, { withFileTypes: true });
-			for (const entry of entries) {
-				if (!entry.isFile() || !entry.name.endsWith('.json')) { continue; }
-				try {
-					const content = fs.readFileSync(path.join(messageDir, entry.name), 'utf8');
-					const msg = JSON.parse(content);
-					messages.push(msg);
-				} catch {
-					// Skip unreadable message files
-				}
-			}
-		} catch {
-			// Directory not accessible
-		}
-		// Sort by creation time
-		messages.sort((a, b) => ((a.time?.created || 0) - (b.time?.created || 0)));
-		return messages;
-	}
-
-	/**
-	 * Read all OpenCode part files for a given message.
-	 * Parts are stored in ~/.local/share/opencode/storage/part/msg_<id>/
-	 * Returns an array of parsed part objects sorted by creation/start time.
-	 */
-	private readOpenCodeParts(messageId: string): any[] {
-		const dataDir = this.getOpenCodeDataDir();
-		const partDir = path.join(dataDir, 'storage', 'part', messageId);
-		const parts: any[] = [];
-		try {
-			if (!fs.existsSync(partDir)) { return parts; }
-			const entries = fs.readdirSync(partDir, { withFileTypes: true });
-			for (const entry of entries) {
-				if (!entry.isFile() || !entry.name.endsWith('.json')) { continue; }
-				try {
-					const content = fs.readFileSync(path.join(partDir, entry.name), 'utf8');
-					const part = JSON.parse(content);
-					parts.push(part);
-				} catch {
-					// Skip unreadable part files
-				}
-			}
-		} catch {
-			// Directory not accessible
-		}
-		// Sort by start time if available, otherwise by ID
-		parts.sort((a, b) => ((a.time?.start || 0) - (b.time?.start || 0)));
-		return parts;
-	}
 
 	private getEditorTypeFromPath(filePath: string): string {
-		const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
-
-		if (normalizedPath.includes('/.copilot/session-state/')) {
-			return 'Copilot CLI';
-		}
-		if (this.isOpenCodeSessionFile(filePath)) {
-			return 'OpenCode';
-		}
-		if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
-			return 'VS Code Insiders';
-		}
-		if (normalizedPath.includes('/code - exploration/') || normalizedPath.includes('/code%20-%20exploration/')) {
-			return 'VS Code Exploration';
-		}
-		if (normalizedPath.includes('/vscodium/')) {
-			return 'VSCodium';
-		}
-		if (normalizedPath.includes('/cursor/')) {
-			return 'Cursor';
-		}
-		if (normalizedPath.includes('.vscode-server-insiders/')) {
-			return 'VS Code Server (Insiders)';
-		}
-		if (normalizedPath.includes('.vscode-server/') || normalizedPath.includes('.vscode-remote/')) {
-			return 'VS Code Server';
-		}
-		if (normalizedPath.includes('/code/')) {
-			return 'VS Code';
-		}
-
-		return 'Unknown';
+		return _getEditorTypeFromPath(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
 	}
 
 	/**
@@ -1126,18 +245,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * e.g. 'C:\...\AppData\Roaming\Code' -> 'VS Code'
 	 */
 	private getEditorNameFromRoot(rootPath: string): string {
-		if (!rootPath) { return 'Unknown'; }
-		const lower = rootPath.toLowerCase();
-		// Check obvious markers first
-		if (lower.includes('.copilot') || lower.includes('copilot')) { return 'Copilot CLI'; }
-		if (lower.includes('opencode')) { return 'OpenCode'; }
-		if (lower.includes('code - insiders') || lower.includes('code-insiders') || lower.includes('insiders')) { return 'VS Code Insiders'; }
-		if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
-		if (lower.includes('vscodium')) { return 'VSCodium'; }
-		if (lower.includes('cursor')) { return 'Cursor'; }
-		// Generic 'code' match (catch AppData\Roaming\Code)
-		if (lower.endsWith('code') || lower.includes(path.sep + 'code' + path.sep) || lower.includes('/code/')) { return 'VS Code'; }
-		return 'Unknown';
+		return _getEditorNameFromRoot(rootPath);
 	}
 
 	/**
@@ -1147,40 +255,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * @returns A shortened display name like "owner/repo"
 	 */
 	private getRepoDisplayName(repoUrl: string): string {
-		if (!repoUrl || repoUrl === 'Unknown') { return 'Unknown'; }
-
-		// Remove .git suffix if present
-		let url = repoUrl.replace(/\.git$/, '');
-
-		// Handle SSH URLs like git@github.com:owner/repo
-		if (url.includes('@') && url.includes(':')) {
-			const colonIndex = url.lastIndexOf(':');
-			const atIndex = url.lastIndexOf('@');
-			if (colonIndex > atIndex) {
-				return url.substring(colonIndex + 1);
-			}
-		}
-
-		// Handle HTTPS/git URLs - extract path after the host
-		try {
-			if (url.includes('://')) {
-				const urlObj = new URL(url);
-				const pathParts = urlObj.pathname.split('/').filter(p => p);
-				if (pathParts.length >= 2) {
-					return `${pathParts[pathParts.length - 2]}/${pathParts[pathParts.length - 1]}`;
-				}
-				return urlObj.pathname.replace(/^\//, '');
-			}
-		} catch {
-			// URL parsing failed, continue to fallback
-		}
-
-		// Fallback: return the last part of the path
-		const parts = url.split('/').filter(p => p);
-		if (parts.length >= 2) {
-			return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
-		}
-		return url;
+		return _getRepoDisplayName(repoUrl);
 	}
 
 	// Logging methods
@@ -1210,66 +285,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Checks if the cache is valid for a file by comparing mtime and size.
 	 * If the cache entry is missing size (old format), treat as invalid so it will be upgraded.
 	 */
-	private isCacheValid(filePath: string, currentMtime: number, currentSize: number): boolean {
-		const cached = this.sessionFileCache.get(filePath);
-		if (!cached) {
-			return false;
-		}
-		// If size is missing (old cache), treat as invalid so it will be upgraded
-		if (typeof cached.size !== 'number') {
-			return false;
-		}
-		return cached.mtime === currentMtime && cached.size === currentSize;
-	}
 
 	private getCachedSessionData(filePath: string): SessionFileCache | undefined {
-		return this.sessionFileCache.get(filePath);
+		return this.cacheManager.getCachedSessionData(filePath);
 	}
 
 	/**
 	 * Sets the cache entry for a session file, including file size.
 	 */
 	private setCachedSessionData(filePath: string, data: SessionFileCache, fileSize?: number): void {
-		if (typeof fileSize === 'number') {
-			data.size = fileSize;
-		}
-		this.sessionFileCache.set(filePath, data);
-
-		// Limit cache size to prevent memory issues (keep last 1000 files)
-		// Only trigger cleanup when size exceeds limit by 100 to avoid frequent operations
-		if (this.sessionFileCache.size > 1100) {
-			// Remove 100 oldest entries to bring size back to 1000
-			// Maps maintain insertion order, so the first entries are the oldest
-			const keysToDelete: string[] = [];
-			let count = 0;
-			for (const key of this.sessionFileCache.keys()) {
-				keysToDelete.push(key);
-				count++;
-				if (count >= 100) {
-					break;
-				}
-			}
-			for (const key of keysToDelete) {
-				this.sessionFileCache.delete(key);
-			}
-			this.log(`Cache size limit reached, removed ${keysToDelete.length} oldest entries. Current size: ${this.sessionFileCache.size}`);
-		}
+		return this.cacheManager.setCachedSessionData(filePath, data);
 	}
 
-	private clearExpiredCache(): void {
-		// Remove cache entries for files that no longer exist
-		const filesToCheck = Array.from(this.sessionFileCache.keys());
-		for (const filePath of filesToCheck) {
-			try {
-				if (!fs.existsSync(filePath)) {
-					this.sessionFileCache.delete(filePath);
-				}
-			} catch (error) {
-				// File access error, remove from cache
-				this.sessionFileCache.delete(filePath);
-			}
-		}
-	}
 
 	/**
 	 * Generate a cache identifier based on VS Code extension mode.
@@ -1279,24 +306,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * the session ID, preventing the Extension Development Host from sharing/fighting
 	 * with the main dev window's cache.
 	 */
-	private getCacheIdentifier(): string {
-		if (this.context.extensionMode === vscode.ExtensionMode.Development) {
-			// Use a short hash of the session ID to keep the key short but unique per window
-			const sessionId = vscode.env.sessionId;
-			const hash = sessionId.substring(0, 8);
-			return `dev-${hash}`;
-		}
-		return 'prod';
-	}
 
 	/**
 	 * Get the path for the cache lock file.
 	 * Uses globalStorageUri which is already scoped per VS Code edition.
 	 */
-	private getCacheLockPath(): string {
-		const cacheId = this.getCacheIdentifier();
-		return path.join(this.context.globalStorageUri.fsPath, `cache_${cacheId}.lock`);
-	}
 
 	/**
 	 * Acquire an exclusive file lock for cache writes.
@@ -1304,175 +318,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * across multiple VS Code windows of the same edition.
 	 * Returns true if lock acquired, false if another instance holds it.
 	 */
-	private async acquireCacheLock(): Promise<boolean> {
-		const lockPath = this.getCacheLockPath();
-		try {
-			// Ensure the directory exists
-			await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
-
-			// Atomic exclusive create — fails if lock file already exists
-			const fd = await fs.promises.open(lockPath, 'wx');
-			await fd.writeFile(JSON.stringify({
-				sessionId: vscode.env.sessionId,
-				timestamp: Date.now()
-			}));
-			await fd.close();
-			return true;
-		} catch (err: any) {
-			if (err.code !== 'EEXIST') {
-				// Unexpected error (permissions, disk full, etc.)
-				this.warn(`Unexpected error acquiring cache lock: ${err.message}`);
-				return false;
-			}
-
-			// Lock file exists — check if it's stale (owner crashed)
-			try {
-				const content = await fs.promises.readFile(lockPath, 'utf-8');
-				const lock = JSON.parse(content);
-				const staleThreshold = 5 * 60 * 1000; // 5 minutes (matches update interval)
-
-				if (Date.now() - lock.timestamp > staleThreshold) {
-					// Stale lock — break it and retry once
-					this.log('Breaking stale cache lock');
-					await fs.promises.unlink(lockPath);
-					try {
-						const fd = await fs.promises.open(lockPath, 'wx');
-						await fd.writeFile(JSON.stringify({
-							sessionId: vscode.env.sessionId,
-							timestamp: Date.now()
-						}));
-						await fd.close();
-						return true;
-					} catch {
-						return false; // Another instance beat us to it
-					}
-				}
-			} catch {
-				// Can't read lock file — might have been deleted by the owner already
-			}
-			return false;
-		}
-	}
 
 	/**
 	 * Release the cache lock file, but only if we own it.
 	 */
-	private async releaseCacheLock(): Promise<void> {
-		const lockPath = this.getCacheLockPath();
-		try {
-			const content = await fs.promises.readFile(lockPath, 'utf-8');
-			const lock = JSON.parse(content);
-			if (lock.sessionId === vscode.env.sessionId) {
-				await fs.promises.unlink(lockPath);
-			}
-		} catch {
-			// Lock file already gone or unreadable — nothing to do
-		}
-	}
 
 	// Persistent cache storage methods
-	private loadCacheFromStorage(): void {
-		try {
-			const cacheId = this.getCacheIdentifier();
-			const versionKey = `sessionFileCacheVersion_${cacheId}`;
-			const cacheKey = `sessionFileCache_${cacheId}`;
-			
-			// One-time migration: clean up old per-session cache keys from previous versions
-			this.migrateOldCacheKeys(cacheId);
-			
-			// Check cache version first
-			const storedVersion = this.context.globalState.get<number>(versionKey);
-			if (storedVersion !== CopilotTokenTracker.CACHE_VERSION) {
-				this.log(`Cache version mismatch (stored: ${storedVersion}, current: ${CopilotTokenTracker.CACHE_VERSION}) for ${cacheId}. Clearing cache.`);
-				this.sessionFileCache = new Map();
-				return;
-			}
-
-			const cacheData = this.context.globalState.get<Record<string, SessionFileCache>>(cacheKey);
-			if (cacheData) {
-				this.sessionFileCache = new Map(Object.entries(cacheData));
-				this.log(`Loaded ${this.sessionFileCache.size} cached session files from storage (${cacheId})`);
-			} else {
-				this.log(`No cached session files found in storage for ${cacheId}`);
-			}
-		} catch (error) {
-			this.error('Error loading cache from storage:', error);
-			// Start with empty cache on error
-			this.sessionFileCache = new Map();
-		}
-	}
 
 	/**
 	 * One-time migration: remove old per-session cache keys that were created by
 	 * earlier versions of the extension (keys containing sessionId or timestamp).
 	 * Also removes the legacy unscoped keys ('sessionFileCache', 'sessionFileCacheVersion').
 	 */
-	private migrateOldCacheKeys(currentCacheId: string): void {
-		try {
-			const allKeys = this.context.globalState.keys();
-			const currentCacheKey = `sessionFileCache_${currentCacheId}`;
-			const currentVersionKey = `sessionFileCacheVersion_${currentCacheId}`;
-			
-			let removedCount = 0;
-			for (const key of allKeys) {
-				// Remove old timestamp keys (no longer used)
-				if (key.startsWith('sessionFileCacheTimestamp_')) {
-					this.context.globalState.update(key, undefined);
-					removedCount++;
-					continue;
-				}
-				// Remove old per-session cache keys that have session IDs embedded
-				// (they contain more than one underscore-separated segment after the prefix)
-				if (key.startsWith('sessionFileCache_') && key !== currentCacheKey) {
-					const suffix = key.replace('sessionFileCache_', '');
-					if (suffix !== 'dev' && suffix !== 'prod') {
-						this.context.globalState.update(key, undefined);
-						removedCount++;
-					}
-				}
-				if (key.startsWith('sessionFileCacheVersion_') && key !== currentVersionKey) {
-					const suffix = key.replace('sessionFileCacheVersion_', '');
-					if (suffix !== 'dev' && suffix !== 'prod') {
-						this.context.globalState.update(key, undefined);
-						removedCount++;
-					}
-				}
-				// Remove legacy unscoped keys from the original code
-				if (key === 'sessionFileCache' || key === 'sessionFileCacheVersion') {
-					this.context.globalState.update(key, undefined);
-					removedCount++;
-				}
-			}
-			
-			if (removedCount > 0) {
-				this.log(`Migrated: removed ${removedCount} old cache keys from globalState`);
-			}
-		} catch (error) {
-			this.error('Error migrating old cache keys:', error);
-		}
-	}
 
 	private async saveCacheToStorage(): Promise<void> {
-		const acquired = await this.acquireCacheLock();
-		if (!acquired) {
-			this.log('Cache lock held by another VS Code window, skipping save');
-			return;
-		}
-		try {
-			const cacheId = this.getCacheIdentifier();
-			const versionKey = `sessionFileCacheVersion_${cacheId}`;
-			const cacheKey = `sessionFileCache_${cacheId}`;
-			
-			// Convert Map to plain object for storage
-			const cacheData = Object.fromEntries(this.sessionFileCache);
-			await this.context.globalState.update(cacheKey, cacheData);
-			await this.context.globalState.update(versionKey, CopilotTokenTracker.CACHE_VERSION);
-			this.log(`Saved ${this.sessionFileCache.size} cached session files to storage (version ${CopilotTokenTracker.CACHE_VERSION}, ${cacheId})`);
-		} catch (error) {
-			this.error('Error saving cache to storage:', error);
-		} finally {
-			await this.releaseCacheLock();
-		}
+		return this.cacheManager.saveCacheToStorage();
 	}
 
 	public async clearCache(): Promise<void> {
@@ -1481,12 +341,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.outputChannel.show(true);
 			this.log('Clearing session file cache...');
 
-				const cacheId = this.getCacheIdentifier();
+				const cacheId = this.cacheManager.getCacheIdentifier();
 			const cacheKey = `sessionFileCache_${cacheId}`;
 			const versionKey = `sessionFileCacheVersion_${cacheId}`;
 			
-			const cacheSize = this.sessionFileCache.size;
-			this.sessionFileCache.clear();
+			const cacheSize = this.cacheManager.cache.size;
+			this.cacheManager.cache.clear();
 			await this.context.globalState.update(cacheKey, undefined);
 			await this.context.globalState.update(versionKey, undefined);
 			// Reset diagnostics loaded flag so the diagnostics view will reload files
@@ -1512,6 +372,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
 		this.extensionUri = extensionUri;
+		this.openCode = new OpenCodeDataAccess(extensionUri);
+		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
+		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode });
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
@@ -1520,10 +383,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('Constructor called');
 
 		// Load persisted cache from storage
-		this.loadCacheFromStorage();
+		this.cacheManager.loadCacheFromStorage();
 
 		// Check GitHub Copilot extension status
-		this.checkCopilotExtension();
+		this.sessionDiscovery.checkCopilotExtension();
 
 		// Create status bar item
 		this.statusBarItem = vscode.window.createStatusBarItem(
@@ -1837,18 +700,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			// Get session files from both workspace and global storage
-			const sessionFiles = await this.getCopilotSessionFiles();
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 
 			for (const sessionFile of sessionFiles) {
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
+					const fileStats = await this.openCode.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
 					// Only process files modified in the current month
 					if (mtime >= monthStart.getTime()) {
-						const tokens = await this.estimateTokensFromSessionCached(sessionFile, mtime, fileSize);
+						const tokens = (await this.getSessionFileDataCached(sessionFile, mtime, fileSize)).tokens;
 
 						monthTokens += tokens;
 
@@ -1891,9 +754,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			// Clean expired cache entries
-			this.clearExpiredCache();
+			this.cacheManager.clearExpiredCache();
 
-			const sessionFiles = await this.getCopilotSessionFiles();
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 			this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
 
 			if (sessionFiles.length === 0) {
@@ -1913,7 +776,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
+					const fileStats = await this.openCode.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -2227,13 +1090,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
 
 		try {
-			const sessionFiles = await this.getCopilotSessionFiles();
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 			this.log(`📈 Preparing chart data from ${sessionFiles.length} session file(s)...`);
 
 			for (const sessionFile of sessionFiles) {
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
+					const fileStats = await this.openCode.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -2487,7 +1350,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this._customizationFilesCache.clear();
 
 		try {
-			const sessionFiles = await this.getCopilotSessionFiles();
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 			this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
 
 			let processed = 0;
@@ -2496,7 +1359,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			for (const sessionFile of sessionFiles) {
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
+					const fileStats = await this.openCode.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -2559,16 +1422,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
 						// Extract workspace ID first (this operation should be safe and not throw)
-						const workspaceId = this.extractWorkspaceIdFromSessionPath(sessionFile);
+						const workspaceId = _extractWorkspaceIdFromSessionPath(sessionFile);
 						try {
-							const workspaceFolder = this.resolveWorkspaceFolderFromSessionPath(sessionFile);
+							const workspaceFolder = _resolveWorkspaceFolderFromSessionPath(sessionFile, this._workspaceIdToFolderCache);
 							if (workspaceFolder) {
 								const norm = path.normalize(workspaceFolder);
 								workspaceSessionCounts.set(norm, (workspaceSessionCounts.get(norm) || 0) + 1);
 								workspaceInteractionCounts.set(norm, (workspaceInteractionCounts.get(norm) || 0) + interactions);
 								if (!this._customizationFilesCache.has(norm)) {
 									try {
-										const files = this.scanWorkspaceCustomizationFiles(norm);
+										const files = _scanWorkspaceCustomizationFiles(norm);
 										this._customizationFilesCache.set(norm, files);
 									} catch (e) {
 										// ignore scan errors per workspace
@@ -2730,190 +1593,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Merge usage analysis data into period stats
 	 */
 	private mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
-		// Merge tool calls
-		period.toolCalls.total += analysis.toolCalls.total;
-		for (const [tool, count] of Object.entries(analysis.toolCalls.byTool)) {
-			period.toolCalls.byTool[tool] = (period.toolCalls.byTool[tool] || 0) + count;
-		}
-
-		// Merge mode usage
-		period.modeUsage.ask += analysis.modeUsage.ask;
-		period.modeUsage.edit += analysis.modeUsage.edit;
-		period.modeUsage.agent += analysis.modeUsage.agent;
-		period.modeUsage.plan += analysis.modeUsage.plan;
-		period.modeUsage.customAgent += analysis.modeUsage.customAgent;
-
-		// Merge context references
-		period.contextReferences.file += analysis.contextReferences.file;
-		period.contextReferences.selection += analysis.contextReferences.selection;
-		period.contextReferences.implicitSelection += analysis.contextReferences.implicitSelection || 0;
-		period.contextReferences.symbol += analysis.contextReferences.symbol;
-		period.contextReferences.codebase += analysis.contextReferences.codebase;
-		period.contextReferences.workspace += analysis.contextReferences.workspace;
-		period.contextReferences.terminal += analysis.contextReferences.terminal;
-		period.contextReferences.vscode += analysis.contextReferences.vscode;
-		period.contextReferences.terminalLastCommand += analysis.contextReferences.terminalLastCommand || 0;
-		period.contextReferences.terminalSelection += analysis.contextReferences.terminalSelection || 0;
-		period.contextReferences.clipboard += analysis.contextReferences.clipboard || 0;
-		period.contextReferences.changes += analysis.contextReferences.changes || 0;
-		period.contextReferences.outputPanel += analysis.contextReferences.outputPanel || 0;
-		period.contextReferences.problemsPanel += analysis.contextReferences.problemsPanel || 0;
-
-		// Merge contentReferences counts
-		period.contextReferences.copilotInstructions += analysis.contextReferences.copilotInstructions || 0;
-		period.contextReferences.agentsMd += analysis.contextReferences.agentsMd || 0;
-
-		// Merge byKind tracking
-		for (const [kind, count] of Object.entries(analysis.contextReferences.byKind || {})) {
-			period.contextReferences.byKind[kind] = (period.contextReferences.byKind[kind] || 0) + count;
-		}
-
-		// Merge byPath tracking
-		for (const [path, count] of Object.entries(analysis.contextReferences.byPath || {})) {
-			period.contextReferences.byPath[path] = (period.contextReferences.byPath[path] || 0) + count;
-		}
-
-		// Merge MCP tools
-		period.mcpTools.total += analysis.mcpTools.total;
-		for (const [server, count] of Object.entries(analysis.mcpTools.byServer)) {
-			period.mcpTools.byServer[server] = (period.mcpTools.byServer[server] || 0) + count;
-		}
-		for (const [tool, count] of Object.entries(analysis.mcpTools.byTool)) {
-			period.mcpTools.byTool[tool] = (period.mcpTools.byTool[tool] || 0) + count;
-		}
-
-		// Merge model switching data
-		// Ensure modelSwitching exists (backward compatibility with old cache)
-		if (!analysis.modelSwitching) {
-			analysis.modelSwitching = {
-				uniqueModels: [],
-				modelCount: 0,
-				switchCount: 0,
-				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false,
-				standardRequests: 0,
-				premiumRequests: 0,
-				unknownRequests: 0,
-				totalRequests: 0
-			};
-		}
-
-		// Only count sessions with at least 1 model detected for model switching stats
-		// Sessions without detected models (modelCount === 0) should not affect the average
-		if (analysis.modelSwitching.modelCount > 0) {
-			period.modelSwitching.totalSessions++;
-			period.modelSwitching.modelsPerSession.push(analysis.modelSwitching.modelCount);
-
-			// Track unique models by tier
-			for (const model of analysis.modelSwitching.tiers.standard) {
-				if (!period.modelSwitching.standardModels.includes(model)) {
-					period.modelSwitching.standardModels.push(model);
-				}
-			}
-			for (const model of analysis.modelSwitching.tiers.premium) {
-				if (!period.modelSwitching.premiumModels.includes(model)) {
-					period.modelSwitching.premiumModels.push(model);
-				}
-			}
-			for (const model of analysis.modelSwitching.tiers.unknown) {
-				if (!period.modelSwitching.unknownModels.includes(model)) {
-					period.modelSwitching.unknownModels.push(model);
-				}
-			}
-
-			// Count sessions with mixed tiers
-			if (analysis.modelSwitching.hasMixedTiers) {
-				period.modelSwitching.mixedTierSessions++;
-			}
-
-			// Aggregate request counts per tier
-			period.modelSwitching.standardRequests += analysis.modelSwitching.standardRequests || 0;
-			period.modelSwitching.premiumRequests += analysis.modelSwitching.premiumRequests || 0;
-			period.modelSwitching.unknownRequests += analysis.modelSwitching.unknownRequests || 0;
-			period.modelSwitching.totalRequests += analysis.modelSwitching.totalRequests || 0;
-
-			// Calculate aggregate statistics
-			if (period.modelSwitching.modelsPerSession.length > 0) {
-				const counts = period.modelSwitching.modelsPerSession;
-				period.modelSwitching.averageModelsPerSession = counts.reduce((a, b) => a + b, 0) / counts.length;
-				period.modelSwitching.maxModelsPerSession = Math.max(...counts);
-				period.modelSwitching.minModelsPerSession = Math.min(...counts);
-				period.modelSwitching.switchingFrequency = (counts.filter(c => c > 1).length / counts.length) * 100;
-			}
-		}
-		
-		// Merge new enhanced metrics
-		if (analysis.editScope) {
-			period.editScope.singleFileEdits += analysis.editScope.singleFileEdits;
-			period.editScope.multiFileEdits += analysis.editScope.multiFileEdits;
-			period.editScope.totalEditedFiles += analysis.editScope.totalEditedFiles;
-			// Recalculate average
-			const editSessions = period.editScope.singleFileEdits + period.editScope.multiFileEdits;
-			period.editScope.avgFilesPerSession = editSessions > 0 
-				? period.editScope.totalEditedFiles / editSessions 
-				: 0;
-		}
-		
-		if (analysis.applyUsage) {
-			period.applyUsage.totalApplies += analysis.applyUsage.totalApplies;
-			period.applyUsage.totalCodeBlocks += analysis.applyUsage.totalCodeBlocks;
-			// Recalculate apply rate
-			period.applyUsage.applyRate = period.applyUsage.totalCodeBlocks > 0
-				? (period.applyUsage.totalApplies / period.applyUsage.totalCodeBlocks) * 100
-				: 0;
-		}
-		
-		if (analysis.sessionDuration) {
-			period.sessionDuration.totalDurationMs += analysis.sessionDuration.totalDurationMs;
-			// Calculate avgDurationMs as total / sessionCount
-			const sessionCount = period.sessions;
-			if (sessionCount > 0) {
-				period.sessionDuration.avgDurationMs = period.sessionDuration.totalDurationMs / sessionCount;
-				
-				// For other timing metrics, use weighted averaging (approximation across per-session averages)
-				const prevAvgFirstProgress = period.sessionDuration.avgFirstProgressMs * (sessionCount - 1);
-				period.sessionDuration.avgFirstProgressMs = (prevAvgFirstProgress + analysis.sessionDuration.avgFirstProgressMs) / sessionCount;
-				
-				const prevAvgTotalElapsed = period.sessionDuration.avgTotalElapsedMs * (sessionCount - 1);
-				period.sessionDuration.avgTotalElapsedMs = (prevAvgTotalElapsed + analysis.sessionDuration.avgTotalElapsedMs) / sessionCount;
-				
-				const prevAvgWaitTime = period.sessionDuration.avgWaitTimeMs * (sessionCount - 1);
-				period.sessionDuration.avgWaitTimeMs = (prevAvgWaitTime + analysis.sessionDuration.avgWaitTimeMs) / sessionCount;
-			}
-		}
-		
-		if (analysis.conversationPatterns) {
-			period.conversationPatterns.multiTurnSessions += analysis.conversationPatterns.multiTurnSessions;
-			period.conversationPatterns.singleTurnSessions += analysis.conversationPatterns.singleTurnSessions;
-			period.conversationPatterns.maxTurnsInSession = Math.max(
-				period.conversationPatterns.maxTurnsInSession,
-				analysis.conversationPatterns.maxTurnsInSession
-			);
-			// Calculate average turns by summing total turns across all sessions
-			const totalSessions = period.conversationPatterns.multiTurnSessions + period.conversationPatterns.singleTurnSessions;
-			if (totalSessions > 0) {
-				// Reconstruct previous total turns from previous average
-				const prevTotalTurns = period.conversationPatterns.avgTurnsPerSession * (totalSessions - 1);
-				// Add current session's turn count (which is stored in avgTurnsPerSession for single session)
-				const newTotalTurns = prevTotalTurns + analysis.conversationPatterns.avgTurnsPerSession;
-				// Calculate true average
-				period.conversationPatterns.avgTurnsPerSession = newTotalTurns / totalSessions;
-			}
-		}
-		
-		if (analysis.agentTypes) {
-			period.agentTypes.editsAgent += analysis.agentTypes.editsAgent;
-			period.agentTypes.defaultAgent += analysis.agentTypes.defaultAgent;
-			period.agentTypes.workspaceAgent += analysis.agentTypes.workspaceAgent;
-			period.agentTypes.other += analysis.agentTypes.other;
-		}
+		return _mergeUsageAnalysis(period, analysis);
 	}
 
 	private async countInteractionsInSession(sessionFile: string): Promise<number> {
 		try {
 			// Handle OpenCode sessions
-			if (this.isOpenCodeSessionFile(sessionFile)) {
-				return await this.countOpenCodeInteractions(sessionFile);
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+				return await this.openCode.countOpenCodeInteractions(sessionFile);
 			}
 
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
@@ -2967,842 +1654,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	private async getModelUsageFromSession(sessionFile: string): Promise<ModelUsage> {
-		const modelUsage: ModelUsage = {};
-
-		// Handle OpenCode sessions
-		if (this.isOpenCodeSessionFile(sessionFile)) {
-			return await this.getOpenCodeModelUsage(sessionFile);
-		}
-
-		const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
-
-		try {
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-
-			// Check if this is a UUID-only file (new Copilot CLI format)
-			if (this.isUuidPointerFile(fileContent)) {
-				return modelUsage; // Empty model usage for pointer files
-			}
-
-			// Detect JSONL content: either by extension or by content analysis
-			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
-
-			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
-			if (isJsonlContent) {
-				const lines = fileContent.trim().split('\n');
-				// Default model for CLI sessions - they may not specify the model per event
-				let defaultModel = 'gpt-4o';
-
-				// For delta-based formats, reconstruct state to extract actual usage
-				let sessionState: any = {};
-				let isDeltaBased = false;
-				// For CLI (non-delta) sessions: capture exact per-model usage from session.shutdown
-				let cliShutdownModelUsage: ModelUsage | null = null;
-
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
-					try {
-						const event = JSON.parse(line);
-
-						// Detect and reconstruct delta-based format
-						if (typeof event.kind === 'number') {
-							isDeltaBased = true;
-							sessionState = this.applyDelta(sessionState, event);
-						}
-
-						// Handle VS Code incremental format - extract model from session header (kind: 0)
-						// The schema has v.selectedModel.identifier or v.selectedModel.metadata.id
-						if (event.kind === 0) {
-							const modelId = event.v?.selectedModel?.identifier ||
-								event.v?.selectedModel?.metadata?.id ||
-								// Legacy fallback: older Copilot Chat session logs stored selectedModel under v.inputState.
-								// This is kept for backward compatibility so we can still read existing logs from those versions.
-								event.v?.inputState?.selectedModel?.metadata?.id;
-							if (modelId) {
-								defaultModel = modelId.replace(/^copilot\//, '');
-							}
-						}
-
-						// Handle model changes (kind: 2 with selectedModel update, NOT kind: 1 which is delete)
-						if (event.kind === 2 && event.k?.[0] === 'selectedModel') {
-							const modelId = event.v?.identifier || event.v?.metadata?.id;
-							if (modelId) {
-								defaultModel = modelId.replace(/^copilot\//, '');
-							}
-						}
-
-						const model = event.model || defaultModel;
-
-						if (!modelUsage[model]) {
-							modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-						}
-
-						// For non-delta formats, estimate from event text (CLI format)
-						if (!isDeltaBased) {
-							// Copilot CLI: session.shutdown has exact per-model token totals
-							if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
-								cliShutdownModelUsage = {};
-								for (const [modelName, metrics] of Object.entries(event.data.modelMetrics) as [string, any][]) {
-									const usage = metrics?.usage;
-									if (usage) {
-										cliShutdownModelUsage[modelName] = {
-											inputTokens: typeof usage.inputTokens === 'number' ? usage.inputTokens : 0,
-											outputTokens: typeof usage.outputTokens === 'number' ? usage.outputTokens : 0,
-										};
-									}
-								}
-							} else if (event.type === 'user.message' && event.data?.content) {
-								modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.content, model);
-							} else if (event.type === 'assistant.message' && event.data?.content) {
-								modelUsage[model].outputTokens += this.estimateTokensFromText(event.data.content, model);
-							} else if (event.type === 'tool.result' && event.data?.output) {
-								// Tool outputs are typically input context
-								modelUsage[model].inputTokens += this.estimateTokensFromText(event.data.output, model);
-							}
-						}
-					} catch (e) {
-						// Skip malformed lines
-					}
-				}
-
-				// If CLI session.shutdown provided exact per-model data, use it instead of estimates
-				if (!isDeltaBased && cliShutdownModelUsage) {
-					return cliShutdownModelUsage;
-				}
-
-				// For delta-based formats, extract actual usage from reconstructed state
-				if (isDeltaBased && sessionState.requests && Array.isArray(sessionState.requests)) {
-					for (const request of sessionState.requests) {
-						if (!request || !request.requestId) { continue; }
-
-						// Extract request-level modelId
-						let requestModel = defaultModel;
-						if (request.modelId) {
-							requestModel = request.modelId.replace(/^copilot\//, '');
-						} else if (request.result?.metadata?.modelId) {
-							requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
-						} else if (request.result?.details) {
-							requestModel = this.getModelFromRequest(request);
-						}
-
-						if (!modelUsage[requestModel]) {
-							modelUsage[requestModel] = { inputTokens: 0, outputTokens: 0 };
-						}
-
-						// Use actual usage if available, otherwise estimate from text
-						if (request.result?.usage) {
-							// OLD FORMAT (pre-Feb 2026)
-							const u = request.result.usage;
-							modelUsage[requestModel].inputTokens += typeof u.promptTokens === 'number' ? u.promptTokens : 0;
-							modelUsage[requestModel].outputTokens += typeof u.completionTokens === 'number' ? u.completionTokens : 0;
-						} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
-							// NEW FORMAT (Feb 2026+)
-							modelUsage[requestModel].inputTokens += request.result.promptTokens;
-							modelUsage[requestModel].outputTokens += request.result.outputTokens;
-						} else {
-							// Fallback to text-based estimation
-							if (request.message?.text) {
-								modelUsage[requestModel].inputTokens += this.estimateTokensFromText(request.message.text, requestModel);
-							}
-							if (request.response && Array.isArray(request.response)) {
-								for (const responseItem of request.response) {
-									if (responseItem.value) {
-										modelUsage[requestModel].outputTokens += this.estimateTokensFromText(responseItem.value, requestModel);
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// FALLBACK: If reconstruction missed result data, use regex extraction from raw lines
-				const rawModelUsage = this.extractPerRequestUsageFromRawLines(lines);
-				for (const [reqIdx, extracted] of rawModelUsage) {
-					const request = sessionState.requests?.[reqIdx];
-					if (!request) { continue; }
-					// Only use regex fallback if reconstruction didn't already provide usage
-					if (request.result?.usage || (typeof request.result?.promptTokens === 'number') || (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number')) { continue; }
-					let requestModel = defaultModel;
-					if (request.modelId) { requestModel = request.modelId.replace(/^copilot\//, ''); }
-					if (!modelUsage[requestModel]) { modelUsage[requestModel] = { inputTokens: 0, outputTokens: 0 }; }
-					modelUsage[requestModel].inputTokens += extracted.promptTokens;
-					modelUsage[requestModel].outputTokens += extracted.outputTokens;
-				}
-
-				return modelUsage;
-			}
-
-			// Handle regular .json files
-			const sessionContent = JSON.parse(fileContent);
-
-			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-				for (const request of sessionContent.requests) {
-					// Get model for this request
-					const model = this.getModelFromRequest(request);
-
-					// Initialize model if not exists
-					if (!modelUsage[model]) {
-						modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-					}
-
-					// Use actual usage if available, otherwise estimate from text
-					if (request.result?.usage) {
-						// OLD FORMAT (pre-Feb 2026)
-						const u = request.result.usage;
-						modelUsage[model].inputTokens += typeof u.promptTokens === 'number' ? u.promptTokens : 0;
-						modelUsage[model].outputTokens += typeof u.completionTokens === 'number' ? u.completionTokens : 0;
-					} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
-						// NEW FORMAT (Feb 2026+)
-						modelUsage[model].inputTokens += request.result.promptTokens;
-						modelUsage[model].outputTokens += request.result.outputTokens;
-					} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
-						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
-						modelUsage[model].inputTokens += request.result.metadata.promptTokens;
-						modelUsage[model].outputTokens += request.result.metadata.outputTokens;
-					} else {
-						// Fallback to text-based estimation
-						// Estimate tokens from user message (input)
-						if (request.message && request.message.parts) {
-							for (const part of request.message.parts) {
-								if (part.text) {
-									const tokens = this.estimateTokensFromText(part.text, model);
-									modelUsage[model].inputTokens += tokens;
-								}
-							}
-						}
-
-						// Estimate tokens from assistant response (output)
-						if (request.response && Array.isArray(request.response)) {
-							for (const responseItem of request.response) {
-								if (responseItem.value) {
-									const tokens = this.estimateTokensFromText(responseItem.value, model);
-									modelUsage[model].outputTokens += tokens;
-								}
-							}
-						}
-					}
-				}
-			}
-		} catch (error) {
-			this.warn(`Error getting model usage from ${sessionFile}: ${error}`);
-		}
-
-		return modelUsage;
-	}
 
 	/**
 	 * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
 	 */
-	private async analyzeSessionUsage(sessionFile: string): Promise<SessionUsageAnalysis> {
-		const analysis: SessionUsageAnalysis = {
-			toolCalls: { total: 0, byTool: {} },
-			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
-			contextReferences: {
-				file: 0,
-				selection: 0,
-				implicitSelection: 0,
-				symbol: 0,
-				codebase: 0,
-				workspace: 0,
-				terminal: 0,
-				vscode: 0,
-				terminalLastCommand: 0,
-				terminalSelection: 0,
-				clipboard: 0,
-				changes: 0,
-				outputPanel: 0,
-				problemsPanel: 0,
-				byKind: {},
-				copilotInstructions: 0,
-				agentsMd: 0,
-				byPath: {}
-			},
-			mcpTools: { total: 0, byServer: {}, byTool: {} },
-			modelSwitching: {
-				uniqueModels: [],
-				modelCount: 0,
-				switchCount: 0,
-				tiers: { standard: [], premium: [], unknown: [] },
-				hasMixedTiers: false,
-				standardRequests: 0,
-				premiumRequests: 0,
-				unknownRequests: 0,
-				totalRequests: 0
-			}
-		};
-
-		try {
-			// Handle OpenCode sessions
-			if (this.isOpenCodeSessionFile(sessionFile)) {
-				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
-				if (messages.length > 0) {
-					const models: string[] = [];
-					for (const msg of messages) {
-						if (msg.role === 'user') {
-							// OpenCode uses agent/mode field for mode type
-							const mode = msg.agent || 'agent';
-							if (mode === 'build' || mode === 'agent') {
-								analysis.modeUsage.agent++;
-							} else if (mode === 'ask') {
-								analysis.modeUsage.ask++;
-							} else if (mode === 'edit') {
-								analysis.modeUsage.edit++;
-							} else {
-								analysis.modeUsage.agent++;
-							}
-						}
-						if (msg.role === 'assistant') {
-							const model = msg.modelID || 'unknown';
-							models.push(model);
-							// Check parts for tool calls
-							const parts = await this.getOpenCodePartsForMessage(msg.id);
-							for (const part of parts) {
-								if (part.type === 'tool' && part.tool) {
-									analysis.toolCalls.total++;
-									const toolName = part.tool;
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-								}
-							}
-						}
-					}
-					// Model switching analysis
-					const uniqueModels = [...new Set(models)];
-					analysis.modelSwitching.uniqueModels = uniqueModels;
-					analysis.modelSwitching.modelCount = uniqueModels.length;
-					analysis.modelSwitching.totalRequests = models.length;
-					let switchCount = 0;
-					for (let i = 1; i < models.length; i++) {
-						if (models[i] !== models[i - 1]) { switchCount++; }
-					}
-					analysis.modelSwitching.switchCount = switchCount;
-				}
-				return analysis;
-			}
-
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-
-			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
-			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
-			if (isJsonlContent) {
-				const lines = fileContent.trim().split('\n').filter(l => l.trim());
-
-				// Detect if this is delta-based format (VS Code incremental)
-				let isDeltaBased = false;
-				if (lines.length > 0) {
-					try {
-						const firstLine = JSON.parse(lines[0]);
-						if (firstLine && typeof firstLine.kind === 'number') {
-							isDeltaBased = true;
-						}
-					} catch {
-						// Not delta format
-					}
-				}
-
-				if (isDeltaBased) {
-					// Delta-based format: reconstruct full state first, then process
-					let sessionState: any = {};
-					for (const line of lines) {
-						try {
-							const delta = JSON.parse(line);
-							sessionState = this.applyDelta(sessionState, delta);
-						} catch {
-							// Skip invalid lines
-						}
-					}
-
-					// Extract session mode from reconstructed state
-					const sessionModeType = sessionState.inputState?.mode 
-						? this.getModeType(sessionState.inputState.mode)
-						: 'ask';
-
-					// Detect implicit selections
-					if (sessionState.inputState?.selections && Array.isArray(sessionState.inputState.selections)) {
-						for (const sel of sessionState.inputState.selections) {
-							if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
-								analysis.contextReferences.implicitSelection++;
-								break;
-							}
-						}
-					}
-
-					// Process reconstructed requests array
-					const requests = sessionState.requests || [];
-					for (const request of requests) {
-						if (!request || !request.requestId) { continue; }
-
-						// Count by mode type
-						if (sessionModeType === 'agent') {
-							analysis.modeUsage.agent++;
-						} else if (sessionModeType === 'edit') {
-							analysis.modeUsage.edit++;
-						} else if (sessionModeType === 'plan') {
-							analysis.modeUsage.plan++;
-						} else if (sessionModeType === 'customAgent') {
-							analysis.modeUsage.customAgent++;
-						} else {
-							analysis.modeUsage.ask++;
-						}
-
-						// Check for agent in request
-						if (request.agent?.id) {
-							const toolName = request.agent.id;
-							analysis.toolCalls.total++;
-							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-						}
-
-						// Analyze all context references from this request
-						this.analyzeRequestContext(request, analysis.contextReferences);
-
-						// Extract tool calls and MCP tools from request.response array
-						if (request.response && Array.isArray(request.response)) {
-							for (const responseItem of request.response) {
-								if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
-									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-
-									// Check if this is an MCP tool by name pattern
-									if (this.isMcpTool(toolName)) {
-										analysis.mcpTools.total++;
-										const serverName = this.extractMcpServerName(toolName);
-										analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-										const normalizedTool = this.normalizeMcpToolName(toolName);
-										analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
-									} else {
-										analysis.toolCalls.total++;
-										analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-									}
-								}
-							}
-						}
-					}
-
-					// Calculate model switching for delta-based JSONL files
-					await this.calculateModelSwitching(sessionFile, analysis);
-
-					// Derive conversation patterns from mode usage before returning
-					this.deriveConversationPatterns(analysis);
-
-					return analysis;
-				}
-
-				// Non-delta JSONL (Copilot CLI format) - process line-by-line
-				let sessionMode = 'ask';
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
-					try {
-						const event = JSON.parse(line);
-
-						// Handle VS Code incremental format - detect mode from session header
-						if (event.kind === 0 && event.v?.inputState?.mode) {
-							sessionMode = this.getModeType(event.v.inputState.mode);
-
-							// Detect implicit selections in initial state (only if there's an actual range)
-							if (event.v?.inputState?.selections && Array.isArray(event.v.inputState.selections)) {
-								for (const sel of event.v.inputState.selections) {
-									// Only count if it's an actual selection (not just a cursor position)
-									if (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn) {
-										analysis.contextReferences.implicitSelection++;
-										break; // Count once per session
-									}
-								}
-							}
-						}
-
-						// Handle mode changes (kind: 1 with mode update)
-						if (event.kind === 1 && event.k?.includes('mode') && event.v) {
-							sessionMode = this.getModeType(event.v);
-						}
-
-						// Detect implicit selections in updates to inputState.selections
-						if (event.kind === 1 && event.k?.includes('selections') && Array.isArray(event.v)) {
-							for (const sel of event.v) {
-								// Only count if it's an actual selection (not just a cursor position)
-								if (sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
-									analysis.contextReferences.implicitSelection++;
-									break; // Count once per update
-								}
-							}
-						}
-
-						// Handle contentReferences updates (kind: 1 with contentReferences update)
-						if (event.kind === 1 && event.k?.includes('contentReferences') && Array.isArray(event.v)) {
-							this.analyzeContentReferences(event.v, analysis.contextReferences);
-						}
-
-						// Handle variableData updates (kind: 1 with variableData update)
-						if (event.kind === 1 && event.k?.includes('variableData') && event.v) {
-							this.analyzeVariableData(event.v, analysis.contextReferences);
-						}
-
-						// Handle VS Code incremental format - count requests as interactions
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							for (const request of event.v) {
-								if (request.requestId) {
-									// Count by mode type
-									if (sessionMode === 'agent') {
-										analysis.modeUsage.agent++;
-									} else if (sessionMode === 'edit') {
-										analysis.modeUsage.edit++;
-									} else if (sessionMode === 'plan') {
-										analysis.modeUsage.plan++;
-									} else if (sessionMode === 'customAgent') {
-										analysis.modeUsage.customAgent++;
-									} else {
-										analysis.modeUsage.ask++;
-									}
-								}
-								// Check for agent in request
-								if (request.agent?.id) {
-									const toolName = request.agent.id;
-									analysis.toolCalls.total++;
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-								}
-
-								// Analyze all context references from this request
-								this.analyzeRequestContext(request, analysis.contextReferences);
-
-								// Extract tool calls from request.response array (when full request is added)
-								if (request.response && Array.isArray(request.response)) {
-									for (const responseItem of request.response) {
-										if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
-											analysis.toolCalls.total++;
-											const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-											analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-										}
-									}
-								}
-							}
-						}
-
-						// Handle VS Code incremental format - tool invocations in responses
-						if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-							for (const responseItem of event.v) {
-								if (responseItem.kind === 'toolInvocationSerialized') {
-									analysis.toolCalls.total++;
-									const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-								}
-							}
-						}
-
-						// Handle Copilot CLI format
-						// Detect mode from event type - CLI can be chat or agent mode
-						if (event.type === 'user.message') {
-							analysis.modeUsage.ask++;
-						}
-
-						// If we see tool calls, upgrade to agent mode for this session
-						if (event.type === 'tool.call' || event.type === 'tool.result') {
-							// Tool usage indicates agent mode - adjust if we counted this as ask
-							if (analysis.modeUsage.ask > 0) {
-								analysis.modeUsage.ask--;
-								analysis.modeUsage.agent++;
-							}
-						}
-
-						// Detect tool calls from Copilot CLI
-						if (event.type === 'tool.call' || event.type === 'tool.result') {
-							const toolName = event.data?.toolName || event.toolName || 'unknown';
-
-							// Check if this is an MCP tool by name pattern
-							if (this.isMcpTool(toolName)) {
-								// Count as MCP tool
-								analysis.mcpTools.total++;
-								const serverName = this.extractMcpServerName(toolName);
-								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-								const normalizedTool = this.normalizeMcpToolName(toolName);
-								analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
-							} else {
-								// Count as regular tool call
-								analysis.toolCalls.total++;
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-
-						// Detect MCP tools from explicit MCP events
-						if (event.type === 'mcp.tool.call' || (event.data?.mcpServer)) {
-							analysis.mcpTools.total++;
-							const serverName = event.data?.mcpServer || 'unknown';
-							const mcpToolName = event.data?.toolName || event.toolName || 'unknown';
-							analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-							const normalizedMcpTool = this.normalizeMcpToolName(mcpToolName);
-							analysis.mcpTools.byTool[normalizedMcpTool] = (analysis.mcpTools.byTool[normalizedMcpTool] || 0) + 1;
-						}
-					} catch (e) {
-						// Skip malformed lines
-					}
-				}
-				// Calculate model switching for JSONL files before returning
-				await this.calculateModelSwitching(sessionFile, analysis);
-
-				// Derive conversation patterns from mode usage before returning
-				this.deriveConversationPatterns(analysis);
-
-				return analysis;
-			}
-
-			// Handle regular .json files
-			const sessionContent = JSON.parse(fileContent);
-
-			// Detect session mode and count interactions per request
-			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-				for (const request of sessionContent.requests) {
-					// Determine mode for each individual request
-					let requestMode = 'ask'; // default
-
-					// Check request-level agent ID first (more specific)
-					if (request.agent?.id) {
-						const agentId = request.agent.id.toLowerCase();
-						if (agentId.includes('edit')) {
-							requestMode = 'edit';
-						} else if (agentId.includes('agent')) {
-							requestMode = 'agent';
-						}
-					}
-					// Fall back to session-level mode if no request-specific agent
-					else if (sessionContent.mode?.id) {
-						const modeId = sessionContent.mode.id.toLowerCase();
-						if (modeId.includes('agent')) {
-							requestMode = 'agent';
-						} else if (modeId.includes('edit')) {
-							requestMode = 'edit';
-						}
-					}
-
-					// Count this request in the appropriate mode
-					if (requestMode === 'agent') {
-						analysis.modeUsage.agent++;
-					} else if (requestMode === 'edit') {
-						analysis.modeUsage.edit++;
-					} else {
-						analysis.modeUsage.ask++;
-					}
-
-					// Analyze all context references from this request
-					this.analyzeRequestContext(request, analysis.contextReferences);
-
-					// Analyze response for tool calls and MCP tools
-					if (request.response && Array.isArray(request.response)) {
-						for (const responseItem of request.response) {
-							// Detect tool invocations
-							if (responseItem.kind === 'toolInvocationSerialized' ||
-								responseItem.kind === 'prepareToolInvocation') {
-								const toolName = responseItem.toolId ||
-									responseItem.toolName ||
-									responseItem.invocationMessage?.toolName ||
-									'unknown';
-
-								// Check if this is an MCP tool by name pattern
-								if (this.isMcpTool(toolName)) {
-									// Count as MCP tool
-									analysis.mcpTools.total++;
-									const serverName = this.extractMcpServerName(toolName);
-									analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-									const normalizedTool = this.normalizeMcpToolName(toolName);
-									analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
-								} else {
-									// Count as regular tool call
-									analysis.toolCalls.total++;
-									analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-								}
-							}
-
-							// Detect MCP servers starting
-							if (responseItem.kind === 'mcpServersStarting' && responseItem.didStartServerIds) {
-								for (const serverId of responseItem.didStartServerIds) {
-									analysis.mcpTools.total++;
-									analysis.mcpTools.byServer[serverId] = (analysis.mcpTools.byServer[serverId] || 0) + 1;
-								}
-							}
-
-							// Detect inline references in response items
-							if (responseItem.kind === 'inlineReference' && responseItem.inlineReference) {
-								// Treat response inlineReferences as contentReferences
-								this.analyzeContentReferences([responseItem], analysis.contextReferences);
-							}
-						}
-					}
-				}
-			}
-		} catch (error) {
-			this.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
-		}
-
-		// Calculate model switching statistics from session
-		await this.calculateModelSwitching(sessionFile, analysis);
-
-		// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
-		await this.trackEnhancedMetrics(sessionFile, analysis);
-
-		return analysis;
-	}
 
 	/**
 	 * Calculate model switching statistics for a session file.
 	 * This method updates the analysis.modelSwitching field in place.
 	 */
-	private async calculateModelSwitching(sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
-		try {
-			// Use non-cached method to avoid circular dependency
-			// (getSessionFileDataCached -> analyzeSessionUsage -> getModelUsageFromSessionCached -> getSessionFileDataCached)
-			const modelUsage = await this.getModelUsageFromSession(sessionFile);
-			const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
-
-			// Skip if modelUsage is undefined or empty (not a valid session file)
-			if (!modelUsage || modelCount === 0) {
-				return;
-			}
-
-			// Get unique models from this session
-			const uniqueModels = Object.keys(modelUsage);
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-
-			// Classify models by tier
-			const standardModels: string[] = [];
-			const premiumModels: string[] = [];
-			const unknownModels: string[] = [];
-
-			for (const model of uniqueModels) {
-				const tier = this.getModelTier(model);
-				if (tier === 'standard') {
-					standardModels.push(model);
-				} else if (tier === 'premium') {
-					premiumModels.push(model);
-				} else {
-					unknownModels.push(model);
-				}
-			}
-
-			analysis.modelSwitching.tiers = { standard: standardModels, premium: premiumModels, unknown: unknownModels };
-			analysis.modelSwitching.hasMixedTiers = standardModels.length > 0 && premiumModels.length > 0;
-
-			// Count requests per tier and model switches by examining request sequence
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-			// Check if this is a UUID-only file (new Copilot CLI format)
-			if (this.isUuidPointerFile(fileContent)) {
-				return;
-			}
-			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
-			if (!isJsonlContent) {
-				const sessionContent = JSON.parse(fileContent);
-				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-					let previousModel: string | null = null;
-					let switchCount = 0;
-					const tierCounts = { standard: 0, premium: 0, unknown: 0 };
-
-					for (const request of sessionContent.requests) {
-						const currentModel = this.getModelFromRequest(request);
-						
-						// Count model switches
-						if (previousModel && currentModel !== previousModel) {
-							switchCount++;
-						}
-						previousModel = currentModel;
-
-						// Count requests per tier
-						const tier = this.getModelTier(currentModel);
-						if (tier === 'standard') {
-							tierCounts.standard++;
-						} else if (tier === 'premium') {
-							tierCounts.premium++;
-						} else {
-							tierCounts.unknown++;
-						}
-					}
-
-					analysis.modelSwitching.switchCount = switchCount;
-					analysis.modelSwitching.standardRequests = tierCounts.standard;
-					analysis.modelSwitching.premiumRequests = tierCounts.premium;
-					analysis.modelSwitching.unknownRequests = tierCounts.unknown;
-					analysis.modelSwitching.totalRequests = tierCounts.standard + tierCounts.premium + tierCounts.unknown;
-				}
-			} else {
-				// For JSONL files, we need to count requests differently
-				// Count user messages as requests (type === 'user.message' or kind: 2 with requests)
-				const lines = fileContent.trim().split('\n');
-				const tierCounts = { standard: 0, premium: 0, unknown: 0 };
-				let defaultModel = 'gpt-4o';
-
-				for (const line of lines) {
-					if (!line.trim()) { continue; }
-					try {
-						const event = JSON.parse(line);
-
-						// Track model changes
-						if (event.kind === 0) {
-							const modelId = event.v?.selectedModel?.identifier ||
-								event.v?.selectedModel?.metadata?.id ||
-								event.v?.inputState?.selectedModel?.metadata?.id;
-							if (modelId) {
-								defaultModel = modelId.replace(/^copilot\//, '');
-							}
-						}
-
-						if (event.kind === 2 && event.k?.[0] === 'selectedModel') {
-							const modelId = event.v?.identifier || event.v?.metadata?.id;
-							if (modelId) {
-								defaultModel = modelId.replace(/^copilot\//, '');
-							}
-						}
-
-						// Count user messages (requests)
-						if (event.type === 'user.message') {
-							const model = event.model || defaultModel;
-							const tier = this.getModelTier(model);
-							if (tier === 'standard') {
-								tierCounts.standard++;
-							} else if (tier === 'premium') {
-								tierCounts.premium++;
-							} else {
-								tierCounts.unknown++;
-							}
-						}
-
-						// Count VS Code incremental format requests (kind: 2 with requests array)
-						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-							for (const request of event.v) {
-								let requestModel = defaultModel;
-								if (request.modelId) {
-									requestModel = request.modelId.replace(/^copilot\//, '');
-								} else if (request.result?.metadata?.modelId) {
-									requestModel = request.result.metadata.modelId.replace(/^copilot\//, '');
-								} else if (request.result?.details) {
-									requestModel = this.getModelFromRequest(request);
-								}
-
-								const tier = this.getModelTier(requestModel);
-								if (tier === 'standard') {
-									tierCounts.standard++;
-								} else if (tier === 'premium') {
-									tierCounts.premium++;
-								} else {
-									tierCounts.unknown++;
-								}
-							}
-						}
-					} catch (e) {
-						// Skip malformed lines
-					}
-				}
-
-				analysis.modelSwitching.standardRequests = tierCounts.standard;
-				analysis.modelSwitching.premiumRequests = tierCounts.premium;
-				analysis.modelSwitching.unknownRequests = tierCounts.unknown;
-				analysis.modelSwitching.totalRequests = tierCounts.standard + tierCounts.premium + tierCounts.unknown;
-			}
-		} catch (error) {
-			this.warn(`Error calculating model switching for ${sessionFile}: ${error}`);
-		}
-	}
 
 	/**
 	 * Check if a tool name indicates it's an MCP (Model Context Protocol) tool.
 	 * MCP tools are identified by names starting with "mcp." or "mcp_"
 	 */
 	private isMcpTool(toolName: string): boolean {
-		return toolName.startsWith('mcp.') || toolName.startsWith('mcp_');
+		return _isMcpTool(toolName);
 	}
 
 	/**
@@ -3810,15 +1677,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * (local stdio vs remote) are counted under a single canonical key in "By Tool" views.
 	 * Maps mcp_github_github_<action> → mcp_io_github_git_<action>.
 	 */
-	private normalizeMcpToolName(toolName: string): string {
-		if (toolName.startsWith('mcp_github_github_')) {
-			return 'mcp_io_github_git_' + toolName.substring('mcp_github_github_'.length);
-		}
-		if (toolName.startsWith('mcp.github.github.')) {
-			return 'mcp.io.github.git.' + toolName.substring('mcp.github.github.'.length);
-		}
-		return toolName;
-	}
 
 	/**
 	 * Extract server name from an MCP tool name.
@@ -3828,40 +1686,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Falls back to extracting the second segment if no mapping exists.
 	 */
 	private extractMcpServerName(toolName: string): string {
-		// First, try to get the display name from toolNames.json and extract the server part
-		const displayName = this.toolNameMap[toolName];
-		if (displayName && displayName.includes(':')) {
-			// Extract the part before the colon (e.g., "GitHub MCP" from "GitHub MCP: Issue Read")
-			return displayName.split(':')[0].trim();
-		}
-
-		// Fallback: recognize known MCP server prefixes for unlisted tools
-		if (toolName.startsWith('mcp_io_github_git_') || toolName.startsWith('mcp.io.github.git.')) {
-			return 'GitHub MCP (Local)';
-		}
-		if (toolName.startsWith('mcp_github_github_') || toolName.startsWith('mcp.github.github.')) {
-			return 'GitHub MCP (Remote)';
-		}
-
-		// Generic fallback: extract from tool name structure
-		const withoutPrefix = toolName.replace(/^mcp[._]/, '');
-		const parts = withoutPrefix.split(/[._]/);
-		return parts[0] || 'unknown';
+		return _extractMcpServerName(toolName, this.toolNameMap);
 	}
 
 	/**
 	 * Derive conversation patterns from already-computed mode usage.
 	 * Called before every return in analyzeSessionUsage to ensure all file formats get patterns.
 	 */
-	private deriveConversationPatterns(analysis: SessionUsageAnalysis): void {
-		const totalRequests = analysis.modeUsage.ask + analysis.modeUsage.edit + analysis.modeUsage.agent;
-		analysis.conversationPatterns = {
-			multiTurnSessions: totalRequests > 1 ? 1 : 0,
-			singleTurnSessions: totalRequests === 1 ? 1 : 0,
-			avgTurnsPerSession: totalRequests,
-			maxTurnsInSession: totalRequests
-		};
-	}
 
 	/**
 	 * Track enhanced metrics from session files:
@@ -3871,334 +1702,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * - Conversation patterns (multi-turn sessions)
 	 * - Agent type usage
 	 */
-	private async trackEnhancedMetrics(sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
-		try {
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-
-			// Check if this is a UUID-only file (new Copilot CLI format)
-			if (this.isUuidPointerFile(fileContent)) {
-				return; // No metrics to track in pointer files
-			}
-
-			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
-			
-			// Initialize tracking structures
-			const editedFiles = new Set<string>();
-			let totalApplies = 0;
-			let totalCodeBlocks = 0;
-			const timestamps: number[] = [];
-			const timingsData: { firstProgress: number; totalElapsed: number; }[] = [];
-			const waitTimes: number[] = [];
-			const agentCounts = {
-				editsAgent: 0,
-				defaultAgent: 0,
-				workspaceAgent: 0,
-				other: 0
-			};
-			
-			if (isJsonlContent) {
-				// Handle delta-based JSONL format
-				const lines = fileContent.trim().split('\n').filter(l => l.trim());
-				let isDeltaBased = false;
-				if (lines.length > 0) {
-					try {
-						const firstLine = JSON.parse(lines[0]);
-						if (firstLine && typeof firstLine.kind === 'number') {
-							isDeltaBased = true;
-						}
-					} catch {
-						// Not delta format
-					}
-				}
-				
-				if (isDeltaBased) {
-					// Reconstruct full state
-					let sessionState: any = {};
-					for (const line of lines) {
-						try {
-							const delta = JSON.parse(line);
-							sessionState = this.applyDelta(sessionState, delta);
-						} catch {
-							// Skip invalid lines
-						}
-					}
-					
-					// Extract timestamps
-					if (sessionState.creationDate) { timestamps.push(sessionState.creationDate); }
-					if (sessionState.lastMessageDate) { timestamps.push(sessionState.lastMessageDate); }
-					
-					// Process requests
-					const requests = sessionState.requests || [];
-					
-					for (const request of requests) {
-						if (!request) { continue; }
-						
-						// Track timestamps
-						if (request.timestamp) { timestamps.push(request.timestamp); }
-						
-						// Track timings
-						if (request.result?.timings) {
-							timingsData.push(request.result.timings);
-						}
-						
-						// Track wait times
-						if (request.timeSpentWaiting !== undefined) {
-							waitTimes.push(request.timeSpentWaiting);
-						}
-						
-						// Track agent types
-						if (request.agent?.id) {
-							const agentId = request.agent.id;
-							if (agentId.includes('edit')) {
-								agentCounts.editsAgent++;
-							} else if (agentId.includes('default')) {
-								agentCounts.defaultAgent++;
-							} else if (agentId.includes('workspace')) {
-								agentCounts.workspaceAgent++;
-							} else {
-								agentCounts.other++;
-							}
-						}
-						
-						// Track edit scope and apply usage
-						if (request.response && Array.isArray(request.response)) {
-							for (const resp of request.response) {
-								if (resp.kind === 'textEditGroup' && resp.uri) {
-									const filePath = resp.uri.path || JSON.stringify(resp.uri);
-									editedFiles.add(filePath);
-								}
-								if (resp.kind === 'codeblockUri') {
-									totalCodeBlocks++;
-									if (resp.isEdit === true) {
-										totalApplies++;
-									}
-								}
-							}
-						}
-					}
-				}
-			} else {
-				// Handle regular JSON files
-				const sessionContent = JSON.parse(fileContent);
-				
-				// Extract timestamps
-				if (sessionContent.creationDate) { timestamps.push(sessionContent.creationDate); }
-				if (sessionContent.lastMessageDate) { timestamps.push(sessionContent.lastMessageDate); }
-				
-				// Process requests
-				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
-					for (const request of sessionContent.requests) {
-						// Track timestamps
-						if (request.timestamp) { timestamps.push(request.timestamp); }
-						
-						// Track timings
-						if (request.result?.timings) {
-							timingsData.push(request.result.timings);
-						}
-						
-						// Track wait times
-						if (request.timeSpentWaiting !== undefined) {
-							waitTimes.push(request.timeSpentWaiting);
-						}
-						
-						// Track agent types
-						if (request.agent?.id) {
-							const agentId = request.agent.id;
-							if (agentId.includes('edit')) {
-								agentCounts.editsAgent++;
-							} else if (agentId.includes('default')) {
-								agentCounts.defaultAgent++;
-							} else if (agentId.includes('workspace')) {
-								agentCounts.workspaceAgent++;
-							} else {
-								agentCounts.other++;
-							}
-						}
-						
-						// Track edit scope and apply usage
-						if (request.response && Array.isArray(request.response)) {
-							for (const resp of request.response) {
-								if (resp.kind === 'textEditGroup' && resp.uri) {
-									const filePath = resp.uri.path || JSON.stringify(resp.uri);
-									editedFiles.add(filePath);
-								}
-								if (resp.kind === 'codeblockUri') {
-									totalCodeBlocks++;
-									if (resp.isEdit === true) {
-										totalApplies++;
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-			
-			// Store edit scope data
-			const editSessionCount = editedFiles.size > 0 ? 1 : 0;
-			analysis.editScope = {
-				singleFileEdits: editedFiles.size === 1 ? 1 : 0,
-				multiFileEdits: editedFiles.size > 1 ? 1 : 0,
-				totalEditedFiles: editedFiles.size,
-				avgFilesPerSession: editSessionCount > 0 ? editedFiles.size / editSessionCount : 0
-			};
-			
-			// Store apply button usage
-			analysis.applyUsage = {
-				totalApplies,
-				totalCodeBlocks,
-				applyRate: totalCodeBlocks > 0 ? (totalApplies / totalCodeBlocks) * 100 : 0
-			};
-			
-			// Calculate session duration
-			const totalDurationMs = timestamps.length >= 2 
-				? Math.max(...timestamps) - Math.min(...timestamps)
-				: 0;
-			const avgFirstProgressMs = timingsData.length > 0
-				? timingsData.reduce((sum, t) => sum + (t.firstProgress || 0), 0) / timingsData.length
-				: 0;
-			const avgTotalElapsedMs = timingsData.length > 0
-				? timingsData.reduce((sum, t) => sum + (t.totalElapsed || 0), 0) / timingsData.length
-				: 0;
-			const avgWaitTimeMs = waitTimes.length > 0
-				? waitTimes.reduce((sum, w) => sum + w, 0) / waitTimes.length
-				: 0;
-			
-			analysis.sessionDuration = {
-				totalDurationMs,
-				avgDurationMs: totalDurationMs,
-				avgFirstProgressMs,
-				avgTotalElapsedMs,
-				avgWaitTimeMs
-			};
-			
-			// Store conversation patterns
-			this.deriveConversationPatterns(analysis);
-			
-			// Store agent type usage
-			analysis.agentTypes = agentCounts;
-			
-		} catch (error) {
-			this.warn(`Error tracking enhanced metrics from ${sessionFile}: ${error}`);
-		}
-	}
 
 	/**
 	 * Analyze a request object for all context references.
 	 * This is the unified method that processes text, contentReferences, and variableData.
 	 */
 	private analyzeRequestContext(request: any, refs: ContextReferenceUsage): void {
-		// Analyze user message text for context references
-		if (request.message) {
-			if (request.message.text) {
-				this.analyzeContextReferences(request.message.text, refs);
-			}
-			if (request.message.parts) {
-				for (const part of request.message.parts) {
-					if (part.text) {
-						this.analyzeContextReferences(part.text, refs);
-					}
-				}
-			}
-		}
-
-		// Analyze contentReferences if present
-		if (request.contentReferences && Array.isArray(request.contentReferences)) {
-			this.analyzeContentReferences(request.contentReferences, refs);
-		}
-
-		// Analyze variableData if present
-		if (request.variableData) {
-			this.analyzeVariableData(request.variableData, refs);
-		}
+		return _analyzeRequestContext(request, refs);
 	}
 
 	/**
 	 * Analyze text for context references like #file, #selection, @workspace
 	 */
 	private analyzeContextReferences(text: string, refs: ContextReferenceUsage): void {
-		// Count #file references
-		const fileMatches = text.match(/#file/gi);
-		if (fileMatches) {
-			refs.file += fileMatches.length;
-		}
-
-		// Count #selection references
-		const selectionMatches = text.match(/#selection/gi);
-		if (selectionMatches) {
-			refs.selection += selectionMatches.length;
-		}
-
-		// Count #symbol and #sym references (both aliases)
-		// Note: #sym:symbolName format is handled via variableData, not text matching
-		const symbolMatches = text.match(/#symbol/gi);
-		const symMatches = text.match(/#sym(?![:\w])/gi);  // Negative lookahead: don't match #symbol or #sym:
-		if (symbolMatches) {
-			refs.symbol += symbolMatches.length;
-		}
-		if (symMatches) {
-			refs.symbol += symMatches.length;
-		}
-
-		// Count #codebase references
-		const codebaseMatches = text.match(/#codebase/gi);
-		if (codebaseMatches) {
-			refs.codebase += codebaseMatches.length;
-		}
-
-		// Count #terminalLastCommand references
-		const terminalLastCommandMatches = text.match(/#terminalLastCommand/gi);
-		if (terminalLastCommandMatches) {
-			refs.terminalLastCommand += terminalLastCommandMatches.length;
-		}
-
-		// Count #terminalSelection references
-		const terminalSelectionMatches = text.match(/#terminalSelection/gi);
-		if (terminalSelectionMatches) {
-			refs.terminalSelection += terminalSelectionMatches.length;
-		}
-
-		// Count #clipboard references
-		const clipboardMatches = text.match(/#clipboard/gi);
-		if (clipboardMatches) {
-			refs.clipboard += clipboardMatches.length;
-		}
-
-		// Count #changes references
-		const changesMatches = text.match(/#changes/gi);
-		if (changesMatches) {
-			refs.changes += changesMatches.length;
-		}
-
-		// Count #outputPanel references
-		const outputPanelMatches = text.match(/#outputPanel/gi);
-		if (outputPanelMatches) {
-			refs.outputPanel += outputPanelMatches.length;
-		}
-
-		// Count #problemsPanel references
-		const problemsPanelMatches = text.match(/#problemsPanel/gi);
-		if (problemsPanelMatches) {
-			refs.problemsPanel += problemsPanelMatches.length;
-		}
-
-		// Count @workspace references
-		const workspaceMatches = text.match(/@workspace/gi);
-		if (workspaceMatches) {
-			refs.workspace += workspaceMatches.length;
-		}
-
-		// Count @terminal references
-		const terminalMatches = text.match(/@terminal/gi);
-		if (terminalMatches) {
-			refs.terminal += terminalMatches.length;
-		}
-
-		// Count @vscode references
-		const vscodeMatches = text.match(/@vscode/gi);
-		if (vscodeMatches) {
-			refs.vscode += vscodeMatches.length;
-		}
+		return _analyzeContextReferences(text, refs);
 	}
 
 	/**
@@ -4206,128 +1723,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Looks for kind: "reference" entries and tracks by kind, path patterns.
 	 * Also increments specific category counters like refs.file when appropriate.
 	 */
-	private analyzeContentReferences(contentReferences: any[], refs: ContextReferenceUsage): void {
-		if (!Array.isArray(contentReferences)) {
-			return;
-		}
-
-		for (const contentRef of contentReferences) {
-			if (!contentRef || typeof contentRef !== 'object') {
-				continue;
-			}
-
-			// Track by kind
-			const kind = contentRef.kind;
-			if (typeof kind === 'string') {
-				refs.byKind[kind] = (refs.byKind[kind] || 0) + 1;
-			}
-
-			// Extract reference object based on kind
-			let reference = null;
-
-			// Handle different reference structures
-			if (kind === 'reference' && contentRef.reference) {
-				reference = contentRef.reference;
-			} else if (kind === 'inlineReference' && contentRef.inlineReference) {
-				reference = contentRef.inlineReference;
-			}
-
-			// Process the reference if found
-			if (reference) {
-				// Try to extract file path from various possible fields
-				const fsPath = reference.fsPath || reference.path;
-				if (typeof fsPath === 'string') {
-					// Normalize path separators for pattern matching
-					const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
-
-					// Track specific patterns - these are auto-attached, not user-explicit #file refs
-					if (normalizedPath.endsWith('/.github/copilot-instructions.md') ||
-						normalizedPath.includes('.github/copilot-instructions.md')) {
-						refs.copilotInstructions++;
-					} else if (normalizedPath.endsWith('/agents.md') ||
-						normalizedPath.match(/\/agents\.md$/i)) {
-						refs.agentsMd++;
-					} else if (normalizedPath.endsWith('.instructions.md') ||
-						normalizedPath.includes('.instructions.md')) {
-						// Other instruction files (e.g., github-actions.instructions.md) are auto-attached
-						// Track as copilotInstructions since they're part of the instructions system
-						refs.copilotInstructions++;
-					} else {
-						// For other files, increment the general file counter
-						// This makes actual file attachments show up in context ref counts
-						refs.file++;
-					}
-
-					// Track by full path (limit to last 100 chars for display)
-					const pathKey = fsPath.length > 100 ? '...' + fsPath.substring(fsPath.length - 97) : fsPath;
-					refs.byPath[pathKey] = (refs.byPath[pathKey] || 0) + 1;
-				}
-
-				// Handle symbol references (e.g., #sym:functionName)
-				// Symbol references have a 'name' field instead of fsPath
-				const symbolName = reference.name;
-				if (typeof symbolName === 'string' && kind === 'reference') {
-					// This is a symbol reference, track it
-					refs.symbol++;
-					// Track symbol by name for display (use 'name' as path)
-					const symbolKey = `#sym:${symbolName}`;
-					refs.byPath[symbolKey] = (refs.byPath[symbolKey] || 0) + 1;
-				}
-			}
-		}
-	}
 
 	/**
 	 * Analyze variableData to track prompt file attachments and other variable-based context.
 	 * This captures automatic attachments like copilot-instructions.md via variable system.
 	 */
-	private analyzeVariableData(variableData: any, refs: ContextReferenceUsage): void {
-		if (!variableData || !Array.isArray(variableData.variables)) {
-			return;
-		}
-
-		for (const variable of variableData.variables) {
-			if (!variable || typeof variable !== 'object') {
-				continue;
-			}
-
-			// Track by kind from variableData
-			const kind = variable.kind;
-			if (typeof kind === 'string') {
-				refs.byKind[kind] = (refs.byKind[kind] || 0) + 1;
-			}
-
-			// Handle symbol references (e.g., #sym:functionName)
-			// These appear as kind="generic" with name starting with "sym:"
-			if (kind === 'generic' && typeof variable.name === 'string' && variable.name.startsWith('sym:')) {
-				refs.symbol++;
-				// Track symbol by name for display
-				const symbolKey = `#${variable.name}`;
-				refs.byPath[symbolKey] = (refs.byPath[symbolKey] || 0) + 1;
-			}
-
-			// Process promptFile variables that contain file references
-			if (kind === 'promptFile' && variable.value) {
-				const value = variable.value;
-				const fsPath = value.fsPath || value.path || value.external;
-
-				if (typeof fsPath === 'string') {
-					const normalizedPath = fsPath.replace(/\\/g, '/').toLowerCase();
-
-					// Track specific patterns (but don't double-count if already in contentReferences)
-					if (normalizedPath.endsWith('/.github/copilot-instructions.md') ||
-						normalizedPath.includes('.github/copilot-instructions.md')) {
-						// copilotInstructions - tracked via contentReferences, skip here to avoid double counting
-					} else if (normalizedPath.endsWith('/agents.md') ||
-						normalizedPath.match(/\/agents\.md$/i)) {
-						// agents.md - tracked via contentReferences, skip here  to avoid double counting
-					}
-					// Note: We don't add to byPath here as these are automatic attachments,
-					// not explicit user file selections
-				}
-			}
-		}
-	}
 
 	/**
 	 * Extract repository remote URL from file paths found in contentReferences.
@@ -4336,132 +1736,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * @returns The repository remote URL if found, undefined otherwise
 	 */
 	private async extractRepositoryFromContentReferences(contentReferences: any[]): Promise<string | undefined> {
-		if (!Array.isArray(contentReferences)) {
-			return undefined;
-		}
-
-		const filePaths: string[] = [];
-
-		// Collect all file paths from contentReferences
-		for (const contentRef of contentReferences) {
-			if (!contentRef || typeof contentRef !== 'object') {
-				continue;
-			}
-
-			let reference = null;
-			const kind = contentRef.kind;
-
-			if (kind === 'reference' && contentRef.reference) {
-				reference = contentRef.reference;
-			} else if (kind === 'inlineReference' && contentRef.inlineReference) {
-				reference = contentRef.inlineReference;
-			}
-
-			if (reference) {
-				// Prefer fsPath (native format) over path (URI format)
-				const rawPath = reference.fsPath || reference.path;
-				if (typeof rawPath === 'string' && rawPath.length > 0) {
-					// Convert VS Code URI path format to native path on Windows
-					// URI paths look like "/c:/Users/..." but should be "c:/Users/..." on Windows
-					let normalizedPath = rawPath;
-					if (process.platform === 'win32' && normalizedPath.match(/^\/[a-zA-Z]:/)) {
-						normalizedPath = normalizedPath.substring(1); // Remove leading slash
-					}
-					filePaths.push(normalizedPath);
-				}
-			}
-		}
-
-		if (filePaths.length === 0) {
-			return undefined;
-		}
-
-		// Find the most likely workspace root by looking for common parent directories
-		// Try each file path and look for a .git/config file in parent directories
-		const checkedRoots = new Set<string>();
-
-		for (const filePath of filePaths) {
-			// Normalize path separators to forward slashes for consistent splitting
-			const normalizedPath = filePath.replace(/\\/g, '/');
-			const pathParts = normalizedPath.split('/').filter(p => p.length > 0);
-
-			// Walk up the directory tree looking for .git/config
-			for (let i = pathParts.length - 1; i >= 1; i--) {
-				// Reconstruct path - on Windows, first part is drive letter (e.g., "c:")
-				let potentialRoot = pathParts.slice(0, i).join('/');
-
-				// On Windows, ensure we have a valid absolute path
-				if (process.platform === 'win32' && pathParts[0].match(/^[a-zA-Z]:$/)) {
-					// Path starts with drive letter, already valid
-				} else if (process.platform !== 'win32' && !potentialRoot.startsWith('/')) {
-					// On Unix, prepend / for absolute path
-					potentialRoot = '/' + potentialRoot;
-				}
-
-				// Skip if we've already checked this root
-				if (checkedRoots.has(potentialRoot)) {
-					continue;
-				}
-				checkedRoots.add(potentialRoot);
-
-				const gitConfigPath = path.join(potentialRoot, '.git', 'config');
-				try {
-					const gitConfig = await fs.promises.readFile(gitConfigPath, 'utf8');
-					const remoteUrl = this.parseGitRemoteUrl(gitConfig);
-					if (remoteUrl) {
-						return remoteUrl;
-					}
-				} catch {
-					// No .git/config at this level, continue up the tree
-				}
-			}
-		}
-
-		return undefined;
+		return _extractRepositoryFromContentReferences(contentReferences);
 	}
 
-	/**
-	 * Parse the remote origin URL from a .git/config file content.
-	 * Looks for [remote "origin"] section and extracts the url value.
-	 * @param gitConfigContent The content of a .git/config file
-	 * @returns The remote origin URL if found, undefined otherwise
-	 */
-	private parseGitRemoteUrl(gitConfigContent: string): string | undefined {
-		// Look for [remote "origin"] section and extract url
-		const lines = gitConfigContent.split('\n');
-		let inOriginSection = false;
 
-		for (const line of lines) {
-			const trimmed = line.trim();
-
-			// Check if we're entering the [remote "origin"] section
-			if (trimmed.match(/^\[remote\s+"origin"\]$/i)) {
-				inOriginSection = true;
-				continue;
-			}
-
-			// Check if we're leaving the section (new section starts)
-			if (inOriginSection && trimmed.startsWith('[')) {
-				inOriginSection = false;
-				continue;
-			}
-
-			// Look for url = ... in the origin section
-			if (inOriginSection) {
-				const urlMatch = trimmed.match(/^url\s*=\s*(.+)$/i);
-				if (urlMatch) {
-					return urlMatch[1].trim();
-				}
-			}
-		}
-
-		return undefined;
-	}
-
-	/**
-	 * Extract session metadata (title, timestamps) from a session file.
-	 * Used to populate cache with information needed for session file details.
-	 */
 	private async extractSessionMetadata(sessionFile: string): Promise<{
 		title: string | undefined;
 		firstInteraction: string | null;
@@ -4472,12 +1750,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			// Handle OpenCode sessions
-			if (this.isOpenCodeSessionFile(sessionFile)) {
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
 				// Read session metadata from DB or JSON file
 				let session: any = null;
-				const sessionId = this.getOpenCodeSessionId(sessionFile);
-				if (this.isOpenCodeDbSession(sessionFile) && sessionId) {
-					session = await this.readOpenCodeDbSession(sessionId);
+				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
+				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
+					session = await this.openCode.readOpenCodeDbSession(sessionId);
 				} else {
 					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 					session = JSON.parse(fileContent);
@@ -4488,7 +1766,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (session.time?.updated) { timestamps.push(session.time.updated); }
 				}
 				// Also check message timestamps for more precision
-				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
 				for (const msg of messages) {
 					if (msg.time?.created) { timestamps.push(msg.time.created); }
 					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
@@ -4506,11 +1784,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
-			if (this.isUuidPointerFile(fileContent)) {
+			if (_isUuidPointerFile(fileContent)) {
 				return { title, firstInteraction: null, lastInteraction: null };
 			}
 
-			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || _isJsonlContent(fileContent);
 
 			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
@@ -4596,8 +1874,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Cache miss - read and process the file once to get all data
 		const tokenResult = await this.estimateTokensFromSession(sessionFilePath);
 		const interactions = await this.countInteractionsInSession(sessionFilePath);
-		const modelUsage = await this.getModelUsageFromSession(sessionFilePath);
-		const usageAnalysis = await this.analyzeSessionUsage(sessionFilePath);
+		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath);
+		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath);
 
 		// Extract title and timestamps from the session file
 		const sessionMeta = await this.extractSessionMetadata(sessionFilePath);
@@ -4620,20 +1898,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return sessionData;
 	}
 
-	private async estimateTokensFromSessionCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<number> {
-		const sessionData = await this.getSessionFileDataCached(sessionFilePath, mtime, fileSize);
-		return sessionData.tokens;
-	}
 
-	private async countInteractionsInSessionCached(sessionFile: string, mtime: number, fileSize: number): Promise<number> {
-		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-		return sessionData.interactions;
-	}
 
-	private async getModelUsageFromSessionCached(sessionFile: string, mtime: number, fileSize: number): Promise<ModelUsage> {
-		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-		return sessionData.modelUsage;
-	}
 
 	private async getUsageAnalysisFromSessionCached(sessionFile: string, mtime: number, fileSize: number): Promise<SessionUsageAnalysis> {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
@@ -4825,7 +2091,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Uses cached data when available to avoid re-reading files.
 	 */
 	private async getSessionFileDetails(sessionFile: string): Promise<SessionFileDetails> {
-		const stat = await this.statSessionFile(sessionFile);
+		const stat = await this.openCode.statSessionFile(sessionFile);
 
 		// Try to get details from cache first
 		const cachedDetails = await this.getSessionFileDetailsFromCache(sessionFile, stat);
@@ -4863,12 +2129,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			// Handle OpenCode sessions
-			if (this.isOpenCodeSessionFile(sessionFile)) {
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
 				// Read session metadata from DB or JSON file
 				let session: any = null;
-				const sessionId = this.getOpenCodeSessionId(sessionFile);
-				if (this.isOpenCodeDbSession(sessionFile) && sessionId) {
-					session = await this.readOpenCodeDbSession(sessionId);
+				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
+				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
+					session = await this.openCode.readOpenCodeDbSession(sessionId);
 				} else {
 					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 					session = JSON.parse(fileContent);
@@ -4876,11 +2142,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (session) {
 					details.title = session.title || session.slug;
 				}
-				details.interactions = await this.countOpenCodeInteractions(sessionFile);
+				details.interactions = await this.openCode.countOpenCodeInteractions(sessionFile);
 				const timestamps: number[] = [];
 				if (session?.time?.created) { timestamps.push(session.time.created); }
 				if (session?.time?.updated) { timestamps.push(session.time.updated); }
-				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
 				for (const msg of messages) {
 					if (msg.time?.created) { timestamps.push(msg.time.created); }
 					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
@@ -4891,7 +2157,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 				}
 				// Set editor info for OpenCode
-				details.editorRoot = this.getOpenCodeDataDir();
+				details.editorRoot = this.openCode.getOpenCodeDataDir();
 				details.editorName = 'OpenCode';
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				return details;
@@ -5120,15 +2386,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Detect which editor the session file belongs to based on its path.
 	 */
 	private detectEditorSource(filePath: string): string {
-		const lowerPath = filePath.toLowerCase().replace(/\\/g, '/');
-		if (lowerPath.includes('/.copilot/session-state/')) { return 'Copilot CLI'; }
-		if (this.isOpenCodeSessionFile(filePath)) { return 'OpenCode'; }
-		if (lowerPath.includes('cursor')) { return 'Cursor'; }
-		if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
-		if (lowerPath.includes('vscodium')) { return 'VSCodium'; }
-		if (lowerPath.includes('windsurf')) { return 'Windsurf'; }
-		if (lowerPath.includes('code')) { return 'VS Code'; }
-		return 'Unknown';
+		return _detectEditorSource(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
 	}
 
 	/**
@@ -5140,8 +2398,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		try {
 			// Handle OpenCode sessions
-			if (this.isOpenCodeSessionFile(sessionFile)) {
-				const messages = await this.getOpenCodeMessagesForSession(sessionFile);
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
 				if (messages.length > 0) {
 					let turnNumber = 0;
 					let prevCumulativeTotal = 0; // track cumulative total to compute per-turn deltas
@@ -5151,7 +2409,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						turnNumber++;
 						// Collect ALL assistant messages for this turn (agentic tool-use loops produce multiple)
 						const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
-						const userParts = await this.getOpenCodePartsForMessage(msg.id);
+						const userParts = await this.openCode.getOpenCodePartsForMessage(msg.id);
 						const userText = userParts.filter(p => p.type === 'text').map(p => p.text || '').join('\n');
 						let assistantText = '';
 						let thinkingText = '';
@@ -5170,7 +2428,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (typeof assistantMsg.tokens?.total === 'number') {
 								turnCumulativeTotal = Math.max(turnCumulativeTotal, assistantMsg.tokens.total);
 							}
-							const assistantParts = await this.getOpenCodePartsForMessage(assistantMsg.id);
+							const assistantParts = await this.openCode.getOpenCodePartsForMessage(assistantMsg.id);
 							for (const part of assistantParts) {
 								if (part.type === 'text' && part.text) {
 									assistantText += part.text;
@@ -5546,16 +2804,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 	}
 
-	/**
-	 * Create empty context references object.
-	 */
 	private createEmptyContextRefs(): ContextReferenceUsage {
-		return {
-			file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
-			workspace: 0, terminal: 0, vscode: 0,
-			terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
-			byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
-		};
+		return _createEmptyContextRefs();
 	}
 
 	/**
@@ -5617,478 +2867,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return { responseText, thinkingText, toolCalls, mcpTools };
 	}
 
-	/**
-	 * Calculate estimated cost in USD based on model usage
-	 * Assumes 50/50 split between input and output tokens for estimation
-	 * @param modelUsage Object with model names as keys and token counts as values
-	 * @returns Estimated cost in USD
-	 */
 	private calculateEstimatedCost(modelUsage: ModelUsage): number {
-		let totalCost = 0;
-
-		for (const [model, usage] of Object.entries(modelUsage)) {
-			const pricing = this.modelPricing[model];
-
-			if (pricing) {
-				// Use actual input and output token counts
-				const inputCost = (usage.inputTokens / 1_000_000) * pricing.inputCostPerMillion;
-				const outputCost = (usage.outputTokens / 1_000_000) * pricing.outputCostPerMillion;
-
-				totalCost += inputCost + outputCost;
-			} else {
-				// Fallback for models without pricing data - use GPT-4o-mini as default
-				const fallbackPricing = this.modelPricing['gpt-4o-mini'];
-
-				const inputCost = (usage.inputTokens / 1_000_000) * fallbackPricing.inputCostPerMillion;
-				const outputCost = (usage.outputTokens / 1_000_000) * fallbackPricing.outputCostPerMillion;
-
-				totalCost += inputCost + outputCost;
-
-				this.log(`No pricing data for model '${model}', using fallback pricing (gpt-4o-mini)`);
-			}
-		}
-
-		return totalCost;
+		return _calculateEstimatedCost(modelUsage, this.modelPricing);
 	}
 
-	private checkCopilotExtension(): void {
-		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
-		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
 
-		if (!copilotExtension && !copilotChatExtension) {
-			this.log('⚠️ GitHub Copilot extensions not found');
-		} else {
-			const copilotStatus = copilotExtension ? (copilotExtension.isActive ? '✅ Active' : '⏳ Loading') : '❌ Not found';
-			const chatStatus = copilotChatExtension ? (copilotChatExtension.isActive ? '✅ Active' : '⏳ Loading') : '❌ Not found';
-			this.log(`GitHub Copilot: ${copilotStatus}, Chat: ${chatStatus}`);
-		}
 
-		// Check if we're in GitHub Codespaces
-		const isCodespaces = process.env.CODESPACES === 'true';
-		if (isCodespaces && (!copilotExtension?.isActive || !copilotChatExtension?.isActive)) {
-			this.warn('⚠️ Running in Codespaces with inactive Copilot extensions');
-		}
-	}
 
-	/**
-	 * Get all possible VS Code user data paths for all VS Code variants
-	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
-	 * 
-	 * NOTE: The canonical JavaScript implementation is in:
-	 * .github/skills/copilot-log-analysis/session-file-discovery.js
-	 * This TypeScript implementation should mirror that logic.
-	 */
-	private getVSCodeUserPaths(): string[] {
-		const platform = os.platform();
-		const homedir = os.homedir();
-		const paths: string[] = [];
 
-		// VS Code variants to check
-		const vscodeVariants = [
-			'Code',               // Stable
-			'Code - Insiders',    // Insiders
-			'Code - Exploration', // Exploration builds
-			'VSCodium',           // VSCodium
-			'Cursor'              // Cursor editor
-		];
 
-		if (platform === 'win32') {
-			const appDataPath = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
-			for (const variant of vscodeVariants) {
-				paths.push(path.join(appDataPath, variant, 'User'));
-			}
-		} else if (platform === 'darwin') {
-			for (const variant of vscodeVariants) {
-				paths.push(path.join(homedir, 'Library', 'Application Support', variant, 'User'));
-			}
-		} else {
-			// Linux and other Unix-like systems
-			const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
-			for (const variant of vscodeVariants) {
-				paths.push(path.join(xdgConfigHome, variant, 'User'));
-			}
-		}
-
-		// Remote/Server paths (used in Codespaces, WSL, SSH remotes)
-		const remotePaths = [
-			path.join(homedir, '.vscode-server', 'data', 'User'),
-			path.join(homedir, '.vscode-server-insiders', 'data', 'User'),
-			path.join(homedir, '.vscode-remote', 'data', 'User'),
-			path.join('/tmp', '.vscode-server', 'data', 'User'),
-			path.join('/workspace', '.vscode-server', 'data', 'User')
-		];
-
-		paths.push(...remotePaths);
-
-		return paths;
-	}
-
-	/**
-	 * Returns all candidate paths the extension considers when scanning for session files,
-	 * along with whether each path exists on disk. Used for diagnostics display.
-	 */
-	private getDiagnosticCandidatePaths(): { path: string; exists: boolean; source: string }[] {
-		const candidates: { path: string; exists: boolean; source: string }[] = [];
-
-		// VS Code user paths
-		const allVSCodePaths = this.getVSCodeUserPaths();
-		for (const p of allVSCodePaths) {
-			let exists = false;
-			try { exists = fs.existsSync(p); } catch { /* ignore */ }
-			candidates.push({ path: p, exists, source: 'VS Code' });
-		}
-
-		// Copilot CLI
-		const copilotCliPath = path.join(os.homedir(), '.copilot', 'session-state');
-		let copilotCliExists = false;
-		try { copilotCliExists = fs.existsSync(copilotCliPath); } catch { /* ignore */ }
-		candidates.push({ path: copilotCliPath, exists: copilotCliExists, source: 'Copilot CLI' });
-
-		// OpenCode JSON storage
-		const openCodeDataDir = this.getOpenCodeDataDir();
-		const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
-		let openCodeJsonExists = false;
-		try { openCodeJsonExists = fs.existsSync(openCodeSessionDir); } catch { /* ignore */ }
-		candidates.push({ path: openCodeSessionDir, exists: openCodeJsonExists, source: 'OpenCode (JSON)' });
-
-		// OpenCode SQLite DB
-		const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
-		let openCodeDbExists = false;
-		try { openCodeDbExists = fs.existsSync(openCodeDbPath); } catch { /* ignore */ }
-		candidates.push({ path: openCodeDbPath, exists: openCodeDbExists, source: 'OpenCode (DB)' });
-
-		return candidates;
-	}
-
-	/**
-	 * NOTE: The canonical JavaScript implementation is in:
-	 * .github/skills/copilot-log-analysis/session-file-discovery.js
-	 * This TypeScript implementation should mirror that logic.
-	 */
-	private async getCopilotSessionFiles(): Promise<string[]> {
-		// Check short-term cache to avoid expensive filesystem scans during rapid successive calls
-		const now = Date.now();
-		if (this._sessionFilesCache && (now - this._sessionFilesCacheTime) < CopilotTokenTracker.SESSION_FILES_CACHE_TTL) {
-			this.log(`💨 Using cached session files list (${this._sessionFilesCache.length} files, cached ${Math.round((now - this._sessionFilesCacheTime) / 1000)}s ago)`);
-			return this._sessionFilesCache;
-		}
-
-		// Screenshot/demo mode: if a sample data directory is configured, use it exclusively
-		const sampleDir = vscode.workspace.getConfiguration('copilot-token-tracker').get<string>('sampleDataDirectory');
-		if (sampleDir && sampleDir.trim().length > 0) {
-			const resolvedSampleDir = sampleDir.trim();
-			try {
-				if (fs.existsSync(resolvedSampleDir)) {
-					const sampleFiles = fs.readdirSync(resolvedSampleDir)
-						.filter(f => f.endsWith('.json') || f.endsWith('.jsonl'))
-						.map(f => path.join(resolvedSampleDir, f));
-					this.log(`📸 Sample data mode: using ${sampleFiles.length} file(s) from ${resolvedSampleDir}`);
-					this._sessionFilesCache = sampleFiles;
-					this._sessionFilesCacheTime = now;
-					return sampleFiles;
-				} else {
-					this.warn(`Sample data directory not found: ${resolvedSampleDir}`);
-				}
-			} catch (err) {
-				this.warn(`Error reading sample data directory: ${err}`);
-			}
-		}
-
-		const sessionFiles: string[] = [];
-
-		const platform = os.platform();
-		const homedir = os.homedir();
-
-		this.log(`🔍 Searching for Copilot session files on ${platform}`);
-
-		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
-		const allVSCodePaths = this.getVSCodeUserPaths();
-		this.log(`📂 Considering ${allVSCodePaths.length} candidate VS Code paths:`);
-		for (const candidatePath of allVSCodePaths) {
-			this.log(`   📁 ${candidatePath}`);
-		}
-
-		// Track which paths we actually found
-		const foundPaths: string[] = [];
-		for (let i = 0; i < allVSCodePaths.length; i++) {
-			const codeUserPath = allVSCodePaths[i];
-			try {
-				if (fs.existsSync(codeUserPath)) {
-					foundPaths.push(codeUserPath);
-				}
-			} catch (checkError) {
-				this.warn(`Could not check path ${codeUserPath}: ${checkError}`);
-			}
-			// Update progress
-			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
-				this.log(`📂 Reading local folders [${i + 1}/${allVSCodePaths.length}]`);
-			}
-		}
-
-		this.log(`✅ Found ${foundPaths.length} of ${allVSCodePaths.length} VS Code paths exist on disk:`);
-		for (const fp of foundPaths) {
-			this.log(`   ✅ ${fp}`);
-		}
-
-		try {
-			// Scan all found VS Code paths for session files
-			for (let i = 0; i < foundPaths.length; i++) {
-				const codeUserPath = foundPaths[i];
-				const pathName = path.basename(path.dirname(codeUserPath));
-
-				// Workspace storage sessions
-				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
-				try {
-					if (fs.existsSync(workspaceStoragePath)) {
-						try {
-							const workspaceDirs = fs.readdirSync(workspaceStoragePath);
-
-							for (const workspaceDir of workspaceDirs) {
-								const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-								try {
-									if (fs.existsSync(chatSessionsPath)) {
-										try {
-											const sessionFiles2 = fs.readdirSync(chatSessionsPath)
-												.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-												.map(file => path.join(chatSessionsPath, file));
-											if (sessionFiles2.length > 0) {
-												this.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
-												sessionFiles.push(...sessionFiles2);
-											}
-										} catch (readError) {
-											this.warn(`Could not read chat sessions in ${chatSessionsPath}: ${readError}`);
-										}
-									}
-								} catch (checkError) {
-									this.warn(`Could not check chat sessions path ${chatSessionsPath}: ${checkError}`);
-								}
-							}
-						} catch (readError) {
-							this.warn(`Could not read workspace storage in ${workspaceStoragePath}: ${readError}`);
-						}
-					}
-				} catch (checkError) {
-					this.warn(`Could not check workspace storage path ${workspaceStoragePath}: ${checkError}`);
-				}
-
-				// Global storage sessions (legacy emptyWindowChatSessions)
-				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
-				try {
-					if (fs.existsSync(globalStoragePath)) {
-						try {
-							const globalSessionFiles = fs.readdirSync(globalStoragePath)
-								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-								.map(file => path.join(globalStoragePath, file));
-							if (globalSessionFiles.length > 0) {
-								this.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
-								sessionFiles.push(...globalSessionFiles);
-							}
-						} catch (readError) {
-							this.warn(`Could not read global storage in ${globalStoragePath}: ${readError}`);
-						}
-					}
-				} catch (checkError) {
-					this.warn(`Could not check global storage path ${globalStoragePath}: ${checkError}`);
-				}
-
-				// GitHub Copilot Chat extension global storage
-				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
-				try {
-					if (fs.existsSync(copilotChatGlobalPath)) {
-						this.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
-						this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
-					}
-				} catch (checkError) {
-					this.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
-				}
-			}
-
-			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
-			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			this.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath} (exists: ${fs.existsSync(copilotCliSessionPath)})`);
-			try {
-				if (fs.existsSync(copilotCliSessionPath)) {
-					try {
-						const entries = fs.readdirSync(copilotCliSessionPath, { withFileTypes: true });
-
-						// Collect flat .json/.jsonl files at the top level
-						const cliSessionFiles = entries
-							.filter(e => !e.isDirectory() && (e.name.endsWith('.json') || e.name.endsWith('.jsonl')))
-							.map(e => path.join(copilotCliSessionPath, e.name));
-						if (cliSessionFiles.length > 0) {
-							this.log(`📄 Found ${cliSessionFiles.length} session files in Copilot CLI directory`);
-							sessionFiles.push(...cliSessionFiles);
-						}
-
-						// Scan UUID subdirectories for events.jsonl (newer Copilot CLI format)
-						const subDirs = entries.filter(e => e.isDirectory());
-						let subDirSessionCount = 0;
-						for (const subDir of subDirs) {
-							const eventsFile = path.join(copilotCliSessionPath, subDir.name, 'events.jsonl');
-							try {
-								if (fs.existsSync(eventsFile)) {
-									const stats = fs.statSync(eventsFile);
-									if (stats.size > 0) {
-										sessionFiles.push(eventsFile);
-										subDirSessionCount++;
-									}
-								}
-							} catch {
-								// Ignore individual file access errors
-							}
-						}
-						if (subDirSessionCount > 0) {
-							this.log(`📄 Found ${subDirSessionCount} session files in Copilot CLI subdirectories`);
-						}
-					} catch (readError) {
-						this.warn(`Could not read Copilot CLI session path in ${copilotCliSessionPath}: ${readError}`);
-					}
-				}
-			} catch (checkError) {
-				this.warn(`Could not check Copilot CLI session path ${copilotCliSessionPath}: ${checkError}`);
-			}
-
-			// Check for OpenCode session files
-			// OpenCode stores session data in ~/.local/share/opencode/storage/session/
-			const openCodeDataDir = this.getOpenCodeDataDir();
-			const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
-			const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
-			this.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir} (exists: ${fs.existsSync(openCodeSessionDir)})`);
-			this.log(`📁 Checking OpenCode DB path: ${openCodeDbPath} (exists: ${fs.existsSync(openCodeDbPath)})`);
-			try {
-				if (fs.existsSync(openCodeSessionDir)) {
-					const scanOpenCodeDir = (dir: string) => {
-						try {
-							const entries = fs.readdirSync(dir, { withFileTypes: true });
-							for (const entry of entries) {
-								if (entry.isDirectory()) {
-									scanOpenCodeDir(path.join(dir, entry.name));
-								} else if (entry.name.startsWith('ses_') && entry.name.endsWith('.json')) {
-									const fullPath = path.join(dir, entry.name);
-									try {
-										const stats = fs.statSync(fullPath);
-										if (stats.size > 0) {
-											sessionFiles.push(fullPath);
-										}
-									} catch {
-										// Ignore file access errors
-									}
-								}
-							}
-						} catch {
-							// Ignore directory access errors
-						}
-					};
-					scanOpenCodeDir(openCodeSessionDir);
-					const openCodeCount = sessionFiles.length - (sessionFiles.filter(f => !this.isOpenCodeSessionFile(f))).length;
-					if (openCodeCount > 0) {
-						this.log(`📄 Found ${openCodeCount} session files in OpenCode storage`);
-					}
-				}
-			} catch (checkError) {
-				this.warn(`Could not check OpenCode session path: ${checkError}`);
-			}
-
-			// Check for OpenCode sessions in SQLite database (opencode.db)
-			// Newer OpenCode versions store sessions in SQLite instead of JSON files
-			try {
-				if (fs.existsSync(openCodeDbPath)) {
-					const existingSessionIds = new Set(
-						sessionFiles
-							.filter(f => this.isOpenCodeSessionFile(f))
-							.map(f => this.getOpenCodeSessionId(f))
-							.filter(Boolean)
-					);
-					const dbSessionIds = await this.discoverOpenCodeDbSessions();
-					let dbNewCount = 0;
-					for (const sessionId of dbSessionIds) {
-						if (!existingSessionIds.has(sessionId)) {
-							// Create virtual path for DB session
-							sessionFiles.push(path.join(openCodeDataDir, `opencode.db#${sessionId}`));
-							dbNewCount++;
-						}
-					}
-					if (dbNewCount > 0) {
-						this.log(`📄 Found ${dbNewCount} additional session(s) in OpenCode database`);
-					}
-				}
-			} catch (dbError) {
-				this.warn(`Could not read OpenCode database: ${dbError}`);
-			}
-
-			// Log summary
-			this.log(`✨ Total: ${sessionFiles.length} session file(s) discovered`);
-			if (sessionFiles.length === 0) {
-				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
-			}
-
-			// Update short-term cache
-			this._sessionFilesCache = sessionFiles;
-			this._sessionFilesCacheTime = Date.now();
-		} catch (error) {
-			this.error('Error getting session files:', error);
-		}
-
-		return sessionFiles;
-	}
-
-	/**
-	 * Recursively scan a directory for session files (.json and .jsonl)
-	 * 
-	 * NOTE: Mirrors logic in .github/skills/copilot-log-analysis/session-file-discovery.js
-	 */
-	private scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
-		try {
-			const entries = fs.readdirSync(dir, { withFileTypes: true });
-			for (const entry of entries) {
-				const fullPath = path.join(dir, entry.name);
-				if (entry.isDirectory()) {
-					this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
-				} else if (entry.name.endsWith('.json') || entry.name.endsWith('.jsonl')) {
-					// Skip known non-session files (embeddings, indexes, etc.)
-					if (this.isNonSessionFile(entry.name)) {
-						continue;
-					}
-					// Only add files that look like session files (have reasonable content)
-					try {
-						const stats = fs.statSync(fullPath);
-						if (stats.size > 0) {
-							sessionFiles.push(fullPath);
-						}
-					} catch (e) {
-						// Ignore file access errors
-					}
-				}
-			}
-		} catch (error) {
-			this.warn(`Could not scan directory ${dir}: ${error}`);
-		}
-	}
-
-	/**
-	 * Check if a filename is a known non-session file that should be excluded
-	 */
-	private isNonSessionFile(filename: string): boolean {
-		const nonSessionFilePatterns = [
-			'embeddings',       // commandEmbeddings.json, settingEmbeddings.json
-			'index',            // index files
-			'cache',            // cache files
-			'preferences',
-			'settings',
-			'config',
-			'workspacesessions', // copilot.cli.workspaceSessions.*.json (index files with session ID lists)
-			'globalsessions',    // copilot.cli.oldGlobalSessions.json (index files)
-			'api.json'           // api.json (API configuration)
-		];
-		const lowerFilename = filename.toLowerCase();
-		return nonSessionFilePatterns.some(pattern => lowerFilename.includes(pattern));
-	}
 
 	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
 		try {
 			// Handle OpenCode sessions - they have actual token counts in message files
-			if (this.isOpenCodeSessionFile(sessionFilePath)) {
-				const result = await this.getTokensFromOpenCodeSession(sessionFilePath);
+			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
+				const result = await this.openCode.getTokensFromOpenCodeSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
 			}
 
@@ -6161,517 +2954,40 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	/**
-	 * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
-	 * Each line is a separate JSON object representing an event in the session
-	 */
 	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number } {
-		let totalTokens = 0;
-		let totalThinkingTokens = 0;
-		const lines = fileContent.trim().split('\n');
-
-		// For delta-based formats, reconstruct full state to reliably extract actual usage.
-		// Usage data can arrive at many different delta path levels, so line-by-line matching
-		// is fragile. Reconstructing the state (like the logviewer does) is the reliable approach.
-		let sessionState: any = {};
-		let isDeltaBased = false;
-		let parseFailedLines = 0;
-		// For CLI (non-delta) format: accumulate actual token totals from session.shutdown
-		let cliActualTokens = 0;
-
-		for (const line of lines) {
-			if (!line.trim()) { continue; }
-
-			try {
-				const event = JSON.parse(line);
-
-				// Detect and reconstruct delta-based format in parallel with estimation
-				if (typeof event.kind === 'number') {
-					isDeltaBased = true;
-					sessionState = this.applyDelta(sessionState, event);
-				}
-
-				// Copilot CLI: session.shutdown contains exact token totals per model
-				if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
-					for (const metrics of Object.values(event.data.modelMetrics) as any[]) {
-						const usage = metrics?.usage;
-						if (usage) {
-							cliActualTokens += (typeof usage.inputTokens === 'number' ? usage.inputTokens : 0)
-								+ (typeof usage.outputTokens === 'number' ? usage.outputTokens : 0);
-						}
-					}
-				}
-
-				// Handle Copilot CLI event types
-				if (event.type === 'user.message' && event.data?.content) {
-					totalTokens += this.estimateTokensFromText(event.data.content);
-				} else if (event.type === 'assistant.message' && event.data?.content) {
-					totalTokens += this.estimateTokensFromText(event.data.content);
-				} else if (event.type === 'tool.result' && event.data?.output) {
-					totalTokens += this.estimateTokensFromText(event.data.output);
-				} else if (event.content) {
-					// Fallback for other formats that might have content
-					totalTokens += this.estimateTokensFromText(event.content);
-				}
-
-				// Handle VS Code incremental format (kind: 2 with requests or response)
-				if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
-					for (const request of event.v) {
-						if (request.message?.text) {
-							totalTokens += this.estimateTokensFromText(request.message.text);
-						}
-					}
-				}
-
-				if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
-					for (const responseItem of event.v) {
-						// Separate thinking tokens
-						if (responseItem.kind === 'thinking' && responseItem.value) {
-							totalThinkingTokens += this.estimateTokensFromText(responseItem.value);
-							continue;
-						}
-						if (responseItem.value) {
-							totalTokens += this.estimateTokensFromText(responseItem.value);
-						} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
-							totalTokens += this.estimateTokensFromText(responseItem.content.value);
-						}
-					}
-				}
-			} catch (e) {
-				// Track parse failures for regex fallback
-				parseFailedLines++;
-			}
-		}
-
-		// Extract actual tokens from the reconstructed state (handles all delta path patterns)
-		// Use per-request regex fallback (like the logviewer) so that requests whose result
-		// lines failed JSON.parse still contribute actual tokens instead of being silently lost.
-		let totalActualTokens = 0;
-		if (isDeltaBased) {
-			const rawUsageFallback = parseFailedLines > 0 ? this.extractPerRequestUsageFromRawLines(lines) : new Map<number, { promptTokens: number; outputTokens: number }>();
-			const requests = (sessionState.requests && Array.isArray(sessionState.requests)) ? sessionState.requests : [];
-			// Determine highest request index: max of reconstructed array length and regex-extracted keys
-			let maxIndex = requests.length;
-			for (const idx of rawUsageFallback.keys()) {
-				if (idx + 1 > maxIndex) { maxIndex = idx + 1; }
-			}
-			for (let i = 0; i < maxIndex; i++) {
-				const request = requests[i];
-				let found = false;
-				// Try reconstructed state first
-				if (request?.result) {
-					const result = request.result;
-					if (typeof result.promptTokens === 'number' && typeof result.outputTokens === 'number') {
-						totalActualTokens += result.promptTokens + result.outputTokens;
-						found = true;
-					} else if (result.metadata && typeof result.metadata.promptTokens === 'number' && typeof result.metadata.outputTokens === 'number') {
-						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
-						totalActualTokens += result.metadata.promptTokens + result.metadata.outputTokens;
-						found = true;
-					} else if (result.usage) {
-						const u = result.usage;
-						const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
-						const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
-						totalActualTokens += prompt + completion;
-						found = true;
-					}
-				}
-				// Per-request fallback: if reconstruction missed this request's result, use regex
-				if (!found) {
-					const extracted = rawUsageFallback.get(i);
-					if (extracted) {
-						totalActualTokens += extracted.promptTokens + extracted.outputTokens;
-					}
-				}
-			}
-		}
-
-		// If CLI session.shutdown provided actual totals, use them; otherwise fall back to per-request delta totals
-		const finalActualTokens = !isDeltaBased && cliActualTokens > 0 ? cliActualTokens : totalActualTokens;
-		return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens };
+		return _estimateTokensFromJsonlSession(fileContent);
 	}
 
-	/**
-	 * Extract per-request actual token usage from raw JSONL lines using regex.
-	 * Handles cases where lines with result data fail JSON.parse due to bad escape characters.
-	 * Supports both old format (usage.promptTokens/completionTokens) and new format (promptTokens/outputTokens).
-	 */
 	private extractPerRequestUsageFromRawLines(lines: string[]): Map<number, { promptTokens: number; outputTokens: number }> {
-		const usage = new Map<number, { promptTokens: number; outputTokens: number }>();
-		for (const line of lines) {
-			if (!line.includes('"result"')) { continue; }
-			const resultMatch = line.match(/"k":\s*\["requests",\s*(\d+),\s*"result"\]/);
-			if (!resultMatch) { continue; }
-			const requestIndex = parseInt(resultMatch[1], 10);
-			const promptMatch = line.match(/"promptTokens":(\d+)/);
-			const outputMatch = line.match(/"outputTokens":(\d+)/);
-			const completionMatch = line.match(/"completionTokens":(\d+)/);
-			if (promptMatch && (outputMatch || completionMatch)) {
-				usage.set(requestIndex, {
-					promptTokens: parseInt(promptMatch[1], 10),
-					outputTokens: parseInt(outputMatch?.[1] || completionMatch![1], 10)
-				});
-			}
-		}
-		return usage;
+		return _extractPerRequestUsageFromRawLines(lines);
 	}
 
-	/**
-	 * Get OpenCode messages for a session, trying DB first then JSON files.
-	 */
-	private async getOpenCodeMessagesForSession(sessionFilePath: string): Promise<any[]> {
-		const sessionId = this.getOpenCodeSessionId(sessionFilePath);
-		if (!sessionId) { return []; }
-		if (this.isOpenCodeDbSession(sessionFilePath)) {
-			return this.readOpenCodeDbMessages(sessionId);
-		}
-		// Try DB first (may have newer data), fall back to JSON files
-		const dbMessages = await this.readOpenCodeDbMessages(sessionId);
-		if (dbMessages.length > 0) { return dbMessages; }
-		return this.readOpenCodeMessages(sessionId);
-	}
 
-	/**
-	 * Get OpenCode parts for a message, trying DB first then JSON files.
-	 */
-	private async getOpenCodePartsForMessage(messageId: string): Promise<any[]> {
-		const dbParts = await this.readOpenCodeDbParts(messageId);
-		if (dbParts.length > 0) { return dbParts; }
-		return this.readOpenCodeParts(messageId);
-	}
 
-	/**
-	 * Extract actual token counts from an OpenCode session.
-	 * OpenCode stores actual token counts in message files (tokens.input, tokens.output, tokens.reasoning).
-	 */
-	private async getTokensFromOpenCodeSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number }> {
-		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
-		let thinkingTokens = 0;
 
-		// OpenCode messages have a cumulative `total` field that grows with each API call.
-		// The last assistant message's `total` is the session total.
-		// Summing input+output across messages would over-count because each API call
-		// re-sends the full conversation context as input.
-		let sessionTotal = 0;
-		for (const msg of messages) {
-			if (msg.role === 'assistant' && msg.tokens) {
-				if (typeof msg.tokens.total === 'number') {
-					sessionTotal = msg.tokens.total; // cumulative — last one wins
-				}
-				thinkingTokens += msg.tokens.reasoning || 0;
-			}
-		}
 
-		return { tokens: sessionTotal, thinkingTokens };
-	}
 
-	/**
-	 * Extract the session ID from an OpenCode session file path.
-	 * Handles both JSON file paths and DB virtual paths:
-	 * - ".../storage/session/global/ses_abc123.json" -> "ses_abc123"
-	 * - ".../opencode.db#ses_abc123" -> "ses_abc123"
-	 */
-	private getOpenCodeSessionId(sessionFilePath: string): string | null {
-		// Handle DB virtual path: opencode.db#ses_<id>
-		const hashIdx = sessionFilePath.indexOf('opencode.db#');
-		if (hashIdx !== -1) {
-			return sessionFilePath.substring(hashIdx + 'opencode.db#'.length);
-		}
-		const basename = path.basename(sessionFilePath, '.json');
-		return basename.startsWith('ses_') ? basename : null;
-	}
 
-	/**
-	 * Count interactions in an OpenCode session (number of user messages).
-	 */
-	private async countOpenCodeInteractions(sessionFilePath: string): Promise<number> {
-		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
-		return messages.filter(m => m.role === 'user').length;
-	}
-
-	/**
-	 * Get model usage from an OpenCode session.
-	 * Extracts model info from assistant message files.
-	 */
-	private async getOpenCodeModelUsage(sessionFilePath: string): Promise<ModelUsage> {
-		const modelUsage: ModelUsage = {};
-		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
-
-		// OpenCode messages have a cumulative `total` field. To get per-turn tokens,
-		// compute deltas between consecutive user turns using the last assistant message's total.
-		let prevTotal = 0;
-		for (let i = 0; i < messages.length; i++) {
-			const msg = messages[i];
-			if (msg.role !== 'user') { continue; }
-			// Find all assistant messages for this turn
-			const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
-			if (turnAssistantMsgs.length === 0) { continue; }
-
-			// Get cumulative total from the last assistant message in this turn
-			let turnCumTotal = prevTotal;
-			for (const am of turnAssistantMsgs) {
-				if (typeof am.tokens?.total === 'number') {
-					turnCumTotal = Math.max(turnCumTotal, am.tokens.total);
-				}
-			}
-			const turnTokens = turnCumTotal - prevTotal;
-			if (turnTokens <= 0) { prevTotal = turnCumTotal; continue; }
-
-			// Attribute to the model used in this turn (from first assistant message)
-			const model = turnAssistantMsgs[0].modelID || turnAssistantMsgs[0].model?.modelID || 'unknown';
-			if (!modelUsage[model]) {
-				modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-			}
-			// Output tokens are the sum of actual output+reasoning across the turn's API calls
-			const turnOutput = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.output || 0) + (m.tokens?.reasoning || 0), 0);
-			const turnInput = Math.max(0, turnTokens - turnOutput);
-			modelUsage[model].inputTokens += turnInput;
-			modelUsage[model].outputTokens += turnOutput;
-
-			prevTotal = turnCumTotal;
-		}
-
-		return modelUsage;
-	}
-
-	/**
-	 * Get all session data from an OpenCode session in one call (for backend sync).
-	 * Returns tokens, interactions, model usage, and timestamp.
-	 * Includes per-model interaction counts in modelUsage.
-	 */
-	private async getOpenCodeSessionData(sessionFilePath: string): Promise<{ tokens: number; interactions: number; modelUsage: ModelUsage & { [key: string]: { inputTokens: number; outputTokens: number; interactions?: number } }; timestamp: number }> {
-		const messages = await this.getOpenCodeMessagesForSession(sessionFilePath);
-		
-		// Get timestamp from the first message
-		let timestamp = Date.now();
-		if (messages.length > 0 && messages[0].time_created) {
-			timestamp = messages[0].time_created;
-		}
-
-		// Get tokens
-		const { tokens } = await this.getTokensFromOpenCodeSession(sessionFilePath);
-
-		// Get interactions (total count)
-		const interactions = await this.countOpenCodeInteractions(sessionFilePath);
-
-		// Get model usage with per-model interaction counts
-		const baseModelUsage = await this.getOpenCodeModelUsage(sessionFilePath);
-		
-		// Count interactions per model (each user turn -> 1 interaction for the model that responded)
-		const modelInteractions: { [model: string]: number } = {};
-		let prevTotal = 0;
-		for (let i = 0; i < messages.length; i++) {
-			const msg = messages[i];
-			if (msg.role !== 'user') { continue; }
-			const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
-			if (turnAssistantMsgs.length === 0) { continue; }
-			
-			const model = turnAssistantMsgs[0].modelID || turnAssistantMsgs[0].model?.modelID || 'unknown';
-			modelInteractions[model] = (modelInteractions[model] || 0) + 1;
-		}
-		
-		// Merge interaction counts into model usage
-		const modelUsage: any = {};
-		for (const [model, usage] of Object.entries(baseModelUsage)) {
-			modelUsage[model] = {
-				...usage,
-				interactions: modelInteractions[model] || 0
-			};
-		}
-
-		return { tokens, interactions, modelUsage, timestamp };
-	}
 
 	private getModelFromRequest(request: any): string {
-		// Try to determine model from request metadata (most reliable source)
-		// First check the top-level modelId field (VS Code format)
-		if (request.modelId) {
-			// Remove "copilot/" prefix if present
-			return request.modelId.replace(/^copilot\//, '');
-		}
-
-		if (request.result && request.result.metadata && request.result.metadata.modelId) {
-			return request.result.metadata.modelId.replace(/^copilot\//, '');
-		}
-
-		// Build a lookup map from display names to model IDs from modelPricing.json
-		if (request.result && request.result.details) {
-			// Create reverse lookup: displayName -> modelId
-			const displayNameToModelId: { [displayName: string]: string } = {};
-			for (const [modelId, pricing] of Object.entries(this.modelPricing)) {
-				if (pricing.displayNames) {
-					for (const displayName of pricing.displayNames) {
-						displayNameToModelId[displayName] = modelId;
-					}
-				}
-			}
-
-			// Check which display name appears in the details
-			// Sort by length descending to match longer names first (e.g., "Gemini 3 Pro (Preview)" before "Gemini 3 Pro")
-			const sortedDisplayNames = Object.keys(displayNameToModelId).sort((a, b) => b.length - a.length);
-			for (const displayName of sortedDisplayNames) {
-				if (request.result.details.includes(displayName)) {
-					return displayNameToModelId[displayName];
-				}
-			}
-		}
-
-		return 'gpt-4'; // default
+		return _getModelFromRequest(request, this.modelPricing);
 	}
 
-	/**
-	 * Detect if file content is JSONL format (multiple JSON objects, one per line)
-	 * This handles cases where .json files actually contain JSONL content
-	 */
 	private isJsonlContent(content: string): boolean {
-		const trimmed = content.trim();
-		// JSONL typically has multiple lines, each starting with { and ending with }
-		if (!trimmed.includes('\n')) {
-			return false; // Single line - not JSONL
-		}
-		const lines = trimmed.split('\n').filter(l => l.trim());
-		if (lines.length < 2) {
-			return false; // Need multiple lines for JSONL
-		}
-		// Check if first two non-empty lines look like separate JSON objects
-		const firstLine = lines[0].trim();
-		const secondLine = lines[1].trim();
-		return firstLine.startsWith('{') && firstLine.endsWith('}') &&
-			secondLine.startsWith('{') && secondLine.endsWith('}');
+		return _isJsonlContent(content);
 	}
 
-	/**
-	 * Check if file content is a UUID-only pointer file (new Copilot CLI format).
-	 * These files contain only a session ID instead of actual session data.
-	 * @param content The file content to check
-	 * @returns true if the content is a UUID-only pointer file
-	 */
 	private isUuidPointerFile(content: string): boolean {
-		const trimmedContent = content.trim();
-		return /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(trimmedContent);
+		return _isUuidPointerFile(content);
 	}
 
-	/**
-	 * Apply a delta to reconstruct session state from delta-based JSONL format.
-	 * VS Code Insiders uses this format where:
-	 * - kind: 0 = initial state (full replacement)
-	 * - kind: 1 = update value at key path
-	 * - kind: 2 = append to array at key path
-	 * - k = key path (array of strings)
-	 * - v = value
-	 */
 	private applyDelta(state: any, delta: any): any {
-		if (typeof delta !== 'object' || delta === null) {
-			return state;
-		}
-
-		const { kind, k, v } = delta;
-
-		if (kind === 0) {
-			// Initial state - full replacement
-			return v;
-		}
-
-		if (!Array.isArray(k) || k.length === 0) {
-			return state;
-		}
-
-		const pathArr = k.map(String);
-		let root = typeof state === 'object' && state !== null ? state : {};
-		let current: any = root;
-
-		// Traverse to the parent of the target location
-		for (let i = 0; i < pathArr.length - 1; i++) {
-			const seg = pathArr[i];
-			const nextSeg = pathArr[i + 1];
-			const wantsArray = /^\d+$/.test(nextSeg);
-
-			if (Array.isArray(current)) {
-				const idx = Number(seg);
-				if (!current[idx] || typeof current[idx] !== 'object') {
-					current[idx] = wantsArray ? [] : {};
-				}
-				current = current[idx];
-			} else {
-				if (!current[seg] || typeof current[seg] !== 'object') {
-					current[seg] = wantsArray ? [] : {};
-				}
-				current = current[seg];
-			}
-		}
-
-		const lastSeg = pathArr[pathArr.length - 1];
-
-		if (kind === 1) {
-			// Set value at key path
-			if (Array.isArray(current)) {
-				current[Number(lastSeg)] = v;
-			} else {
-				current[lastSeg] = v;
-			}
-			return root;
-		}
-
-		if (kind === 2) {
-			// Append value(s) to array at key path
-			let target: any[];
-			if (Array.isArray(current)) {
-				const idx = Number(lastSeg);
-				if (!Array.isArray(current[idx])) {
-					current[idx] = [];
-				}
-				target = current[idx];
-			} else {
-				if (!Array.isArray(current[lastSeg])) {
-					current[lastSeg] = [];
-				}
-				target = current[lastSeg];
-			}
-
-			if (Array.isArray(v)) {
-				target.push(...v);
-			} else {
-				target.push(v);
-			}
-			return root;
-		}
-
-		return root;
+		return _applyDelta(state, delta);
 	}
 
-	private getModelTier(modelId: string): 'standard' | 'premium' | 'unknown' {
-		// Determine tier based on multiplier: 0 = standard, >0 = premium
-		// Look up from modelPricing.json
-		const pricingInfo = this.modelPricing[modelId];
-		if (pricingInfo && typeof pricingInfo.multiplier === 'number') {
-			return pricingInfo.multiplier === 0 ? 'standard' : 'premium';
-		}
-
-		// Fallback: try to match partial model names
-		for (const [key, value] of Object.entries(this.modelPricing)) {
-			if (modelId.includes(key) || key.includes(modelId)) {
-				if (typeof value.multiplier === 'number') {
-					return value.multiplier === 0 ? 'standard' : 'premium';
-				}
-			}
-		}
-
-		return 'unknown';
-	}
 
 	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
-		// Token estimation based on character count and model
-		let tokensPerChar = 0.25; // default
-
-		// Find matching model
-		for (const [modelKey, ratio] of Object.entries(this.tokenEstimators)) {
-			if (model.includes(modelKey) || model.includes(modelKey.replace('-', ''))) {
-				tokensPerChar = ratio;
-				break;
-			}
-		}
-
-		return Math.ceil(text.length * tokensPerChar);
+		return _estimateTokensFromText(text, model, this.tokenEstimators);
 	}
 
 	public async showDetails(): Promise<void> {
@@ -7492,432 +3808,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		period: UsageAnalysisPeriod;
 		lastUpdated: string;
 	}> {
-		const stats = await this.calculateUsageAnalysisStats(useCache);
-		const p = stats.last30Days;
-
-		const stageLabels: Record<number, string> = {
-			1: 'Stage 1: Copilot Skeptic',
-			2: 'Stage 2: Copilot Explorer',
-			3: 'Stage 3: Copilot Collaborator',
-			4: 'Stage 4: Copilot Strategist'
-		};
-
-		// ---------- 1. Prompt Engineering ----------
-		const peEvidence: string[] = [];
-		const peTips: string[] = [];
-		let peStage = 1;
-
-		const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent;
-		if (totalInteractions > 0) {
-			peEvidence.push(`${totalInteractions} total interactions`);
-		}
-		if (p.modeUsage.ask > 0) {
-			peEvidence.push(`${p.modeUsage.ask} ask-mode conversations`);
-		}
-		if (p.modeUsage.agent > 0) {
-			peEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
-		}
-
-		// Conversation patterns (multi-turn shows iterative refinement)
-		if (p.conversationPatterns) {
-			const multiTurnRate = p.sessions > 0
-				? Math.round((p.conversationPatterns.multiTurnSessions / p.sessions) * 100)
-				: 0;
-			if (p.conversationPatterns.multiTurnSessions > 0) {
-				peEvidence.push(`${p.conversationPatterns.multiTurnSessions} multi-turn sessions (${multiTurnRate}%)`);
-			}
-			if (p.conversationPatterns.avgTurnsPerSession >= 3) {
-				peEvidence.push(`Avg ${p.conversationPatterns.avgTurnsPerSession.toFixed(1)} exchanges per session`);
-				peStage = Math.max(peStage, 2) as 1 | 2 | 3 | 4;
-			}
-			if (p.conversationPatterns.avgTurnsPerSession >= 5) {
-				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		if (totalInteractions >= 5) {
-			peStage = 2; // At least trying it out
-		}
-
-		// Check slash command / tool usage (indicates structured prompts)
-		const slashCommands = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
-		const usedSlashCommands = slashCommands.filter(cmd => (p.toolCalls.byTool[cmd] || 0) > 0);
-		if (usedSlashCommands.length > 0) {
-			peEvidence.push(`Used slash commands: /${usedSlashCommands.join(', /')}`);
-		}
-
-		const hasModelSwitching = p.modelSwitching.mixedTierSessions > 0 || p.modelSwitching.switchingFrequency > 0;
-		const hasAgentMode = p.modeUsage.agent > 0;
-
-		if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) {
-			peStage = 3; // Regular, purposeful use
-		}
-
-		// Strategist: high volume + agent mode + (model switching or diverse slash commands)
-		if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) {
-			peStage = 4;
-		}
-
-		// Model switching awareness
-		if (hasModelSwitching) {
-			peEvidence.push(`Switched models in ${Math.round(p.modelSwitching.switchingFrequency)}% of sessions`);
-			if (peStage < 4 && p.modelSwitching.mixedTierSessions > 0) {
-				peStage = Math.max(peStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// Context-aware tips
-		if (peStage < 2) { peTips.push('Try asking Copilot a question using the Chat panel'); }
-		if (peStage < 3) {
-			if (!hasAgentMode) { peTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes'); }
-			if (usedSlashCommands.length < 2) { peTips.push('Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts'); }
-		}
-		if (peStage < 4) {
-			if (!hasAgentMode) { peTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks'); }
-			if (!hasModelSwitching) { peTips.push('Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems'); }
-			if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push('Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting'); }
-		}
-
-		// ---------- 2. Context Engineering ----------
-		const ceEvidence: string[] = [];
-		const ceTips: string[] = [];
-		let ceStage = 1;
-
-		const totalContextRefs = p.contextReferences.file + p.contextReferences.selection +
-			p.contextReferences.symbol + p.contextReferences.codebase + p.contextReferences.workspace;
-		const refTypes = [
-			p.contextReferences.file > 0,
-			p.contextReferences.selection > 0,
-			p.contextReferences.symbol > 0,
-			p.contextReferences.codebase > 0,
-			p.contextReferences.workspace > 0,
-			p.contextReferences.terminal > 0,
-			p.contextReferences.vscode > 0,
-			p.contextReferences.clipboard > 0,
-			p.contextReferences.changes > 0,
-			p.contextReferences.problemsPanel > 0,
-			p.contextReferences.outputPanel > 0,
-			p.contextReferences.terminalLastCommand > 0,
-			p.contextReferences.terminalSelection > 0
-		];
-		const usedRefTypeCount = refTypes.filter(Boolean).length;
-
-		if (p.contextReferences.file > 0) { ceEvidence.push(`${p.contextReferences.file} #file references`); }
-		if (p.contextReferences.selection > 0) { ceEvidence.push(`${p.contextReferences.selection} #selection references`); }
-		if (p.contextReferences.codebase > 0) { ceEvidence.push(`${p.contextReferences.codebase} #codebase references`); }
-		if (p.contextReferences.workspace > 0) { ceEvidence.push(`${p.contextReferences.workspace} @workspace references`); }
-		if (p.contextReferences.terminal > 0) { ceEvidence.push(`${p.contextReferences.terminal} @terminal references`); }
-
-		if (totalContextRefs >= 1) { ceStage = 2; }
-		if (usedRefTypeCount >= 3 && totalContextRefs >= 10) { ceStage = 3; }
-		if (usedRefTypeCount >= 5 && totalContextRefs >= 30) { ceStage = 4; }
-
-		// Image context (byKind: copilot.image)
-		const imageRefs = p.contextReferences.byKind['copilot.image'] || 0;
-		if (imageRefs > 0) {
-			ceEvidence.push(`${imageRefs} image references (vision)`);
-			ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
-		}
-
-		if (ceStage < 2) { ceTips.push('Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context'); }
-		if (ceStage < 3) { ceTips.push('Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context'); }
-		if (ceStage < 4) { ceTips.push('Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables'); }
-
-		// ---------- 3. Agentic ----------
-		const agEvidence: string[] = [];
-		const agTips: string[] = [];
-		let agStage = 1;
-
-		if (p.modeUsage.agent > 0) {
-			agEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
-			agStage = 2;
-		}
-		if (p.toolCalls.total > 0) {
-			agEvidence.push(`${p.toolCalls.total} tool calls executed`);
-		}
-		if (p.modeUsage.edit > 0) {
-			agEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
-		}
-
-		// Edit scope tracking (multi-file edits show advanced agentic behavior)
-		if (p.editScope) {
-			const multiFileRate = p.editScope.totalEditedFiles > 0
-				? Math.round((p.editScope.multiFileEdits / (p.editScope.singleFileEdits + p.editScope.multiFileEdits)) * 100)
-				: 0;
-			if (p.editScope.multiFileEdits > 0) {
-				agEvidence.push(`${p.editScope.multiFileEdits} multi-file edit sessions (${multiFileRate}%)`);
-				agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
-			}
-			if (p.editScope.avgFilesPerSession >= 3) {
-				agEvidence.push(`Avg ${p.editScope.avgFilesPerSession.toFixed(1)} files per edit session`);
-				agStage = Math.max(agStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// Agent type distribution
-		if (p.agentTypes && p.agentTypes.editsAgent > 0) {
-			agEvidence.push(`${p.agentTypes.editsAgent} edits agent sessions`);
-			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
-		}
-
-		// Diverse tool usage in agent mode
-		const toolCount = Object.keys(p.toolCalls.byTool).length;
-		if (p.modeUsage.agent >= 10 && toolCount >= 3) {
-			agStage = 3;
-		}
-
-		// Heavy agentic use with many tool types or high multi-file edit rate
-		if (p.modeUsage.agent >= 50 && toolCount >= 5) {
-			agStage = 4;
-		}
-		if (p.editScope && p.editScope.multiFileEdits >= 20 && p.editScope.avgFilesPerSession >= 3) {
-			agStage = Math.max(agStage, 4) as 1 | 2 | 3 | 4;
-		}
-
-		if (agStage < 2) { agTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously'); }
-		if (agStage < 3) { agTips.push('Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits'); }
-		if (agStage < 4) { agTips.push('Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows'); }
-
-		// ---------- 4. Tool Usage ----------
-		const tuEvidence: string[] = [];
-		const tuTips: string[] = [];
-		let tuStage = 1;
-
-		// Basic tool usage (primarily from agent mode)
-		if (toolCount > 0) {
-			tuEvidence.push(`${toolCount} unique tools used`);
-			tuStage = 2;
-		}
-
-		// Agent type distribution (workspace agent shows advanced tool usage)
-		if (p.agentTypes) {
-			if (p.agentTypes.workspaceAgent > 0) {
-				tuEvidence.push(`${p.agentTypes.workspaceAgent} @workspace agent sessions`);
-				tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// Specific advanced tool IDs (intentional tool integration)
-		const advancedToolFriendlyNames: Record<string, string> = {
-			github_pull_request: 'GitHub Pull Request',
-			github_repo: 'GitHub Repository',
-			run_in_terminal: 'Run In Terminal',
-			editFiles: 'Edit Files',
-			listFiles: 'List Files'
-		};
-		const usedAdvanced = Object.keys(advancedToolFriendlyNames).filter(t => (p.toolCalls.byTool[t] || 0) > 0);
-		if (usedAdvanced.length > 0) {
-			tuEvidence.push(`Advanced tools: ${usedAdvanced.map(t => advancedToolFriendlyNames[t]).join(', ')}`);
-			if (usedAdvanced.length >= 2) {
-				tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// MCP tools are a strong signal of strategic/advanced use
-		const mcpServers = Object.keys(p.mcpTools.byServer);
-		if (p.mcpTools.total > 0) {
-			tuEvidence.push(`${p.mcpTools.total} MCP tool calls across ${mcpServers.length} server(s)`);
-			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4; // Using any MCP server is stage 3
-			if (mcpServers.length >= 2) {
-				tuStage = 4; // Multiple MCP servers = strategist
-			}
-		}
-
-		// Tips based on current state
-		if (tuStage < 2) {
-			tuTips.push('Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands');
-		}
-		if (tuStage < 3) {
-			if (mcpServers.length === 0) {
-				tuTips.push('Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)');
-			} else {
-				tuTips.push('Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal');
-			}
-		}
-		if (tuStage < 4) {
-			if (mcpServers.length === 1) {
-				tuTips.push('Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot\'s capabilities - check the VS Code MCP registry');
-			} else if (mcpServers.length === 0) {
-				tuTips.push('Explore the [VS Code MCP registry](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for tools that integrate with your workflow');
-			} else {
-				tuTips.push('You\'re using multiple MCP servers - keep exploring advanced tool combinations');
-			}
-		}
-
-		// ---------- 5. Customization ----------
-		const cuEvidence: string[] = [];
-		const cuTips: string[] = [];
-		let cuStage = 1;
-
-		// Derive repo-level customization from the customization matrix (which is actually populated)
-		const matrix = this._lastCustomizationMatrix;
-		const totalRepos = matrix?.totalWorkspaces ?? 0;
-		const reposWithCustomization = totalRepos - (matrix?.workspacesWithIssues ?? 0);
-		const customizationRate = totalRepos > 0 ? (reposWithCustomization / totalRepos) : 0;
-
-		if (totalRepos > 0) {
-			cuEvidence.push(`Worked in ${totalRepos} repositor${totalRepos === 1 ? 'y' : 'ies'}`);
-		}
-
-		if (reposWithCustomization > 0) {
-			cuStage = 2;
-		}
-
-		// Stage thresholds based on adoption rate
-		if (customizationRate >= 0.3 && reposWithCustomization >= 2) {
-			cuStage = 3;
-		}
-
-		if (customizationRate >= 0.7 && reposWithCustomization >= 3) {
-			cuStage = 4;
-		}
-
-		// Model selection awareness (choosing specific models)
-		const uniqueModels = [...new Set([
-			...p.modelSwitching.standardModels,
-			...p.modelSwitching.premiumModels
-		])];
-		if (uniqueModels.length >= 3) {
-			// Check for Stage 4 criteria first
-			const hasStage4Models = uniqueModels.length >= 5 && reposWithCustomization >= 3;
-			
-			cuEvidence.push(`Used ${uniqueModels.length} different models`);
-			if (hasStage4Models) {
-				cuStage = 4;
-			} else if (uniqueModels.length >= 5) {
-				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
-			} else {
-				cuStage = Math.max(cuStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// Show repo customization evidence once, reflecting the final achieved stage
-		if (cuStage >= 4) {
-			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (70%+ with 3+ repos → Stage 4)`);
-		} else if (cuStage >= 3) {
-			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (30%+ with 2+ repos → Stage 3)`);
-		} else if (reposWithCustomization > 0) {
-			cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos with custom instructions or agents.md`);
-		}
-
-		if (cuStage < 2) { cuTips.push('Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines'); }
-		if (cuStage < 3) { cuTips.push('Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience'); }
-		if (cuStage < 4) {
-			const uncustomized = totalRepos - reposWithCustomization;
-			if (totalRepos > 0 && uncustomized > 0) {
-				cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
-			} else {
-				cuTips.push('Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)');
-			}
-		}
-		if (cuStage >= 4) {
-			const uncustomized = totalRepos - reposWithCustomization;
-			if (uncustomized > 0) {
-				const missingCustomizationRepos = (matrix?.workspaces || [])
-					.filter(row => Object.values(row.typeStatuses).every(status => status === '❌'));
-				const prioritizedMissingRepos = missingCustomizationRepos
-					.filter(row => !row.workspacePath.startsWith('<unresolved:'))
-					.sort((a, b) => {
-						if (b.interactionCount !== a.interactionCount) {
-							return b.interactionCount - a.interactionCount;
-						}
-						return b.sessionCount - a.sessionCount;
-					})
-					.slice(0, 3);
-
-				const summaryTip = `${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add [instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), [agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), or [MCP configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for full coverage.`;
-				if (prioritizedMissingRepos.length > 0) {
-					const repoLines = prioritizedMissingRepos.map(row => 
-						`${row.workspaceName} (${row.interactionCount} interaction${row.interactionCount === 1 ? '' : 's'})`
-					).join('\n');
-					cuTips.push(`${summaryTip}\n\nTop repos to customize first:\n${repoLines}`);
-				} else {
-					cuTips.push(summaryTip);
-				}
-			} else {
-				cuTips.push('All repos customized! Keep instructions up to date and add [skill files](https://code.visualstudio.com/docs/copilot/customization/agent-skills) or [MCP server configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for deeper integration');
-			}
-		}
-
-		// ---------- 6. Workflow Integration ----------
-		const wiEvidence: string[] = [];
-		const wiTips: string[] = [];
-		let wiStage = 1;
-
-		// Sessions count reflects regularity
-		if (p.sessions >= 3) {
-			wiEvidence.push(`${p.sessions} sessions in the last 30 days`);
-			wiStage = 2;
-		}
-
-		// Apply button usage (high rate shows active adoption of suggestions)
-		if (p.applyUsage && p.applyUsage.totalCodeBlocks > 0) {
-			const applyRatePercent = Math.round(p.applyUsage.applyRate);
-			wiEvidence.push(`${applyRatePercent}% code block apply rate (${p.applyUsage.totalApplies}/${p.applyUsage.totalCodeBlocks})`);
-			if (applyRatePercent >= 50) {
-				wiStage = Math.max(wiStage, 2) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// Session duration (informational only - not used for staging)
-		if (p.sessionDuration && p.sessionDuration.avgDurationMs > 0) {
-			const avgMinutes = Math.round(p.sessionDuration.avgDurationMs / 60000);
-			wiEvidence.push(`Avg ${avgMinutes}min session duration`);
-		}
-
-		// Multi-mode usage (ask + agent) - key indicator of integration
-		const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.agent > 0].filter(Boolean).length;
-		if (modesUsed >= 2) {
-			wiEvidence.push(`Uses ${modesUsed} modes (ask/agent)`);
-			wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
-		}
-
-		// Explicit context usage - strong signal of intentional integration
-		const hasExplicitContext = totalContextRefs >= 10;
-		if (hasExplicitContext) {
-			wiEvidence.push(`${totalContextRefs} explicit context references`);
-			if (totalContextRefs >= 20) {
-				wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
-			}
-		}
-
-		// Stage 4: Multi-mode + explicit context + regular usage
-		if (p.sessions >= 15 && modesUsed >= 2 && totalContextRefs >= 20) {
-			wiStage = 4;
-			wiEvidence.push('Deep integration: regular usage with multi-mode and explicit context');
-		}
-
-		if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
-		if (wiStage < 3) { 
-			if (modesUsed < 2) { wiTips.push('Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow'); }
-			if (totalContextRefs < 10) { wiTips.push('Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection'); }
-		}
-		if (wiStage < 4) { 
-			if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently'); }
-			wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); 
-		}
-
-		// ---------- Overall score (median) ----------
-		const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
-		const mid = Math.floor(scores.length / 2);
-		const overallStage = scores.length % 2 === 0
-			? Math.round((scores[mid - 1] + scores[mid]) / 2)
-			: scores[mid];
-
-		return {
-			overallStage,
-			overallLabel: stageLabels[overallStage] || `Stage ${overallStage}`,
-			categories: [
-				{ category: 'Prompt Engineering', icon: '💬', stage: peStage, evidence: peEvidence, tips: peTips },
-				{ category: 'Context Engineering', icon: '📎', stage: ceStage, evidence: ceEvidence, tips: ceTips },
-				{ category: 'Agentic', icon: '🤖', stage: agStage, evidence: agEvidence, tips: agTips },
-				{ category: 'Tool Usage', icon: '🔧', stage: tuStage, evidence: tuEvidence, tips: tuTips },
-				{ category: 'Customization', icon: '⚙️', stage: cuStage, evidence: cuEvidence, tips: cuTips },
-				{ category: 'Workflow Integration', icon: '🔄', stage: wiStage, evidence: wiEvidence, tips: wiTips }
-			],
-			period: p,
-			lastUpdated: stats.lastUpdated.toISOString()
-		};
+		return _calculateMaturityScores(this._lastCustomizationMatrix, (useCache) => this.calculateUsageAnalysisStats(useCache), useCache);
 	}
 
 	public async showMaturity(): Promise<void> {
@@ -8498,392 +4389,8 @@ ${hashtag}`;
     this.log("✅ Fluency Level Viewer refreshed");
   }
 
-  private getFluencyLevelData(isDebugMode: boolean): {
-    categories: Array<{
-      category: string;
-      icon: string;
-      levels: Array<{
-        stage: number;
-        label: string;
-        description: string;
-        thresholds: string[];
-        tips: string[];
-      }>;
-    }>;
-    isDebugMode: boolean;
-  } {
-    return {
-      isDebugMode,
-      categories: [
-        {
-          category: "Prompt Engineering",
-          icon: "💬",
-          levels: [
-            {
-              stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Rarely uses Copilot or uses only basic features",
-              thresholds: [
-                "Fewer than 5 total interactions in 30 days",
-                "Minimal multi-turn conversations",
-                "No slash commands or agent mode usage",
-              ],
-              tips: [
-                "Try asking Copilot a question using the Chat panel",
-                "Start with simple queries to get familiar with the interface",
-              ],
-            },
-            {
-              stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Exploring Copilot capabilities with occasional use",
-              thresholds: [
-                "At least 5 total interactions",
-                "Average 3+ exchanges per session shows iterative refinement",
-                "Beginning to use slash commands or agent mode",
-              ],
-              tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes",
-                "Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts",
-                "Experiment with multi-turn conversations to refine responses",
-              ],
-            },
-            {
-              stage: 3,
-              label: "Stage 3: Copilot Collaborator",
-              description: "Regular, purposeful use across multiple features",
-              thresholds: [
-                "At least 30 total interactions",
-                "Using 2+ slash commands or agent mode regularly",
-                "Average 5+ exchanges per session OR model switching in sessions",
-                "Shows model switching awareness (mixed-tier sessions)",
-              ],
-              tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks",
-                "Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems",
-                "Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting",
-              ],
-            },
-            {
-              stage: 4,
-              label: "Stage 4: Copilot Strategist",
-              description:
-                "Strategic, advanced use leveraging the full Copilot ecosystem",
-              thresholds: [
-                "At least 100 total interactions",
-                "Using agent mode regularly",
-                "Active model switching (switches in sessions) OR 3+ diverse slash commands",
-                "Demonstrates strategic choice of models and commands for different tasks",
-              ],
-              tips: [
-                "You're at the highest level!",
-                "Continue exploring advanced combinations of models, modes, and commands",
-              ],
-            },
-          ],
-        },
-        {
-          category: "Context Engineering",
-          icon: "📎",
-          levels: [
-            {
-              stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Not using explicit context references",
-              thresholds: [
-                "Zero explicit context references (#file, #selection, @workspace, etc.)",
-              ],
-              tips: [
-                "Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context",
-                "Start with #file to reference specific files in your prompts",
-              ],
-            },
-            {
-              stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Beginning to use basic context references",
-              thresholds: [
-                "At least 1 context reference used",
-                "Exploring basic references like #file or #selection",
-              ],
-              tips: [
-                "Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context",
-                "Try combining multiple context types in a single query",
-              ],
-            },
-            {
-              stage: 3,
-              label: "Stage 3: Copilot Collaborator",
-              description: "Regular use of diverse context types",
-              thresholds: [
-                "At least 3 different context reference types used",
-                "At least 10 total context references",
-                "May include image references (vision capabilities)",
-              ],
-              tips: [
-                "Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables",
-                "Experiment with @terminal and @vscode for IDE-level context",
-              ],
-            },
-            {
-              stage: 4,
-              label: "Stage 4: Copilot Strategist",
-              description: "Strategic use of advanced context engineering",
-              thresholds: [
-                "At least 5 different context reference types used",
-                "At least 30 total context references",
-                "Using specialized references like #changes, #problemsPanel, #outputPanel, etc.",
-              ],
-              tips: [
-                "You're at the highest level!",
-                "Continue mastering context engineering for optimal results",
-              ],
-            },
-          ],
-        },
-        {
-          category: "Agentic",
-          icon: "🤖",
-          levels: [
-            {
-              stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Not using agent mode or autonomous features",
-              thresholds: [
-                "Zero agent-mode interactions",
-                "No tool calls executed",
-                "Not using edit mode or multi-file capabilities",
-              ],
-              tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously",
-                "Start with simple tasks to see how agent mode works",
-              ],
-            },
-            {
-              stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Beginning to explore agent mode",
-              thresholds: [
-                "At least 1 agent-mode interaction OR",
-                "Using edit mode OR",
-                "At least 1 multi-file edit session",
-              ],
-              tips: [
-                "Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits",
-                "Try edit mode for focused code changes",
-              ],
-            },
-            {
-              stage: 3,
-              label: "Stage 3: Copilot Collaborator",
-              description: "Regular use of agent mode with diverse tools",
-              thresholds: [
-                "At least 10 agent-mode interactions AND 3+ unique tools used OR",
-                "Average 3+ files per edit session OR",
-                "Using edits agent for focused editing tasks",
-              ],
-              tips: [
-                "Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows",
-                "Let agent mode handle multi-step tasks that span multiple files",
-              ],
-            },
-            {
-              stage: 4,
-              label: "Stage 4: Copilot Strategist",
-              description: "Heavy, strategic use of autonomous features",
-              thresholds: [
-                "At least 50 agent-mode interactions AND 5+ tool types used OR",
-                "At least 20 multi-file edits with 3+ files per session average",
-                "Demonstrates mastery of agent orchestration",
-              ],
-              tips: [
-                "You're at the highest level!",
-                "Continue leveraging agent mode for complex, multi-step workflows",
-              ],
-            },
-          ],
-        },
-        {
-          category: "Tool Usage",
-          icon: "🔧",
-          levels: [
-            {
-              stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Not using tools beyond basic chat",
-              thresholds: [
-                "Zero unique tools used",
-                "No MCP servers configured",
-                "No workspace agent sessions",
-              ],
-              tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands",
-                "Explore the built-in tools available in agent mode",
-              ],
-            },
-            {
-              stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Beginning to use basic tools",
-              thresholds: [
-                "At least 1 unique tool used",
-                "Using basic agent mode tools",
-              ],
-              tips: [
-                "Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)",
-                "Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal",
-              ],
-            },
-            {
-              stage: 3,
-              label: "Stage 3: Copilot Collaborator",
-              description: "Regular use of diverse tools and integrations",
-              thresholds: [
-                "Using @workspace agent OR",
-                "Using 2+ advanced tools (GitHub PR, GitHub Repo, terminal, editFiles, listFiles) OR",
-                "Using at least 1 MCP server",
-              ],
-              tips: [
-                "Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot's capabilities - check the VS Code MCP registry",
-                "Explore advanced tool combinations for complex workflows",
-              ],
-            },
-            {
-              stage: 4,
-              label: "Stage 4: Copilot Strategist",
-              description:
-                "Strategic use of multiple MCP servers and advanced tools",
-              thresholds: [
-                "Using 2+ MCP servers",
-                "Leveraging multiple advanced tools strategically",
-              ],
-              tips: [
-                "You're at the highest level!",
-                "Keep exploring advanced tool combinations and new MCP servers",
-              ],
-            },
-          ],
-        },
-        {
-          category: "Customization",
-          icon: "⚙️",
-          levels: [
-            {
-              stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Using default Copilot without customization",
-              thresholds: [
-                "No repositories with custom instructions or agents.md",
-                "Using fewer than 3 different models",
-              ],
-              tips: [
-                "Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines",
-                "Start customizing Copilot for your workflow",
-              ],
-            },
-            {
-              stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Beginning to customize Copilot",
-              thresholds: [
-                "At least 1 repository with custom instructions or agents.md",
-              ],
-              tips: [
-                "Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience",
-                "Experiment with different models for different tasks",
-              ],
-            },
-            {
-              stage: 3,
-              label: "Stage 3: Copilot Collaborator",
-              description: "Regular customization across repositories",
-              thresholds: [
-                "30%+ of repositories have customization (with 2+ repos) OR",
-                "Using 3+ different models strategically",
-              ],
-              tips: [
-                "Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)",
-                "Explore 5+ models to match tasks with optimal model capabilities",
-              ],
-            },
-            {
-              stage: 4,
-              label: "Stage 4: Copilot Strategist",
-              description: "Comprehensive customization strategy",
-              thresholds: [
-                "70%+ customization adoption rate with 3+ repos OR",
-                "Using 5+ different models with 3+ repos customized",
-              ],
-              tips: [
-                "You're at the highest level!",
-                "Continue refining your customization strategy",
-              ],
-            },
-          ],
-        },
-        {
-          category: "Workflow Integration",
-          icon: "🔄",
-          levels: [
-            {
-              stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Minimal integration into daily workflow",
-              thresholds: [
-                "Fewer than 3 sessions in 30 days",
-                "Using only 1 mode (ask OR agent)",
-                "Fewer than 10 explicit context references",
-              ],
-              tips: [
-                "Use Copilot more regularly - even for quick questions",
-                "Make Copilot part of your daily coding routine",
-              ],
-            },
-            {
-              stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Occasional integration with some regularity",
-              thresholds: [
-                "At least 3 sessions in 30 days OR",
-                "50%+ code block apply rate",
-              ],
-              tips: [
-                "Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow",
-                "Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection",
-              ],
-            },
-            {
-              stage: 3,
-              label: "Stage 3: Copilot Collaborator",
-              description: "Regular workflow integration",
-              thresholds: [
-                "Using 2 modes (ask AND agent) OR",
-                "At least 20 explicit context references",
-              ],
-              tips: [
-                "Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently",
-                "Make Copilot part of every coding task: planning, coding, testing, and reviewing",
-              ],
-            },
-            {
-              stage: 4,
-              label: "Stage 4: Copilot Strategist",
-              description: "Deep integration across all development activities",
-              thresholds: [
-                "At least 15 sessions",
-                "Using 2+ modes (ask + agent)",
-                "At least 20 explicit context references",
-                "Shows regular, purposeful usage pattern",
-              ],
-              tips: [
-                "You're at the highest level!",
-                "Continue integrating Copilot into every aspect of your development workflow",
-              ],
-            },
-          ],
-        },
-      ],
-    };
+  private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
+		return _getFluencyLevelData(isDebugMode);
   }
 
   private getFluencyLevelViewerHtml(
@@ -9192,183 +4699,6 @@ ${hashtag}`;
    * Calculates a fluency stage (1-4) for a team member based on aggregated Azure Table Storage metrics.
    * Applies the same 6-category scoring thresholds as calculateMaturityScores().
    */
-  private calculateFluencyScoreForTeamMember(fd: {
-    askModeCount: number; editModeCount: number; agentModeCount: number;
-    planModeCount: number; customAgentModeCount: number;
-    toolCallsTotal: number; toolCallsByTool: Record<string, number>;
-    ctxFile: number; ctxSelection: number; ctxSymbol: number;
-    ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
-    ctxVscode: number; ctxClipboard: number; ctxChanges: number;
-    ctxProblemsPanel: number; ctxOutputPanel: number;
-    ctxTerminalLastCommand: number; ctxTerminalSelection: number;
-    ctxByKind: Record<string, number>;
-    mcpTotal: number; mcpByServer: Record<string, number>;
-    mixedTierSessions: number; switchingFreqSum: number; switchingFreqCount: number;
-    standardModels: Set<string>; premiumModels: Set<string>;
-    multiFileEdits: number; filesPerEditSum: number; filesPerEditCount: number;
-    editsAgentCount: number; workspaceAgentCount: number;
-    repositories: Set<string>; repositoriesWithCustomization: Set<string>;
-    applyRateSum: number; applyRateCount: number;
-    multiTurnSessions: number; turnsPerSessionSum: number; turnsPerSessionCount: number;
-    sessionCount: number; durationMsSum: number; durationMsCount: number;
-  }, dashboardSessions: number): { stage: number; label: string; categories: { category: string; icon: string; stage: number; tips: string[] }[] } {
-    const stageLabels: Record<number, string> = {
-      1: "Stage 1: Copilot Skeptic",
-      2: "Stage 2: Copilot Explorer",
-      3: "Stage 3: Copilot Collaborator",
-      4: "Stage 4: Copilot Strategist",
-    };
-
-    const totalInteractions = fd.askModeCount + fd.editModeCount + fd.agentModeCount;
-    const avgTurnsPerSession = fd.turnsPerSessionCount > 0 ? fd.turnsPerSessionSum / fd.turnsPerSessionCount : 0;
-    const switchingFrequency = fd.switchingFreqCount > 0 ? fd.switchingFreqSum / fd.switchingFreqCount : 0;
-    const hasModelSwitching = fd.mixedTierSessions > 0 || switchingFrequency > 0;
-    const hasAgentMode = fd.agentModeCount > 0;
-    const toolCount = Object.keys(fd.toolCallsByTool).length;
-    const avgFilesPerSession = fd.filesPerEditCount > 0 ? fd.filesPerEditSum / fd.filesPerEditCount : 0;
-    const avgApplyRate = fd.applyRateCount > 0 ? fd.applyRateSum / fd.applyRateCount : 0;
-    const totalContextRefs = fd.ctxFile + fd.ctxSelection + fd.ctxSymbol + fd.ctxCodebase + fd.ctxWorkspace;
-
-    // 1. Prompt Engineering
-    let peStage = 1;
-    const slashCmds = ["explain", "fix", "tests", "doc", "generate", "optimize", "new", "newNotebook", "search", "fixTestFailure", "setupTests"];
-    const usedSlashCommands = slashCmds.filter(cmd => (fd.toolCallsByTool[cmd] ?? 0) > 0);
-    if (avgTurnsPerSession >= 3) { peStage = Math.max(peStage, 2); }
-    if (avgTurnsPerSession >= 5) { peStage = Math.max(peStage, 3); }
-    if (totalInteractions >= 5) { peStage = Math.max(peStage, 2); }
-    if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) { peStage = Math.max(peStage, 3); }
-    if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) { peStage = 4; }
-    if (hasModelSwitching && fd.mixedTierSessions > 0) { peStage = Math.max(peStage, 3); }
-    const peTips: string[] = [];
-    if (peStage < 2) { peTips.push("Try asking Copilot a question using the Chat panel"); }
-    if (peStage < 3) {
-      if (!hasAgentMode) { peTips.push("Try agent mode for multi-file changes"); }
-      if (usedSlashCommands.length < 2) { peTips.push("Use slash commands like /explain, /fix, or /tests for structured prompts"); }
-    }
-    if (peStage < 4) {
-      if (!hasAgentMode) { peTips.push("Try agent mode for autonomous, multi-step coding tasks"); }
-      if (!hasModelSwitching) { peTips.push("Experiment with different models — fast models for simple queries, reasoning models for complex problems"); }
-      if (usedSlashCommands.length < 3 && hasAgentMode && hasModelSwitching) { peTips.push("Explore more slash commands like /explain, /tests, or /doc"); }
-    }
-
-    // 2. Context Engineering
-    let ceStage = 1;
-    const usedRefTypeCount = [
-      fd.ctxFile, fd.ctxSelection, fd.ctxSymbol, fd.ctxCodebase, fd.ctxWorkspace,
-      fd.ctxTerminal, fd.ctxVscode, fd.ctxClipboard, fd.ctxChanges,
-      fd.ctxProblemsPanel, fd.ctxOutputPanel, fd.ctxTerminalLastCommand, fd.ctxTerminalSelection,
-    ].filter(v => v > 0).length;
-    if (totalContextRefs >= 1) { ceStage = 2; }
-    if (usedRefTypeCount >= 3 && totalContextRefs >= 10) { ceStage = 3; }
-    if (usedRefTypeCount >= 5 && totalContextRefs >= 30) { ceStage = 4; }
-    if ((fd.ctxByKind["copilot.image"] ?? 0) > 0) { ceStage = Math.max(ceStage, 3); }
-    const ceTips: string[] = [];
-    if (ceStage < 2) { ceTips.push("Add #file or #selection references to give Copilot more context"); }
-    if (ceStage < 3) { ceTips.push("Explore @workspace, #codebase, and @terminal for broader context"); }
-    if (ceStage < 4) { ceTips.push("Try image attachments, #changes, #problemsPanel, and other specialized context variables"); }
-
-    // 3. Agentic
-    let agStage = 1;
-    if (hasAgentMode) { agStage = 2; }
-    if (fd.multiFileEdits > 0) { agStage = Math.max(agStage, 2); }
-    if (avgFilesPerSession >= 3) { agStage = Math.max(agStage, 3); }
-    if (fd.editsAgentCount > 0) { agStage = Math.max(agStage, 2); }
-    if (fd.agentModeCount >= 10 && toolCount >= 3) { agStage = Math.max(agStage, 3); }
-    if (fd.agentModeCount >= 50 && toolCount >= 5) { agStage = 4; }
-    if (fd.multiFileEdits >= 20 && avgFilesPerSession >= 3) { agStage = Math.max(agStage, 4); }
-    const agTips: string[] = [];
-    if (agStage < 2) { agTips.push("Try agent mode — it can run terminal commands, edit files, and explore codebases autonomously"); }
-    if (agStage < 3) { agTips.push("Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits"); }
-    if (agStage < 4) { agTips.push("Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows"); }
-
-    // 4. Tool Usage
-    let tuStage = 1;
-    if (toolCount > 0) { tuStage = 2; }
-    if (fd.workspaceAgentCount > 0) { tuStage = Math.max(tuStage, 3); }
-    const advancedToolIds = ["github_pull_request", "github_repo", "run_in_terminal", "editFiles", "listFiles"];
-    const usedAdvancedCount = advancedToolIds.filter(t => (fd.toolCallsByTool[t] ?? 0) > 0).length;
-    if (usedAdvancedCount >= 2) { tuStage = Math.max(tuStage, 3); }
-    if (fd.mcpTotal > 0) { tuStage = Math.max(tuStage, 3); }
-    if (Object.keys(fd.mcpByServer).length >= 2) { tuStage = 4; }
-    const tuTips: string[] = [];
-    if (tuStage < 2) { tuTips.push("Try agent mode to let Copilot use built-in tools for file operations and terminal commands"); }
-    if (tuStage < 3) {
-      if (fd.mcpTotal === 0) { tuTips.push("Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)"); }
-      else { tuTips.push("Explore GitHub integrations and advanced tools like editFiles and run_in_terminal"); }
-    }
-    if (tuStage < 4) {
-      if (Object.keys(fd.mcpByServer).length === 1) { tuTips.push("Add more MCP servers to expand Copilot's capabilities"); }
-      else if (fd.mcpTotal === 0) { tuTips.push("Explore MCP servers for tools that integrate with your workflow"); }
-    }
-
-    // 5. Customization
-    let cuStage = 1;
-    const totalRepos = fd.repositories.size;
-    const reposWithCustomization = fd.repositoriesWithCustomization.size;
-    const customizationRate = totalRepos > 0 ? reposWithCustomization / totalRepos : 0;
-    if (reposWithCustomization > 0) { cuStage = 2; }
-    if (customizationRate >= 0.3 && reposWithCustomization >= 2) { cuStage = 3; }
-    if (customizationRate >= 0.7 && reposWithCustomization >= 3) { cuStage = 4; }
-    const uniqueModels = new Set([...fd.standardModels, ...fd.premiumModels]);
-    if (uniqueModels.size >= 3) { cuStage = Math.max(cuStage, 3); }
-    if (uniqueModels.size >= 5 && reposWithCustomization >= 3) { cuStage = 4; }
-    const cuTips: string[] = [];
-    if (cuStage < 2) { cuTips.push("Create a .github/copilot-instructions.md file with project-specific guidelines"); }
-    if (cuStage < 3) { cuTips.push("Add custom instructions to more repositories to standardize your Copilot experience"); }
-    if (cuStage < 4) {
-      const uncustomized = totalRepos - reposWithCustomization;
-      if (uncustomized > 0) { cuTips.push(`${reposWithCustomization} of ${totalRepos} repos customized — add instructions to the remaining ${uncustomized} for Stage 4`); }
-      else { cuTips.push("Aim for consistent customization across all projects with instructions and agents.md"); }
-    }
-    if (cuStage >= 4) {
-      const uncustomized = totalRepos - reposWithCustomization;
-      if (uncustomized > 0) {
-        cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
-      } else {
-        cuTips.push("All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration");
-      }
-    }
-
-    // 6. Workflow Integration
-    const effectiveSessions = Math.max(dashboardSessions, fd.sessionCount);
-    let wiStage = 1;
-    if (effectiveSessions >= 3) { wiStage = 2; }
-    if (avgApplyRate >= 50) { wiStage = Math.max(wiStage, 2); }
-    const modesUsed = [fd.askModeCount > 0, fd.agentModeCount > 0].filter(Boolean).length;
-    if (modesUsed >= 2) { wiStage = Math.max(wiStage, 3); }
-    if (totalContextRefs >= 20) { wiStage = Math.max(wiStage, 3); }
-    if (effectiveSessions >= 15 && modesUsed >= 2 && totalContextRefs >= 20) { wiStage = 4; }
-    const wiTips: string[] = [];
-    if (wiStage < 2) { wiTips.push("Use Copilot more regularly — even for quick questions"); }
-    if (wiStage < 3) {
-      if (modesUsed < 2) { wiTips.push("Combine ask mode with agent mode in your daily workflow"); }
-      if (totalContextRefs < 10) { wiTips.push("Use explicit context references like #file, @workspace, and #selection"); }
-    }
-    if (wiStage < 4) {
-      if (totalContextRefs < 20) { wiTips.push("Make explicit context a habit — use #file, @workspace, and other references consistently"); }
-      wiTips.push("Make Copilot part of every coding task: planning, coding, testing, and reviewing");
-    }
-
-    // Overall: median of 6 category stages
-    const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
-    const mid = Math.floor(scores.length / 2);
-    const overallStage = scores.length % 2 === 0
-      ? Math.round((scores[mid - 1] + scores[mid]) / 2)
-      : scores[mid];
-
-    return {
-      stage: overallStage,
-      label: stageLabels[overallStage] ?? `Stage ${overallStage}`,
-      categories: [
-        { category: "Prompt Engineering", icon: "💬", stage: peStage, tips: peTips },
-        { category: "Context Engineering", icon: "📎", stage: ceStage, tips: ceTips },
-        { category: "Agentic", icon: "🤖", stage: agStage, tips: agTips },
-        { category: "Tool Usage", icon: "🔧", stage: tuStage, tips: tuTips },
-        { category: "Customization", icon: "⚙️", stage: cuStage, tips: cuTips },
-        { category: "Workflow Integration", icon: "🔄", stage: wiStage, tips: wiTips },
-      ],
-    };
-  }
 
   /**
    * Fetches and aggregates data for the Team Dashboard.
@@ -9718,7 +5048,7 @@ ${hashtag}`;
             ? Math.round(data.tokens / data.interactions)
             : 0;
         const fluencyData = userFluencyMap.get(userKey);
-        const fluencyScore = fluencyData ? this.calculateFluencyScoreForTeamMember(fluencyData, sessionCount) : undefined;
+        const fluencyScore = fluencyData ? _calculateFluencyScoreForTeamMember(fluencyData, sessionCount) : undefined;
         return {
           userId,
           datasetId,
@@ -10006,7 +5336,7 @@ ${hashtag}`;
     // Session Files Discovery
     report.push("## Session Files Discovery");
     try {
-      const sessionFiles = await this.getCopilotSessionFiles();
+      const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
       report.push(`Total Session Files Found: ${sessionFiles.length}`);
       report.push("");
 
@@ -10055,7 +5385,7 @@ ${hashtag}`;
 
     // Cache Statistics
     report.push("## Cache Statistics");
-    report.push(`Cached Session Files: ${this.sessionFileCache.size}`);
+    report.push(`Cached Session Files: ${this.cacheManager.cache.size}`);
     report.push(`Cache Storage: Extension Global State`);
     report.push("");
     report.push(
@@ -10073,7 +5403,7 @@ ${hashtag}`;
       // DO NOT call calculateDetailedStats here - it triggers expensive re-analysis
       // The loadDiagnosticDataInBackground method ensures stats are calculated if needed
       try {
-        const sessionFiles = await this.getCopilotSessionFiles();
+        const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
         report.push(`Total Session Files Found: ${sessionFiles.length}`);
         report.push("");
 
@@ -10404,7 +5734,7 @@ ${hashtag}`;
       this.lastDiagnosticReport = report;
 
       // Get session files
-      const sessionFiles = await this.getCopilotSessionFiles();
+      const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 
       // Get first 20 session files with stats (quick preview)
       const sessionFileData: {
@@ -10414,7 +5744,7 @@ ${hashtag}`;
       }[] = [];
       for (const file of sessionFiles.slice(0, 20)) {
         try {
-          const stat = await this.statSessionFile(file);
+          const stat = await this.openCode.statSessionFile(file);
           sessionFileData.push({
             file,
             size: stat.size,
@@ -10435,8 +5765,8 @@ ${hashtag}`;
       );
       for (const file of sessionFiles) {
         // Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
-        if (this.isOpenCodeDbSession(file)) {
-          const editorRoot = this.getOpenCodeDataDir();
+        if (this.openCode.isOpenCodeDbSession(file)) {
+          const editorRoot = this.openCode.getOpenCodeDataDir();
           dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
           continue;
         }
@@ -10469,7 +5799,7 @@ ${hashtag}`;
       );
 
       // Build candidate paths list for diagnostics
-      const candidatePaths = this.getDiagnosticCandidatePaths();
+      const candidatePaths = this.sessionDiscovery.getDiagnosticCandidatePaths();
 
       // Get backend storage info
       const backendStorageInfo = await this.getBackendStorageInfo();
@@ -10540,7 +5870,7 @@ ${hashtag}`;
     const fileStats = await Promise.all(
       sessionFiles.map(async (file) => {
         try {
-          const stat = await this.statSessionFile(file);
+          const stat = await this.openCode.statSessionFile(file);
           return { file, mtime: stat.mtime.getTime() };
         } catch {
           return { file, mtime: 0 };
@@ -10640,7 +5970,7 @@ ${hashtag}`;
       enabled && storageAccount && subscriptionId && resourceGroup;
 
     // Get unique device count from session files (estimate based on unique workspace roots)
-    const sessionFiles = await this.getCopilotSessionFiles();
+    const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
     const workspaceIds = new Set<string>();
     const pathModule = require("path");
 
@@ -10706,7 +6036,7 @@ ${hashtag}`;
     let cacheSizeInMB = 0;
     try {
       // Estimate cache size by serializing to JSON
-      const cacheData = Object.fromEntries(this.sessionFileCache);
+      const cacheData = Object.fromEntries(this.cacheManager.cache);
       const jsonString = JSON.stringify(cacheData);
       cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
     } catch {
@@ -10732,7 +6062,7 @@ ${hashtag}`;
     let storageFilePath: string | null = null;
     try {
       const extensionId = "RobBos.copilot-token-tracker";
-      const userPaths = this.getVSCodeUserPaths();
+      const userPaths = this.sessionDiscovery.getVSCodeUserPaths();
       for (const userPath of userPaths) {
         try {
           const candidate = path.join(userPath, "globalStorage", extensionId);
@@ -10759,10 +6089,10 @@ ${hashtag}`;
     }
 
     const cacheInfo = {
-      size: this.sessionFileCache.size,
+      size: this.cacheManager.cache.size,
       sizeInMB: cacheSizeInMB,
       lastUpdated:
-        this.sessionFileCache.size > 0 ? new Date().toISOString() : null,
+        this.cacheManager.cache.size > 0 ? new Date().toISOString() : null,
       location: persistedCacheSummary,
       storagePath: storageFilePath,
     };
