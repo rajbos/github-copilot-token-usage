@@ -181,4 +181,10 @@
   ,"vscode_fetchWebPage_internal": "VSCode Fetch Web Page (Internal)"
   ,"webfetch": "Web Fetch"
   ,"write": "Write"
+  ,"navigate_page": "Navigate Page"
+  ,"open_browser_page": "Open Browser Page"
+  ,"read_page": "Read Page"
+  ,"run_playwright_code": "Run Playwright Code"
+  ,"screenshot_page": "Screenshot Page"
+  ,"task_complete": "Task Complete"
 }
