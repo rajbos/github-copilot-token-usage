@@ -171,7 +171,7 @@ function createMcpToolIssueUrl(unknownTools: string[]): string {
 		`${toolList}\n\n` +
 		`Please add friendly names for these tools to improve the user experience.`
 	);
-	const labels = encodeURIComponent('MCP Toolnames,Toolnames checkup');
+	const labels = encodeURIComponent('MCP Toolnames');
 	
 	return `${repoUrl}/issues/new?title=${title}&body=${body}&labels=${labels}`;
 }
