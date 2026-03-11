@@ -122,6 +122,7 @@
   ,"test_failure": "Test Failure"
   ,"test_search": "Test Search"
   ,"tool_replay": "Tool Replay"
+  ,"tool_search": "Tool Search"
   ,"vscode_askQuestions": "VSCode Ask Questions"
   ,"vscode_get_confirmation": "VSCode Get Confirmation"
   ,"vscode_get_terminal_confirmation": "VSCode Get Terminal Confirmation"
