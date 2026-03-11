@@ -67,6 +67,7 @@ jobs:
         fi
 
     - name: Install dependencies
+      working-directory: current-repo
       run: npm ci
       
     - name: Check Copilot CLI version
