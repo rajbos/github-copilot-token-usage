@@ -22,20 +22,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Create 'Toolnames checkup' label
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "=== Creating 'Toolnames checkup' label ==="
-          if gh label create "Toolnames checkup" \
-              --repo "${{ github.repository }}" \
-              --color "e4e669" \
-              --description "Triggers a workflow to check if the tool names in this issue are already mapped in src/toolNames.json" \
-              2>&1; then
-            echo "✅ Label created successfully"
-          else
-            echo "ℹ️ Label may already exist (this is fine)"
-          fi
+    
 
   # Checks each tool name in the issue body against src/toolNames.json on main
   # and posts a comment with the status of each one.
