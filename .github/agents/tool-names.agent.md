@@ -31,9 +31,9 @@ MCP tools follow predictable naming patterns. The raw tool identifier encodes th
 | `mcp_github_github_` | `GitHub MCP (Remote):` | [github/github-mcp-server](https://github.com/github/github-mcp-server) |
 | `mcp_github-code-s_` | `GitHub MCP (Code Scanning):` | [github/github-mcp-server](https://github.com/github/github-mcp-server) |
 | `mcp_com_microsoft_` | `GitHub MCP:` | Microsoft internal MCP server |
-| `mcp_gitkraken_` | `GitKraken MCP:` | [gitkraken/git-graph](https://github.com/nicolo-ribaudo/gitkraken-mcp) |
+| `mcp_gitkraken_` | `GitKraken MCP:` | GitKraken (no public MCP server repo; tools come from the GitKraken VS Code extension) |
 | `mcp_oraios_serena_` | `Serena:` | [oraios/serena](https://github.com/oraios/serena) |
-| `mcp_microsoft_pla_` | `Playwright MCP:` | [microsoft/playwright-mcp](https://github.com/nicolo-ribaudo/playwright-mcp) |
+| `mcp_microsoft_pla_` | `Playwright MCP:` | [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) |
 | `mcp_io_github_ups_` | `Context7 MCP:` | [upstash/context7](https://github.com/upstash/context7) |
 
 ### How to Generate a Friendly Name
@@ -90,7 +90,7 @@ Use these repos to look up tool definitions when needed:
 | Server | Repository | Language | Tools File / Path |
 |---|---|---|---|
 | GitHub MCP Server | [github/github-mcp-server](https://github.com/github/github-mcp-server) | Go | `pkg/github/*.go` (each file exposes tools for a domain: issues, PRs, repos, search, actions, code scanning, etc.) |
-| Playwright MCP | [nicolo-ribaudo/playwright-mcp](https://github.com/nicolo-ribaudo/playwright-mcp) | TypeScript | Browser automation tools |
+| Playwright MCP | [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) | TypeScript | Browser automation tools |
 | Serena | [oraios/serena](https://github.com/oraios/serena) | Python | Semantic code editing and symbol navigation |
 | Context7 | [upstash/context7](https://github.com/upstash/context7) | TypeScript | Library documentation retrieval |
 | Chrome DevTools MCP | [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) | TypeScript | Browser debugging tools |
