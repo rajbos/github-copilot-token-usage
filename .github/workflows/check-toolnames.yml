@@ -3,32 +3,16 @@ name: Check Toolnames in Issue
 on:
   issues:
     types: [labeled]
-  workflow_dispatch:  # Run manually to create the 'Toolnames checkup' label
 
 permissions:
   contents: read
 
 jobs:
-  # Creates the 'Toolnames checkup' label in the repository.
-  # Run this job manually via workflow_dispatch the first time to bootstrap the label.
-  setup-label:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    permissions:
-      issues: write
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
-        with:
-          egress-policy: audit
-
-    
-
   # Checks each tool name in the issue body against src/toolNames.json on main
   # and posts a comment with the status of each one.
   check-toolnames:
     runs-on: ubuntu-latest
-    if: github.event_name == 'issues' && github.event.label.name == 'Toolnames checkup'
+    if: github.event.label.name == 'Toolnames checkup'
     permissions:
       issues: write
       contents: read
