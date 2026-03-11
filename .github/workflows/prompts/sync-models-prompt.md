@@ -15,6 +15,8 @@ Update `src/tokenEstimators.json` and `src/modelPricing.json` with missing model
    - Add it to the appropriate JSON file(s)
    - Use sensible defaults based on existing similar models
 
+> **IMPORTANT**: Only add models that are **explicitly listed** on the documentation page above. Do NOT add models based on your own knowledge of AI models, third-party sources, or speculation about what models might exist. If a model is not present on that specific documentation page, it must not be added.
+
 ## Token Estimators (`src/tokenEstimators.json`)
 
 For missing models in tokenEstimators.json:
@@ -53,7 +55,7 @@ For missing models in modelPricing.json:
 - **ONLY** update `lastUpdated` field in `src/modelPricing.json` to today's date (YYYY-MM-DD format) **if you added new models to the pricing file**
 - If no models were added, do NOT update the `lastUpdated` field
 - Do NOT modify the `sources` section unless you have specific pricing data
-- Do not make up new model names. If they are not in any of the lists in the documentation, then we do not add them to the json
+- Do NOT add models that are not explicitly listed on the documentation page — if a model is not on that page, skip it entirely
 
 ## Output Format
 
@@ -64,6 +66,7 @@ For missing models in modelPricing.json:
 
 ## Constraints
 
+- **Only add models that appear on the GitHub Copilot supported models documentation page** (`https://docs.github.com/en/copilot/reference/ai-models/supported-models`). Do NOT add models from any other source, from your own training knowledge, or that you believe might exist — only what is explicitly listed on that page.
 - Only modify `src/tokenEstimators.json` and `src/modelPricing.json`
 - Do not open a PR (the workflow will handle that)
 - Preserve all existing entries and formatting conventions
