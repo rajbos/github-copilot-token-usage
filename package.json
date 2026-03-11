@@ -288,7 +288,7 @@
   "devDependencies": {
     "@github/copilot": "^0.0.423",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.3.5",
     "@types/vscode": "1.109.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.42.0",
@@ -317,7 +317,7 @@
     "jsdom": "^28.1.0",
     "jspdf": "4.2.0",
     "pptxgenjs": "4.0.1",
-    "sql.js": "1.14.0"
+    "sql.js": "1.14.1"
   },
   "overrides": {
     "diff": ">=8.0.3",
