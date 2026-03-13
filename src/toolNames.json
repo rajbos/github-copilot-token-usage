@@ -15,6 +15,7 @@
   ,"mcp_io_github_git_search_pull_requests": "GitHub MCP (Local): Search Pull Requests"
   ,"mcp_io_github_git_get_release_by_tag": "GitHub MCP (Local): Get Release By Tag"
   ,"mcp_io_github_git_search_issues": "GitHub MCP (Local): Search Issues"
+  ,"mcp_io_github_git_add_issue_comment": "GitHub MCP (Local): Add Issue Comment"
   ,"mcp_github_github_assign_copilot_to_issue": "GitHub MCP (Remote): Assign Copilot to Issue"
   ,"mcp_github_github_issue_read": "GitHub MCP (Remote): Issue Read"
   ,"mcp_github_github_issue_write": "GitHub MCP (Remote): Issue Write"
