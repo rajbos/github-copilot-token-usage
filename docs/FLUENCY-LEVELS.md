@@ -48,7 +48,11 @@ Measures how you provide context to Copilot using explicit references.
 
 **Tracked reference types:** `#file`, `#selection`, `#symbol`, `#codebase`, `@workspace`, `@terminal`, `@vscode`, `#clipboard`, `#changes`, `#problemsPanel`, `#outputPanel`, `#terminalLastCommand`, `#terminalSelection`
 
+**Evidence:** All tracked reference types are shown in the evidence panel when used (not just the basic ones).
+
 **Booster:** Using image references (`copilot.image`) → at least Stage 3
+
+**Stage 3 hint behaviour:** The "try specialized context variables" tip is dynamic — it only lists the specific variables the user hasn't tried yet. If the user has already used 2 or more of the specialized set (`image attachments`, `#changes`, `#problemsPanel`, `#outputPanel`, `#terminalLastCommand`, `#terminalSelection`, `#clipboard`, `@vscode`), the hint is suppressed entirely.
 
 ---
 

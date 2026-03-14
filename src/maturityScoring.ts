@@ -9,6 +9,11 @@ import type {
 	UsageAnalysisPeriod,
 } from './types';
 
+/** Format a number with thousand separators for display. */
+function fmt(n: number): string {
+	return n.toLocaleString('en-US');
+}
+
 
 export function getFluencyLevelData(isDebugMode: boolean): {
     categories: Array<{
@@ -475,7 +480,47 @@ export function calculateFluencyScoreForTeamMember(fd: {
     const ceTips: string[] = [];
     if (ceStage < 2) { ceTips.push("Add #file or #selection references to give Copilot more context"); }
     if (ceStage < 3) { ceTips.push("Explore @workspace, #codebase, and @terminal for broader context"); }
-    if (ceStage < 4) { ceTips.push("Try image attachments, #changes, #problemsPanel, and other specialized context variables"); }
+    if (ceStage < 4) {
+        const typesStillNeeded = Math.max(0, 5 - usedRefTypeCount);
+        const refsStillNeeded = Math.max(0, 30 - totalContextRefs);
+        const specializedItems = [
+            { name: 'image attachments', used: (fd.ctxByKind["copilot.image"] ?? 0) > 0 },
+            { name: '#changes', used: fd.ctxChanges > 0 },
+            { name: '#problemsPanel', used: fd.ctxProblemsPanel > 0 },
+            { name: '#outputPanel', used: fd.ctxOutputPanel > 0 },
+            { name: '#terminalLastCommand', used: fd.ctxTerminalLastCommand > 0 },
+            { name: '#terminalSelection', used: fd.ctxTerminalSelection > 0 },
+            { name: '#clipboard', used: fd.ctxClipboard > 0 },
+            { name: '@vscode', used: fd.ctxVscode > 0 },
+        ];
+        const specializedUsedCount = specializedItems.filter(i => i.used).length;
+        if (specializedUsedCount >= 2) {
+            // User already uses multiple specialized context techniques — show a concrete gap tip.
+            const allTypesNotUsed = [
+                { name: '#symbol', used: fd.ctxSymbol > 0 },
+                { name: '@workspace', used: fd.ctxWorkspace > 0 },
+                { name: '#codebase', used: fd.ctxCodebase > 0 },
+                { name: '@terminal', used: fd.ctxTerminal > 0 },
+                ...specializedItems,
+            ].filter(i => !i.used).map(i => i.name);
+            const gapParts: string[] = [];
+            if (typesStillNeeded > 0) { gapParts.push(`${fmt(usedRefTypeCount)} of 5 different reference types used`); }
+            if (refsStillNeeded > 0) { gapParts.push(`${fmt(totalContextRefs)} of 30 total references`); }
+            if (gapParts.length > 0) {
+                const suggest = allTypesNotUsed.slice(0, 3);
+                const suggStr = suggest.length > 0 ? ` — try ${suggest.join(', ')}` : '';
+                ceTips.push(`Stage 4 needs ${gapParts.join(' and ')}${suggStr}`);
+            }
+        } else {
+            // User hasn't explored many specialized vars yet — suggest them.
+            const specializedNotYetUsed = specializedItems.filter(i => !i.used).map(i => i.name);
+            if (specializedNotYetUsed.length > 0) {
+                const toMention = specializedNotYetUsed.slice(0, 3);
+                const extra = specializedNotYetUsed.length > 3 ? ` and ${specializedNotYetUsed.length - 3} more` : '';
+                ceTips.push(`Try ${toMention.join(', ')}${extra} — see specialized context variables to reach Stage 4`);
+            }
+        }
+    }
 
     // 3. Agentic
     let agStage = 1;
@@ -527,13 +572,13 @@ export function calculateFluencyScoreForTeamMember(fd: {
     if (cuStage < 3) { cuTips.push("Add custom instructions to more repositories to standardize your Copilot experience"); }
     if (cuStage < 4) {
       const uncustomized = totalRepos - reposWithCustomization;
-      if (uncustomized > 0) { cuTips.push(`${reposWithCustomization} of ${totalRepos} repos customized — add instructions to the remaining ${uncustomized} for Stage 4`); }
+      if (uncustomized > 0) { cuTips.push(`${fmt(reposWithCustomization)} of ${fmt(totalRepos)} repos customized — add instructions to the remaining ${fmt(uncustomized)} for Stage 4`); }
       else { cuTips.push("Aim for consistent customization across all projects with instructions and agents.md"); }
     }
     if (cuStage >= 4) {
       const uncustomized = totalRepos - reposWithCustomization;
       if (uncustomized > 0) {
-        cuTips.push(`${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
+        cuTips.push(`${fmt(uncustomized)} repo${uncustomized === 1 ? '' : 's'} still missing customization — add instructions, agents.md, or MCP configs for full coverage`);
       } else {
         cuTips.push("All repos customized! Keep instructions up to date and add skill files or MCP server configs for deeper integration");
       }
@@ -610,13 +655,13 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent;
 	if (totalInteractions > 0) {
-		peEvidence.push(`${totalInteractions} total interactions`);
+		peEvidence.push(`${fmt(totalInteractions)} total interactions`);
 	}
 	if (p.modeUsage.ask > 0) {
-		peEvidence.push(`${p.modeUsage.ask} ask-mode conversations`);
+		peEvidence.push(`${fmt(p.modeUsage.ask)} ask-mode conversations`);
 	}
 	if (p.modeUsage.agent > 0) {
-		peEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
+		peEvidence.push(`${fmt(p.modeUsage.agent)} agent-mode interactions`);
 	}
 
 	// Conversation patterns (multi-turn shows iterative refinement)
@@ -625,7 +670,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 			? Math.round((p.conversationPatterns.multiTurnSessions / p.sessions) * 100)
 			: 0;
 		if (p.conversationPatterns.multiTurnSessions > 0) {
-			peEvidence.push(`${p.conversationPatterns.multiTurnSessions} multi-turn sessions (${multiTurnRate}%)`);
+			peEvidence.push(`${fmt(p.conversationPatterns.multiTurnSessions)} multi-turn sessions (${multiTurnRate}%)`);
 		}
 		if (p.conversationPatterns.avgTurnsPerSession >= 3) {
 			peEvidence.push(`Avg ${p.conversationPatterns.avgTurnsPerSession.toFixed(1)} exchanges per session`);
@@ -703,11 +748,18 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	];
 	const usedRefTypeCount = refTypes.filter(Boolean).length;
 
-	if (p.contextReferences.file > 0) { ceEvidence.push(`${p.contextReferences.file} #file references`); }
-	if (p.contextReferences.selection > 0) { ceEvidence.push(`${p.contextReferences.selection} #selection references`); }
-	if (p.contextReferences.codebase > 0) { ceEvidence.push(`${p.contextReferences.codebase} #codebase references`); }
-	if (p.contextReferences.workspace > 0) { ceEvidence.push(`${p.contextReferences.workspace} @workspace references`); }
-	if (p.contextReferences.terminal > 0) { ceEvidence.push(`${p.contextReferences.terminal} @terminal references`); }
+	if (p.contextReferences.file > 0) { ceEvidence.push(`${fmt(p.contextReferences.file)} #file references`); }
+	if (p.contextReferences.selection > 0) { ceEvidence.push(`${fmt(p.contextReferences.selection)} #selection references`); }
+	if (p.contextReferences.codebase > 0) { ceEvidence.push(`${fmt(p.contextReferences.codebase)} #codebase references`); }
+	if (p.contextReferences.workspace > 0) { ceEvidence.push(`${fmt(p.contextReferences.workspace)} @workspace references`); }
+	if (p.contextReferences.terminal > 0) { ceEvidence.push(`${fmt(p.contextReferences.terminal)} @terminal references`); }
+	if (p.contextReferences.vscode > 0) { ceEvidence.push(`${fmt(p.contextReferences.vscode)} @vscode references`); }
+	if (p.contextReferences.clipboard > 0) { ceEvidence.push(`${fmt(p.contextReferences.clipboard)} #clipboard references`); }
+	if (p.contextReferences.changes > 0) { ceEvidence.push(`${fmt(p.contextReferences.changes)} #changes references`); }
+	if (p.contextReferences.problemsPanel > 0) { ceEvidence.push(`${fmt(p.contextReferences.problemsPanel)} #problemsPanel references`); }
+	if (p.contextReferences.outputPanel > 0) { ceEvidence.push(`${fmt(p.contextReferences.outputPanel)} #outputPanel references`); }
+	if (p.contextReferences.terminalLastCommand > 0) { ceEvidence.push(`${fmt(p.contextReferences.terminalLastCommand)} #terminalLastCommand references`); }
+	if (p.contextReferences.terminalSelection > 0) { ceEvidence.push(`${fmt(p.contextReferences.terminalSelection)} #terminalSelection references`); }
 
 	if (totalContextRefs >= 1) { ceStage = 2; }
 	if (usedRefTypeCount >= 3 && totalContextRefs >= 10) { ceStage = 3; }
@@ -716,13 +768,53 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	// Image context (byKind: copilot.image)
 	const imageRefs = p.contextReferences.byKind['copilot.image'] || 0;
 	if (imageRefs > 0) {
-		ceEvidence.push(`${imageRefs} image references (vision)`);
+		ceEvidence.push(`${fmt(imageRefs)} image references (vision)`);
 		ceStage = Math.max(ceStage, 3) as 1 | 2 | 3 | 4;
 	}
 
 	if (ceStage < 2) { ceTips.push('Try adding [#file or #selection](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) references to give Copilot more context'); }
 	if (ceStage < 3) { ceTips.push('Explore [@workspace, #codebase, and @terminal](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) for broader context'); }
-	if (ceStage < 4) { ceTips.push('Try [image attachments](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts), #changes, #problemsPanel, and other specialized context variables'); }
+	if (ceStage < 4) {
+		const typesStillNeeded = Math.max(0, 5 - usedRefTypeCount);
+		const refsStillNeeded = Math.max(0, 30 - totalContextRefs);
+		const specializedItems = [
+			{ name: 'image attachments', used: imageRefs > 0 },
+			{ name: '#changes', used: p.contextReferences.changes > 0 },
+			{ name: '#problemsPanel', used: p.contextReferences.problemsPanel > 0 },
+			{ name: '#outputPanel', used: p.contextReferences.outputPanel > 0 },
+			{ name: '#terminalLastCommand', used: p.contextReferences.terminalLastCommand > 0 },
+			{ name: '#terminalSelection', used: p.contextReferences.terminalSelection > 0 },
+			{ name: '#clipboard', used: p.contextReferences.clipboard > 0 },
+			{ name: '@vscode', used: p.contextReferences.vscode > 0 },
+		];
+		const specializedUsedCount = specializedItems.filter(i => i.used).length;
+		if (specializedUsedCount >= 2) {
+			// User already uses multiple specialized context techniques — show a concrete gap tip.
+			const allTypesNotUsed = [
+				{ name: '#symbol', used: p.contextReferences.symbol > 0 },
+				{ name: '@workspace', used: p.contextReferences.workspace > 0 },
+				{ name: '#codebase', used: p.contextReferences.codebase > 0 },
+				{ name: '@terminal', used: p.contextReferences.terminal > 0 },
+				...specializedItems,
+			].filter(i => !i.used).map(i => i.name);
+			const gapParts: string[] = [];
+			if (typesStillNeeded > 0) { gapParts.push(`${fmt(usedRefTypeCount)} of 5 different reference types used`); }
+			if (refsStillNeeded > 0) { gapParts.push(`${fmt(totalContextRefs)} of 30 total references`); }
+			if (gapParts.length > 0) {
+				const suggest = allTypesNotUsed.slice(0, 3);
+				const suggStr = suggest.length > 0 ? ` — try ${suggest.join(', ')}` : '';
+				ceTips.push(`Stage 4 needs ${gapParts.join(' and ')}${suggStr}`);
+			}
+		} else {
+			// User hasn't explored many specialized vars yet — suggest them.
+			const specializedNotYetUsed = specializedItems.filter(i => !i.used).map(i => i.name);
+			if (specializedNotYetUsed.length > 0) {
+				const toMention = specializedNotYetUsed.slice(0, 3);
+				const extra = specializedNotYetUsed.length > 3 ? ` and ${specializedNotYetUsed.length - 3} more` : '';
+				ceTips.push(`Try ${toMention.join(', ')}${extra} — see [specialized context variables](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) to reach Stage 4`);
+			}
+		}
+	}
 
 	// ---------- 3. Agentic ----------
 	const agEvidence: string[] = [];
@@ -730,14 +822,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	let agStage = 1;
 
 	if (p.modeUsage.agent > 0) {
-		agEvidence.push(`${p.modeUsage.agent} agent-mode interactions`);
+		agEvidence.push(`${fmt(p.modeUsage.agent)} agent-mode interactions`);
 		agStage = 2;
 	}
 	if (p.toolCalls.total > 0) {
-		agEvidence.push(`${p.toolCalls.total} tool calls executed`);
+		agEvidence.push(`${fmt(p.toolCalls.total)} tool calls executed`);
 	}
 	if (p.modeUsage.edit > 0) {
-		agEvidence.push(`${p.modeUsage.edit} edit-mode interactions`);
+		agEvidence.push(`${fmt(p.modeUsage.edit)} edit-mode interactions`);
 	}
 
 	// Edit scope tracking (multi-file edits show advanced agentic behavior)
@@ -746,7 +838,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 			? Math.round((p.editScope.multiFileEdits / (p.editScope.singleFileEdits + p.editScope.multiFileEdits)) * 100)
 			: 0;
 		if (p.editScope.multiFileEdits > 0) {
-			agEvidence.push(`${p.editScope.multiFileEdits} multi-file edit sessions (${multiFileRate}%)`);
+			agEvidence.push(`${fmt(p.editScope.multiFileEdits)} multi-file edit sessions (${multiFileRate}%)`);
 			agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
 		}
 		if (p.editScope.avgFilesPerSession >= 3) {
@@ -757,7 +849,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Agent type distribution
 	if (p.agentTypes && p.agentTypes.editsAgent > 0) {
-		agEvidence.push(`${p.agentTypes.editsAgent} edits agent sessions`);
+		agEvidence.push(`${fmt(p.agentTypes.editsAgent)} edits agent sessions`);
 		agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
 	}
 
@@ -786,14 +878,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Basic tool usage (primarily from agent mode)
 	if (toolCount > 0) {
-		tuEvidence.push(`${toolCount} unique tools used`);
+		tuEvidence.push(`${fmt(toolCount)} unique tools used`);
 		tuStage = 2;
 	}
 
 	// Agent type distribution (workspace agent shows advanced tool usage)
 	if (p.agentTypes) {
 		if (p.agentTypes.workspaceAgent > 0) {
-			tuEvidence.push(`${p.agentTypes.workspaceAgent} @workspace agent sessions`);
+			tuEvidence.push(`${fmt(p.agentTypes.workspaceAgent)} @workspace agent sessions`);
 			tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4;
 		}
 	}
@@ -817,7 +909,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	// MCP tools are a strong signal of strategic/advanced use
 	const mcpServers = Object.keys(p.mcpTools.byServer);
 	if (p.mcpTools.total > 0) {
-		tuEvidence.push(`${p.mcpTools.total} MCP tool calls across ${mcpServers.length} server(s)`);
+		tuEvidence.push(`${fmt(p.mcpTools.total)} MCP tool calls across ${mcpServers.length} server(s)`);
 		tuStage = Math.max(tuStage, 3) as 1 | 2 | 3 | 4; // Using any MCP server is stage 3
 		if (mcpServers.length >= 2) {
 			tuStage = 4; // Multiple MCP servers = strategist
@@ -894,11 +986,11 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Show repo customization evidence once, reflecting the final achieved stage
 	if (cuStage >= 4) {
-		cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (70%+ with 3+ repos → Stage 4)`);
+		cuEvidence.push(`${fmt(reposWithCustomization)} of ${fmt(totalRepos)} repos customized (70%+ with 3+ repos → Stage 4)`);
 	} else if (cuStage >= 3) {
-		cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos customized (30%+ with 2+ repos → Stage 3)`);
+		cuEvidence.push(`${fmt(reposWithCustomization)} of ${fmt(totalRepos)} repos customized (30%+ with 2+ repos → Stage 3)`);
 	} else if (reposWithCustomization > 0) {
-		cuEvidence.push(`${reposWithCustomization} of ${totalRepos} repos with custom instructions or agents.md`);
+		cuEvidence.push(`${fmt(reposWithCustomization)} of ${fmt(totalRepos)} repos with custom instructions or agents.md`);
 	}
 
 	if (cuStage < 2) { cuTips.push('Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines'); }
@@ -906,7 +998,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	if (cuStage < 4) {
 		const uncustomized = totalRepos - reposWithCustomization;
 		if (totalRepos > 0 && uncustomized > 0) {
-			cuTips.push(`${reposWithCustomization} of ${totalRepos} repos have customization — add [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to the remaining ${uncustomized} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
+			cuTips.push(`${fmt(reposWithCustomization)} of ${fmt(totalRepos)} repos have customization — add [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to the remaining ${fmt(uncustomized)} repo${uncustomized === 1 ? '' : 's'} for Stage 4`);
 		} else {
 			cuTips.push('Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)');
 		}
@@ -926,10 +1018,10 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 				})
 				.slice(0, 3);
 
-			const summaryTip = `${uncustomized} repo${uncustomized === 1 ? '' : 's'} still missing customization — add [instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), [agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), or [MCP configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for full coverage.`;
+			const summaryTip = `${fmt(uncustomized)} repo${uncustomized === 1 ? '' : 's'} still missing customization — add [instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), [agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), or [MCP configs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) for full coverage.`;
 			if (prioritizedMissingRepos.length > 0) {
 				const repoLines = prioritizedMissingRepos.map(row => 
-					`${row.workspaceName} (${row.interactionCount} interaction${row.interactionCount === 1 ? '' : 's'})`
+					`${row.workspaceName} (${fmt(row.interactionCount)} interaction${row.interactionCount === 1 ? '' : 's'})`
 				).join('\n');
 				cuTips.push(`${summaryTip}\n\nTop repos to customize first:\n${repoLines}`);
 			} else {
@@ -947,14 +1039,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Sessions count reflects regularity
 	if (p.sessions >= 3) {
-		wiEvidence.push(`${p.sessions} sessions in the last 30 days`);
+		wiEvidence.push(`${fmt(p.sessions)} sessions in the last 30 days`);
 		wiStage = 2;
 	}
 
 	// Apply button usage (high rate shows active adoption of suggestions)
 	if (p.applyUsage && p.applyUsage.totalCodeBlocks > 0) {
 		const applyRatePercent = Math.round(p.applyUsage.applyRate);
-		wiEvidence.push(`${applyRatePercent}% code block apply rate (${p.applyUsage.totalApplies}/${p.applyUsage.totalCodeBlocks})`);
+		wiEvidence.push(`${applyRatePercent}% code block apply rate (${fmt(p.applyUsage.totalApplies)}/${fmt(p.applyUsage.totalCodeBlocks)})`);
 		if (applyRatePercent >= 50) {
 			wiStage = Math.max(wiStage, 2) as 1 | 2 | 3 | 4;
 		}
@@ -976,7 +1068,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	// Explicit context usage - strong signal of intentional integration
 	const hasExplicitContext = totalContextRefs >= 10;
 	if (hasExplicitContext) {
-		wiEvidence.push(`${totalContextRefs} explicit context references`);
+		wiEvidence.push(`${fmt(totalContextRefs)} explicit context references`);
 		if (totalContextRefs >= 20) {
 			wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
 		}
