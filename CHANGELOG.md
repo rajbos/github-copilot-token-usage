@@ -4,7 +4,44 @@ All notable changes to the "copilot-token-tracker" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.0.16]
+
+- <!-- Release notes generated using configuration in .github/release.yml at v0.0.16 -->
+## What's Changed
+
+### Changes
+* chore: sync changelog for v0.0.15 by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/351
+* devContainerMount by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/355
+* Add friendly names for Serena MCP tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/357
+* Add complete Serena MCP tool name mappings by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/361
+* Improve unit test setup and coverage by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/362
+* Fix Copilot CLI token counts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/363
+* Refactoring extension.ts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/365
+* Add missing friendly names for browser tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/367
+* Add friendly display names for uncovered MCP tools by @Codex in https://github.com/rajbos/github-copilot-token-usage/pull/374
+* chore: sync model data with GitHub Copilot documentation by @github-actions[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/372
+* Strengthen sync-models prompt to prevent adding undocumented models by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/376
+* Add tool-names agent definition for MCP tool name mapping by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/380
+* feat: add Toolnames checkup workflow to prevent duplicate tool-name issues by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/381
+* chore: sync toolNames.json with vscode-copilot-chat by @github-actions[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/382
+* Add missing friendly name for mcp_io_github_git_add_issue_comment by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/384
+* Add missing friendly names for tools: edit, question, skill, task, todowrite, websearch by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/386
+* Versionbump for a release by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/387
+*
+### 📦 npm Dependencies
+* npm(deps-dev): bump @github/copilot from 0.0.420 to 0.0.423 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/354
+* npm(deps): bump dompurify from 3.3.1 to 3.3.2 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/356
+* npm(deps): bump the minor-and-patch-updates group with 2 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/368
+* npm(deps-dev): bump @github/copilot from 0.0.423 to 1.0.2 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/369
+*
+### 📦 GitHub Actions Dependencies
+* github-actions(deps): bump the minor-and-patch-updates group with 4 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/370
+### 📦 Other Dependencies
+* Bump puppeteer from 24.37.5 to 24.38.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/353
+* Bump puppeteer from 24.38.0 to 24.39.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/377
+## New Contributors
+* @Codex made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/374
+
 ## [0.0.15]
 
 ## What's Changed
