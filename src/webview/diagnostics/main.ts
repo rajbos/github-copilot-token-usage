@@ -893,6 +893,7 @@ function renderLayout(data: DiagnosticsData): void {
 					${buttonHtml("btn-details")}
 					${buttonHtml("btn-chart")}
 					${buttonHtml("btn-usage")}
+					${buttonHtml("btn-environmental")}
 					${buttonHtml("btn-maturity")}
 					${data?.backendConfigured ? buttonHtml("btn-dashboard") : ""}
 				</div>
@@ -1610,6 +1611,11 @@ function renderLayout(data: DiagnosticsData): void {
     .getElementById("btn-dashboard")
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showDashboard" }),
+    );
+  document
+    .getElementById("btn-environmental")
+    ?.addEventListener("click", () =>
+      vscode.postMessage({ command: "showEnvironmental" }),
     );
 
   setupSortHandlers();

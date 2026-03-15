@@ -134,6 +134,7 @@ function renderShell(
 		createButton(BUTTONS['btn-refresh']),
 		createButton(BUTTONS['btn-chart']),
 		createButton(BUTTONS['btn-usage']),
+		createButton(BUTTONS['btn-environmental']),
 		createButton(BUTTONS['btn-diagnostics']),
 		createButton(BUTTONS['btn-maturity'])
 	);
@@ -157,8 +158,6 @@ function renderShell(
 	if (modelSection) {
 		sections.append(modelSection);
 	}
-
-	sections.append(buildEstimatesSection());
 
 	container.append(header, sections, footer);
 	root.append(themeStyle, style, container);
@@ -189,7 +188,7 @@ function buildMetricsSection(
 		{ icon: '📊', text: 'Metric' },
 		{ icon: '📅', text: 'Today' },
 		{ icon: '📈', text: 'Last 30 Days' },
-		{ icon: '📆', text: 'Last Month' },
+		{ icon: '📆', text: 'Previous Month' },
 		{ icon: '🌍', text: 'Projected Year' }
 	];
 	headers.forEach((h, idx) => {
@@ -213,10 +212,7 @@ function buildMetricsSection(
 		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
 		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },
-		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), last30Days: formatNumber(stats.last30Days.avgTokensPerSession), lastMonth: formatNumber(stats.lastMonth.avgTokensPerSession), projected: '—' },
-		{ label: 'Estimated CO₂ (g)', icon: '🌱', color: '#7fe36f', today: `${formatFixed(stats.today.co2, 2)} g`, last30Days: `${formatFixed(stats.last30Days.co2, 2)} g`, lastMonth: `${formatFixed(stats.lastMonth.co2, 2)} g`, projected: `${formatFixed(projections.projectedCo2, 2)} g` },
-		{ label: 'Estimated water (L)', icon: '💧', color: '#6fc3ff', today: `${formatFixed(stats.today.waterUsage, 3)} L`, last30Days: `${formatFixed(stats.last30Days.waterUsage, 3)} L`, lastMonth: `${formatFixed(stats.lastMonth.waterUsage, 3)} L`, projected: `${formatFixed(projections.projectedWater, 3)} L` },
-		{ label: 'Tree equivalent (yr)', icon: '🌳', color: '#9de67f', today: stats.today.treesEquivalent.toFixed(6), last30Days: stats.last30Days.treesEquivalent.toFixed(6), lastMonth: stats.lastMonth.treesEquivalent.toFixed(6), projected: projections.projectedTrees.toFixed(4) }
+		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), last30Days: formatNumber(stats.last30Days.avgTokensPerSession), lastMonth: formatNumber(stats.lastMonth.avgTokensPerSession), projected: '—' }
 	];
 
 	rows.forEach(row => {
@@ -383,7 +379,7 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 		{ icon: '📝', text: 'Editor', key: 'name' },
 		{ icon: '📅', text: 'Today', key: 'today' },
 		{ icon: '📈', text: 'Last 30 Days', key: 'last30Days' },
-		{ icon: '📆', text: 'Last Month', key: 'lastMonth' },
+		{ icon: '📆', text: 'Previous Month', key: 'lastMonth' },
 		{ icon: '🌍', text: 'Projected Year', key: 'projected' }
 	];
 	const editorHeaderWraps: HTMLElement[] = [];
@@ -537,7 +533,7 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 		{ icon: '🧠', text: 'Model', key: 'name' },
 		{ icon: '📅', text: 'Today', key: 'today' },
 		{ icon: '📈', text: 'Last 30 Days', key: 'last30Days' },
-		{ icon: '📆', text: 'Last Month', key: 'lastMonth' },
+		{ icon: '📆', text: 'Previous Month', key: 'lastMonth' },
 		{ icon: '🌍', text: 'Projected Year', key: 'projected' }
 	];
 	const modelHeaderWraps: HTMLElement[] = [];
@@ -617,6 +613,9 @@ function wireButtons(): void {
 	
 	const dashboard = document.getElementById('btn-dashboard');
 	dashboard?.addEventListener('click', () => vscode.postMessage({ command: 'showDashboard' }));
+
+	const environmental = document.getElementById('btn-environmental');
+	environmental?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
 }
 
 async function bootstrap(): Promise<void> {

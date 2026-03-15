@@ -396,7 +396,10 @@ function renderLayout(data: MaturityData): void {
 					${buttonHtml('btn-details')}
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
-					${buttonHtml('btn-diagnostics')}					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}				</div>
+					${buttonHtml('btn-environmental')}
+					${buttonHtml('btn-diagnostics')}
+					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}
+				</div>
 			</div>
 
 			<div class="info-box">
@@ -553,6 +556,9 @@ function renderLayout(data: MaturityData): void {
 	});
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
+	});
+	document.getElementById('btn-environmental')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showEnvironmental' });
 	});
 
 	// Wire up share to issue button

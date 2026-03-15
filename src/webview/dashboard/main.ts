@@ -160,6 +160,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
     createButton(BUTTONS["btn-details"]),
     createButton(BUTTONS["btn-chart"]),
     createButton(BUTTONS["btn-usage"]),
+    createButton(BUTTONS["btn-environmental"]),
     createButton(BUTTONS["btn-diagnostics"]),
     createButton(BUTTONS["btn-maturity"]),
   );
@@ -568,6 +569,9 @@ function wireButtons(): void {
 
   document.getElementById("btn-maturity")?.addEventListener("click", () => {
     vscode.postMessage({ command: "showMaturity" });
+  });
+  document.getElementById("btn-environmental")?.addEventListener("click", () => {
+    vscode.postMessage({ command: "showEnvironmental" });
   });
 
   // Note: No dashboard button handler - users are already on the dashboard

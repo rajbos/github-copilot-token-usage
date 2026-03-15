@@ -259,7 +259,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * add information where logs from the devContainer are stored by @UncleBats in https://github.com/rajbos/github-copilot-token-usage/pull/160
 * Persist active tab state in diagnostic view by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/164
 * Add Azure Storage backend configuration panel to diagnostics by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/163
-* Show last month stats next to this month by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/166
+* Show Previous Month stats next to this month by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/166
 * Add clickable links for empty sessions in Diagnostic Report by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/165
 * Enhance usage analysis with model tracking features by @FokkoVeegens in https://github.com/rajbos/github-copilot-token-usage/pull/157
 * Progressive loading for diagnostics view - eliminate 10-30s UI blocking by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/169
