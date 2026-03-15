@@ -166,6 +166,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private maturityPanel: vscode.WebviewPanel | undefined;
 	private dashboardPanel: vscode.WebviewPanel | undefined;
 	private fluencyLevelViewerPanel: vscode.WebviewPanel | undefined;
+	private environmentalPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private lastDetailedStats: DetailedStats | undefined;
 	private lastDailyStats: DailyTokenStats[] | undefined;
@@ -672,6 +673,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
 			}
 
+			// If the environmental panel is open, update its content
+			if (this.environmentalPanel) {
+				if (silent) {
+					void this.environmentalPanel.webview.postMessage({
+						command: 'updateStats',
+						data: {
+							today: detailedStats.today,
+							month: detailedStats.month,
+							lastMonth: detailedStats.lastMonth,
+							last30Days: detailedStats.last30Days,
+							lastUpdated: detailedStats.lastUpdated.toISOString(),
+							backendConfigured: this.isBackendConfigured(),
+						},
+					});
+				} else {
+					this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, detailedStats);
+				}
+			}
+
 			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Last 30 Days: ${detailedStats.last30Days.tokens}`);
 			// Store the stats for reuse without recalculation
 			this.lastDetailedStats = detailedStats;
@@ -738,7 +758,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const now = new Date();
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-		// Calculate last month boundaries
+		// Calculate Previous Month boundaries
 		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
 		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
 		// Calculate last 30 days boundary
@@ -930,7 +950,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 					}
 					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
-						// Session is from last month - only track lastMonth stats
+						// Session is from Previous Month - only track lastMonth stats
 						lastMonthStats.tokens += tokens;
 						lastMonthStats.estimatedTokens += estimatedTokens;
 						lastMonthStats.actualTokens += actualTokens;
@@ -938,14 +958,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 						lastMonthStats.sessions += 1;
 						lastMonthStats.interactions += interactions;
 
-						// Add editor usage to last month stats
+						// Add editor usage to Previous Month stats
 						if (!lastMonthStats.editorUsage[editorType]) {
 							lastMonthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
 						}
 						lastMonthStats.editorUsage[editorType].tokens += tokens;
 						lastMonthStats.editorUsage[editorType].sessions += 1;
 
-						// Add model usage to last month stats
+						// Add model usage to Previous Month stats
 						for (const [model, usage] of Object.entries(modelUsage)) {
 							if (!lastMonthStats.modelUsage[model]) {
 								lastMonthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
@@ -963,7 +983,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Last Month ${lastMonthStats.sessions} sessions`);
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
 				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
 			}
@@ -3051,6 +3071,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDashboard':
 					await this.showDashboard();
 					break;
+				case 'showEnvironmental':
+					await this.showEnvironmental();
+					break;
 				case 'saveSortSettings':
 					await this.context.globalState.update('details.sortSettings', message.settings);
 					break;
@@ -3062,6 +3085,108 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.log('📊 Details panel closed');
 			this.detailsPanel = undefined;
 		});
+	}
+
+	public async showEnvironmental(): Promise<void> {
+		this.log('🌿 Opening Environmental Impact view');
+
+		if (this.environmentalPanel) {
+			this.environmentalPanel.reveal();
+			this.log('🌿 Environmental Impact view revealed (already exists)');
+			return;
+		}
+
+		let stats = this.lastDetailedStats;
+		if (!stats) {
+			stats = await this.updateTokenStats();
+			if (!stats) {
+				return;
+			}
+		}
+
+		this.environmentalPanel = vscode.window.createWebviewPanel(
+			'copilotEnvironmental',
+			'Environmental Impact',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
+
+		this.environmentalPanel.webview.onDidReceiveMessage(async (message) => {
+			switch (message.command) {
+				case 'refresh': {
+					const refreshed = await this.updateTokenStats();
+					if (refreshed && this.environmentalPanel) {
+						this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, refreshed);
+					}
+					break;
+				}
+				case 'showDetails':
+					await this.showDetails();
+					break;
+				case 'showChart':
+					await this.showChart();
+					break;
+				case 'showUsageAnalysis':
+					await this.showUsageAnalysis();
+					break;
+				case 'showDiagnostics':
+					await this.showDiagnosticReport();
+					break;
+				case 'showMaturity':
+					await this.showMaturity();
+					break;
+				case 'showDashboard':
+					await this.showDashboard();
+					break;
+			}
+		});
+
+		this.environmentalPanel.onDidDispose(() => {
+			this.log('🌿 Environmental Impact view closed');
+			this.environmentalPanel = undefined;
+		});
+	}
+
+	private getEnvironmentalHtml(webview: vscode.Webview, stats: DetailedStats): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(
+			vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'environmental.js')
+		);
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`,
+		].join('; ');
+
+		const dataWithBackend = {
+			...stats,
+			backendConfigured: this.isBackendConfigured(),
+		};
+		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Environmental Impact</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_ENVIRONMENTAL__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
 	}
 
 	public async showChart(): Promise<void> {
@@ -3117,6 +3242,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showDashboard':
 					await this.showDashboard();
+					break;
+				case 'showEnvironmental':
+					await this.showEnvironmental();
 					break;
 			}
 		});
@@ -3181,6 +3309,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 				case 'showDashboard':
 					await this.showDashboard();
+					break;
+				case 'showEnvironmental':
+					await this.showEnvironmental();
 					break;
 				case 'analyseRepository':
 					await this.handleAnalyseRepository(message.workspacePath);
@@ -3891,6 +4022,9 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 				case 'showDashboard':
 					await this.showDashboard();
 					break;
+				case 'showEnvironmental':
+					await this.showEnvironmental();
+					break;
 				case 'shareToLinkedIn':
 					await this.shareToSocialMedia('linkedin');
 					break;
@@ -4590,6 +4724,9 @@ ${hashtag}`;
           break;
         case "showMaturity":
           await this.showMaturity();
+          break;
+        case "showEnvironmental":
+          await this.showEnvironmental();
           break;
         case "deleteUserDataset":
           await this.handleDeleteUserDataset(message.userId, message.datasetId);
@@ -5681,6 +5818,9 @@ ${hashtag}`;
         case "showDashboard":
           await this.showDashboard();
           break;
+        case "showEnvironmental":
+          await this.showEnvironmental();
+          break;
         case "resetDebugCounters":
           await this.context.globalState.update('extension.openCount', 0);
           await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
@@ -6529,6 +6669,14 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  const showEnvironmentalCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showEnvironmental",
+    async () => {
+      tokenTracker.log("Show environmental impact command called");
+      await tokenTracker.showEnvironmental();
+    },
+  );
+
   // Register the show fluency level viewer command (debug-only)
   const showFluencyLevelViewerCommand = vscode.commands.registerCommand(
     "copilot-token-tracker.showFluencyLevelViewer",
@@ -6565,6 +6713,7 @@ export function activate(context: vscode.ExtensionContext) {
     showMaturityCommand,
     showFluencyLevelViewerCommand,
     showDashboardCommand,
+    showEnvironmentalCommand,
     generateDiagnosticReportCommand,
     clearCacheCommand,
     tokenTracker,

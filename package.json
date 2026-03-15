@@ -113,6 +113,11 @@
         "command": "copilot-token-tracker.showDashboard",
         "title": "Show Team Dashboard",
         "category": "Copilot Token Tracker"
+      },
+      {
+        "command": "copilot-token-tracker.showEnvironmental",
+        "title": "Show Environmental Impact",
+        "category": "Copilot Token Tracker"
       }
     ],
     "configuration": {

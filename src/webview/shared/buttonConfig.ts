@@ -3,7 +3,7 @@
  * This ensures consistent button IDs, labels, and icons across all webviews.
  */
 
-export type ButtonId = 'btn-refresh' | 'btn-details' | 'btn-chart' | 'btn-usage' | 'btn-diagnostics' | 'btn-maturity' | 'btn-dashboard' | 'btn-level-viewer';
+export type ButtonId = 'btn-refresh' | 'btn-details' | 'btn-chart' | 'btn-usage' | 'btn-diagnostics' | 'btn-maturity' | 'btn-dashboard' | 'btn-level-viewer' | 'btn-environmental';
 
 export interface ButtonConfig {
 	id: ButtonId;
@@ -47,6 +47,10 @@ export const BUTTONS: Record<ButtonId, ButtonConfig> = {
 	'btn-level-viewer': {
 		id: 'btn-level-viewer',
 		label: '🔍 Level Viewer'
+	},
+	'btn-environmental': {
+		id: 'btn-environmental',
+		label: '🌿 Environmental Impact'
 	}
 };
 

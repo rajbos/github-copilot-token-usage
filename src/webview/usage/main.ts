@@ -477,6 +477,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${buttonHtml('btn-refresh')}
 				${buttonHtml('btn-details')}
 				${buttonHtml('btn-chart')}
+				${buttonHtml('btn-environmental')}
 				${buttonHtml('btn-diagnostics')}
 				${buttonHtml('btn-maturity')}
 				${stats.backendConfigured ? buttonHtml('btn-dashboard') : ''}
@@ -644,7 +645,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</div>
 					</div>
 				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
+					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
 					<div class="list">
 						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
 							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
@@ -709,7 +710,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</div>
 					</div>
 					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
 							${stats.month.mcpTools.total > 0 ? `
@@ -887,7 +888,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</div>
 					</div>
 					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Last Month</h4>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
 						<div class="stats-grid" style="grid-template-columns: 1fr;">
 							<div class="stat-card">
 								<div class="stat-label">📊 Avg Models per Conversation</div>
@@ -964,7 +965,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<div class="stats-grid">
 					<div class="stat-card"><div class="stat-label">📅 Today Sessions</div><div class="stat-value">${formatNumber(stats.today.sessions)}</div></div>
 					<div class="stat-card"><div class="stat-label">📆 Last 30 Days Sessions</div><div class="stat-value">${formatNumber(stats.last30Days.sessions)}</div></div>
-					<div class="stat-card"><div class="stat-label">📅 Last Month Sessions</div><div class="stat-value">${formatNumber(stats.month.sessions)}</div></div>
+					<div class="stat-card"><div class="stat-label">📅 Previous Month Sessions</div><div class="stat-value">${formatNumber(stats.month.sessions)}</div></div>
 				</div>
 			</div>
 
@@ -994,6 +995,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
+	});
+	document.getElementById('btn-environmental')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showEnvironmental' });
 	});
 	
 	// Repository analysis buttons
