@@ -3051,6 +3051,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'showDashboard':
 					await this.showDashboard();
 					break;
+				case 'saveSortSettings':
+					await this.context.globalState.update('details.sortSettings', message.settings);
+					break;
 			}
 		});
 
@@ -5224,9 +5227,14 @@ ${hashtag}`;
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
+    const sortSettings = this.context.globalState.get('details.sortSettings', {
+      editor: { key: 'name', dir: 'asc' },
+      model: { key: 'name', dir: 'asc' },
+    });
     const dataWithBackend = {
       ...stats,
       backendConfigured: this.isBackendConfigured(),
+      sortSettings,
     };
     const initialData = JSON.stringify(dataWithBackend).replace(
       /</g,
