@@ -1494,6 +1494,95 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
+			// Deduplicate workspace paths that resolve to the same physical repository.
+			// Two sources of duplication are handled:
+			//
+			// 1. Case differences on case-insensitive filesystems (Windows/macOS):
+			//    Different VS Code variants may store the same folder as "C:\Users\..." vs "c:\users\...".
+			//    Detected by lowercasing the full path.
+			//
+			// 2. Remote/devcontainer paths for the same local repo:
+			//    Opening a devcontainer for a local project stores a vscode-remote:// URI whose
+			//    resolved fsPath is the *container-internal* path (e.g. "/workspaces/my-repo"),
+			//    while normal sessions store the local Windows path.
+			//    Both have the same basename, and one of them is a non-local path
+			//    (starts with "/workspaces/" or is a Unix-style absolute path on Windows).
+			//    Detected by matching basename case-insensitively when one entry is a remote path.
+			//
+			// In both cases: session/interaction counts are summed; customization file scan results
+			// are kept from whichever path has more files (the local path wins for scanning).
+			{
+				const mergeInto = (winner: string, loser: string) => {
+					workspaceSessionCounts.set(winner,
+						(workspaceSessionCounts.get(winner) || 0) + (workspaceSessionCounts.get(loser) || 0));
+					workspaceInteractionCounts.set(winner,
+						(workspaceInteractionCounts.get(winner) || 0) + (workspaceInteractionCounts.get(loser) || 0));
+					workspaceSessionCounts.delete(loser);
+					workspaceInteractionCounts.delete(loser);
+					const winnerFiles = this._customizationFilesCache.get(winner) || [];
+					const loserFiles = this._customizationFilesCache.get(loser) || [];
+					if (winnerFiles.length === 0 && loserFiles.length > 0) {
+						this._customizationFilesCache.set(winner, loserFiles);
+					}
+					this._customizationFilesCache.delete(loser);
+				};
+
+				// Helper: true when path looks like a remote/devcontainer path on Windows
+				// (Unix-style absolute path, e.g. "/workspaces/repo" or "/home/user/repo")
+				const isRemotePath = (p: string) => {
+					if (process.platform !== 'win32') { return false; }
+					const normalized = p.replace(/\\/g, '/');
+					return normalized.startsWith('/');
+				};
+
+				// Pass 1 — case-insensitive dedup (covers casing differences between editor variants)
+				if (process.platform === 'win32' || process.platform === 'darwin') {
+					const lowerToCanonical = new Map<string, string>();
+					for (const key of Array.from(workspaceSessionCounts.keys())) {
+						const lower = key.toLowerCase();
+						if (!lowerToCanonical.has(lower)) {
+							lowerToCanonical.set(lower, key);
+						} else {
+							const canonical = lowerToCanonical.get(lower)!;
+							// Prefer the local (non-remote) path as winner; otherwise more sessions wins
+							const canonicalIsRemote = isRemotePath(canonical);
+							const keyIsRemote = isRemotePath(key);
+							const winner = (!keyIsRemote && canonicalIsRemote)
+								? key
+								: (!canonicalIsRemote && keyIsRemote)
+									? canonical
+									: (workspaceSessionCounts.get(key) || 0) >= (workspaceSessionCounts.get(canonical) || 0)
+										? key : canonical;
+							const loser = winner === key ? canonical : key;
+							mergeInto(winner, loser);
+							lowerToCanonical.set(lower, winner);
+						}
+					}
+				}
+
+				// Pass 2 — basename dedup for remote/devcontainer paths.
+				// When one path is a remote (Unix-style) path and another is a local path with the
+				// same basename, they represent the same physical repo opened via a devcontainer.
+				if (process.platform === 'win32') {
+					const basenameToLocal = new Map<string, string>(); // lower-basename → local path key
+					for (const key of Array.from(workspaceSessionCounts.keys())) {
+						if (!isRemotePath(key)) {
+							basenameToLocal.set(path.basename(key).toLowerCase(), key);
+						}
+					}
+					for (const key of Array.from(workspaceSessionCounts.keys())) {
+						if (isRemotePath(key)) {
+							const base = path.basename(key).toLowerCase();
+							const localKey = basenameToLocal.get(base);
+							if (localKey && workspaceSessionCounts.has(key)) {
+								// Merge remote into local — local wins because we can scan its files
+								mergeInto(localKey, key);
+							}
+						}
+					}
+				}
+			}
+
 			// Build the customization matrix using scanned workspace data and session counts
 			try {
 				// Unique customization types based on Copilot patterns only
@@ -6570,7 +6659,7 @@ export function activate(context: vscode.ExtensionContext) {
       waterUsagePer1kTokens: 0.3,
       co2AbsorptionPerTreePerYear: 21000,
       getCopilotSessionFiles: () =>
-        (tokenTracker as any).getCopilotSessionFiles(),
+        (tokenTracker as any).sessionDiscovery.getCopilotSessionFiles(),
       estimateTokensFromText: (text: string, model?: string) =>
         (tokenTracker as any).estimateTokensFromText(text, model),
       getModelFromRequest: (req: any) =>

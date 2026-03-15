@@ -636,6 +636,17 @@ export function resolveWorkspaceFolderFromSessionPath(sessionFilePath: string, w
 			return undefined;
 		}
 
+		// Canonicalize path casing using the real filesystem path.
+		// Different VS Code variants (Stable, Insiders, Cursor) may store the same folder with
+		// different drive-letter or path casing in their workspace.json (e.g. "C:\Users\" vs "c:\users\").
+		// realpathSync.native returns the true OS-level casing, so the same physical folder always
+		// produces the same Map key and is deduplicated correctly.
+		try {
+			folderFsPath = fs.realpathSync.native(folderFsPath);
+		} catch {
+			// Path may not exist on disk (deleted/moved repo); keep the parsed path as-is.
+		}
+
 		workspaceIdToFolderCache.set(workspaceId, folderFsPath);
 		return folderFsPath;
 	} catch (err) {
