@@ -6659,7 +6659,7 @@ export function activate(context: vscode.ExtensionContext) {
       waterUsagePer1kTokens: 0.3,
       co2AbsorptionPerTreePerYear: 21000,
       getCopilotSessionFiles: () =>
-        tokenTracker.sessionDiscovery.getCopilotSessionFiles(),
+        (tokenTracker as any).sessionDiscovery.getCopilotSessionFiles(),
       estimateTokensFromText: (text: string, model?: string) =>
         (tokenTracker as any).estimateTokensFromText(text, model),
       getModelFromRequest: (req: any) =>
