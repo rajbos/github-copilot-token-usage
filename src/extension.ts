@@ -169,6 +169,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private environmentalPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private lastDetailedStats: DetailedStats | undefined;
+	private _updateTokenStatsPromise: Promise<DetailedStats | undefined> | undefined;
 	private lastDailyStats: DailyTokenStats[] | undefined;
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -562,6 +563,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
+		// If a non-silent update is already in progress, wait for it instead of starting a duplicate run.
+		// This prevents the details panel opening during startup from triggering a second progress sweep.
+		if (!silent && this._updateTokenStatsPromise) {
+			this.log('Update already in progress, waiting for existing run...');
+			return this._updateTokenStatsPromise;
+		}
+
+		const doUpdate = async (): Promise<DetailedStats | undefined> => {
 		try {
 			this.log('Updating token stats...');
 			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
@@ -708,6 +717,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.statusBarItem.tooltip = 'Error calculating token usage';
 			return undefined;
 		}
+		}; // end doUpdate
+
+		if (silent) {
+			return doUpdate();
+		}
+
+		this._updateTokenStatsPromise = doUpdate().finally(() => {
+			this._updateTokenStatsPromise = undefined;
+		});
+		return this._updateTokenStatsPromise;
 	}
 
 	private async calculateTokenUsage(): Promise<Pick<TokenUsageStats, 'todayTokens' | 'monthTokens'>> {
