@@ -1,6 +1,7 @@
 // Maturity Score webview
 import { buttonHtml } from '../shared/buttonConfig';
 import type { ContextReferenceUsage } from '../shared/contextRefUtils';
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -113,7 +114,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 			const angle = startAngle + i * angleStep;
 			return `${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`;
 		}).join(' ');
-		return `<polygon points="${points}" fill="none" stroke="#2a2a40" stroke-width="1" />`;
+		return `<polygon points="${points}" fill="none" class="radar-grid" stroke-width="1" />`;
 	}).join('');
 
 	// Axis lines
@@ -121,7 +122,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 		const angle = startAngle + i * angleStep;
 		const x2 = cx + maxR * Math.cos(angle);
 		const y2 = cy + maxR * Math.sin(angle);
-		return `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#2a2a40" stroke-width="1" />`;
+		return `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" class="radar-grid" stroke-width="1" />`;
 	}).join('');
 
 	// Data polygon
@@ -142,7 +143,7 @@ function renderRadarChart(categories: CategoryScore[]): string {
 		if (Math.cos(angle) < -0.3) { anchor = 'end'; }
 		else if (Math.cos(angle) > 0.3) { anchor = 'start'; }
 		return `<text x="${x}" y="${y}" text-anchor="${anchor}" dominant-baseline="central"
-			font-size="14" fill="#d0d0d0" font-weight="600">${cat.icon} ${cat.category}</text>`;
+			class="radar-label" font-size="14" font-weight="600">${cat.icon} ${cat.category}</text>`;
 	}).join('');
 
 	// Stage dots
@@ -152,13 +153,13 @@ function renderRadarChart(categories: CategoryScore[]): string {
 		const x = cx + r * Math.cos(angle);
 		const y = cy + r * Math.sin(angle);
 		const color = stageColor(cat.stage);
-		return `<circle cx="${x}" cy="${y}" r="5" fill="${color}" stroke="#fff" stroke-width="1.5" />`;
+		return `<circle cx="${x}" cy="${y}" r="5" fill="${color}" class="radar-dot" stroke-width="1.5" />`;
 	}).join('');
 
 	// Ring labels
 	const ringLabels = [1, 2, 3, 4].map(level => {
 		const r = (level / 4) * maxR;
-		return `<text x="${cx + 4}" y="${cy - r + 3}" font-size="9" fill="#555">${level}</text>`;
+		return `<text x="${cx + 4}" y="${cy - r + 3}" class="radar-ring-label" font-size="9">${level}</text>`;
 	}).join('');
 
 	return `<svg viewBox="0 0 650 650" class="radar-svg" xmlns="http://www.w3.org/2000/svg">
@@ -384,6 +385,7 @@ function renderLayout(data: MaturityData): void {
 	}).join('');
 
 	root.innerHTML = `
+		<style>${themeStyles}</style>
 		<style>${styles}</style>
 		<div class="container">
 			<div class="header">

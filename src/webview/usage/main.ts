@@ -181,7 +181,7 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 	if (missed.length === 0) {
 		return `
 			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: #22c55e; margin-bottom: 8px;">
+				<div style="font-size: 13px; font-weight: 600; color: var(--success-fg); margin-bottom: 8px;">
 					✅ No other AI tool configs missing a Copilot counterpart
 				</div>
 				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
@@ -196,7 +196,7 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
 
 	return `
         <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
-            <div style="font-size: 13px; font-weight: 600; color: #fbbf24; margin-bottom: 8px;">
+            <div style="font-size: 13px; font-weight: 600; color: var(--warning-fg); margin-bottom: 8px;">
                 ⚠️ Missed Potential: Non-Copilot Instruction Files
             </div>
             <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
@@ -386,15 +386,15 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			<div class="section">
 				<div class="section-title"><span>🛠️</span><span>Copilot Customization Files</span></div>
 				<div class="section-subtitle">Showing workspace customization status for active workspaces</div>
-				<div style="color:#999; padding:12px;">No workspaces with customization files detected in the last 30 days.</div>
+				<div style="color: var(--text-muted); padding:12px;">No workspaces with customization files detected in the last 30 days.</div>
 			</div>`;
 	} else {
 		customizationHtml = `
-			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
 					🛠️ Copilot Customization Files
 				</div>
-				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
+				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
 					Showing ${matrix.totalWorkspaces} workspace(s) with Copilot activity in the last 30 days.
 					${matrix.workspacesWithIssues > 0
 						? `<span class="stale-warning">⚠️ ${matrix.workspacesWithIssues} workspace(s) have no customization files.</span>`
@@ -404,10 +404,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<table class="customization-matrix">
 						<thead>
 							<tr>
-								<th style="text-align: left; padding: 8px; border-bottom: 2px solid #2a2a30;">📂 Workspace</th>
-								<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;">Sessions</th>
+								<th style="text-align: left; padding: 8px; border-bottom: 2px solid var(--border-color);">📂 Workspace</th>
+								<th style="text-align: center; padding: 8px; border-bottom: 2px solid var(--border-color);">Sessions</th>
 								${matrix.customizationTypes.map(type => `
-									<th style="text-align: center; padding: 8px; border-bottom: 2px solid #2a2a30;" title="${escapeHtml(type.label)}">
+									<th style="text-align: center; padding: 8px; border-bottom: 2px solid var(--border-color);" title="${escapeHtml(type.label)}">
 										${escapeHtml(type.icon)}
 									</th>
 								`).join('')}
@@ -418,10 +418,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								const hasNoCustomization = Object.values(ws.typeStatuses).every(s => s === '❌');
 								return `
 								<tr>
-									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; font-family: 'Courier New', monospace; font-size: 12px;">
+									<td style="padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-family: 'Courier New', monospace; font-size: 12px;">
 										${escapeHtml(ws.workspaceName)}${hasNoCustomization ? ' <span title="No customization files" style="font-family: sans-serif;">⚠️</span>' : ''}
 									</td>
-									<td style="padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; color: #60a5fa; font-weight: 600;">
+									<td style="padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; color: var(--link-color); font-weight: 600;">
 										${ws.sessionCount}
 									</td>
 									${matrix.customizationTypes.map(type => {
@@ -435,7 +435,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 														? 'Missing'
 														: 'Status unknown';
 										return `
-										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid #2a2a30; text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
+										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
 											<span aria-hidden="true">${escapeHtml(status)}</span>
 											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${statusLabel}</span>
 										</td>
@@ -446,7 +446,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						</tbody>
 					</table>
 				</div>
-				<div style="margin-top: 12px; font-size: 10px; color: #999; border-top: 1px solid #2a2a30; padding-top: 8px;">
+				<div style="margin-top: 12px; font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
 					<div style="display: flex; gap: 16px; flex-wrap: wrap;">
 						${matrix.customizationTypes.map(type => `
 							<span>${escapeHtml(type.icon)} ${escapeHtml(type.label)}</span>
@@ -600,11 +600,11 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			${renderMissedPotential(stats)}
 
 			<!-- Repository Setup Section -->
-			<div class="repo-hygiene-section" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: #18181b; border: 1px solid #2a2a30; border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">
+			<div class="repo-hygiene-section" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
+				<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
 					🏗️ Repository Hygiene Analysis
 				</div>
-				<div style="font-size: 11px; color: #b8b8b8; margin-bottom: 12px;">
+				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
 					Analyze repository hygiene and structure to identify missing configuration files and best practices.
 				</div>
 				${matrix && matrix.workspaces && matrix.workspaces.length > 0 ? `
@@ -777,7 +777,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.today.modelSwitching.premiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
-										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="color: var(--warning-fg);">⭐ Premium:</span>
 										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
@@ -789,7 +789,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								` : ''}
 							</div>
 							${stats.today.modelSwitching.totalRequests > 0 ? `
-								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
+								<div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); min-height: 65px;">
 									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
 									${stats.today.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
@@ -799,7 +799,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									` : ''}
 									${stats.today.modelSwitching.premiumRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--warning-fg);">⭐ Premium: </span>
 											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.premiumRequests)} (${formatPercent((stats.today.modelSwitching.premiumRequests / stats.today.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
@@ -812,7 +812,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								</div>
 							` : ''}
 							${stats.today.modelSwitching.mixedTierSessions > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
 									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${formatNumber(stats.today.modelSwitching.mixedTierSessions)}</span>
 								</div>
 							` : ''}
@@ -846,7 +846,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.last30Days.modelSwitching.premiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
-										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="color: var(--warning-fg);">⭐ Premium:</span>
 										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
@@ -858,7 +858,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								` : ''}
 							</div>
 							${stats.last30Days.modelSwitching.totalRequests > 0 ? `
-								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
+								<div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); min-height: 65px;">
 									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
 									${stats.last30Days.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
@@ -868,7 +868,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									` : ''}
 									${stats.last30Days.modelSwitching.premiumRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--warning-fg);">⭐ Premium: </span>
 											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.premiumRequests)} (${formatPercent((stats.last30Days.modelSwitching.premiumRequests / stats.last30Days.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
@@ -881,7 +881,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								</div>
 							` : ''}
 							${stats.last30Days.modelSwitching.mixedTierSessions > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
 									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${formatNumber(stats.last30Days.modelSwitching.mixedTierSessions)}</span>
 								</div>
 							` : ''}
@@ -915,7 +915,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
 								${stats.month.modelSwitching.premiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
-										<span style="color: #fbbf24;">⭐ Premium:</span>
+										<span style="color: var(--warning-fg);">⭐ Premium:</span>
 										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
@@ -927,7 +927,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								` : ''}
 							</div>
 							${stats.month.modelSwitching.totalRequests > 0 ? `
-								<div style="padding-top: 8px; border-top: 1px solid #2a2a30; min-height: 65px;">
+								<div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); min-height: 65px;">
 									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
 									${stats.month.modelSwitching.standardRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
@@ -937,7 +937,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									` : ''}
 									${stats.month.modelSwitching.premiumRequests > 0 ? `
 										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: #fbbf24;">⭐ Premium: </span>
+											<span style="color: var(--warning-fg);">⭐ Premium: </span>
 											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.premiumRequests)} (${formatPercent((stats.month.modelSwitching.premiumRequests / stats.month.modelSwitching.totalRequests) * 100)})</span>
 										</div>
 									` : ''}
@@ -950,7 +950,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								</div>
 							` : ''}
 							${stats.month.modelSwitching.mixedTierSessions > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a30;">
+								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
 									<span style="font-size: 11px; color: var(--link-color);">🔀 Mixed tier sessions: ${formatNumber(stats.month.modelSwitching.mixedTierSessions)}</span>
 								</div>
 							` : ''}
@@ -1171,10 +1171,10 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 	const header = el('div');
 	header.setAttribute('style', 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;');
 	const title = el('div');
-	title.setAttribute('style', 'font-size: 14px; font-weight: 600; color: #fff;');
+	title.setAttribute('style', 'font-size: 14px; font-weight: 600; color: var(--text-primary);');
 	title.textContent = '📊 Repository Hygiene Score';
 	const score = el('div');
-	score.setAttribute('style', 'font-size: 24px; font-weight: 700; color: #60a5fa;');
+	score.setAttribute('style', 'font-size: 24px; font-weight: 700; color: var(--link-color);');
 	score.textContent = `${Math.round(toFiniteNumber(summary.percentage))}%`;
 	header.append(title, score);
 	container.appendChild(header);
@@ -1187,13 +1187,13 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 			count: summary.passedChecks,
 			label: 'Passed',
 			cardStyle: 'text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;',
-			countStyle: 'font-size: 18px; font-weight: 600; color: #22c55e;'
+			countStyle: 'font-size: 18px; font-weight: 600; color: var(--success-fg);'
 		},
 		{
 			count: summary.warningChecks,
 			label: 'Warnings',
 			cardStyle: 'text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;',
-			countStyle: 'font-size: 18px; font-weight: 600; color: #f59e0b;'
+			countStyle: 'font-size: 18px; font-weight: 600; color: var(--warning-fg);'
 		},
 		{
 			count: summary.failedChecks,
@@ -1210,7 +1210,7 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 		count.setAttribute('style', statCard.countStyle);
 		count.textContent = String(toFiniteNumber(statCard.count));
 		const label = el('div');
-		label.setAttribute('style', 'font-size: 10px; color: #b8b8b8;');
+		label.setAttribute('style', 'font-size: 10px; color: var(--text-secondary);');
 		label.textContent = statCard.label;
 		card.append(count, label);
 		statsGrid.appendChild(card);
@@ -1219,7 +1219,7 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 	container.appendChild(statsGrid);
 
 	const scoreSummary = el('div');
-	scoreSummary.setAttribute('style', 'font-size: 11px; color: #999; text-align: center; margin-bottom: 16px;');
+	scoreSummary.setAttribute('style', 'font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 16px;');
 	scoreSummary.textContent = `Score: ${toFiniteNumber(summary.totalScore)} / ${toFiniteNumber(summary.maxScore)} points`;
 	container.appendChild(scoreSummary);
 
@@ -1245,18 +1245,18 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 
 	for (const [categoryId, categoryChecks] of Object.entries(categories)) {
 		const section = el('div');
-		section.setAttribute('style', 'margin-bottom: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;');
+		section.setAttribute('style', 'margin-bottom: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden;');
 
 		const sectionHeader = el('div');
-		sectionHeader.setAttribute('style', 'padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30; display: flex; justify-content: space-between; align-items: center;');
+		sectionHeader.setAttribute('style', 'padding: 8px 12px; background: var(--list-hover-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;');
 
 		const categoryName = el('span');
-		categoryName.setAttribute('style', 'font-size: 12px; font-weight: 600; color: #fff;');
+		categoryName.setAttribute('style', 'font-size: 12px; font-weight: 600; color: var(--text-primary);');
 		categoryName.textContent = categoryLabels[categoryId] || categoryId;
 
 		const categorySummary = summary?.categories?.[categoryId];
 		const categoryPct = el('span');
-		categoryPct.setAttribute('style', 'font-size: 11px; color: #60a5fa; font-weight: 600;');
+		categoryPct.setAttribute('style', 'font-size: 11px; color: var(--link-color); font-weight: 600;');
 		categoryPct.textContent = `${Math.round(toFiniteNumber(categorySummary?.percentage))}%`;
 
 		sectionHeader.append(categoryName, categoryPct);
@@ -1268,7 +1268,7 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 			const statusColor = status === 'pass' ? '#22c55e' : status === 'warning' ? '#f59e0b' : '#ef4444';
 
 			const checkRow = el('div');
-			checkRow.setAttribute('style', 'padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; align-items: flex-start; gap: 8px;');
+			checkRow.setAttribute('style', 'padding: 8px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: flex-start; gap: 8px;');
 
 			const icon = el('span');
 			icon.setAttribute('style', 'font-size: 16px;');
@@ -1282,14 +1282,14 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 			checkLabel.textContent = typeof check?.label === 'string' ? check.label : '';
 
 			const checkDetail = el('div');
-			checkDetail.setAttribute('style', 'font-size: 11px; color: #b8b8b8; margin-top: 2px;');
+			checkDetail.setAttribute('style', 'font-size: 11px; color: var(--text-secondary); margin-top: 2px;');
 			checkDetail.textContent = typeof check?.detail === 'string' ? check.detail : '';
 
 			content.append(checkLabel, checkDetail);
 
 			if (typeof check?.hint === 'string' && check.hint.length > 0) {
 				const hint = el('div');
-				hint.setAttribute('style', 'font-size: 10px; color: #60a5fa; margin-top: 4px; font-style: italic;');
+				hint.setAttribute('style', 'font-size: 10px; color: var(--link-color); margin-top: 4px; font-style: italic;');
 				hint.textContent = `💡 ${check.hint}`;
 				content.appendChild(hint);
 			}
@@ -1299,14 +1299,14 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 			if (docUrl) {
 				const docLink = el('a');
 				docLink.setAttribute('href', docUrl);
-				docLink.setAttribute('style', 'font-size: 10px; color: #60a5fa; margin-top: 4px; display: inline-block;');
+				docLink.setAttribute('style', 'font-size: 10px; color: var(--link-color); margin-top: 4px; display: inline-block;');
 				docLink.setAttribute('title', 'View official documentation');
 				docLink.textContent = '📖 View documentation';
 				content.appendChild(docLink);
 			}
 
 			const weight = el('span');
-			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
+			weight.setAttribute('style', 'font-size: 10px; color: var(--text-muted); min-width: 30px; text-align: right;');
 			weight.textContent = `+${toFiniteNumber(check?.weight)}`;
 
 			checkRow.append(icon, content, weight);
@@ -1318,12 +1318,12 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 
 	if (recommendations.length > 0) {
 		const recommendationsSection = el('div');
-		recommendationsSection.setAttribute('style', 'margin-top: 16px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; overflow: hidden;');
+		recommendationsSection.setAttribute('style', 'margin-top: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden;');
 
 		const recommendationsHeader = el('div');
-		recommendationsHeader.setAttribute('style', 'padding: 8px 12px; background: rgba(96, 165, 250, 0.1); border-bottom: 1px solid #2a2a30;');
+		recommendationsHeader.setAttribute('style', 'padding: 8px 12px; background: var(--list-hover-bg); border-bottom: 1px solid var(--border-color);');
 		const recommendationsTitle = el('span');
-		recommendationsTitle.setAttribute('style', 'font-size: 12px; font-weight: 600; color: #fff;');
+		recommendationsTitle.setAttribute('style', 'font-size: 12px; font-weight: 600; color: var(--text-primary);');
 		recommendationsTitle.textContent = '💡 Top Recommendations';
 		recommendationsHeader.appendChild(recommendationsTitle);
 		recommendationsSection.appendChild(recommendationsHeader);
@@ -1333,7 +1333,7 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 			const priorityColor = priority === 'high' ? '#ef4444' : priority === 'medium' ? '#f59e0b' : '#60a5fa';
 
 			const row = el('div');
-			row.setAttribute('style', 'padding: 8px; border-bottom: 1px solid #2a2a30; display: flex; gap: 8px;');
+			row.setAttribute('style', 'padding: 8px; border-bottom: 1px solid var(--border-subtle); display: flex; gap: 8px;');
 
 			const priorityLabel = el('span');
 			priorityLabel.setAttribute('style', `font-size: 10px; font-weight: 600; color: ${priorityColor}; min-width: 50px;`);
@@ -1343,17 +1343,17 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 			content.setAttribute('style', 'flex: 1;');
 
 			const action = el('div');
-			action.setAttribute('style', 'font-size: 11px; color: #fff;');
+			action.setAttribute('style', 'font-size: 11px; color: var(--text-primary);');
 			action.textContent = typeof recommendation?.action === 'string' ? recommendation.action : '';
 
 			const impact = el('div');
-			impact.setAttribute('style', 'font-size: 10px; color: #999; margin-top: 2px;');
+			impact.setAttribute('style', 'font-size: 10px; color: var(--text-muted); margin-top: 2px;');
 			impact.textContent = typeof recommendation?.impact === 'string' ? recommendation.impact : '';
 
 			content.append(action, impact);
 
 			const weight = el('span');
-			weight.setAttribute('style', 'font-size: 10px; color: #999; min-width: 30px; text-align: right;');
+			weight.setAttribute('style', 'font-size: 10px; color: var(--text-muted); min-width: 30px; text-align: right;');
 			weight.textContent = `+${toFiniteNumber(recommendation?.weight)}`;
 
 			row.append(priorityLabel, content, weight);
@@ -1370,7 +1370,7 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 		copilotSection.setAttribute('style', 'margin-top: 16px; padding: 12px; background: rgba(96, 165, 250, 0.07); border: 1px solid rgba(96, 165, 250, 0.3); border-radius: 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px;');
 
 		const copilotText = el('div');
-		copilotText.setAttribute('style', 'font-size: 11px; color: #b8b8b8; flex: 1;');
+		copilotText.setAttribute('style', 'font-size: 11px; color: var(--text-secondary); flex: 1;');
 		copilotText.textContent = 'Let Copilot help you fix the identified issues in this repository.';
 
 		const copilotBtn = document.createElement('vscode-button');
@@ -1393,11 +1393,11 @@ function buildRepoAnalysisBodyElement(data: any, workspacePath?: string): HTMLEl
 				copilotSection.setAttribute('style', 'margin-top: 16px; padding: 12px; background: rgba(251, 191, 36, 0.07); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 4px; display: flex; flex-direction: column; gap: 8px;');
 
 				const instructions = el('div');
-				instructions.setAttribute('style', 'font-size: 11px; color: #fbbf24;');
+				instructions.setAttribute('style', 'font-size: 11px; color: var(--warning-fg);');
 				instructions.textContent = `⚠️ Open "${repoFolderName}" in VS Code first, then paste this prompt into Copilot Chat:`;
 
 				const promptBox = el('pre');
-				promptBox.setAttribute('style', 'font-size: 10px; color: #b8b8b8; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 4px; padding: 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; font-family: monospace; margin: 0;');
+				promptBox.setAttribute('style', 'font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; font-family: monospace; margin: 0;');
 				promptBox.textContent = prompt;
 
 				const copyBtn = document.createElement('vscode-button');
@@ -1446,12 +1446,12 @@ function renderRepositoryHygienePanels(): void {
 		const buttonAction = hasResult ? 'details' : 'analyze';
 		const isCurrentSelection = selectedRepoPath === ws.workspacePath && hasSelectedRepository;
 		return `
-			<div class="repo-item" style="padding: 8px 12px; border-bottom: ${idx < visibleWorkspaces.length - 1 ? '1px solid #2a2a30' : 'none'}; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+			<div class="repo-item" style="padding: 8px 12px; border-bottom: ${idx < visibleWorkspaces.length - 1 ? '1px solid var(--border-subtle)' : 'none'}; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
 				<div style="flex: 1; min-width: 0;">
-					<div class="repo-name" style="font-size: 12px; font-weight: 600; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
+					<div class="repo-name" style="font-size: 12px; font-weight: 600; color: var(--text-primary); font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
 						${escapeHtml(ws.workspaceName)}
 					</div>
-					<div style="font-size: 10px; color: #999; margin-top: 2px;">
+					<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">
 						${Number(ws.sessionCount) || 0} ${ws.sessionCount === 1 ? 'session' : 'sessions'} · ${Number(ws.interactionCount) || 0} ${ws.interactionCount === 1 ? 'interaction' : 'interactions'} · Score: ${escapeHtml(scoreLabel)}
 					</div>
 				</div>
@@ -1472,17 +1472,17 @@ function renderRepositoryHygienePanels(): void {
 	if (record?.data) {
 		detailsPane.replaceChildren();
 		const card = el('div', 'repo-details-card');
-		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;');
+		card.setAttribute('style', 'padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;');
 
 		const header = el('div', 'repo-details-card-header');
 		header.setAttribute('style', 'display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;');
 
 		const label = el('div');
-		label.setAttribute('style', 'font-size: 12px; color: #b8b8b8;');
+		label.setAttribute('style', 'font-size: 12px; color: var(--text-secondary);');
 		label.textContent = 'Repository: ';
 
 		const repoName = el('span');
-		repoName.setAttribute('style', "color: #fff; font-weight: 600; font-family: 'Courier New', monospace;");
+		repoName.setAttribute('style', "color: var(--text-primary); font-weight: 600; font-family: 'Courier New', monospace;");
 		repoName.textContent = workspaceName;
 		label.appendChild(repoName);
 
@@ -1512,12 +1512,12 @@ function renderRepositoryHygienePanels(): void {
 	}
 
 	detailsPane.innerHTML = `
-		<div style="padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px;">
+		<div style="padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
 			<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
-				<div style="font-size: 12px; color: #b8b8b8;">Repository: <span style="color: #fff; font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span></div>
+				<div style="font-size: 12px; color: var(--text-secondary);">Repository: <span style="color: var(--text-primary); font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span></div>
 				<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
 			</div>
-			<div style="font-size: 11px; color: #999;">No analysis data yet. Click Analyze in the list.</div>
+			<div style="font-size: 11px; color: var(--text-muted);">No analysis data yet. Click Analyze in the list.</div>
 		</div>
 	`;
 }
@@ -1543,7 +1543,7 @@ function displayRepoAnalysisResults(data: any, workspacePath?: string): void {
 	if (resultsHost) {
 		resultsHost.replaceChildren();
 		const card = el('div', 'repo-analysis-card');
-		card.setAttribute('style', 'padding: 12px; background: #0d0d0f; border: 1px solid #2a2a30; border-radius: 6px; margin-bottom: 12px;');
+		card.setAttribute('style', 'padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 12px;');
 		card.appendChild(buildRepoAnalysisBodyElement(data, workspacePath));
 		resultsHost.appendChild(card);
 	}
