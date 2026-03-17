@@ -3,11 +3,16 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # Triggers on version tags like v1.0.0, v1.2.3, etc.
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+      - 'v*'  # Tag push: build + GitHub release only (no marketplace publish)
+  workflow_dispatch:  # Manual trigger: full pipeline including marketplace publish
     inputs:
       create_tag:
         description: 'Create tag from package.json version'
+        required: false
+        default: 'true'
+        type: boolean
+      publish_marketplace:
+        description: 'Publish to VS Code Marketplace after creating the release'
         required: false
         default: 'true'
         type: boolean
@@ -20,6 +25,10 @@ jobs:
     permissions: 
       contents: write
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract_version.outputs.tag_version }}
+      tag_name: ${{ steps.tag_name.outputs.tag_name }}
+      vsix_file: ${{ steps.vsix_filename.outputs.vsix_file }}
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -123,6 +132,47 @@ jobs:
         fi
         echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
         echo "Tag name: $TAG_NAME"
+
+    - name: Generate release notes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG_NAME="${{ steps.tag_name.outputs.tag_name }}"
+        VERSION="${{ steps.extract_version.outputs.tag_version }}"
+        echo "Generating release notes for $TAG_NAME..."
+        
+        # Use GitHub API to auto-generate notes from merged PRs since last release
+        if gh api repos/${{ github.repository }}/releases/generate-notes \
+          -f tag_name="${TAG_NAME}" \
+          --jq '.body' > /tmp/release_notes.md 2>/dev/null && [ -s /tmp/release_notes.md ]; then
+          echo "✅ Generated release notes from merged PRs"
+        else
+          echo "Release ${VERSION}" > /tmp/release_notes.md
+          echo "⚠️  Could not auto-generate notes, using fallback"
+        fi
+        
+        echo "--- Release notes preview ---"
+        cat /tmp/release_notes.md
+        echo "---"
+
+    - name: Update CHANGELOG.md for VSIX packaging
+      run: |
+        VERSION="${{ steps.extract_version.outputs.tag_version }}"
+        node -e "
+          const fs = require('fs');
+          const version = process.argv[1];
+          const notes = fs.readFileSync('/tmp/release_notes.md', 'utf8').trim();
+          let changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const marker = '## [Unreleased]';
+          const idx = changelog.indexOf(marker);
+          if (idx >= 0) {
+            const insertAt = changelog.indexOf('\n', idx) + 1;
+            const section = '\n## [' + version + ']\n\n' + notes + '\n';
+            changelog = changelog.slice(0, insertAt) + section + changelog.slice(insertAt);
+          }
+          fs.writeFileSync('CHANGELOG.md', changelog);
+          console.log('✅ Updated CHANGELOG.md with v' + version + ' notes for VSIX packaging');
+        " "$VERSION"
         
     - name: Install dependencies
       run: npm ci
@@ -158,22 +208,13 @@ jobs:
         VSIX_FILE=$(ls *.vsix | head -n 1)
         echo "vsix_file=$VSIX_FILE" >> $GITHUB_OUTPUT
         echo "VSIX file: $VSIX_FILE"
-        
-    - name: Generate release notes
-      run: |
-        # Extract the latest changes from CHANGELOG.md if it has been updated
-        # Write to a file to avoid shell interpretation issues with special characters
-        if grep -q "## \[.*\]" CHANGELOG.md; then
-          # Try to extract the latest version section from changelog
-          NOTES=$(sed -n '/## \[.*\]/,/## \[.*\]/p' CHANGELOG.md | head -n -1 | tail -n +2)
-          if [ -n "$NOTES" ]; then
-            echo "$NOTES" > /tmp/release_notes.md
-          else
-            echo "Release ${{ steps.extract_version.outputs.tag_version }}" > /tmp/release_notes.md
-          fi
-        else
-          echo "Release ${{ steps.extract_version.outputs.tag_version }}" > /tmp/release_notes.md
-        fi
+
+    - name: Upload VSIX as workflow artifact
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: vsix-package
+        path: ./${{ steps.vsix_filename.outputs.vsix_file }}
+        retention-days: 90
         
     - name: Create Release
       id: create_release
@@ -185,7 +226,7 @@ jobs:
         set -o pipefail
         echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
         
-        # Create release with notes from file and upload VSIX file
+        # Create release with auto-generated notes and upload VSIX file
         gh release create "${{ steps.tag_name.outputs.tag_name }}" \
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes-file /tmp/release_notes.md \
@@ -216,4 +257,138 @@ jobs:
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           exit 1
+        fi
+
+  publish:
+    needs: release
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Download VSIX from release
+      id: download_vsix
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG_NAME="${{ needs.release.outputs.tag_name }}"
+        echo "Downloading VSIX from release $TAG_NAME..."
+        gh release download "$TAG_NAME" \
+          --repo "${{ github.repository }}" \
+          --pattern "*.vsix" \
+          --dir .
+        VSIX_FILE=$(ls *.vsix | head -n 1)
+        echo "Downloaded: $VSIX_FILE"
+        echo "vsix_file=$VSIX_FILE" >> $GITHUB_OUTPUT
+
+    - name: Publish to VS Code Marketplace
+      id: publish
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      run: |
+        if [ -z "$VSCE_PAT" ]; then
+          echo "❌ VSCE_PAT secret is not configured."
+          echo "   Add it at: Settings → Secrets and variables → Actions"
+          echo "   Create a PAT at https://dev.azure.com with 'Marketplace (Publish)' scope"
+          exit 1
+        fi
+        
+        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to VS Code Marketplace..."
+        npx vsce publish \
+          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
+          --pat "$VSCE_PAT"
+
+    - name: Publish Summary
+      if: always()
+      run: |
+        echo "# 🚀 VS Code Marketplace" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.publish.outcome }}" == "success" ]; then
+          echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Failed to publish v${{ needs.release.outputs.version }} to marketplace." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Ensure the \`VSCE_PAT\` secret is configured with a valid Azure DevOps PAT" >> $GITHUB_STEP_SUMMARY
+          echo "with the \`Marketplace (Publish)\` scope for all accessible organizations." >> $GITHUB_STEP_SUMMARY
+        fi
+
+  update-changelog:
+    needs: release
+    if: always() && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      with:
+        node-version: '20.x'
+
+    - name: Sync CHANGELOG.md from GitHub releases
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: node scripts/sync-changelog.js
+
+    - name: Check for changes
+      id: changes
+      run: |
+        if git diff --quiet CHANGELOG.md; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "ℹ️ No changes needed"
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Changes detected in CHANGELOG.md"
+        fi
+
+    - name: Create Pull Request
+      if: steps.changes.outputs.changed == 'true'
+      uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+      with:
+        branch: update-changelog
+        title: "docs: sync CHANGELOG.md with v${{ needs.release.outputs.version }} release notes"
+        body: |
+          Automatically syncs CHANGELOG.md with the latest GitHub release notes.
+          
+          Triggered by release workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        commit-message: "docs: sync CHANGELOG.md with GitHub release notes"
+
+    - name: Changelog Summary
+      if: always()
+      run: |
+        echo "# 📝 Changelog Update" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
+          echo "A pull request has been created to update CHANGELOG.md." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "CHANGELOG.md is already up to date." >> $GITHUB_STEP_SUMMARY
         fi

@@ -394,83 +394,62 @@ All builds must pass these checks before merging.
 
 ## Pre-Release Checklist
 
-Version: 0.0.13 | Last run: 2026-03-01
-
-Run `npm run pre-release` to automate steps 1–3 below.
+Run `npm run pre-release` to automate steps 1–2 below.
 
 - [ ] Version bumped in `package.json`
 - [ ] `npm run compile` completed successfully
-- [ ] Screenshots updated in `docs/images/` (run `npm run pre-release` or update manually)
 - [ ] Commit and push to main branch
-- [ ] Trigger GitHub Actions Release workflow (Method 1: GitHub UI → Actions → Release → Run workflow)
-- [ ] Run `./publish.ps1` — syncs `CHANGELOG.md` from the new release, builds the VSIX, and publishes to the marketplace
-- [ ] Commit and push the updated `CHANGELOG.md`
+- [ ] Trigger Release workflow (GitHub UI → Actions → Release → Run workflow)
+
+The workflow handles everything else: tagging, building, testing, creating the GitHub release, publishing to the marketplace, and updating the changelog.
 
 ## Release Process
 
-The project supports automated VSIX builds and releases through two methods:
+The project uses a fully automated release pipeline via GitHub Actions.
 
-### Method 1: Manual Trigger via GitHub UI (Recommended)
-
-1. **Update the version** in `package.json`
-2. **Commit and push** your changes to the main branch
-3. **Go to GitHub Actions** → Release workflow
-4. **Click "Run workflow"** and confirm
-
-The workflow will automatically:
-
-- Create a tag based on the version in `package.json`
-- Run the full build pipeline (lint, type-check, compile, test)
-- Create a VSIX package
-- Create a GitHub release with auto-generated release notes
-- Attach the VSIX file as a release asset
-
-Then run the `./publish.ps1` script to publish to the marketplace.
-
-### Method 2: Tag-Based Release (Traditional)
+### One-Step Release (Recommended)
 
 1. **Update the version** in `package.json`
-2. **Commit your changes**
-3. **Create and push a version tag:**
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
+2. **Commit and push** to the main branch
+3. **Go to GitHub Actions** → Release workflow → **Run workflow**
 
-The release workflow will:
+The workflow inputs:
+- `create_tag` — Creates a git tag from the `package.json` version (default: true)
+- `publish_marketplace` — Publishes to the VS Code Marketplace (default: true)
 
-- Verify the tag version matches `package.json` version
-- Run the full build pipeline (lint, type-check, compile, test)
-- Create a VSIX package
-- Create a GitHub release with auto-generated release notes
-- Attach the VSIX file as a release asset
+The workflow automatically:
 
-**Note**: The workflow will fail if the tag version doesn't match the version in `package.json`.
+1. Creates a version tag (e.g., `v0.0.19`)
+2. Generates release notes from merged PRs (using `.github/release.yml` categories)
+3. Updates `CHANGELOG.md` in the VSIX package so the extension ships with current notes
+4. Runs the full build pipeline (lint, type-check, compile, test)
+5. Creates a GitHub Release with the VSIX attached
+6. Publishes to the VS Code Marketplace (using the `VSCE_PAT` secret)
+7. Opens a PR to sync `CHANGELOG.md` in the repository
 
-### Syncing Release Notes
+> **Security:** Only users with repository write access can trigger the `workflow_dispatch`. The `VSCE_PAT` secret must be configured in repository settings (Settings → Secrets and variables → Actions). Create a PAT at https://dev.azure.com with the "Marketplace (Publish)" scope.
 
-The project automatically keeps `CHANGELOG.md` synchronized with GitHub release notes:
+### Tag-Based Release (Build Only)
 
-**Manual Sync:**
+Pushing a version tag (e.g., `git push origin v0.0.19`) triggers the build and creates a GitHub release, but does **not** publish to the marketplace. Use the workflow dispatch for the full pipeline.
+
+### Manual Changelog Sync
+
+To manually sync the changelog with all GitHub release notes:
 
 ```bash
 npm run sync-changelog
 ```
 
-**Automatic Sync:**
-The GitHub workflow automatically updates `CHANGELOG.md` whenever:
+Or trigger the **Sync Release Notes** workflow from the Actions tab.
 
-- A new release is published
-- An existing release is edited
-- The workflow is manually triggered
+### Manual Publish (Fallback)
 
-**Test the Sync:**
+If you need to re-publish manually (e.g., after a marketplace upload failure):
 
-```bash
-npm run sync-changelog:test
+```powershell
+.\publish.ps1 -VsixPath ".\copilot-token-tracker-0.0.19.vsix"
 ```
-
-This ensures the local changelog always reflects the latest release information from GitHub.
 
 ## Submitting Changes
 

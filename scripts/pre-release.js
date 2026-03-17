@@ -147,29 +147,22 @@ async function main() {
     console.log('  1. Review docs/images/ screenshots and update manually if needed');
     console.log('  2. Commit changes (screenshots + CONTRIBUTING.md)');
     console.log('  3. Push to main branch');
-    console.log('  4. Trigger GitHub Actions Release workflow:');
+    console.log('  4. Trigger the Release workflow from GitHub Actions:');
     console.log('     https://github.com/rajbos/github-copilot-token-usage/actions');
-    console.log('  5. Once the release exists, run ./publish.ps1 — it will sync');
-    console.log('     CHANGELOG.md from the new release, build, and publish the VSIX.');
-    console.log('  6. Commit and push the updated CHANGELOG.md after publishing.');
+    console.log('     (this handles tagging, building, releasing, and publishing)');
     console.log('');
 }
 
 // ─── CONTRIBUTING.md upsert ───────────────────────────────────────────────────
 
 function updateContributingChecklist(filePath, version) {
-    const today = new Date().toISOString().split('T')[0];
     const newSection =
         `## Pre-Release Checklist\n\n` +
-        `Version: ${version} | Last run: ${today}\n\n` +
-        `Run \`npm run pre-release\` to automate steps 1–3 below.\n\n` +
+        `Run \`npm run pre-release\` to automate steps 1–2 below.\n\n` +
         `- [ ] Version bumped in \`package.json\`\n` +
         `- [ ] \`npm run compile\` completed successfully\n` +
-        `- [ ] Screenshots updated in \`docs/images/\` (run \`npm run pre-release\` or update manually)\n` +
         `- [ ] Commit and push to main branch\n` +
-        `- [ ] Trigger GitHub Actions Release workflow (Method 1: GitHub UI → Actions → Release → Run workflow)\n` +
-        `- [ ] Run \`./publish.ps1\` — syncs \`CHANGELOG.md\` from the new release, builds the VSIX, and publishes to the marketplace\n` +
-        `- [ ] Commit and push the updated \`CHANGELOG.md\`\n`;
+        `- [ ] Trigger Release workflow (GitHub UI → Actions → Release → Run workflow)\n`;
 
     let content = fs.readFileSync(filePath, 'utf8');
 
