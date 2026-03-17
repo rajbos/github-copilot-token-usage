@@ -5,6 +5,289 @@ All notable changes to the "copilot-token-tracker" extension will be documented 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+## [0.0.18]
+
+## [0.0.17]
+## [0.0.15]
+## [0.0.14]
+## [0.0.13]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.12]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.11]
+## [0.0.10]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.9]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.8]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.16]
+- <!-- Release notes generated using configuration in .github/release.yml at v0.0.16 -->
+## What's Changed
+### Changes
+* chore: sync changelog for v0.0.15 by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/351
+* devContainerMount by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/355
+* Add friendly names for Serena MCP tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/357
+* Add complete Serena MCP tool name mappings by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/361
+* Improve unit test setup and coverage by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/362
+* Fix Copilot CLI token counts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/363
+* Refactoring extension.ts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/365
+* Add missing friendly names for browser tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/367
+* Add friendly display names for uncovered MCP tools by @Codex in https://github.com/rajbos/github-copilot-token-usage/pull/374
+* chore: sync model data with GitHub Copilot documentation by @github-actions[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/372
+* Strengthen sync-models prompt to prevent adding undocumented models by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/376
+* Add tool-names agent definition for MCP tool name mapping by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/380
+* feat: add Toolnames checkup workflow to prevent duplicate tool-name issues by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/381
+* chore: sync toolNames.json with vscode-copilot-chat by @github-actions[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/382
+* Add missing friendly name for mcp_io_github_git_add_issue_comment by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/384
+* Add missing friendly names for tools: edit, question, skill, task, todowrite, websearch by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/386
+* Versionbump for a release by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/387
+*
+### 📦 npm Dependencies
+* npm(deps-dev): bump @github/copilot from 0.0.420 to 0.0.423 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/354
+* npm(deps): bump dompurify from 3.3.1 to 3.3.2 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/356
+* npm(deps): bump the minor-and-patch-updates group with 2 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/368
+* npm(deps-dev): bump @github/copilot from 0.0.423 to 1.0.2 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/369
+*
+### 📦 GitHub Actions Dependencies
+* github-actions(deps): bump the minor-and-patch-updates group with 4 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/370
+### 📦 Other Dependencies
+* Bump puppeteer from 24.37.5 to 24.38.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/353
+* Bump puppeteer from 24.38.0 to 24.39.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/377
+## New Contributors
+* @Codex made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/374
+## [0.0.15]
+## [0.0.14]
+## What's Changed
+### ✨ Features & Improvements
+* Add reset button to restore dismissed fluency tips by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/292
+* Improve radar chart size and label positioning by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/293
+* Enhance tips and fluency guidance with documentation links by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/296
+* Improve logging for VS Code and OpenCode session path discovery by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/301
+* Add per-row data cleanup button in Team Dashboard by @Virginia-Hamra in https://github.com/rajbos/github-copilot-token-usage/pull/302
+* Add fluency metrics to Azure Table Storage with unified team scoring by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/303
+* Add non-Copilot customization file detection (Cursor, Windsurf, Claude, etc.) by @FokkoVeegens in https://github.com/rajbos/github-copilot-token-usage/pull/304
+* Add repo hygiene scanner for Copilot best practices by @UncleBats in https://github.com/rajbos/github-copilot-token-usage/pull/305
+* Fix token totals: support new API formats and add regex fallback for malformed logs by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/306
+* Soften fluency level 1 & 2 colors from red/orange to lighter blue/green by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/309
+* Make Fluency Level Viewer available to all users (not just debug mode) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/311
+* Enhance repo hygiene: add docs links and "Ask Copilot to Improve" button by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/314
+* Preserve webview UI state during background timer updates by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/315
+* Add Fluency Score news banner shown after 5 extension opens by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/316
+* Show notification for unknown tools after 8 extension opens by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/317
+* Add missing friendly names for MCP tools (Context7, Playwright) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/319
+* Update Context7 MCP tool display names by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/320
+* Add missing friendly names for 14 tools (bash, claude-code, glob, grep, etc.) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/323
+* Expand unknown tool detection to all tools, not just MCP by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/324
+* Add pre-release checklist, screenshot/demo mode config, automate pre-release steps by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/326
+* Add screenshot capture scripts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/334
+### 🐛 Bug Fixes
+* Fix CSP violation and button rendering issues in production builds by @UncleBats in https://github.com/rajbos/github-copilot-token-usage/pull/295
+* Refactor file stat handling to always check for file modifications by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/299
+### 📝 Documentation
+* Document WSL environment requirements for session data tracking by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/300
+* Update README Known Issues to reflect actual (not estimated) token usage by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/321
+### 🔒 Security
+* Sanitize model names and dynamic content to prevent XSS vulnerabilities by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/325
+* Escape HTML in diagnostics and usage analysis webviews to prevent XSS by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/327
+* Fix code scanning alert #32: harden formatFileSize against DOM-based XSS by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/329
+* Fix code scanning alert #45: add sanitizeStats to validate postMessage data by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/330
+* Fix TypeScript errors in sanitizeStats XSS security fix by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/331
+* Fix code scanning alert #32: escape editorName and title fields in session table by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/332
+* Fix 4 npm dependency vulnerabilities (ajv, markdown-it, diff, serialize-javascript) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/333
+### 🔧 CI / Workflow
+* Pin @github/copilot CLI version in package.json for Dependabot tracking by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/294
+* Skip model-sync PR creation when only lastUpdated metadata changes by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/297
+* Fix Pinned-Dependencies scorecard alert: use npm ci in copilot-setup-steps by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/298
+* Fix npm ci usage in scrape-models.sh to comply with OpenSSF scorecard by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/308
+### 📦 Dependencies
+* Bump basic-ftp from 5.1.0 to 5.2.0 by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/307
+* Bump minimatch from 3.1.2 to 3.1.5 by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/310
+* Bump fast-xml-parser from 5.3.6 to 5.4.1 by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/312
+* Bump fast-xml-parser from 5.3.6 to 5.4.1 in azure-storage-loader by @dependabot in https://github.com/rajbos/github-copilot-token-usage/pull/313
+## New Contributors
+* @Virginia-Hamra made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/302
+* @FokkoVeegens made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/304
+* @UncleBats made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/295
+## [0.0.13]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.12]
+### Changed
+- Adding fix for Code - Insiders.
+- Show stats for all different editors:
+-  — Stable VS Code release
+-  — VS Code Insiders (preview) builds
+-  — Exploration/pre-release builds
+-  — Community-built VS Code distribution
+-  — Cursor editor
+- Update model colors to avoid using grey/white/black for the largest models.
+### Dependencies
+- Bump devops-actions/issue-comment-tag from 0.1.8 to 0.1.9.
+- Bump the minor-and-patch-updates group with 4 updates.
+## [0.0.7]
+## [0.0.6]
+### Added
+- Diagnostic report generation for troubleshooting extension issues.
+## [0.0.5]
+## [0.0.4]
+### Added
+- Intelligent file caching to improve performance when processing session files.
+- Cache management with automatic size limits and cleanup of non-existent files.
+- Cache hit/miss rate logging for performance monitoring.
+### Changed
+- Session file processing now uses cached data when files haven't been modified.
+- Reduced file I/O operations during periodic updates for better performance.
+## [0.0.3]
+## [0.0.2]
+### Added
+- CI build pipeline with GitHub Actions.
+- GitHub issue templates for bug reports and feature requests.
+- Development guidelines for minimal file changes to Copilot instructions.
+-  file with bug report guidance.
+- Button to refresh the data on demand.
+- Estimated water usage tracking to token usage display.
+- Support for other platforms (macOS, Linux).
+- Dependabot configuration for automated dependency and GitHub Actions updates.
+### Changed
+- Added missing publishing info.
+## [0.0.11]
+## [0.0.10]
+### Changed
+- Adding fix for Code - Insiders.
+- Show stats for all different editors:
+-  — Stable VS Code release
+-  — VS Code Insiders (preview) builds
+-  — Exploration/pre-release builds
+-  — Community-built VS Code distribution
+-  — Cursor editor
+- Update model colors to avoid using grey/white/black for the largest models.
+### Dependencies
+- Bump devops-actions/issue-comment-tag from 0.1.8 to 0.1.9.
+- Bump the minor-and-patch-updates group with 4 updates.
+## [0.0.7]
+## [0.0.6]
+### Added
+- Diagnostic report generation for troubleshooting extension issues.
+## [0.0.5]
+## [0.0.4]
+### Added
+- Intelligent file caching to improve performance when processing session files.
+- Cache management with automatic size limits and cleanup of non-existent files.
+- Cache hit/miss rate logging for performance monitoring.
+### Changed
+- Session file processing now uses cached data when files haven't been modified.
+- Reduced file I/O operations during periodic updates for better performance.
+## [0.0.3]
+## [0.0.2]
+### Added
+- CI build pipeline with GitHub Actions.
+- GitHub issue templates for bug reports and feature requests.
+- Development guidelines for minimal file changes to Copilot instructions.
+-  file with bug report guidance.
+- Button to refresh the data on demand.
+- Estimated water usage tracking to token usage display.
+- Support for other platforms (macOS, Linux).
+- Dependabot configuration for automated dependency and GitHub Actions updates.
+### Changed
+- Added missing publishing info.
+## [0.0.9]
+## [0.0.7]
+## [0.0.6]
+## [0.0.5]
+## [0.0.4]
+## [0.0.3]
+## [0.0.2]
+## [0.0.8]
+## What's Changed
+* Adding fix for Code - Insiders by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/111
+* Update model colors by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/112
+* Support views for different editors:
+- `Code` — Stable VS Code release
+- `Code - Insiders` — VS Code Insiders (preview) builds
+- `Code - Exploration` — Exploration/pre-release builds
+- `VSCodium` — Community-built VS Code distribution
+- `Cursor` — Cursor editor
+- <img width="1142" height="772" alt="image" src="https://github.com/user-attachments/assets/20f31a38-1a9e-44c0-a0b6-8e79dc5a5c34" />
+## Dependency updates
+* github-actions(deps): bump devops-actions/issue-comment-tag from 0.1.8 to 0.1.9 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/109
+* npm(deps-dev): bump the minor-and-patch-updates group with 4 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/110
+* Update docs by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/113
+## [0.0.7]
+## [0.0.6]
+## What's Changed
+* Add diagnostic report generation for troubleshooting extension issues by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/103
+## Other changes
+* Update prelaunch tasks by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/101
+* Add error message display to release workflow step summary by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/99
+* * docs updates by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/104
+## Dependencies
+* npm(deps-dev): bump the minor-and-patch-updates group with 2 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/100
+## [0.0.5]
+## [0.0.4]
+### Added
+- Intelligent file caching to improve performance when processing session files
+- Cache management with automatic size limits and cleanup of non-existent files
+- Cache hit/miss rate logging for performance monitoring
+### Changed
+- Session file processing now uses cached data when files haven't been modified
+- Reduced file I/O operations during periodic updates for better performance
+- Initial release
+- Automated VSIX build and release workflow
+## [0.0.3]
+## [0.0.2]
+## What's Changed
+* Add CI build pipeline with GitHub Actions by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/9
+* Add GitHub issue templates for bug reports and feature requests by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/2
+* Add development guidelines for minimal file changes to Copilot instructions by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/13
+* Add SUPPORT.md file with bug report guidance by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/4
+* Add missing publishing info by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/15
+* button to refresh the data on demand by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/16
+* Add estimated water usage tracking to token usage display by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/11
+* Add support for other platforms by @readefries in https://github.com/rajbos/github-copilot-token-usage/pull/14
+* Add Dependabot configuration for automated dependency and GitHub Actions updates by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/6
+* github-actions(deps): bump actions/setup-node from 4 to 5 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/20
+* github-actions(deps): bump actions/checkout from 4 to 5 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/19
+* npm(deps-dev): bump @types/node from 22.18.6 to 24.5.2 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/21
+* Add automated VSIX build and release workflow for version tags by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/18
+* Committing new version number for new release by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/24
+* Add permissions for release job in workflow by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/26
+* [StepSecurity] Apply security best practices by @step-security-bot in https://github.com/rajbos/github-copilot-token-usage/pull/25
+## New Contributors
+* @Copilot made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/9
+* @rajbos made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/15
+* @readefries made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/14
+* @dependabot[bot] made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/20
+* @step-security-bot made their first contribution in https://github.com/rajbos/github-copilot-token-usage/pull/25
 
 ## [0.0.17]
 
