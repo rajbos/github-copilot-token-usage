@@ -32,6 +32,8 @@
   ,"mcp_com_microsoft_get_bestpractices": "GitHub MCP: Get Best Practices"
   ,"mcp_gitkraken_git_add_or_commit": "GitKraken MCP: Git Add or Commit"
   ,"mcp_gitkraken_git_status": "GitKraken MCP: Git Status"
+  ,"mcp_gitkraken_git_branch": "GitKraken MCP: Git Branch"
+  ,"mcp_gitkraken_git_checkout": "GitKraken MCP: Git Checkout"
   ,"mcp_gitkraken_gitkraken_workspace_list": "GitKraken MCP: List Workspaces"
   ,"manage_todo_list": "Manage TODO List"
   ,"copilot_readFile": "Read File"
