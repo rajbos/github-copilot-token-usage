@@ -394,7 +394,7 @@ All builds must pass these checks before merging.
 
 ## Pre-Release Checklist
 
-Run `npm run pre-release` to automate steps 1–2 below.
+Run `npm run pre-release` to validate the version and compile.
 
 - [ ] Version bumped in `package.json`
 - [ ] `npm run compile` completed successfully

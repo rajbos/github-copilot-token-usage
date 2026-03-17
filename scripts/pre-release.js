@@ -158,7 +158,7 @@ async function main() {
 function updateContributingChecklist(filePath, version) {
     const newSection =
         `## Pre-Release Checklist\n\n` +
-        `Run \`npm run pre-release\` to automate steps 1–2 below.\n\n` +
+        `Run \`npm run pre-release\` to validate the version and compile.\n\n` +
         `- [ ] Version bumped in \`package.json\`\n` +
         `- [ ] \`npm run compile\` completed successfully\n` +
         `- [ ] Commit and push to main branch\n` +

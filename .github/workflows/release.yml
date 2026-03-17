@@ -144,11 +144,14 @@ jobs:
         # Use GitHub API to auto-generate notes from merged PRs since last release
         if gh api repos/${{ github.repository }}/releases/generate-notes \
           -f tag_name="${TAG_NAME}" \
-          --jq '.body' > /tmp/release_notes.md 2>/dev/null && [ -s /tmp/release_notes.md ]; then
+          --jq '.body' > /tmp/release_notes.md 2>/tmp/generate_notes_err.txt && [ -s /tmp/release_notes.md ]; then
           echo "✅ Generated release notes from merged PRs"
         else
           echo "Release ${VERSION}" > /tmp/release_notes.md
           echo "⚠️  Could not auto-generate notes, using fallback"
+          if [ -s /tmp/generate_notes_err.txt ]; then
+            echo "    Error: $(cat /tmp/generate_notes_err.txt)"
+          fi
         fi
         
         echo "--- Release notes preview ---"
