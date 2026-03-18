@@ -171,6 +171,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private lastDetailedStats: DetailedStats | undefined;
 	private lastDailyStats: DailyTokenStats[] | undefined;
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
+	private lastDashboardData: any | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
 	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
 	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
@@ -357,6 +358,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.lastDetailedStats = undefined;
 			this.lastDailyStats = undefined;
 			this.lastUsageAnalysisStats = undefined;
+			this.lastDashboardData = undefined;
 
 			this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
 			vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
@@ -4828,20 +4830,33 @@ ${hashtag}`;
       this.dashboardPanel = undefined;
     });
 
-    // Load data asynchronously and send to webview
+    // If we have cached data, show it immediately so the panel renders fast
+    if (this.lastDashboardData) {
+      this.log("📊 Sending cached dashboard data immediately");
+      this.dashboardPanel.webview.postMessage({
+        command: "dashboardData",
+        data: this.lastDashboardData,
+      });
+    }
+
+    // Load (or refresh) data asynchronously and send to webview
     try {
       const dashboardData = await this.getDashboardData();
+      this.lastDashboardData = dashboardData;
       this.dashboardPanel?.webview.postMessage({
         command: "dashboardData",
         data: dashboardData,
       });
     } catch (error) {
       this.error("Failed to load dashboard data:", error);
-      this.dashboardPanel?.webview.postMessage({
-        command: "dashboardError",
-        message:
-          "Failed to load dashboard data. Please check backend configuration and try again.",
-      });
+      // Only show error state when there's no cached data to fall back on
+      if (!this.lastDashboardData) {
+        this.dashboardPanel?.webview.postMessage({
+          command: "dashboardError",
+          message:
+            "Failed to load dashboard data. Please check backend configuration and try again.",
+        });
+      }
     }
   }
 
@@ -4854,6 +4869,7 @@ ${hashtag}`;
     this.dashboardPanel.webview.postMessage({ command: "dashboardLoading" });
     try {
       const dashboardData = await this.getDashboardData();
+      this.lastDashboardData = dashboardData;
       this.dashboardPanel?.webview.postMessage({
         command: "dashboardData",
         data: dashboardData,
