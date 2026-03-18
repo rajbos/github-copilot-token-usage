@@ -72,6 +72,25 @@ function resolveModel(request: any): string {
 	return getModelFromRequest(request, modelPricing);
 }
 
+/**
+ * Check if a session file path is an OpenCode DB virtual path.
+ */
+function isOpenCodeDbSession(filePath: string): boolean {
+	return filePath.includes('opencode.db#ses_');
+}
+
+/**
+ * Stat a session file, handling OpenCode DB virtual paths.
+ * Virtual DB paths (opencode.db#ses_<id>) are resolved to the actual DB file.
+ */
+async function statSessionFile(filePath: string): Promise<fs.Stats> {
+	if (isOpenCodeDbSession(filePath)) {
+		const dbPath = filePath.split('#')[0];
+		return fs.promises.stat(dbPath);
+	}
+	return fs.promises.stat(filePath);
+}
+
 /** Determine editor source from file path */
 function getEditorSourceFromPath(filePath: string): string {
 	const normalized = filePath.toLowerCase().replace(/\\/g, '/');
@@ -100,8 +119,10 @@ export interface SessionData {
  */
 export async function processSessionFile(filePath: string): Promise<SessionData | null> {
 	try {
-		const stats = await fs.promises.stat(filePath);
-		const content = await fs.promises.readFile(filePath, 'utf-8');
+		const stats = await statSessionFile(filePath);
+		const content = isOpenCodeDbSession(filePath)
+			? '' // OpenCode DB sessions are handled by the opencode module
+			: await fs.promises.readFile(filePath, 'utf-8');
 
 		if (!content.trim()) {
 			return null;
@@ -306,7 +327,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 
 	for (const file of sessionFiles) {
 		try {
-			const stats = await fs.promises.stat(file);
+			const stats = await statSessionFile(file);
 			const modified = stats.mtime;
 
 			if (modified < last30DaysStart) {
@@ -419,6 +440,11 @@ export const ENVIRONMENTAL = {
 	CO2_PER_1K_TOKENS,
 	CO2_ABSORPTION_PER_TREE_PER_YEAR,
 	WATER_USAGE_PER_1K_TOKENS,
+	// Context comparison constants
+	CO2_PER_KM_DRIVING: 120,          // grams CO2 per km for average car
+	CO2_PER_PHONE_CHARGE: 8.22,       // grams CO2 per smartphone full charge
+	WATER_PER_COFFEE_CUP: 140,        // liters of water per cup of coffee
+	CO2_PER_LED_HOUR: 20,             // grams CO2 per hour for 10W LED bulb
 };
 
 /** Model pricing data export */

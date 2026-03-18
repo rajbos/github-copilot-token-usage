@@ -27,7 +27,7 @@
     "build:production": "node esbuild.js --production",
     "lint": "eslint src",
     "check-types": "tsc --noEmit",
-    "test": "node --test dist/cli.js --help || true"
+    "test": "node dist/cli.js --help | grep -q copilot-token-tracker && node dist/cli.js --version"
   },
   "devDependencies": {
     "commander": "^13.1.0",

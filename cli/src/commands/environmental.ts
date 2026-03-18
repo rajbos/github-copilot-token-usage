@@ -53,20 +53,20 @@ export const environmentalCommand = new Command('environmental')
 			const co2 = last30.co2;
 			const water = last30.waterUsage;
 
-			// Driving comparison: ~120g CO2 per km for average car
-			const drivingKm = co2 / 120;
+			// Driving comparison
+			const drivingKm = co2 / ENVIRONMENTAL.CO2_PER_KM_DRIVING;
 			console.log(`  🚗 Equivalent to driving:    ${drivingKm.toFixed(3)} km`);
 
-			// Smartphone charges: ~8.22g CO2 per full charge
-			const phoneCharges = co2 / 8.22;
+			// Smartphone charges
+			const phoneCharges = co2 / ENVIRONMENTAL.CO2_PER_PHONE_CHARGE;
 			console.log(`  📱 Smartphone charges:        ${phoneCharges.toFixed(1)}`);
 
-			// Cups of coffee water: ~140 liters per cup
-			const coffeeCups = water / 140;
+			// Cups of coffee water
+			const coffeeCups = water / ENVIRONMENTAL.WATER_PER_COFFEE_CUP;
 			console.log(`  ☕ Cups of coffee (water):     ${coffeeCups.toFixed(4)}`);
 
-			// LED bulb hours: ~20g CO2 per hour for 10W LED
-			const ledHours = co2 / 20;
+			// LED bulb hours
+			const ledHours = co2 / ENVIRONMENTAL.CO2_PER_LED_HOUR;
 			console.log(`  💡 LED bulb hours:            ${ledHours.toFixed(2)}`);
 
 			console.log();
