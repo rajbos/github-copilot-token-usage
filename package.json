@@ -288,7 +288,14 @@
     "pre-release": "node scripts/pre-release.js",
     "capture-screenshots": "pwsh -File scripts/capture-screenshots.ps1",
     "sync-changelog": "node scripts/sync-changelog.js",
-    "sync-changelog:test": "node scripts/sync-changelog.js --test"
+    "sync-changelog:test": "node scripts/sync-changelog.js --test",
+    "cli:build": "cd cli && npm install && npm run build",
+    "cli:build:production": "cd cli && npm install && npm run build:production",
+    "cli:stats": "cd cli && node dist/cli.js stats",
+    "cli:usage": "cd cli && node dist/cli.js usage",
+    "cli:environmental": "cd cli && node dist/cli.js environmental",
+    "cli:fluency": "cd cli && node dist/cli.js fluency",
+    "cli": "cd cli && node dist/cli.js"
   },
   "devDependencies": {
     "@github/copilot": "^1.0.5",

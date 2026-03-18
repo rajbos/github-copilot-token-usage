@@ -1,0 +1,43 @@
+{
+  "name": "copilot-token-tracker-cli",
+  "version": "0.0.1",
+  "description": "CLI tool to analyze GitHub Copilot token usage from local session files",
+  "license": "MIT",
+  "author": "RobBos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rajbos/github-copilot-token-usage",
+    "directory": "cli"
+  },
+  "keywords": [
+    "github-copilot",
+    "token-usage",
+    "copilot",
+    "cli",
+    "token-tracker"
+  ],
+  "bin": {
+    "copilot-token-tracker": "./dist/cli.js"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "node esbuild.js",
+    "build:production": "node esbuild.js --production",
+    "lint": "eslint src",
+    "check-types": "tsc --noEmit",
+    "test": "node --test dist/cli.js --help || true"
+  },
+  "devDependencies": {
+    "commander": "^13.1.0",
+    "chalk": "^4.1.2",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3",
+    "@types/node": "^22.12.0",
+    "sql.js": "^1.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
