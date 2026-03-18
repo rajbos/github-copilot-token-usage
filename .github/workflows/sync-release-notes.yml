@@ -1,9 +1,9 @@
 name: Sync Release Notes
 
+# Manual-only trigger — automated changelog sync is handled by the Release workflow.
+# Use this to re-sync CHANGELOG.md from GitHub releases at any time.
 on:
-  workflow_dispatch:  # Manual trigger
-  release:
-    types: [published, edited]  # Automatic trigger when releases are published or edited
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,7 +12,8 @@ jobs:
   sync-release-notes:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Need write permission to update CHANGELOG.md
+      contents: write
+      pull-requests: write
       
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -23,7 +24,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
-        fetch-depth: 0  # Fetch all history so we can work with all releases
+        fetch-depth: 0
         
     - name: Setup Node.js
       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -33,9 +34,7 @@ jobs:
     - name: Sync GitHub release notes to CHANGELOG.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Run the sync script from the scripts directory
-        node scripts/sync-changelog.js
+      run: node scripts/sync-changelog.js
         
     - name: Check for changes
       id: changes
@@ -47,24 +46,6 @@ jobs:
           echo "changed=true" >> $GITHUB_OUTPUT
           echo "Changes detected in CHANGELOG.md"
         fi
-        
-    - name: Ensure on main branch
-      if: steps.changes.outputs.changed == 'true'
-      run: |
-        git checkout -b update-changelog
-        
-    - name: Commit and push changes
-      if: steps.changes.outputs.changed == 'true'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add CHANGELOG.md
-        git commit -m "docs: sync CHANGELOG.md with GitHub release notes
-
-        This commit automatically updates the CHANGELOG.md file to match
-        the release notes from GitHub releases, ensuring consistency
-        between local documentation and published releases."
-        git push -u origin update-changelog
 
     - name: Create Pull Request
       if: steps.changes.outputs.changed == 'true'
@@ -73,14 +54,15 @@ jobs:
         branch: update-changelog
         title: "docs: sync CHANGELOG.md with GitHub release notes"
         body: |
-          This pull request updates the CHANGELOG.md file to reflect the latest
-          GitHub release notes, ensuring that the changelog is always up to date
-          with the published releases.
+          Automatically syncs CHANGELOG.md with the latest GitHub release notes.
+          
+          Triggered by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        commit-message: "docs: sync CHANGELOG.md with GitHub release notes"
         
     - name: Summary
       run: |
         if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
-          echo "✅ CHANGELOG.md has been successfully updated with GitHub release notes"
+          echo "✅ A PR has been created to update CHANGELOG.md with GitHub release notes"
         else
           echo "ℹ️ CHANGELOG.md was already up to date with GitHub release notes"
         fi

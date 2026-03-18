@@ -1,10 +1,14 @@
 # publish.ps1
-# Publishes the extension to the VS Code Marketplace using a VSIX downloaded
-# from the GitHub release. Run AFTER the GitHub Actions release workflow has
-# created the GitHub release and you have downloaded the .vsix asset.
+# Manual fallback for publishing to the VS Code Marketplace.
+#
+# PRIMARY METHOD: Use the GitHub Actions Release workflow (workflow_dispatch),
+# which handles building, testing, releasing, and publishing in one step.
+#
+# Use this script only when you need to manually publish a pre-built VSIX
+# (e.g., re-publishing after a marketplace upload failure).
 #
 # Usage:
-#   .\publish.ps1 -VsixPath ".\copilot-token-tracker-0.0.13.vsix"
+#   .\publish.ps1 -VsixPath ".\copilot-token-tracker-0.0.18.vsix"
 
 param(
     [string]$VsixPath  # Path to the .vsix downloaded from the GitHub release
