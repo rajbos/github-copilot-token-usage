@@ -6,11 +6,11 @@ tools: ['read_file', 'write_file', 'search_files', 'run_in_terminal']
 
 # Sync Tool Names from vscode-copilot-chat
 
-Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, compare them to the existing `src/toolNames.json` in this repo. Only make changes in this repo.
+Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, compare them to the existing `src/toolnames.json` in our repo in the `current` folder. Only make changes in our current folder.
 
 ## Requirements
 
-1. Clone or locate the `microsoft/vscode-copilot-chat` repository and open the file `src/extension/tools/common/toolNames.ts`.
+1. The `microsoft/vscode-copilot-chat` repository has been checked out and is available in the workspace in the folder `vscode-copilot-chat`. Use the paths provided in the Context Paths section below.
 2. In the vscode-copilot-chat repo, treat `src/extension/tools/common/toolNames.ts` as the source of truth for tool IDs.
    - Extract tool IDs from:
      - `export enum ToolName { ... }` (string literal values)
@@ -36,11 +36,11 @@ Scan `microsoft/vscode-copilot-chat` repo for model-facing tool identifiers, com
    ```
    , "some_tool": "Some Tool"
    ```
-7. Inject the missing entries inside the json object, matching the organic grouping of logically related tools if possible (e.g. if there are existing entries with the same prefix, group the new entry with them). If no related entries exist, add the new entry at the end of the file, but before the closing `}`.
+7. Inject the missing entries inside the json object, matching the organic grouping of locically related tools if possible (e.g. if there are existing entries with the same prefix, group the new entry with them). If no related entries exist, add the new entry at the end of the file, but before the closing `}`.
 8. Also print (as plain text, after the delta or NO_DELTA) the upstream commit SHA used for the scan and the exact file path scanned in upstream, for traceability.
 
 ## Constraints
-- Only modify `src/toolNames.json` in this repository.
+- Only modify our toolNames.json file.
 - Do not open a PR.
 - Do not include tools in the list that are not model-facing (only those defined in upstream `ToolName` / `ContributedToolName` string values).
 - Be resilient to minor refactors (enum order changes, added comments, etc.).
