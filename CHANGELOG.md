@@ -5,6 +5,26 @@ All notable changes to the "copilot-token-tracker" extension will be documented 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+
+## [0.0.19]
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Changes
+* changelog after release by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/415
+* feat: central input validation script to detect hidden Unicode and prompt injection in workflows by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/420
+* Add actionlint workflow to lint GitHub Actions workflows by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/424
+* Fix Team Dashboard slow initial render by caching last fetch result by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/418
+* Automate release pipeline: one-trigger workflow with marketplace publish and proper release notes by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/419
+* Add missing friendly names for Context7 MCP tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/427
+* Add friendly name for `pdf-utilities.pdf` tool by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/425
+* Add missing friendly names for 6 tools in toolNames.json by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/426
+### 📦 Other Dependencies
+* Bump fast-xml-parser from 5.4.1 to 5.5.6 in /.github/skills/azure-storage-loader by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/416
+
+
+**Full Changelog**: https://github.com/rajbos/github-copilot-token-usage/compare/v0.0.18...v0.0.19
 ## [0.0.18]
 
 ## [0.0.17]
