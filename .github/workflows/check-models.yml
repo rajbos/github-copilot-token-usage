@@ -5,7 +5,7 @@ on:
   push:
     paths:
         - .github/workflows/check-models.yml
-        - .github/workflows/prompts/sync-models-prompt.md
+        - .github/prompts/sync-models.prompt.md
         - src/tokenEstimators.json
         - src/modelPricing.json
         
@@ -78,7 +78,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           # Read the prompt from the file
-          PROMPT=$(cat .github/workflows/prompts/sync-models-prompt.md)
+          PROMPT=$(cat .github/prompts/sync-models.prompt.md)
           
           # Get the paths to relevant files
           ESTIMATORS_PATH="${GITHUB_WORKSPACE}/src/tokenEstimators.json"

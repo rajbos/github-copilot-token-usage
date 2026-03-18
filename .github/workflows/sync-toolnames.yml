@@ -7,7 +7,7 @@ on:
   push:
     paths:
       - .github/workflows/sync-toolnames.yml
-      - .github/workflows/prompts/sync-toolnames-prompt.md
+      - .github/prompts/sync-toolnames.prompt.md
 
 permissions:
   contents: read
@@ -85,7 +85,7 @@ jobs:
         COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         # Read the prompt from the file
-        PROMPT=$(cat .github/workflows/prompts/sync-toolnames-prompt.md)
+        PROMPT=$(cat .github/prompts/sync-toolnames.prompt.md)
         
         # Get the path to the vscode-copilot-chat repo
         UPSTREAM_PATH="${GITHUB_WORKSPACE}/vscode-copilot-chat"
