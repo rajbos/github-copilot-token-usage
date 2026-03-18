@@ -4,6 +4,8 @@
 
 The Fluency Level Viewer is a debug-only tool that displays all fluency score rules, thresholds, and tips for each category and stage. This feature is designed to help developers understand how the scoring system works and what actions trigger different fluency levels.
 
+![Screenshot of the fluency score view, showing the score accross the 6 different dimensions](/docs/images/05%20Fluency%20Score.png)  
+
 ## Availability
 
 **Important**: This feature is only available when a VS Code debugger is active. This is intentional to keep it as a development and testing tool rather than a production feature.
