@@ -235,6 +235,8 @@ A debug-only tool that displays all fluency score rules, thresholds, and tips fo
 
 For detailed information, see [Fluency Level Viewer Documentation](docs/FLUENCY-LEVEL-VIEWER.md).
 
+![Screenshot of the fluency score view, showing the score accross the 6 different dimensions](/docs/images/05%20Fluency%20Score.png)  
+
 ## Known Issues
 
 - The numbers shown use **actual token counts** from the LLM API when available in session logs (e.g. Copilot Chat JSONL sessions and OpenCode sessions). When actual token data is not available, the extension falls back to **estimates** computed from the text in the session logs.

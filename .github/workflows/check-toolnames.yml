@@ -27,6 +27,18 @@ jobs:
         with:
           ref: main
 
+      - name: Validate issue body for hidden content
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TEXT: ${{ github.event.issue.body }}
+          ITEM_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+          CONTEXT_TYPE: issue
+          FINDINGS_FILE: /tmp/validation-findings.txt
+        run: bash .github/workflows/validate-input.sh
+
       - name: Check toolnames and post comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

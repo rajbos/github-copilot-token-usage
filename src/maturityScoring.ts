@@ -46,7 +46,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "No slash commands or agent mode usage",
               ],
               tips: [
-                "Try asking Copilot a question using the Chat panel",
+                "Try asking Copilot a question using the Chat panel — [▶ Chat in IDE video](https://tech.hub.ms/github-copilot/videos/chat-in-ide)",
                 "Start with simple queries to get familiar with the interface",
               ],
             },
@@ -60,7 +60,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "Beginning to use slash commands or agent mode",
               ],
               tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes",
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-file changes — [▶ Agent Mode video](https://tech.hub.ms/github-copilot/videos/agent-mode)",
                 "Use [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /fix, or /tests to give structured prompts",
                 "Experiment with multi-turn conversations to refine responses",
               ],
@@ -77,7 +77,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               ],
               tips: [
                 "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for autonomous, multi-step coding tasks",
-                "Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems",
+                "Experiment with [different models](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_choose-a-language-model) for different tasks - use fast models for simple queries and reasoning models for complex problems — [▶ Model selection video](https://tech.hub.ms/github-copilot/videos/model-selection)",
                 "Explore more [slash commands](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like /explain, /tests, or /doc to diversify your prompting",
               ],
             },
@@ -172,7 +172,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "Not using edit mode or multi-file capabilities",
               ],
               tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously",
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) — it can run terminal commands, edit files, and explore your codebase autonomously — [▶ Agent Mode video](https://tech.hub.ms/github-copilot/videos/agent-mode)",
                 "Start with simple tasks to see how agent mode works",
               ],
             },
@@ -186,7 +186,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "At least 1 multi-file edit session",
               ],
               tips: [
-                "Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits",
+                "Use [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for multi-step tasks; let it chain tools like file search, terminal, and code edits — [▶ Agent Mode video](https://tech.hub.ms/github-copilot/videos/agent-mode)",
                 "Try edit mode for focused code changes",
               ],
             },
@@ -201,7 +201,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               ],
               tips: [
                 "Tackle complex refactoring or debugging tasks in [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) for deeper autonomous workflows",
-                "Let agent mode handle multi-step tasks that span multiple files",
+                "Let agent mode handle multi-step tasks that span multiple files — [▶ Multi-file Edits video](https://tech.hub.ms/github-copilot/videos/multi-file-edits)",
               ],
             },
             {
@@ -234,7 +234,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "No workspace agent sessions",
               ],
               tips: [
-                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands",
+                "Try [agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) to let Copilot use built-in tools for file operations and terminal commands — [▶ Agent Mode video](https://tech.hub.ms/github-copilot/videos/agent-mode)",
                 "Explore the built-in tools available in agent mode",
               ],
             },
@@ -247,7 +247,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "Using basic agent mode tools",
               ],
               tips: [
-                "Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services)",
+                "Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services) — [▶ MCP with Azure and GitHub](https://tech.hub.ms/github-copilot/videos/mcp-with-azure-and-github)",
                 "Explore [GitHub integrations](https://code.visualstudio.com/docs/copilot/agents/agent-tools) and advanced tools like editFiles and run_in_terminal",
               ],
             },
@@ -261,7 +261,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "Using at least 1 MCP server",
               ],
               tips: [
-                "Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot's capabilities - check the VS Code MCP registry",
+                "Add more [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to expand Copilot's capabilities - check the VS Code MCP registry — [▶ MCP with Azure and GitHub](https://tech.hub.ms/github-copilot/videos/mcp-with-azure-and-github)",
                 "Explore advanced tool combinations for complex workflows",
               ],
             },
@@ -294,7 +294,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "Using fewer than 3 different models",
               ],
               tips: [
-                "Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines",
+                "Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines — [▶ User Instructions video](https://tech.hub.ms/github-copilot/videos/user-instructions)",
                 "Start customizing Copilot for your workflow",
               ],
             },
@@ -306,8 +306,8 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "At least 1 repository with custom instructions or agents.md",
               ],
               tips: [
-                "Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience",
-                "Experiment with different models for different tasks",
+                "Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience — [▶ User Instructions video](https://tech.hub.ms/github-copilot/videos/user-instructions)",
+                "Experiment with [different models](https://tech.hub.ms/github-copilot/videos/model-selection) for different tasks",
               ],
             },
             {
@@ -320,7 +320,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               ],
               tips: [
                 "Aim for consistent customization across all projects with [instructions and agents.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)",
-                "Explore 5+ models to match tasks with optimal model capabilities",
+                "Explore 5+ models to match tasks with optimal model capabilities — [▶ Model selection video](https://tech.hub.ms/github-copilot/videos/model-selection)",
               ],
             },
             {
@@ -352,7 +352,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "Fewer than 10 explicit context references",
               ],
               tips: [
-                "Use Copilot more regularly - even for quick questions",
+                "Use Copilot more regularly - even for quick questions — [▶ Chat in IDE video](https://tech.hub.ms/github-copilot/videos/chat-in-ide)",
                 "Make Copilot part of your daily coding routine",
               ],
             },
@@ -365,7 +365,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
                 "50%+ code block apply rate",
               ],
               tips: [
-                "Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow",
+                "Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow — [▶ Agent Mode video](https://tech.hub.ms/github-copilot/videos/agent-mode)",
                 "Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection",
               ],
             },
