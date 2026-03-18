@@ -9,12 +9,12 @@ on:
       create_tag:
         description: 'Create tag from package.json version'
         required: false
-        default: 'true'
+        default: true
         type: boolean
       publish_marketplace:
         description: 'Publish to VS Code Marketplace after creating the release'
         required: false
-        default: 'true'
+        default: true
         type: boolean
 
 permissions:
@@ -62,41 +62,6 @@ jobs:
         PACKAGE_VERSION=$(node -p "require('./package.json').version")
         echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
         echo "Package version: $PACKAGE_VERSION"
-        
-    - name: Create tag for manual trigger
-      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        VERSION="v${{ steps.package_version.outputs.package_version }}"
-        echo "Creating tag: $VERSION"
-        
-        # Check if tag already exists on remote using exit code
-        if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-          echo "❌ Tag $VERSION already exists on remote!"
-          echo "Please update the version in package.json or delete the existing tag."
-          exit 1
-        fi
-        
-        # Create and push the tag
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git tag -a "$VERSION" -m "Release $VERSION"
-        git push origin "$VERSION"
-        
-        # Verify tag was created successfully on remote
-        echo "Verifying tag was created on remote..."
-        for i in {1..5}; do
-          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            echo "✅ Tag $VERSION created and verified on remote"
-            exit 0
-          fi
-          echo "Waiting for tag to propagate (attempt $i/5)..."
-          sleep 2
-        done
-        
-        echo "❌ Failed to verify tag creation on remote"
-        exit 1
         
     - name: Extract version from tag
       id: extract_version
@@ -176,6 +141,72 @@ jobs:
           fs.writeFileSync('CHANGELOG.md', changelog);
           console.log('✅ Updated CHANGELOG.md with v' + version + ' notes for VSIX packaging');
         " "$VERSION"
+
+    - name: Create changelog branch and commit
+      if: steps.trigger_type.outputs.is_manual == 'true'
+      id: changelog_branch
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        VERSION="${{ steps.extract_version.outputs.tag_version }}"
+        BRANCH="changelog/v${VERSION}"
+        echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Check if branch already exists on remote
+        if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+          echo "❌ Branch $BRANCH already exists on remote!"
+          echo "Delete it or bump the version before re-running."
+          exit 1
+        fi
+
+        if git diff --quiet CHANGELOG.md; then
+          echo "ℹ️ No changes to CHANGELOG.md, skipping branch + commit"
+          exit 0
+        fi
+
+        git checkout -b "$BRANCH"
+        git add CHANGELOG.md
+        git commit -m "docs: update CHANGELOG.md for v${VERSION}"
+        git push origin "$BRANCH"
+        echo "✅ Pushed CHANGELOG.md update to $BRANCH"
+
+    - name: Create tag for manual trigger
+      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag == true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        VERSION="v${{ steps.package_version.outputs.package_version }}"
+        echo "Creating tag: $VERSION"
+        
+        # Check if tag already exists on remote using exit code
+        if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+          echo "❌ Tag $VERSION already exists on remote!"
+          echo "Please update the version in package.json or delete the existing tag."
+          exit 1
+        fi
+        
+        # Create and push the tag
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "$VERSION" -m "Release $VERSION"
+        git push origin "$VERSION"
+        
+        # Verify tag was created successfully on remote
+        echo "Verifying tag was created on remote..."
+        for i in {1..5}; do
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "✅ Tag $VERSION created and verified on remote"
+            exit 0
+          fi
+          echo "Waiting for tag to propagate (attempt $i/5)..."
+          sleep 2
+        done
+        
+        echo "❌ Failed to verify tag creation on remote"
+        exit 1
         
     - name: Install dependencies
       run: npm ci
@@ -333,65 +364,4 @@ jobs:
           echo "with the \`Marketplace (Publish)\` scope for all accessible organizations." >> $GITHUB_STEP_SUMMARY
         fi
 
-  update-changelog:
-    needs: release
-    if: always() && needs.release.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    
-    steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
-      with:
-        egress-policy: audit
 
-    - name: Checkout code
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      with:
-        fetch-depth: 0
-
-    - name: Setup Node.js
-      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
-      with:
-        node-version: '20.x'
-
-    - name: Sync CHANGELOG.md from GitHub releases
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: node scripts/sync-changelog.js
-
-    - name: Check for changes
-      id: changes
-      run: |
-        if git diff --quiet CHANGELOG.md; then
-          echo "changed=false" >> $GITHUB_OUTPUT
-          echo "ℹ️ No changes needed"
-        else
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "Changes detected in CHANGELOG.md"
-        fi
-
-    - name: Create Pull Request
-      if: steps.changes.outputs.changed == 'true'
-      uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
-      with:
-        branch: update-changelog
-        title: "docs: sync CHANGELOG.md with v${{ needs.release.outputs.version }} release notes"
-        body: |
-          Automatically syncs CHANGELOG.md with the latest GitHub release notes.
-          
-          Triggered by release workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        commit-message: "docs: sync CHANGELOG.md with GitHub release notes"
-
-    - name: Changelog Summary
-      if: always()
-      run: |
-        echo "# 📝 Changelog Update" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
-          echo "A pull request has been created to update CHANGELOG.md." >> $GITHUB_STEP_SUMMARY
-        else
-          echo "CHANGELOG.md is already up to date." >> $GITHUB_STEP_SUMMARY
-        fi
