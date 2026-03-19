@@ -75,8 +75,8 @@ export const fluencyCommand = new Command('fluency')
 				}
 			}
 
-			// Tips (only when requested)
-			if (options.tips && cat.tips.length > 0 && cat.stage < 4) {
+			// Tips
+			if (cat.tips.length > 0 && cat.stage < 4) {
 				console.log(chalk.yellow(`     💡 Tips:`));
 				for (const tip of cat.tips.slice(0, 2)) {
 					// Strip markdown links for cleaner CLI output
