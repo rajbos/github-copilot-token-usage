@@ -17,7 +17,7 @@
     "token-tracker"
   ],
   "bin": {
-    "ai-engineering-fluency": "./dist/cli.js"
+    "ai-engineering-fluency": "dist/cli.js"
   },
   "files": [
     "dist/**/*"
