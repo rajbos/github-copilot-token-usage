@@ -21,9 +21,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   publish:
+    name: Publish CLI to npm
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -65,11 +67,11 @@ jobs:
         id: version
         run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm (OIDC)
+      - name: Publish to npm
         if: ${{ !inputs.dry_run }}
-        run: npm publish --access public
+        run: npm publish --access public --provenance
 
-      - name: Dry run publish (OIDC)
+      - name: Dry run publish
         if: ${{ inputs.dry_run }}
         run: npm publish --access public --dry-run
 
