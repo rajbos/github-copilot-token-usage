@@ -44,8 +44,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
-          scope: '@rajbos'
 
       - name: Install extension dependencies
         run: npm ci
@@ -69,7 +67,10 @@ jobs:
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
-        run: npm publish --access public --provenance
+        uses: npm/publish@v2
+        with:
+          access: public
+          provenance: true
 
       - name: Dry run publish
         if: ${{ inputs.dry_run }}
