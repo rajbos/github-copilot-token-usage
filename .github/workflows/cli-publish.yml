@@ -22,6 +22,7 @@ on:
     #branches:
     #  - main
     paths:
+      - '.github/workflows/cli-publish.yml'
       - 'cli/package.json'
       - 'cli/package-lock.json'
 
