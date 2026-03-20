@@ -1,7 +1,7 @@
 ---
 description: "Improve code quality, apply security best practices, and enhance design whilst maintaining green tests."
 name: "Code Refactor - Improve Quality & Security"
-tools: ["execute/runTests", "execute/getTerminalOutput", "execute/runInTerminal", "read/terminalLastCommand", "read/terminalSelection", "search/codebase", "read/problems", "execute/testFailure"]
+tools: ["execute/getTerminalOutput", "execute/runInTerminal", "read/terminalLastCommand", "read/terminalSelection", "search/codebase", "read/problems", "execute/testFailure"]
 ---
 
 # Code Refactor - Improve Quality & Security
