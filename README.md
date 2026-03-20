@@ -1,10 +1,22 @@
 # GitHub Copilot Token Tracker
 
-A VS Code extension that shows your daily and monthly GitHub Copilot estimated token usage in the status bar. It reads GitHub Copilot Chat session logs and computes local aggregates.
+A VS Code extension that shows your daily and monthly GitHub Copilot estimated token usage and AI Fluency. It reads the local session logs and computes local aggregates.
 
-Optionally, you can enable an **opt-in Azure Storage backend** to sync aggregates from all your VS Code instances (across machines, profiles, and windows) into **your own Azure Storage account** for cross-device reporting.
+## Supported AI engineering tools:
 
-You can also use a **shared Azure Storage account** (a “shared storage server” for the team) so that multiple developers sync into the same dataset and a team lead can view aggregated usage across the team (with explicit per-user consent).
+- VS Code + GitHub Copilot
+- VS Code Insiders + GitHub Copilot
+- GitHub Copilot CLI
+- OpenCode + GitHub Copilot (not tested with other AI tooling)
+
+### CLI
+
+We also added a CLI that you can run as an npx package:
+```bash
+npx copilot-token-tracker usage
+```
+
+For screenshots and examples of the CLI output, see the [CLI README](cli/README.md).
 
 ## Features
 

@@ -24,6 +24,8 @@ copilot-token-tracker stats
 copilot-token-tracker stats --verbose  # Show per-folder breakdown
 ```
 
+![Terminal Statistics](../docs/images/Terminal%20Statistics.png)
+
 ### `usage` - Token Usage Report
 
 Show token usage broken down by time period.
@@ -33,6 +35,8 @@ copilot-token-tracker usage
 copilot-token-tracker usage --models  # Show per-model breakdown
 copilot-token-tracker usage --cost    # Show estimated cost
 ```
+
+![Terminal Usage](../docs/images/Terminal%20Usage.png)
 
 ### `environmental` - Environmental Impact
 
@@ -49,8 +53,18 @@ Show your Copilot Fluency Score across multiple categories (Prompt Engineering, 
 
 ```bash
 copilot-token-tracker fluency
-copilot-token-tracker fluency --tips  # Show improvement tips
+copilot-token-tracker fluency --tips  # Show improvement tips, if there are any
 ```
+
+### `diagnostics` - Search Locations & Stats
+
+Show all locations searched for session files, whether each path exists, and per-location stats (files, sessions, chat turns, tokens).
+
+```bash
+copilot-token-tracker diagnostics
+```
+
+![Terminal Diagnostics](../docs/images/Terminal%20Diagnostitcs.png)
 
 ## Data Sources
 
@@ -71,6 +85,7 @@ npm run cli:stats        # Run stats command
 npm run cli:usage        # Run usage command
 npm run cli:environmental # Run environmental command
 npm run cli:fluency      # Run fluency command
+npm run cli:diagnostics  # Run diagnostics command
 npm run cli -- --help    # Run any CLI command
 ```
 

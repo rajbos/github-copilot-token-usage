@@ -9,6 +9,7 @@ import { statsCommand } from './commands/stats';
 import { usageCommand } from './commands/usage';
 import { environmentalCommand } from './commands/environmental';
 import { fluencyCommand } from './commands/fluency';
+import { diagnosticsCommand } from './commands/diagnostics';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const packageJson = require('../package.json');
@@ -24,5 +25,6 @@ program.addCommand(statsCommand);
 program.addCommand(usageCommand);
 program.addCommand(environmentalCommand);
 program.addCommand(fluencyCommand);
+program.addCommand(diagnosticsCommand);
 
 program.parse();
