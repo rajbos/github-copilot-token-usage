@@ -18,11 +18,22 @@ on:
         default: false
         type: boolean
 
+  push:
+    #branches:
+    #  - main
+    paths:
+      - '.github/workflows/cli-publish.yml'
+      - 'cli/package.json'
+      - 'cli/package-lock.json'
+
 permissions:
   contents: write
+  pull-requests: write
+  id-token: write  # Required for OIDC to npm registry
 
 jobs:
   publish:
+    name: Publish CLI to npm
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,15 +44,13 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v6 #v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@v6 #v6
         with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install extension dependencies
         run: npm ci
@@ -65,25 +74,29 @@ jobs:
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: NODE_AUTH_TOKEN="" npm publish
 
       - name: Dry run publish
         if: ${{ inputs.dry_run }}
-        run: npm publish --access public --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: NODE_AUTH_TOKEN="" npm publish public --dry-run
 
-      - name: Commit version bump
+      - name: Commit version bump and create PR
         if: ${{ !inputs.dry_run }}
         run: |
           cd ..
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b cli/bump-version-v${{ steps.version.outputs.version }}
           git add cli/package.json cli/package-lock.json
           git commit -m "chore(cli): bump version to v${{ steps.version.outputs.version }}"
-          git push
+          git push origin cli/bump-version-v${{ steps.version.outputs.version }}
+          gh pr create \
+            --title "chore(cli): bump version to v${{ steps.version.outputs.version }}" \
+            --body "Automated version bump after publishing \`@rajbos/ai-engineering-fluency@${{ steps.version.outputs.version }}\` to npm." \
+            --base main \
+            --head cli/bump-version-v${{ steps.version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
         run: |
@@ -94,5 +107,7 @@ jobs:
           echo "- **Dry run:** ${{ inputs.dry_run }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ inputs.dry_run }}" = "false" ]; then
-            echo "Install with: \`npx copilot-token-tracker-cli\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Install with: \`npx @rajbos/ai-engineering-fluency\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "A PR has been opened to merge the version bump back to main." >> "$GITHUB_STEP_SUMMARY"
           fi

@@ -1,12 +1,12 @@
 {
   "name": "@rajbos/ai-engineering-fluency",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "AI Engineering Fluency - CLI tool to analyze GitHub Copilot token usage from local session files",
   "license": "MIT",
   "author": "RobBos",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rajbos/github-copilot-token-usage",
+    "url": "git+https://github.com/rajbos/github-copilot-token-usage.git",
     "directory": "cli"
   },
   "keywords": [
@@ -17,7 +17,7 @@
     "token-tracker"
   ],
   "bin": {
-    "copilot-token-tracker": "./dist/cli.js"
+    "ai-engineering-fluency": "dist/cli.js"
   },
   "files": [
     "dist/**/*"
@@ -38,6 +38,6 @@
     "sql.js": "^1.12.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.14.0"
   }
 }
