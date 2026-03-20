@@ -159,7 +159,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private _disposed = false;
 	private updateInterval: NodeJS.Timeout | undefined;
-	private initialDelayTimeout: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
 	private chartPanel: vscode.WebviewPanel | undefined;
 	private analysisPanel: vscode.WebviewPanel | undefined;
@@ -415,62 +414,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private scheduleInitialUpdate(): void {
-		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
-		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
-
-		// Check if Copilot extensions exist but are not active (likely still loading)
-		const extensionsExistButInactive =
-			(copilotExtension && !copilotExtension.isActive) ||
-			(copilotChatExtension && !copilotChatExtension.isActive);
-
-		if (extensionsExistButInactive) {
-			// Use shorter delay for testing in Codespaces
-			const delaySeconds = process.env.CODESPACES === 'true' ? 5 : 2;
-			this.log(`⏳ Waiting for Copilot Extension to start (${delaySeconds}s delay)`);
-
-			this.initialDelayTimeout = setTimeout(async () => {
-				try {
-					this.log('🚀 Starting token usage analysis...');
-					this.recheckCopilotExtensionsAfterDelay();
-					await this.updateTokenStats();
-					this.startBackendSyncAfterInitialAnalysis();
-					await this.showFluencyScoreNewsBanner();
-					await this.showUnknownMcpToolsBanner();
-				} catch (error) {
-					this.error('Error in delayed initial update:', error);
-				}
-			}, delaySeconds * 1000);
-		} else if (!copilotExtension && !copilotChatExtension) {
-			this.log('⚠️ No Copilot extensions found - starting analysis anyway');
-			setTimeout(async () => {
+		this.log('🚀 Starting token usage analysis...');
+		setTimeout(async () => {
+			try {
 				await this.updateTokenStats();
 				this.startBackendSyncAfterInitialAnalysis();
 				await this.showFluencyScoreNewsBanner();
 				await this.showUnknownMcpToolsBanner();
-			}, 100);
-		} else {
-			this.log('✅ Copilot extensions are active - starting token analysis');
-			setTimeout(async () => {
-				await this.updateTokenStats();
-				this.startBackendSyncAfterInitialAnalysis();
-				await this.showFluencyScoreNewsBanner();
-				await this.showUnknownMcpToolsBanner();
-			}, 100);
-		}
-	}
-
-	private recheckCopilotExtensionsAfterDelay(): void {
-		const copilotExtension = vscode.extensions.getExtension('GitHub.copilot');
-		const copilotChatExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
-
-		const copilotActive = copilotExtension?.isActive;
-		const chatActive = copilotChatExtension?.isActive;
-
-		if (copilotActive && chatActive) {
-			this.log('✅ Copilot extensions are now active');
-		} else {
-			this.warn('⚠️ Some Copilot extensions still inactive after delay');
-		}
+			} catch (error) {
+				this.error('Error in initial update:', error);
+			}
+		}, 100);
 	}
 
 	/**
@@ -6603,10 +6557,6 @@ ${hashtag}`;
   public dispose(): void {
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
-    }
-    if (this.initialDelayTimeout) {
-      clearTimeout(this.initialDelayTimeout);
-      this.log("Cleared initial delay timeout during disposal");
     }
     if (this.detailsPanel) {
       this.detailsPanel.dispose();
