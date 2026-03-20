@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   publish:
@@ -42,6 +43,7 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
+          scope: '@rajbos'
 
       - name: Install extension dependencies
         run: npm ci
@@ -63,27 +65,31 @@ jobs:
         id: version
         run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm
+      - name: Publish to npm (OIDC)
         if: ${{ !inputs.dry_run }}
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Dry run publish
+      - name: Dry run publish (OIDC)
         if: ${{ inputs.dry_run }}
         run: npm publish --access public --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Commit version bump
+      - name: Commit version bump and create PR
         if: ${{ !inputs.dry_run }}
         run: |
           cd ..
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b cli/bump-version-v${{ steps.version.outputs.version }}
           git add cli/package.json cli/package-lock.json
           git commit -m "chore(cli): bump version to v${{ steps.version.outputs.version }}"
-          git push
+          git push origin cli/bump-version-v${{ steps.version.outputs.version }}
+          gh pr create \
+            --title "chore(cli): bump version to v${{ steps.version.outputs.version }}" \
+            --body "Automated version bump after publishing \`@rajbos/ai-engineering-fluency@${{ steps.version.outputs.version }}\` to npm." \
+            --base main \
+            --head cli/bump-version-v${{ steps.version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
         run: |
@@ -94,5 +100,7 @@ jobs:
           echo "- **Dry run:** ${{ inputs.dry_run }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ inputs.dry_run }}" = "false" ]; then
-            echo "Install with: \`npx copilot-token-tracker-cli\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Install with: \`npx @rajbos/ai-engineering-fluency\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "A PR has been opened to merge the version bump back to main." >> "$GITHUB_STEP_SUMMARY"
           fi
