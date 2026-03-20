@@ -1,7 +1,7 @@
 {
-  "name": "copilot-token-tracker-cli",
+  "name": "@rajbos/ai-engineering-fluency",
   "version": "0.0.1",
-  "description": "CLI tool to analyze GitHub Copilot token usage from local session files",
+  "description": "AI Engineering Fluency - CLI tool to analyze GitHub Copilot token usage from local session files",
   "license": "MIT",
   "author": "RobBos",
   "repository": {
