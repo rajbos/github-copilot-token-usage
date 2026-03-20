@@ -44,14 +44,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v6 #v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@v6 #v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install extension dependencies
@@ -76,11 +74,11 @@ jobs:
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
-        run: npm publish
+        run: NODE_AUTH_TOKEN="" npm publish
 
       - name: Dry run publish
         if: ${{ inputs.dry_run }}
-        run: npm publish --access public --dry-run
+        run: NODE_AUTH_TOKEN="" npm publish public --dry-run
 
       - name: Commit version bump and create PR
         if: ${{ !inputs.dry_run }}
