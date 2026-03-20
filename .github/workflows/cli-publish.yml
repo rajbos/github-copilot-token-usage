@@ -18,6 +18,13 @@ on:
         default: false
         type: boolean
 
+  push:
+    #branches:
+    #  - main
+    paths:
+      - 'cli/package.json'
+      - 'cli/package-lock.json'
+
 permissions:
   contents: write
   pull-requests: write
