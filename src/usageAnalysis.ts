@@ -36,11 +36,13 @@ import {
 	extractMcpServerName,
 } from './workspaceHelpers';
 import type { OpenCodeDataAccess } from './opencode';
+import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
 	openCode: OpenCodeDataAccess;
+	crush?: CrushDataAccess;
 	continue_: ContinueDataAccess;
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
@@ -959,6 +961,40 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Crush sessions
+		if (deps.crush?.isCrushSessionFile(sessionFile)) {
+			const messages = await deps.crush.getCrushMessages(sessionFile);
+			const models: string[] = [];
+			for (const msg of messages) {
+				if (msg.role === 'user') {
+					analysis.modeUsage.agent++;
+				}
+				if (msg.role === 'assistant') {
+					const model = msg.model || 'unknown';
+					models.push(model);
+					const parts: any[] = Array.isArray(msg.parts) ? msg.parts : [];
+					for (const part of parts) {
+						if (part?.type === 'tool_call' && part?.data?.name) {
+							analysis.toolCalls.total++;
+							const toolName = part.data.name as string;
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+					}
+				}
+			}
+			// Model switching analysis
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCount = 0;
+			for (let i = 1; i < models.length; i++) {
+				if (models[i] !== models[i - 1]) { switchCount++; }
+			}
+			analysis.modelSwitching.switchCount = switchCount;
+			return analysis;
+		}
+
 		// Handle Continue sessions
 		if (deps.continue_.isContinueSessionFile(sessionFile)) {
 			const turns = deps.continue_.buildContinueTurns(sessionFile);
@@ -1349,12 +1385,17 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'continue_' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Handle OpenCode sessions
 	if (deps.openCode.isOpenCodeSessionFile(sessionFile)) {
 		return await deps.openCode.getOpenCodeModelUsage(sessionFile);
+	}
+
+	// Handle Crush sessions
+	if (deps.crush?.isCrushSessionFile(sessionFile)) {
+		return await deps.crush.getCrushModelUsage(sessionFile);
 	}
 
 	// Handle Continue sessions
