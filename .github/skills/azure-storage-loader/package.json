@@ -18,6 +18,6 @@
   "license": "MIT",
   "dependencies": {
     "@azure/data-tables": "^13.3.2",
-    "@azure/identity": "^4.13.0"
+    "@azure/identity": "^4.13.1"
   }
 }
