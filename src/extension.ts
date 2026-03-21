@@ -51,6 +51,7 @@ import type {
   WorkspaceCustomizationSummary
 } from './types';
 import { OpenCodeDataAccess } from './opencode';
+import { CrushDataAccess } from './crush';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -120,10 +121,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private lastDiagnosticReport: string = '';
 	private logViewerPanel?: vscode.WebviewPanel;
 	private openCode: OpenCodeDataAccess;
+	private crush: CrushDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -239,6 +241,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private getEditorTypeFromPath(filePath: string): string {
 		return _getEditorTypeFromPath(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
+	}
+
+	/**
+	 * Stat a session file, handling virtual paths for both OpenCode and Crush.
+	 * Must be used instead of fs.promises.stat() directly.
+	 */
+	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
+		if (this.crush.isCrushSessionFile(sessionFile)) {
+			return this.crush.statSessionFile(sessionFile);
+		}
+		return this.openCode.statSessionFile(sessionFile);
 	}
 
 	/**
@@ -375,8 +388,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
 		this.extensionUri = extensionUri;
 		this.openCode = new OpenCodeDataAccess(extensionUri);
+		this.crush = new CrushDataAccess(extensionUri);
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
-		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode });
+		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush });
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
@@ -681,7 +695,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			for (const sessionFile of sessionFiles) {
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.openCode.statSessionFile(sessionFile);
+					const fileStats = await this.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -752,7 +766,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.openCode.statSessionFile(sessionFile);
+					const fileStats = await this.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -1072,7 +1086,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			for (const sessionFile of sessionFiles) {
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.openCode.statSessionFile(sessionFile);
+					const fileStats = await this.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -1335,7 +1349,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			for (const sessionFile of sessionFiles) {
 				try {
 					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.openCode.statSessionFile(sessionFile);
+					const fileStats = await this.statSessionFile(sessionFile);
 					const mtime = fileStats.mtime.getTime();
 					const fileSize = fileStats.size;
 
@@ -1668,6 +1682,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return await this.openCode.countOpenCodeInteractions(sessionFile);
 			}
 
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				return await this.crush.countCrushInteractions(sessionFile);
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -1835,6 +1854,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 				for (const msg of messages) {
 					if (msg.time?.created) { timestamps.push(msg.time.created); }
 					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
+				}
+				let firstInteraction: string | null = null;
+				let lastInteraction: string | null = null;
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					firstInteraction = new Date(timestamps[0]).toISOString();
+					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				const session = await this.crush.readCrushSession(sessionFile);
+				if (session) {
+					title = session.title || undefined;
+					if (session.created_at) { timestamps.push(session.created_at * 1000); } // epoch seconds → ms
+					if (session.updated_at) { timestamps.push(session.updated_at * 1000); }
+				}
+				// Also pull message timestamps for precision
+				const messages = await this.crush.getCrushMessages(sessionFile);
+				for (const msg of messages) {
+					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
+					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
 				}
 				let firstInteraction: string | null = null;
 				let lastInteraction: string | null = null;
@@ -2028,6 +2071,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Enriches the details object with editorRoot and editorName properties.
 	 */
 	private enrichDetailsWithEditorInfo(sessionFile: string, details: SessionFileDetails): void {
+		// OpenCode and Crush sessions have their own editorRoot/editorName logic — skip path splitting
+		if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+			details.editorRoot = this.openCode.getOpenCodeDataDir();
+			details.editorName = 'OpenCode';
+			return;
+		}
+		if (this.crush.isCrushSessionFile(sessionFile)) {
+			details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
+			details.editorName = 'Crush';
+			return;
+		}
 		try {
 			const parts = sessionFile.split(/[/\\]/);
 			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
@@ -2156,7 +2210,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Uses cached data when available to avoid re-reading files.
 	 */
 	private async getSessionFileDetails(sessionFile: string): Promise<SessionFileDetails> {
-		const stat = await this.openCode.statSessionFile(sessionFile);
+		const stat = await this.statSessionFile(sessionFile);
 
 		// Try to get details from cache first
 		const cachedDetails = await this.getSessionFileDetailsFromCache(sessionFile, stat);
@@ -2224,6 +2278,32 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// Set editor info for OpenCode
 				details.editorRoot = this.openCode.getOpenCodeDataDir();
 				details.editorName = 'OpenCode';
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				const session = await this.crush.readCrushSession(sessionFile);
+				if (session) {
+					details.title = session.title || undefined;
+				}
+				details.interactions = await this.crush.countCrushInteractions(sessionFile);
+				const timestamps: number[] = [];
+				if (session?.created_at) { timestamps.push(session.created_at * 1000); }
+				if (session?.updated_at) { timestamps.push(session.updated_at * 1000); }
+				const messages = await this.crush.getCrushMessages(sessionFile);
+				for (const msg of messages) {
+					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
+					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
+				}
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
+				details.editorName = 'Crush';
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				return details;
 			}
@@ -2543,6 +2623,87 @@ class CopilotTokenTracker implements vscode.Disposable {
 					title: details.title || null,
 					editorSource: details.editorSource,
 					editorName: details.editorName || 'OpenCode',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				const messages = await this.crush.getCrushMessages(sessionFile);
+				const session = await this.crush.readCrushSession(sessionFile);
+				const totalTokens = (session?.prompt_tokens ?? 0) + (session?.completion_tokens ?? 0);
+				const userMessages = messages.filter(m => m.role === 'user');
+				const numTurns = userMessages.length;
+				let turnNumber = 0;
+				for (let i = 0; i < messages.length; i++) {
+					const msg = messages[i];
+					if (msg.role !== 'user') { continue; }
+					turnNumber++;
+					// Collect assistant messages until the next user message
+					const turnAssistantMsgs: any[] = [];
+					for (let j = i + 1; j < messages.length; j++) {
+						if (messages[j].role === 'user') { break; }
+						if (messages[j].role === 'assistant') { turnAssistantMsgs.push(messages[j]); }
+					}
+					// Extract user text from parts
+					const userParts: any[] = Array.isArray(msg.parts) ? msg.parts : [];
+					const userText = userParts
+						.filter(p => p?.type === 'text' && p?.text)
+						.map(p => p.text as string)
+						.join('\n');
+					let assistantText = '';
+					const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+					let model: string | null = null;
+					for (const assistantMsg of turnAssistantMsgs) {
+						if (!model) { model = assistantMsg.model || null; }
+						const parts: any[] = Array.isArray(assistantMsg.parts) ? assistantMsg.parts : [];
+						for (const part of parts) {
+							if (part?.type === 'text' && part?.text) {
+								assistantText += part.text;
+							} else if (part?.type === 'tool_call' && part?.data?.name) {
+								toolCalls.push({
+									toolName: part.data.name,
+									arguments: part.data.arguments ? JSON.stringify(part.data.arguments) : undefined
+								});
+							}
+						}
+					}
+					// Distribute session token totals evenly across turns
+					const perTurnTokens = numTurns > 0 ? Math.round(totalTokens / numTurns) : 0;
+					const perTurnInput = session?.prompt_tokens && numTurns > 0 ? Math.round(session.prompt_tokens / numTurns) : 0;
+					const perTurnOutput = session?.completion_tokens && numTurns > 0 ? Math.round(session.completion_tokens / numTurns) : 0;
+					turns.push({
+						turnNumber,
+						timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : null,
+						mode: 'agent',
+						userMessage: userText,
+						assistantResponse: assistantText,
+						model,
+						toolCalls,
+						contextReferences: {
+							file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+							workspace: 0, terminal: 0, vscode: 0,
+							terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
+							outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+						},
+						mcpTools: [],
+						inputTokensEstimate: perTurnInput,
+						outputTokensEstimate: perTurnOutput,
+						thinkingTokensEstimate: 0
+					});
+				}
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: 'Crush',
 					size: details.size,
 					modified: details.modified,
 					interactions: details.interactions,
@@ -2948,6 +3109,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
 				const result = await this.openCode.getTokensFromOpenCodeSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
+			}
+
+			// Handle Crush sessions - actual token counts stored in sessions table
+			if (this.crush.isCrushSessionFile(sessionFilePath)) {
+				const result = await this.crush.getTokensFromCrushSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens };
 			}
 
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
@@ -5951,7 +6118,7 @@ ${hashtag}`;
       }[] = [];
       for (const file of sessionFiles.slice(0, 20)) {
         try {
-          const stat = await this.openCode.statSessionFile(file);
+          const stat = await this.statSessionFile(file);
           sessionFileData.push({
             file,
             size: stat.size,
@@ -6077,7 +6244,7 @@ ${hashtag}`;
     const fileStats = await Promise.all(
       sessionFiles.map(async (file) => {
         try {
-          const stat = await this.openCode.statSessionFile(file);
+          const stat = await this.statSessionFile(file);
           return { file, mtime: stat.mtime.getTime() };
         } catch {
           return { file, mtime: 0 };

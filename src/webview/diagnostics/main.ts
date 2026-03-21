@@ -307,8 +307,19 @@ function getRepoDisplayName(repoUrl: string): string {
   return url;
 }
 
+function getEditorBadgeClass(editor: string): string {
+  const lower = editor.toLowerCase();
+  if (lower.includes("crush")) {
+    return "editor-badge editor-badge-crush";
+  }
+  return "editor-badge";
+}
+
 function getEditorIcon(editor: string): string {
   const lower = editor.toLowerCase();
+  if (lower.includes("crush")) {
+    return "🩷";
+  }
   if (lower.includes("opencode")) {
     return "🟢";
   }
@@ -537,7 +548,7 @@ function renderSessionTable(
               (sf, idx) => `
 						<tr>
 							<td>${idx + 1}</td>
-							<td><span class="editor-badge" title="${escapeHtml(sf.editorSource)}">${escapeHtml(sf.editorName || sf.editorSource)}</span></td>
+							<td><span class="${getEditorBadgeClass(sf.editorName || sf.editorSource)}" title="${escapeHtml(sf.editorSource)}">${getEditorIcon(sf.editorName || sf.editorSource)} ${escapeHtml(sf.editorName || sf.editorSource)}</span></td>
 							<td class="session-title" title="${sf.title ? escapeHtml(sf.title) : "Empty session"}">
 								${sf.title ? `<a href="#" class="session-file-link" data-file="${encodeURIComponent(sf.file)}" title="${escapeHtml(sf.title)}">${escapeHtml(sf.title.length > 40 ? sf.title.substring(0, 40) + "..." : sf.title)}</a>` : `<a href="#" class="session-file-link empty-session-link" data-file="${encodeURIComponent(sf.file)}" title="Empty session">(Empty session)</a>`}
 							</td>
@@ -840,7 +851,7 @@ function renderLayout(data: DiagnosticsData): void {
         sessionFilesHtml += `
 				<tr>
 					<td title="${escapeHtml(sf.dir)}">${escapeHtml(display)}</td>
-					<td><span class="editor-badge">${escapeHtml(editorName)}</span></td>
+				<td><span class="${getEditorBadgeClass(editorName)}">${getEditorIcon(editorName)} ${escapeHtml(editorName)}</span></td>
 					<td>${sf.count}</td>
 					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a></td>
 				</tr>`;
@@ -1102,8 +1113,8 @@ function renderLayout(data: DiagnosticsData): void {
             // Editor cell
             const editorCell = document.createElement("td");
             const editorBadge = document.createElement("span");
-            editorBadge.className = "editor-badge";
-            editorBadge.textContent = escapeHtml(editorName);
+            editorBadge.className = getEditorBadgeClass(editorName);
+            editorBadge.textContent = `${getEditorIcon(editorName)} ${escapeHtml(editorName)}`;
             editorCell.appendChild(editorBadge);
             row.appendChild(editorCell);
 
