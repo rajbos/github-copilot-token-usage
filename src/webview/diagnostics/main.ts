@@ -225,7 +225,15 @@ function buildCandidatePathsElement(
     return a.source.localeCompare(b.source);
   });
 
-  for (const cp of sorted) {
+  // Group all Crush entries into one row; render everything else individually
+  const crushEntries = sorted.filter((cp) =>
+    cp.source.toLowerCase().includes("crush"),
+  );
+  const otherEntries = sorted.filter(
+    (cp) => !cp.source.toLowerCase().includes("crush"),
+  );
+
+  const renderRow = (cp: { path: string; exists: boolean; source: string }) => {
     const row = document.createElement("tr");
     if (!cp.exists) {
       row.style.opacity = "0.5";
@@ -248,6 +256,45 @@ function buildCandidatePathsElement(
     pathCell.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
     pathCell.style.fontSize = "12px";
     pathCell.textContent = cp.path;
+    row.appendChild(pathCell);
+
+    tbody.appendChild(row);
+  };
+
+  for (const cp of otherEntries) {
+    renderRow(cp);
+  }
+
+  if (crushEntries.length > 0) {
+    const anyExist = crushEntries.some((cp) => cp.exists);
+    const row = document.createElement("tr");
+    if (!anyExist) {
+      row.style.opacity = "0.5";
+    }
+
+    const statusCell = document.createElement("td");
+    statusCell.textContent = anyExist ? "✅" : "❌";
+    statusCell.style.textAlign = "center";
+    row.appendChild(statusCell);
+
+    const sourceCell = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = getEditorBadgeClass("Crush");
+    badge.textContent = `${getEditorIcon("Crush")} Crush`;
+    sourceCell.appendChild(badge);
+    row.appendChild(sourceCell);
+
+    const pathCell = document.createElement("td");
+    pathCell.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
+    pathCell.style.fontSize = "12px";
+    pathCell.style.lineHeight = "1.6";
+    for (const cp of crushEntries) {
+      const line = document.createElement("div");
+      line.style.opacity = cp.exists ? "1" : "0.5";
+      line.title = cp.path;
+      line.textContent = `${cp.exists ? "✅" : "❌"} ${cp.path}`;
+      pathCell.appendChild(line);
+    }
     row.appendChild(pathCell);
 
     tbody.appendChild(row);
