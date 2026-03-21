@@ -734,8 +734,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Calculate Previous Month boundaries
 		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
 		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
-		// Calculate last 30 days boundary
-		const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+		// Calculate last 30 days boundary (midnight, so numbers don't shift during a refresh)
+		const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
 
 		const todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
@@ -1243,7 +1243,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		const now = new Date();
 		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+		const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
 		this.log('🔍 [Usage Analysis] Starting calculation...');
