@@ -37,11 +37,13 @@ import {
 } from './workspaceHelpers';
 import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
+import type { ContinueDataAccess } from './continue';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
 	openCode: OpenCodeDataAccess;
 	crush?: CrushDataAccess;
+	continue_: ContinueDataAccess;
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
 	toolNameMap: { [key: string]: string };
@@ -495,7 +497,7 @@ export function analyzeRequestContext(request: any, refs: ContextReferenceUsage)
  * Calculate model switching statistics for a session file.
  * This method updates the analysis.modelSwitching field in place.
  */
-export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'openCode' | 'tokenEstimators'>, sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
+export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'openCode' | 'continue_' | 'tokenEstimators'>, sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
 	try {
 		// Use non-cached method to avoid circular dependency
 		// (getSessionFileDataCached -> analyzeSessionUsage -> getModelUsageFromSessionCached -> getSessionFileDataCached)
@@ -993,6 +995,38 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Continue sessions
+		if (deps.continue_.isContinueSessionFile(sessionFile)) {
+			const turns = deps.continue_.buildContinueTurns(sessionFile);
+			const meta = deps.continue_.getContinueSessionMeta(sessionFile);
+			const models: string[] = [];
+			for (const turn of turns) {
+				analysis.modeUsage.ask++;
+				if (turn.model) { models.push(turn.model); }
+				for (const tc of turn.toolCalls) {
+					analysis.toolCalls.total++;
+					analysis.toolCalls.byTool[tc.toolName] = (analysis.toolCalls.byTool[tc.toolName] || 0) + 1;
+				}
+			}
+			if (meta?.mode === 'agent') {
+				// Recount interactions as agent mode
+				for (let k = 0; k < turns.length; k++) {
+					analysis.modeUsage.ask--;
+					analysis.modeUsage.agent++;
+				}
+			}
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCount = 0;
+			for (let ki = 1; ki < models.length; ki++) {
+				if (models[ki] !== models[ki - 1]) { switchCount++; }
+			}
+			analysis.modelSwitching.switchCount = switchCount;
+			return analysis;
+		}
+
 		const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 		// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
@@ -1351,7 +1385,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Handle OpenCode sessions
@@ -1362,6 +1396,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 	// Handle Crush sessions
 	if (deps.crush?.isCrushSessionFile(sessionFile)) {
 		return await deps.crush.getCrushModelUsage(sessionFile);
+	}
+
+	// Handle Continue sessions
+	if (deps.continue_.isContinueSessionFile(sessionFile)) {
+		return deps.continue_.getContinueModelUsage(sessionFile);
 	}
 
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;

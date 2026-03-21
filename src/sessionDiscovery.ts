@@ -1,5 +1,5 @@
 /**
- * Session file discovery - finds and scans for Copilot/OpenCode session files.
+ * Session file discovery - finds and scans for Copilot/OpenCode/Continue session files.
  */
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
+import type { ContinueDataAccess } from './continue';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -14,6 +15,7 @@ export interface SessionDiscoveryDeps {
 	error: (message: string, error?: any) => void;
 	openCode: OpenCodeDataAccess;
 	crush: CrushDataAccess;
+	continue_: ContinueDataAccess;
 }
 
 export class SessionDiscovery {
@@ -132,6 +134,12 @@ export class SessionDiscovery {
 			try { dbExists = fs.existsSync(dbPath); } catch { /* ignore */ }
 			candidates.push({ path: dbPath, exists: dbExists, source: `Crush (${path.basename(project.path)})` });
 		}
+
+		// Continue sessions directory
+		const continueSessionsDir = this.deps.continue_.getContinueSessionsDir();
+		let continueExists = false;
+		try { continueExists = fs.existsSync(continueSessionsDir); } catch { /* ignore */ }
+		candidates.push({ path: continueSessionsDir, exists: continueExists, source: 'Continue' });
 
 		return candidates;
 	}
@@ -438,6 +446,16 @@ export class SessionDiscovery {
 				}
 			} catch (crushError) {
 				this.deps.warn(`Could not read Crush projects: ${crushError}`);
+			}
+			// Check for Continue extension session files (~/.continue/sessions/*.json)
+			try {
+				const continueFiles = this.deps.continue_.getContinueSessionFiles();
+				if (continueFiles.length > 0) {
+					this.deps.log(`📄 Found ${continueFiles.length} session file(s) in Continue (~/.continue/sessions)`);
+					sessionFiles.push(...continueFiles);
+				}
+			} catch (continueError) {
+				this.deps.warn(`Could not read Continue session files: ${continueError}`);
 			}
 
 			// Log summary

@@ -52,6 +52,7 @@ import type {
 } from './types';
 import { OpenCodeDataAccess } from './opencode';
 import { CrushDataAccess } from './crush';
+import { ContinueDataAccess } from './continue';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -108,7 +109,7 @@ import {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 29; // Use actual token counts from CLI session.shutdown events
+	private static readonly CACHE_VERSION = 31; // Fix Continue token estimation (use text length, not non-existent promptLength field)
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -122,10 +123,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private logViewerPanel?: vscode.WebviewPanel;
 	private openCode: OpenCodeDataAccess;
 	private crush: CrushDataAccess;
+	private continue_: ContinueDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, continue_: this.continue_, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -389,8 +391,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.extensionUri = extensionUri;
 		this.openCode = new OpenCodeDataAccess(extensionUri);
 		this.crush = new CrushDataAccess(extensionUri);
+		this.continue_ = new ContinueDataAccess();
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
-		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush });
+		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, continue_: this.continue_ });
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
@@ -1687,6 +1690,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return await this.crush.countCrushInteractions(sessionFile);
 			}
 
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				return this.continue_.countContinueInteractions(sessionFile);
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -1885,6 +1893,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 					timestamps.sort((a, b) => a - b);
 					firstInteraction = new Date(timestamps[0]).toISOString();
 					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				const meta = this.continue_.getContinueSessionMeta(sessionFile);
+				title = meta?.title;
+				const sessionId = this.continue_.getContinueSessionId(sessionFile);
+				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
+				let firstInteraction: string | null = null;
+				let lastInteraction: string | null = null;
+				if (indexEntry?.dateCreated) {
+					firstInteraction = new Date(indexEntry.dateCreated).toISOString();
+					const fileStat = await fs.promises.stat(sessionFile);
+					lastInteraction = fileStat.mtime.toISOString();
 				}
 				return { title, firstInteraction, lastInteraction };
 			}
@@ -2308,6 +2332,36 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return details;
 			}
 
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				const meta = this.continue_.getContinueSessionMeta(sessionFile);
+				if (meta) {
+					details.title = meta.title;
+					if (meta.workspaceDirectory) {
+						// workspaceDirectory is a file URI like file:///c%3A/Users/.../repo-name
+						try {
+							const wsPath = decodeURIComponent(meta.workspaceDirectory.replace(/^file:\/\/\//, '').replace(/^file:\/\//, ''));
+							details.repository = require('path').basename(wsPath);
+						} catch { /* ignore */ }
+					}
+				}
+				details.interactions = this.continue_.countContinueInteractions(sessionFile);
+				details.editorRoot = this.continue_.getContinueDataDir();
+				details.editorName = 'Continue';
+				// Use dateCreated from sessions.json index for accurate timestamps
+				const sessionId = this.continue_.getContinueSessionId(sessionFile);
+				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
+				if (indexEntry?.dateCreated) {
+					details.firstInteraction = new Date(indexEntry.dateCreated).toISOString();
+					details.lastInteraction = stat.mtime.toISOString();
+				} else {
+					details.firstInteraction = stat.mtime.toISOString();
+					details.lastInteraction = stat.mtime.toISOString();
+				}
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format where the file contains just a session ID)
@@ -2634,7 +2688,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 			}
 
-			// Handle Crush sessions
+// Handle Crush sessions
 			if (this.crush.isCrushSessionFile(sessionFile)) {
 				const messages = await this.crush.getCrushMessages(sessionFile);
 				const session = await this.crush.readCrushSession(sessionFile);
@@ -2704,6 +2758,42 @@ class CopilotTokenTracker implements vscode.Disposable {
 					title: details.title || null,
 					editorSource: details.editorSource,
 					editorName: 'Crush',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				const continueTurns = this.continue_.buildContinueTurns(sessionFile);
+				const emptyContextRefs = _createEmptyContextRefs();
+				for (const ct of continueTurns) {
+					turns.push({
+						turnNumber: turns.length + 1,
+						timestamp: null,
+						mode: 'ask',
+						userMessage: ct.userText,
+						assistantResponse: ct.assistantText,
+						model: ct.model,
+						toolCalls: ct.toolCalls,
+						contextReferences: emptyContextRefs,
+						mcpTools: [],
+						inputTokensEstimate: ct.inputTokens,
+						outputTokensEstimate: ct.outputTokens,
+						thinkingTokensEstimate: 0
+					});
+				}
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: details.editorName || 'Continue',
 					size: details.size,
 					modified: details.modified,
 					interactions: details.interactions,
@@ -3115,6 +3205,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.crush.isCrushSessionFile(sessionFilePath)) {
 				const result = await this.crush.getTokensFromCrushSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens };
+			}
+
+			// Handle Continue sessions - they have actual token counts in promptLogs
+			if (this.continue_.isContinueSessionFile(sessionFilePath)) {
+				const result = this.continue_.getTokensFromContinueSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens }; // Continue has actual counts
 			}
 
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
