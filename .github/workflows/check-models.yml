@@ -20,9 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor != 'dependabot[bot]' && !startsWith(github.ref_name, 'dependabot/')
     permissions:
-      contents: write  # Need write permission to create branches and push changes
-      pull-requests: write  # Need write permission to create PRs
-      id-token: write  # Keep for potential future use
+      contents: write  # needed to create branches and push changes
+      pull-requests: write  # needed to create PRs
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
