@@ -298,11 +298,11 @@
     "cli": "cd cli && node dist/cli.js"
   },
   "devDependencies": {
-    "@github/copilot": "^1.0.5",
+    "@github/copilot": "^1.0.10",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.5.0",
     "@types/vscode": "1.110.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.42.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
@@ -310,7 +310,7 @@
     "esbuild": "^0.27.4",
     "eslint": "^9.39.2",
     "npm-run-all": "^4.1.5",
-    "stylelint": "^17.4.0",
+    "stylelint": "^17.5.0",
     "stylelint-config-standard": "^40.0.0",
     "typescript": "^5.9.3"
   },
@@ -320,13 +320,13 @@
     "@azure/arm-storage": "^19.1.0",
     "@azure/arm-subscriptions": "^6.0.0",
     "@azure/data-tables": "^13.3.2",
-    "@azure/identity": "^4.13.0",
+    "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.31.0",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "chart.js": "^4.4.1",
     "html-escape": "^2.0.0",
     "html2canvas": "1.4.1",
-    "jsdom": "^29.0.0",
+    "jsdom": "^29.0.1",
     "jspdf": "4.2.1",
     "pptxgenjs": "4.0.1",
     "sql.js": "1.14.1"
