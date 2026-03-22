@@ -154,19 +154,19 @@ jobs:
           echo "Date range: $START_DATE to $END_DATE"
 
           # Build command arguments
-          ARGS="--storageAccount $AZURE_STORAGE_ACCOUNT"
-          ARGS="$ARGS --tableName $AZURE_TABLE_NAME"
-          ARGS="$ARGS --datasetId $AZURE_DATASET_ID"
-          ARGS="$ARGS --startDate $START_DATE"
-          ARGS="$ARGS --endDate $END_DATE"
-          ARGS="$ARGS --output ./usage-data/usage-agg-daily.json"
+          ARGS=(--storageAccount "$AZURE_STORAGE_ACCOUNT")
+          ARGS+=(--tableName "$AZURE_TABLE_NAME")
+          ARGS+=(--datasetId "$AZURE_DATASET_ID")
+          ARGS+=(--startDate "$START_DATE")
+          ARGS+=(--endDate "$END_DATE")
+          ARGS+=(--output ./usage-data/usage-agg-daily.json)
 
           # Use shared key if available, otherwise rely on Entra ID (DefaultAzureCredential)
           if [ -n "$AZURE_STORAGE_KEY" ]; then
-            ARGS="$ARGS --sharedKey $AZURE_STORAGE_KEY"
+            ARGS+=(--sharedKey "$AZURE_STORAGE_KEY")
           fi
 
-          node .github/skills/azure-storage-loader/load-table-data.js $ARGS || {
+          node .github/skills/azure-storage-loader/load-table-data.js "${ARGS[@]}" || {
             echo "⚠️ Failed to download aggregated usage data, continuing without it"
             exit 0
           }

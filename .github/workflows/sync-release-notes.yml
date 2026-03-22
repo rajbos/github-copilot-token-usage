@@ -40,10 +40,10 @@ jobs:
       id: changes
       run: |
         if git diff --quiet CHANGELOG.md; then
-          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "changed=false" >> "$GITHUB_OUTPUT"
           echo "No changes detected in CHANGELOG.md"
         else
-          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "Changes detected in CHANGELOG.md"
         fi
 
