@@ -36,7 +36,7 @@ jobs:
 
       - name: Check for CLI-relevant file changes
         if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@de90cc6b5708d14e015ca8c3acee5b86b31db2a8 # v3.0.2
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           filters: |
