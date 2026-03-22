@@ -18,7 +18,7 @@ permissions:
 jobs:
   sync-models:
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]'
+    if: github.actor != 'dependabot[bot]' && !startsWith(github.ref_name, 'dependabot/')
     permissions:
       contents: write  # Need write permission to create branches and push changes
       pull-requests: write  # Need write permission to create PRs
