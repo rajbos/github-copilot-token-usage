@@ -113,7 +113,7 @@ jobs:
         echo ""
         echo "=== Copilot CLI Output ==="
 
-        cd ${GITHUB_WORKSPACE}/current-repo/
+        cd "${GITHUB_WORKSPACE}/current-repo/"
         
         # Run gh copilot with the prompt using non-interactive mode
         # Use -s/--silent for script-friendly output, -p for prompt, --allow-all for permissions
@@ -132,10 +132,10 @@ jobs:
       run: |
         if git diff --quiet; then
           echo "No changes detected in toolNames.json"
-          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "changed=false" >> "$GITHUB_OUTPUT"
         else
           echo "Changes detected in toolNames.json"
-          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "changed=true" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Create Pull Request
