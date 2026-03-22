@@ -250,7 +250,7 @@ export async function calculateDetailedStats(
 	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 	const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 	const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-	const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
 
 	const periods: {
 		today: PeriodStats;
@@ -376,7 +376,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 
 	const now = new Date();
 	const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
 	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
 	const todayPeriod = createEmptyUsageAnalysisPeriod();
