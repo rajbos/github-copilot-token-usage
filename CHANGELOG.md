@@ -5,6 +5,46 @@ All notable changes to the "copilot-token-tracker" extension will be documented 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [Unreleased]
+
+## [0.0.21]
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Changes
+* changelog after release by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/415
+* feat: central input validation script to detect hidden Unicode and prompt injection in workflows by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/420
+* Add actionlint workflow to lint GitHub Actions workflows by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/424
+* Fix Team Dashboard slow initial render by caching last fetch result by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/418
+* Automate release pipeline: one-trigger workflow with marketplace publish and proper release notes by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/419
+* Add missing friendly names for Context7 MCP tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/427
+* Add friendly name for `pdf-utilities.pdf` tool by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/425
+* Add missing friendly names for 6 tools in toolNames.json by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/426
+* docs by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/428
+* feat: move workflow prompts to .github/prompts/ as VS Code-compatible prompt files by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/417
+* Remove Copilot extension check and startup wait by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/430
+* Add missing friendly names for Azure, Bicep, GitHub, Microsoft Docs, and VS Code tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/431
+* versionbump by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/432
+* Add friendly display names for 19 missing MCP tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/438
+* feat: Add npx CLI package for Copilot token usage analysis by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/433
+* copilot/create npx package for token analysis by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/441
+* catch up with npm package version by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/442
+* Add friendly names for execution_subagent, file_glob_search, read_skill by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/446
+* Initial setup for continue support by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/447
+* Fix cli run by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/450
+* Adding support for the "Crush" editor (split from OpenCode) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/451
+* Add support for a new CLI-based coding environment in the extension by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/452
+* Version bump by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/453
+### 📦 npm Dependencies
+* npm(deps): bump fast-xml-parser from 5.5.6 to 5.5.7 by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/437
+### 📦 Other Dependencies
+* Bump fast-xml-parser from 5.4.1 to 5.5.6 in /.github/skills/azure-storage-loader by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/416
+* Bump puppeteer from 24.39.1 to 24.40.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/435
+* Bump fast-xml-parser from 5.5.6 to 5.5.7 in /.github/skills/azure-storage-loader by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/436
+* Bump @azure/identity from 4.13.0 to 4.13.1 in /.github/skills/azure-storage-loader by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/448
+
+
+**Full Changelog**: https://github.com/rajbos/github-copilot-token-usage/compare/v0.0.18...v0.0.21
 ## [0.0.18]
 
 ## [0.0.17]
