@@ -27,14 +27,16 @@ on:
       - 'cli/package-lock.json'
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write  # Required for OIDC to npm registry
+  contents: read
 
 jobs:
   publish:
     name: Publish CLI to npm
     runs-on: ubuntu-latest
+    permissions:
+      contents: write      # needed to push version bump branch and create PR
+      pull-requests: write # needed to open the version bump PR
+      id-token: write      # required for OIDC authentication to npm registry
     defaults:
       run:
         working-directory: cli
