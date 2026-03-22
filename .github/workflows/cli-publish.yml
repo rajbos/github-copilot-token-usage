@@ -44,10 +44,10 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6 #v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6 #v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -100,14 +100,16 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## CLI Package Published 📦" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Version:** v${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Bump:** ${{ inputs.version_bump }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Dry run:** ${{ inputs.dry_run }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ inputs.dry_run }}" = "false" ]; then
-            echo "Install with: \`npx @rajbos/ai-engineering-fluency\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "A PR has been opened to merge the version bump back to main." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            echo "## CLI Package Published 📦"
+            echo ""
+            echo "- **Version:** v${{ steps.version.outputs.version }}"
+            echo "- **Bump:** ${{ inputs.version_bump }}"
+            echo "- **Dry run:** ${{ inputs.dry_run }}"
+            echo ""
+            if [ "${{ inputs.dry_run }}" = "false" ]; then
+              echo "Install with: \`npx @rajbos/ai-engineering-fluency\`"
+              echo ""
+              echo "A PR has been opened to merge the version bump back to main."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

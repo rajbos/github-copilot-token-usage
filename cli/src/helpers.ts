@@ -8,6 +8,8 @@ import * as os from 'os';
 import chalk from 'chalk';
 import { SessionDiscovery } from '../../src/sessionDiscovery';
 import { OpenCodeDataAccess } from '../../src/opencode';
+import { CrushDataAccess } from '../../src/crush';
+import { ContinueDataAccess } from '../../src/continue';
 import { parseSessionFileContent } from '../../src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../src/types';
@@ -40,10 +42,25 @@ function createOpenCode(): OpenCodeDataAccess {
 	return new OpenCodeDataAccess(fakeUri as any);
 }
 
+/** Create Crush data access instance for CLI */
+function createCrush(): CrushDataAccess {
+	const fakeUri = vscodeStub.Uri.file(__dirname);
+	return new CrushDataAccess(fakeUri as any);
+}
+
+/** Create Continue data access instance for CLI */
+function createContinue(): ContinueDataAccess {
+	return new ContinueDataAccess();
+}
+
+// Module-level singletons so sql.js WASM is only initialised once across all session files
+const _openCodeInstance = createOpenCode();
+const _crushInstance = createCrush();
+const _continueInstance = createContinue();
+
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	const openCode = createOpenCode();
-	return new SessionDiscovery({ log, warn, error, openCode });
+	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance });
 }
 
 /** Discover all session files on this machine */
@@ -80,10 +97,20 @@ function isOpenCodeDbSession(filePath: string): boolean {
 }
 
 /**
- * Stat a session file, handling OpenCode DB virtual paths.
- * Virtual DB paths (opencode.db#ses_<id>) are resolved to the actual DB file.
+ * Check if a session file path is a Crush DB virtual path.
+ */
+function isCrushSessionFile(filePath: string): boolean {
+	return _crushInstance.isCrushSessionFile(filePath);
+}
+
+/**
+ * Stat a session file, handling DB virtual paths (OpenCode and Crush).
+ * Virtual DB paths are resolved to the actual DB file.
  */
 async function statSessionFile(filePath: string): Promise<fs.Stats> {
+	if (isCrushSessionFile(filePath)) {
+		return _crushInstance.statSessionFile(filePath);
+	}
 	if (isOpenCodeDbSession(filePath)) {
 		const dbPath = filePath.split('#')[0];
 		return fs.promises.stat(dbPath);
@@ -99,6 +126,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/code - exploration/')) { return 'vscode-exploration'; }
 	if (normalized.includes('/vscodium/')) { return 'vscodium'; }
 	if (normalized.includes('/.copilot/')) { return 'copilot-cli'; }
+	if (normalized.includes('/.crush/crush.db#')) { return 'crush'; }
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
 	return 'vscode';
@@ -120,9 +148,40 @@ export interface SessionData {
 export async function processSessionFile(filePath: string): Promise<SessionData | null> {
 	try {
 		const stats = await statSessionFile(filePath);
-		const content = isOpenCodeDbSession(filePath)
-			? '' // OpenCode DB sessions are handled by the opencode module
-			: await fs.promises.readFile(filePath, 'utf-8');
+
+		// Handle Crush DB virtual paths directly via the crush module
+		if (isCrushSessionFile(filePath)) {
+			const result = await _crushInstance.getTokensFromCrushSession(filePath);
+			const interactions = await _crushInstance.countCrushInteractions(filePath);
+			const modelUsage = await _crushInstance.getCrushModelUsage(filePath);
+			return {
+				file: filePath,
+				tokens: result.tokens,
+				thinkingTokens: result.thinkingTokens,
+				interactions,
+				modelUsage,
+				lastModified: stats.mtime,
+				editorSource: getEditorSourceFromPath(filePath),
+			};
+		}
+
+		// Handle OpenCode DB virtual paths directly via the opencode module
+		if (isOpenCodeDbSession(filePath)) {
+			const result = await _openCodeInstance.getTokensFromOpenCodeSession(filePath);
+			const interactions = await _openCodeInstance.countOpenCodeInteractions(filePath);
+			const modelUsage = await _openCodeInstance.getOpenCodeModelUsage(filePath);
+			return {
+				file: filePath,
+				tokens: result.tokens,
+				thinkingTokens: result.thinkingTokens,
+				interactions,
+				modelUsage,
+				lastModified: stats.mtime,
+				editorSource: getEditorSourceFromPath(filePath),
+			};
+		}
+
+		const content = await fs.promises.readFile(filePath, 'utf-8');
 
 		if (!content.trim()) {
 			return null;
@@ -306,11 +365,10 @@ function aggregateIntoPeriod(period: PeriodStats, data: SessionData): void {
  * This is a simplified version that uses the shared usageAnalysis module.
  */
 export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promise<UsageAnalysisStats> {
-	const openCode = createOpenCode();
-
 	const deps = {
 		warn,
-		openCode,
+		openCode: _openCodeInstance,
+		crush: _crushInstance,
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,
