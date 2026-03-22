@@ -308,6 +308,12 @@ body {
 	white-space: nowrap;
 }
 
+.editor-badge-crush {
+	background: #3d0a4f;
+	color: #ff3dff;
+	border: 1px solid #cc00cc;
+}
+
 .session-folders-table {
 	margin-top: 16px;
 	margin-bottom: 16px;

@@ -1,17 +1,21 @@
 /**
- * Session file discovery - finds and scans for Copilot/OpenCode session files.
+ * Session file discovery - finds and scans for Copilot/OpenCode/Continue session files.
  */
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { OpenCodeDataAccess } from './opencode';
+import type { CrushDataAccess } from './crush';
+import type { ContinueDataAccess } from './continue';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
 	warn: (message: string) => void;
 	error: (message: string, error?: any) => void;
 	openCode: OpenCodeDataAccess;
+	crush: CrushDataAccess;
+	continue_: ContinueDataAccess;
 }
 
 export class SessionDiscovery {
@@ -115,6 +119,27 @@ export class SessionDiscovery {
 		let openCodeDbExists = false;
 		try { openCodeDbExists = fs.existsSync(openCodeDbPath); } catch { /* ignore */ }
 		candidates.push({ path: openCodeDbPath, exists: openCodeDbExists, source: 'OpenCode (DB)' });
+
+		// Crush projects
+		const crushConfigDir = this.deps.crush.getCrushConfigDir();
+		const crushProjectsPath = path.join(crushConfigDir, 'projects.json');
+		let crushConfigExists = false;
+		try { crushConfigExists = fs.existsSync(crushProjectsPath); } catch { /* ignore */ }
+		candidates.push({ path: crushProjectsPath, exists: crushConfigExists, source: 'Crush (projects.json)' });
+		// Add each known Crush project data dir
+		const crushProjects = this.deps.crush.readCrushProjects();
+		for (const project of crushProjects) {
+			const dbPath = path.join(project.data_dir, 'crush.db');
+			let dbExists = false;
+			try { dbExists = fs.existsSync(dbPath); } catch { /* ignore */ }
+			candidates.push({ path: dbPath, exists: dbExists, source: `Crush (${path.basename(project.path)})` });
+		}
+
+		// Continue sessions directory
+		const continueSessionsDir = this.deps.continue_.getContinueSessionsDir();
+		let continueExists = false;
+		try { continueExists = fs.existsSync(continueSessionsDir); } catch { /* ignore */ }
+		candidates.push({ path: continueSessionsDir, exists: continueExists, source: 'Continue' });
 
 		return candidates;
 	}
@@ -392,6 +417,45 @@ export class SessionDiscovery {
 				}
 			} catch (dbError) {
 				this.deps.warn(`Could not read OpenCode database: ${dbError}`);
+			}
+
+			// Check for Crush sessions (per-project ~/.crush/crush.db)
+			// Crush records all known projects in %LOCALAPPDATA%/crush/projects.json (Windows)
+			try {
+				const crushProjects = this.deps.crush.readCrushProjects();
+				this.deps.log(`📁 Crush: found ${crushProjects.length} project(s) in projects.json`);
+				let crushTotal = 0;
+				for (const project of crushProjects) {
+					const dbPath = path.join(project.data_dir, 'crush.db');
+					this.deps.log(`📁 Checking Crush DB path: ${dbPath} (exists: ${fs.existsSync(dbPath)})`);
+					try {
+						if (fs.existsSync(dbPath)) {
+							const sessionIds = await this.deps.crush.discoverSessionsInDb(dbPath);
+							for (const sessionId of sessionIds) {
+								// Virtual path: <data_dir>/crush.db#<uuid>
+								sessionFiles.push(path.join(project.data_dir, `crush.db#${sessionId}`));
+								crushTotal++;
+							}
+						}
+					} catch (projectError) {
+						this.deps.warn(`Could not read Crush database for ${project.path}: ${projectError}`);
+					}
+				}
+				if (crushTotal > 0) {
+					this.deps.log(`📄 Found ${crushTotal} session(s) in Crush database(s)`);
+				}
+			} catch (crushError) {
+				this.deps.warn(`Could not read Crush projects: ${crushError}`);
+			}
+			// Check for Continue extension session files (~/.continue/sessions/*.json)
+			try {
+				const continueFiles = this.deps.continue_.getContinueSessionFiles();
+				if (continueFiles.length > 0) {
+					this.deps.log(`📄 Found ${continueFiles.length} session file(s) in Continue (~/.continue/sessions)`);
+					sessionFiles.push(...continueFiles);
+				}
+			} catch (continueError) {
+				this.deps.warn(`Could not read Continue session files: ${continueError}`);
 			}
 
 			// Log summary
