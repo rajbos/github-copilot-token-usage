@@ -55,7 +55,7 @@ jobs:
             sort -u | \
             jq -R -s -c 'split("\n") | map(select(length > 0))')
 
-          echo "skills=$SKILLS" >> $GITHUB_OUTPUT
+          echo "skills=$SKILLS" >> "$GITHUB_OUTPUT"
           echo "Changed skills: $SKILLS"
 
   validate:
