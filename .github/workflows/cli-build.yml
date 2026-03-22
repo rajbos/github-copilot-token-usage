@@ -17,24 +17,45 @@ on:
       - 'src/toolNames.json'
   pull_request:
     branches: [main]
-    paths:
-      - 'cli/**'
-      - 'src/sessionDiscovery.ts'
-      - 'src/sessionParser.ts'
-      - 'src/tokenEstimation.ts'
-      - 'src/maturityScoring.ts'
-      - 'src/usageAnalysis.ts'
-      - 'src/opencode.ts'
-      - 'src/types.ts'
-      - 'src/tokenEstimators.json'
-      - 'src/modelPricing.json'
-      - 'src/toolNames.json'
 
 permissions:
   contents: read
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      cli-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.cli-relevant == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Check for CLI-relevant file changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@de90cc6b5708d14e015ca8c3acee5b86b31db2a8 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            cli-relevant:
+              - 'cli/**'
+              - 'src/sessionDiscovery.ts'
+              - 'src/sessionParser.ts'
+              - 'src/tokenEstimation.ts'
+              - 'src/maturityScoring.ts'
+              - 'src/usageAnalysis.ts'
+              - 'src/opencode.ts'
+              - 'src/types.ts'
+              - 'src/tokenEstimators.json'
+              - 'src/modelPricing.json'
+              - 'src/toolNames.json'
+
   build-and-validate:
+    needs: check-changes
+    if: needs.check-changes.outputs.cli-relevant == 'true'
     runs-on: ubuntu-latest
     env:
         node-version: 22
