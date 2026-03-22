@@ -75,3 +75,8 @@ updates:
     directory: /.github/skills/azure-storage-loader
     schedule:
       interval: daily
+
+  - package-ecosystem: npm
+    directory: /cli
+    schedule:
+      interval: daily
