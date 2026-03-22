@@ -72,8 +72,22 @@ jobs:
         id: version
         run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
+      - name: Check if version is already published
+        id: check_published
+        run: |
+          PACKAGE_NAME=$(node -p 'require("./package.json").name')
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Checking npm registry for ${PACKAGE_NAME}@${VERSION}..."
+          if npm view "${PACKAGE_NAME}@${VERSION}" version 2>&1; then
+            echo "Version ${VERSION} is already published to npm. Skipping publish."
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version ${VERSION} is not yet published. Proceeding with publish."
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' }}
         run: NODE_AUTH_TOKEN="" npm publish
 
       - name: Dry run publish
@@ -81,7 +95,7 @@ jobs:
         run: NODE_AUTH_TOKEN="" npm publish public --dry-run
 
       - name: Commit version bump and create PR
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' }}
         run: |
           cd ..
           git config user.name "github-actions[bot]"
@@ -101,15 +115,21 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "## CLI Package Published 📦"
-            echo ""
-            echo "- **Version:** v${{ steps.version.outputs.version }}"
-            echo "- **Bump:** ${{ inputs.version_bump }}"
-            echo "- **Dry run:** ${{ inputs.dry_run }}"
-            echo ""
-            if [ "${{ inputs.dry_run }}" = "false" ]; then
-              echo "Install with: \`npx @rajbos/ai-engineering-fluency\`"
+            if [ "${{ steps.check_published.outputs.already_published }}" = "true" ]; then
+              echo "## CLI Package Publish Skipped ⏭️"
               echo ""
-              echo "A PR has been opened to merge the version bump back to main."
+              echo "Version **v${{ steps.version.outputs.version }}** is already published to npm."
+            else
+              echo "## CLI Package Published 📦"
+              echo ""
+              echo "- **Version:** v${{ steps.version.outputs.version }}"
+              echo "- **Bump:** ${{ inputs.version_bump }}"
+              echo "- **Dry run:** ${{ inputs.dry_run }}"
+              echo ""
+              if [ "${{ inputs.dry_run }}" = "false" ]; then
+                echo "Install with: \`npx @rajbos/ai-engineering-fluency\`"
+                echo ""
+                echo "A PR has been opened to merge the version bump back to main."
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
