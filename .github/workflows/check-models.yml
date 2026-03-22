@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
 
@@ -99,7 +99,7 @@ jobs:
           echo ""
           echo "=== Copilot CLI Output ==="
 
-          cd ${GITHUB_WORKSPACE}
+          cd "${GITHUB_WORKSPACE}"
           
           # Run copilot with the prompt using non-interactive mode
           COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
@@ -113,29 +113,29 @@ jobs:
         run: |
           if git diff --quiet src/tokenEstimators.json src/modelPricing.json; then
             echo "No changes detected in model data files"
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             # Check if the only change is the lastUpdated date in modelPricing.json
             DIFF_OUTPUT=$(git diff src/modelPricing.json)
             
             # Count the number of changed lines (lines starting with +/- but not +++ or ---)
-            CHANGED_LINES=$(echo "$DIFF_OUTPUT" | grep -E '^[+-][^+-]' | wc -l)
+            CHANGED_LINES=$(echo "$DIFF_OUTPUT" | grep -cE '^[+-][^+-]' || true)
             
             # Check if only 2 lines changed (one deletion, one addition) and both contain "lastUpdated"
             if [ "$CHANGED_LINES" -eq 2 ]; then
               # Check if all changed lines contain "lastUpdated"
-              if echo "$DIFF_OUTPUT" | grep -E '^[+-][^+-]' | grep -v '"lastUpdated"' | wc -l | grep -q '^0$'; then
+              if ! echo "$DIFF_OUTPUT" | grep -E '^[+-][^+-]' | grep -qv '"lastUpdated"'; then
                 # Verify no changes to tokenEstimators.json
                 if git diff --quiet src/tokenEstimators.json; then
                   echo "Only lastUpdated date changed - skipping PR creation"
-                  echo "changed=false" >> $GITHUB_OUTPUT
+                  echo "changed=false" >> "$GITHUB_OUTPUT"
                   exit 0
                 fi
               fi
             fi
             
             echo "Changes detected in model data files"
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create Pull Request

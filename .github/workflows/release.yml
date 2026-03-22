@@ -32,7 +32,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
         egress-policy: audit
 
@@ -49,10 +49,10 @@ jobs:
       id: trigger_type
       run: |
         if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "is_manual=true" >> $GITHUB_OUTPUT
+          echo "is_manual=true" >> "$GITHUB_OUTPUT"
           echo "Triggered manually via workflow_dispatch"
         else
-          echo "is_manual=false" >> $GITHUB_OUTPUT
+          echo "is_manual=false" >> "$GITHUB_OUTPUT"
           echo "Triggered by tag push"
         fi
         
@@ -60,7 +60,7 @@ jobs:
       id: package_version
       run: |
         PACKAGE_VERSION=$(node -p "require('./package.json').version")
-        echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
         echo "Package version: $PACKAGE_VERSION"
         
     - name: Extract version from tag
@@ -73,7 +73,7 @@ jobs:
           # For tag triggers, extract from the tag
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
         fi
-        echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+        echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
         echo "Release version: $TAG_VERSION"
         
     - name: Verify version consistency
@@ -95,7 +95,7 @@ jobs:
         else
           TAG_NAME="${{ github.ref_name }}"
         fi
-        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
         echo "Tag name: $TAG_NAME"
 
     - name: Generate release notes
@@ -150,7 +150,7 @@ jobs:
       run: |
         VERSION="${{ steps.extract_version.outputs.tag_version }}"
         BRANCH="changelog/v${VERSION}"
-        echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+        echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -239,8 +239,8 @@ jobs:
     - name: Get VSIX filename
       id: vsix_filename
       run: |
-        VSIX_FILE=$(ls *.vsix | head -n 1)
-        echo "vsix_file=$VSIX_FILE" >> $GITHUB_OUTPUT
+        VSIX_FILE=$(find . -maxdepth 1 -name "*.vsix" -exec basename {} \; | head -n 1)
+        echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
         echo "VSIX file: $VSIX_FILE"
 
     - name: Upload VSIX as workflow artifact
@@ -270,26 +270,30 @@ jobs:
       if: always()
       run: |
         if [ "${{ steps.create_release.outcome }}" == "success" ]; then
-          echo "# ✅ Release Created Successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}" >> $GITHUB_STEP_SUMMARY
-          echo "🔗 [Release URL](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag_name.outputs.tag_name }})" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "# ✅ Release Created Successfully"
+            echo ""
+            echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} created successfully!"
+            echo "📦 VSIX package: ${{ steps.vsix_filename.outputs.vsix_file }}"
+            echo "🔗 [Release URL](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag_name.outputs.tag_name }})"
+          } >> "$GITHUB_STEP_SUMMARY"
         else
-          echo "# ❌ Release Creation Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.extract_version.outputs.tag_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** ${{ steps.tag_name.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Error Details" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          if [ -f /tmp/release_output.txt ]; then
-            cat /tmp/release_output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No error details captured" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "# ❌ Release Creation Failed"
+            echo ""
+            echo "**Version:** ${{ steps.extract_version.outputs.tag_version }}"
+            echo "**Tag:** ${{ steps.tag_name.outputs.tag_name }}"
+            echo ""
+            echo "## Error Details"
+            echo ""
+            echo "\`\`\`"
+            if [ -f /tmp/release_output.txt ]; then
+              cat /tmp/release_output.txt
+            else
+              echo "No error details captured"
+            fi
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
           exit 1
         fi
 
@@ -302,7 +306,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
         egress-policy: audit
 
@@ -329,9 +333,9 @@ jobs:
           --repo "${{ github.repository }}" \
           --pattern "*.vsix" \
           --dir .
-        VSIX_FILE=$(ls *.vsix | head -n 1)
+        VSIX_FILE=$(find . -maxdepth 1 -name "*.vsix" -exec basename {} \; | head -n 1)
         echo "Downloaded: $VSIX_FILE"
-        echo "vsix_file=$VSIX_FILE" >> $GITHUB_OUTPUT
+        echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
 
     - name: Publish to VS Code Marketplace
       id: publish
@@ -353,15 +357,17 @@ jobs:
     - name: Publish Summary
       if: always()
       run: |
-        echo "# 🚀 VS Code Marketplace" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ steps.publish.outcome }}" == "success" ]; then
-          echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "❌ Failed to publish v${{ needs.release.outputs.version }} to marketplace." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Ensure the \`VSCE_PAT\` secret is configured with a valid Azure DevOps PAT" >> $GITHUB_STEP_SUMMARY
-          echo "with the \`Marketplace (Publish)\` scope for all accessible organizations." >> $GITHUB_STEP_SUMMARY
-        fi
+        {
+          echo "# 🚀 VS Code Marketplace"
+          echo ""
+          if [ "${{ steps.publish.outcome }}" == "success" ]; then
+            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)"
+          else
+            echo "❌ Failed to publish v${{ needs.release.outputs.version }} to marketplace."
+            echo ""
+            echo "Ensure the \`VSCE_PAT\` secret is configured with a valid Azure DevOps PAT"
+            echo "with the \`Marketplace (Publish)\` scope for all accessible organizations."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
 
 
