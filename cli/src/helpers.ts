@@ -10,6 +10,7 @@ import { SessionDiscovery } from '../../src/sessionDiscovery';
 import { OpenCodeDataAccess } from '../../src/opencode';
 import { CrushDataAccess } from '../../src/crush';
 import { ContinueDataAccess } from '../../src/continue';
+import { VisualStudioDataAccess } from '../../src/visualstudio';
 import { parseSessionFileContent } from '../../src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../src/types';
@@ -53,14 +54,20 @@ function createContinue(): ContinueDataAccess {
 	return new ContinueDataAccess();
 }
 
+/** Create Visual Studio data access instance for CLI */
+function createVisualStudio(): VisualStudioDataAccess {
+	return new VisualStudioDataAccess();
+}
+
 // Module-level singletons so sql.js WASM is only initialised once across all session files
 const _openCodeInstance = createOpenCode();
 const _crushInstance = createCrush();
 const _continueInstance = createContinue();
+const _visualStudioInstance = createVisualStudio();
 
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance });
+	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance });
 }
 
 /** Discover all session files on this machine */
@@ -369,6 +376,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		warn,
 		openCode: _openCodeInstance,
 		crush: _crushInstance,
+		visualStudio: _visualStudioInstance,
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,

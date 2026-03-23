@@ -314,6 +314,12 @@ body {
 	border: 1px solid #cc00cc;
 }
 
+.editor-badge-vs {
+	background: #5c2d91;
+	color: #ffffff;
+	border: 1px solid #7b3fbe;
+}
+
 .session-folders-table {
 	margin-top: 16px;
 	margin-bottom: 16px;

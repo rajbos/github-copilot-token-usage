@@ -8,6 +8,7 @@ import * as os from 'os';
 import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
+import type { VisualStudioDataAccess } from "./visualstudio";
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -16,6 +17,7 @@ export interface SessionDiscoveryDeps {
 	openCode: OpenCodeDataAccess;
 	crush: CrushDataAccess;
 	continue_: ContinueDataAccess;
+	visualStudio: VisualStudioDataAccess;
 }
 
 export class SessionDiscovery {
@@ -134,6 +136,12 @@ export class SessionDiscovery {
 			try { dbExists = fs.existsSync(dbPath); } catch { /* ignore */ }
 			candidates.push({ path: dbPath, exists: dbExists, source: `Crush (${path.basename(project.path)})` });
 		}
+
+		// Add VS Copilot log directory as candidate
+		const vsLogDir = this.deps.visualStudio.getLogDir();
+		let vsLogDirExists = false;
+		try { vsLogDirExists = fs.existsSync(vsLogDir); } catch {}
+		candidates.push({ path: vsLogDir, exists: vsLogDirExists, source: "Visual Studio (log dir)" });
 
 		// Continue sessions directory
 		const continueSessionsDir = this.deps.continue_.getContinueSessionsDir();
@@ -456,6 +464,17 @@ export class SessionDiscovery {
 				}
 			} catch (continueError) {
 				this.deps.warn(`Could not read Continue session files: ${continueError}`);
+			}
+
+			// Check for Visual Studio Copilot session files
+			try {
+				const vsSessions = this.deps.visualStudio.discoverSessions();
+				if (vsSessions.length > 0) {
+					this.deps.log(`📄 Found ${vsSessions.length} session file(s) in Visual Studio Copilot`);
+					sessionFiles.push(...vsSessions);
+				}
+			} catch (vsError) {
+				this.deps.warn(`Could not read Visual Studio session files: ${vsError}`);
 			}
 
 			// Log summary
