@@ -185,6 +185,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Cached sql.js SQL module (lazy initialized)
 
+	// In-flight command tracker — prevents concurrent execution of the same webview command
+	private readonly _inFlightCommands = new Set<string>();
+
 	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
 	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
 
@@ -294,6 +297,49 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (error) {
 			this.outputChannel.appendLine(`[${timestamp}] ${error}`);
 		}
+	}
+
+	/**
+	 * Dispatch a webview command with in-flight deduplication and error handling.
+	 * If a command with the same key is already executing, the new call is silently dropped.
+	 * Use panel-prefixed keys for panel-specific commands (e.g. 'refresh:details') and plain
+	 * command names for shared navigation commands (e.g. 'showDetails').
+	 */
+	private async dispatch(commandKey: string, handler: () => unknown): Promise<void> {
+		if (this._inFlightCommands.has(commandKey)) {
+			this.log(`⏳ Command '${commandKey}' already in flight, skipping`);
+			return;
+		}
+		this._inFlightCommands.add(commandKey);
+		try {
+			await handler();
+		} catch (error) {
+			this.error(`Webview command '${commandKey}' failed`, error);
+			vscode.window.showErrorMessage(`Operation failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			this._inFlightCommands.delete(commandKey);
+		}
+	}
+
+	/**
+	 * Dispatch a shared navigation command that is common across all webview panels.
+	 * Returns true if the command was recognised and dispatched, false if it is panel-specific.
+	 */
+	private async dispatchSharedCommand(command: string): Promise<boolean> {
+		const handlers: Record<string, () => unknown> = {
+			showDetails:            () => this.showDetails(),
+			showChart:              () => this.showChart(),
+			showUsageAnalysis:      () => this.showUsageAnalysis(),
+			showDiagnostics:        () => this.showDiagnosticReport(),
+			showMaturity:           () => this.showMaturity(),
+			showDashboard:          () => this.showDashboard(),
+			showEnvironmental:      () => this.showEnvironmental(),
+			showFluencyLevelViewer: () => this.showFluencyLevelViewer(),
+		};
+		const handler = handlers[command];
+		if (!handler) { return false; }
+		await this.dispatch(command, handler);
+		return true;
 	}
 
 	// Cache management methods
@@ -3360,30 +3406,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'refresh':
-					await this.refreshDetailsPanel();
-					break;
-				case 'showChart':
-					await this.showChart();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
-				case 'showDashboard':
-					await this.showDashboard();
-					break;
-				case 'showEnvironmental':
-					await this.showEnvironmental();
+					await this.dispatch('refresh:details', () => this.refreshDetailsPanel());
 					break;
 				case 'saveSortSettings':
-					await this.context.globalState.update('details.sortSettings', message.settings);
+					await this.dispatch('saveSortSettings:details', () =>
+						this.context.globalState.update('details.sortSettings', message.settings)
+					);
 					break;
 			}
 		});
@@ -3426,32 +3457,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
 
 		this.environmentalPanel.webview.onDidReceiveMessage(async (message) => {
-			switch (message.command) {
-				case 'refresh': {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (message.command === 'refresh') {
+				await this.dispatch('refresh:environmental', async () => {
 					const refreshed = await this.updateTokenStats();
 					if (refreshed && this.environmentalPanel) {
 						this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, refreshed);
 					}
-					break;
-				}
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showChart':
-					await this.showChart();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
-				case 'showDashboard':
-					await this.showDashboard();
-					break;
+				});
 			}
 		});
 
@@ -3532,28 +3545,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
-			switch (message.command) {
-				case 'refresh':
-					await this.refreshChartPanel();
-					break;
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
-				case 'showDashboard':
-					await this.showDashboard();
-					break;
-				case 'showEnvironmental':
-					await this.showEnvironmental();
-					break;
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (message.command === 'refresh') {
+				await this.dispatch('refresh:chart', () => this.refreshChartPanel());
 			}
 		});
 
@@ -3599,36 +3593,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Handle messages from the webview
 		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'refresh':
-					await this.refreshAnalysisPanel();
-					break;
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showChart':
-					await this.showChart();
-					break;
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
-				case 'showDashboard':
-					await this.showDashboard();
-					break;
-				case 'showEnvironmental':
-					await this.showEnvironmental();
+					await this.dispatch('refresh:analysis', () => this.refreshAnalysisPanel());
 					break;
 				case 'analyseRepository':
-					await this.handleAnalyseRepository(message.workspacePath);
+					await this.dispatch('analyseRepository', () => this.handleAnalyseRepository(message.workspacePath));
 					break;
 				case 'analyseAllRepositories':
-					await this.handleAnalyseAllRepositories();
+					await this.dispatch('analyseAllRepositories', () => this.handleAnalyseAllRepositories());
 					break;
 				case 'openCopilotChatWithPrompt':
-					await vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true });
+					await this.dispatch('openCopilotChatWithPrompt', () =>
+						vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true })
+					);
 					break;
 			}
 		});
@@ -3961,13 +3940,16 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 
 		// Handle messages from the webview
 		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'openRawFile':
-					try {
-						await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
-					} catch (err) {
-						vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
-					}
+					await this.dispatch('openRawFile:logviewer', async () => {
+						try {
+							await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
+						} catch (err) {
+							vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
+						}
+					});
 					break;
 				case 'showToolCallPretty': {
 					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
@@ -4078,18 +4060,6 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 					}
 					break;
 				}
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
-					break;
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showMaturity':
-					await this.showMaturity();
-					break;
 			}
 		});
 
@@ -4282,86 +4252,74 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
 
 		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'refresh':
-					await this.refreshMaturityPanel();
-					break;
-				case 'showFluencyLevelViewer':
-					await this.showFluencyLevelViewer();
-					break;
-				case 'showDetails':
-					await this.showDetails();
-					break;
-				case 'showChart':
-					await this.showChart();
-					break;
-				case 'showUsageAnalysis':
-					await this.showUsageAnalysis();
-					break;
-				case 'showDiagnostics':
-					await this.showDiagnosticReport();
+					await this.dispatch('refresh:maturity', () => this.refreshMaturityPanel());
 					break;
 				case 'searchMcpExtensions':
-					await vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp');
+					await this.dispatch('searchMcpExtensions', () =>
+						vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp')
+					);
 					break;
 				case 'shareToIssue': {
-					const scores = await this.calculateMaturityScores();
-					const categorySections = scores.categories.map(c => {
-						const evidenceList = c.evidence.length > 0
-							? c.evidence.map(e => `- ✅ ${e}`).join('\n')
-							: '- No significant activity detected';
-						return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
-					}).join('\n\n');
-					const body = `<h2>Copilot Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
-					const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
-					await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					await this.dispatch('shareToIssue', async () => {
+						const scores = await this.calculateMaturityScores();
+						const categorySections = scores.categories.map(c => {
+							const evidenceList = c.evidence.length > 0
+								? c.evidence.map(e => `- ✅ ${e}`).join('\n')
+								: '- No significant activity detected';
+							return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
+						}).join('\n\n');
+						const body = `<h2>Copilot Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
+						const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
+						await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					});
 					break;
 				}
 				case 'dismissTips':
 					if (message.category) {
-						await this.dismissFluencyTips(message.category);
-						await this.refreshMaturityPanel();
+						await this.dispatch('dismissTips', async () => {
+							await this.dismissFluencyTips(message.category);
+							await this.refreshMaturityPanel();
+						});
 					}
 					break;
 				case 'resetDismissedTips':
-					await this.resetDismissedFluencyTips();
-					await this.refreshMaturityPanel();
-					break;
-				case 'showDashboard':
-					await this.showDashboard();
-					break;
-				case 'showEnvironmental':
-					await this.showEnvironmental();
+					await this.dispatch('resetDismissedTips', async () => {
+						await this.resetDismissedFluencyTips();
+						await this.refreshMaturityPanel();
+					});
 					break;
 				case 'shareToLinkedIn':
-					await this.shareToSocialMedia('linkedin');
+					await this.dispatch('shareToLinkedIn', () => this.shareToSocialMedia('linkedin'));
 					break;
 				case 'shareToBluesky':
-					await this.shareToSocialMedia('bluesky');
+					await this.dispatch('shareToBluesky', () => this.shareToSocialMedia('bluesky'));
 					break;
 				case 'shareToMastodon':
-					await this.shareToSocialMedia('mastodon');
+					await this.dispatch('shareToMastodon', () => this.shareToSocialMedia('mastodon'));
 					break;
 				case 'downloadChartImage':
-					await this.downloadChartImage();
+					await this.dispatch('downloadChartImage', () => this.downloadChartImage());
 					break;
 				case 'saveChartImage':
 					if (message.data) {
-						await this.saveChartImageData(message.data);
+						await this.dispatch('saveChartImage', () => this.saveChartImageData(message.data));
 					}
 					break;
 				case 'exportPdf':
 					if (message.data) {
-						await this.exportFluencyScorePdf(message.data);
+						await this.dispatch('exportPdf', () => this.exportFluencyScorePdf(message.data));
 					}
 					break;
 				case 'exportPptx':
 					if (message.data) {
-						await this.exportFluencyScorePptx(message.data);
+						await this.dispatch('exportPptx', () => this.exportFluencyScorePptx(message.data));
 					}
 					break;
-		}
-	});
+			}
+		});
 
 	this.maturityPanel.onDidDispose(() => {
 		this.log('🎯 Copilot Fluency Score dashboard closed');
@@ -4789,25 +4747,9 @@ ${hashtag}`;
 
     this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(
       async (message) => {
-        switch (message.command) {
-          case "refresh":
-            await this.refreshFluencyLevelViewerPanel();
-            break;
-          case "showMaturity":
-            await this.showMaturity();
-            break;
-          case "showDetails":
-            await this.showDetails();
-            break;
-          case "showChart":
-            await this.showChart();
-            break;
-          case "showUsageAnalysis":
-            await this.showUsageAnalysis();
-            break;
-          case "showDiagnostics":
-            await this.showDiagnosticReport();
-            break;
+        if (await this.dispatchSharedCommand(message.command)) { return; }
+        if (message.command === "refresh") {
+          await this.dispatch('refresh:fluencyLevelViewer', () => this.refreshFluencyLevelViewerPanel());
         }
       },
     );
@@ -5014,30 +4956,13 @@ ${hashtag}`;
     );
 
     this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
+      if (await this.dispatchSharedCommand(message.command)) { return; }
       switch (message.command) {
         case "refresh":
-          await this.refreshDashboardPanel();
-          break;
-        case "showDetails":
-          await this.showDetails();
-          break;
-        case "showChart":
-          await this.showChart();
-          break;
-        case "showUsageAnalysis":
-          await this.showUsageAnalysis();
-          break;
-        case "showDiagnostics":
-          await this.showDiagnosticReport();
-          break;
-        case "showMaturity":
-          await this.showMaturity();
-          break;
-        case "showEnvironmental":
-          await this.showEnvironmental();
+          await this.dispatch('refresh:dashboard', () => this.refreshDashboardPanel());
           break;
         case "deleteUserDataset":
-          await this.handleDeleteUserDataset(message.userId, message.datasetId);
+          await this.dispatch('deleteUserDataset', () => this.handleDeleteUserDataset(message.userId, message.datasetId));
           break;
       }
     });
@@ -5998,171 +5923,176 @@ ${hashtag}`;
 
     // Handle messages from the webview
     this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+      if (await this.dispatchSharedCommand(message.command)) { return; }
       switch (message.command) {
         case "copyReport":
-          await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
-          vscode.window.showInformationMessage(
-            "Diagnostic report copied to clipboard",
-          );
+          await this.dispatch('copyReport:diagnostics', async () => {
+            await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
+            vscode.window.showInformationMessage(
+              "Diagnostic report copied to clipboard",
+            );
+          });
           break;
         case "openIssue":
-          await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
-          vscode.window.showInformationMessage(
-            "Diagnostic report copied to clipboard. Please paste it into the GitHub issue.",
-          );
-          const shortBody = encodeURIComponent(
-            "The diagnostic report has been copied to the clipboard. Please paste it below.",
-          );
+          await this.dispatch('openIssue:diagnostics', async () => {
+            await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
+            vscode.window.showInformationMessage(
+              "Diagnostic report copied to clipboard. Please paste it into the GitHub issue.",
+            );
+            const shortBody = encodeURIComponent(
+              "The diagnostic report has been copied to the clipboard. Please paste it below.",
+            );
           const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
-          await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+            await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+          });
           break;
         case "openSessionFile":
           if (message.file) {
-            try {
-              // Open the session file in the log viewer
-              await this.showLogViewer(message.file);
-            } catch (err) {
-              vscode.window.showErrorMessage(
-                "Could not open log viewer: " + message.file,
-              );
-            }
+            await this.dispatch('openSessionFile:diagnostics', async () => {
+              try {
+                // Open the session file in the log viewer
+                await this.showLogViewer(message.file);
+              } catch (err) {
+                vscode.window.showErrorMessage(
+                  "Could not open log viewer: " + message.file,
+                );
+              }
+            });
           }
           break;
 
         case "openFormattedJsonlFile":
           if (message.file) {
-            try {
-              await this.showFormattedJsonlFile(message.file);
-            } catch (err) {
-              const errorMsg = err instanceof Error ? err.message : String(err);
-              vscode.window.showErrorMessage(
-                "Could not open formatted file: " +
-                  message.file +
-                  " (" +
-                  errorMsg +
-                  ")",
-              );
-            }
+            await this.dispatch('openFormattedJsonlFile:diagnostics', async () => {
+              try {
+                await this.showFormattedJsonlFile(message.file);
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                vscode.window.showErrorMessage(
+                  "Could not open formatted file: " +
+                    message.file +
+                    " (" +
+                    errorMsg +
+                    ")",
+                );
+              }
+            });
           }
           break;
 
         case "revealPath":
           if (message.path) {
-            try {
-              const fs = require("fs");
-              const pathModule = require("path");
-              const normalized = pathModule.normalize(message.path);
-
-              // If the path exists and is a directory, open it directly in the OS file manager.
-              // Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
+            await this.dispatch('revealPath:diagnostics', async () => {
               try {
-                const stat = await fs.promises.stat(normalized);
-                if (stat.isDirectory()) {
-                  await vscode.env.openExternal(vscode.Uri.file(normalized));
-                } else {
-                  // For files, reveal the file in OS (select it)
+                const fs = require("fs");
+                const pathModule = require("path");
+                const normalized = pathModule.normalize(message.path);
+
+                // If the path exists and is a directory, open it directly in the OS file manager.
+                // Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
+                try {
+                  const stat = await fs.promises.stat(normalized);
+                  if (stat.isDirectory()) {
+                    await vscode.env.openExternal(vscode.Uri.file(normalized));
+                  } else {
+                    // For files, reveal the file in OS (select it)
+                    await vscode.commands.executeCommand(
+                      "revealFileInOS",
+                      vscode.Uri.file(normalized),
+                    );
+                  }
+                } catch (err) {
+                  // If the stat fails, fallback to revealFileInOS which may still work
                   await vscode.commands.executeCommand(
                     "revealFileInOS",
                     vscode.Uri.file(normalized),
                   );
                 }
               } catch (err) {
-                // If the stat fails, fallback to revealFileInOS which may still work
-                await vscode.commands.executeCommand(
-                  "revealFileInOS",
-                  vscode.Uri.file(normalized),
+                vscode.window.showErrorMessage(
+                  "Could not reveal: " + message.path,
                 );
               }
-            } catch (err) {
-              vscode.window.showErrorMessage(
-                "Could not reveal: " + message.path,
-              );
-            }
+            });
           }
-          break;
-        case "showDetails":
-          await this.showDetails();
-          break;
-        case "showChart":
-          await this.showChart();
-          break;
-        case "showUsageAnalysis":
-          await this.showUsageAnalysis();
-          break;
-        case "showMaturity":
-          await this.showMaturity();
           break;
         case "clearCache":
-          this.log("clearCache message received from diagnostics webview");
-          await this.clearCache();
-          // After clearing cache, refresh the diagnostic report if it's open
-          if (this.diagnosticsPanel) {
-            // Send completion message to webview before refreshing
-            this.diagnosticsPanel.webview.postMessage({
-              command: "cacheCleared",
-            });
-            // Wait a moment for the message to be processed
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            // Simply refresh the diagnostic report by revealing it again
-            // This will trigger a rebuild with fresh data
-            await this.showDiagnosticReport();
-          }
+          await this.dispatch('clearCache:diagnostics', async () => {
+            this.log("clearCache message received from diagnostics webview");
+            await this.clearCache();
+            // After clearing cache, refresh the diagnostic report if it's open
+            if (this.diagnosticsPanel) {
+              // Send completion message to webview before refreshing
+              this.diagnosticsPanel.webview.postMessage({
+                command: "cacheCleared",
+              });
+              // Wait a moment for the message to be processed
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              // Simply refresh the diagnostic report by revealing it again
+              // This will trigger a rebuild with fresh data
+              await this.showDiagnosticReport();
+            }
+          });
           break;
         case "configureBackend":
-          // Execute the configureBackend command if it exists
-          try {
-            await vscode.commands.executeCommand(
-              "copilot-token-tracker.configureBackend",
-            );
-          } catch (err) {
-            // If command is not registered, show settings
-            vscode.window
-              .showInformationMessage(
-                'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
-                "Open Settings",
-              )
-              .then((choice) => {
-                if (choice === "Open Settings") {
-                  vscode.commands.executeCommand(
-                    "workbench.action.openSettings",
-                    "copilotTokenTracker.backend",
-                  );
-                }
-              });
-          }
+          await this.dispatch('configureBackend:diagnostics', async () => {
+            // Execute the configureBackend command if it exists
+            try {
+              await vscode.commands.executeCommand(
+                "copilot-token-tracker.configureBackend",
+              );
+            } catch (err) {
+              // If command is not registered, show settings
+              vscode.window
+                .showInformationMessage(
+                  'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
+                  "Open Settings",
+                )
+                .then((choice) => {
+                  if (choice === "Open Settings") {
+                    vscode.commands.executeCommand(
+                      "workbench.action.openSettings",
+                      "copilotTokenTracker.backend",
+                    );
+                  }
+                });
+            }
+          });
           break;
         case "openSettings":
-          await vscode.commands.executeCommand(
-            "workbench.action.openSettings",
-            "copilotTokenTracker.backend",
+          await this.dispatch('openSettings:diagnostics', () =>
+            vscode.commands.executeCommand(
+              "workbench.action.openSettings",
+              "copilotTokenTracker.backend",
+            )
           );
           break;
-        case "showDashboard":
-          await this.showDashboard();
-          break;
-        case "showEnvironmental":
-          await this.showEnvironmental();
-          break;
         case "resetDebugCounters":
-          await this.context.globalState.update('extension.openCount', 0);
-          await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
-          await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
-          await this.context.globalState.update('news.unknownMcpTools.dismissedVersion', undefined);
-          vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
-          await this.showDiagnosticReport();
+          await this.dispatch('resetDebugCounters:diagnostics', async () => {
+            await this.context.globalState.update('extension.openCount', 0);
+            await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
+            await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
+            await this.context.globalState.update('news.unknownMcpTools.dismissedVersion', undefined);
+            vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
+            await this.showDiagnosticReport();
+          });
           break;
         case "setDebugCounter":
           if (typeof message.key === 'string' && typeof message.value === 'number') {
-            await this.context.globalState.update(message.key, message.value);
-            vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
-            await this.showDiagnosticReport();
+            await this.dispatch('setDebugCounter:diagnostics', async () => {
+              await this.context.globalState.update(message.key, message.value);
+              vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+              await this.showDiagnosticReport();
+            });
           }
           break;
         case "setDebugFlag":
           if (typeof message.key === 'string' && typeof message.value === 'boolean') {
-            await this.context.globalState.update(message.key, message.value);
-            vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
-            await this.showDiagnosticReport();
+            await this.dispatch('setDebugFlag:diagnostics', async () => {
+              await this.context.globalState.update(message.key, message.value);
+              vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+              await this.showDiagnosticReport();
+            });
           }
           break;
       }
