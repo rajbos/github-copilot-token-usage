@@ -199,6 +199,7 @@
   ,"mcp_chrome-devtoo_list_network_requests": "Chrome DevTools MCP: List Network Requests"
   ,"mcp_chrome-devtoo_press_key": "Chrome DevTools MCP: Press Key"
   ,"mcp_chrome-devtoo_take_snapshot": "Chrome DevTools MCP: Take Snapshot"
+  ,"mcp_chrome-devtoo_wait_for": "Chrome DevTools MCP: Wait For"
   ,"mcp_chrome_devtoo_click": "Chrome DevTools MCP: Click"
   ,"mcp_chrome_devtoo_evaluate_script": "Chrome DevTools MCP: Evaluate Script"
   ,"mcp_chrome_devtoo_fill": "Chrome DevTools MCP: Fill"
