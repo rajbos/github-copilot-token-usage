@@ -9,3 +9,11 @@ node_modules
 .github/scripts/scraped-models.json
 example.json
 log-example.txt
+
+# Visual Studio extension generated files
+visualstudio-extension/**/obj/
+visualstudio-extension/**/bin/
+visualstudio-extension/.vs/
+
+# Accidental nested Visual Studio extension workspace/build output
+visualstudio-extension/visualstudio-extension/
