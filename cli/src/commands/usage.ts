@@ -4,8 +4,8 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { discoverSessionFiles, calculateDetailedStats, fmt, formatTokens, modelPricing } from '../helpers';
-import type { PeriodStats, ModelUsage } from '../../../src/types';
-import { getModelTier } from '../../../src/tokenEstimation';
+import type { PeriodStats, ModelUsage } from '../../../vscode-extension/src/types';
+import { getModelTier } from '../../../vscode-extension/src/tokenEstimation';
 
 export const usageCommand = new Command('usage')
 	.description('Show token usage for today, current month, last month, and last 30 days')

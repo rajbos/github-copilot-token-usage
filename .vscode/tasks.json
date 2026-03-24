@@ -7,6 +7,9 @@
       "label": "npm compile",
       "type": "npm",
       "script": "compile",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
       "group": {
         "kind": "build",
         "isDefault": true
@@ -27,6 +30,9 @@
     {
       "type": "npm",
       "script": "watch",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
       "group": "build",
       "problemMatcher": [],
       "isBackground": true,
@@ -39,6 +45,9 @@
     {
       "type": "npm",
       "script": "watch:esbuild",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
       "group": "build",
       "problemMatcher": [],
       "isBackground": true,
@@ -51,6 +60,9 @@
     {
       "type": "npm",
       "script": "watch:tsc",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
       "group": "build",
       "problemMatcher": "$tsc-watch",
       "isBackground": true,
@@ -63,6 +75,9 @@
     {
       "type": "npm",
       "script": "watch-tests",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
       "problemMatcher": "$tsc-watch",
       "isBackground": true,
       "presentation": {

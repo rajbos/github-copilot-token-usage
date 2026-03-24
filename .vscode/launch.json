@@ -11,10 +11,10 @@
 			"request": "launch",
 			"preLaunchTask": "npm compile",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}"
+				"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension"
 			],
 			"outFiles": [
-				"${workspaceFolder}/dist/**/*.js"
+				"${workspaceFolder}/vscode-extension/dist/**/*.js"
 			]
 		}
 	]

@@ -13,7 +13,7 @@ async function main() {
   ];
 
   for (const file of dataFiles) {
-    const srcPath = path.join(__dirname, "..", "src", file);
+    const srcPath = path.join(__dirname, "..", "vscode-extension", "src", file);
     const destPath = path.join(__dirname, "src", file);
     if (fs.existsSync(srcPath) && !fs.existsSync(destPath)) {
       fs.copyFileSync(srcPath, destPath);

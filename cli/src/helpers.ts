@@ -6,22 +6,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import chalk from 'chalk';
-import { SessionDiscovery } from '../../src/sessionDiscovery';
-import { OpenCodeDataAccess } from '../../src/opencode';
-import { CrushDataAccess } from '../../src/crush';
-import { ContinueDataAccess } from '../../src/continue';
-import { VisualStudioDataAccess } from '../../src/visualstudio';
-import { parseSessionFileContent } from '../../src/sessionParser';
-import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../src/tokenEstimation';
-import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../src/types';
-import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../src/usageAnalysis';
-import { createEmptyContextRefs } from '../../src/tokenEstimation';
+import { SessionDiscovery } from '../../vscode-extension/src/sessionDiscovery';
+import { OpenCodeDataAccess } from '../../vscode-extension/src/opencode';
+import { CrushDataAccess } from '../../vscode-extension/src/crush';
+import { ContinueDataAccess } from '../../vscode-extension/src/continue';
+import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio';
+import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
+import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
+import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
+import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../vscode-extension/src/usageAnalysis';
+import { createEmptyContextRefs } from '../../vscode-extension/src/tokenEstimation';
 import * as vscodeStub from './vscode-stub';
 
 // Import JSON data files
-import tokenEstimatorsData from '../../src/tokenEstimators.json';
-import modelPricingData from '../../src/modelPricing.json';
-import toolNamesData from '../../src/toolNames.json';
+import tokenEstimatorsData from '../../vscode-extension/src/tokenEstimators.json';
+import modelPricingData from '../../vscode-extension/src/modelPricing.json';
+import toolNamesData from '../../vscode-extension/src/toolNames.json';
 
 // Environmental impact constants (from extension.ts)
 const CO2_PER_1K_TOKENS = 0.2;           // gCO2e per 1000 tokens
