@@ -40,7 +40,15 @@ namespace CopilotTokenTracker.ToolWindow
         {
             try
             {
-                await WebView.EnsureCoreWebView2Async(null);
+                // Use a writable user-data folder so WebView2 works inside the
+                // VS experimental instance (the default location is often denied).
+                var userDataFolder = Path.Combine(
+                    Path.GetTempPath(),
+                    "CopilotTokenTracker-WebView2");
+                var env = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: userDataFolder);
+
+                await WebView.EnsureCoreWebView2Async(env);
 
                 // Disable unnecessary browser chrome
                 WebView.CoreWebView2.Settings.IsStatusBarEnabled          = false;
