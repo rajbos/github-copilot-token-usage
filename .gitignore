@@ -14,6 +14,10 @@ log-example.txt
 visualstudio-extension/**/obj/
 visualstudio-extension/**/bin/
 visualstudio-extension/.vs/
+visualstudio-extension/**/obj/**
+visualstudio-extension/**/bin/**
 
 # Accidental nested Visual Studio extension workspace/build output
 visualstudio-extension/visualstudio-extension/
+visualstudio-extension/src/CopilotTokenTracker/bin/Release/net472/MessagePack.Annotations.dll
+visualstudio-extension/src/CopilotTokenTracker/bin/Release/net472/System.Buffers.dll
