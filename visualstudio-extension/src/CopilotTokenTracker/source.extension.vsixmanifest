@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0"
+    xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"
+    xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Id="CopilotTokenTracker.VS.RobBos"
+              Version="1.0.0"
+              Language="en-US"
+              Publisher="RobBos" />
+    <DisplayName>Copilot Token Tracker</DisplayName>
+    <Description xml:space="preserve">
+      Shows GitHub Copilot token usage statistics inside Visual Studio.
+      Displays today's and last-30-days token usage, per-model breakdown,
+      and detailed session analysis — powered by the same webview panels
+      as the VS Code extension.
+    </Description>
+    <Tags>GitHub Copilot, token usage, AI, productivity</Tags>
+  </Metadata>
+
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Community"    Version="[17.0,18.0)" />
+    <InstallationTarget Id="Microsoft.VisualStudio.Professional" Version="[17.0,18.0)" />
+    <InstallationTarget Id="Microsoft.VisualStudio.Enterprise"   Version="[17.0,18.0)" />
+  </Installation>
+
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP"
+                DisplayName=".NET Framework 4.7.2"
+                Version="[4.7.2,)" />
+  </Dependencies>
+
+  <Assets>
+    <!-- The package itself -->
+    <Asset Type="Microsoft.VisualStudio.VsPackage"
+           d:Source="Project"
+           d:ProjectName="%CurrentProject%"
+           Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+    <!-- MEF component so VS discovers the package -->
+    <Asset Type="Microsoft.VisualStudio.MefComponent"
+           d:Source="Project"
+           d:ProjectName="%CurrentProject%"
+           Path="|%CurrentProject%|" />
+  </Assets>
+</PackageManifest>

@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>CopilotTokenTracker</RootNamespace>
+    <AssemblyName>CopilotTokenTracker</AssemblyName>
+    <!-- Required for VS extension to locate the assembly from its install dir -->
+    <UseCodebase>true</UseCodebase>
+    <!-- Suppress package reference warnings for VS SDK assemblies excluded from output -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Visual Studio SDK (excluded from runtime — VS provides these at host time) -->
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.6.36389" ExcludeAssets="Runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.6.2164" PrivateAssets="all" />
+    <!-- Embedded Chromium for the WebView2 tool window -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2478.35" />
+    <!-- MessagePack for parsing VS Copilot Chat binary session files -->
+    <PackageReference Include="MessagePack" Version="2.5.187" />
+    <!-- JSON serialisation for the data bridge to the webview -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- System.Text.Json is not built into net472; pull it via NuGet -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <!-- Framework assemblies needed for OleMenuCommandService / MenuCommand -->
+  <ItemGroup>
+    <Reference Include="System.Design" />
+  </ItemGroup>
+
+  <!-- VSCT: VS Command Table definition (menus / commands) -->
+  <ItemGroup>
+    <VSCTCompile Include="CopilotTokenTrackerPackage.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+  </ItemGroup>
+
+  <!-- VSIX manifest -->
+  <ItemGroup>
+    <Content Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </Content>
+  </ItemGroup>
+
+  <!-- vscode-shim.js embedded as a resource so it can be injected into WebView2 pages -->
+  <ItemGroup>
+    <EmbeddedResource Include="WebBridge\vscode-shim.js" />
+  </ItemGroup>
+
+  <!--
+    Copy webview JS bundles from the vscode-extension build output into this project's
+    webview\ folder so they can be packaged inside the VSIX.
+    Prerequisite: run `npm run compile` in vscode-extension/ first.
+  -->
+  <Target Name="CopyWebviewBundles" BeforeTargets="Build">
+    <ItemGroup>
+      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\details.js" />
+      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\chart.js" />
+      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\usage.js" />
+      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\diagnostics.js" />
+    </ItemGroup>
+    <MakeDir Directories="$(MSBuildProjectDirectory)\webview" />
+    <Copy
+      SourceFiles="@(_WebviewBundle)"
+      DestinationFolder="$(MSBuildProjectDirectory)\webview\"
+      SkipUnchangedFiles="true"
+      ContinueOnError="true" />
+    <Message Importance="high"
+             Text="Copied webview bundles from vscode-extension/dist/webview/ — rebuild vscode-extension if they are missing." />
+  </Target>
+
+  <!-- Include copied webview JS files inside the VSIX package -->
+  <ItemGroup>
+    <Content Include="webview\*.js" Condition="Exists('$(MSBuildProjectDirectory)\webview')">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <VSIXSubPath>webview\</VSIXSubPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>
