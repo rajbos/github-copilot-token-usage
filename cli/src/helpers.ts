@@ -136,6 +136,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/.crush/crush.db#')) { return 'crush'; }
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
+        if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
 	return 'vscode';
 }
 
@@ -187,6 +188,23 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 				editorSource: getEditorSourceFromPath(filePath),
 			};
 		}
+
+                // Handle Visual Studio session files (binary MessagePack)
+                if (_visualStudioInstance.isVSSessionFile(filePath)) {
+                        const result = _visualStudioInstance.getTokenEstimates(filePath, estimateTokens);
+                        const objects = _visualStudioInstance.decodeSessionFile(filePath);
+                        const interactions = _visualStudioInstance.countInteractions(objects);
+                        const modelUsage = _visualStudioInstance.getModelUsage(filePath, estimateTokens);
+                        return {
+                                file: filePath,
+                                tokens: result.tokens,
+                                thinkingTokens: result.thinkingTokens,
+                                interactions,
+                                modelUsage,
+                                lastModified: stats.mtime,
+                                editorSource: getEditorSourceFromPath(filePath),
+                        };
+                }
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');
 
@@ -515,3 +533,4 @@ export const ENVIRONMENTAL = {
 
 /** Model pricing data export */
 export { modelPricing, tokenEstimators, toolNameMap };
+
