@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace CopilotTokenTracker.Data
@@ -50,9 +51,18 @@ namespace CopilotTokenTracker.Data
                                               "AppData", "Local");
 
             var logDir = Path.Combine(localAppData, "Temp", "VSGitHubCopilotLogs");
-            if (!Directory.Exists(logDir)) { return; }
+            Utilities.OutputLogger.Log($"Checking log directory: {logDir}");
 
-            foreach (var logFile in SafeEnumerateFiles(logDir, "*.chat.log"))
+            if (!Directory.Exists(logDir))
+            {
+                Utilities.OutputLogger.LogWarning($"Log directory not found: {logDir}");
+                return;
+            }
+
+            var logFiles = SafeEnumerateFiles(logDir, "*.chat.log").ToList();
+            Utilities.OutputLogger.Log($"Found {logFiles.Count} log files");
+
+            foreach (var logFile in logFiles)
             {
                 try
                 {
@@ -80,13 +90,19 @@ namespace CopilotTokenTracker.Data
             var home  = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var roots = new List<string> { home };
 
+            Utilities.OutputLogger.Log($"Scanning filesystem starting from home: {home}");
+
             // Well-known code root conventions on Windows
             foreach (var drive in new[] { "C", "D" })
             {
                 foreach (var folder in new[] { "repos", "code", "src", "projects", "dev" })
                 {
                     var p = $"{drive}:\\{folder}";
-                    if (Directory.Exists(p)) { roots.Add(p); }
+                    if (Directory.Exists(p))
+                    {
+                        roots.Add(p);
+                        Utilities.OutputLogger.Log($"Added scan root: {p}");
+                    }
                 }
             }
 

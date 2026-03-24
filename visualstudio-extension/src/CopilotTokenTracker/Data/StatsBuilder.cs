@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -25,30 +26,45 @@ namespace CopilotTokenTracker.Data
 
         private static DetailedStats Build()
         {
-            var sessionFiles = SessionDiscovery.DiscoverSessions();
-
-            // Parse in parallel for speed; null = unreadable / no data
-            var sessions = sessionFiles
-                .AsParallel()
-                .Select(ParseSession)
-                .Where(s => s != null)
-                .ToList();
-
-            var now          = DateTime.UtcNow;
-            var todayStart   = now.Date;
-            var monthStart   = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var lastMonStart = monthStart.AddMonths(-1);
-            var minus30Days  = now.AddDays(-30);
-
-            return new DetailedStats
+            try
             {
-                Today      = Aggregate(sessions, todayStart,   now),
-                Month      = Aggregate(sessions, monthStart,   now),
-                LastMonth  = Aggregate(sessions, lastMonStart, monthStart),
-                Last30Days = Aggregate(sessions, minus30Days,  now),
-                LastUpdated     = now.ToString("o"),
-                BackendConfigured = false,
-            };
+                Utilities.OutputLogger.Log("Starting stats build...");
+                var sessionFiles = SessionDiscovery.DiscoverSessions();
+                Utilities.OutputLogger.Log($"Discovered {sessionFiles.Count} session files");
+
+                // Parse in parallel for speed; null = unreadable / no data
+                var sessions = sessionFiles
+                    .AsParallel()
+                    .Select(ParseSession)
+                    .Where(s => s != null)
+                    .ToList();
+
+                Utilities.OutputLogger.Log($"Successfully parsed {sessions.Count} sessions");
+
+                var now          = DateTime.UtcNow;
+                var todayStart   = now.Date;
+                var monthStart   = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                var lastMonStart = monthStart.AddMonths(-1);
+                var minus30Days  = now.AddDays(-30);
+
+                var stats = new DetailedStats
+                {
+                    Today      = Aggregate(sessions, todayStart,   now),
+                    Month      = Aggregate(sessions, monthStart,   now),
+                    LastMonth  = Aggregate(sessions, lastMonStart, monthStart),
+                    Last30Days = Aggregate(sessions, minus30Days,  now),
+                    LastUpdated     = now.ToString("o"),
+                    BackendConfigured = false,
+                };
+
+                Utilities.OutputLogger.Log($"Stats aggregated - Today: {stats.Today.Tokens:N0}, Last30Days: {stats.Last30Days.Tokens:N0}");
+                return stats;
+            }
+            catch (Exception ex)
+            {
+                Utilities.OutputLogger.LogError("Stats build failed", ex);
+                throw;
+            }
         }
 
         // ── Session parsing ────────────────────────────────────────────────────
@@ -57,17 +73,32 @@ namespace CopilotTokenTracker.Data
         {
             try
             {
+                Utilities.OutputLogger.Log($"Parsing session file: {Path.GetFileName(filePath)}");
+
                 var objects = SessionParser.DecodeSessionFile(filePath);
-                if (objects.Count == 0) { return null; }
+                if (objects.Count == 0)
+                {
+                    Utilities.OutputLogger.LogWarning($"Session file has no objects: {Path.GetFileName(filePath)}");
+                    return null;
+                }
+
+                Utilities.OutputLogger.Log($"  Decoded {objects.Count} objects from session file");
 
                 var (created, _) = SessionParser.GetTimestamps(objects);
-                if (created == null) { return null; }
+                if (created == null)
+                {
+                    Utilities.OutputLogger.LogWarning($"  No timestamp found in session file: {Path.GetFileName(filePath)}");
+                    return null;
+                }
 
                 if (!DateTime.TryParse(created, null,
                     System.Globalization.DateTimeStyles.RoundtripKind, out var sessionDate))
                 {
+                    Utilities.OutputLogger.LogWarning($"  Invalid timestamp format '{created}' in session file: {Path.GetFileName(filePath)}");
                     return null;
                 }
+
+                Utilities.OutputLogger.Log($"  Session date: {sessionDate:yyyy-MM-dd HH:mm:ss}");
 
                 var modelUsage   = new Dictionary<string, (long Input, long Output)>(StringComparer.OrdinalIgnoreCase);
                 var totalTokens  = 0L;
@@ -99,6 +130,8 @@ namespace CopilotTokenTracker.Data
                         : (existing.Input,            existing.Output + tokens);
                 }
 
+                Utilities.OutputLogger.Log($"  ✓ Parsed successfully: {interactions} interactions, {totalTokens:N0} tokens");
+
                 return new ParsedSession
                 {
                     FilePath     = filePath,
@@ -108,8 +141,9 @@ namespace CopilotTokenTracker.Data
                     ModelUsage   = modelUsage,
                 };
             }
-            catch
+            catch (Exception ex)
             {
+                Utilities.OutputLogger.LogError($"  Failed to parse session file: {Path.GetFileName(filePath)}", ex);
                 return null;
             }
         }
