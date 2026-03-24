@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -160,6 +161,57 @@ namespace CopilotTokenTracker.Data
 
         // ── Low-level MessagePack reader ───────────────────────────────────────
 
+        /// <summary>
+        /// Decodes a MessagePack Timestamp extension (type code -1) into an ISO-8601 string.
+        /// Handles all three timestamp formats: 32-bit, 64-bit, and 96-bit.
+        /// </summary>
+        private static string? DecodeTimestamp(ReadOnlySequence<byte> data)
+        {
+            try
+            {
+                long seconds;
+                uint nanoseconds;
+                var bytes = data.ToArray();
+
+                switch (bytes.Length)
+                {
+                    case 4: // Timestamp32: seconds in uint32
+                        seconds = ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16)
+                                | ((uint)bytes[2] << 8) | bytes[3];
+                        nanoseconds = 0;
+                        break;
+
+                    case 8: // Timestamp64: upper 30 bits = nanoseconds, lower 34 bits = seconds
+                        ulong val = 0;
+                        for (int i = 0; i < 8; i++)
+                            val = (val << 8) | bytes[i];
+                        nanoseconds = (uint)(val >> 34);
+                        seconds = (long)(val & 0x3FFFFFFFFUL);
+                        break;
+
+                    case 12: // Timestamp96: 4 bytes nanoseconds + 8 bytes signed seconds
+                        nanoseconds = ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16)
+                                    | ((uint)bytes[2] << 8) | bytes[3];
+                        seconds = 0;
+                        for (int i = 4; i < 12; i++)
+                            seconds = (seconds << 8) | bytes[i];
+                        break;
+
+                    default:
+                        return null;
+                }
+
+                var dt = DateTimeOffset.FromUnixTimeSeconds(seconds)
+                                       .AddTicks(nanoseconds / 100)
+                                       .UtcDateTime;
+                return dt.ToString("o");
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static object? ReadValue(ref MessagePackReader reader)
         {
             switch (reader.NextMessagePackType)
@@ -213,7 +265,11 @@ namespace CopilotTokenTracker.Data
                     return null;
 
                 case MessagePackType.Extension:
-                    reader.ReadExtensionFormat();
+                    var ext = reader.ReadExtensionFormat();
+                    if (ext.TypeCode == -1) // MessagePack Timestamp
+                    {
+                        return DecodeTimestamp(ext.Data);
+                    }
                     return null;
 
                 default:
