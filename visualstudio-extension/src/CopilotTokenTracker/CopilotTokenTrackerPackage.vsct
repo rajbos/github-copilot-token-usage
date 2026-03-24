@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   VS Command Table for Copilot Token Tracker.
-  Adds a "Copilot Token Tracker" entry under the View menu.
-
-  GUIDs:
-    guidCopilotTokenTrackerPackage    = CopilotTokenTrackerPackage.PackageGuidString
-    guidCopilotTokenTrackerCmdSet     = ShowTokenTrackerCommand.CommandSetGuidString
+  - "Copilot Token Tracker" entry under the View menu.
+  - Dedicated "Copilot Token Tracker" toolbar showing live token counts.
 -->
 <CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable"
               xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -15,14 +12,30 @@
 
   <Commands package="guidCopilotTokenTrackerPackage">
 
+    <Menus>
+      <!-- Our own toolbar — shows up in View > Toolbars as "Copilot Token Tracker" -->
+      <Menu guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbar"
+            type="Toolbar" priority="0x0000">
+        <Strings>
+          <ButtonText>Copilot Token Tracker</ButtonText>
+        </Strings>
+      </Menu>
+    </Menus>
+
     <Groups>
-      <!-- Place our group inside View > Other Windows -->
+      <!-- View menu group -->
       <Group guid="guidCopilotTokenTrackerCmdSet" id="MyMenuGroup" priority="0x0600">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW"/>
+      </Group>
+
+      <!-- Group inside our custom toolbar -->
+      <Group guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbarGroup" priority="0x0000">
+        <Parent guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbar"/>
       </Group>
     </Groups>
 
     <Buttons>
+      <!-- View menu command -->
       <Button guid="guidCopilotTokenTrackerCmdSet"
               id="ShowTokenTrackerCommandId"
               priority="0x0100"
@@ -32,6 +45,20 @@
           <ButtonText>Copilot Token Tracker</ButtonText>
           <CommandName>View.CopilotTokenTracker</CommandName>
           <ToolTipText>Open the Copilot Token Tracker tool window</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- Toolbar button — text updated at runtime to show token counts -->
+      <Button guid="guidCopilotTokenTrackerCmdSet"
+              id="ToolbarInfoCommandId"
+              priority="0x0100"
+              type="Button">
+        <Parent guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbarGroup" />
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings>
+          <ButtonText>Copilot: loading…</ButtonText>
+          <CommandName>CopilotTokenTracker.ToolbarInfo</CommandName>
+          <ToolTipText>Today's tokens | Last 30 days tokens — click to open details</ToolTipText>
         </Strings>
       </Button>
     </Buttons>
@@ -44,8 +71,11 @@
 
     <GuidSymbol name="guidCopilotTokenTrackerCmdSet"
                 value="{B1C2D3E4-F5A6-B7C8-D9E0-F1A2B3C4D5E6}">
-      <IDSymbol name="MyMenuGroup"             value="0x1020" />
+      <IDSymbol name="MyMenuGroup"              value="0x1020" />
       <IDSymbol name="ShowTokenTrackerCommandId" value="0x0100" />
+      <IDSymbol name="CopilotToolbar"           value="0x1040" />
+      <IDSymbol name="CopilotToolbarGroup"      value="0x1050" />
+      <IDSymbol name="ToolbarInfoCommandId"     value="0x0200" />
     </GuidSymbol>
   </Symbols>
 

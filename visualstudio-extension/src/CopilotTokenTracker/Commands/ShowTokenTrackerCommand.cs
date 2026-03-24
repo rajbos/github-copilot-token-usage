@@ -37,6 +37,9 @@ namespace CopilotTokenTracker.Commands
 
         private void Execute(object sender, EventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Utilities.OutputLogger.Log("ShowTokenTrackerCommand executed - opening tool window");
+
             _ = _package.JoinableTaskFactory.RunAsync(async () =>
             {
                 var window = await _package.ShowToolWindowAsync(
@@ -47,7 +50,13 @@ namespace CopilotTokenTracker.Commands
 
                 if (window is ToolWindow.TokenTrackerToolWindow trackerWindow)
                 {
+                    Utilities.OutputLogger.Log("Tool window opened, refreshing data...");
                     await trackerWindow.RefreshAsync();
+                    Utilities.OutputLogger.Log("Data refresh completed");
+                }
+                else
+                {
+                    Utilities.OutputLogger.LogWarning("Tool window opened but type cast failed");
                 }
             });
         }
