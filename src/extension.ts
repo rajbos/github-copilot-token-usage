@@ -52,6 +52,7 @@ import type {
 } from './types';
 import { OpenCodeDataAccess } from './opencode';
 import { CrushDataAccess } from './crush';
+import { VisualStudioDataAccess } from './visualstudio';
 import { ContinueDataAccess } from './continue';
 import {
   estimateTokensFromText as _estimateTokensFromText,
@@ -123,11 +124,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private logViewerPanel?: vscode.WebviewPanel;
 	private openCode: OpenCodeDataAccess;
 	private crush: CrushDataAccess;
+	private visualStudio: VisualStudioDataAccess;
 	private continue_: ContinueDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, continue_: this.continue_, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -253,6 +255,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Must be used instead of fs.promises.stat() directly.
 	 */
 	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			return this.visualStudio.statSessionFile(sessionFile);
+		}
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			return this.visualStudio.statSessionFile(sessionFile);
+		}
 		if (this.crush.isCrushSessionFile(sessionFile)) {
 			return this.crush.statSessionFile(sessionFile);
 		}
@@ -438,8 +446,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.openCode = new OpenCodeDataAccess(extensionUri);
 		this.crush = new CrushDataAccess(extensionUri);
 		this.continue_ = new ContinueDataAccess();
+		this.visualStudio = new VisualStudioDataAccess();
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
-		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, continue_: this.continue_ });
+		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_ });
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
@@ -1731,6 +1740,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return await this.openCode.countOpenCodeInteractions(sessionFile);
 			}
 
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFile)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFile);
+				return this.visualStudio.countInteractions(objects);
+			}
+
 			// Handle Crush sessions
 			if (this.crush.isCrushSessionFile(sessionFile)) {
 				return await this.crush.countCrushInteractions(sessionFile);
@@ -1916,6 +1931,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 					firstInteraction = new Date(timestamps[0]).toISOString();
 					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFile)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFile);
+				const vsTitle = this.visualStudio.getSessionTitle(objects);
+				if (vsTitle) { title = vsTitle; }
+				const vsTs = this.visualStudio.getSessionTimestamps(objects);
+				if (vsTs.timeCreated) { timestamps.push(new Date(vsTs.timeCreated).getTime()); }
+				if (vsTs.timeUpdated) { timestamps.push(new Date(vsTs.timeUpdated).getTime()); }
+				const firstInteraction = timestamps.length > 0 ? new Date(Math.min(...timestamps)).toISOString() : null;
+				const lastInteraction = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
 				return { title, firstInteraction, lastInteraction };
 			}
 
@@ -2147,6 +2175,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			details.editorName = 'OpenCode';
 			return;
 		}
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			details.editorRoot = path.dirname(sessionFile);
+			details.editorName = 'Visual Studio';
+			return;
+		}
 		if (this.crush.isCrushSessionFile(sessionFile)) {
 			details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
 			details.editorName = 'Crush';
@@ -2349,6 +2382,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 				details.editorRoot = this.openCode.getOpenCodeDataDir();
 				details.editorName = 'OpenCode';
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFile)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFile);
+				details.editorSource = 'Visual Studio';
+				details.editorName = 'Visual Studio';
+				details.title = this.visualStudio.getSessionTitle(objects);
+				details.interactions = this.visualStudio.countInteractions(objects);
+				const vsMeta = this.visualStudio.getSessionTimestamps(objects);
+				if (vsMeta.timeCreated) { details.firstInteraction = new Date(vsMeta.timeCreated).toISOString(); }
+				if (vsMeta.timeUpdated) { details.lastInteraction = new Date(vsMeta.timeUpdated).toISOString(); }
+				this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				return details;
 			}
 
@@ -2733,6 +2780,69 @@ class CopilotTokenTracker implements vscode.Disposable {
 					usageAnalysis: undefined
 				};
 			}
+
+		// Handle Visual Studio sessions
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			const objects = this.visualStudio.decodeSessionFile(sessionFile);
+			let turnNumber = 0;
+			for (let i = 1; i < objects.length; i += 2) {
+				const req = objects[i];
+				const res = objects[i + 1];
+				if (!req) { continue; }
+				const reqData = req[1];
+				const resData = res?.[1];
+				turnNumber++;
+				const userText = this.visualStudio.extractTextFromContent(reqData?.Content || []);
+				const assistantText = res ? this.visualStudio.extractTextFromContent(resData?.Content || []) : '';
+				const model = this.visualStudio.getModelId(resData ?? reqData, !resData);
+				const contextText = this.visualStudio.extractContextText(reqData?.Context);
+								const inputTokens = this.estimateTokensFromText(userText + contextText, model ?? 'gpt-4');
+				const outputTokens = res ? this.estimateTokensFromText(assistantText, model ?? 'gpt-4') : 0;
+				const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+				for (const c of (resData?.Content || [])) {
+					const inner = Array.isArray(c) ? c[1] : null;
+					if (inner?.Function) {
+						toolCalls.push({
+							toolName: String(inner.Function.Description || 'tool'),
+							result: typeof inner.Function.Result === 'string' ? inner.Function.Result : undefined
+						});
+					}
+				}
+				turns.push({
+					turnNumber,
+					timestamp: reqData?.Timestamp ? new Date(reqData.Timestamp).toISOString() : null,
+					mode: 'ask' as const,
+					userMessage: userText,
+					assistantResponse: assistantText,
+					model,
+					toolCalls,
+					contextReferences: {
+						file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+						workspace: 0, terminal: 0, vscode: 0,
+						terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
+						outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+					},
+					mcpTools: [],
+					inputTokensEstimate: inputTokens,
+					outputTokensEstimate: outputTokens,
+					thinkingTokensEstimate: 0
+				});
+			}
+			return {
+				file: details.file,
+				title: details.title || null,
+				editorSource: details.editorSource,
+				editorName: 'Visual Studio',
+				size: details.size,
+				modified: details.modified,
+				interactions: details.interactions,
+				contextReferences: details.contextReferences,
+				firstInteraction: details.firstInteraction,
+				lastInteraction: details.lastInteraction,
+				turns,
+				usageAnalysis: undefined
+			};
+		}
 
 // Handle Crush sessions
 			if (this.crush.isCrushSessionFile(sessionFile)) {
@@ -3245,6 +3355,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
 				const result = await this.openCode.getTokensFromOpenCodeSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
+				return { ...result, actualTokens: result.tokens };
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
+				return { ...result, actualTokens: result.tokens };
 			}
 
 			// Handle Crush sessions - actual token counts stored in sessions table
@@ -3942,14 +4064,23 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
-				case 'openRawFile':
-					await this.dispatch('openRawFile:logviewer', async () => {
-						try {
-							await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
-						} catch (err) {
-							vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
-						}
-					});
+					case 'openRawFile':
+						await this.dispatch('openRawFile:logviewer', async () => {
+							try {
+								if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+									// VS session files are binary MessagePack — show decoded JSON instead
+									const objects = this.visualStudio.decodeSessionFile(sessionFilePath);
+									const readable = objects.map((obj: any, i: number) => i === 0 ? obj : obj?.[1] ?? obj);
+									const jsonText = JSON.stringify(readable, null, 2);
+									const doc = await vscode.workspace.openTextDocument({ content: jsonText, language: 'json' });
+									await vscode.window.showTextDocument(doc);
+								} else {
+									await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
+								}
+							} catch (err) {
+								vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
+							}
+						});
 					break;
 				case 'showToolCallPretty': {
 					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
@@ -6828,7 +6959,7 @@ export function activate(context: vscode.ExtensionContext) {
       statSessionFile: (sessionFile: string) =>
         (tokenTracker as any).statSessionFile(sessionFile),
       isOpenCodeSession: (sessionFile: string) =>
-        (tokenTracker as any).isOpenCodeSessionFile(sessionFile),
+        (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
         (tokenTracker as any).getOpenCodeSessionData(sessionFile),
     });

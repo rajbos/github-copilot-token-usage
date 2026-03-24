@@ -362,6 +362,7 @@ export function getEditorNameFromRoot(rootPath: string): string {
 	if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
 	if (lower.includes('vscodium')) { return 'VSCodium'; }
 	if (lower.includes('cursor')) { return 'Cursor'; }
+        if (lower.includes('.vs') && lower.includes('copilot-chat')) { return 'Visual Studio'; }
 	// Generic 'code' match (catch AppData\Roaming\Code)
 	if (lower.endsWith('code') || lower.includes(path.sep + 'code' + path.sep) || lower.includes('/code/')) { return 'VS Code'; }
 	return 'Unknown';
@@ -696,6 +697,9 @@ export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: 
 	if (normalizedPath.includes('.vscode-server/') || normalizedPath.includes('.vscode-remote/')) {
 		return 'VS Code Server';
 	}
+        if (normalizedPath.includes('/.vs/') && normalizedPath.includes('/copilot-chat/') && normalizedPath.includes('/sessions/')) {
+                return 'Visual Studio';
+        }
 	if (normalizedPath.includes('/code/')) {
 		return 'VS Code';
 	}
@@ -716,6 +720,7 @@ export function detectEditorSource(filePath: string, isOpenCodeSessionFile?: (p:
 	if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
 	if (lowerPath.includes('vscodium')) { return 'VSCodium'; }
 	if (lowerPath.includes('windsurf')) { return 'Windsurf'; }
+        if (lowerPath.includes('/.vs/') && lowerPath.includes('/copilot-chat/') && lowerPath.includes('/sessions/')) { return 'Visual Studio'; }
 	if (lowerPath.includes('code')) { return 'VS Code'; }
 	return 'Unknown';
 }

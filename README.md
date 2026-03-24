@@ -8,6 +8,8 @@ A VS Code extension that shows your daily and monthly GitHub Copilot estimated t
 - VS Code Insiders + GitHub Copilot
 - GitHub Copilot CLI
 - OpenCode + GitHub Copilot (not tested with other AI tooling)
+- Crush + GitHub Copilot
+- Visual Studio + GitHub Copilot
 
 ### CLI
 
@@ -79,6 +81,9 @@ Supported editors are:
 - `Code - Exploration` — Exploration/pre-release builds
 - `VSCodium` — Community-built VS Code distribution
 - `Cursor` — Cursor editor
+- `OpenCode` — Terminal-based coding agent
+- `Crush` — Terminal-based coding agent
+- `Visual Studio` — Visual Studio IDE (2022+); token counts are **estimated** from prompt and response text length — actual LLM token usage is not stored in VS session files
 
 ## Performance Optimization
 

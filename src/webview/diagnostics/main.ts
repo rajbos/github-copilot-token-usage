@@ -246,8 +246,8 @@ function buildCandidatePathsElement(
 
     const sourceCell = document.createElement("td");
     const badge = document.createElement("span");
-    badge.className = "editor-badge";
-    badge.textContent = cp.source;
+    badge.className = getEditorBadgeClass(cp.source);
+    badge.textContent = `${getEditorIcon(cp.source)} ${cp.source}`;
     sourceCell.appendChild(badge);
     row.appendChild(sourceCell);
 
@@ -356,6 +356,12 @@ function getRepoDisplayName(repoUrl: string): string {
 
 function getEditorBadgeClass(editor: string): string {
   const lower = editor.toLowerCase();
+  if (lower.includes("visual studio")) {
+    return "editor-badge editor-badge-vs";
+  }
+  if (lower.includes("visual studio")) {
+    return "editor-badge editor-badge-vs";
+  }
   if (lower.includes("crush")) {
     return "editor-badge editor-badge-crush";
   }
@@ -364,6 +370,12 @@ function getEditorBadgeClass(editor: string): string {
 
 function getEditorIcon(editor: string): string {
   const lower = editor.toLowerCase();
+  if (lower.includes("visual studio")) {
+    return "🪟";
+  }
+  if (lower.includes("visual studio")) {
+    return "🪟";
+  }
   if (lower.includes("crush")) {
     return "🩷";
   }

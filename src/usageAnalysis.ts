@@ -38,12 +38,14 @@ import {
 import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
+import type { VisualStudioDataAccess } from './visualstudio';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
 	openCode: OpenCodeDataAccess;
 	crush?: CrushDataAccess;
 	continue_: ContinueDataAccess;
+	visualStudio?: VisualStudioDataAccess;
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
 	toolNameMap: { [key: string]: string };
@@ -961,6 +963,74 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Visual Studio sessions
+		if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
+			const objects = deps.visualStudio.decodeSessionFile(sessionFile);
+			const models: string[] = [];
+			for (let i = 1; i < objects.length; i++) {
+				const isRequest = i % 2 === 1;
+				if (isRequest) {
+					analysis.modeUsage.ask++;
+				} else {
+					const model = deps.visualStudio.getModelId(objects[i], false);
+					if (model) { models.push(model); }
+					// Count tool calls from response content
+					for (const c of (objects[i]?.Content || [])) {
+						const inner = Array.isArray(c) ? c[1] : null;
+						if (inner?.Function) {
+							analysis.toolCalls.total++;
+							const toolName = String(inner.Function.Description || 'tool');
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+					}
+				}
+			}
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCount = 0;
+			for (let i = 1; i < models.length; i++) {
+				if (models[i] !== models[i - 1]) { switchCount++; }
+			}
+			analysis.modelSwitching.switchCount = switchCount;
+			return analysis;
+		}
+
+		// Handle Visual Studio sessions
+		if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
+			const objects = deps.visualStudio.decodeSessionFile(sessionFile);
+			const models: string[] = [];
+			for (let i = 1; i < objects.length; i++) {
+				const isRequest = i % 2 === 1;
+				if (isRequest) {
+					analysis.modeUsage.ask++;
+				} else {
+					const model = deps.visualStudio.getModelId(objects[i], false);
+					if (model) { models.push(model); }
+					// Count tool calls from response content
+					for (const c of (objects[i]?.Content || [])) {
+						const inner = Array.isArray(c) ? c[1] : null;
+						if (inner?.Function) {
+							analysis.toolCalls.total++;
+							const toolName = String(inner.Function.Description || 'tool');
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+					}
+				}
+			}
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCount = 0;
+			for (let i = 1; i < models.length; i++) {
+				if (models[i] !== models[i - 1]) { switchCount++; }
+			}
+			analysis.modelSwitching.switchCount = switchCount;
+			return analysis;
+		}
+
 		// Handle Crush sessions
 		if (deps.crush?.isCrushSessionFile(sessionFile)) {
 			const messages = await deps.crush.getCrushMessages(sessionFile);
@@ -1385,12 +1455,17 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Handle OpenCode sessions
 	if (deps.openCode.isOpenCodeSessionFile(sessionFile)) {
 		return await deps.openCode.getOpenCodeModelUsage(sessionFile);
+	}
+
+	// Handle Visual Studio sessions
+	if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
+		return deps.visualStudio.getModelUsage(sessionFile, (text, model) => estimateTokensFromText(text, model ?? undefined, deps.tokenEstimators));
 	}
 
 	// Handle Crush sessions
