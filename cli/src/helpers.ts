@@ -17,6 +17,7 @@ import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCa
 import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../vscode-extension/src/usageAnalysis';
 import { createEmptyContextRefs } from '../../vscode-extension/src/tokenEstimation';
 import * as vscodeStub from './vscode-stub';
+import { loadCache, saveCache, disableCache, getCached, setCached, getCacheStats } from './cliCache';
 
 // Import JSON data files
 import tokenEstimatorsData from '../../vscode-extension/src/tokenEstimators.json';
@@ -157,20 +158,28 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 	try {
 		const stats = await statSessionFile(filePath);
 
+		// Check the cache before doing any parsing
+		const cached = getCached(filePath, stats.mtimeMs, stats.size);
+		if (cached) {
+			return cached;
+		}
+
 		// Handle Crush DB virtual paths directly via the crush module
 		if (isCrushSessionFile(filePath)) {
 			const result = await _crushInstance.getTokensFromCrushSession(filePath);
 			const interactions = await _crushInstance.countCrushInteractions(filePath);
 			const modelUsage = await _crushInstance.getCrushModelUsage(filePath);
-			return {
-				file: filePath,
-				tokens: result.tokens,
-				thinkingTokens: result.thinkingTokens,
-				interactions,
-				modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-			};
+const crushResult: SessionData = {
+			file: filePath,
+			tokens: result.tokens,
+			thinkingTokens: result.thinkingTokens,
+			interactions,
+			modelUsage,
+			lastModified: stats.mtime,
+			editorSource: getEditorSourceFromPath(filePath),
+		};
+			setCached(filePath, stats.mtimeMs, stats.size, crushResult);
+			return crushResult;
 		}
 
 		// Handle OpenCode DB virtual paths directly via the opencode module
@@ -178,7 +187,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			const result = await _openCodeInstance.getTokensFromOpenCodeSession(filePath);
 			const interactions = await _openCodeInstance.countOpenCodeInteractions(filePath);
 			const modelUsage = await _openCodeInstance.getOpenCodeModelUsage(filePath);
-			return {
+			const openCodeResult: SessionData = {
 				file: filePath,
 				tokens: result.tokens,
 				thinkingTokens: result.thinkingTokens,
@@ -187,6 +196,8 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 				lastModified: stats.mtime,
 				editorSource: getEditorSourceFromPath(filePath),
 			};
+			setCached(filePath, stats.mtimeMs, stats.size, openCodeResult);
+			return openCodeResult;
 		}
 
                 // Handle Visual Studio session files (binary MessagePack)
@@ -195,7 +206,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
                         const objects = _visualStudioInstance.decodeSessionFile(filePath);
                         const interactions = _visualStudioInstance.countInteractions(objects);
                         const modelUsage = _visualStudioInstance.getModelUsage(filePath, estimateTokens);
-                        return {
+                        const vsResult: SessionData = {
                                 file: filePath,
                                 tokens: result.tokens,
                                 thinkingTokens: result.thinkingTokens,
@@ -204,6 +215,8 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
                                 lastModified: stats.mtime,
                                 editorSource: getEditorSourceFromPath(filePath),
                         };
+                        setCached(filePath, stats.mtimeMs, stats.size, vsResult);
+                        return vsResult;
                 }
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');
@@ -249,7 +262,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			fileModelUsage = result.modelUsage as ModelUsage;
 		}
 
-		return {
+		const sessionData: SessionData = {
 			file: filePath,
 			tokens,
 			thinkingTokens,
@@ -258,6 +271,8 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			lastModified: stats.mtime,
 			editorSource: getEditorSourceFromPath(filePath),
 		};
+		setCached(filePath, stats.mtimeMs, stats.size, sessionData);
+		return sessionData;
 	} catch {
 		return null;
 	}
@@ -533,4 +548,7 @@ export const ENVIRONMENTAL = {
 
 /** Model pricing data export */
 export { modelPricing, tokenEstimators, toolNameMap };
+
+/** Cache lifecycle — re-export for use in commands */
+export { loadCache, saveCache, disableCache, getCacheStats } from './cliCache';
 

@@ -21,3 +21,10 @@ visualstudio-extension/**/bin/**
 visualstudio-extension/visualstudio-extension/
 visualstudio-extension/src/CopilotTokenTracker/bin/Release/net472/MessagePack.Annotations.dll
 visualstudio-extension/src/CopilotTokenTracker/bin/Release/net472/System.Buffers.dll
+
+# Bundled CLI exe (build artifact copied from cli/dist/)
+visualstudio-extension/src/CopilotTokenTracker/cli-bundle/
+
+# Node.js SEA build artifacts
+cli/dist/sea-prep.blob
+cli/dist/copilot-token-tracker.exe

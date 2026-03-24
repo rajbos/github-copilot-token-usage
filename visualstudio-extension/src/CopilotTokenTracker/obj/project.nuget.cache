@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "LsYvHT6cvxI=",
+  "dgSpecHash": "5Hm9IbDP0Hc=",
   "success": true,
   "projectFilePath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj",
   "expectedPackageFiles": [
@@ -9,8 +9,8 @@
     "C:\\Users\\RobBos\\.nuget\\packages\\envdte80\\17.6.36389\\envdte80.17.6.36389.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\envdte90\\17.6.36389\\envdte90.17.6.36389.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\envdte90a\\17.6.36389\\envdte90a.17.6.36389.nupkg.sha512",
-    "C:\\Users\\RobBos\\.nuget\\packages\\messagepack\\2.5.187\\messagepack.2.5.187.nupkg.sha512",
-    "C:\\Users\\RobBos\\.nuget\\packages\\messagepack.annotations\\2.5.187\\messagepack.annotations.2.5.187.nupkg.sha512",
+    "C:\\Users\\RobBos\\.nuget\\packages\\messagepack\\2.5.108\\messagepack.2.5.108.nupkg.sha512",
+    "C:\\Users\\RobBos\\.nuget\\packages\\messagepack.annotations\\2.5.108\\messagepack.annotations.2.5.108.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\8.0.0\\microsoft.bcl.asyncinterfaces.8.0.0.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\microsoft.build.framework\\17.6.3\\microsoft.build.framework.17.6.3.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\microsoft.codeanalysis.bannedapianalyzers\\3.3.2\\microsoft.codeanalysis.bannedapianalyzers.3.3.2.nupkg.sha512",
@@ -108,6 +108,7 @@
     "C:\\Users\\RobBos\\.nuget\\packages\\system.numerics.vectors\\4.5.0\\system.numerics.vectors.4.5.0.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\system.private.uri\\4.3.2\\system.private.uri.4.3.2.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\system.reflection.emit\\4.7.0\\system.reflection.emit.4.7.0.nupkg.sha512",
+    "C:\\Users\\RobBos\\.nuget\\packages\\system.reflection.emit.lightweight\\4.7.0\\system.reflection.emit.lightweight.4.7.0.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\system.reflection.metadata\\7.0.0\\system.reflection.metadata.7.0.0.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\system.reflection.typeextensions\\4.7.0\\system.reflection.typeextensions.4.7.0.nupkg.sha512",
     "C:\\Users\\RobBos\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",

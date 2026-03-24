@@ -3,7 +3,7 @@
  */
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { discoverSessionFiles, processSessionFile, getDiagnosticPaths, fmt, formatTokens } from '../helpers';
+import { discoverSessionFiles, processSessionFile, getDiagnosticPaths, fmt, formatTokens, getCacheStats } from '../helpers';
 
 export const statsCommand = new Command('stats')
 	.description('Show overview of discovered session files, sessions, chat turns, and tokens')
@@ -93,6 +93,10 @@ export const statsCommand = new Command('stats')
 		console.log(`  Total estimated tokens:     ${chalk.bold.yellow(formatTokens(totalTokens))}`);
 		if (totalThinkingTokens > 0) {
 			console.log(`  Thinking tokens (included): ${chalk.dim(formatTokens(totalThinkingTokens))}`);
+		}
+		const cacheInfo = getCacheStats();
+		if (cacheInfo.enabled && cacheInfo.entries > 0) {
+			console.log(chalk.dim(`  Cache: ${fmt(cacheInfo.entries)} entries loaded`));
 		}
 		console.log();
 
