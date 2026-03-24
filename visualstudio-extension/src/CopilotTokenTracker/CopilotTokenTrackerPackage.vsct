@@ -9,6 +9,7 @@
 
   <Extern href="stdidcmd.h"/>
   <Extern href="vsshlids.h"/>
+  <Extern href="KnownImageIds.vsct"/>
 
   <Commands package="guidCopilotTokenTrackerPackage">
 
@@ -16,6 +17,8 @@
       <!-- Our own toolbar — shows up in View > Toolbars as "Copilot Token Tracker" -->
       <Menu guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbar"
             type="Toolbar" priority="0x0000">
+        <CommandFlag>DefaultDocked</CommandFlag>
+        <CommandFlag>AlwaysCreate</CommandFlag>
         <Strings>
           <ButtonText>Copilot Token Tracker</ButtonText>
         </Strings>
@@ -41,6 +44,8 @@
               priority="0x0100"
               type="Button">
         <Parent guid="guidCopilotTokenTrackerCmdSet" id="MyMenuGroup" />
+        <Icon guid="ImageCatalogGuid" id="StatusInformation" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
         <Strings>
           <ButtonText>Copilot Token Tracker</ButtonText>
           <CommandName>View.CopilotTokenTracker</CommandName>
@@ -54,7 +59,10 @@
               priority="0x0100"
               type="Button">
         <Parent guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbarGroup" />
+        <Icon guid="ImageCatalogGuid" id="StatusInformation" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
         <CommandFlag>TextChanges</CommandFlag>
+        <CommandFlag>IconAndText</CommandFlag>
         <Strings>
           <ButtonText>Copilot: loading…</ButtonText>
           <CommandName>CopilotTokenTracker.ToolbarInfo</CommandName>

@@ -82,28 +82,30 @@
           }
         }
       },
-      "MessagePack/2.5.187": {
+      "MessagePack/2.5.108": {
         "type": "package",
         "dependencies": {
-          "MessagePack.Annotations": "2.5.187",
+          "MessagePack.Annotations": "2.5.108",
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Microsoft.NET.StringTools": "17.6.3",
+          "Microsoft.NET.StringTools": "17.4.0",
           "System.Collections.Immutable": "6.0.0",
+          "System.Reflection.Emit": "4.7.0",
+          "System.Reflection.Emit.Lightweight": "4.7.0",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0",
           "System.Threading.Tasks.Extensions": "4.5.4"
         },
         "compile": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/MessagePack.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
       },
-      "MessagePack.Annotations/2.5.187": {
+      "MessagePack.Annotations/2.5.108": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
@@ -111,7 +113,7 @@
           }
         },
         "runtime": {
-          "lib/netstandard2.0/MessagePack.Annotations.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
@@ -197,7 +199,7 @@
           }
         },
         "runtime": {
-          "lib/net472/Microsoft.NET.StringTools.dll": {
+          "lib/net472/_._": {
             "related": ".pdb;.xml"
           }
         }
@@ -1813,7 +1815,7 @@
           }
         },
         "runtime": {
-          "lib/net462/System.Collections.Immutable.dll": {
+          "lib/net462/_._": {
             "related": ".xml"
           }
         },
@@ -2031,6 +2033,15 @@
         }
       },
       "System.Reflection.Emit/4.7.0": {
+        "type": "package",
+        "compile": {
+          "ref/net45/_._": {}
+        },
+        "runtime": {
+          "lib/net45/_._": {}
+        }
+      },
+      "System.Reflection.Emit.Lightweight/4.7.0": {
         "type": "package",
         "compile": {
           "ref/net45/_._": {}
@@ -2502,28 +2513,30 @@
           }
         }
       },
-      "MessagePack/2.5.187": {
+      "MessagePack/2.5.108": {
         "type": "package",
         "dependencies": {
-          "MessagePack.Annotations": "2.5.187",
+          "MessagePack.Annotations": "2.5.108",
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Microsoft.NET.StringTools": "17.6.3",
+          "Microsoft.NET.StringTools": "17.4.0",
           "System.Collections.Immutable": "6.0.0",
+          "System.Reflection.Emit": "4.7.0",
+          "System.Reflection.Emit.Lightweight": "4.7.0",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0",
           "System.Threading.Tasks.Extensions": "4.5.4"
         },
         "compile": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/MessagePack.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
       },
-      "MessagePack.Annotations/2.5.187": {
+      "MessagePack.Annotations/2.5.108": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
@@ -2531,7 +2544,7 @@
           }
         },
         "runtime": {
-          "lib/netstandard2.0/MessagePack.Annotations.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
@@ -2617,7 +2630,7 @@
           }
         },
         "runtime": {
-          "lib/net472/Microsoft.NET.StringTools.dll": {
+          "lib/net472/_._": {
             "related": ".pdb;.xml"
           }
         }
@@ -4225,7 +4238,7 @@
           }
         },
         "runtime": {
-          "lib/net462/System.Collections.Immutable.dll": {
+          "lib/net462/_._": {
             "related": ".xml"
           }
         },
@@ -4443,6 +4456,15 @@
         }
       },
       "System.Reflection.Emit/4.7.0": {
+        "type": "package",
+        "compile": {
+          "ref/net45/_._": {}
+        },
+        "runtime": {
+          "lib/net45/_._": {}
+        }
+      },
+      "System.Reflection.Emit.Lightweight/4.7.0": {
         "type": "package",
         "compile": {
           "ref/net45/_._": {}
@@ -4902,28 +4924,30 @@
           }
         }
       },
-      "MessagePack/2.5.187": {
+      "MessagePack/2.5.108": {
         "type": "package",
         "dependencies": {
-          "MessagePack.Annotations": "2.5.187",
+          "MessagePack.Annotations": "2.5.108",
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Microsoft.NET.StringTools": "17.6.3",
+          "Microsoft.NET.StringTools": "17.4.0",
           "System.Collections.Immutable": "6.0.0",
+          "System.Reflection.Emit": "4.7.0",
+          "System.Reflection.Emit.Lightweight": "4.7.0",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0",
           "System.Threading.Tasks.Extensions": "4.5.4"
         },
         "compile": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/MessagePack.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
       },
-      "MessagePack.Annotations/2.5.187": {
+      "MessagePack.Annotations/2.5.108": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
@@ -4931,7 +4955,7 @@
           }
         },
         "runtime": {
-          "lib/netstandard2.0/MessagePack.Annotations.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
@@ -5017,7 +5041,7 @@
           }
         },
         "runtime": {
-          "lib/net472/Microsoft.NET.StringTools.dll": {
+          "lib/net472/_._": {
             "related": ".pdb;.xml"
           }
         }
@@ -6613,7 +6637,7 @@
           }
         },
         "runtime": {
-          "lib/net462/System.Collections.Immutable.dll": {
+          "lib/net462/_._": {
             "related": ".xml"
           }
         },
@@ -6831,6 +6855,15 @@
         }
       },
       "System.Reflection.Emit/4.7.0": {
+        "type": "package",
+        "compile": {
+          "ref/net45/_._": {}
+        },
+        "runtime": {
+          "lib/net45/_._": {}
+        }
+      },
+      "System.Reflection.Emit.Lightweight/4.7.0": {
         "type": "package",
         "compile": {
           "ref/net45/_._": {}
@@ -7290,28 +7323,30 @@
           }
         }
       },
-      "MessagePack/2.5.187": {
+      "MessagePack/2.5.108": {
         "type": "package",
         "dependencies": {
-          "MessagePack.Annotations": "2.5.187",
+          "MessagePack.Annotations": "2.5.108",
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Microsoft.NET.StringTools": "17.6.3",
+          "Microsoft.NET.StringTools": "17.4.0",
           "System.Collections.Immutable": "6.0.0",
+          "System.Reflection.Emit": "4.7.0",
+          "System.Reflection.Emit.Lightweight": "4.7.0",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0",
           "System.Threading.Tasks.Extensions": "4.5.4"
         },
         "compile": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/MessagePack.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
       },
-      "MessagePack.Annotations/2.5.187": {
+      "MessagePack.Annotations/2.5.108": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
@@ -7319,7 +7354,7 @@
           }
         },
         "runtime": {
-          "lib/netstandard2.0/MessagePack.Annotations.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
@@ -7405,7 +7440,7 @@
           }
         },
         "runtime": {
-          "lib/net472/Microsoft.NET.StringTools.dll": {
+          "lib/net472/_._": {
             "related": ".pdb;.xml"
           }
         }
@@ -9004,7 +9039,7 @@
           }
         },
         "runtime": {
-          "lib/net462/System.Collections.Immutable.dll": {
+          "lib/net462/_._": {
             "related": ".xml"
           }
         },
@@ -9222,6 +9257,15 @@
         }
       },
       "System.Reflection.Emit/4.7.0": {
+        "type": "package",
+        "compile": {
+          "ref/net45/_._": {}
+        },
+        "runtime": {
+          "lib/net45/_._": {}
+        }
+      },
+      "System.Reflection.Emit.Lightweight/4.7.0": {
         "type": "package",
         "compile": {
           "ref/net45/_._": {}
@@ -9681,28 +9725,30 @@
           }
         }
       },
-      "MessagePack/2.5.187": {
+      "MessagePack/2.5.108": {
         "type": "package",
         "dependencies": {
-          "MessagePack.Annotations": "2.5.187",
+          "MessagePack.Annotations": "2.5.108",
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Microsoft.NET.StringTools": "17.6.3",
+          "Microsoft.NET.StringTools": "17.4.0",
           "System.Collections.Immutable": "6.0.0",
+          "System.Reflection.Emit": "4.7.0",
+          "System.Reflection.Emit.Lightweight": "4.7.0",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0",
           "System.Threading.Tasks.Extensions": "4.5.4"
         },
         "compile": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/MessagePack.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
       },
-      "MessagePack.Annotations/2.5.187": {
+      "MessagePack.Annotations/2.5.108": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
@@ -9710,7 +9756,7 @@
           }
         },
         "runtime": {
-          "lib/netstandard2.0/MessagePack.Annotations.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
@@ -9796,7 +9842,7 @@
           }
         },
         "runtime": {
-          "lib/net472/Microsoft.NET.StringTools.dll": {
+          "lib/net472/_._": {
             "related": ".pdb;.xml"
           }
         }
@@ -11407,7 +11453,7 @@
           }
         },
         "runtime": {
-          "lib/net462/System.Collections.Immutable.dll": {
+          "lib/net462/_._": {
             "related": ".xml"
           }
         },
@@ -11625,6 +11671,15 @@
         }
       },
       "System.Reflection.Emit/4.7.0": {
+        "type": "package",
+        "compile": {
+          "ref/net45/_._": {}
+        },
+        "runtime": {
+          "lib/net45/_._": {}
+        }
+      },
+      "System.Reflection.Emit.Lightweight/4.7.0": {
         "type": "package",
         "compile": {
           "ref/net45/_._": {}
@@ -12084,28 +12139,30 @@
           }
         }
       },
-      "MessagePack/2.5.187": {
+      "MessagePack/2.5.108": {
         "type": "package",
         "dependencies": {
-          "MessagePack.Annotations": "2.5.187",
+          "MessagePack.Annotations": "2.5.108",
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Microsoft.NET.StringTools": "17.6.3",
+          "Microsoft.NET.StringTools": "17.4.0",
           "System.Collections.Immutable": "6.0.0",
+          "System.Reflection.Emit": "4.7.0",
+          "System.Reflection.Emit.Lightweight": "4.7.0",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0",
           "System.Threading.Tasks.Extensions": "4.5.4"
         },
         "compile": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/MessagePack.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net472/MessagePack.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
       },
-      "MessagePack.Annotations/2.5.187": {
+      "MessagePack.Annotations/2.5.108": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
@@ -12113,7 +12170,7 @@
           }
         },
         "runtime": {
-          "lib/netstandard2.0/MessagePack.Annotations.dll": {
+          "lib/netstandard2.0/_._": {
             "related": ".xml"
           }
         }
@@ -12199,7 +12256,7 @@
           }
         },
         "runtime": {
-          "lib/net472/Microsoft.NET.StringTools.dll": {
+          "lib/net472/_._": {
             "related": ".pdb;.xml"
           }
         }
@@ -13810,7 +13867,7 @@
           }
         },
         "runtime": {
-          "lib/net462/System.Collections.Immutable.dll": {
+          "lib/net462/_._": {
             "related": ".xml"
           }
         },
@@ -14028,6 +14085,15 @@
         }
       },
       "System.Reflection.Emit/4.7.0": {
+        "type": "package",
+        "compile": {
+          "ref/net45/_._": {}
+        },
+        "runtime": {
+          "lib/net45/_._": {}
+        }
+      },
+      "System.Reflection.Emit.Lightweight/4.7.0": {
         "type": "package",
         "compile": {
           "ref/net45/_._": {}
@@ -14523,33 +14589,31 @@
         "lib/netstandard2.0/envdte90a.xml"
       ]
     },
-    "MessagePack/2.5.187": {
-      "sha512": "uW4j8m4Nc+2Mk5n6arOChavJ9bLjkis0qWASOj2h2OwmfINuzYv+mjCHUymrYhmyyKTu3N+ObtTXAY4uQ7jIhg==",
+    "MessagePack/2.5.108": {
+      "sha512": "kcVRbdWP3xNWLZmmpm4DFO+kuXf6mUR2mHZ27WoZIEFIv9hazuUd80injXhNrZnlq/FklAdCsLOil5M76I4Ndg==",
       "type": "package",
-      "path": "messagepack/2.5.187",
+      "path": "messagepack/2.5.108",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
-        "lib/net472/MessagePack.dll",
-        "lib/net472/MessagePack.xml",
         "lib/net6.0/MessagePack.dll",
         "lib/net6.0/MessagePack.xml",
         "lib/netstandard2.0/MessagePack.dll",
         "lib/netstandard2.0/MessagePack.xml",
-        "messagepack.2.5.187.nupkg.sha512",
+        "messagepack.2.5.108.nupkg.sha512",
         "messagepack.nuspec"
       ]
     },
-    "MessagePack.Annotations/2.5.187": {
-      "sha512": "/IvvMMS8opvlHjEJ/fR2Cal4Co726Kj77Z8KiohFhuHfLHHmb9uUxW5+tSCL4ToKFfkQlrS3HD638mRq83ySqA==",
+    "MessagePack.Annotations/2.5.108": {
+      "sha512": "28aNCvfJClgwaKr26gf2S6LT+C1PNyPxiG+ihYpy8uCJsRLJEDoCt2I0Uk5hqOPQ8P8hI0ESy520oMkZkPmsOQ==",
       "type": "package",
-      "path": "messagepack.annotations/2.5.187",
+      "path": "messagepack.annotations/2.5.108",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "lib/netstandard2.0/MessagePack.Annotations.dll",
         "lib/netstandard2.0/MessagePack.Annotations.xml",
-        "messagepack.annotations.2.5.187.nupkg.sha512",
+        "messagepack.annotations.2.5.108.nupkg.sha512",
         "messagepack.annotations.nuspec"
       ]
     },
@@ -17338,6 +17402,64 @@
         "version.txt"
       ]
     },
+    "System.Reflection.Emit.Lightweight/4.7.0": {
+      "sha512": "a4OLB4IITxAXJeV74MDx49Oq2+PsF6Sml54XAFv+2RyWwtDBcabzoxiiJRhdhx+gaohLh4hEGCLQyBozXoQPqA==",
+      "type": "package",
+      "path": "system.reflection.emit.lightweight/4.7.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/MonoAndroid10/_._",
+        "lib/MonoTouch10/_._",
+        "lib/net45/_._",
+        "lib/netcore50/System.Reflection.Emit.Lightweight.dll",
+        "lib/netcoreapp2.0/_._",
+        "lib/netstandard1.0/System.Reflection.Emit.Lightweight.dll",
+        "lib/netstandard1.0/System.Reflection.Emit.Lightweight.xml",
+        "lib/netstandard1.3/System.Reflection.Emit.Lightweight.dll",
+        "lib/netstandard2.0/System.Reflection.Emit.Lightweight.dll",
+        "lib/netstandard2.0/System.Reflection.Emit.Lightweight.xml",
+        "lib/netstandard2.1/_._",
+        "lib/portable-net45+wp8/_._",
+        "lib/wp80/_._",
+        "lib/xamarinios10/_._",
+        "lib/xamarinmac20/_._",
+        "lib/xamarintvos10/_._",
+        "lib/xamarinwatchos10/_._",
+        "ref/MonoAndroid10/_._",
+        "ref/MonoTouch10/_._",
+        "ref/net45/_._",
+        "ref/netcoreapp2.0/_._",
+        "ref/netstandard1.0/System.Reflection.Emit.Lightweight.dll",
+        "ref/netstandard1.0/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/de/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/es/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/fr/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/it/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/ja/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/ko/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/ru/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/zh-hans/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard1.0/zh-hant/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard2.0/System.Reflection.Emit.Lightweight.dll",
+        "ref/netstandard2.0/System.Reflection.Emit.Lightweight.xml",
+        "ref/netstandard2.1/_._",
+        "ref/portable-net45+wp8/_._",
+        "ref/wp80/_._",
+        "ref/xamarinios10/_._",
+        "ref/xamarinmac20/_._",
+        "ref/xamarintvos10/_._",
+        "ref/xamarinwatchos10/_._",
+        "runtimes/aot/lib/netcore50/System.Reflection.Emit.Lightweight.dll",
+        "runtimes/aot/lib/netcore50/System.Reflection.Emit.Lightweight.xml",
+        "system.reflection.emit.lightweight.4.7.0.nupkg.sha512",
+        "system.reflection.emit.lightweight.nuspec",
+        "useSharedDesignerContext.txt",
+        "version.txt"
+      ]
+    },
     "System.Reflection.Metadata/7.0.0": {
       "sha512": "MclTG61lsD9sYdpNz9xsKBzjsmsfCtcMZYXz/IUr2zlhaTaABonlr1ESeompTgM+Xk+IwtGYU7/voh3YWB/fWw==",
       "type": "package",
@@ -18053,7 +18175,6 @@
   },
   "projectFileDependencyGroups": {
     ".NETFramework,Version=v4.7.2": [
-      "MessagePack >= 2.5.187",
       "Microsoft.VSSDK.BuildTools >= 17.6.2164",
       "Microsoft.VisualStudio.SDK >= 17.6.36389",
       "Microsoft.Web.WebView2 >= 1.0.2478.35",
@@ -18105,10 +18226,6 @@
     "frameworks": {
       "net472": {
         "dependencies": {
-          "MessagePack": {
-            "target": "Package",
-            "version": "[2.5.187, )"
-          },
           "Microsoft.VSSDK.BuildTools": {
             "target": "Package",
             "version": "[17.6.2164, )",

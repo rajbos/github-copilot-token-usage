@@ -42,21 +42,32 @@ namespace CopilotTokenTracker.Commands
 
             _ = _package.JoinableTaskFactory.RunAsync(async () =>
             {
-                var window = await _package.ShowToolWindowAsync(
-                    typeof(ToolWindow.TokenTrackerToolWindow),
-                    id:         0,
-                    create:     true,
-                    cancellationToken: _package.DisposalToken);
+                try
+                {
+                    await _package.ShowToolWindowAsync(
+                        typeof(ToolWindow.TokenTrackerToolWindow),
+                        id:         0,
+                        create:     true,
+                        cancellationToken: _package.DisposalToken);
 
-                if (window is ToolWindow.TokenTrackerToolWindow trackerWindow)
-                {
-                    Utilities.OutputLogger.Log("Tool window opened, refreshing data...");
-                    await trackerWindow.RefreshAsync();
-                    Utilities.OutputLogger.Log("Data refresh completed");
+                    await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
+                    var pane = _package.FindToolWindow(
+                        typeof(ToolWindow.TokenTrackerToolWindow), 0, false);
+
+                    if (pane is ToolWindow.TokenTrackerToolWindow trackerWindow)
+                    {
+                        Utilities.OutputLogger.Log("Tool window opened, refreshing data...");
+                        await trackerWindow.RefreshAsync();
+                        Utilities.OutputLogger.Log("Data refresh completed");
+                    }
+                    else
+                    {
+                        Utilities.OutputLogger.LogWarning("Tool window pane not found after show");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Utilities.OutputLogger.LogWarning("Tool window opened but type cast failed");
+                    Utilities.OutputLogger.LogError("ShowTokenTrackerCommand failed", ex);
                 }
             });
         }

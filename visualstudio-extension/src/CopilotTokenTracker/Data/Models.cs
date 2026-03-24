@@ -91,16 +91,4 @@ namespace CopilotTokenTracker.Data
         [JsonPropertyName("sessions")]
         public int Sessions { get; set; }
     }
-
-    // ── Internal-only parsed session record ─────────────────────────────────────
-
-    internal sealed class ParsedSession
-    {
-        public string FilePath    { get; set; } = string.Empty;
-        public System.DateTime Date { get; set; }
-        public long Tokens        { get; set; }
-        public int  Interactions  { get; set; }
-        public Dictionary<string, (long Input, long Output)> ModelUsage { get; set; }
-            = new Dictionary<string, (long Input, long Output)>(System.StringComparer.OrdinalIgnoreCase);
-    }
 }

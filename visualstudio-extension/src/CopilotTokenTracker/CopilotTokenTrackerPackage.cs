@@ -50,6 +50,10 @@ namespace CopilotTokenTracker
                 await Commands.ToolbarInfoCommand.InitializeAsync(this);
                 Utilities.OutputLogger.Log("Commands initialized successfully");
 
+                // Force-show our custom toolbar (VS caches visibility state from
+                // previous sessions; this ensures it always appears).
+                ShowCustomToolbar();
+
                 Utilities.OutputLogger.Log("=== Extension Initialized Successfully ===");
 
                 // Don't auto-show the tool window during init — it can crash if
@@ -59,6 +63,37 @@ namespace CopilotTokenTracker
             {
                 Utilities.OutputLogger.LogError("Failed to initialize extension", ex);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Make the "Copilot Token Tracker" toolbar visible via DTE CommandBars.
+        /// Uses late-binding (dynamic) to avoid a hard reference on the
+        /// CommandBars interop assembly.
+        /// </summary>
+        private void ShowCustomToolbar()
+        {
+            try
+            {
+                Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+                if (GetService(typeof(EnvDTE.DTE)) is EnvDTE80.DTE2 dte)
+                {
+                    dynamic bars = dte.CommandBars;
+                    dynamic toolbar = bars["Copilot Token Tracker"];
+                    if (!(bool)toolbar.Visible)
+                    {
+                        toolbar.Visible = true;
+                        Utilities.OutputLogger.Log("Custom toolbar forced visible");
+                    }
+                    else
+                    {
+                        Utilities.OutputLogger.Log("Custom toolbar already visible");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Utilities.OutputLogger.LogWarning($"Could not auto-show toolbar: {ex.Message}");
             }
         }
     }

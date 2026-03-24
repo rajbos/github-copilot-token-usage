@@ -44,10 +44,6 @@
       "frameworks": {
         "net472": {
           "dependencies": {
-            "MessagePack": {
-              "target": "Package",
-              "version": "[2.5.187, )"
-            },
             "Microsoft.VSSDK.BuildTools": {
               "target": "Package",
               "version": "[17.6.2164, )",

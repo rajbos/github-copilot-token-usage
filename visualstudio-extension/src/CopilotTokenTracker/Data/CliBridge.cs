@@ -1,0 +1,138 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace CopilotTokenTracker.Data
+{
+    /// <summary>
+    /// Bridges to the bundled CLI executable (<c>copilot-token-tracker.exe</c>) to
+    /// retrieve token usage stats.  This avoids duplicating session discovery, parsing,
+    /// and aggregation logic that already lives in the shared TypeScript codebase.
+    ///
+    /// The CLI exe is a Node.js SEA (Single Executable Application) built from
+    /// <c>cli/</c> and copied into <c>cli-bundle/</c> at build time.
+    /// </summary>
+    internal static class CliBridge
+    {
+        private const string ExeName  = "copilot-token-tracker.exe";
+        private const int    TimeoutMs = 60_000; // 60 seconds — session scanning can be slow
+
+        // ── Public API ─────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Runs the CLI <c>usage --json</c> command and deserializes the result
+        /// into a <see cref="DetailedStats"/> instance.
+        /// Returns <c>null</c> when the CLI exe is missing or the command fails.
+        /// </summary>
+        public static async Task<DetailedStats?> GetUsageStatsAsync()
+        {
+            var exePath = FindCliExe();
+            if (exePath == null)
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge: bundled exe not found — falling back to built-in parser");
+                return null;
+            }
+
+            Utilities.OutputLogger.Log($"CLI bridge: running {exePath} usage --json");
+
+            var (exitCode, stdout, stderr) = await RunProcessAsync(exePath, "usage --json");
+
+            if (exitCode != 0)
+            {
+                Utilities.OutputLogger.LogWarning($"CLI bridge: exit code {exitCode}");
+                if (!string.IsNullOrWhiteSpace(stderr))
+                {
+                    Utilities.OutputLogger.LogWarning($"CLI bridge stderr: {stderr}");
+                }
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(stdout))
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge: empty stdout");
+                return null;
+            }
+
+            try
+            {
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                };
+                var result = JsonSerializer.Deserialize<DetailedStats>(stdout, options);
+                if (result != null)
+                {
+                    Utilities.OutputLogger.Log("CLI bridge: stats deserialized successfully");
+                }
+                return result;
+            }
+            catch (JsonException ex)
+            {
+                Utilities.OutputLogger.LogError("CLI bridge: JSON parse error", ex);
+                return null;
+            }
+        }
+
+        /// <summary>Returns <c>true</c> when the bundled CLI exe is available.</summary>
+        public static bool IsAvailable() => FindCliExe() != null;
+
+        // ── Internals ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Looks for the CLI exe next to this assembly (inside the VSIX install folder)
+        /// under the <c>cli-bundle/</c> subfolder.
+        /// </summary>
+        private static string? FindCliExe()
+        {
+            var asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            if (asmDir == null) { return null; }
+
+            var candidate = Path.Combine(asmDir, "cli-bundle", ExeName);
+            return File.Exists(candidate) ? candidate : null;
+        }
+
+        /// <summary>
+        /// Starts a process, captures stdout and stderr, and waits up to <see cref="TimeoutMs"/>.
+        /// Uses event-based output reading to avoid the classic ReadToEnd/WaitForExit deadlock.
+        /// </summary>
+        private static Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
+            string fileName, string arguments)
+        {
+            return Task.Run(() =>
+            {
+                var stdoutBuilder = new System.Text.StringBuilder();
+                var stderrBuilder = new System.Text.StringBuilder();
+
+                using var proc = new Process();
+                proc.StartInfo = new ProcessStartInfo
+                {
+                    FileName               = fileName,
+                    Arguments              = arguments,
+                    UseShellExecute        = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError  = true,
+                    CreateNoWindow         = true,
+                };
+
+                proc.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutBuilder.AppendLine(e.Data); };
+                proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderrBuilder.AppendLine(e.Data); };
+
+                proc.Start();
+                proc.BeginOutputReadLine();
+                proc.BeginErrorReadLine();
+
+                if (!proc.WaitForExit(TimeoutMs))
+                {
+                    try { proc.Kill(); } catch { /* best effort */ }
+                    Utilities.OutputLogger.LogWarning($"CLI bridge: process killed after {TimeoutMs / 1000}s timeout");
+                    return (-1, string.Empty, "Process timed out");
+                }
+
+                return (proc.ExitCode, stdoutBuilder.ToString(), stderrBuilder.ToString());
+            });
+        }
+    }
+}

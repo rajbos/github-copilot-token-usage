@@ -11,25 +11,30 @@ export const usageCommand = new Command('usage')
 	.description('Show token usage for today, current month, last month, and last 30 days')
 	.option('-m, --models', 'Show per-model token breakdown')
 	.option('-c, --cost', 'Show estimated cost breakdown')
+	.option('--json', 'Output raw JSON (for machine consumption)')
 	.action(async (options) => {
-		console.log(chalk.bold.cyan('\n📊 Copilot Token Tracker - Usage Report\n'));
+		const files = await discoverFiles(options);
+		if (!files) { return; }
 
-		process.stdout.write(chalk.dim('Scanning for session files...'));
-		const files = await discoverSessionFiles();
-		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+		const stats = await calculateStats(files, options);
 
-		if (files.length === 0) {
-			console.log(chalk.yellow('⚠️  No session files found.'));
+		if (options.json) {
+			// Machine-readable output: emit pure JSON to stdout and exit
+			const payload = {
+				today: stats.today,
+				month: stats.month,
+				lastMonth: stats.lastMonth,
+				last30Days: stats.last30Days,
+				lastUpdated: stats.lastUpdated.toISOString(),
+				backendConfigured: false,
+			};
+			process.stdout.write(JSON.stringify(payload));
 			return;
 		}
 
-		process.stdout.write(chalk.dim('Calculating token usage...'));
-		const stats = await calculateDetailedStats(files, (completed, total) => {
-			process.stdout.write(`\r${chalk.dim(`Processing: ${completed}/${total} files`)}`);
-		});
-		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+		// Human-readable output
+		console.log(chalk.bold.cyan('\n📊 Copilot Token Tracker - Usage Report\n'));
 
-		// Display each period
 		const periods: { label: string; emoji: string; stats: PeriodStats }[] = [
 			{ label: 'Today', emoji: '📅', stats: stats.today },
 			{ label: 'This Month', emoji: '📆', stats: stats.month },
@@ -43,6 +48,40 @@ export const usageCommand = new Command('usage')
 
 		console.log(chalk.dim(`Last updated: ${stats.lastUpdated.toLocaleString()}\n`));
 	});
+
+/** Discover session files (quiet when --json is set). */
+async function discoverFiles(options: { json?: boolean }) {
+	if (!options.json) {
+		process.stdout.write(chalk.dim('Scanning for session files...'));
+	}
+	const files = await discoverSessionFiles();
+	if (!options.json) {
+		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+	}
+	if (files.length === 0) {
+		if (options.json) {
+			process.stdout.write('{}');
+		} else {
+			console.log(chalk.yellow('⚠️  No session files found.'));
+		}
+		return null;
+	}
+	return files;
+}
+
+/** Calculate detailed stats (quiet when --json is set). */
+async function calculateStats(files: string[], options: { json?: boolean }) {
+	if (!options.json) {
+		process.stdout.write(chalk.dim('Calculating token usage...'));
+	}
+	const stats = await calculateDetailedStats(files, options.json ? undefined : (completed, total) => {
+		process.stdout.write(`\r${chalk.dim(`Processing: ${completed}/${total} files`)}`);
+	});
+	if (!options.json) {
+		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+	}
+	return stats;
+}
 
 function printPeriodStats(
 	label: string,

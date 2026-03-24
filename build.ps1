@@ -69,7 +69,7 @@ function Build-Cli {
     try {
         switch ($Target) {
             'build'   { npm ci; npm run build }
-            'package' { npm ci; npm run build:production }
+            'package' { npm ci; npm run build:production; & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild }
             'test'    { Write-Host "    (no CLI tests yet)" }
             'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
         }
@@ -79,7 +79,22 @@ function Build-Cli {
 }
 
 # ---------------------------------------------------------------------------
-# Visual Studio Extension  (placeholder — C#/.NET not yet scaffolded)
+# CLI Bundled Executable (for embedding in Visual Studio extension)
+# ---------------------------------------------------------------------------
+function Build-CliExe {
+    Write-Step "cli: bundle-exe"
+    Push-Location "$PSScriptRoot/cli"
+    try {
+        npm ci
+        & pwsh -NoProfile -File bundle-exe.ps1
+        if ($LASTEXITCODE -ne 0) { throw "CLI exe bundling failed" }
+        Write-Ok "cli exe bundled."
+    }
+    finally { Pop-Location }
+}
+
+# ---------------------------------------------------------------------------
+# Visual Studio Extension
 # ---------------------------------------------------------------------------
 function Build-VisualStudio {
     Write-Step "visualstudio-extension: $Target"
@@ -88,12 +103,48 @@ function Build-VisualStudio {
         Write-Host "    (visualstudio-extension not yet scaffolded – skipping)" -ForegroundColor Yellow
         return
     }
+
+    # Ensure the bundled CLI exe exists (needed at runtime by the C# bridge)
+    $cliExe = Join-Path $PSScriptRoot 'cli' 'dist' 'copilot-token-tracker.exe'
+    if (-not (Test-Path $cliExe)) {
+        Write-Host "    Bundled CLI exe not found — building it first..." -ForegroundColor Yellow
+        Build-CliExe
+    }
+
+    # Copy the CLI exe and its runtime assets into the VS extension project
+    $vsCliDir = Join-Path $PSScriptRoot 'visualstudio-extension' 'src' 'CopilotTokenTracker' 'cli-bundle'
+    if (-not (Test-Path $vsCliDir)) { New-Item -ItemType Directory -Path $vsCliDir -Force | Out-Null }
+    Copy-Item $cliExe (Join-Path $vsCliDir 'copilot-token-tracker.exe') -Force
+    # sql.js WASM binary is loaded at runtime from the same directory as the exe
+    $wasmSrc = Join-Path $PSScriptRoot 'cli' 'dist' 'sql-wasm.wasm'
+    if (Test-Path $wasmSrc) {
+        Copy-Item $wasmSrc (Join-Path $vsCliDir 'sql-wasm.wasm') -Force
+    }
+    Write-Host "    Copied CLI exe + sql-wasm.wasm to cli-bundle/"
+
     $sln = $slnFiles[0].FullName
+
+    # VSIX projects require Visual Studio's MSBuild (not dotnet build) because
+    # the VSSDK build targets depend on VS-specific assemblies.
+    $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+        -latest -requires Microsoft.Component.MSBuild `
+        -find 'MSBuild\**\Bin\MSBuild.exe' 2>$null | Select-Object -First 1
+
+    if (-not $msbuild) {
+        # Fallback: try the well-known VS 18 (2024+) path
+        $msbuild = "${env:ProgramFiles}\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+    }
+
+    if (-not (Test-Path $msbuild)) {
+        Write-Err "MSBuild not found — install the Visual Studio 'VSIX development' workload"
+        return
+    }
+
     switch ($Target) {
-        'build'   { dotnet build $sln --configuration Release }
-        'package' { dotnet publish $sln --configuration Release }
-        'test'    { dotnet test $sln --configuration Release }
-        'clean'   { dotnet clean $sln }
+        'build'   { & $msbuild $sln /p:Configuration=Release /t:Build   /v:minimal }
+        'package' { & $msbuild $sln /p:Configuration=Release /t:Rebuild /v:minimal }
+        'test'    { Write-Host "    (no VS extension tests yet)" }
+        'clean'   { & $msbuild $sln /p:Configuration=Release /t:Clean   /v:minimal }
     }
     Write-Ok "visualstudio-extension done."
 }
