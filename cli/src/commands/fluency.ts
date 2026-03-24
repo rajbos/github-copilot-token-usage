@@ -4,7 +4,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { discoverSessionFiles, calculateUsageAnalysisStats, fmt } from '../helpers';
-import { calculateMaturityScores } from '../../../src/maturityScoring';
+import { calculateMaturityScores } from '../../../vscode-extension/src/maturityScoring';
 
 export const fluencyCommand = new Command('fluency')
 	.description('Show your Copilot Fluency Score and improvement tips')
