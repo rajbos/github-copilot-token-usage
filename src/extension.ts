@@ -1746,12 +1746,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.visualStudio.countInteractions(objects);
 			}
 
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				return this.visualStudio.countInteractions(objects);
-			}
-
 			// Handle Crush sessions
 			if (this.crush.isCrushSessionFile(sessionFile)) {
 				return await this.crush.countCrushInteractions(sessionFile);
@@ -2179,11 +2173,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
 			details.editorRoot = this.openCode.getOpenCodeDataDir();
 			details.editorName = 'OpenCode';
-			return;
-		}
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			details.editorRoot = path.dirname(sessionFile);
-			details.editorName = 'Visual Studio';
 			return;
 		}
 		if (this.visualStudio.isVSSessionFile(sessionFile)) {
@@ -2800,14 +2789,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const req = objects[i];
 				const res = objects[i + 1];
 				if (!req) { continue; }
+				const reqData = req[1];
+				const resData = res?.[1];
 				turnNumber++;
-				const userText = this.visualStudio.extractTextFromContent(req.Content || []);
-				const assistantText = res ? this.visualStudio.extractTextFromContent(res.Content || []) : '';
-				const model = this.visualStudio.getModelId(res ?? req, !res);
-				const inputTokens = this.estimateTokensFromText(userText, model ?? 'gpt-4');
+				const userText = this.visualStudio.extractTextFromContent(reqData?.Content || []);
+				const assistantText = res ? this.visualStudio.extractTextFromContent(resData?.Content || []) : '';
+				const model = this.visualStudio.getModelId(resData ?? reqData, !resData);
+				const contextText = this.visualStudio.extractContextText(reqData?.Context);
+								const inputTokens = this.estimateTokensFromText(userText + contextText, model ?? 'gpt-4');
 				const outputTokens = res ? this.estimateTokensFromText(assistantText, model ?? 'gpt-4') : 0;
 				const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
-				for (const c of (res?.Content || [])) {
+				for (const c of (resData?.Content || [])) {
 					const inner = Array.isArray(c) ? c[1] : null;
 					if (inner?.Function) {
 						toolCalls.push({
@@ -2818,67 +2810,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				turns.push({
 					turnNumber,
-					timestamp: req.Timestamp ? new Date(req.Timestamp).toISOString() : null,
-					mode: 'ask' as const,
-					userMessage: userText,
-					assistantResponse: assistantText,
-					model,
-					toolCalls,
-					contextReferences: {
-						file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
-						workspace: 0, terminal: 0, vscode: 0,
-						terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
-						outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
-					},
-					mcpTools: [],
-					inputTokensEstimate: inputTokens,
-					outputTokensEstimate: outputTokens,
-					thinkingTokensEstimate: 0
-				});
-			}
-			return {
-				file: details.file,
-				title: details.title || null,
-				editorSource: details.editorSource,
-				editorName: 'Visual Studio',
-				size: details.size,
-				modified: details.modified,
-				interactions: details.interactions,
-				contextReferences: details.contextReferences,
-				firstInteraction: details.firstInteraction,
-				lastInteraction: details.lastInteraction,
-				turns,
-				usageAnalysis: undefined
-			};
-		}
-
-		// Handle Visual Studio sessions
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			const objects = this.visualStudio.decodeSessionFile(sessionFile);
-			let turnNumber = 0;
-			for (let i = 1; i < objects.length; i += 2) {
-				const req = objects[i];
-				const res = objects[i + 1];
-				if (!req) { continue; }
-				turnNumber++;
-				const userText = this.visualStudio.extractTextFromContent(req.Content || []);
-				const assistantText = res ? this.visualStudio.extractTextFromContent(res.Content || []) : '';
-				const model = this.visualStudio.getModelId(res ?? req, !res);
-				const inputTokens = this.estimateTokensFromText(userText, model ?? 'gpt-4');
-				const outputTokens = res ? this.estimateTokensFromText(assistantText, model ?? 'gpt-4') : 0;
-				const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
-				for (const c of (res?.Content || [])) {
-					const inner = Array.isArray(c) ? c[1] : null;
-					if (inner?.Function) {
-						toolCalls.push({
-							toolName: String(inner.Function.Description || 'tool'),
-							result: typeof inner.Function.Result === 'string' ? inner.Function.Result : undefined
-						});
-					}
-				}
-				turns.push({
-					turnNumber,
-					timestamp: req.Timestamp ? new Date(req.Timestamp).toISOString() : null,
+					timestamp: reqData?.Timestamp ? new Date(reqData.Timestamp).toISOString() : null,
 					mode: 'ask' as const,
 					userMessage: userText,
 					assistantResponse: assistantText,
@@ -4132,14 +4064,23 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
-				case 'openRawFile':
-					await this.dispatch('openRawFile:logviewer', async () => {
-						try {
-							await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
-						} catch (err) {
-							vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
-						}
-					});
+					case 'openRawFile':
+						await this.dispatch('openRawFile:logviewer', async () => {
+							try {
+								if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+									// VS session files are binary MessagePack — show decoded JSON instead
+									const objects = this.visualStudio.decodeSessionFile(sessionFilePath);
+									const readable = objects.map((obj: any, i: number) => i === 0 ? obj : obj?.[1] ?? obj);
+									const jsonText = JSON.stringify(readable, null, 2);
+									const doc = await vscode.workspace.openTextDocument({ content: jsonText, language: 'json' });
+									await vscode.window.showTextDocument(doc);
+								} else {
+									await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
+								}
+							} catch (err) {
+								vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
+							}
+						});
 					break;
 				case 'showToolCallPretty': {
 					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };

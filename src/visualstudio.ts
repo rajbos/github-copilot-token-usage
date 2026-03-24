@@ -7,6 +7,8 @@
  *
  * Discovery: VS logs session paths to %LOCALAPPDATA%\Temp\VSGitHubCopilotLogs\*.chat.log
  * with entries: "[PersistedCopilotSessionRepository V] Updating session file '<path>'"
+ * A supplemental filesystem scan covers sessions not yet referenced in log files
+ * (e.g. VS started but not yet chatted, or log files cleaned up).
  *
  * File format: 1-byte version prefix (0x01) + stream of MessagePack objects:
  *   - Object 0:           session header { Name(null), TimeCreated, TimeUpdated, ConversationMode, ... }
@@ -20,8 +22,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { decodeMulti } from '@msgpack/msgpack';
+import { decode, decodeMulti } from '@msgpack/msgpack';
 import type { ModelUsage } from './types';
+
+/** Directory names to skip during filesystem scan (heavy / non-project dirs). */
+const SCAN_SKIP_DIRS = new Set([
+    'node_modules', '.git', '.github', 'bin', 'obj', 'out', 'dist', 'build', 'target',
+    'packages', 'vendor', '__pycache__', '.tox', '.venv', 'venv', 'env',
+    'Windows', 'Program Files', 'Program Files (x86)', 'ProgramData',
+    '$Recycle.Bin', 'System Volume Information', 'Recovery',
+]);
 
 export class VisualStudioDataAccess {
 
@@ -51,16 +61,26 @@ return path.join(localAppData, 'Temp', 'VSGitHubCopilotLogs');
 }
 
 /**
- * Discover VS Copilot session files by parsing VS temp chat log files.
- * Each .chat.log contains "Updating session file '<abs-path>'" entries.
- * Only returns paths that exist on disk; deduplicates across multiple log files.
+ * Discover VS Copilot session files.
+ * Primary: parse VS temp chat log files (fast).
+ * Supplemental: filesystem scan of common development roots, to catch sessions
+ * not yet referenced in logs (e.g. VS running but session not yet persisted to log,
+ * or log files cleaned up by system temp cleaner).
  */
 discoverSessions(): string[] {
-const sessionFiles: string[] = [];
 const seen = new Set<string>();
-const logDir = this.getLogDir();
+const sessionFiles: string[] = [];
 
-if (!fs.existsSync(logDir)) { return []; }
+this._discoverFromLogs(seen, sessionFiles);
+this._discoverFromFilesystem(seen, sessionFiles);
+
+return sessionFiles;
+}
+
+/** Parse *.chat.log files in the VS temp log dir for "Updating session file" entries. */
+private _discoverFromLogs(seen: Set<string>, results: string[]): void {
+const logDir = this.getLogDir();
+if (!fs.existsSync(logDir)) { return; }
 
 let logFiles: string[];
 try {
@@ -68,7 +88,7 @@ logFiles = fs.readdirSync(logDir)
 .filter(f => f.endsWith('.chat.log'))
 .map(f => path.join(logDir, f));
 } catch {
-return [];
+return;
 }
 
 const pattern = /Updating session file '([^']+)'/;
@@ -84,14 +104,117 @@ if (seen.has(sessionPath)) { continue; }
 seen.add(sessionPath);
 try {
 if (fs.existsSync(sessionPath)) {
-sessionFiles.push(sessionPath);
+results.push(sessionPath);
 }
-} catch { /* ignore stat errors */ }
+} catch { /* ignore */ }
 }
 } catch { /* ignore file read errors */ }
 }
+}
 
-return sessionFiles;
+/**
+ * Supplement log discovery by scanning common development root directories
+ * for `.vs/<solution>/copilot-chat/<hash>/sessions/<uuid>` paths.
+ * Scans: user home dir, and common named dev roots (C:\repos, C:\code, etc.).
+ * Depth-limited and skips known heavy directories to stay fast.
+ */
+private _discoverFromFilesystem(seen: Set<string>, results: string[]): void {
+const home = os.homedir();
+// Drive letter(s): default to C, also try D if it exists
+const drives = ['C', 'D'];
+
+const roots: string[] = [home];
+
+// Add common named dev roots at drive root
+for (const drive of drives) {
+for (const name of ['repos', 'code', 'src', 'projects', 'dev']) {
+const p = drive + ':\\' + name;
+try { if (fs.existsSync(p)) { roots.push(p); } } catch { /* ok */ }
+}
+}
+
+for (const root of roots) {
+// For home dir, allow depth 7 (home/code/repos/org/project/.vs/...)
+// For explicit dev roots, allow depth 5
+const maxDepth = root === home ? 7 : 5;
+this._scanForVsDirs(root, 0, maxDepth, seen, results);
+}
+}
+
+/**
+ * Recursively scan for `.vs` directories starting from `dir`, up to `maxDepth`.
+ * When a `.vs` directory is found, scan it for Copilot Chat session files.
+ */
+private _scanForVsDirs(
+dir: string, depth: number, maxDepth: number,
+seen: Set<string>, results: string[]
+): void {
+if (depth > maxDepth) { return; }
+
+let entries: fs.Dirent[];
+try {
+entries = fs.readdirSync(dir, { withFileTypes: true });
+} catch {
+return;
+}
+
+for (const entry of entries) {
+if (!entry.isDirectory()) { continue; }
+
+const name = entry.name;
+
+// Skip heavy / non-project directories
+if (SCAN_SKIP_DIRS.has(name)) { continue; }
+// Skip other hidden dirs (but NOT .vs — that's what we're looking for)
+if (name.startsWith('.') && name !== '.vs') { continue; }
+
+const fullPath = path.join(dir, name);
+
+if (name === '.vs') {
+// Found a .vs directory — look inside for copilot-chat sessions
+this._findSessionsInVsDir(fullPath, seen, results);
+// Do NOT recurse further into .vs itself
+} else {
+this._scanForVsDirs(fullPath, depth + 1, maxDepth, seen, results);
+}
+}
+}
+
+/**
+ * Given a `.vs` directory, find all `copilot-chat/<hash>/sessions/<uuid>` files.
+ * Pattern: `.vs/<solution-dir>/copilot-chat/<hash>/sessions/<file>`
+ */
+private _findSessionsInVsDir(vsDir: string, seen: Set<string>, results: string[]): void {
+let solutionDirs: fs.Dirent[];
+try {
+solutionDirs = fs.readdirSync(vsDir, { withFileTypes: true });
+} catch { return; }
+
+for (const sol of solutionDirs) {
+if (!sol.isDirectory()) { continue; }
+const copilotChatDir = path.join(vsDir, sol.name, 'copilot-chat');
+let hashDirs: fs.Dirent[];
+try {
+hashDirs = fs.readdirSync(copilotChatDir, { withFileTypes: true });
+} catch { continue; }
+
+for (const hashDir of hashDirs) {
+if (!hashDir.isDirectory()) { continue; }
+const sessionsDir = path.join(copilotChatDir, hashDir.name, 'sessions');
+let sessionFiles: fs.Dirent[];
+try {
+sessionFiles = fs.readdirSync(sessionsDir, { withFileTypes: true });
+} catch { continue; }
+
+for (const sf of sessionFiles) {
+if (!sf.isFile()) { continue; }
+const fullPath = path.join(sessionsDir, sf.name);
+if (seen.has(fullPath)) { continue; }
+seen.add(fullPath);
+results.push(fullPath);
+}
+}
+}
 }
 
 /**
@@ -111,13 +234,16 @@ return [];
 
 /**
  * Extract the session title.
+
+/**
+ * Extract the session title.
  * VS does not store an explicit title — it displays the text of the first user message.
  */
 getSessionTitle(objects: any[]): string | undefined {
-// Find the first request object (odd index ≥ 1)
 const req = objects.find((_: any, i: number) => i > 0 && i % 2 === 1);
-if (!req?.Content) { return undefined; }
-const text = this.extractTextFromContent(req.Content).trim();
+const reqData = req?.[1];
+if (!reqData?.Content) { return undefined; }
+const text = this.extractTextFromContent(reqData.Content).trim();
 if (!text) { return undefined; }
 return text.length > 80 ? text.substring(0, 80) + '\u2026' : text;
 }
@@ -158,8 +284,40 @@ return parts.join('\n');
 }
 
 /**
- * Extract the model ID from a request or response message object.
- * Requests carry Model.ModelId; responses carry Model[1].Id.
+ * Extract text from the Context array attached to a VS request message.
+ * Each context item carries a ValueContainer whose second element is a
+ * nested MessagePack-encoded byte array; decoded inner object has a Content field.
+ */
+extractContextText(contextArr: any): string {
+if (!Array.isArray(contextArr)) { return ''; }
+const parts: string[] = [];
+for (const item of contextArr) {
+const vc = item?.ValueContainer;
+if (!Array.isArray(vc) || vc.length < 2) { continue; }
+const vcRaw = vc[1];
+if (!vcRaw || typeof vcRaw !== 'object') { continue; }
+const keys = Object.keys(vcRaw);
+if (keys.length === 0) { continue; }
+if (!isNaN(Number(keys[0]))) {
+// Byte array stored as numeric-keyed object — decode as nested MessagePack
+try {
+const numKeys = keys.map(Number).sort((a, b) => a - b);
+const bytes = Buffer.from(numKeys.map(k => (vcRaw as Record<number, number>)[k]));
+const inner = decode(bytes) as any;
+const innerData = Array.isArray(inner) ? inner[1] : inner;
+if (innerData?.Content && typeof innerData.Content === 'string') {
+parts.push(innerData.Content);
+}
+} catch { /* ignore malformed context */ }
+} else if (vcRaw.Content && typeof vcRaw.Content === 'string') {
+parts.push(vcRaw.Content);
+}
+}
+return parts.join('\n');
+}
+/**
+ * Extract the model ID from a message's inner data object (obj[1]).
+ * Responses carry Model[1].Id.
  */
 getModelId(msgObj: any, isRequest: boolean): string | null {
 if (!msgObj) { return null; }
@@ -185,13 +343,15 @@ estimator: (text: string, model?: string) => number
 const objects = this.decodeSessionFile(filePath);
 let total = 0;
 for (let i = 1; i < objects.length; i++) {
-const obj = objects[i];
-if (!obj?.Content) { continue; }
-const text = this.extractTextFromContent(obj.Content);
-if (!text) { continue; }
+const objData = objects[i]?.[1];
+if (!objData?.Content) { continue; }
+const text = this.extractTextFromContent(objData.Content);
 const isRequest = i % 2 === 1;
-const model = this.getModelId(obj, isRequest) || undefined;
-total += estimator(text, model);
+// For requests, also count context (injected file/document content)
+const contextText = isRequest ? this.extractContextText(objData.Context) : '';
+if (!text && !contextText) { continue; }
+const model = this.getModelId(objData, isRequest) || undefined;
+total += estimator(text + contextText, model);
 }
 return { tokens: total, thinkingTokens: 0 };
 }
@@ -210,15 +370,16 @@ const objects = this.decodeSessionFile(filePath);
 const modelTexts: { [model: string]: { input: string; output: string } } = {};
 
 for (let i = 1; i < objects.length; i++) {
-const obj2 = objects[i];
-if (!obj2?.Content) { continue; }
-const text = this.extractTextFromContent(obj2.Content);
-if (!text) { continue; }
+const obj2Data = objects[i]?.[1];
+if (!obj2Data?.Content) { continue; }
+const text = this.extractTextFromContent(obj2Data.Content);
 const isRequest = i % 2 === 1;
-const model = this.getModelId(obj2, isRequest) || 'unknown';
+const contextText = isRequest ? this.extractContextText(obj2Data.Context) : '';
+if (!text && !contextText) { continue; }
+const model = this.getModelId(obj2Data, isRequest) || 'unknown';
 if (!modelTexts[model]) { modelTexts[model] = { input: '', output: '' }; }
 if (isRequest) {
-modelTexts[model].input += text;
+modelTexts[model].input += text + contextText;
 } else {
 modelTexts[model].output += text;
 }
