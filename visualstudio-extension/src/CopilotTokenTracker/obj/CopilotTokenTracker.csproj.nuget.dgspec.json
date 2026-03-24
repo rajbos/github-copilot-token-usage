@@ -13,6 +13,8 @@
         "packagesPath": "C:\\Users\\RobBos\\.nuget\\packages\\",
         "outputPath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\obj\\",
         "projectStyle": "PackageReference",
+        "skipContentFileWrite": true,
+        "UsingMicrosoftNETSdk": false,
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
@@ -30,42 +32,36 @@
         },
         "frameworks": {
           "net472": {
-            "targetAlias": "net472",
             "projectReferences": {}
           }
-        },
-        "warningProperties": {
-          "noWarn": [
-            "NU1701"
-          ],
-          "warnAsError": [
-            "NU1605"
-          ]
         },
         "restoreAuditProperties": {
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        },
-        "SdkAnalysisLevel": "10.0.200"
+        }
       },
       "frameworks": {
         "net472": {
-          "targetAlias": "net472",
           "dependencies": {
             "MessagePack": {
               "target": "Package",
               "version": "[2.5.187, )"
             },
             "Microsoft.VSSDK.BuildTools": {
-              "suppressParent": "All",
               "target": "Package",
-              "version": "[17.6.2164, )"
+              "version": "[17.6.2164, )",
+              "noWarn": [
+                "NU1604"
+              ]
             },
             "Microsoft.VisualStudio.SDK": {
               "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "target": "Package",
-              "version": "[17.6.36389, )"
+              "version": "[17.6.36389, )",
+              "noWarn": [
+                "NU1604"
+              ]
             },
             "Microsoft.Web.WebView2": {
               "target": "Package",
@@ -79,8 +75,24 @@
               "target": "Package",
               "version": "[8.0.5, )"
             }
-          },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.201\\RuntimeIdentifierGraph.json"
+          }
+        }
+      },
+      "runtimes": {
+        "win": {
+          "#import": []
+        },
+        "win-arm": {
+          "#import": []
+        },
+        "win-arm64": {
+          "#import": []
+        },
+        "win-x64": {
+          "#import": []
+        },
+        "win-x86": {
+          "#import": []
         }
       }
     }

@@ -34,6 +34,12 @@ namespace CopilotTokenTracker
         {
             await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             await Commands.ShowTokenTrackerCommand.InitializeAsync(this);
+
+            await this.ShowToolWindowAsync(
+                typeof(ToolWindow.TokenTrackerToolWindow),
+                id: 0,
+                create: true,
+                cancellationToken: cancellationToken);
         }
     }
 }

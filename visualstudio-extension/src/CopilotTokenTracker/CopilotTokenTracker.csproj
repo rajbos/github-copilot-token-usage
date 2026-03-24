@@ -1,36 +1,92 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
+    <RuntimeIdentifiers>win;win-x86;win-x64;win-arm;win-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectTypeGuids>{82b43b9b-a64c-4715-b499-d71e9ca2bd60};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <ProjectGuid>{A1B2C3D4-E5F6-A7B8-C9D0-E1F2A3B4C5D6}</ProjectGuid>
     <OutputType>Library</OutputType>
-    <TargetFramework>net472</TargetFramework>
-    <UseWPF>true</UseWPF>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>CopilotTokenTracker</RootNamespace>
     <AssemblyName>CopilotTokenTracker</AssemblyName>
-    <!-- Required for VS extension to locate the assembly from its install dir -->
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
-    <!-- Suppress package reference warnings for VS SDK assemblies excluded from output -->
-    <NoWarn>$(NoWarn);NU1701</NoWarn>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CopyOutputSymbolsToOutputDirectory>true</CopyOutputSymbolsToOutputDirectory>
+    <StartAction>Program</StartAction>
+    <StartProgram Condition="'$(DevEnvDir)' != ''">$(DevEnvDir)devenv.exe</StartProgram>
+    <StartArguments>/rootsuffix Exp</StartArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
 
+  <!-- Source files -->
   <ItemGroup>
-    <!-- Visual Studio SDK (excluded from runtime — VS provides these at host time) -->
-    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.6.36389" ExcludeAssets="Runtime" />
-    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.6.2164" PrivateAssets="all" />
-    <!-- Embedded Chromium for the WebView2 tool window -->
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2478.35" />
-    <!-- MessagePack for parsing VS Copilot Chat binary session files -->
-    <PackageReference Include="MessagePack" Version="2.5.187" />
-    <!-- JSON serialisation for the data bridge to the webview -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <!-- System.Text.Json is not built into net472; pull it via NuGet -->
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <Compile Include="CopilotTokenTrackerPackage.cs" />
+    <Compile Include="Commands\ShowTokenTrackerCommand.cs" />
+    <Compile Include="Data\Models.cs" />
+    <Compile Include="Data\SessionDiscovery.cs" />
+    <Compile Include="Data\SessionParser.cs" />
+    <Compile Include="Data\StatsBuilder.cs" />
+    <Compile Include="Data\TokenEstimator.cs" />
+    <Compile Include="Properties\Settings.Designer.cs">
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+    </Compile>
+    <Compile Include="ToolWindow\TokenTrackerToolWindow.cs" />
+    <Compile Include="WebBridge\ThemedHtmlBuilder.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
 
-  <!-- Framework assemblies needed for OleMenuCommandService / MenuCommand -->
+  <!-- WPF XAML -->
   <ItemGroup>
-    <Reference Include="System.Design" />
+    <Page Include="ToolWindow\TokenTrackerControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Include="ToolWindow\TokenTrackerControl.xaml.cs">
+      <DependentUpon>TokenTrackerControl.xaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <!-- VSIX manifest -->
+  <ItemGroup>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
   </ItemGroup>
 
   <!-- VSCT: VS Command Table definition (menus / commands) -->
@@ -40,17 +96,34 @@
     </VSCTCompile>
   </ItemGroup>
 
-  <!-- VSIX manifest -->
-  <ItemGroup>
-    <Content Include="source.extension.vsixmanifest">
-      <SubType>Designer</SubType>
-    </Content>
-  </ItemGroup>
-
-  <!-- vscode-shim.js embedded as a resource so it can be injected into WebView2 pages -->
+  <!-- Embedded resources -->
   <ItemGroup>
     <EmbeddedResource Include="WebBridge\vscode-shim.js" />
   </ItemGroup>
+
+  <!-- Framework references -->
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Design" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+  </ItemGroup>
+
+  <!-- NuGet packages -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.6.36389" ExcludeAssets="runtime" NoWarn="NU1604" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.6.2164" NoWarn="NU1604" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2478.35" />
+    <PackageReference Include="MessagePack" Version="2.5.187" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="'$(VSToolsPath)' != ''" />
 
   <!--
     Copy webview JS bundles from the vscode-extension build output into this project's
@@ -59,19 +132,14 @@
   -->
   <Target Name="CopyWebviewBundles" BeforeTargets="Build">
     <ItemGroup>
-      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\details.js" />
-      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\chart.js" />
-      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\usage.js" />
-      <_WebviewBundle Include="..\..\vscode-extension\dist\webview\diagnostics.js" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\details.js" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\chart.js" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\usage.js" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\diagnostics.js" />
     </ItemGroup>
     <MakeDir Directories="$(MSBuildProjectDirectory)\webview" />
-    <Copy
-      SourceFiles="@(_WebviewBundle)"
-      DestinationFolder="$(MSBuildProjectDirectory)\webview\"
-      SkipUnchangedFiles="true"
-      ContinueOnError="true" />
-    <Message Importance="high"
-             Text="Copied webview bundles from vscode-extension/dist/webview/ — rebuild vscode-extension if they are missing." />
+    <Copy SourceFiles="@(_WebviewBundle)" DestinationFolder="$(MSBuildProjectDirectory)\webview\" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Message Importance="high" Text="Copied webview bundles from vscode-extension/dist/webview/ — rebuild vscode-extension if they are missing." />
   </Target>
 
   <!-- Include copied webview JS files inside the VSIX package -->
