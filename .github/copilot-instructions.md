@@ -189,3 +189,38 @@ To maintain a consistent, VS Code-native look across all webview panels (Details
   - Keep navigation command names unchanged so `extension.ts` handlers continue to work.
   - Run `npm run compile` and verify TypeScript and ESLint pass.
   - Visually compare the header with the Details and other panels to confirm parity.
+
+## CLI Integration Requirement
+
+**Important**: When adding support for a new editor or data source, you must wire it into **both** the VS Code extension (`src/`) **and** the CLI (`cli/src/`). The CLI is a standalone command-line tool that shares the same session discovery and data access classes but has its own aggregation pipeline.
+
+### CLI Files to Update
+
+| File | What to add |
+|---|---|
+| `cli/src/helpers.ts` | Import, factory function, singleton, detection, stat routing, `processSessionFile()` branch, `calculateUsageAnalysisStats()` deps |
+| `cli/src/commands/stats.ts` | Add entry to `getEditorDisplayName()` |
+| `cli/src/commands/usage.ts` | No change needed — uses shared helpers |
+| `cli/README.md` | Add the new editor to the "Data Sources" section |
+
+### CLI Integration Points in `cli/src/helpers.ts`
+
+1. **Import** — `import { NewEditorDataAccess } from '../../src/neweditor';`
+2. **Factory function** — `function createNewEditor(): NewEditorDataAccess { return new NewEditorDataAccess(); }`
+3. **Singleton** — `const _newEditorInstance = createNewEditor();`
+4. **`createSessionDiscovery()`** — pass `newEditor: _newEditorInstance` in the deps object
+5. **`statSessionFile()`** — add guard routing virtual paths to the real DB file (before the generic `fs.promises.stat()` fallthrough)
+6. **`getEditorSourceFromPath()`** — add a path pattern check *before* the generic `'/code/'` or `'vscode'` fallthrough, returning a stable lowercase identifier (e.g. `'neweditor'`)
+7. **`processSessionFile()`** — add a guard block calling `getTokens()`, `countInteractions()`, `getModelUsage()` from the data access class and returning a `SessionData` object
+8. **`calculateUsageAnalysisStats()` deps** — pass `newEditor: _newEditorInstance` so `analyzeSessionUsage()` can route to it
+
+### CLI Checklist
+
+- [ ] `cli/src/helpers.ts` — import, factory, singleton, detection, stat routing, processSessionFile block, usageAnalysis deps
+- [ ] `cli/src/commands/stats.ts` — `getEditorDisplayName()` entry
+- [ ] `cli/README.md` — "Data Sources" section updated
+- [ ] `npm run cli:build` passes
+- [ ] CLI `stats` command shows the new editor in the session list
+- [ ] Token counts are non-zero and plausible
+
+

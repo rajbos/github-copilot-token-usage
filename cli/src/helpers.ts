@@ -10,6 +10,7 @@ import { SessionDiscovery } from '../../src/sessionDiscovery';
 import { OpenCodeDataAccess } from '../../src/opencode';
 import { CrushDataAccess } from '../../src/crush';
 import { ContinueDataAccess } from '../../src/continue';
+import { VisualStudioDataAccess } from '../../src/visualstudio';
 import { parseSessionFileContent } from '../../src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../src/types';
@@ -53,14 +54,20 @@ function createContinue(): ContinueDataAccess {
 	return new ContinueDataAccess();
 }
 
+/** Create Visual Studio data access instance for CLI */
+function createVisualStudio(): VisualStudioDataAccess {
+	return new VisualStudioDataAccess();
+}
+
 // Module-level singletons so sql.js WASM is only initialised once across all session files
 const _openCodeInstance = createOpenCode();
 const _crushInstance = createCrush();
 const _continueInstance = createContinue();
+const _visualStudioInstance = createVisualStudio();
 
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance });
+	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance });
 }
 
 /** Discover all session files on this machine */
@@ -129,6 +136,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/.crush/crush.db#')) { return 'crush'; }
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
+        if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
 	return 'vscode';
 }
 
@@ -180,6 +188,23 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 				editorSource: getEditorSourceFromPath(filePath),
 			};
 		}
+
+                // Handle Visual Studio session files (binary MessagePack)
+                if (_visualStudioInstance.isVSSessionFile(filePath)) {
+                        const result = _visualStudioInstance.getTokenEstimates(filePath, estimateTokens);
+                        const objects = _visualStudioInstance.decodeSessionFile(filePath);
+                        const interactions = _visualStudioInstance.countInteractions(objects);
+                        const modelUsage = _visualStudioInstance.getModelUsage(filePath, estimateTokens);
+                        return {
+                                file: filePath,
+                                tokens: result.tokens,
+                                thinkingTokens: result.thinkingTokens,
+                                interactions,
+                                modelUsage,
+                                lastModified: stats.mtime,
+                                editorSource: getEditorSourceFromPath(filePath),
+                        };
+                }
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');
 
@@ -369,6 +394,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		warn,
 		openCode: _openCodeInstance,
 		crush: _crushInstance,
+		visualStudio: _visualStudioInstance,
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,
@@ -507,3 +533,4 @@ export const ENVIRONMENTAL = {
 
 /** Model pricing data export */
 export { modelPricing, tokenEstimators, toolNameMap };
+
