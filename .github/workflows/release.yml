@@ -273,6 +273,10 @@ jobs:
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes-file /tmp/release_notes.md \
           vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
+
+    - name: Release Summary
+      if: always()
+      shell: bash
       run: |
         if [ "${{ steps.create_release.outcome }}" == "success" ]; then
           {

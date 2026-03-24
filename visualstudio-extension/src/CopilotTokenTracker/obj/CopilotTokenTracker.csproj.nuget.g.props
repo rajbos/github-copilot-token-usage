@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <RestoreSuccess Condition=" '$(RestoreSuccess)' == '' ">True</RestoreSuccess>
+    <RestoreTool Condition=" '$(RestoreTool)' == '' ">NuGet</RestoreTool>
+    <ProjectAssetsFile Condition=" '$(ProjectAssetsFile)' == '' ">$(MSBuildThisFileDirectory)project.assets.json</ProjectAssetsFile>
+    <NuGetPackageRoot Condition=" '$(NuGetPackageRoot)' == '' ">$(UserProfile)\.nuget\packages\</NuGetPackageRoot>
+    <NuGetPackageFolders Condition=" '$(NuGetPackageFolders)' == '' ">C:\Users\RobBos\.nuget\packages\;C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages</NuGetPackageFolders>
+    <NuGetProjectStyle Condition=" '$(NuGetProjectStyle)' == '' ">PackageReference</NuGetProjectStyle>
+    <NuGetToolVersion Condition=" '$(NuGetToolVersion)' == '' ">7.0.0</NuGetToolVersion>
+  </PropertyGroup>
+  <ItemGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <SourceRoot Include="C:\Users\RobBos\.nuget\packages\" />
+    <SourceRoot Include="C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages\" />
+  </ItemGroup>
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)microsoft.vssdk.compatibilityanalyzer\17.6.2164\build\Microsoft.VsSDK.CompatibilityAnalyzer.props" Condition="Exists('$(NuGetPackageRoot)microsoft.vssdk.compatibilityanalyzer\17.6.2164\build\Microsoft.VsSDK.CompatibilityAnalyzer.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.codeanalysis.bannedapianalyzers\3.3.2\build\Microsoft.CodeAnalysis.BannedApiAnalyzers.props" Condition="Exists('$(NuGetPackageRoot)microsoft.codeanalysis.bannedapianalyzers\3.3.2\build\Microsoft.CodeAnalysis.BannedApiAnalyzers.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.vssdk.buildtools\17.6.2164\build\Microsoft.VSSDK.BuildTools.props" Condition="Exists('$(NuGetPackageRoot)microsoft.vssdk.buildtools\17.6.2164\build\Microsoft.VSSDK.BuildTools.props')" />
+  </ImportGroup>
+  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <PkgMicrosoft_VisualStudio_Threading_Analyzers Condition=" '$(PkgMicrosoft_VisualStudio_Threading_Analyzers)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.visualstudio.threading.analyzers\17.6.40</PkgMicrosoft_VisualStudio_Threading_Analyzers>
+    <PkgMicrosoft_Web_WebView2 Condition=" '$(PkgMicrosoft_Web_WebView2)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.web.webview2\1.0.2478.35</PkgMicrosoft_Web_WebView2>
+    <PkgMicrosoft_VsSDK_CompatibilityAnalyzer Condition=" '$(PkgMicrosoft_VsSDK_CompatibilityAnalyzer)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.vssdk.compatibilityanalyzer\17.6.2164</PkgMicrosoft_VsSDK_CompatibilityAnalyzer>
+    <PkgMicrosoft_CodeAnalysis_BannedApiAnalyzers Condition=" '$(PkgMicrosoft_CodeAnalysis_BannedApiAnalyzers)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.codeanalysis.bannedapianalyzers\3.3.2</PkgMicrosoft_CodeAnalysis_BannedApiAnalyzers>
+    <PkgMicrosoft_VisualStudio_SDK_Analyzers Condition=" '$(PkgMicrosoft_VisualStudio_SDK_Analyzers)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.visualstudio.sdk.analyzers\16.10.10</PkgMicrosoft_VisualStudio_SDK_Analyzers>
+    <PkgMicrosoft_VSSDK_BuildTools Condition=" '$(PkgMicrosoft_VSSDK_BuildTools)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.vssdk.buildtools\17.6.2164</PkgMicrosoft_VSSDK_BuildTools>
+    <PkgMicrosoft_VisualStudio_Composition_Analyzers Condition=" '$(PkgMicrosoft_VisualStudio_Composition_Analyzers)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.visualstudio.composition.analyzers\17.6.17</PkgMicrosoft_VisualStudio_Composition_Analyzers>
+    <PkgMicrosoft_ServiceHub_Analyzers Condition=" '$(PkgMicrosoft_ServiceHub_Analyzers)' == '' ">C:\Users\RobBos\.nuget\packages\microsoft.servicehub.analyzers\4.2.102</PkgMicrosoft_ServiceHub_Analyzers>
+  </PropertyGroup>
+</Project>
