@@ -189,6 +189,12 @@ namespace CopilotTokenTracker.ToolWindow
                             _currentView = "maturity";
                             await RefreshAsync();
                             break;
+
+                        case "showDashboard":
+                            // Dashboard view not yet implemented — fall back to details
+                            _currentView = "details";
+                            await RefreshAsync();
+                            break;
                     }
                 });
             }
