@@ -90,54 +90,59 @@ namespace CopilotTokenTracker.ToolWindow
         {
             if (!_webViewReady) { return; }
 
-            FallbackText.Text       = "Refreshing data…";
-            FallbackText.Visibility = Visibility.Visible;
+            // Show loading state immediately so the user gets feedback right away
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            WebView.CoreWebView2.NavigateToString(
+                ThemedHtmlBuilder.BuildLoadingHtml(_currentView));
+            FallbackText.Visibility = Visibility.Collapsed;
 
             try
             {
-                string statsJson;
-                switch (_currentView)
-                {
-                    case "environmental":
-                    {
-                        var envStats = await StatsBuilder.BuildEnvironmentalAsync();
-                        statsJson = JsonSerializer.Serialize(envStats, new JsonSerializerOptions
-                        {
-                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                        });
-                        break;
-                    }
-                    case "maturity":
-                    {
-                        var maturity = await StatsBuilder.BuildMaturityAsync();
-                        statsJson = JsonSerializer.Serialize(maturity, new JsonSerializerOptions
-                        {
-                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                        });
-                        break;
-                    }
-                    default:
-                    {
-                        var stats = await StatsBuilder.BuildAsync() ?? new DetailedStats
-                        {
-                            LastUpdated = DateTime.UtcNow.ToString("o"),
-                        };
-                        statsJson = JsonSerializer.Serialize(stats, new JsonSerializerOptions
-                        {
-                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                        });
-                        break;
-                    }
-                }
+                var statsJson = await FetchStatsJsonAsync(_currentView);
+                var html      = ThemedHtmlBuilder.Build(_currentView, statsJson);
 
-                var html = ThemedHtmlBuilder.Build(_currentView, statsJson);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 WebView.CoreWebView2.NavigateToString(html);
-
-                FallbackText.Visibility = Visibility.Collapsed;
             }
             catch (Exception ex)
             {
-                FallbackText.Text = $"Error loading token data:\n{ex.Message}";
+                Utilities.OutputLogger.LogError("RefreshAsync: failed to load stats", ex);
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    WebView.CoreWebView2.NavigateToString(
+                        ThemedHtmlBuilder.BuildErrorHtml(ex.Message));
+                }
+                catch { /* best effort */ }
+            }
+        }
+
+        // ── Data fetching ──────────────────────────────────────────────────────
+
+        private static async Task<string> FetchStatsJsonAsync(string view)
+        {
+            var serOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+            switch (view)
+            {
+                case "environmental":
+                {
+                    var envStats = await StatsBuilder.BuildEnvironmentalAsync();
+                    return JsonSerializer.Serialize(envStats, serOpts);
+                }
+                case "maturity":
+                {
+                    var maturity = await StatsBuilder.BuildMaturityAsync();
+                    return JsonSerializer.Serialize(maturity, serOpts);
+                }
+                default:
+                {
+                    var stats = await StatsBuilder.BuildAsync() ?? new DetailedStats
+                    {
+                        LastUpdated = DateTime.UtcNow.ToString("o"),
+                    };
+                    return JsonSerializer.Serialize(stats, serOpts);
+                }
             }
         }
 

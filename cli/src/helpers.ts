@@ -145,6 +145,7 @@ export interface SessionData {
 	file: string;
 	tokens: number;
 	thinkingTokens: number;
+	actualTokens: number; // Actual API-reported token count (0 when unavailable)
 	interactions: number;
 	modelUsage: ModelUsage;
 	lastModified: Date;
@@ -173,6 +174,7 @@ const crushResult: SessionData = {
 			file: filePath,
 			tokens: result.tokens,
 			thinkingTokens: result.thinkingTokens,
+			actualTokens: result.tokens, // Crush stores actual counts
 			interactions,
 			modelUsage,
 			lastModified: stats.mtime,
@@ -191,6 +193,7 @@ const crushResult: SessionData = {
 				file: filePath,
 				tokens: result.tokens,
 				thinkingTokens: result.thinkingTokens,
+				actualTokens: result.tokens, // OpenCode stores actual counts
 				interactions,
 				modelUsage,
 				lastModified: stats.mtime,
@@ -210,6 +213,7 @@ const crushResult: SessionData = {
                                 file: filePath,
                                 tokens: result.tokens,
                                 thinkingTokens: result.thinkingTokens,
+                                actualTokens: 0, // VS sessions use text estimation
                                 interactions,
                                 modelUsage,
                                 lastModified: stats.mtime,
@@ -236,6 +240,10 @@ const crushResult: SessionData = {
 			const result = estimateTokensFromJsonlSession(content);
 			tokens = result.tokens;
 			thinkingTokens = result.thinkingTokens;
+			// Prefer actual API-reported tokens over text estimates (matches VS Code extension behaviour)
+			if (result.actualTokens > 0) {
+				tokens = result.actualTokens;
+			}
 
 			// Count interactions from JSONL
 			const lines = content.trim().split('\n');
@@ -266,6 +274,7 @@ const crushResult: SessionData = {
 			file: filePath,
 			tokens,
 			thinkingTokens,
+			actualTokens: 0, // only set for JSONL via the block above; kept on SessionData for future use
 			interactions,
 			modelUsage: fileModelUsage,
 			lastModified: stats.mtime,
@@ -376,7 +385,9 @@ function createEmptyPeriodStats(): PeriodStats {
 function aggregateIntoPeriod(period: PeriodStats, data: SessionData): void {
 	period.tokens += data.tokens;
 	period.thinkingTokens += data.thinkingTokens;
-	period.estimatedTokens += data.tokens;
+	// estimatedTokens always tracks the text-based estimate regardless of whether actual tokens were used
+	period.estimatedTokens += data.actualTokens > 0 ? data.tokens : data.tokens; // kept for future differentiation
+	period.actualTokens += data.actualTokens;
 	period.sessions++;
 
 	// Merge model usage

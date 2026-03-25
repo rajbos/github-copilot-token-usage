@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Reflection;
 
 namespace CopilotTokenTracker.WebBridge
@@ -58,6 +59,98 @@ window.{globalKey} = {safeJson};
 <body>
 <div id=""root""></div>
 <script src=""https://copilot-tracker.local/{view}.js""></script>
+</body>
+</html>";
+        }
+
+        /// <summary>
+        /// Returns a lightweight HTML page that shows a spinner while data is loading.
+        /// No external scripts are required, so it renders instantly.
+        /// </summary>
+        public static string BuildLoadingHtml(string view)
+        {
+            var themeCss = BuildThemeCss();
+            return $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+<meta charset=""UTF-8"">
+<meta http-equiv=""Content-Security-Policy""
+      content=""default-src 'none'; style-src 'unsafe-inline';"">
+<style>
+{themeCss}
+html, body {{
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}}
+.loading {{
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100vh; gap: 16px;
+}}
+.spinner {{
+    width: 32px; height: 32px;
+    border: 3px solid var(--vscode-panel-border);
+    border-top-color: var(--vscode-button-background);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}}
+@keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+.message {{ color: var(--vscode-descriptionForeground); font-size: 13px; }}
+</style>
+</head>
+<body>
+<div class=""loading"">
+  <div class=""spinner""></div>
+  <div class=""message"">Loading Copilot usage data…</div>
+</div>
+</body>
+</html>";
+        }
+
+        /// <summary>
+        /// Returns a lightweight HTML page that displays an error message when data
+        /// could not be loaded.
+        /// </summary>
+        public static string BuildErrorHtml(string message)
+        {
+            var themeCss  = BuildThemeCss();
+            var safeMsg   = WebUtility.HtmlEncode(message);
+            return $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+<meta charset=""UTF-8"">
+<meta http-equiv=""Content-Security-Policy""
+      content=""default-src 'none'; style-src 'unsafe-inline';"">
+<style>
+{themeCss}
+html, body {{
+    margin: 0; padding: 0; height: 100%; overflow: auto;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}}
+.error-container {{
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100vh; gap: 12px; padding: 24px; box-sizing: border-box;
+    text-align: center;
+}}
+.error-icon  {{ font-size: 32px; }}
+.error-title {{ font-size: 15px; font-weight: 600; }}
+.error-detail {{
+    font-size: 12px; color: var(--vscode-descriptionForeground);
+    max-width: 480px; white-space: pre-wrap; word-break: break-word;
+}}
+</style>
+</head>
+<body>
+<div class=""error-container"">
+  <div class=""error-icon"">&#x26A0;</div>
+  <div class=""error-title"">Error loading Copilot usage data</div>
+  <div class=""error-detail"">{safeMsg}</div>
+</div>
 </body>
 </html>";
         }

@@ -28,6 +28,11 @@ namespace CopilotTokenTracker.Data
         /// </summary>
         private static volatile bool _hasSucceededOnce = false;
 
+        /// <summary>Last successfully fetched stats, used to serve cached data immediately.</summary>
+        private static volatile DetailedStats? _cachedStats;
+        private static DateTime _cachedStatsAt = DateTime.MinValue;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+
         /// <summary>
         /// In-flight Task for <c>usage --json</c>. When a second caller arrives while
         /// this is non-null, it receives the same Task instead of spawning a second process.
@@ -39,15 +44,30 @@ namespace CopilotTokenTracker.Data
         // ── Public API ─────────────────────────────────────────────────────────
 
         /// <summary>
+        /// Returns the most recently fetched stats from the in-memory cache, or
+        /// <c>null</c> if no successful fetch has completed yet.
+        /// </summary>
+        public static DetailedStats? GetCachedStats() => _cachedStats;
+
+        /// <summary>
         /// Runs the CLI <c>usage --json</c> command and deserializes the result
         /// into a <see cref="DetailedStats"/> instance.
         /// If a call is already in progress, returns the same Task (no duplicate process).
+        /// If cached data is still within <see cref="CacheTtl"/>, returns it immediately
+        /// without re-running the CLI.
         /// Returns <c>null</c> when the CLI exe is missing or the command fails.
         /// </summary>
         public static Task<DetailedStats?> GetUsageStatsAsync()
         {
             lock (_usageLock)
             {
+                // Return fresh cached data without launching the CLI again
+                if (_cachedStats != null && (DateTime.UtcNow - _cachedStatsAt) < CacheTtl)
+                {
+                    Utilities.OutputLogger.Log("CLI bridge: returning in-memory cached stats");
+                    return System.Threading.Tasks.Task.FromResult<DetailedStats?>(_cachedStats);
+                }
+
                 if (_inflightUsageTask != null)
                 {
                     Utilities.OutputLogger.Log("CLI bridge: usage --json already in flight, reusing existing call");
@@ -104,6 +124,8 @@ namespace CopilotTokenTracker.Data
                 if (result != null)
                 {
                     _hasSucceededOnce = true;
+                    _cachedStats      = result;
+                    _cachedStatsAt    = DateTime.UtcNow;
                     Utilities.OutputLogger.Log("CLI bridge: stats deserialized successfully");
                 }
                 return result;
