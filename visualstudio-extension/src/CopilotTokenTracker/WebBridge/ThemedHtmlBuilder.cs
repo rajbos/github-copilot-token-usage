@@ -67,11 +67,13 @@ window.{globalKey} = {safeJson};
         private static string ViewToGlobalKey(string view)
             => view switch
             {
-                "details"     => "__INITIAL_DETAILS__",
-                "chart"       => "__INITIAL_CHART__",
-                "usage"       => "__INITIAL_USAGE__",
-                "diagnostics" => "__INITIAL_DIAGNOSTICS__",
-                _             => "__INITIAL_DETAILS__",
+                "details"       => "__INITIAL_DETAILS__",
+                "chart"         => "__INITIAL_CHART__",
+                "usage"         => "__INITIAL_USAGE__",
+                "diagnostics"   => "__INITIAL_DIAGNOSTICS__",
+                "environmental" => "__INITIAL_ENVIRONMENTAL__",
+                "maturity"      => "__INITIAL_MATURITY__",
+                _               => "__INITIAL_DETAILS__",
             };
 
         private static string LoadShim()

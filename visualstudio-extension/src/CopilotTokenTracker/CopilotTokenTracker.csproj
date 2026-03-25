@@ -139,6 +139,8 @@
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\chart.js" />
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\usage.js" />
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\diagnostics.js" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\environmental.js" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\maturity.js" />
     </ItemGroup>
     <MakeDir Directories="$(MSBuildProjectDirectory)\webview" />
     <Copy SourceFiles="@(_WebviewBundle)" DestinationFolder="$(MSBuildProjectDirectory)\webview\" SkipUnchangedFiles="true" ContinueOnError="true" />

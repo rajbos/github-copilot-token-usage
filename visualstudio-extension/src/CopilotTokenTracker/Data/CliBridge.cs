@@ -76,6 +76,60 @@ namespace CopilotTokenTracker.Data
             }
         }
 
+        /// <summary>
+        /// Runs the CLI <c>fluency --json</c> command and deserializes the result
+        /// into a <see cref="MaturityData"/> instance.
+        /// Returns <c>null</c> when the CLI exe is missing or the command fails.
+        /// </summary>
+        public static async Task<MaturityData?> GetMaturityAsync()
+        {
+            var exePath = FindCliExe();
+            if (exePath == null)
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge: bundled exe not found for fluency");
+                return null;
+            }
+
+            Utilities.OutputLogger.Log($"CLI bridge: running {exePath} fluency --json");
+
+            var (exitCode, stdout, stderr) = await RunProcessAsync(exePath, "fluency --json");
+
+            if (exitCode != 0)
+            {
+                Utilities.OutputLogger.LogWarning($"CLI bridge (fluency): exit code {exitCode}");
+                if (!string.IsNullOrWhiteSpace(stderr))
+                {
+                    Utilities.OutputLogger.LogWarning($"CLI bridge (fluency) stderr: {stderr}");
+                }
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(stdout))
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge (fluency): empty stdout");
+                return null;
+            }
+
+            try
+            {
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                };
+                var result = JsonSerializer.Deserialize<MaturityData>(stdout, options);
+                if (result != null)
+                {
+                    Utilities.OutputLogger.Log("CLI bridge: maturity data deserialized successfully");
+                }
+                return result;
+            }
+            catch (JsonException ex)
+            {
+                Utilities.OutputLogger.LogError("CLI bridge (fluency): JSON parse error", ex);
+                return null;
+            }
+        }
+
         /// <summary>Returns <c>true</c> when the bundled CLI exe is available.</summary>
         public static bool IsAvailable() => FindCliExe() != null;
 

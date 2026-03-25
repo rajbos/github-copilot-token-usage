@@ -9,23 +9,30 @@ import { calculateMaturityScores } from '../../../vscode-extension/src/maturityS
 export const fluencyCommand = new Command('fluency')
 	.description('Show your Copilot Fluency Score and improvement tips')
 	.option('-t, --tips', 'Show improvement tips for each category')
+	.option('--json', 'Output raw JSON (for machine consumption)')
 	.action(async (options) => {
-		console.log(chalk.bold.cyan('\n🎯 Copilot Token Tracker - Fluency Score\n'));
+		if (!options.json) {
+			console.log(chalk.bold.cyan('\n🎯 Copilot Token Tracker - Fluency Score\n'));
+		}
 
-		process.stdout.write(chalk.dim('Scanning for session files...'));
+		if (!options.json) { process.stdout.write(chalk.dim('Scanning for session files...')); }
 		const files = await discoverSessionFiles();
-		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+		if (!options.json) { process.stdout.write('\r' + ' '.repeat(50) + '\r'); }
 
 		if (files.length === 0) {
-			console.log(chalk.yellow('⚠️  No session files found.'));
+			if (options.json) {
+				process.stdout.write('{}');
+			} else {
+				console.log(chalk.yellow('⚠️  No session files found.'));
+			}
 			return;
 		}
 
-		process.stdout.write(chalk.dim('Analyzing usage patterns...'));
+		if (!options.json) { process.stdout.write(chalk.dim('Analyzing usage patterns...')); }
 
 		// Calculate usage analysis stats
 		const usageStats = await calculateUsageAnalysisStats(files);
-		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+		if (!options.json) { process.stdout.write('\r' + ' '.repeat(50) + '\r'); }
 
 		// Calculate maturity scores
 		const scores = await calculateMaturityScores(
@@ -33,6 +40,20 @@ export const fluencyCommand = new Command('fluency')
 			async () => usageStats,
 			false
 		);
+
+		if (options.json) {
+			// Machine-readable output: emit pure JSON to stdout and exit
+			const payload = {
+				overallStage: scores.overallStage,
+				overallLabel: scores.overallLabel,
+				categories: scores.categories,
+				period: scores.period,
+				lastUpdated: scores.lastUpdated,
+				backendConfigured: false,
+			};
+			process.stdout.write(JSON.stringify(payload));
+			return;
+		}
 
 		// Overall score
 		const stageColors: Record<number, typeof chalk.red> = {

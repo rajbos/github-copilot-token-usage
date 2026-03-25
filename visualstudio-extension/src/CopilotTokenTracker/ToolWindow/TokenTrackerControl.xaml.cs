@@ -95,11 +95,37 @@ namespace CopilotTokenTracker.ToolWindow
 
             try
             {
-                var stats    = await StatsBuilder.BuildAsync();
-                var statsJson = JsonSerializer.Serialize(stats, new JsonSerializerOptions
+                string statsJson;
+                switch (_currentView)
                 {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                });
+                    case "environmental":
+                    {
+                        var envStats = await StatsBuilder.BuildEnvironmentalAsync();
+                        statsJson = JsonSerializer.Serialize(envStats, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        });
+                        break;
+                    }
+                    case "maturity":
+                    {
+                        var maturity = await StatsBuilder.BuildMaturityAsync();
+                        statsJson = JsonSerializer.Serialize(maturity, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        });
+                        break;
+                    }
+                    default:
+                    {
+                        var stats = await StatsBuilder.BuildAsync();
+                        statsJson = JsonSerializer.Serialize(stats, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        });
+                        break;
+                    }
+                }
 
                 var html = ThemedHtmlBuilder.Build(_currentView, statsJson);
                 WebView.CoreWebView2.NavigateToString(html);
@@ -148,6 +174,16 @@ namespace CopilotTokenTracker.ToolWindow
 
                         case "showDiagnostics":
                             _currentView = "diagnostics";
+                            await RefreshAsync();
+                            break;
+
+                        case "showEnvironmental":
+                            _currentView = "environmental";
+                            await RefreshAsync();
+                            break;
+
+                        case "showMaturity":
+                            _currentView = "maturity";
                             await RefreshAsync();
                             break;
                     }
