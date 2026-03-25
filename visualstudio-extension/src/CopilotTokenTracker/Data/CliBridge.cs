@@ -28,14 +28,43 @@ namespace CopilotTokenTracker.Data
         /// </summary>
         private static volatile bool _hasSucceededOnce = false;
 
+        /// <summary>
+        /// In-flight Task for <c>usage --json</c>. When a second caller arrives while
+        /// this is non-null, it receives the same Task instead of spawning a second process.
+        /// Cleared back to <c>null</c> once the Task completes.
+        /// </summary>
+        private static Task<DetailedStats?>? _inflightUsageTask;
+        private static readonly object _usageLock = new object();
+
         // ── Public API ─────────────────────────────────────────────────────────
 
         /// <summary>
         /// Runs the CLI <c>usage --json</c> command and deserializes the result
         /// into a <see cref="DetailedStats"/> instance.
+        /// If a call is already in progress, returns the same Task (no duplicate process).
         /// Returns <c>null</c> when the CLI exe is missing or the command fails.
         /// </summary>
-        public static async Task<DetailedStats?> GetUsageStatsAsync()
+        public static Task<DetailedStats?> GetUsageStatsAsync()
+        {
+            lock (_usageLock)
+            {
+                if (_inflightUsageTask != null)
+                {
+                    Utilities.OutputLogger.Log("CLI bridge: usage --json already in flight, reusing existing call");
+                    return _inflightUsageTask;
+                }
+
+                _inflightUsageTask = RunGetUsageStatsAsync();
+                _ = _inflightUsageTask.ContinueWith(_ =>
+                {
+                    lock (_usageLock) { _inflightUsageTask = null; }
+                }, System.Threading.Tasks.TaskContinuationOptions.ExecuteSynchronously);
+
+                return _inflightUsageTask;
+            }
+        }
+
+        private static async Task<DetailedStats?> RunGetUsageStatsAsync()
         {
             var exePath = FindCliExe();
             if (exePath == null)
