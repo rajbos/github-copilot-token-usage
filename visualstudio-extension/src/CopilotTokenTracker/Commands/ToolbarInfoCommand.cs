@@ -127,8 +127,8 @@ namespace CopilotTokenTracker.Commands
 
                     if (pane is ToolWindow.TokenTrackerToolWindow trackerWindow)
                     {
-                        Utilities.OutputLogger.Log("Tool window found, refreshing...");
-                        await trackerWindow.RefreshAsync();
+                        Utilities.OutputLogger.Log("Tool window found, resetting to details view...");
+                        await trackerWindow.ResetViewAsync();
                     }
                     else
                     {

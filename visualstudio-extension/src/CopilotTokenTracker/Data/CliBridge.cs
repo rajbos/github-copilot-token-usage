@@ -138,6 +138,78 @@ namespace CopilotTokenTracker.Data
         }
 
         /// <summary>
+        /// Runs the CLI <c>chart --json</c> command and returns the raw JSON string.
+        /// Returns <c>null</c> when the CLI exe is missing or the command fails.
+        /// </summary>
+        public static async Task<string?> GetChartDataJsonAsync()
+        {
+            var exePath = FindCliExe();
+            if (exePath == null)
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge: bundled exe not found for chart");
+                return null;
+            }
+
+            var timeoutMs = _hasSucceededOnce ? TimeoutMs : InitialTimeoutMs;
+            Utilities.OutputLogger.Log($"CLI bridge: running {exePath} chart --json");
+
+            var (exitCode, stdout, stderr) = await RunProcessAsync(exePath, "chart --json", timeoutMs);
+
+            if (exitCode != 0)
+            {
+                Utilities.OutputLogger.LogWarning($"CLI bridge (chart): exit code {exitCode}");
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    Utilities.OutputLogger.LogWarning($"CLI bridge (chart) stderr: {stderr}");
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(stdout))
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge (chart): empty stdout");
+                return null;
+            }
+
+            Utilities.OutputLogger.Log("CLI bridge: chart data received");
+            return stdout.Trim();
+        }
+
+        /// <summary>
+        /// Runs the CLI <c>usage-analysis --json</c> command and returns the raw JSON string.
+        /// Returns <c>null</c> when the CLI exe is missing or the command fails.
+        /// </summary>
+        public static async Task<string?> GetUsageAnalysisJsonAsync()
+        {
+            var exePath = FindCliExe();
+            if (exePath == null)
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge: bundled exe not found for usage-analysis");
+                return null;
+            }
+
+            var timeoutMs = _hasSucceededOnce ? TimeoutMs : InitialTimeoutMs;
+            Utilities.OutputLogger.Log($"CLI bridge: running {exePath} usage-analysis --json");
+
+            var (exitCode, stdout, stderr) = await RunProcessAsync(exePath, "usage-analysis --json", timeoutMs);
+
+            if (exitCode != 0)
+            {
+                Utilities.OutputLogger.LogWarning($"CLI bridge (usage-analysis): exit code {exitCode}");
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    Utilities.OutputLogger.LogWarning($"CLI bridge (usage-analysis) stderr: {stderr}");
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(stdout))
+            {
+                Utilities.OutputLogger.LogWarning("CLI bridge (usage-analysis): empty stdout");
+                return null;
+            }
+
+            Utilities.OutputLogger.Log("CLI bridge: usage-analysis data received");
+            return stdout.Trim();
+        }
+
+        /// <summary>
         /// Runs the CLI <c>fluency --json</c> command and deserializes the result
         /// into a <see cref="MaturityData"/> instance.
         /// Returns <c>null</c> when the CLI exe is missing or the command fails.
@@ -230,6 +302,8 @@ namespace CopilotTokenTracker.Data
                     RedirectStandardOutput = true,
                     RedirectStandardError  = true,
                     CreateNoWindow         = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                    StandardErrorEncoding  = System.Text.Encoding.UTF8,
                 };
 
                 proc.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutBuilder.AppendLine(e.Data); };

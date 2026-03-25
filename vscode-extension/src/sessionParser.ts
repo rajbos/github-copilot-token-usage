@@ -201,6 +201,7 @@ export function parseSessionFileContent(
 	let totalInputTokens = 0;
 	let totalOutputTokens = 0;
 	let totalThinkingTokens = 0;
+	let totalActualTokens = 0;
 
 	let sessionJson: any | undefined;
 
@@ -298,7 +299,8 @@ export function parseSessionFileContent(
 				tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
 				interactions,
 				modelUsage,
-				thinkingTokens: totalThinkingTokens
+				thinkingTokens: totalThinkingTokens,
+				actualTokens: 0, // delta-based JSONL: no result.usage fields to read
 			};
 		}
 
@@ -306,7 +308,7 @@ export function parseSessionFileContent(
 		try {
 			sessionJson = JSON.parse(fileContent.trim());
 		} catch {
-			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0 };
+			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0, actualTokens: 0 };
 		}
 	}
 
@@ -315,7 +317,7 @@ export function parseSessionFileContent(
 		try {
 			sessionJson = JSON.parse(fileContent);
 		} catch {
-			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0 };
+			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0, actualTokens: 0 };
 		}
 	}
 
@@ -362,13 +364,29 @@ export function parseSessionFileContent(
 				}
 			}
 		}
+
+		// Extract actual token counts from LLM API usage data (mirrors extension's estimateTokensFromSession logic)
+		if (request?.result?.usage) {
+			// OLD FORMAT (pre-Feb 2026)
+			const u = request.result.usage;
+			const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+			const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+			totalActualTokens += prompt + completion;
+		} else if (typeof request?.result?.promptTokens === 'number' && typeof request?.result?.outputTokens === 'number') {
+			// NEW FORMAT (Feb 2026+)
+			totalActualTokens += request.result.promptTokens + request.result.outputTokens;
+		} else if (request?.result?.metadata && typeof request?.result?.metadata?.promptTokens === 'number' && typeof request?.result?.metadata?.outputTokens === 'number') {
+			// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+			totalActualTokens += request.result.metadata.promptTokens + request.result.metadata.outputTokens;
+		}
 	}
 
 	return {
 		tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
 		interactions,
 		modelUsage,
-		thinkingTokens: totalThinkingTokens
+		thinkingTokens: totalThinkingTokens,
+		actualTokens: totalActualTokens,
 	};
 }
 

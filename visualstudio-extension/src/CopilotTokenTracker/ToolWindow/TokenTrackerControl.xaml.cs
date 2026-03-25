@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -16,6 +17,12 @@ namespace CopilotTokenTracker.ToolWindow
     {
         private bool   _webViewReady;
         private string _currentView = "details";
+
+        /// <summary>
+        /// Last rendered HTML per view name.  Populated by <see cref="RefreshAsync"/>;
+        /// served instantly on navigation so the user never waits for a redundant CLI call.
+        /// </summary>
+        private readonly Dictionary<string, string> _viewHtmlCache = new Dictionary<string, string>();
 
         public TokenTrackerControl()
         {
@@ -90,31 +97,46 @@ namespace CopilotTokenTracker.ToolWindow
         {
             if (!_webViewReady) { return; }
 
-            // Show loading state immediately so the user gets feedback right away
+            Utilities.OutputLogger.Log($"Loading view: {_currentView}");
+
+            // Show a text overlay while data is loading.  We deliberately avoid
+            // calling NavigateToString here so we don't trigger a navigation that
+            // immediately gets cancelled, which leaves WebView2 in a black state.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            WebView.CoreWebView2.NavigateToString(
-                ThemedHtmlBuilder.BuildLoadingHtml(_currentView));
-            FallbackText.Visibility = Visibility.Collapsed;
+            FallbackText.Text       = "Loading…";
+            FallbackText.Visibility = Visibility.Visible;
 
             try
             {
                 var statsJson = await FetchStatsJsonAsync(_currentView);
                 var html      = ThemedHtmlBuilder.Build(_currentView, statsJson);
 
+                // Store in cache so subsequent navigations to this view are instant
+                _viewHtmlCache[_currentView] = html;
+
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 WebView.CoreWebView2.NavigateToString(html);
+                FallbackText.Visibility = Visibility.Collapsed;
+                Utilities.OutputLogger.Log($"View loaded: {_currentView}");
             }
             catch (Exception ex)
             {
-                Utilities.OutputLogger.LogError("RefreshAsync: failed to load stats", ex);
-                try
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    WebView.CoreWebView2.NavigateToString(
-                        ThemedHtmlBuilder.BuildErrorHtml(ex.Message));
-                }
-                catch { /* best effort */ }
+                Utilities.OutputLogger.LogError($"RefreshAsync: failed to load view '{_currentView}'", ex);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                FallbackText.Text = $"Error loading token data:\n{ex.Message}";
             }
+        }
+
+        /// <summary>
+        /// Resets the current view back to the default (details) and refreshes.
+        /// Use this when a view is stuck or rendering incorrectly.
+        /// </summary>
+        public async Task ResetViewAsync()
+        {
+            Utilities.OutputLogger.Log($"Resetting view (was: {_currentView}) → details");
+            _viewHtmlCache.Clear(); // discard all cached HTML so next navigation fetches fresh data
+            _currentView = "details";
+            await RefreshAsync();
         }
 
         // ── Data fetching ──────────────────────────────────────────────────────
@@ -125,6 +147,44 @@ namespace CopilotTokenTracker.ToolWindow
 
             switch (view)
             {
+                case "chart":
+                {
+                    var raw = await CliBridge.GetChartDataJsonAsync();
+                    if (!string.IsNullOrWhiteSpace(raw)) { return raw!; }
+                    // Fallback: empty chart payload
+                    return JsonSerializer.Serialize(new
+                    {
+                        labels = Array.Empty<string>(),
+                        tokensData = Array.Empty<int>(),
+                        sessionsData = Array.Empty<int>(),
+                        modelDatasets = Array.Empty<object>(),
+                        editorDatasets = Array.Empty<object>(),
+                        editorTotalsMap = new { },
+                        repositoryDatasets = Array.Empty<object>(),
+                        repositoryTotalsMap = new { },
+                        dailyCount = 0,
+                        totalTokens = 0,
+                        avgTokensPerDay = 0,
+                        totalSessions = 0,
+                        lastUpdated = DateTime.UtcNow.ToString("o"),
+                        backendConfigured = false,
+                    }, serOpts);
+                }
+                case "usage":
+                {
+                    var raw = await CliBridge.GetUsageAnalysisJsonAsync();
+                    if (!string.IsNullOrWhiteSpace(raw)) { return raw!; }
+                    // Fallback: empty usage payload
+                    return JsonSerializer.Serialize(new
+                    {
+                        today = new { },
+                        last30Days = new { },
+                        month = new { },
+                        locale = "en-US",
+                        lastUpdated = DateTime.UtcNow.ToString("o"),
+                        backendConfigured = false,
+                    }, serOpts);
+                }
                 case "environmental":
                 {
                     var envStats = await StatsBuilder.BuildEnvironmentalAsync();
@@ -146,6 +206,50 @@ namespace CopilotTokenTracker.ToolWindow
             }
         }
 
+        // ── Loading overlay & navigation ──────────────────────────────────────
+
+        /// <summary>
+        /// Injects a full-page spinner overlay into the currently visible WebView page.
+        /// The overlay disappears naturally when NavigateToString replaces the page.
+        /// </summary>
+        private async Task ShowLoadingOverlayAsync()
+        {
+            if (!_webViewReady) { return; }
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await WebView.CoreWebView2.ExecuteScriptAsync(
+                "(function(){" +
+                "  if(document.getElementById('__vs-loading-overlay__')){return;}" +
+                "  var s=document.createElement('style');" +
+                "  s.textContent='@keyframes __vs-spin__{to{transform:rotate(360deg)}}';" +
+                "  document.head.appendChild(s);" +
+                "  var o=document.createElement('div');" +
+                "  o.id='__vs-loading-overlay__';" +
+                "  o.style.cssText='position:fixed;inset:0;background:rgba(20,20,20,0.82);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;pointer-events:none;';" +
+                "  o.innerHTML='<div style=\"width:28px;height:28px;border:3px solid #555;border-top-color:#ccc;border-radius:50%;animation:__vs-spin__ 0.7s linear infinite;\"></div>" +
+                "<div style=\"margin-top:10px;font-size:13px;color:#bbb;font-family:sans-serif;\">Loading\u2026</div>';" +
+                "  document.body.appendChild(o);" +
+                "})();");
+        }
+
+        /// <summary>Shows loading overlay, changes the current view, then refreshes.</summary>
+        private async Task NavigateToViewAsync(string view)
+        {
+            _currentView = view;
+
+            // If we have cached HTML for this view, render it instantly without hitting the CLI
+            if (_viewHtmlCache.TryGetValue(view, out var cachedHtml))
+            {
+                Utilities.OutputLogger.Log($"Serving cached HTML for view: {view}");
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                WebView.CoreWebView2.NavigateToString(cachedHtml);
+                return;
+            }
+
+            // First visit — show spinner and fetch fresh data
+            await ShowLoadingOverlayAsync();
+            await RefreshAsync();
+        }
+
         // ── Incoming messages from JS ──────────────────────────────────────────
 
         private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -159,51 +263,62 @@ namespace CopilotTokenTracker.ToolWindow
 
                 _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
-                    switch (cmdProp.GetString())
+                    var cmd = cmdProp.GetString();
+                    Utilities.OutputLogger.Log($"WebMessage received: {cmd} (current view: {_currentView})");
+
+                    switch (cmd)
                     {
                         case "refresh":
                             await RefreshAsync();
                             break;
 
                         case "showDetails":
-                            _currentView = "details";
-                            await RefreshAsync();
+                            await NavigateToViewAsync("details");
                             break;
 
                         case "showChart":
-                            _currentView = "chart";
-                            await RefreshAsync();
+                            await NavigateToViewAsync("chart");
                             break;
 
                         case "showUsageAnalysis":
-                            _currentView = "usage";
-                            await RefreshAsync();
+                            await NavigateToViewAsync("usage");
                             break;
 
                         case "showDiagnostics":
-                            _currentView = "diagnostics";
-                            await RefreshAsync();
+                            // Diagnostics view is not supported in Visual Studio — redirect to details
+                            Utilities.OutputLogger.LogWarning("Diagnostics view is not supported in Visual Studio; redirecting to details");
+                            await NavigateToViewAsync("details");
                             break;
 
                         case "showEnvironmental":
-                            _currentView = "environmental";
-                            await RefreshAsync();
+                            await NavigateToViewAsync("environmental");
                             break;
 
                         case "showMaturity":
-                            _currentView = "maturity";
-                            await RefreshAsync();
+                            await NavigateToViewAsync("maturity");
                             break;
 
                         case "showDashboard":
                             // Dashboard view not yet implemented — fall back to details
-                            _currentView = "details";
-                            await RefreshAsync();
+                            await NavigateToViewAsync("details");
+                            break;
+
+                        case "jsError":
+                        {
+                            var jsMsg = root.TryGetProperty("message", out var jsMsgProp) ? jsMsgProp.GetString() : "(no message)";
+                            var jsSrc = root.TryGetProperty("source",  out var jsSrcProp)  ? jsSrcProp.GetString()  : "";
+                            var jsLine = root.TryGetProperty("line",   out var jsLineProp) ? jsLineProp.GetInt32()  : 0;
+                            Utilities.OutputLogger.LogError($"WebView JS error in view '{_currentView}': {jsMsg} at {jsSrc}:{jsLine}");
+                            break;
+                        }
+
+                        default:
+                            Utilities.OutputLogger.LogWarning($"Unknown WebMessage command: {cmd}");
                             break;
                     }
                 });
             }
-            catch { /* ignore malformed messages */ }
+            catch (Exception parseEx) { Utilities.OutputLogger.LogWarning($"OnWebMessageReceived: malformed message — {parseEx.Message}"); }
         }
     }
 }

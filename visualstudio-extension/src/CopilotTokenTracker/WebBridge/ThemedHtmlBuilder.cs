@@ -31,6 +31,7 @@ namespace CopilotTokenTracker.WebBridge
             var shim      = LoadShim();
             var themeCss  = BuildThemeCss();
             var globalKey = ViewToGlobalKey(view);
+            var vsHideJs  = BuildVsHideScript(view);
 
             // Prevent </script> injection in the JSON payload (OWASP XSS defence)
             var safeJson = statsJson.Replace("<", "\\u003c").Replace(">", "\\u003e");
@@ -48,6 +49,16 @@ namespace CopilotTokenTracker.WebBridge
 <style>
 {themeCss}
 html, body {{ margin: 0; padding: 0; height: 100%; overflow: auto; }}
+/* Hide views not supported in Visual Studio */
+#btn-diagnostics {{ display: none !important; }}
+/* Chart: hide By Repository toggle (no repo data) */
+#view-repository {{ display: none !important; }}
+/* Maturity: hide social sharing section and beta footer */
+.share-section, .beta-footer {{ display: none !important; }}
+/* Maturity: hide Fluency Level Viewer inline button (not available in Visual Studio) */
+#btn-level-viewer-inline {{ display: none !important; }}
+/* Maturity: hide VS Code Marketplace MCP discovery button (not available in Visual Studio) */
+.mcp-discover-btn {{ display: none !important; }}
 </style>
 <script>
 {shim}
@@ -59,14 +70,110 @@ window.{globalKey} = {safeJson};
 <body>
 <div id=""root""></div>
 <script src=""https://copilot-tracker.local/{view}.js""></script>
-</body>
+{vsHideJs}
+<script>
+// Relay unhandled JS errors back to the VS extension output window
+(function(){{
+  window.onerror = function(msg, src, line, col) {{
+    if (window.chrome && window.chrome.webview) {{
+      window.chrome.webview.postMessage({{ command: 'jsError', message: String(msg), source: String(src || ''), line: line || 0 }});
+    }}
+    return false;
+  }};
+  window.onunhandledrejection = function(e) {{
+    if (window.chrome && window.chrome.webview) {{
+      window.chrome.webview.postMessage({{ command: 'jsError', message: String(e.reason || 'unhandled rejection'), source: 'Promise', line: 0 }});
+    }}
+  }};
+}})();
+</script></body>
 </html>";
         }
 
         /// <summary>
-        /// Returns a lightweight HTML page that shows a spinner while data is loading.
-        /// No external scripts are required, so it renders instantly.
+        /// Returns a small inline script that hides VS-unsupported sections after the
+        /// bundle has rendered them into the DOM.  Uses a MutationObserver so it still
+        /// works even when the bundle renders asynchronously.
         /// </summary>
+        private static string BuildVsHideScript(string view)
+        {
+            if (view == "maturity") { return BuildVsHideScriptMaturity(); }
+            if (view != "usage") { return string.Empty; }
+
+            // Hide the Customization Files section, the Missed Potential section, and the
+            // Repository Hygiene section — none of which have data in Visual Studio.
+            return @"<script>
+(function () {
+  function hideUnsupportedSections() {
+    // Hide the repo-hygiene-section by class (always present)
+    document.querySelectorAll('.repo-hygiene-section').forEach(function(el) { el.style.display = 'none'; });
+
+    // Hide the ""Copilot Customization Files"" section (class=""section"") and the
+    // ""Missed Potential"" / ""No other AI tool configs"" inline divs by inspecting
+    // heading text — these have no stable id or unique class.
+    document.querySelectorAll('.section').forEach(function(el) {
+      var title = el.querySelector('.section-title');
+      if (title && title.textContent.includes('Copilot Customization Files')) {
+        el.style.display = 'none';
+      }
+    });
+
+    // Inline divs rendered by renderMissedPotential() — match only the *direct* heading child
+    // so ancestor divs (whose accumulated textContent also contains the string) are NOT hidden.
+    document.querySelectorAll('div').forEach(function(el) {
+      var firstChild = el.firstElementChild;
+      if (!firstChild) { return; }
+      var headingText = firstChild.textContent || '';
+      if ((headingText.includes('No other AI tool configs missing') || headingText.includes('Missed Potential: Non-Copilot')) &&
+          el.style && el.parentElement) {
+        el.style.display = 'none';
+      }
+    });
+  }
+
+  // Run once the bundle has rendered (observe DOM mutations until stable)
+  var observer = new MutationObserver(function() { hideUnsupportedSections(); });
+  observer.observe(document.body, { childList: true, subtree: true });
+  // Also run immediately in case the DOM is already populated
+  hideUnsupportedSections();
+})();
+</script>";
+        }
+
+        /// <summary>
+        /// Returns a JS block for the maturity view that rewrites VS Code-specific MCP
+        /// registry links to IDE-neutral GitHub Copilot docs links.
+        /// </summary>
+        private static string BuildVsHideScriptMaturity()
+        {
+            // Replace "VS Code MCP registry" anchor text/hrefs with the GitHub Copilot MCP docs.
+            // Done via MutationObserver so it runs after the bundle renders asynchronously.
+            return @"<script>
+(function () {
+  var GITHUB_MCP_DOCS = 'https://docs.github.com/en/copilot/customizing-copilot/using-model-context-protocol-with-github-copilot';
+
+  function fixMcpLinks() {
+    document.querySelectorAll('a').forEach(function(a) {
+      var href = a.getAttribute('href') || '';
+      var text = a.textContent || '';
+      // Rewrite VS Code MCP registry links to GitHub Copilot MCP docs
+      if (href.indexOf('code.visualstudio.com') !== -1 && href.indexOf('mcp') !== -1) {
+        a.setAttribute('href', GITHUB_MCP_DOCS);
+        a.setAttribute('target', '_blank');
+      }
+      // Replace display text that mentions VS Code specifically
+      if (text.indexOf('VS Code MCP registry') !== -1) {
+        a.textContent = text.replace('VS Code MCP registry', 'GitHub Copilot MCP docs');
+      }
+    });
+  }
+
+  var observer = new MutationObserver(function() { fixMcpLinks(); });
+  observer.observe(document.body, { childList: true, subtree: true });
+  fixMcpLinks();
+})();
+</script>";
+        }
         public static string BuildLoadingHtml(string view)
         {
             var themeCss = BuildThemeCss();

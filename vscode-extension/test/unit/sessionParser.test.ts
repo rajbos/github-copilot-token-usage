@@ -380,3 +380,81 @@ test('delta-based JSONL: invalid JSON lines are silently skipped', () => {
 	assert.equal(result.interactions, 1);
 	assert.equal(result.tokens, 'hi'.length + 'yo'.length);
 });
+
+// ── actualTokens extraction tests ──────────────────────────────────────────
+
+test('JSON session: extracts actualTokens from old result.usage format', () => {
+	const content = JSON.stringify({
+		requests: [
+			{
+				model: 'gpt-4o',
+				message: { text: 'hello' },
+				response: [{ value: 'world' }],
+				result: { usage: { promptTokens: 100, completionTokens: 50 } }
+			}
+		]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.equal(result.actualTokens, 150);
+});
+
+test('JSON session: extracts actualTokens from new result.promptTokens/outputTokens format', () => {
+	const content = JSON.stringify({
+		requests: [
+			{
+				model: 'gpt-4o',
+				message: { text: 'hello' },
+				response: [{ value: 'world' }],
+				result: { promptTokens: 200, outputTokens: 80 }
+			}
+		]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.equal(result.actualTokens, 280);
+});
+
+test('JSON session: extracts actualTokens from insiders result.metadata format', () => {
+	const content = JSON.stringify({
+		requests: [
+			{
+				model: 'gpt-4o',
+				message: { text: 'hello' },
+				response: [{ value: 'world' }],
+				result: { metadata: { promptTokens: 300, outputTokens: 120 } }
+			}
+		]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.equal(result.actualTokens, 420);
+});
+
+test('JSON session: accumulates actualTokens across multiple requests', () => {
+	const content = JSON.stringify({
+		requests: [
+			{
+				model: 'gpt-4o',
+				message: { text: 'a' },
+				response: [{ value: 'b' }],
+				result: { usage: { promptTokens: 100, completionTokens: 50 } }
+			},
+			{
+				model: 'gpt-4o',
+				message: { text: 'c' },
+				response: [{ value: 'd' }],
+				result: { promptTokens: 200, outputTokens: 80 }
+			}
+		]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.equal(result.actualTokens, 430);
+});
+
+test('JSON session: actualTokens is 0 when no result usage fields present', () => {
+	const content = JSON.stringify({
+		requests: [
+			{ model: 'gpt-4o', message: { text: 'hello' }, response: [{ value: 'world' }] }
+		]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.equal(result.actualTokens, 0);
+});
