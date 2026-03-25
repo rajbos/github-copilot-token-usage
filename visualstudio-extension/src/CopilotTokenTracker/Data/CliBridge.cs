@@ -17,8 +17,16 @@ namespace CopilotTokenTracker.Data
     /// </summary>
     internal static class CliBridge
     {
-        private const string ExeName  = "copilot-token-tracker.exe";
-        private const int    TimeoutMs = 60_000; // 60 seconds — session scanning can be slow
+        private const string ExeName          = "copilot-token-tracker.exe";
+        private const int    TimeoutMs        = 60_000;  // 60 s after the cache is warm
+        private const int    InitialTimeoutMs = 180_000; // 3 min — first run scans all sessions
+
+        /// <summary>
+        /// Set to <c>true</c> after the CLI has returned valid data at least once.
+        /// Subsequent calls use the shorter <see cref="TimeoutMs"/> because the CLI
+        /// reads its own on-disk cache instead of re-scanning all sessions.
+        /// </summary>
+        private static volatile bool _hasSucceededOnce = false;
 
         // ── Public API ─────────────────────────────────────────────────────────
 
@@ -36,9 +44,10 @@ namespace CopilotTokenTracker.Data
                 return null;
             }
 
-            Utilities.OutputLogger.Log($"CLI bridge: running {exePath} usage --json");
+            var timeoutMs = _hasSucceededOnce ? TimeoutMs : InitialTimeoutMs;
+            Utilities.OutputLogger.Log($"CLI bridge: running {exePath} usage --json (timeout {timeoutMs / 1000}s)");
 
-            var (exitCode, stdout, stderr) = await RunProcessAsync(exePath, "usage --json");
+            var (exitCode, stdout, stderr) = await RunProcessAsync(exePath, "usage --json", timeoutMs);
 
             if (exitCode != 0)
             {
@@ -65,6 +74,7 @@ namespace CopilotTokenTracker.Data
                 var result = JsonSerializer.Deserialize<DetailedStats>(stdout, options);
                 if (result != null)
                 {
+                    _hasSucceededOnce = true;
                     Utilities.OutputLogger.Log("CLI bridge: stats deserialized successfully");
                 }
                 return result;
@@ -153,7 +163,7 @@ namespace CopilotTokenTracker.Data
         /// Uses event-based output reading to avoid the classic ReadToEnd/WaitForExit deadlock.
         /// </summary>
         private static Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
-            string fileName, string arguments)
+            string fileName, string arguments, int timeoutMs = TimeoutMs)
         {
             return Task.Run(() =>
             {
@@ -178,10 +188,10 @@ namespace CopilotTokenTracker.Data
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
 
-                if (!proc.WaitForExit(TimeoutMs))
+                if (!proc.WaitForExit(timeoutMs))
                 {
                     try { proc.Kill(); } catch { /* best effort */ }
-                    Utilities.OutputLogger.LogWarning($"CLI bridge: process killed after {TimeoutMs / 1000}s timeout");
+                    Utilities.OutputLogger.LogWarning($"CLI bridge: process killed after {timeoutMs / 1000}s timeout");
                     return (-1, string.Empty, "Process timed out");
                 }
 

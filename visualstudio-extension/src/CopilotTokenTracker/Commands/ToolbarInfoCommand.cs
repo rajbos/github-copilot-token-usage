@@ -62,9 +62,17 @@ namespace CopilotTokenTracker.Commands
             try
             {
                 var stats = await StatsBuilder.BuildAsync();
-                var today  = FormatTokenCount(stats.Today.Tokens);
-                var last30 = FormatTokenCount(stats.Last30Days.Tokens);
-                var text   = $"Copilot: {today} | {last30}";
+                string text;
+                if (stats == null)
+                {
+                    text = "Copilot: ? | ?";
+                }
+                else
+                {
+                    var today  = FormatTokenCount(stats.Today.Tokens);
+                    var last30 = FormatTokenCount(stats.Last30Days.Tokens);
+                    text = $"Copilot: {today} | {last30}";
+                }
 
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
                 _menuCommand.Text = text;

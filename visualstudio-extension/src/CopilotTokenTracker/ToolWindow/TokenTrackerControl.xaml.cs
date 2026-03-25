@@ -118,7 +118,10 @@ namespace CopilotTokenTracker.ToolWindow
                     }
                     default:
                     {
-                        var stats = await StatsBuilder.BuildAsync();
+                        var stats = await StatsBuilder.BuildAsync() ?? new DetailedStats
+                        {
+                            LastUpdated = DateTime.UtcNow.ToString("o"),
+                        };
                         statsJson = JsonSerializer.Serialize(stats, new JsonSerializerOptions
                         {
                             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
