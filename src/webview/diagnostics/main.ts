@@ -359,9 +359,6 @@ function getEditorBadgeClass(editor: string): string {
   if (lower.includes("visual studio")) {
     return "editor-badge editor-badge-vs";
   }
-  if (lower.includes("visual studio")) {
-    return "editor-badge editor-badge-vs";
-  }
   if (lower.includes("crush")) {
     return "editor-badge editor-badge-crush";
   }
@@ -370,9 +367,6 @@ function getEditorBadgeClass(editor: string): string {
 
 function getEditorIcon(editor: string): string {
   const lower = editor.toLowerCase();
-  if (lower.includes("visual studio")) {
-    return "🪟";
-  }
   if (lower.includes("visual studio")) {
     return "🪟";
   }

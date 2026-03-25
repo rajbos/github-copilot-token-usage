@@ -33,6 +33,7 @@ test('getEditorIcon: returns correct icons for known editors', () => {
 	assert.equal(getEditorIcon('Cursor'), '⚡');
 	assert.equal(getEditorIcon('OpenCode'), '🟢');
 	assert.equal(getEditorIcon('Unknown'), '❓');
+	assert.equal(getEditorIcon('Visual Studio'), '🪟');
 });
 
 test('getEditorIcon: returns fallback icon for unrecognized editors', () => {

@@ -258,9 +258,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.visualStudio.isVSSessionFile(sessionFile)) {
 			return this.visualStudio.statSessionFile(sessionFile);
 		}
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			return this.visualStudio.statSessionFile(sessionFile);
-		}
 		if (this.crush.isCrushSessionFile(sessionFile)) {
 			return this.crush.statSessionFile(sessionFile);
 		}
@@ -3363,12 +3360,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return { ...result, actualTokens: result.tokens };
 			}
 
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
-				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
-				return { ...result, actualTokens: result.tokens };
-			}
-
 			// Handle Crush sessions - actual token counts stored in sessions table
 			if (this.crush.isCrushSessionFile(sessionFilePath)) {
 				const result = await this.crush.getTokensFromCrushSession(sessionFilePath);
@@ -4206,6 +4197,24 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 	 */
 	public async showFormattedJsonlFile(sessionFilePath: string): Promise<void> {
 		try {
+			// Handle Visual Studio binary session files (MessagePack format)
+			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFilePath);
+				// Object 0 is the session header (no wrapper); subsequent objects are
+				// [version, innerData] tuples — extract the inner payload for readability.
+				const decodedMessages = objects.map((obj: any, i: number) => i === 0 ? obj : obj?.[1] ?? obj);
+				const formattedJson = JSON.stringify(decodedMessages, null, 2);
+				const fileName = path.basename(sessionFilePath);
+				const prettyUri = vscode.Uri.parse(`untitled:${fileName}-decoded.json`);
+				const doc = await vscode.workspace.openTextDocument(prettyUri);
+				const editor = await vscode.window.showTextDocument(doc, { preview: true });
+				await editor.edit((editBuilder) => {
+					editBuilder.insert(new vscode.Position(0, 0), formattedJson);
+				});
+				await vscode.languages.setTextDocumentLanguage(doc, 'json');
+				return;
+			}
+
 			// Read the file content
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf-8');
 
