@@ -9,22 +9,11 @@ node_modules
 .github/scripts/scraped-models.json
 example.json
 log-example.txt
-
-# Visual Studio extension generated files
-visualstudio-extension/**/obj/
-visualstudio-extension/**/bin/
 visualstudio-extension/.vs/
-visualstudio-extension/**/obj/**
-visualstudio-extension/**/bin/**
-
-# Accidental nested Visual Studio extension workspace/build output
-visualstudio-extension/visualstudio-extension/
-visualstudio-extension/src/CopilotTokenTracker/bin/Release/net472/MessagePack.Annotations.dll
-visualstudio-extension/src/CopilotTokenTracker/bin/Release/net472/System.Buffers.dll
-
-# Bundled CLI exe (build artifact copied from cli/dist/)
+visualstudio-extension/src/CopilotTokenTracker/bin/
+visualstudio-extension/src/CopilotTokenTracker/obj/
 visualstudio-extension/src/CopilotTokenTracker/cli-bundle/
-
-# Node.js SEA build artifacts
-cli/dist/sea-prep.blob
-cli/dist/copilot-token-tracker.exe
+visualstudio-extension/src/CopilotTokenTrackerRunner/bin/
+visualstudio-extension/src/CopilotTokenTrackerRunner/obj/
+visualstudio-extension/src/CopilotTokenTrackerRunner/cli-bundle/
+visualstudio-extension/visualstudio-extension/src/CopilotTokenTrackerRunner/obj/
