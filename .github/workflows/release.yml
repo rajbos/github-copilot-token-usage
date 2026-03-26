@@ -158,8 +158,9 @@ jobs:
 
         # Check if branch already exists on remote
         if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-          echo "❌ Branch $BRANCH already exists on remote!"
-          echo "Delete it or bump the version before re-running."
+          MSG="❌ Branch $BRANCH already exists on remote! Delete it or bump the version before re-running."
+          echo "$MSG"
+          echo "$MSG" > /tmp/changelog_error.txt
           exit 1
         fi
 
@@ -289,7 +290,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         else
           {
-            echo "# ❌ Release Creation Failed"
+            echo "# ❌ Release Failed"
             echo ""
             echo "**Version:** ${{ steps.extract_version.outputs.tag_version }}"
             echo "**Tag:** ${{ steps.tag_name.outputs.tag_name }}"
@@ -297,10 +298,12 @@ jobs:
             echo "## Error Details"
             echo ""
             echo "\`\`\`"
-            if [ -f /tmp/release_output.txt ]; then
+            if [ -f /tmp/changelog_error.txt ]; then
+              cat /tmp/changelog_error.txt
+            elif [ -f /tmp/release_output.txt ]; then
               cat /tmp/release_output.txt
             else
-              echo "No error details captured"
+              echo "No error details captured — check the job logs above for the failed step."
             fi
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
