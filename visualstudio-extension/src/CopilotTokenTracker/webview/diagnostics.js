@@ -21015,7 +21015,7 @@ The view will automatically update when data is ready.`;
 				<div class="info-box">
 					<div class="info-box-title">\u{1F4CB} About This Report</div>
 					<div>
-						This diagnostic report contains information about your GitHub Copilot Token Tracker
+						This diagnostic report contains information about your AI Engineering Fluency extension
 						extension setup and usage statistics. </br> It does <strong>not</strong> include any of your
 						code or conversation content. You can safely share this report when reporting issues.
 					</div>

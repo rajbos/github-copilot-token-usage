@@ -28918,10 +28918,10 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
   var demoStageOverrides = [];
   var demoPanelExpanded = false;
   var STAGE_LABELS = {
-    1: "Stage 1: Copilot Skeptic",
-    2: "Stage 2: Copilot Explorer",
-    3: "Stage 3: Copilot Collaborator",
-    4: "Stage 4: Copilot Strategist"
+    1: "Stage 1: AI Skeptic",
+    2: "Stage 2: AI Explorer",
+    3: "Stage 3: AI Collaborator",
+    4: "Stage 4: AI Strategist"
   };
   var STAGE_DESCRIPTIONS = {
     1: "Rarely uses Copilot or uses only basic features",
@@ -29164,7 +29164,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 			<div class="header">
 				<div class="header-left">
 					<span class="header-icon">\u{1F3AF}</span>
-					<span class="header-title">Copilot Fluency Score</span>
+					<span class="header-title">AI Engineering Fluency Score</span>
 				</div>
 				<div class="button-row">
 					${buttonHtml("btn-refresh")}
@@ -29191,7 +29191,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 
 			<!-- Overall stage banner -->
 			<div class="stage-banner">
-				<div class="stage-banner-label">Overall Copilot Fluency</div>
+				<div class="stage-banner-label">Overall AI Engineering Fluency</div>
 				<div class="stage-banner-title stage-${data.overallStage}">${escapeHtml(data.overallLabel)}</div>
 				<div class="stage-banner-subtitle">${escapeHtml(STAGE_DESCRIPTIONS[data.overallStage] || "")}</div>
 			</div>
@@ -29209,28 +29209,28 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 				<div class="legend-item">
 					<div class="legend-dot stage-1-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 1: Copilot Skeptic</div>
+						<div class="legend-label">Stage 1: AI Skeptic</div>
 						<div class="legend-desc">Rarely uses Copilot or uses only basic features</div>
 					</div>
 				</div>
 				<div class="legend-item">
 					<div class="legend-dot stage-2-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 2: Copilot Explorer</div>
+						<div class="legend-label">Stage 2: AI Explorer</div>
 						<div class="legend-desc">Exploring Copilot capabilities with occasional use</div>
 					</div>
 				</div>
 				<div class="legend-item">
 					<div class="legend-dot stage-3-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 3: Copilot Collaborator</div>
+						<div class="legend-label">Stage 3: AI Collaborator</div>
 						<div class="legend-desc">Regular, purposeful use across multiple features</div>
 					</div>
 				</div>
 				<div class="legend-item">
 					<div class="legend-dot stage-4-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 4: Copilot Strategist</div>
+						<div class="legend-label">Stage 4: AI Strategist</div>
 						<div class="legend-desc">Strategic, advanced use leveraging the full Copilot ecosystem</div>
 					</div>
 				</div>
@@ -29257,7 +29257,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 			<div class="share-section">
 				<div class="share-header">
 					<span class="share-icon">\u{1F4E2}</span>
-					<span class="share-title">Share Your Copilot Fluency Score</span>
+					<span class="share-title">Share Your AI Engineering Fluency Score</span>
 				</div>
 				<div class="share-description">
 					Share your progress with the community and inspire others to level up their Copilot skills!
@@ -29434,7 +29434,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
       coverContainer.style.cssText = "position:absolute;left:-9999px;top:0;width:1200px;background:#1b1b1e;padding:24px;border-radius:10px;";
       const titleEl = document.createElement("div");
       titleEl.style.cssText = "text-align:center;margin-bottom:20px;";
-      titleEl.innerHTML = `<div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px;">GitHub Copilot Fluency Score</div><div style="font-size:16px;color:#b8b8c8;">Report &middot; ${(/* @__PURE__ */ new Date()).toLocaleDateString()}</div>`;
+      titleEl.innerHTML = `<div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px;">AI Engineering Fluency Score</div><div style="font-size:16px;color:#b8b8c8;">Report &middot; ${(/* @__PURE__ */ new Date()).toLocaleDateString()}</div>`;
       coverContainer.appendChild(titleEl);
       if (stageBanner) {
         coverContainer.appendChild(stageBanner.cloneNode(true));
