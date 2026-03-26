@@ -42,17 +42,17 @@ let selectedCategoryIndex = 0;
 // ── Stage labels ───────────────────────────────────────────────────────
 
 const STAGE_LABELS: Record<number, string> = {
-	1: 'Stage 1: Copilot Skeptic',
-	2: 'Stage 2: Copilot Explorer',
-	3: 'Stage 3: Copilot Collaborator',
-	4: 'Stage 4: Copilot Strategist'
+	1: 'Stage 1: AI Skeptic',
+	2: 'Stage 2: AI Explorer',
+	3: 'Stage 3: AI Collaborator',
+	4: 'Stage 4: AI Strategist'
 };
 
 const STAGE_DESCRIPTIONS: Record<number, string> = {
-	1: 'Rarely uses Copilot or uses only basic features',
-	2: 'Exploring Copilot capabilities with occasional use',
+	1: 'Rarely uses AI tools or uses only basic features',
+	2: 'Exploring AI capabilities with occasional use',
 	3: 'Regular, purposeful use across multiple features',
-	4: 'Strategic, advanced use leveraging the full Copilot ecosystem'
+	4: 'Strategic, advanced use leveraging the full AI ecosystem'
 };
 
 function escapeHtml(text: string): string {

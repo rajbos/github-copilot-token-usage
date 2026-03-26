@@ -1,6 +1,6 @@
 /**
  * Maturity/fluency scoring functions.
- * Computes Copilot Fluency Score and related metrics.
+ * Computes AI Fluency Score and related metrics.
  */
 import type {
 	DetailedStats,
@@ -38,22 +38,22 @@ export function getFluencyLevelData(isDebugMode: boolean): {
           levels: [
             {
               stage: 1,
-              label: "Stage 1: Copilot Skeptic",
-              description: "Rarely uses Copilot or uses only basic features",
+              label: "Stage 1: AI Skeptic",
+              description: "Rarely uses AI tools or uses only basic features",
               thresholds: [
                 "Fewer than 5 total interactions in 30 days",
                 "Minimal multi-turn conversations",
                 "No slash commands or agent mode usage",
               ],
               tips: [
-                "Try asking Copilot a question using the Chat panel — [▶ Chat in IDE video](https://tech.hub.ms/github-copilot/videos/chat-in-ide)",
+                "Try asking AI a question using the Chat panel — [▶ Chat in IDE video](https://tech.hub.ms/github-copilot/videos/chat-in-ide)",
                 "Start with simple queries to get familiar with the interface",
               ],
             },
             {
               stage: 2,
-              label: "Stage 2: Copilot Explorer",
-              description: "Exploring Copilot capabilities with occasional use",
+              label: "Stage 2: AI Explorer",
+              description: "Exploring AI capabilities with occasional use",
               thresholds: [
                 "At least 5 total interactions",
                 "Average 3+ exchanges per session shows iterative refinement",
@@ -67,7 +67,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 3,
-              label: "Stage 3: Copilot Collaborator",
+              label: "Stage 3: AI Collaborator",
               description: "Regular, purposeful use across multiple features",
               thresholds: [
                 "At least 30 total interactions",
@@ -83,9 +83,9 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 4,
-              label: "Stage 4: Copilot Strategist",
+              label: "Stage 4: AI Strategist",
               description:
-                "Strategic, advanced use leveraging the full Copilot ecosystem",
+                "Strategic, advanced use leveraging the full AI ecosystem",
               thresholds: [
                 "At least 100 total interactions",
                 "Using agent mode regularly",
@@ -105,7 +105,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
           levels: [
             {
               stage: 1,
-              label: "Stage 1: Copilot Skeptic",
+              label: "Stage 1: AI Skeptic",
               description: "Not using explicit context references",
               thresholds: [
                 "Zero explicit context references (#file, #selection, @workspace, etc.)",
@@ -117,7 +117,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 2,
-              label: "Stage 2: Copilot Explorer",
+              label: "Stage 2: AI Explorer",
               description: "Beginning to use basic context references",
               thresholds: [
                 "At least 1 context reference used",
@@ -130,7 +130,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 3,
-              label: "Stage 3: Copilot Collaborator",
+              label: "Stage 3: AI Collaborator",
               description: "Regular use of diverse context types",
               thresholds: [
                 "At least 3 different context reference types used",
@@ -144,7 +144,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 4,
-              label: "Stage 4: Copilot Strategist",
+              label: "Stage 4: AI Strategist",
               description: "Strategic use of advanced context engineering",
               thresholds: [
                 "At least 5 different context reference types used",
@@ -164,7 +164,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
           levels: [
             {
               stage: 1,
-              label: "Stage 1: Copilot Skeptic",
+              label: "Stage 1: AI Skeptic",
               description: "Not using agent mode or autonomous features",
               thresholds: [
                 "Zero agent-mode interactions",
@@ -178,7 +178,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 2,
-              label: "Stage 2: Copilot Explorer",
+              label: "Stage 2: AI Explorer",
               description: "Beginning to explore agent mode",
               thresholds: [
                 "At least 1 agent-mode interaction OR",
@@ -192,7 +192,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 3,
-              label: "Stage 3: Copilot Collaborator",
+              label: "Stage 3: AI Collaborator",
               description: "Regular use of agent mode with diverse tools",
               thresholds: [
                 "At least 10 agent-mode interactions AND 3+ unique tools used OR",
@@ -206,7 +206,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 4,
-              label: "Stage 4: Copilot Strategist",
+              label: "Stage 4: AI Strategist",
               description: "Heavy, strategic use of autonomous features",
               thresholds: [
                 "At least 50 agent-mode interactions AND 5+ tool types used OR",
@@ -226,7 +226,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
           levels: [
             {
               stage: 1,
-              label: "Stage 1: Copilot Skeptic",
+              label: "Stage 1: AI Skeptic",
               description: "Not using tools beyond basic chat",
               thresholds: [
                 "Zero unique tools used",
@@ -240,7 +240,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 2,
-              label: "Stage 2: Copilot Explorer",
+              label: "Stage 2: AI Explorer",
               description: "Beginning to use basic tools",
               thresholds: [
                 "At least 1 unique tool used",
@@ -253,7 +253,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 3,
-              label: "Stage 3: Copilot Collaborator",
+              label: "Stage 3: AI Collaborator",
               description: "Regular use of diverse tools and integrations",
               thresholds: [
                 "Using @workspace agent OR",
@@ -267,7 +267,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 4,
-              label: "Stage 4: Copilot Strategist",
+              label: "Stage 4: AI Strategist",
               description:
                 "Strategic use of multiple MCP servers and advanced tools",
               thresholds: [
@@ -287,7 +287,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
           levels: [
             {
               stage: 1,
-              label: "Stage 1: Copilot Skeptic",
+              label: "Stage 1: AI Skeptic",
               description: "Using default Copilot without customization",
               thresholds: [
                 "No repositories with custom instructions or agents.md",
@@ -300,7 +300,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 2,
-              label: "Stage 2: Copilot Explorer",
+              label: "Stage 2: AI Explorer",
               description: "Beginning to customize Copilot",
               thresholds: [
                 "At least 1 repository with custom instructions or agents.md",
@@ -312,7 +312,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 3,
-              label: "Stage 3: Copilot Collaborator",
+              label: "Stage 3: AI Collaborator",
               description: "Regular customization across repositories",
               thresholds: [
                 "30%+ of repositories have customization (with 2+ repos) OR",
@@ -325,7 +325,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 4,
-              label: "Stage 4: Copilot Strategist",
+              label: "Stage 4: AI Strategist",
               description: "Comprehensive customization strategy",
               thresholds: [
                 "70%+ customization adoption rate with 3+ repos OR",
@@ -344,7 +344,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
           levels: [
             {
               stage: 1,
-              label: "Stage 1: Copilot Skeptic",
+              label: "Stage 1: AI Skeptic",
               description: "Minimal integration into daily workflow",
               thresholds: [
                 "Fewer than 3 sessions in 30 days",
@@ -358,7 +358,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 2,
-              label: "Stage 2: Copilot Explorer",
+              label: "Stage 2: AI Explorer",
               description: "Occasional integration with some regularity",
               thresholds: [
                 "At least 3 sessions in 30 days OR",
@@ -371,7 +371,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 3,
-              label: "Stage 3: Copilot Collaborator",
+              label: "Stage 3: AI Collaborator",
               description: "Regular workflow integration",
               thresholds: [
                 "Using 2 modes (ask AND agent) OR",
@@ -384,7 +384,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             },
             {
               stage: 4,
-              label: "Stage 4: Copilot Strategist",
+              label: "Stage 4: AI Strategist",
               description: "Deep integration across all development activities",
               thresholds: [
                 "At least 15 sessions",
@@ -428,10 +428,10 @@ export function calculateFluencyScoreForTeamMember(fd: {
     sessionCount: number; durationMsSum: number; durationMsCount: number;
   }, dashboardSessions: number): { stage: number; label: string; categories: { category: string; icon: string; stage: number; tips: string[] }[] } {
     const stageLabels: Record<number, string> = {
-      1: "Stage 1: Copilot Skeptic",
-      2: "Stage 2: Copilot Explorer",
-      3: "Stage 3: Copilot Collaborator",
-      4: "Stage 4: Copilot Strategist",
+      1: "Stage 1: AI Skeptic",
+      2: "Stage 2: AI Explorer",
+      3: "Stage 3: AI Collaborator",
+      4: "Stage 4: AI Strategist",
     };
 
     const totalInteractions = fd.askModeCount + fd.editModeCount + fd.agentModeCount;
@@ -642,10 +642,10 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	const p = stats.last30Days;
 
 	const stageLabels: Record<number, string> = {
-		1: 'Stage 1: Copilot Skeptic',
-		2: 'Stage 2: Copilot Explorer',
-		3: 'Stage 3: Copilot Collaborator',
-		4: 'Stage 4: Copilot Strategist'
+		1: 'Stage 1: AI Skeptic',
+		2: 'Stage 2: AI Explorer',
+		3: 'Stage 3: AI Collaborator',
+		4: 'Stage 4: AI Strategist'
 	};
 
 	// ---------- 1. Prompt Engineering ----------
@@ -1080,14 +1080,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 		wiEvidence.push('Deep integration: regular usage with multi-mode and explicit context');
 	}
 
-	if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
+	if (wiStage < 2) { wiTips.push('Use AI more regularly - even for quick questions'); }
 	if (wiStage < 3) { 
 		if (modesUsed < 2) { wiTips.push('Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow'); }
 		if (totalContextRefs < 10) { wiTips.push('Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection'); }
 	}
 	if (wiStage < 4) { 
 		if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently'); }
-		wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); 
+		wiTips.push('Make AI part of every coding task: planning, coding, testing, and reviewing'); 
 	}
 
 	// ---------- Overall score (median) ----------

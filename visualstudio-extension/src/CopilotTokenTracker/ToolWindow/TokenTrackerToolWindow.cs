@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.Shell;
 namespace CopilotTokenTracker.ToolWindow
 {
     /// <summary>
-    /// The "Copilot Token Tracker" tool window that hosts the WebView2-based dashboard.
+    /// The "AI Engineering Fluency" tool window that hosts the WebView2-based dashboard.
     /// </summary>
     [Guid(ToolWindowGuidString)]
     public sealed class TokenTrackerToolWindow : ToolWindowPane
@@ -17,7 +17,7 @@ namespace CopilotTokenTracker.ToolWindow
 
         public TokenTrackerToolWindow() : base(null)
         {
-            Caption = "Copilot Token Tracker";
+            Caption = "AI Engineering Fluency";
         }
 
         protected override void OnCreate()

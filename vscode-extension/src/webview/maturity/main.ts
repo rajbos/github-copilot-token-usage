@@ -85,17 +85,17 @@ let demoPanelExpanded = false; // Hidden by default
 // ── Stage labels ───────────────────────────────────────────────────────
 
 const STAGE_LABELS: Record<number, string> = {
-	1: 'Stage 1: Copilot Skeptic',
-	2: 'Stage 2: Copilot Explorer',
-	3: 'Stage 3: Copilot Collaborator',
-	4: 'Stage 4: Copilot Strategist'
+	1: 'Stage 1: AI Skeptic',
+	2: 'Stage 2: AI Explorer',
+	3: 'Stage 3: AI Collaborator',
+	4: 'Stage 4: AI Strategist'
 };
 
 const STAGE_DESCRIPTIONS: Record<number, string> = {
-	1: 'Rarely uses Copilot or uses only basic features',
-	2: 'Exploring Copilot capabilities with occasional use',
+	1: 'Rarely uses AI tools or uses only basic features',
+	2: 'Exploring AI capabilities with occasional use',
 	3: 'Regular, purposeful use across multiple features',
-	4: 'Strategic, advanced use leveraging the full Copilot ecosystem'
+	4: 'Strategic, advanced use leveraging the full AI ecosystem'
 };
 
 // ── Radar chart SVG ────────────────────────────────────────────────────
@@ -391,7 +391,7 @@ function renderLayout(data: MaturityData): void {
 			<div class="header">
 				<div class="header-left">
 					<span class="header-icon">🎯</span>
-					<span class="header-title">Copilot Fluency Score</span>
+					<span class="header-title">AI Engineering Fluency Score</span>
 				</div>
 				<div class="button-row">
 					${buttonHtml('btn-refresh')}
@@ -407,8 +407,8 @@ function renderLayout(data: MaturityData): void {
 			<div class="info-box">
 				<div class="info-box-title">📋 About This Dashboard</div>
 				<div>
-					This dashboard maps your GitHub Copilot usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories.
-					It helps you understand which Copilot capabilities you already use and suggests areas to explore for greater productivity.
+					This dashboard maps your AI tool usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories.
+					It helps you understand which AI capabilities you already use and suggests areas to explore for greater productivity.
 					<br><br>
 					📖 <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">🔍 Fluency Level Viewer</button>
 					<br><br>
@@ -418,7 +418,7 @@ function renderLayout(data: MaturityData): void {
 
 			<!-- Overall stage banner -->
 			<div class="stage-banner">
-				<div class="stage-banner-label">Overall Copilot Fluency</div>
+				<div class="stage-banner-label">Overall AI Engineering Fluency</div>
 				<div class="stage-banner-title stage-${data.overallStage}">${escapeHtml(data.overallLabel)}</div>
 				<div class="stage-banner-subtitle">${escapeHtml(STAGE_DESCRIPTIONS[data.overallStage] || '')}</div>
 			</div>
@@ -436,29 +436,29 @@ function renderLayout(data: MaturityData): void {
 				<div class="legend-item">
 					<div class="legend-dot stage-1-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 1: Copilot Skeptic</div>
-						<div class="legend-desc">Rarely uses Copilot or uses only basic features</div>
+						<div class="legend-label">Stage 1: AI Skeptic</div>
+						<div class="legend-desc">Rarely uses AI tools or uses only basic features</div>
 					</div>
 				</div>
 				<div class="legend-item">
 					<div class="legend-dot stage-2-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 2: Copilot Explorer</div>
-						<div class="legend-desc">Exploring Copilot capabilities with occasional use</div>
+						<div class="legend-label">Stage 2: AI Explorer</div>
+						<div class="legend-desc">Exploring AI capabilities with occasional use</div>
 					</div>
 				</div>
 				<div class="legend-item">
 					<div class="legend-dot stage-3-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 3: Copilot Collaborator</div>
+						<div class="legend-label">Stage 3: AI Collaborator</div>
 						<div class="legend-desc">Regular, purposeful use across multiple features</div>
 					</div>
 				</div>
 				<div class="legend-item">
 					<div class="legend-dot stage-4-dot"></div>
 					<div class="legend-content">
-						<div class="legend-label">Stage 4: Copilot Strategist</div>
-						<div class="legend-desc">Strategic, advanced use leveraging the full Copilot ecosystem</div>
+						<div class="legend-label">Stage 4: AI Strategist</div>
+						<div class="legend-desc">Strategic, advanced use leveraging the full AI ecosystem</div>
 					</div>
 				</div>
 			</div>
@@ -484,10 +484,10 @@ function renderLayout(data: MaturityData): void {
 			<div class="share-section">
 				<div class="share-header">
 					<span class="share-icon">📢</span>
-					<span class="share-title">Share Your Copilot Fluency Score</span>
+					<span class="share-title">Share Your AI Engineering Fluency Score</span>
 				</div>
 				<div class="share-description">
-					Share your progress with the community and inspire others to level up their Copilot skills!
+					Share your progress with the community and inspire others to level up their AI engineering skills!
 				</div>
 				<div class="share-buttons">
 					<button id="btn-share-linkedin" class="share-btn share-btn-linkedin">
@@ -695,7 +695,7 @@ function renderLayout(data: MaturityData): void {
 		// Add title
 		const titleEl = document.createElement('div');
 		titleEl.style.cssText = 'text-align:center;margin-bottom:20px;';
-		titleEl.innerHTML = `<div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px;">GitHub Copilot Fluency Score</div><div style="font-size:16px;color:#b8b8c8;">Report &middot; ${new Date().toLocaleDateString()}</div>`;
+		titleEl.innerHTML = `<div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px;">AI Engineering Fluency Score</div><div style="font-size:16px;color:#b8b8c8;">Report &middot; ${new Date().toLocaleDateString()}</div>`;
 		coverContainer.appendChild(titleEl);
 
 		if (stageBanner) { coverContainer.appendChild(stageBanner.cloneNode(true)); }

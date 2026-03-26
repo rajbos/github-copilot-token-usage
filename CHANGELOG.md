@@ -1,8 +1,11 @@
 # Change Log
 
-All notable changes to the "copilot-token-tracker" extension will be documented in this file.
-
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+> **Note:** Each component now has its own changelog:
+> - **VS Code extension** → [vscode-extension/CHANGELOG.md](vscode-extension/CHANGELOG.md) — tag prefix `vscode/v*`
+> - **CLI** → [cli/CHANGELOG.md](cli/CHANGELOG.md) — tag prefix `cli/v*`
+> - **Visual Studio extension** → [visualstudio-extension/CHANGELOG.md](visualstudio-extension/CHANGELOG.md) — tag prefix `vs/v*`
+>
+> The entries below are historical (pre-split) VS Code extension releases.
 
 ## [Unreleased]
 ## [0.0.18]

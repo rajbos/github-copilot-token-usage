@@ -593,7 +593,7 @@ export class SyncService {
 				if (!validation.valid) {
 					this.deps.warn(`⚠ Backend sync: User identity validation failed. Data will be synced WITHOUT user dimension.`);
 					this.deps.warn(`   Reason: ${validation.error}`);
-					this.deps.warn(`   Fix: Update "Copilot Token Tracker: Backend User Id" in settings to a valid team alias.`);
+					this.deps.warn(`   Fix: Update "AI Engineering Fluency: Backend User Id" in settings to a valid team alias.`);
 				}
 			} else {
 				this.deps.warn(`⚠ Backend sync: Could not resolve user identity for mode ${settings.userIdentityMode}. Data will be synced WITHOUT user dimension.`);

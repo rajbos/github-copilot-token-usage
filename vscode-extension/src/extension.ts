@@ -451,7 +451,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_ });
 		this.context = context;
 		// Create output channel for extension logs
-		this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot Token Tracker');
+		this.outputChannel = vscode.window.createOutputChannel('AI Engineering Fluency');
 		// CRITICAL: Add output channel to context.subscriptions so VS Code doesn't dispose it
 		context.subscriptions.push(this.outputChannel);
 		this.log('Constructor called');
@@ -468,9 +468,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			vscode.StatusBarAlignment.Right,
 			100
 		);
-		this.statusBarItem.name = "GitHub Copilot Token Usage";
-		this.statusBarItem.text = "$(loading~spin) Copilot Tokens: Loading...";
-		this.statusBarItem.tooltip = "Daily and 30-day GitHub Copilot token usage - Click to open details";
+		this.statusBarItem.name = "AI Engineering Fluency";
+		this.statusBarItem.text = "$(loading~spin) AI Fluency: Loading...";
+		this.statusBarItem.tooltip = "AI Engineering Fluency — daily and 30-day token usage - Click to open details";
 		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
 		this.statusBarItem.show();
 
@@ -534,7 +534,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const open = 'Open Fluency Score';
 		const dismiss = 'Dismiss';
 		const choice = await vscode.window.showInformationMessage(
-			'🎯 New: Copilot Fluency Score dashboard — track how deeply your team uses GitHub Copilot across 6 categories and 4 stages.',
+			'🎯 New: AI Engineering Fluency Score dashboard — track how deeply your team uses GitHub Copilot across 6 categories and 4 stages.',
 			open,
 			dismiss
 		);
@@ -603,7 +603,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const tooltip = new vscode.MarkdownString();
 			tooltip.isTrusted = false;
 			// Title
-			tooltip.appendMarkdown('#### 🤖 GitHub Copilot Token Usage');
+			tooltip.appendMarkdown('#### AI Engineering Fluency');
 			tooltip.appendMarkdown('\n---\n');
 			// Table layout for Today
 			tooltip.appendMarkdown(`📅 Today  \n`);
@@ -3509,7 +3509,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Create a small webview panel
 		this.detailsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDetails',
-			'GitHub Copilot Token Usage',
+			'AI Engineering Fluency',
 			{
 				viewColumn: vscode.ViewColumn.One,
 				preserveFocus: true
@@ -3696,7 +3696,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Create webview panel
 		this.analysisPanel = vscode.window.createWebviewPanel(
 			'copilotUsageAnalysis',
-			'Copilot Usage Analysis',
+			'AI Usage Analysis',
 			{
 				viewColumn: vscode.ViewColumn.One,
 				preserveFocus: true
@@ -4369,7 +4369,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 
 		this.maturityPanel = vscode.window.createWebviewPanel(
 			'copilotMaturity',
-			'Copilot Fluency Score',
+			'AI Engineering Fluency Score',
 			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
 			{
 				enableScripts: true,
@@ -4402,7 +4402,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 								: '- No significant activity detected';
 							return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
 						}).join('\n\n');
-						const body = `<h2>Copilot Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
+						const body = `<h2>AI Engineering Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
 						const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
 						await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
 					});
@@ -4501,7 +4501,7 @@ private async shareToSocialMedia(platform: 'linkedin' | 'bluesky' | 'mastodon'):
 	// Build share text with stats
 	const categoryScores = scores.categories.map(c => `${c.icon} ${c.category}: Stage ${c.stage}`).join('\n');
 	
-	const shareText = `🎯 My GitHub Copilot Fluency Score
+	const shareText = `🎯 My AI Engineering Fluency Score
 
 Overall: ${scores.overallLabel}
 
@@ -4665,7 +4665,7 @@ ${hashtag}`;
         pdf.setFontSize(8);
         pdf.setTextColor(128, 128, 128);
         pdf.text(
-          `Copilot Fluency Score Report - Page ${i + 1} of ${images.length}`,
+          `AI Engineering Fluency Score Report - Page ${i + 1} of ${images.length}`,
           margin,
           7,
         );
@@ -4694,7 +4694,7 @@ ${hashtag}`;
         pdf.setFontSize(8);
         pdf.setTextColor(128, 128, 128);
         pdf.text(
-          "Generated by Copilot Token Tracker Extension",
+          "Generated by AI Engineering Fluency Extension",
           pageWidth / 2,
           pageHeight - 5,
           { align: "center" },
@@ -4749,9 +4749,9 @@ ${hashtag}`;
 
       const pptx = new PptxGenJS();
       pptx.layout = "LAYOUT_WIDE"; // 13.33" x 7.5" — great for presentations
-      pptx.author = "Copilot Token Tracker";
-      pptx.subject = "Copilot Fluency Score Report";
-      pptx.title = "Copilot Fluency Score";
+      pptx.author = "AI Engineering Fluency";
+      pptx.subject = "AI Engineering Fluency Score Report";
+      pptx.title = "AI Engineering Fluency Score";
 
       const slideW = 13.33;
       const slideH = 7.5;
@@ -4805,7 +4805,7 @@ ${hashtag}`;
         });
 
         // Footer text
-        slide.addText("Generated by Copilot Token Tracker Extension", {
+        slide.addText("Generated by AI Engineering Fluency Extension", {
           x: 0,
           y: 7.0,
           w: 13.33,
@@ -5028,7 +5028,7 @@ ${hashtag}`;
 			<meta charset="UTF-8" />
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Copilot Fluency Score</title>
+			<title>AI Engineering Fluency Score</title>
 		</head>
 		<body>
 			<div id="root"></div>
@@ -5762,7 +5762,7 @@ ${hashtag}`;
 			<meta charset="UTF-8" />
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Copilot Token Usage</title>
+			<title>AI Engineering Fluency</title>
 		</head>
 		<body>
 			<div id="root"></div>
@@ -5779,7 +5779,7 @@ ${hashtag}`;
 
     // Header
     report.push("=".repeat(70));
-    report.push("GitHub Copilot Token Tracker - Diagnostic Report");
+    report.push("AI Engineering Fluency - Diagnostic Report");
     report.push("=".repeat(70));
     report.push("");
 
@@ -6176,7 +6176,7 @@ ${hashtag}`;
               // If command is not registered, show settings
               vscode.window
                 .showInformationMessage(
-                  'Backend configuration is available in settings. Search for "Copilot Token Tracker: Backend" in settings.',
+                  'Backend configuration is available in settings. Search for "AI Engineering Fluency: Backend" in settings.',
                   "Open Settings",
                 )
                 .then((choice) => {
@@ -6805,7 +6805,7 @@ ${hashtag}`;
 			<meta charset="UTF-8" />
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
-			<title>Copilot Token Usage Chart</title>
+			<title>AI Engineering Fluency — Chart</title>
 		</head>
 		<body>
 			<div id="root"></div>
@@ -6999,7 +6999,7 @@ export function activate(context: vscode.ExtensionContext) {
     async () => {
       tokenTracker.log("Refresh command called");
       await tokenTracker.updateTokenStats();
-      vscode.window.showInformationMessage("Copilot token usage refreshed");
+      vscode.window.showInformationMessage("AI Engineering Fluency data refreshed");
     },
   );
 

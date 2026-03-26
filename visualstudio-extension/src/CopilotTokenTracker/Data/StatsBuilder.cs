@@ -56,14 +56,14 @@ namespace CopilotTokenTracker.Data
             return new MaturityData
             {
                 OverallStage = 1,
-                OverallLabel = "Stage 1: Copilot Skeptic",
+                OverallLabel = "Stage 1: AI Skeptic",
                 LastUpdated  = DateTime.UtcNow.ToString("o"),
             };
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────────
 
-        private static EnvironmentalPeriod MapEnvironmentalPeriod(PeriodStats p)
+        internal static EnvironmentalPeriod MapEnvironmentalPeriod(PeriodStats p)
             => new EnvironmentalPeriod
             {
                 Tokens          = p.Tokens,

@@ -41,7 +41,7 @@ export function showBackendSuccess(message: string): void {
  * @returns Output channel for logging
  */
 export function createBackendOutputChannel(context: vscode.ExtensionContext): vscode.OutputChannel {
-	const channel = vscode.window.createOutputChannel('Copilot Token Tracker - Backend');
+	const channel = vscode.window.createOutputChannel('AI Engineering Fluency - Backend');
 	context.subscriptions.push(channel);
 	return channel;
 }

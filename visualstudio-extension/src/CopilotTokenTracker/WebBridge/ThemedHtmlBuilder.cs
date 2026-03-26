@@ -29,7 +29,9 @@ namespace CopilotTokenTracker.WebBridge
         public static string Build(string view, string statsJson)
         {
             var shim      = LoadShim();
-            var themeCss  = BuildThemeCss();
+            string themeCss;
+            try   { themeCss = BuildThemeCss(); }
+            catch { themeCss = BuildFallbackThemeCss(); }
             var globalKey = ViewToGlobalKey(view);
             var vsHideJs  = BuildVsHideScript(view);
 
@@ -95,7 +97,7 @@ window.{globalKey} = {safeJson};
         /// bundle has rendered them into the DOM.  Uses a MutationObserver so it still
         /// works even when the bundle renders asynchronously.
         /// </summary>
-        private static string BuildVsHideScript(string view)
+        internal static string BuildVsHideScript(string view)
         {
             if (view == "maturity") { return BuildVsHideScriptMaturity(); }
             if (view != "usage") { return string.Empty; }
@@ -176,7 +178,9 @@ window.{globalKey} = {safeJson};
         }
         public static string BuildLoadingHtml(string view)
         {
-            var themeCss = BuildThemeCss();
+            string themeCss;
+            try   { themeCss = BuildThemeCss(); }
+            catch { themeCss = BuildFallbackThemeCss(); }
             return $@"<!DOCTYPE html>
 <html lang=""en"">
 <head>
@@ -222,7 +226,9 @@ html, body {{
         /// </summary>
         public static string BuildErrorHtml(string message)
         {
-            var themeCss  = BuildThemeCss();
+            string themeCss;
+            try   { themeCss = BuildThemeCss(); }
+            catch { themeCss = BuildFallbackThemeCss(); }
             var safeMsg   = WebUtility.HtmlEncode(message);
             return $@"<!DOCTYPE html>
 <html lang=""en"">
@@ -264,7 +270,7 @@ html, body {{
 
         // ── Private helpers ────────────────────────────────────────────────────
 
-        private static string ViewToGlobalKey(string view)
+        internal static string ViewToGlobalKey(string view)
             => view switch
             {
                 "details"       => "__INITIAL_DETAILS__",
@@ -290,6 +296,43 @@ html, body {{
         }
 
         // ── Theme CSS ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns CSS using only hardcoded dark-theme fallback values.
+        /// Used when the VS Shell assembly is not available (e.g. unit tests).
+        /// </summary>
+        private static string BuildFallbackThemeCss() => @":root {
+    --vscode-editor-background:              #1e1e1e;
+    --vscode-editor-foreground:              #d4d4d4;
+    --vscode-sideBar-background:             #252526;
+    --vscode-editorWidget-background:        #252526;
+    --vscode-descriptionForeground:          #808080;
+    --vscode-disabledForeground:             #6b6b6b;
+    --vscode-panel-border:                   #3f3f46;
+    --vscode-widget-border:                  #3f3f46;
+    --vscode-button-background:              #0e639c;
+    --vscode-button-foreground:              #ffffff;
+    --vscode-button-hoverBackground:         #1177bb;
+    --vscode-button-secondaryBackground:     #3a3d41;
+    --vscode-button-secondaryForeground:     #d4d4d4;
+    --vscode-button-secondaryHoverBackground:#45494e;
+    --vscode-badge-background:               #0e639c;
+    --vscode-badge-foreground:               #ffffff;
+    --vscode-focusBorder:                    #0e639c;
+    --vscode-list-hoverBackground:           #2a2d2e;
+    --vscode-list-activeSelectionBackground: #094771;
+    --vscode-list-activeSelectionForeground: #ffffff;
+    --vscode-textLink-foreground:            #4fc3f7;
+    --vscode-textLink-activeForeground:      #4fc3f7;
+    --vscode-charts-foreground:              #d4d4d4;
+    --vscode-charts-lines:                   #3f3f46;
+    --vscode-charts-red:    #f48771;
+    --vscode-charts-blue:   #75beff;
+    --vscode-charts-yellow: #cca700;
+    --vscode-charts-orange: #d18616;
+    --vscode-charts-green:  #89d185;
+    --vscode-charts-purple: #b180d7;
+}";
 
         private static string BuildThemeCss()
         {

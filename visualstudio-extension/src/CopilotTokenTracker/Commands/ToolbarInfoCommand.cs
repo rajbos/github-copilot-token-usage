@@ -57,7 +57,7 @@ namespace CopilotTokenTracker.Commands
             Utilities.OutputLogger.Log("ToolbarInfoCommand initialized - timers started");
         }
 
-        /// <summary>Fetch fresh stats and update the toolbar button text.</summary>
+        /// <summary>Fetch fresh stats and update the toolbar button text and tooltip.</summary>
         private async Task RefreshStatsAsync()
         {
             try
@@ -66,7 +66,7 @@ namespace CopilotTokenTracker.Commands
                 string text;
                 if (stats == null)
                 {
-                    text = "Copilot: ? | ?";
+                    text = "AI Engineering Fluency: ? | ?";
                     // Retry sooner rather than waiting the full 5-minute interval
                     _statsTimer?.Change(StatsRetryInterval, StatsRefreshInterval);
                 }
@@ -74,24 +74,24 @@ namespace CopilotTokenTracker.Commands
                 {
                     var today  = FormatTokenCount(stats.Today.Tokens);
                     var last30 = FormatTokenCount(stats.Last30Days.Tokens);
-                    text = $"Copilot: {today} | {last30}";
+                    text = $"AI Engineering Fluency: {today} ({stats.Today.Tokens:N0}) | {last30} ({stats.Last30Days.Tokens:N0})";
                 }
 
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
-                _menuCommand.Text = text;
+                _menuCommand.Text        = text;
             }
             catch
             {
                 try
                 {
                     await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
-                    _menuCommand.Text = "Copilot: error";
+                    _menuCommand.Text        = "AI Engineering Fluency: error";
                 }
                 catch { /* package may be disposed */ }
             }
         }
 
-        private static string FormatTokenCount(long tokens)
+        internal static string FormatTokenCount(long tokens)
         {
             if (tokens >= 1_000_000)
                 return (tokens / 1_000_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "M";

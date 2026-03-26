@@ -1,11 +1,14 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("CopilotTokenTracker")]
-[assembly: AssemblyDescription("Shows GitHub Copilot token usage statistics inside Visual Studio.")]
+[assembly: InternalsVisibleTo("CopilotTokenTracker.Tests")]
+
+[assembly: AssemblyTitle("AI Engineering Fluency")]
+[assembly: AssemblyDescription("Measure and grow your AI engineering fluency inside Visual Studio.")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("RobBos")]
-[assembly: AssemblyProduct("CopilotTokenTracker")]
+[assembly: AssemblyProduct("AI Engineering Fluency")]
 [assembly: AssemblyCopyright("")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

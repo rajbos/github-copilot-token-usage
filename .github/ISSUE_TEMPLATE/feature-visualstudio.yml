@@ -1,0 +1,65 @@
+name: Feature request — Visual Studio Extension
+description: Suggest a new feature or improvement for the Copilot Token Tracker Visual Studio extension
+title: "[FEATURE][visualstudio] "
+labels:
+  - enhancement
+  - visual-studio-extension
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement to the **Copilot Token Tracker Visual Studio extension**.
+        Please provide as much detail as possible to help us understand the request.
+        > **Note:** This extension currently targets **Windows only** with Visual Studio 2022+.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Is your feature request related to a problem? Describe it clearly.
+      placeholder: "I'm always frustrated when I try to..."
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Desired solution
+      description: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any alternative solutions or workarounds you have tried.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: Who benefits from this feature, and in what workflow?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Critical — I cannot use the extension effectively without this
+        - High — This would significantly improve my experience
+        - Medium — Nice to have
+        - Low — Just a suggestion
+
+  - type: input
+    id: vs-version
+    attributes:
+      label: Visual Studio version (if relevant)
+      description: "e.g. Visual Studio 2022 17.10.0"
+      placeholder: "e.g. Visual Studio 2022 17.10.0"
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context, mockups, links to similar features, or screenshots.

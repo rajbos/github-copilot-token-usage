@@ -20378,7 +20378,7 @@
     style.textContent = styles_default;
     const container = el("div", "container");
     const header = el("div", "header");
-    const title = el("div", "title", "\u{1F916} Copilot Token Usage");
+    const title = el("div", "title", "AI Engineering Fluency");
     const buttonRow = el("div", "button-row");
     buttonRow.append(
       createButton(BUTTONS["btn-refresh"]),
@@ -20409,7 +20409,7 @@
   function buildMetricsSection(stats, projections) {
     const section = el("div", "section");
     const heading = el("h3");
-    heading.textContent = "\u{1F916} Copilot Token Usage";
+    heading.textContent = "AI Engineering Fluency";
     section.append(heading);
     const table = document.createElement("table");
     table.className = "stats-table";

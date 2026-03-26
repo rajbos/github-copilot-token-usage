@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  VS Command Table for Copilot Token Tracker.
-  - "Copilot Token Tracker" entry under the View menu.
-  - Dedicated "Copilot Token Tracker" toolbar showing live token counts.
+  VS Command Table for AI Engineering Fluency.
+  - "AI Engineering Fluency" entry under the View menu.
+  - Dedicated "AI Engineering Fluency" toolbar showing live token counts.
 -->
 <CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable"
               xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -14,13 +14,13 @@
   <Commands package="guidCopilotTokenTrackerPackage">
 
     <Menus>
-      <!-- Our own toolbar — shows up in View > Toolbars as "Copilot Token Tracker" -->
+      <!-- Our own toolbar — shows up in View > Toolbars as "AI Engineering Fluency" -->
       <Menu guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbar"
             type="Toolbar" priority="0x0000">
         <CommandFlag>DefaultDocked</CommandFlag>
         <CommandFlag>AlwaysCreate</CommandFlag>
         <Strings>
-          <ButtonText>Copilot Token Tracker</ButtonText>
+          <ButtonText>AI Engineering Fluency</ButtonText>
         </Strings>
       </Menu>
     </Menus>
@@ -47,9 +47,9 @@
         <Icon guid="ImageCatalogGuid" id="StatusInformation" />
         <CommandFlag>IconIsMoniker</CommandFlag>
         <Strings>
-          <ButtonText>Copilot Token Tracker</ButtonText>
-          <CommandName>View.CopilotTokenTracker</CommandName>
-          <ToolTipText>Open the Copilot Token Tracker tool window</ToolTipText>
+          <ButtonText>AI Engineering Fluency</ButtonText>
+          <CommandName>View.AIEngineeringFluency</CommandName>
+          <ToolTipText>Open the AI Engineering Fluency tool window</ToolTipText>
         </Strings>
       </Button>
 
@@ -64,9 +64,9 @@
         <CommandFlag>TextChanges</CommandFlag>
         <CommandFlag>IconAndText</CommandFlag>
         <Strings>
-          <ButtonText>Copilot: loading…</ButtonText>
+          <ButtonText>AI Engineering Fluency: loading…</ButtonText>
           <CommandName>CopilotTokenTracker.ToolbarInfo</CommandName>
-          <ToolTipText>Today's tokens | Last 30 days tokens — click to reset to details view</ToolTipText>
+          <ToolTipText>AI Engineering Fluency — today's tokens | last 30 days tokens — click to open dashboard</ToolTipText>
         </Strings>
       </Button>
     </Buttons>

@@ -12,7 +12,7 @@ namespace CopilotTokenTracker.Utilities
     {
         private static IVsOutputWindowPane? _pane;
         private static readonly Guid PaneGuid = new Guid("A1B2C3D4-5E6F-7A8B-9C0D-1E2F3A4B5C6D");
-        private const string PaneName = "Copilot Token Tracker";
+        private const string PaneName = "AI Engineering Fluency";
 
         /// <summary>
         /// Initializes the output pane. Call this during package initialization.

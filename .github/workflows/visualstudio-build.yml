@@ -3,6 +3,8 @@ name: Visual Studio Extension - Build & Package
 on:
   push:
     branches: [ main, develop ]
+    tags:
+      - 'vs/v*'  # Tag push: build + GitHub release (and optionally publish to marketplace)
     paths:
       - 'visualstudio-extension/**'
       - 'cli/**'
@@ -51,6 +53,13 @@ jobs:
     name: Build & Package
     # Windows required: Node.js SEA (bundle-exe.ps1) and MSBuild/VSSDK are Windows-only
     runs-on: windows-latest
+    permissions:
+      contents: write  # needed to create GitHub releases on tag triggers
+    outputs:
+      vsix_path: ${{ steps.vsix.outputs.vsix_path }}
+      vsix_name: ${{ steps.vsix.outputs.vsix_name }}
+      release_version: ${{ steps.release_version.outputs.version }}
+      is_tag: ${{ steps.release_version.outputs.is_tag }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -60,6 +69,36 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Extract release version
+        id: release_version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/vs/v*') {
+            $version = $env:GITHUB_REF -replace 'refs/tags/vs/v', ''
+            Write-Host "Tag trigger detected: vs/v$version"
+            echo "is_tag=true"    >> $env:GITHUB_OUTPUT
+            echo "version=$version" >> $env:GITHUB_OUTPUT
+          } else {
+            # Read version from vsixmanifest for non-tag builds
+            [xml]$manifest = Get-Content 'visualstudio-extension/src/CopilotTokenTracker/source.extension.vsixmanifest'
+            $version = $manifest.PackageManifest.Metadata.Identity.Version
+            Write-Host "Non-tag build, manifest version: $version"
+            echo "is_tag=false"   >> $env:GITHUB_OUTPUT
+            echo "version=$version" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Update vsixmanifest version (tag trigger only)
+        if: steps.release_version.outputs.is_tag == 'true'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release_version.outputs.version }}"
+          $manifestPath = 'visualstudio-extension/src/CopilotTokenTracker/source.extension.vsixmanifest'
+          [xml]$manifest = Get-Content $manifestPath
+          $oldVersion = $manifest.PackageManifest.Metadata.Identity.Version
+          $manifest.PackageManifest.Metadata.Identity.Version = $version
+          $manifest.Save((Resolve-Path $manifestPath))
+          Write-Host "✅ Updated vsixmanifest version: $oldVersion → $version"
 
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -140,15 +179,108 @@ jobs:
       # ── Build Visual Studio extension (MSBuild / VSSDK) ───────────────────
 
       - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
 
       - name: Restore NuGet packages
         working-directory: visualstudio-extension
         run: nuget restore CopilotTokenTracker.sln
 
+      - name: Restore test project (SDK-style)
+        working-directory: visualstudio-extension
+        run: dotnet restore src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj
+
       - name: Build solution (Release)
         working-directory: visualstudio-extension
         run: msbuild CopilotTokenTracker.sln /p:Configuration=Release /t:Build /v:minimal
+
+      # ── Run unit tests with coverage ──────────────────────────────────────
+
+      - name: Run unit tests with coverage
+        working-directory: visualstudio-extension
+        run: >-
+          dotnet test src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj
+          --no-build
+          --configuration Release
+          --logger "trx;LogFileName=test-results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: Generate coverage summary
+        if: always()
+        shell: pwsh
+        working-directory: visualstudio-extension
+        run: |
+          $coverageFile = Get-ChildItem -Path TestResults -Filter "coverage.cobertura.xml" -Recurse |
+                          Select-Object -First 1
+          if (-not $coverageFile) {
+            Write-Host "⚠️ No coverage file found"
+            "## ⚠️ Unit Test Coverage`nNo coverage data collected." >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          Write-Host "Coverage file: $($coverageFile.FullName)"
+
+          [xml]$xml = Get-Content $coverageFile.FullName
+
+          $lineRate   = [double]$xml.coverage.'line-rate'   * 100
+          $branchRate = [double]$xml.coverage.'branch-rate' * 100
+
+          $linePct   = [math]::Round($lineRate, 1)
+          $branchPct = [math]::Round($branchRate, 1)
+
+          # Build per-package (namespace) breakdown
+          $packageRows = ""
+          foreach ($pkg in $xml.coverage.packages.package) {
+              $pkgName = $pkg.name
+              $pkgLine   = [math]::Round([double]$pkg.'line-rate'   * 100, 1)
+              $pkgBranch = [math]::Round([double]$pkg.'branch-rate' * 100, 1)
+              $packageRows += "| ``$pkgName`` | $pkgLine% | $pkgBranch% |`n"
+          }
+
+          # Build per-class breakdown for classes with notable coverage data
+          $classRows = ""
+          foreach ($pkg in $xml.coverage.packages.package) {
+              foreach ($cls in $pkg.classes.class) {
+                  $clsName = $cls.name
+                  $clsLine   = [math]::Round([double]$cls.'line-rate'   * 100, 1)
+                  $clsBranch = [math]::Round([double]$cls.'branch-rate' * 100, 1)
+                  $classRows += "| ``$clsName`` | $clsLine% | $clsBranch% |`n"
+              }
+          }
+
+          # Write step summary
+          $summary = @"
+          ## 🧪 Visual Studio Extension — Unit Test Coverage
+
+          | Metric | Coverage |
+          |--------|----------|
+          | **Line Coverage** | $linePct% |
+          | **Branch Coverage** | $branchPct% |
+
+          ### By Namespace
+
+          | Namespace | Line | Branch |
+          |-----------|------|--------|
+          $packageRows
+
+          <details><summary>By Class</summary>
+
+          | Class | Line | Branch |
+          |-------|------|--------|
+          $classRows
+
+          </details>
+          "@
+
+          $summary >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "✅ Coverage: $linePct% line, $branchPct% branch"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: vs-test-results-${{ github.sha }}
+          path: visualstudio-extension/TestResults/
+          retention-days: 30
 
       # ── Collect the produced .vsix ─────────────────────────────────────────
 
@@ -184,9 +316,20 @@ jobs:
             Write-Error "❌ VS_MARKETPLACE_PAT secret is not configured."
             exit 1
           }
+          # VsixPublisher.exe is the correct tool for Visual Studio IDE extensions
+          # (not @vscode/vsce, which is for VS Code extensions only)
+          $vsixPublisher = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" `
+            -Recurse -Filter "VsixPublisher.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $vsixPublisher) {
+            Write-Error "❌ VsixPublisher.exe not found on this runner."
+            exit 1
+          }
+          Write-Host "Found: $($vsixPublisher.FullName)"
           $vsix = "${{ steps.vsix.outputs.vsix_path }}"
+          $manifest = "visualstudio-extension/publish-manifest.json"
           Write-Host "Publishing $vsix to Visual Studio Marketplace..."
-          & npx @vscode/vsce publish --packagePath $vsix --pat $env:VS_MARKETPLACE_PAT
+          & $vsixPublisher.FullName publish -payload $vsix -publishManifest $manifest -personalAccessToken $env:VS_MARKETPLACE_PAT
           if ($LASTEXITCODE -ne 0) { throw "Marketplace publish failed" }
           Write-Host "✅ Published to Visual Studio Marketplace"
 
@@ -204,9 +347,56 @@ jobs:
           | Item | Value |
           |------|-------|
           | VSIX | ``$vsixName`` |
+          | Version | ``${{ steps.release_version.outputs.version }}`` |
           | Trigger | ``${{ github.event_name }}`` |
           | Commit | ``${{ github.sha }}`` |
           "@ >> $env:GITHUB_STEP_SUMMARY
           } else {
             "## ❌ Build failed — no .vsix produced" >> $env:GITHUB_STEP_SUMMARY
           }
+
+  github-release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/vs/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@cbed621e49e4c01b044d60f6c80ea4ed6328b281 # v4.2.0
+        with:
+          name: copilot-token-tracker-vs-${{ github.sha }}
+          path: dist
+
+      - name: Generate release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="vs/v${{ needs.build.outputs.release_version }}"
+          echo "Generating release notes for $TAG_NAME..."
+          if gh api repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="${TAG_NAME}" \
+            --jq '.body' > /tmp/release_notes.md 2>/dev/null && [ -s /tmp/release_notes.md ]; then
+            echo "✅ Generated release notes from merged PRs"
+          else
+            echo "Visual Studio Extension v${{ needs.build.outputs.release_version }}" > /tmp/release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="vs/v${{ needs.build.outputs.release_version }}"
+          VSIX_FILE=$(find dist -name '*.vsix' | head -n 1)
+          echo "Creating release $TAG_NAME with $VSIX_FILE"
+          gh release create "$TAG_NAME" \
+            --title "Visual Studio Extension v${{ needs.build.outputs.release_version }}" \
+            --notes-file /tmp/release_notes.md \
+            "$VSIX_FILE"
+          echo "✅ GitHub release created: $TAG_NAME"
