@@ -409,6 +409,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		warn,
 		openCode: _openCodeInstance,
 		crush: _crushInstance,
+		continue_: _continueInstance,
 		visualStudio: _visualStudioInstance,
 		tokenEstimators,
 		modelPricing,
