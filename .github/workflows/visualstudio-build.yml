@@ -195,8 +195,9 @@ jobs:
           }
           Write-Host "Found: $($vsixPublisher.FullName)"
           $vsix = "${{ steps.vsix.outputs.vsix_path }}"
+          $manifest = "visualstudio-extension/publish-manifest.json"
           Write-Host "Publishing $vsix to Visual Studio Marketplace..."
-          & $vsixPublisher.FullName publish -payload $vsix -personalAccessToken $env:VS_MARKETPLACE_PAT
+          & $vsixPublisher.FullName publish -payload $vsix -publishManifest $manifest -personalAccessToken $env:VS_MARKETPLACE_PAT
           if ($LASTEXITCODE -ne 0) { throw "Marketplace publish failed" }
           Write-Host "✅ Published to Visual Studio Marketplace"
 
