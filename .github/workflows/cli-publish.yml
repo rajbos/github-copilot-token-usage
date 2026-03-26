@@ -72,7 +72,7 @@ jobs:
       - name: Determine trigger type
         id: trigger_type
         run: |
-          if [ "${{ github.event_name }}" == "push" ] && [[ "${{ github.ref }}" == refs/tags/cli/v* ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/cli/v* ]]; then
             echo "is_tag=true" >> "$GITHUB_OUTPUT"
             TAG_VERSION=${GITHUB_REF#refs/tags/cli/v}
             echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
