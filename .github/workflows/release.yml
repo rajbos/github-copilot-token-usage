@@ -239,6 +239,7 @@ jobs:
       with:
         run: npm test
         options: -screen 0 1024x768x24
+        working-directory: vscode-extension
       continue-on-error: false  # Fail the release if tests fail
       
     - name: Create VSIX package
