@@ -6,7 +6,7 @@
     <Identity Id="CopilotTokenTracker.VS.RobBos"
               Version="1.0.0"
               Language="en-US"
-              Publisher="RobBos" />
+              Publisher="Rob Bos" />
     <DisplayName>Copilot Token Tracker</DisplayName>
     <Description xml:space="preserve">
       Shows GitHub Copilot token usage statistics inside Visual Studio.
