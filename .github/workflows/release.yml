@@ -329,6 +329,7 @@ jobs:
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Check marketplace version
+      id: version_check
       run: |
         LOCAL_VERSION="${{ needs.release.outputs.version }}"
         echo "Local version: $LOCAL_VERSION"
@@ -406,6 +407,10 @@ jobs:
           echo ""
           if [ "${{ steps.publish.outcome }}" == "success" ]; then
             echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)"
+          elif [ "${{ steps.version_check.outcome }}" == "failure" ]; then
+            echo "⏭️ Publish skipped — v${{ needs.release.outputs.version }} is already live on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)."
+            echo ""
+            echo "Bump the version in \`vscode-extension/package.json\` before publishing again."
           else
             echo "❌ Failed to publish v${{ needs.release.outputs.version }} to marketplace."
             echo ""
