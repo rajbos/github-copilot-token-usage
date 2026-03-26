@@ -64,11 +64,9 @@ namespace CopilotTokenTracker.Commands
             {
                 var stats = await StatsBuilder.BuildAsync();
                 string text;
-                string tooltip;
                 if (stats == null)
                 {
-                    text    = "AI Engineering Fluency: ? | ?";
-                    tooltip = "AI Engineering Fluency — today's tokens | last 30 days tokens";
+                    text = "AI Engineering Fluency: ? | ?";
                     // Retry sooner rather than waiting the full 5-minute interval
                     _statsTimer?.Change(StatsRetryInterval, StatsRefreshInterval);
                 }
@@ -76,16 +74,11 @@ namespace CopilotTokenTracker.Commands
                 {
                     var today  = FormatTokenCount(stats.Today.Tokens);
                     var last30 = FormatTokenCount(stats.Last30Days.Tokens);
-                    text    = $"AI Engineering Fluency: {today} | {last30}";
-                    tooltip = $"AI Engineering Fluency\n" +
-                              $"Today:       {stats.Today.Tokens:N0} tokens ({today})\n" +
-                              $"Last 30 days: {stats.Last30Days.Tokens:N0} tokens ({last30})\n" +
-                              $"Click to open the dashboard";
+                    text = $"AI Engineering Fluency: {today} ({stats.Today.Tokens:N0}) | {last30} ({stats.Last30Days.Tokens:N0})";
                 }
 
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
                 _menuCommand.Text        = text;
-                _menuCommand.ToolTipText = tooltip;
             }
             catch
             {
@@ -93,7 +86,6 @@ namespace CopilotTokenTracker.Commands
                 {
                     await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
                     _menuCommand.Text        = "AI Engineering Fluency: error";
-                    _menuCommand.ToolTipText = "AI Engineering Fluency — failed to load stats";
                 }
                 catch { /* package may be disposed */ }
             }
