@@ -113,6 +113,7 @@ Prefer VS Code's debugger with breakpoints rather than adding log statements:
 - **`vscode-extension/src/modelPricing.json`**: Model pricing data with input/output costs per million tokens. Includes metadata about pricing sources and last update date. See `vscode-extension/src/README.md` for detailed update instructions and current pricing sources.
 - **`docs/FLUENCY-LEVELS.md`**: Documents the scoring rules for the Copilot Fluency Score dashboard (4 stages, 6 categories, thresholds, and boosters). **Keep this file up to date** when changing the `calculateMaturityScores()` method in `vscode-extension/src/extension.ts`.
 - **`vscode-extension/package.json`**: Defines activation events, commands, and build scripts.
+- **`vscode-extension/LICENSE`**: A copy of the root `LICENSE` file that must exist in `vscode-extension/` so that `vsce package` can include it in the VSIX and satisfy the VS Code Marketplace license check. If the root LICENSE changes, keep this file in sync.
 - **`vscode-extension/esbuild.js`**: The build script that bundles the TypeScript source and JSON data files. Also copies `sql-wasm.wasm` from `node_modules/sql.js/dist/` to `dist/` for OpenCode SQLite support.
 - **`vscode-extension/src/types/json.d.ts`**: Type declarations for JSON module imports and the `sql.js` module.
 
