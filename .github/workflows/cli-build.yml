@@ -5,16 +5,16 @@ on:
     branches: [main]
     paths:
       - 'cli/**'
-      - 'src/sessionDiscovery.ts'
-      - 'src/sessionParser.ts'
-      - 'src/tokenEstimation.ts'
-      - 'src/maturityScoring.ts'
-      - 'src/usageAnalysis.ts'
-      - 'src/opencode.ts'
-      - 'src/types.ts'
-      - 'src/tokenEstimators.json'
-      - 'src/modelPricing.json'
-      - 'src/toolNames.json'
+      - 'vscode-extension/src/sessionDiscovery.ts'
+      - 'vscode-extension/src/sessionParser.ts'
+      - 'vscode-extension/src/tokenEstimation.ts'
+      - 'vscode-extension/src/maturityScoring.ts'
+      - 'vscode-extension/src/usageAnalysis.ts'
+      - 'vscode-extension/src/opencode.ts'
+      - 'vscode-extension/src/types.ts'
+      - 'vscode-extension/src/tokenEstimators.json'
+      - 'vscode-extension/src/modelPricing.json'
+      - 'vscode-extension/src/toolNames.json'
   pull_request:
     branches: [main]
 
@@ -42,16 +42,16 @@ jobs:
           filters: |
             cli-relevant:
               - 'cli/**'
-              - 'src/sessionDiscovery.ts'
-              - 'src/sessionParser.ts'
-              - 'src/tokenEstimation.ts'
-              - 'src/maturityScoring.ts'
-              - 'src/usageAnalysis.ts'
-              - 'src/opencode.ts'
-              - 'src/types.ts'
-              - 'src/tokenEstimators.json'
-              - 'src/modelPricing.json'
-              - 'src/toolNames.json'
+              - 'vscode-extension/src/sessionDiscovery.ts'
+              - 'vscode-extension/src/sessionParser.ts'
+              - 'vscode-extension/src/tokenEstimation.ts'
+              - 'vscode-extension/src/maturityScoring.ts'
+              - 'vscode-extension/src/usageAnalysis.ts'
+              - 'vscode-extension/src/opencode.ts'
+              - 'vscode-extension/src/types.ts'
+              - 'vscode-extension/src/tokenEstimators.json'
+              - 'vscode-extension/src/modelPricing.json'
+              - 'vscode-extension/src/toolNames.json'
 
   build-and-validate:
     needs: check-changes
@@ -73,6 +73,7 @@ jobs:
           node-version: ${{ env.node-version }}
 
       - name: Install extension dependencies
+        working-directory: vscode-extension
         run: npm ci
 
       - name: Install CLI dependencies
