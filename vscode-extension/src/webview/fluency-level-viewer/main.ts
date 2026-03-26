@@ -49,10 +49,10 @@ const STAGE_LABELS: Record<number, string> = {
 };
 
 const STAGE_DESCRIPTIONS: Record<number, string> = {
-	1: 'Rarely uses Copilot or uses only basic features',
-	2: 'Exploring Copilot capabilities with occasional use',
+	1: 'Rarely uses AI tools or uses only basic features',
+	2: 'Exploring AI capabilities with occasional use',
 	3: 'Regular, purposeful use across multiple features',
-	4: 'Strategic, advanced use leveraging the full Copilot ecosystem'
+	4: 'Strategic, advanced use leveraging the full AI ecosystem'
 };
 
 function escapeHtml(text: string): string {

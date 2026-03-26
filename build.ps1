@@ -104,14 +104,36 @@ function Build-VisualStudio {
         return
     }
 
-    # Ensure the bundled CLI exe exists (needed at runtime by the C# bridge)
-    $cliExe = Join-Path $PSScriptRoot 'cli' 'dist' 'copilot-token-tracker.exe'
-    if (-not (Test-Path $cliExe)) {
-        Write-Host "    Bundled CLI exe not found — building it first..." -ForegroundColor Yellow
-        Build-CliExe
+    # Always rebuild the vscode-extension webview bundles so the VS extension
+    # gets the latest compiled JS (labels, strings, etc.)
+    Write-Step "vscode-extension: compile (for VS webview bundles)"
+    Push-Location "$PSScriptRoot/vscode-extension"
+    try {
+        npm ci
+        npm run compile
+        if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
+        Write-Ok "vscode-extension compiled."
     }
+    finally { Pop-Location }
+
+    # Copy compiled webview bundles into the VS extension project
+    $webviewSrc = Join-Path $PSScriptRoot 'vscode-extension' 'dist' 'webview'
+    $webviewDst = Join-Path $PSScriptRoot 'visualstudio-extension' 'src' 'CopilotTokenTracker' 'webview'
+    if (-not (Test-Path $webviewDst)) { New-Item -ItemType Directory -Path $webviewDst -Force | Out-Null }
+    foreach ($bundle in @('details', 'chart', 'usage', 'diagnostics', 'environmental', 'maturity')) {
+        $src = Join-Path $webviewSrc "$bundle.js"
+        if (Test-Path $src) {
+            Copy-Item $src (Join-Path $webviewDst "$bundle.js") -Force
+        }
+    }
+    Write-Ok "Copied webview bundles to visualstudio-extension/webview/"
+
+    # Always rebuild the CLI exe from source so the VS extension has the latest
+    # maturity scoring labels and other runtime logic.
+    Build-CliExe
 
     # Copy the CLI exe and its runtime assets into the VS extension project
+    $cliExe = Join-Path $PSScriptRoot 'cli' 'dist' 'copilot-token-tracker.exe'
     $vsCliDir = Join-Path $PSScriptRoot 'visualstudio-extension' 'src' 'CopilotTokenTracker' 'cli-bundle'
     if (-not (Test-Path $vsCliDir)) { New-Item -ItemType Directory -Path $vsCliDir -Force | Out-Null }
     Copy-Item $cliExe (Join-Path $vsCliDir 'copilot-token-tracker.exe') -Force
@@ -120,7 +142,7 @@ function Build-VisualStudio {
     if (Test-Path $wasmSrc) {
         Copy-Item $wasmSrc (Join-Path $vsCliDir 'sql-wasm.wasm') -Force
     }
-    Write-Host "    Copied CLI exe + sql-wasm.wasm to cli-bundle/"
+    Write-Ok "Copied CLI exe + sql-wasm.wasm to cli-bundle/"
 
     $sln = $slnFiles[0].FullName
 

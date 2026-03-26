@@ -1,6 +1,6 @@
 /**
  * Maturity/fluency scoring functions.
- * Computes Copilot Fluency Score and related metrics.
+ * Computes AI Fluency Score and related metrics.
  */
 import type {
 	DetailedStats,
@@ -39,21 +39,21 @@ export function getFluencyLevelData(isDebugMode: boolean): {
             {
               stage: 1,
               label: "Stage 1: AI Skeptic",
-              description: "Rarely uses Copilot or uses only basic features",
+              description: "Rarely uses AI tools or uses only basic features",
               thresholds: [
                 "Fewer than 5 total interactions in 30 days",
                 "Minimal multi-turn conversations",
                 "No slash commands or agent mode usage",
               ],
               tips: [
-                "Try asking Copilot a question using the Chat panel — [▶ Chat in IDE video](https://tech.hub.ms/github-copilot/videos/chat-in-ide)",
+                "Try asking AI a question using the Chat panel — [▶ Chat in IDE video](https://tech.hub.ms/github-copilot/videos/chat-in-ide)",
                 "Start with simple queries to get familiar with the interface",
               ],
             },
             {
               stage: 2,
               label: "Stage 2: AI Explorer",
-              description: "Exploring Copilot capabilities with occasional use",
+              description: "Exploring AI capabilities with occasional use",
               thresholds: [
                 "At least 5 total interactions",
                 "Average 3+ exchanges per session shows iterative refinement",
@@ -85,7 +85,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               stage: 4,
               label: "Stage 4: AI Strategist",
               description:
-                "Strategic, advanced use leveraging the full Copilot ecosystem",
+                "Strategic, advanced use leveraging the full AI ecosystem",
               thresholds: [
                 "At least 100 total interactions",
                 "Using agent mode regularly",
@@ -1080,14 +1080,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 		wiEvidence.push('Deep integration: regular usage with multi-mode and explicit context');
 	}
 
-	if (wiStage < 2) { wiTips.push('Use Copilot more regularly - even for quick questions'); }
+	if (wiStage < 2) { wiTips.push('Use AI more regularly - even for quick questions'); }
 	if (wiStage < 3) { 
 		if (modesUsed < 2) { wiTips.push('Combine [ask mode with agent mode](https://code.visualstudio.com/docs/copilot/agents/overview) in your daily workflow'); }
 		if (totalContextRefs < 10) { wiTips.push('Use explicit [context references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) like #file, @workspace, and #selection'); }
 	}
 	if (wiStage < 4) { 
 		if (totalContextRefs < 20) { wiTips.push('Make explicit context a habit - use [#file, @workspace, and other references](https://code.visualstudio.com/docs/copilot/chat/copilot-chat#_add-context-to-your-prompts) consistently'); }
-		wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing'); 
+		wiTips.push('Make AI part of every coding task: planning, coding, testing, and reviewing'); 
 	}
 
 	// ---------- Overall score (median) ----------

@@ -56,7 +56,7 @@ namespace CopilotTokenTracker.Data
             return new MaturityData
             {
                 OverallStage = 1,
-                OverallLabel = "Stage 1: Copilot Skeptic",
+                OverallLabel = "Stage 1: AI Skeptic",
                 LastUpdated  = DateTime.UtcNow.ToString("o"),
             };
         }
