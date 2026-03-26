@@ -4,7 +4,7 @@
     xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
     <Identity Id="AIEngineeringFluency.VS.RobBos"
-              Version="1.0.0"
+              Version="1.0.1"
               Language="en-US"
               Publisher="Rob Bos" />
     <DisplayName>AI Engineering Fluency</DisplayName>
