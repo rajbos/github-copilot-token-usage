@@ -223,11 +223,13 @@ jobs:
           |-----------|------|--------|
           $packageRows
 
-          ### By Class
+          <details><summary>By Class</summary>
 
           | Class | Line | Branch |
           |-------|------|--------|
           $classRows
+
+          </details>
           "@
 
           $summary >> $env:GITHUB_STEP_SUMMARY
