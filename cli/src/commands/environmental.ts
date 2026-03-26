@@ -4,7 +4,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { discoverSessionFiles, calculateDetailedStats, fmt, formatTokens, ENVIRONMENTAL } from '../helpers';
-import type { PeriodStats } from '../../../src/types';
+import type { PeriodStats } from '../../../vscode-extension/src/types';
 
 export const environmentalCommand = new Command('environmental')
 	.alias('env')

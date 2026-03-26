@@ -6,22 +6,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import chalk from 'chalk';
-import { SessionDiscovery } from '../../src/sessionDiscovery';
-import { OpenCodeDataAccess } from '../../src/opencode';
-import { CrushDataAccess } from '../../src/crush';
-import { ContinueDataAccess } from '../../src/continue';
-import { VisualStudioDataAccess } from '../../src/visualstudio';
-import { parseSessionFileContent } from '../../src/sessionParser';
-import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../src/tokenEstimation';
-import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../src/types';
-import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../src/usageAnalysis';
-import { createEmptyContextRefs } from '../../src/tokenEstimation';
+import { SessionDiscovery } from '../../vscode-extension/src/sessionDiscovery';
+import { OpenCodeDataAccess } from '../../vscode-extension/src/opencode';
+import { CrushDataAccess } from '../../vscode-extension/src/crush';
+import { ContinueDataAccess } from '../../vscode-extension/src/continue';
+import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio';
+import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
+import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
+import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
+import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../vscode-extension/src/usageAnalysis';
+import { createEmptyContextRefs } from '../../vscode-extension/src/tokenEstimation';
 import * as vscodeStub from './vscode-stub';
+import { loadCache, saveCache, disableCache, getCached, setCached, getCacheStats } from './cliCache';
 
 // Import JSON data files
-import tokenEstimatorsData from '../../src/tokenEstimators.json';
-import modelPricingData from '../../src/modelPricing.json';
-import toolNamesData from '../../src/toolNames.json';
+import tokenEstimatorsData from '../../vscode-extension/src/tokenEstimators.json';
+import modelPricingData from '../../vscode-extension/src/modelPricing.json';
+import toolNamesData from '../../vscode-extension/src/toolNames.json';
 
 // Environmental impact constants (from extension.ts)
 const CO2_PER_1K_TOKENS = 0.2;           // gCO2e per 1000 tokens
@@ -157,20 +158,28 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 	try {
 		const stats = await statSessionFile(filePath);
 
+		// Check the cache before doing any parsing
+		const cached = getCached(filePath, stats.mtimeMs, stats.size);
+		if (cached) {
+			return cached;
+		}
+
 		// Handle Crush DB virtual paths directly via the crush module
 		if (isCrushSessionFile(filePath)) {
 			const result = await _crushInstance.getTokensFromCrushSession(filePath);
 			const interactions = await _crushInstance.countCrushInteractions(filePath);
 			const modelUsage = await _crushInstance.getCrushModelUsage(filePath);
-			return {
-				file: filePath,
-				tokens: result.tokens,
-				thinkingTokens: result.thinkingTokens,
-				interactions,
-				modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-			};
+const crushResult: SessionData = {
+			file: filePath,
+			tokens: result.tokens,
+			thinkingTokens: result.thinkingTokens,
+			interactions,
+			modelUsage,
+			lastModified: stats.mtime,
+			editorSource: getEditorSourceFromPath(filePath),
+		};
+			setCached(filePath, stats.mtimeMs, stats.size, crushResult);
+			return crushResult;
 		}
 
 		// Handle OpenCode DB virtual paths directly via the opencode module
@@ -178,7 +187,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			const result = await _openCodeInstance.getTokensFromOpenCodeSession(filePath);
 			const interactions = await _openCodeInstance.countOpenCodeInteractions(filePath);
 			const modelUsage = await _openCodeInstance.getOpenCodeModelUsage(filePath);
-			return {
+			const openCodeResult: SessionData = {
 				file: filePath,
 				tokens: result.tokens,
 				thinkingTokens: result.thinkingTokens,
@@ -187,6 +196,8 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 				lastModified: stats.mtime,
 				editorSource: getEditorSourceFromPath(filePath),
 			};
+			setCached(filePath, stats.mtimeMs, stats.size, openCodeResult);
+			return openCodeResult;
 		}
 
                 // Handle Visual Studio session files (binary MessagePack)
@@ -195,7 +206,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
                         const objects = _visualStudioInstance.decodeSessionFile(filePath);
                         const interactions = _visualStudioInstance.countInteractions(objects);
                         const modelUsage = _visualStudioInstance.getModelUsage(filePath, estimateTokens);
-                        return {
+                        const vsResult: SessionData = {
                                 file: filePath,
                                 tokens: result.tokens,
                                 thinkingTokens: result.thinkingTokens,
@@ -204,6 +215,8 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
                                 lastModified: stats.mtime,
                                 editorSource: getEditorSourceFromPath(filePath),
                         };
+                        setCached(filePath, stats.mtimeMs, stats.size, vsResult);
+                        return vsResult;
                 }
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');
@@ -249,7 +262,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			fileModelUsage = result.modelUsage as ModelUsage;
 		}
 
-		return {
+		const sessionData: SessionData = {
 			file: filePath,
 			tokens,
 			thinkingTokens,
@@ -258,6 +271,8 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			lastModified: stats.mtime,
 			editorSource: getEditorSourceFromPath(filePath),
 		};
+		setCached(filePath, stats.mtimeMs, stats.size, sessionData);
+		return sessionData;
 	} catch {
 		return null;
 	}
@@ -503,6 +518,145 @@ function createEmptyUsageAnalysisPeriod(): UsageAnalysisPeriod {
 	};
 }
 
+/** A single day's aggregated token data for the chart view. */
+interface DailyEntry {
+	tokens: number;
+	sessions: number;
+	modelUsage: ModelUsage;
+	editorUsage: { [editor: string]: { tokens: number; sessions: number } };
+}
+
+/**
+ * Process session files and return per-day stats for the last 30 days.
+ * Returns `{ labels, days }` where labels are sorted YYYY-MM-DD strings and
+ * days are the corresponding aggregated stats.
+ */
+export async function calculateDailyStats(sessionFiles: string[]): Promise<{
+	labels: string[];
+	days: DailyEntry[];
+}> {
+	const now = new Date();
+	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+
+	// Fill in all 31 days (today inclusive) with zeroes so the chart has continuous labels
+	const dailyMap = new Map<string, DailyEntry>();
+	const cursor = new Date(last30DaysStart);
+	while (cursor <= now) {
+		const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+		dailyMap.set(key, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+		cursor.setDate(cursor.getDate() + 1);
+	}
+
+	for (const file of sessionFiles) {
+		const data = await processSessionFile(file);
+		if (!data || data.tokens === 0 || data.interactions === 0) { continue; }
+		if (data.lastModified < last30DaysStart) { continue; }
+
+		const d = data.lastModified;
+		const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		const entry = dailyMap.get(dateKey);
+		if (!entry) { continue; }
+
+		entry.tokens += data.tokens;
+		entry.sessions++;
+
+		for (const [model, usage] of Object.entries(data.modelUsage)) {
+			if (!entry.modelUsage[model]) {
+				entry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+			}
+			entry.modelUsage[model].inputTokens += usage.inputTokens;
+			entry.modelUsage[model].outputTokens += usage.outputTokens;
+		}
+
+		const editor = data.editorSource;
+		if (!entry.editorUsage[editor]) {
+			entry.editorUsage[editor] = { tokens: 0, sessions: 0 };
+		}
+		entry.editorUsage[editor].tokens += data.tokens;
+		entry.editorUsage[editor].sessions++;
+	}
+
+	const labels = Array.from(dailyMap.keys()).sort();
+	const days = labels.map(l => dailyMap.get(l)!);
+	return { labels, days };
+}
+
+const CHART_COLORS = [
+	{ bg: 'rgba(54, 162, 235, 0.6)',  border: 'rgba(54, 162, 235, 1)' },
+	{ bg: 'rgba(255, 99, 132, 0.6)',  border: 'rgba(255, 99, 132, 1)' },
+	{ bg: 'rgba(75, 192, 192, 0.6)',  border: 'rgba(75, 192, 192, 1)' },
+	{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
+	{ bg: 'rgba(255, 159, 64, 0.6)',  border: 'rgba(255, 159, 64, 1)' },
+	{ bg: 'rgba(255, 205, 86, 0.6)',  border: 'rgba(255, 205, 86, 1)' },
+	{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
+	{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' },
+];
+
+/**
+ * Build the JSON payload consumed by the chart webview from the daily stats arrays
+ * returned by `calculateDailyStats`.
+ */
+export function buildChartPayload(labels: string[], days: DailyEntry[]): object {
+	const tokensData  = days.map(d => d.tokens);
+	const sessionsData = days.map(d => d.sessions);
+
+	const allModels = new Set<string>();
+	days.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
+	const modelDatasets = Array.from(allModels).map((model, idx) => {
+		const color = CHART_COLORS[idx % CHART_COLORS.length];
+		return {
+			label: model,
+			data: days.map(d => {
+				const u = d.modelUsage[model];
+				return u ? u.inputTokens + u.outputTokens : 0;
+			}),
+			backgroundColor: color.bg,
+			borderColor: color.border,
+			borderWidth: 1,
+		};
+	});
+
+	const allEditors = new Set<string>();
+	days.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
+	const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+		const color = CHART_COLORS[idx % CHART_COLORS.length];
+		return {
+			label: editor,
+			data: days.map(d => d.editorUsage[editor]?.tokens || 0),
+			backgroundColor: color.bg,
+			borderColor: color.border,
+			borderWidth: 1,
+		};
+	});
+
+	const editorTotalsMap: Record<string, number> = {};
+	days.forEach(d => {
+		Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+			editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
+		});
+	});
+
+	const totalTokens   = tokensData.reduce((a, b) => a + b, 0);
+	const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+
+	return {
+		labels,
+		tokensData,
+		sessionsData,
+		modelDatasets,
+		editorDatasets,
+		editorTotalsMap,
+		repositoryDatasets: [],
+		repositoryTotalsMap: {},
+		dailyCount: labels.length,
+		totalTokens,
+		avgTokensPerDay: labels.length > 0 ? Math.round(totalTokens / labels.length) : 0,
+		totalSessions,
+		lastUpdated: new Date().toISOString(),
+		backendConfigured: false,
+	};
+}
+
 /** Format a number with thousand separators */
 export function fmt(n: number): string {
 	return n.toLocaleString('en-US');
@@ -533,4 +687,7 @@ export const ENVIRONMENTAL = {
 
 /** Model pricing data export */
 export { modelPricing, tokenEstimators, toolNameMap };
+
+/** Cache lifecycle — re-export for use in commands */
+export { loadCache, saveCache, disableCache, getCacheStats } from './cliCache';
 

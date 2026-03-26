@@ -59,7 +59,7 @@ jobs:
     - name: Extract version from package.json
       id: package_version
       run: |
-        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        PACKAGE_VERSION=$(node -p "require('./vscode-extension/package.json').version")
         echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
         echo "Package version: $PACKAGE_VERSION"
         
@@ -209,21 +209,27 @@ jobs:
         exit 1
         
     - name: Install dependencies
+      working-directory: vscode-extension
       run: npm ci
       
     - name: Run linting
+      working-directory: vscode-extension
       run: npm run lint
       
     - name: Run type checking
+      working-directory: vscode-extension
       run: npm run check-types
       
     - name: Compile extension
+      working-directory: vscode-extension
       run: npm run compile
       
     - name: Build production package
+      working-directory: vscode-extension
       run: npm run package
       
     - name: Compile tests
+      working-directory: vscode-extension
       run: npm run compile-tests
       
     - name: Run tests
@@ -234,10 +240,12 @@ jobs:
       continue-on-error: false  # Fail the release if tests fail
       
     - name: Create VSIX package
+      working-directory: vscode-extension
       run: npx vsce package
       
     - name: Get VSIX filename
       id: vsix_filename
+      working-directory: vscode-extension
       run: |
         VSIX_FILE=$(find . -maxdepth 1 -name "*.vsix" -exec basename {} \; | head -n 1)
         echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
@@ -247,7 +255,7 @@ jobs:
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: vsix-package
-        path: ./${{ steps.vsix_filename.outputs.vsix_file }}
+        path: vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}
         retention-days: 90
         
     - name: Create Release
@@ -264,10 +272,11 @@ jobs:
         gh release create "${{ steps.tag_name.outputs.tag_name }}" \
           --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
           --notes-file /tmp/release_notes.md \
-          ./${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
-        
+          vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
+
     - name: Release Summary
       if: always()
+      shell: bash
       run: |
         if [ "${{ steps.create_release.outcome }}" == "success" ]; then
           {
@@ -318,8 +327,10 @@ jobs:
       with:
         node-version: '20.x'
         cache: 'npm'
+        cache-dependency-path: vscode-extension/package-lock.json
 
     - name: Install dependencies
+      working-directory: vscode-extension
       run: npm ci
 
     - name: Download VSIX from release

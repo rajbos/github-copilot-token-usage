@@ -11,7 +11,7 @@
     "esModuleInterop": true,
     "declaration": false,
     "paths": {
-      "../src/*": ["../src/*"]
+      "../vscode-extension/src/*": ["../vscode-extension/src/*"]
     }
   },
   "include": ["src/**/*.ts"],

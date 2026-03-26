@@ -10,10 +10,14 @@
 const fs = require('fs');
 const path = require('path');
 
+// Resolve node_modules from the CWD (where npm runs this script from)
+// This allows the script to be called from vscode-extension/ and find its deps there
+const cwdNodeModules = path.join(process.cwd(), 'node_modules');
+
 // Try to load jsonc-parser, fallback to strip-json-comments if not available
 let parseJsonc;
 try {
-  const jsoncParser = require('jsonc-parser');
+  const jsoncParser = require(path.join(cwdNodeModules, 'jsonc-parser'));
   parseJsonc = (content) => {
     const errors = [];
     const result = jsoncParser.parse(content, errors, { allowTrailingComma: true });
@@ -25,7 +29,7 @@ try {
   };
 } catch (e) {
   // Fallback to strip-json-comments
-  const stripJsonComments = require('strip-json-comments');
+  const stripJsonComments = require(path.join(cwdNodeModules, 'strip-json-comments'));
   parseJsonc = (content) => JSON.parse(stripJsonComments(content));
 }
 
@@ -43,18 +47,17 @@ const EXCLUDE_PATTERNS = [
 
 // JSON files to validate (relative to repo root)
 const JSON_FILES = [
-  // Core configuration files
-  'package.json',
-  'package-lock.json',
-  'tsconfig.json',
-  'tsconfig.tests.json',
-  '.stylelintrc.json',
+  // VS Code extension configuration files
+  'vscode-extension/package.json',
+  'vscode-extension/package-lock.json',
+  'vscode-extension/tsconfig.json',
+  'vscode-extension/tsconfig.tests.json',
   
-  // Extension data files
-  'src/tokenEstimators.json',
-  'src/modelPricing.json',
-  'src/toolNames.json',
-  'src/customizationPatterns.json',
+  // VS Code extension data files
+  'vscode-extension/src/tokenEstimators.json',
+  'vscode-extension/src/modelPricing.json',
+  'vscode-extension/src/toolNames.json',
+  'vscode-extension/src/customizationPatterns.json',
   
   // VS Code configuration
   '.vscode/settings.json',
@@ -72,8 +75,8 @@ const JSON_FILES = [
 
 // Files that support JSONC (JSON with Comments)
 const JSONC_FILES = new Set([
-  'tsconfig.json',
-  'tsconfig.tests.json',
+  'vscode-extension/tsconfig.json',
+  'vscode-extension/tsconfig.tests.json',
   '.vscode/settings.json',
   '.vscode/launch.json',
   '.vscode/tasks.json',

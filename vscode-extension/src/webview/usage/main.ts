@@ -1,4 +1,4 @@
-// Usage Analysis webview
+﻿// Usage Analysis webview
 import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
@@ -279,6 +279,18 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 		</table>`;
 }
 
+/**
+ * Return a copy of `map` with every key from `keys` present (defaulting to 0).
+ * Used to build cross-period tables where every item found in any period is shown in all.
+ */
+function unionFill(map: { [key: string]: number }, keys: string[]): { [key: string]: number } {
+	const result: { [key: string]: number } = { ...map };
+	for (const k of keys) {
+		if (!(k in result)) { result[k] = 0; }
+	}
+	return result;
+}
+
 function sanitizeStats(raw: any): UsageAnalysisStats | null {
 	if (!raw || typeof raw !== 'object') {
 		return null;
@@ -459,6 +471,38 @@ function renderLayout(stats: UsageAnalysisStats): void {
 			</div>`;
 	}
 
+	// Compute union of keys across all periods so every column shows every known item
+	const allToolKeys = [...new Set([
+		...Object.keys(stats.today.toolCalls.byTool),
+		...Object.keys(stats.last30Days.toolCalls.byTool),
+		...Object.keys(stats.month.toolCalls.byTool),
+	])];
+	const allMcpToolKeys = [...new Set([
+		...Object.keys(stats.today.mcpTools.byTool),
+		...Object.keys(stats.last30Days.mcpTools.byTool),
+		...Object.keys(stats.month.mcpTools.byTool),
+	])];
+	const allMcpServerKeys = [...new Set([
+		...Object.keys(stats.today.mcpTools.byServer),
+		...Object.keys(stats.last30Days.mcpTools.byServer),
+		...Object.keys(stats.month.mcpTools.byServer),
+	])];
+	const allStandardModels = [...new Set([
+		...stats.today.modelSwitching.standardModels,
+		...stats.last30Days.modelSwitching.standardModels,
+		...stats.month.modelSwitching.standardModels,
+	])];
+	const allPremiumModels = [...new Set([
+		...stats.today.modelSwitching.premiumModels,
+		...stats.last30Days.modelSwitching.premiumModels,
+		...stats.month.modelSwitching.premiumModels,
+	])];
+	const allUnknownModels = [...new Set([
+		...stats.today.modelSwitching.unknownModels,
+		...stats.last30Days.modelSwitching.unknownModels,
+		...stats.month.modelSwitching.unknownModels,
+	])];
+
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
 	const last30DaysTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
 	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent + stats.today.modeUsage.plan + stats.today.modeUsage.customAgent;
@@ -634,21 +678,21 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 					<div class="list">
 						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.today.toolCalls.total)}</div>
-						${renderToolsTable(stats.today.toolCalls.byTool, 10)}
+						${renderToolsTable(unionFill(stats.today.toolCalls.byTool, allToolKeys), 10)}
 					</div>
 				</div>
 				<div>
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
 					<div class="list">
 						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.last30Days.toolCalls.total)}</div>
-							${renderToolsTable(stats.last30Days.toolCalls.byTool, 10)}
+							${renderToolsTable(unionFill(stats.last30Days.toolCalls.byTool, allToolKeys), 10)}
 						</div>
 					</div>
 				<div>
 					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
 					<div class="list">
 						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
-							${renderToolsTable(stats.month.toolCalls.byTool, 10)}
+							${renderToolsTable(unionFill(stats.month.toolCalls.byTool, allToolKeys), 10)}
 						</div>
 					</div>
 				</div>
@@ -675,9 +719,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						}).join(' ');
 						return `
 							<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
-								<div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-									Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names — might not be included in the top-10 tables above
-								</div>
 								<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
 									${toolListHtml}
 								</div>
@@ -695,8 +736,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
-							${stats.today.mcpTools.total > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byServer, 8)}</div></div>
+							${allMcpServerKeys.length > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.today.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -704,8 +745,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
-							${stats.last30Days.mcpTools.total > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byServer, 8)}</div></div>
+							${allMcpServerKeys.length > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.last30Days.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
@@ -713,31 +754,31 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
 						<div class="list">
 							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
-							${stats.month.mcpTools.total > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byServer, 8)}</div></div>
+							${allMcpServerKeys.length > 0 ? `
+								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.month.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
 							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
 						</div>
 					</div>
 				</div>
 				<div class="three-column" style="margin-top: 12px;">
 					<div>
-						${stats.today.mcpTools.total > 0 ? `
+						${allMcpToolKeys.length > 0 ? `
 							<div class="list">
-								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.today.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.today.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
 							</div>
 						` : ''}
 					</div>
 					<div>
-						${stats.last30Days.mcpTools.total > 0 ? `
+						${allMcpToolKeys.length > 0 ? `
 							<div class="list">
-								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.last30Days.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.last30Days.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
 							</div>
 						` : ''}
 					</div>
 					<div>
-						${stats.month.mcpTools.total > 0 ? `
+						${allMcpToolKeys.length > 0 ? `
 							<div class="list">
-								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(stats.month.mcpTools.byTool, 8, lookupMcpToolName)}</div></div>
+								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.month.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
 							</div>
 						` : ''}
 					</div>
@@ -769,22 +810,22 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
 							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
 							<div style="min-height: 90px;">
-								${stats.today.modelSwitching.standardModels.length > 0 ? `
+								${allStandardModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--link-color);">🔵 Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.standardModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allStandardModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${stats.today.modelSwitching.premiumModels.length > 0 ? `
+								${allPremiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--warning-fg);">⭐ Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allPremiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${stats.today.modelSwitching.unknownModels.length > 0 ? `
+								${allUnknownModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--text-muted);">❓ Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.today.modelSwitching.unknownModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allUnknownModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : ''}
 							</div>
@@ -838,22 +879,22 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
 							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
 							<div style="min-height: 90px;">
-								${stats.last30Days.modelSwitching.standardModels.length > 0 ? `
+								${allStandardModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--link-color);">🔵 Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.standardModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allStandardModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${stats.last30Days.modelSwitching.premiumModels.length > 0 ? `
+								${allPremiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--warning-fg);">⭐ Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allPremiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${stats.last30Days.modelSwitching.unknownModels.length > 0 ? `
+								${allUnknownModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--text-muted);">❓ Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.last30Days.modelSwitching.unknownModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allUnknownModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : ''}
 							</div>
@@ -907,22 +948,22 @@ function renderLayout(stats: UsageAnalysisStats): void {
 						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
 							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
 							<div style="min-height: 90px;">
-								${stats.month.modelSwitching.standardModels.length > 0 ? `
+								${allStandardModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--link-color);">🔵 Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.standardModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allStandardModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${stats.month.modelSwitching.premiumModels.length > 0 ? `
+								${allPremiumModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--warning-fg);">⭐ Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.premiumModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allPremiumModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${stats.month.modelSwitching.unknownModels.length > 0 ? `
+								${allUnknownModels.length > 0 ? `
 									<div style="margin-bottom: 6px;">
 										<span style="color: var(--text-muted);">❓ Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${stats.month.modelSwitching.unknownModels.map(escapeHtml).join(', ')}</span>
+										<span style="font-size: 11px; color: var(--text-primary);">${allUnknownModels.map(escapeHtml).join(', ')}</span>
 									</div>
 								` : ''}
 							</div>

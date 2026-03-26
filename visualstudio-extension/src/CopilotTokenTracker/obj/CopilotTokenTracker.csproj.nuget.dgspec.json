@@ -1,0 +1,96 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj",
+        "projectName": "CopilotTokenTracker",
+        "projectPath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj",
+        "packagesPath": "C:\\Users\\RobBos\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\obj\\",
+        "projectStyle": "PackageReference",
+        "skipContentFileWrite": true,
+        "UsingMicrosoftNETSdk": false,
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\RobBos\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net472"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net472": {
+            "projectReferences": {}
+          }
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net472": {
+          "dependencies": {
+            "Microsoft.VSSDK.BuildTools": {
+              "target": "Package",
+              "version": "[17.6.2164, )",
+              "noWarn": [
+                "NU1604"
+              ]
+            },
+            "Microsoft.VisualStudio.SDK": {
+              "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
+              "target": "Package",
+              "version": "[17.6.36389, )",
+              "noWarn": [
+                "NU1604"
+              ]
+            },
+            "Microsoft.Web.WebView2": {
+              "target": "Package",
+              "version": "[1.0.2478.35, )"
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.3, )"
+            },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[8.0.5, )"
+            }
+          }
+        }
+      },
+      "runtimes": {
+        "win": {
+          "#import": []
+        },
+        "win-arm": {
+          "#import": []
+        },
+        "win-arm64": {
+          "#import": []
+        },
+        "win-x64": {
+          "#import": []
+        },
+        "win-x86": {
+          "#import": []
+        }
+      }
+    }
+  }
+}

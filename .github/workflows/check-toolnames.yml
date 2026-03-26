@@ -85,7 +85,7 @@ jobs:
               with open(COMMENT_FILE, "w") as f:
                   f.write("## 🔍 Toolnames Checkup\n\n_No candidate tool names (backtick-wrapped identifiers without path separators) were found in the issue body._\n")
           else:
-              with open("src/toolNames.json", "r") as f:
+              with open("vscode-extension/src/toolNames.json", "r") as f:
                   known_tools = json.load(f)
           
               already_added = []
@@ -98,7 +98,7 @@ jobs:
                       needs_adding.append(tool)
           
               lines = ["## 🔍 Toolnames Checkup", ""]
-              lines.append("Checked the tool names in this issue against `src/toolNames.json` on the `main` branch:")
+              lines.append("Checked the tool names in this issue against `vscode-extension/src/toolNames.json` on the `main` branch:")
               lines.append("")
           
               if already_added:
@@ -122,7 +122,7 @@ jobs:
               if already_added and not needs_adding:
                   lines.append("> **All tool names in this issue are already mapped.** This issue may be a duplicate — consider closing it.")
               elif needs_adding:
-                  lines.append(f"> **{len(needs_adding)} tool name(s) still need to be added.** Please use the `tool-names` custom agent or update `src/toolNames.json` manually.")
+                  lines.append(f"> **{len(needs_adding)} tool name(s) still need to be added.** Please use the `tool-names` custom agent or update `vscode-extension/src/toolNames.json` manually.")
           
               lines.append("")
               lines.append(f"_Workflow run: {server_url}/{repo}/actions/runs/{run_id}_")
