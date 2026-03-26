@@ -527,6 +527,13 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "Failed to upload .vsix to release" }
         Write-Host "✅ Uploaded to GitHub release"
 
+    - name: Upload .vsix as workflow artifact
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: visualstudio-vsix
+        path: ${{ steps.vsix.outputs.vsix_path }}
+        retention-days: 30
+
     # ── (Optional) Publish to VS Marketplace ──────────────────────────────
 
     - name: Publish to Visual Studio Marketplace
