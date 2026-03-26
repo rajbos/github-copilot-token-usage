@@ -145,7 +145,6 @@ export interface SessionData {
 	file: string;
 	tokens: number;
 	thinkingTokens: number;
-	actualTokens: number; // Actual API-reported token count (0 when unavailable)
 	interactions: number;
 	modelUsage: ModelUsage;
 	lastModified: Date;
@@ -174,7 +173,6 @@ const crushResult: SessionData = {
 			file: filePath,
 			tokens: result.tokens,
 			thinkingTokens: result.thinkingTokens,
-			actualTokens: result.tokens, // Crush stores actual counts
 			interactions,
 			modelUsage,
 			lastModified: stats.mtime,
@@ -193,7 +191,6 @@ const crushResult: SessionData = {
 				file: filePath,
 				tokens: result.tokens,
 				thinkingTokens: result.thinkingTokens,
-				actualTokens: result.tokens, // OpenCode stores actual counts
 				interactions,
 				modelUsage,
 				lastModified: stats.mtime,
@@ -213,7 +210,6 @@ const crushResult: SessionData = {
                                 file: filePath,
                                 tokens: result.tokens,
                                 thinkingTokens: result.thinkingTokens,
-                                actualTokens: 0, // VS sessions use text estimation
                                 interactions,
                                 modelUsage,
                                 lastModified: stats.mtime,
@@ -240,10 +236,6 @@ const crushResult: SessionData = {
 			const result = estimateTokensFromJsonlSession(content);
 			tokens = result.tokens;
 			thinkingTokens = result.thinkingTokens;
-			// Prefer actual API-reported tokens over text estimates (matches VS Code extension behaviour)
-			if (result.actualTokens > 0) {
-				tokens = result.actualTokens;
-			}
 
 			// Count interactions from JSONL
 			const lines = content.trim().split('\n');
@@ -264,7 +256,7 @@ const crushResult: SessionData = {
 				estimateTokens,
 				resolveModel
 			);
-			tokens = result.actualTokens > 0 ? result.actualTokens : result.tokens;
+			tokens = result.tokens;
 			thinkingTokens = result.thinkingTokens;
 			interactions = result.interactions;
 			fileModelUsage = result.modelUsage as ModelUsage;
@@ -274,7 +266,6 @@ const crushResult: SessionData = {
 			file: filePath,
 			tokens,
 			thinkingTokens,
-			actualTokens: 0, // only set for JSONL via the block above; kept on SessionData for future use
 			interactions,
 			modelUsage: fileModelUsage,
 			lastModified: stats.mtime,
@@ -385,9 +376,7 @@ function createEmptyPeriodStats(): PeriodStats {
 function aggregateIntoPeriod(period: PeriodStats, data: SessionData): void {
 	period.tokens += data.tokens;
 	period.thinkingTokens += data.thinkingTokens;
-	// estimatedTokens always tracks the text-based estimate regardless of whether actual tokens were used
-	period.estimatedTokens += data.actualTokens > 0 ? data.tokens : data.tokens; // kept for future differentiation
-	period.actualTokens += data.actualTokens;
+	period.estimatedTokens += data.tokens;
 	period.sessions++;
 
 	// Merge model usage
@@ -420,7 +409,6 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		warn,
 		openCode: _openCodeInstance,
 		crush: _crushInstance,
-		continue_: _continueInstance,
 		visualStudio: _visualStudioInstance,
 		tokenEstimators,
 		modelPricing,
@@ -560,159 +548,6 @@ export const ENVIRONMENTAL = {
 
 /** Model pricing data export */
 export { modelPricing, tokenEstimators, toolNameMap };
-
-// ── Daily stats & chart payload ──────────────────────────────────────────────
-
-const MODEL_COLORS = [
-	{ bg: 'rgba(54, 162, 235, 0.6)',  border: 'rgba(54, 162, 235, 1)' },
-	{ bg: 'rgba(255, 99, 132, 0.6)',  border: 'rgba(255, 99, 132, 1)' },
-	{ bg: 'rgba(75, 192, 192, 0.6)',  border: 'rgba(75, 192, 192, 1)' },
-	{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
-	{ bg: 'rgba(255, 159, 64, 0.6)',  border: 'rgba(255, 159, 64, 1)' },
-	{ bg: 'rgba(255, 205, 86, 0.6)',  border: 'rgba(255, 205, 86, 1)' },
-	{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
-	{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' },
-];
-
-/** Returns the last N calendar days as YYYY-MM-DD strings (oldest first). */
-function buildDateRange(days: number): string[] {
-	const result: string[] = [];
-	const now = new Date();
-	for (let i = days - 1; i >= 0; i--) {
-		const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-		result.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-	}
-	return result;
-}
-
-function formatDateKey(date: Date): string {
-	return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-interface DailyEntry {
-	tokens: number;
-	sessions: number;
-	interactions: number;
-	modelUsage: ModelUsage;
-	editorUsage: { [editor: string]: { tokens: number; sessions: number } };
-	repositoryUsage: { [repo: string]: { tokens: number; sessions: number } };
-}
-
-/**
- * Builds daily token stats for the last 30 days for the chart view.
- */
-export async function calculateDailyStats(
-	sessionFiles: string[],
-): Promise<{ labels: string[]; days: DailyEntry[] }> {
-	const now = new Date();
-	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-
-	const map = new Map<string, DailyEntry>();
-	const labels = buildDateRange(31); // 31 days so "today" is always included
-	for (const label of labels) {
-		map.set(label, { tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
-	}
-
-	for (const file of sessionFiles) {
-		const data = await processSessionFile(file);
-		if (!data || data.tokens === 0) { continue; }
-
-		if (data.lastModified < last30DaysStart) { continue; }
-
-		const key = formatDateKey(data.lastModified);
-		const entry = map.get(key);
-		if (!entry) { continue; } // outside our window
-
-		entry.tokens += data.tokens;
-		entry.sessions++;
-		entry.interactions += data.interactions;
-
-		for (const [model, usage] of Object.entries(data.modelUsage)) {
-			if (!entry.modelUsage[model]) { entry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
-			entry.modelUsage[model].inputTokens += usage.inputTokens;
-			entry.modelUsage[model].outputTokens += usage.outputTokens;
-		}
-
-		const editor = data.editorSource;
-		if (!entry.editorUsage[editor]) { entry.editorUsage[editor] = { tokens: 0, sessions: 0 }; }
-		entry.editorUsage[editor].tokens += data.tokens;
-		entry.editorUsage[editor].sessions++;
-	}
-
-	return { labels, days: labels.map(l => map.get(l)!) };
-}
-
-/**
- * Builds a ChartDataPayload from daily stats, matching the shape expected by the chart webview.
- */
-export function buildChartPayload(
-	labels: string[],
-	days: DailyEntry[],
-): object {
-	const tokensData = days.map(d => d.tokens);
-	const sessionsData = days.map(d => d.sessions);
-
-	const allModels = new Set<string>();
-	days.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
-
-	const modelDatasets = Array.from(allModels).map((model, idx) => {
-		const color = MODEL_COLORS[idx % MODEL_COLORS.length];
-		return {
-			label: model,
-			data: days.map(d => {
-				const u = d.modelUsage[model];
-				return u ? u.inputTokens + u.outputTokens : 0;
-			}),
-			backgroundColor: color.bg,
-			borderColor: color.border,
-			borderWidth: 1,
-		};
-	});
-
-	const allEditors = new Set<string>();
-	days.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
-
-	const editorDatasets = Array.from(allEditors).map((editor, idx) => {
-		const color = MODEL_COLORS[idx % MODEL_COLORS.length];
-		return {
-			label: editor,
-			data: days.map(d => d.editorUsage[editor]?.tokens || 0),
-			backgroundColor: color.bg,
-			borderColor: color.border,
-			borderWidth: 1,
-		};
-	});
-
-	const editorTotalsMap: Record<string, number> = {};
-	days.forEach(d => {
-		Object.entries(d.editorUsage).forEach(([editor, usage]) => {
-			editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
-		});
-	});
-
-	const repositoryDatasets: object[] = [];
-	const repositoryTotalsMap: Record<string, number> = {};
-
-	const totalTokens = tokensData.reduce((a, b) => a + b, 0);
-	const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
-
-	return {
-		labels,
-		tokensData,
-		sessionsData,
-		modelDatasets,
-		editorDatasets,
-		editorTotalsMap,
-		repositoryDatasets,
-		repositoryTotalsMap,
-		dailyCount: labels.length,
-		totalTokens,
-		avgTokensPerDay: labels.length > 0 ? Math.round(totalTokens / labels.length) : 0,
-		totalSessions,
-		lastUpdated: new Date().toISOString(),
-		backendConfigured: false,
-	};
-}
 
 /** Cache lifecycle — re-export for use in commands */
 export { loadCache, saveCache, disableCache, getCacheStats } from './cliCache';

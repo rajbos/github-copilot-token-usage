@@ -10,8 +10,6 @@ import { usageCommand } from './commands/usage';
 import { environmentalCommand } from './commands/environmental';
 import { fluencyCommand } from './commands/fluency';
 import { diagnosticsCommand } from './commands/diagnostics';
-import { chartCommand } from './commands/chart';
-import { usageAnalysisCommand } from './commands/usage-analysis';
 import { loadCache, saveCache, disableCache } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -42,7 +40,5 @@ program.addCommand(usageCommand);
 program.addCommand(environmentalCommand);
 program.addCommand(fluencyCommand);
 program.addCommand(diagnosticsCommand);
-program.addCommand(chartCommand);
-program.addCommand(usageAnalysisCommand);
 
 program.parse();

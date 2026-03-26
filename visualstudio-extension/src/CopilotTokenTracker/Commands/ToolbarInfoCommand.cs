@@ -20,7 +20,8 @@ namespace CopilotTokenTracker.Commands
         public static readonly Guid CommandSet = new Guid(ShowTokenTrackerCommand.CommandSetGuidString);
         public const int CommandId = 0x0200;
 
-        private static readonly TimeSpan StatsRefreshInterval = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan StatsRefreshInterval      = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan StatsRetryInterval        = TimeSpan.FromSeconds(30);
 
         private readonly AsyncPackage _package;
         private readonly OleMenuCommand _menuCommand;
@@ -66,6 +67,8 @@ namespace CopilotTokenTracker.Commands
                 if (stats == null)
                 {
                     text = "Copilot: ? | ?";
+                    // Retry sooner rather than waiting the full 5-minute interval
+                    _statsTimer?.Change(StatsRetryInterval, StatsRefreshInterval);
                 }
                 else
                 {
@@ -129,6 +132,8 @@ namespace CopilotTokenTracker.Commands
                     {
                         Utilities.OutputLogger.Log("Tool window found, resetting to details view...");
                         await trackerWindow.ResetViewAsync();
+                        // The view fetch may have populated the CLI cache; sync toolbar text now.
+                        await RefreshStatsAsync();
                     }
                     else
                     {
