@@ -328,6 +328,33 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+    - name: Check marketplace version
+      run: |
+        LOCAL_VERSION="${{ needs.release.outputs.version }}"
+        echo "Local version: $LOCAL_VERSION"
+
+        MARKETPLACE_VERSION=$(curl -s -X POST \
+          "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=3.0-preview.1" \
+          -H "Content-Type: application/json" \
+          -H "Accept: application/json;api-version=3.0-preview.1" \
+          -d '{"filters":[{"criteria":[{"filterType":7,"value":"RobBos.copilot-token-tracker"}]}],"flags":512}' \
+          | jq -r '.results[0].extensions[0].versions[0].version // empty')
+
+        if [ -z "$MARKETPLACE_VERSION" ]; then
+          echo "⚠️  Could not retrieve marketplace version — proceeding with publish."
+          exit 0
+        fi
+
+        echo "Marketplace version: $MARKETPLACE_VERSION"
+
+        if [ "$LOCAL_VERSION" == "$MARKETPLACE_VERSION" ]; then
+          echo "❌ Version $LOCAL_VERSION is already published on the VS Code Marketplace."
+          echo "   Bump the version in vscode-extension/package.json before publishing."
+          exit 1
+        fi
+
+        echo "✅ Version check passed: $LOCAL_VERSION is newer than marketplace $MARKETPLACE_VERSION"
+
     - name: Setup Node.js
       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
@@ -504,7 +531,7 @@ jobs:
       if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace == true
       shell: pwsh
       env:
-        VS_MARKETPLACE_PAT: ${{ secrets.VS_MARKETPLACE_PAT }}
+        VS_MARKETPLACE_PAT: ${{ secrets.VSCE_PAT }} # same one for the VSCode Marketplace works for Visual Studio Marketplace as well
       run: |
         if (-not $env:VS_MARKETPLACE_PAT) {
           Write-Error "❌ VS_MARKETPLACE_PAT secret is not configured."
