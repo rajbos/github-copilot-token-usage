@@ -381,4 +381,153 @@ jobs:
           fi
         } >> "$GITHUB_STEP_SUMMARY"
 
+  build-visualstudio:
+    needs: release
+    # Windows required: Node.js SEA (bundle-exe.ps1) and MSBuild/VSSDK are Windows-only
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      with:
+        node-version: '22.x'
+
+    # ── Install dependencies ────────────────────────────────────────────────
+
+    - name: Install vscode-extension dependencies
+      run: npm ci
+      working-directory: vscode-extension
+
+    - name: Install CLI dependencies
+      run: npm ci
+      working-directory: cli
+
+    # ── Build CLI (production bundle + Windows .exe) ───────────────────────
+
+    - name: Build CLI (production bundle)
+      working-directory: cli
+      run: npm run build:production
+
+    - name: Bundle CLI as single executable
+      working-directory: cli
+      shell: pwsh
+      run: |
+        & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild
+        if ($LASTEXITCODE -ne 0) { throw "bundle-exe.ps1 failed" }
+
+    - name: Copy CLI exe + wasm to cli-bundle/
+      shell: pwsh
+      run: |
+        $vsCliDir = "visualstudio-extension\src\CopilotTokenTracker\cli-bundle"
+        New-Item -ItemType Directory -Path $vsCliDir -Force | Out-Null
+        Copy-Item "cli\dist\copilot-token-tracker.exe" "$vsCliDir\copilot-token-tracker.exe" -Force
+        Copy-Item "cli\dist\sql-wasm.wasm"             "$vsCliDir\sql-wasm.wasm"             -Force
+        Write-Host "✅ Copied cli-bundle assets"
+
+    # ── Build webview bundles ──────────────────────────────────────────────
+
+    - name: Build VS Code extension webview bundles
+      working-directory: vscode-extension
+      run: npm run package
+
+    - name: Copy webview bundles to VS extension project
+      shell: pwsh
+      run: |
+        $src = "vscode-extension\dist\webview"
+        $dst = "visualstudio-extension\src\CopilotTokenTracker\webview"
+        if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+        Copy-Item $src $dst -Recurse -Force
+        Write-Host "✅ Copied webview bundles"
+
+    # ── Build Visual Studio extension (MSBuild / VSSDK) ───────────────────
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
+
+    - name: Restore NuGet packages
+      working-directory: visualstudio-extension
+      run: nuget restore CopilotTokenTracker.sln
+
+    - name: Build solution (Release)
+      working-directory: visualstudio-extension
+      run: msbuild CopilotTokenTracker.sln /p:Configuration=Release /t:Build /v:minimal
+
+    # ── Collect the produced .vsix ─────────────────────────────────────────
+
+    - name: Find .vsix artifact
+      id: vsix
+      shell: pwsh
+      run: |
+        $vsix = Get-ChildItem -Path "visualstudio-extension" -Filter "*.vsix" -Recurse |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+        if (-not $vsix) { throw "No .vsix file produced" }
+        $sizeMB = [math]::Round($vsix.Length / 1MB, 1)
+        Write-Host "✅ VSIX: $($vsix.FullName) ($sizeMB MB)"
+        echo "vsix_path=$($vsix.FullName)" >> $env:GITHUB_OUTPUT
+        echo "vsix_name=$($vsix.Name)"     >> $env:GITHUB_OUTPUT
+
+    # ── Upload .vsix to GitHub release ────────────────────────────────────
+
+    - name: Upload .vsix to GitHub release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      shell: pwsh
+      run: |
+        $tag = "${{ needs.release.outputs.tag_name }}"
+        $vsixPath = "${{ steps.vsix.outputs.vsix_path }}"
+        Write-Host "Uploading $vsixPath to release $tag ..."
+        gh release upload $tag $vsixPath --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Failed to upload .vsix to release" }
+        Write-Host "✅ Uploaded to GitHub release"
+
+    # ── (Optional) Publish to VS Marketplace ──────────────────────────────
+
+    - name: Publish to Visual Studio Marketplace
+      if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace == true
+      shell: pwsh
+      env:
+        VS_MARKETPLACE_PAT: ${{ secrets.VS_MARKETPLACE_PAT }}
+      run: |
+        if (-not $env:VS_MARKETPLACE_PAT) {
+          Write-Error "❌ VS_MARKETPLACE_PAT secret is not configured."
+          exit 1
+        }
+        $vsix = "${{ steps.vsix.outputs.vsix_path }}"
+        Write-Host "Publishing $vsix to Visual Studio Marketplace..."
+        & npx @vscode/vsce publish --packagePath $vsix --pat $env:VS_MARKETPLACE_PAT
+        if ($LASTEXITCODE -ne 0) { throw "Marketplace publish failed" }
+        Write-Host "✅ Published to Visual Studio Marketplace"
+
+    # ── Summary ────────────────────────────────────────────────────────────
+
+    - name: Build summary
+      if: always()
+      shell: pwsh
+      run: |
+        $vsixName = "${{ steps.vsix.outputs.vsix_name }}"
+        if ($vsixName) {
+          @"
+        ## ✅ Visual Studio Extension Built Successfully
+
+        | Item | Value |
+        |------|-------|
+        | VSIX | ``$vsixName`` |
+        | Release | ``${{ needs.release.outputs.tag_name }}`` |
+        | Commit | ``${{ github.sha }}`` |
+        "@ >> $env:GITHUB_STEP_SUMMARY
+        } else {
+          "## ❌ Build failed — no .vsix produced" >> $env:GITHUB_STEP_SUMMARY
+        }
+
 
