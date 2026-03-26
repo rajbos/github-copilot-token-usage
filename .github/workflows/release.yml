@@ -504,15 +504,15 @@ jobs:
       if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace == true
       shell: pwsh
       env:
-        VS_MARKETPLACE_PAT: ${{ secrets.VS_MARKETPLACE_PAT }}
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
       run: |
-        if (-not $env:VS_MARKETPLACE_PAT) {
-          Write-Error "❌ VS_MARKETPLACE_PAT secret is not configured."
+        if (-not $env:VSCE_PAT) {
+          Write-Error "❌ VSCE_PAT secret is not configured."
           exit 1
         }
         $vsix = "${{ steps.vsix.outputs.vsix_path }}"
         Write-Host "Publishing $vsix to Visual Studio Marketplace..."
-        & npx @vscode/vsce publish --packagePath $vsix --pat $env:VS_MARKETPLACE_PAT
+        & npx @vscode/vsce publish --packagePath $vsix --pat $env:VSCE_PAT
         if ($LASTEXITCODE -ne 0) { throw "Marketplace publish failed" }
         Write-Host "✅ Published to Visual Studio Marketplace"
 
