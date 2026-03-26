@@ -20130,6 +20130,24 @@
     }
     return node;
   }
+  function createButton(configOrId, label, appearance) {
+    const button = document.createElement("vscode-button");
+    if (typeof configOrId === "string") {
+      button.id = configOrId;
+      button.textContent = label || "";
+      if (appearance) {
+        button.setAttribute("appearance", appearance);
+      }
+    } else {
+      const config = configOrId;
+      button.id = config.id;
+      button.textContent = config.label;
+      if (config.appearance) {
+        button.setAttribute("appearance", config.appearance);
+      }
+    }
+    return button;
+  }
 
   // src/webview/shared/buttonConfig.ts
   var BUTTONS = {
@@ -20171,16 +20189,6 @@
       label: "\u{1F33F} Environmental Impact"
     }
   };
-  function buttonHtml(id) {
-    const config = BUTTONS[id];
-    const appearance = config.appearance ? ` appearance="${config.appearance}"` : "";
-    return `<vscode-button id="${config.id}"${appearance}>${config.label}</vscode-button>`;
-  }
-
-  // src/webview/shared/contextRefUtils.ts
-  function getTotalContextRefs(refs) {
-    return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase + refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd + (refs.terminalLastCommand || 0) + (refs.terminalSelection || 0) + (refs.clipboard || 0) + (refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0);
-  }
 
   // src/tokenEstimators.json
   var tokenEstimators_default = {
@@ -20241,17 +20249,11 @@
   // src/webview/shared/formatUtils.ts
   var tokenEstimators = tokenEstimators_default.estimators;
   var currentLocale;
-  function setFormatLocale(locale) {
-    currentLocale = locale;
-  }
   function formatFixed(value, digits) {
     return new Intl.NumberFormat(currentLocale, {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits
     }).format(value);
-  }
-  function formatPercent(value, digits = 1) {
-    return `${formatFixed(value, digits)}%`;
   }
   function formatNumber(value) {
     return value.toLocaleString(currentLocale);
@@ -20260,1716 +20262,243 @@
   // src/webview/shared/theme.css
   var theme_default = '/**\n * Shared theme variables for all webview panels\n * Uses VS Code theme tokens for automatic light/dark theme support\n */\n\n:root {\n	/* VS Code base colors */\n	--bg-primary: var(--vscode-editor-background);\n	--bg-secondary: var(--vscode-sideBar-background);\n	--bg-tertiary: var(--vscode-editorWidget-background);\n	--text-primary: var(--vscode-editor-foreground);\n	--text-secondary: var(--vscode-descriptionForeground);\n	--text-muted: var(--vscode-disabledForeground);\n	--border-color: var(--vscode-panel-border);\n	--border-subtle: var(--vscode-widget-border);\n	\n	/* Button colors */\n	--button-bg: var(--vscode-button-background);\n	--button-fg: var(--vscode-button-foreground);\n	--button-hover-bg: var(--vscode-button-hoverBackground);\n	--button-secondary-bg: var(--vscode-button-secondaryBackground);\n	--button-secondary-fg: var(--vscode-button-secondaryForeground);\n	--button-secondary-hover-bg: var(--vscode-button-secondaryHoverBackground);\n	\n	/* Input colors */\n	--input-bg: var(--vscode-input-background);\n	--input-fg: var(--vscode-input-foreground);\n	--input-border: var(--vscode-input-border);\n	\n	/* List/card colors */\n	--list-hover-bg: var(--vscode-list-hoverBackground);\n	--list-active-bg: var(--vscode-list-activeSelectionBackground);\n	--list-active-fg: var(--vscode-list-activeSelectionForeground);\n	--list-inactive-bg: var(--vscode-list-inactiveSelectionBackground);\n	\n	/* Alternating row colors for better readability */\n	--row-alternate-bg: var(--vscode-list-inactiveSelectionBackground);\n	\n	/* Badge colors */\n	--badge-bg: var(--vscode-badge-background);\n	--badge-fg: var(--vscode-badge-foreground);\n	\n	/* Focus colors */\n	--focus-border: var(--vscode-focusBorder);\n	\n	/* Link colors */\n	--link-color: var(--vscode-textLink-foreground);\n	--link-hover-color: var(--vscode-textLink-activeForeground);\n	\n	/* Status colors */\n	--error-fg: var(--vscode-errorForeground);\n	--warning-fg: var(--vscode-editorWarning-foreground);\n	--success-fg: var(--vscode-terminal-ansiGreen);\n	\n	/* Shadow for cards */\n	--shadow-color: rgb(0, 0, 0, 0.16);\n	--shadow-hover-color: rgb(0, 0, 0, 0.24);\n}\n\n/* Light theme adjustments */\nbody[data-vscode-theme-kind="vscode-light"],\nbody[data-vscode-theme-kind="vscode-high-contrast-light"] {\n	--shadow-color: rgb(0, 0, 0, 0.08);\n	--shadow-hover-color: rgb(0, 0, 0, 0.12);\n}\n\n/* High contrast mode adjustments */\nbody[data-vscode-theme-kind="vscode-high-contrast"],\nbody[data-vscode-theme-kind="vscode-high-contrast-light"] {\n	--border-color: var(--vscode-contrastBorder);\n	--border-subtle: var(--vscode-contrastBorder);\n}\n';
 
-  // src/webview/usage/styles.css
-  var styles_default = "* {\n	margin: 0;\n	padding: 0;\n	box-sizing: border-box;\n}\n\nbody {\n	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n	background: var(--bg-primary);\n	color: var(--text-primary);\n	padding: 16px;\n	line-height: 1.5;\n	min-width: 320px;\n}\n\n.container {\n	background: var(--bg-secondary);\n	border: 1px solid var(--border-color);\n	border-radius: 10px;\n	padding: 16px;\n	box-shadow: 0 4px 10px var(--shadow-color);\n	max-width: 1200px;\n	margin: 0 auto;\n}\n\n.header {\n	display: flex;\n	justify-content: space-between;\n	align-items: center;\n	gap: 12px;\n	margin-bottom: 14px;\n	padding-bottom: 4px;\n}\n\n.header-left {\n	display: flex;\n	align-items: center;\n	gap: 8px;\n}\n\n.header-icon {\n	font-size: 20px;\n}\n\n.header-title {\n	font-size: 16px;\n	font-weight: 700;\n	color: var(--text-primary);\n	letter-spacing: 0.2px;\n}\n\n.button-row {\n	display: flex;\n	flex-wrap: wrap;\n	gap: 8px;\n}\n\n.nav-button {\n	background: var(--button-secondary-bg);\n	border: 1px solid var(--border-subtle);\n	color: var(--text-primary);\n	padding: 8px 12px;\n	border-radius: 6px;\n	font-size: 12px;\n	cursor: pointer;\n	transition: all 0.15s ease;\n}\n\n.nav-button:hover {\n	background: var(--button-secondary-hover-bg);\n}\n\n.nav-button.primary {\n	background: var(--button-bg);\n	border-color: var(--button-bg);\n	color: var(--button-fg);\n}\n\n.nav-button.primary:hover {\n	background: var(--button-hover-bg);\n}\n\n.section {\n	background: var(--bg-tertiary);\n	border: 1px solid var(--border-color);\n	border-radius: 8px;\n	padding: 12px;\n	margin-bottom: 16px;\n	box-shadow: 0 2px 6px var(--shadow-color);\n}\n\n.section-title {\n	font-size: 14px;\n	font-weight: 700;\n	color: var(--text-primary);\n	margin-bottom: 10px;\n	display: flex;\n	align-items: center;\n	gap: 6px;\n	letter-spacing: 0.2px;\n}\n\n.section-subtitle {\n	font-size: 12px;\n	color: var(--text-secondary);\n	margin-bottom: 12px;\n}\n\n.stats-grid {\n	display: grid;\n	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));\n	gap: 12px;\n	margin-bottom: 16px;\n}\n\n.stat-card {\n	background: var(--list-hover-bg);\n	border: 1px solid var(--border-color);\n	border-radius: 6px;\n	padding: 12px;\n	box-shadow: 0 2px 4px var(--shadow-color);\n}\n\n.stat-card[title] {\n	cursor: help;\n}\n\n.stat-label {\n	font-size: 11px;\n	color: var(--text-secondary);\n	margin-bottom: 4px;\n}\n\n.stat-value {\n	font-size: 20px;\n	font-weight: 700;\n	color: var(--text-primary);\n}\n\n.bar-chart {\n	background: var(--list-hover-bg);\n	border: 1px solid var(--border-color);\n	border-radius: 6px;\n	padding: 12px;\n	margin-bottom: 12px;\n}\n\n.bar-item {\n	margin-bottom: 8px;\n}\n\n.bar-label {\n	display: flex;\n	justify-content: space-between;\n	font-size: 12px;\n	margin-bottom: 4px;\n	color: var(--text-primary);\n}\n\n.bar-track {\n	background: var(--row-alternate-bg);\n	height: 8px;\n	border-radius: 4px;\n	overflow: hidden;\n}\n\n.bar-fill {\n	height: 100%;\n	border-radius: 4px;\n	transition: width 0.3s ease;\n}\n\n.list {\n	background: var(--list-hover-bg);\n	border: 1px solid var(--border-color);\n	border-radius: 6px;\n	padding: 12px 16px;\n}\n\n.list ul {\n	list-style: none;\n	padding: 0;\n}\n\n.list li {\n	padding: 4px 0;\n	font-size: 13px;\n}\n\n/* Customization matrix styles */\n.customization-matrix-container {\n	overflow-x: auto;\n	max-width: 100%;\n}\n\n.customization-matrix {\n	width: 100%;\n	border-collapse: collapse;\n	font-size: 12px;\n	color: var(--text-primary);\n}\n\n.customization-matrix th {\n	background: var(--list-hover-bg);\n	color: var(--text-primary);\n	font-weight: 600;\n	font-size: 11px;\n	white-space: nowrap;\n}\n\n.customization-matrix td {\n	background: var(--bg-tertiary);\n}\n\n.customization-matrix tbody tr:hover td {\n	background: var(--list-hover-bg);\n}\n\n.stale-warning {\n	color: #f59e0b;\n	font-weight: 600;\n}\n\n.two-column {\n	display: grid;\n	grid-template-columns: 1fr 1fr;\n	gap: 16px;\n}\n\n.three-column {\n	display: grid;\n	grid-template-columns: 1fr 1fr 1fr;\n	gap: 16px;\n	align-items: stretch;\n}\n\n.three-column > div {\n	display: flex;\n	flex-direction: column;\n}\n\n.three-column > div > .list {\n	flex: 1;\n}\n\n.info-box {\n	background: var(--bg-tertiary);\n	border: 1px solid var(--border-color);\n	border-radius: 6px;\n	padding: 12px;\n	margin-bottom: 16px;\n	font-size: 12px;\n	color: var(--text-secondary);\n}\n\n.info-box-title {\n	font-weight: 600;\n	color: var(--text-primary);\n	margin-bottom: 6px;\n}\n\n\n.repo-hygiene-results {\n	margin-top: 4px;\n}\n\n.repo-analysis-card {\n	margin: 0;\n}\n\n.repo-hygiene-pane {\n	border: 1px solid var(--border-color);\n	border-radius: 6px;\n	margin-bottom: 12px;\n	background: var(--bg-secondary);\n}\n\n.repo-hygiene-pane-header {\n	padding: 8px 12px;\n	font-size: 12px;\n	font-weight: 600;\n	color: var(--text-primary);\n	border-bottom: 1px solid var(--border-color);\n	background: var(--list-hover-bg);\n}\n\n.repo-hygiene-pane-body {\n	display: block;\n}\n\n.repo-hygiene-pane-collapsed {\n	display: none;\n}\n\n.repo-hygiene-pane-collapsed .repo-hygiene-pane-body {\n	display: none;\n}\n\n.btn-repo-action[disabled] {\n	opacity: 0.7;\n}\n\n.footer {\n	margin-top: 6px;\n	padding-top: 12px;\n	border-top: 1px solid var(--border-subtle);\n	text-align: left;\n	font-size: 11px;\n	color: var(--text-muted);\n}\n\n@media (width <= 768px) {\n	.two-column {\n		grid-template-columns: 1fr;\n	}\n\n	.three-column {\n		grid-template-columns: 1fr;\n	}\n}\n";
+  // src/webview/environmental/styles.css
+  var styles_default = "body {\n	margin: 0;\n	background: var(--bg-primary);\n	color: var(--text-primary);\n	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n}\n\n.container {\n	padding: 16px;\n	display: flex;\n	flex-direction: column;\n	gap: 14px;\n	max-width: 1200px;\n	margin: 0 auto;\n}\n\n.header {\n	display: flex;\n	justify-content: space-between;\n	align-items: center;\n	gap: 12px;\n	padding-bottom: 4px;\n}\n\n.title {\n	display: flex;\n	align-items: center;\n	gap: 8px;\n	font-size: 16px;\n	font-weight: 700;\n	color: var(--text-primary);\n}\n\n.button-row {\n	display: flex;\n	flex-wrap: wrap;\n	gap: 8px;\n}\n\n.sections {\n	display: flex;\n	flex-direction: column;\n	gap: 16px;\n}\n\n.section {\n	background: var(--bg-secondary);\n	border: 1px solid var(--border-color);\n	border-radius: 10px;\n	padding: 12px;\n	box-shadow: 0 4px 10px var(--shadow-color);\n}\n\n.section h3 {\n	margin: 0 0 10px;\n	font-size: 14px;\n	display: flex;\n	align-items: center;\n	gap: 6px;\n	color: var(--text-primary);\n	letter-spacing: 0.2px;\n}\n\n/* --- Metric cards --- */\n.metric-cards {\n	display: flex;\n	flex-direction: column;\n	gap: 16px;\n}\n\n.metric-card {\n	background: var(--bg-tertiary);\n	border: 1px solid var(--border-subtle);\n	border-radius: 8px;\n	padding: 14px 16px;\n}\n\n.metric-card-header {\n	display: flex;\n	align-items: center;\n	gap: 7px;\n	margin-bottom: 12px;\n}\n\n.metric-card-icon {\n	font-size: 16px;\n	line-height: 1;\n}\n\n.metric-card-label {\n	font-size: 13px;\n	font-weight: 700;\n	color: var(--text-primary);\n	text-transform: uppercase;\n	letter-spacing: 0.4px;\n}\n\n.metric-primary-value {\n	font-size: 16px;\n	font-weight: 700;\n	color: var(--text-primary);\n	padding: 6px 0 10px;\n	border-bottom: 1px solid var(--border-subtle);\n	margin-bottom: 8px;\n}\n\n.analogy-grid {\n	display: grid;\n	grid-template-columns: repeat(4, 1fr);\n	gap: 16px;\n}\n\n.analogy-col {\n	display: flex;\n	flex-direction: column;\n	gap: 6px;\n}\n\n.analogy-col-header {\n	font-size: 11px;\n	font-weight: 700;\n	color: var(--text-secondary);\n	text-transform: uppercase;\n	letter-spacing: 0.5px;\n	padding-bottom: 5px;\n	border-bottom: 1px solid var(--border-subtle);\n	margin-bottom: 2px;\n}\n\n.analogy-item {\n	display: flex;\n	align-items: baseline;\n	gap: 6px;\n	font-size: 12px;\n	color: var(--text-primary);\n	line-height: 1.5;\n}\n\n.analogy-icon {\n	flex-shrink: 0;\n	width: 20px;\n	text-align: center;\n	font-size: 13px;\n}\n\n.notes {\n	margin: 4px 0 0;\n	padding-left: 16px;\n	color: var(--text-secondary);\n}\n\n.notes li {\n	margin: 4px 0;\n	line-height: 1.4;\n}\n\n.footer {\n	color: var(--text-muted);\n	font-size: 11px;\n	margin-top: 6px;\n}\n\n.section-intro {\n	color: var(--text-secondary);\n	font-size: 12px;\n	margin: 0 0 10px;\n	line-height: 1.5;\n}\n";
 
-  // src/toolNames.json
-  var toolNames_default = {
-    unknown: "Unknown",
-    run_in_terminal: "Run In Terminal",
-    "mcp.io.github.git.assign_copilot_to_issue": "GitHub MCP (Local): Assign Copilot to Issue",
-    "mcp.io.github.git.create_or_update_file": "GitHub MCP (Local): Create/Update File",
-    mcp_io_github_git_create_or_update_file: "GitHub MCP (Local): Create/Update File",
-    mcp_io_github_git_assign_copilot_to_issue: "GitHub MCP (Local): Assign Copilot to Issue",
-    mcp_io_github_git_pull_request_read: "GitHub MCP (Local): Pull Request Read",
-    mcp_io_github_git_issue_read: "GitHub MCP (Local): Issue Read",
-    mcp_io_github_git_issue_write: "GitHub MCP (Local): Issue Write",
-    mcp_io_github_git_list_issues: "GitHub MCP (Local): List Issues",
-    mcp_io_github_git_create_pull_request: "GitHub MCP (Local): Create Pull Request",
-    mcp_io_github_git_get_file_contents: "GitHub MCP (Local): Get File Contents",
-    mcp_io_github_git_search_code: "GitHub MCP (Local): Search Code",
-    mcp_io_github_git_search_pull_requests: "GitHub MCP (Local): Search Pull Requests",
-    mcp_io_github_git_get_release_by_tag: "GitHub MCP (Local): Get Release By Tag",
-    mcp_io_github_git_search_issues: "GitHub MCP (Local): Search Issues",
-    mcp_io_github_git_add_issue_comment: "GitHub MCP (Local): Add Issue Comment",
-    mcp_io_github_git_list_pull_requests: "GitHub MCP (Local): List Pull Requests",
-    mcp_io_github_git_list_code_scanning_alerts: "GitHub MCP (Local): List Code Scanning Alerts",
-    mcp_github_github_assign_copilot_to_issue: "GitHub MCP (Remote): Assign Copilot to Issue",
-    mcp_github_github_issue_read: "GitHub MCP (Remote): Issue Read",
-    mcp_github_github_issue_write: "GitHub MCP (Remote): Issue Write",
-    mcp_github_github_list_issues: "GitHub MCP (Remote): List Issues",
-    mcp_github_get_file_contents: "GitHub MCP (Remote): Get File Contents",
-    mcp_github_get_latest_release: "GitHub MCP (Remote): Get Latest Release",
-    mcp_github_get_release_by_tag: "GitHub MCP (Remote): Get Release By Tag",
-    mcp_github_list_releases: "GitHub MCP (Remote): List Releases",
-    mcp_github_list_tags: "GitHub MCP (Remote): List Tags",
-    mcp_github_search_code: "GitHub MCP (Remote): Search Code",
-    mcp_github_search_issues: "GitHub MCP (Remote): Search Issues",
-    mcp_github_create_pull_request: "GitHub MCP (Remote): Create Pull Request",
-    "mcp_github-code-s_get_code_scanning_alert": "GitHub MCP (Code Scanning): Get Alert",
-    "mcp_github-code-s_list_code_scanning_alerts": "GitHub MCP (Code Scanning): List Alerts",
-    mcp_com_microsoft_get_bestpractices: "GitHub MCP: Get Best Practices",
-    mcp_microsoft_doc_microsoft_code_sample_search: "Microsoft Docs MCP: Code Sample Search",
-    mcp_microsoft_doc_microsoft_docs_search: "Microsoft Docs MCP: Docs Search",
-    mcp_gitkraken_git_add_or_commit: "GitKraken MCP: Git Add or Commit",
-    mcp_gitkraken_git_status: "GitKraken MCP: Git Status",
-    mcp_gitkraken_git_branch: "GitKraken MCP: Git Branch",
-    mcp_gitkraken_git_checkout: "GitKraken MCP: Git Checkout",
-    mcp_gitkraken_gitkraken_workspace_list: "GitKraken MCP: List Workspaces",
-    mcp_azure_aks: "Azure MCP: AKS",
-    mcp_azure_mcp_azureterraformbestpractices: "Azure MCP: Azure Terraform Best Practices",
-    mcp_azure_mcp_documentation: "Azure MCP: Documentation",
-    mcp_bicep_format_bicep_file: "Bicep MCP: Format Bicep File",
-    mcp_bicep_get_az_resource_type_schema: "Bicep MCP: Get Az Resource Type Schema",
-    mcp_bicep_get_bicep_best_practices: "Bicep MCP: Get Bicep Best Practices",
-    mcp_bicep_get_bicep_file_diagnostics: "Bicep MCP: Get Bicep File Diagnostics",
-    mcp_bicep_list_az_resource_types_for_provider: "Bicep MCP: List Az Resource Types For Provider",
-    "azure_bicep-get_azure_verified_module": "Azure Bicep: Get Azure Verified Module",
-    "azure_development-recommend_custom_modes": "Azure Development: Recommend Custom Modes",
-    "azure_resources-query_azure_resource_graph": "Azure Resources: Query Azure Resource Graph",
-    manage_todo_list: "Manage TODO List",
-    copilot_readFile: "Read File",
-    copilot_viewImage: "Copilot View Image",
-    opilot_findFiles: "Find Files",
-    copilot_writeFile: "Write File",
-    copilot_applyPatch: "Apply Patch",
-    copilot_findTextInFiles: "Find Text In Files",
-    copilot_findFiles: "Find Files",
-    copilot_replaceString: "Replace String",
-    copilot_createFile: "Create File",
-    copilot_listDirectory: "List Directory",
-    copilot_fetchWebPage: "Fetch Web Page",
-    copilot_getErrors: "Get Errors",
-    copilot_multiReplaceString: "Multi Replace String",
-    copilot_searchCodebase: "Search Codebase",
-    get_terminal_output: "Get Terminal Output",
-    run_task: "Run Task: Investigate",
-    await_terminal: "Await Terminal command",
-    "github.copilot.editsAgent": "GitHub Copilot Edits Agent",
-    todoList: "TODO List",
-    terminal: "Terminal",
-    terminal_last_command: "Terminal Last Command",
-    github_pull_request: "GitHub Pull Request",
-    github_repo: "GitHub Repository",
-    editFiles: "Edit Files",
-    listFiles: "List Files",
-    search_subagent: "Search Subagent",
-    execution_subagent: "Execution Subagent",
-    apply_patch: "Apply Patch",
-    ask_questions: "Ask Questions",
-    copilot_askQuestions: "Ask Questions",
-    copilot_createAndRunTask: "Create And Run Task",
-    copilot_createDirectory: "Create Directory",
-    copilot_createNewJupyterNotebook: "Create New Jupyter Notebook",
-    copilot_createNewWorkspace: "Create New Workspace",
-    copilot_editFiles: "Edit Files",
-    copilot_editNotebook: "Edit Notebook",
-    copilot_findTestFiles: "Find Test Files",
-    copilot_getChangedFiles: "Get Changed Files",
-    copilot_getDocInfo: "Get Doc Info",
-    copilot_getNotebookSummary: "Get Notebook Summary",
-    copilot_getProjectSetupInfo: "Get Project Setup Info",
-    copilot_getSearchResults: "Get Search Results",
-    copilot_getVSCodeAPI: "Get VSCode API",
-    copilot_githubRepo: "GitHub Repository",
-    copilot_insertEdit: "Insert Edit",
-    copilot_installExtension: "Install Extension",
-    copilot_memory: "Memory",
-    copilot_openIntegratedBrowser: "Open Integrated Browser",
-    copilot_openSimpleBrowser: "Open Simple Browser",
-    copilot_readNotebookCellOutput: "Read Notebook Cell Output",
-    copilot_readProjectStructure: "Read Project Structure",
-    copilot_runNotebookCell: "Run Notebook Cell",
-    copilot_runTests1: "Run Tests",
-    copilot_runVscodeCommand: "Run VSCode Command",
-    copilot_searchWorkspaceSymbols: "Search Workspace Symbols",
-    copilot_switchAgent: "Switch Agent",
-    copilot_testFailure: "Test Failure",
-    copilot_toolReplay: "Tool Replay",
-    create_and_run_task: "Create And Run Task",
-    create_directory: "Create Directory",
-    create_file: "Create File",
-    create_new_jupyter_notebook: "Create New Jupyter Notebook",
-    create_new_workspace: "Create New Workspace",
-    create_virtual_environment: "Create Virtual Environment",
-    edit_files: "Edit Files",
-    edit_notebook_file: "Edit Notebook File",
-    fetch_webpage: "Fetch Webpage",
-    file_search: "File Search",
-    get_changed_files: "Get Changed Files",
-    get_doc_info: "Get Doc Info",
-    get_errors: "Get Errors",
-    get_project_setup_info: "Get Project Setup Info",
-    configure_python_environment: "Configure Python Environment",
-    get_search_view_results: "Get Search View Results",
-    get_task_output: "Get Task Output",
-    job_output: "Job Output",
-    get_vscode_api: "Get VSCode API",
-    grep_search: "Grep Search",
-    insert_edit_into_file: "Insert Edit Into File",
-    install_extension: "Install Extension",
-    install_python_packages: "Install Python Packages",
-    list_dir: "List Dir",
-    ls: "Ls",
-    memory: "Memory",
-    multi_replace_string_in_file: "Multi Replace String In File",
-    open_integrated_browser: "Open Integrated Browser",
-    open_simple_browser: "Open Simple Browser",
-    read_file: "Read File",
-    view_image: "View Image",
-    read_notebook_cell_output: "Read Notebook Cell Output",
-    read_project_structure: "Read Project Structure",
-    replace_string_in_file: "Replace String In File",
-    "setup.agent": "Setup Agent",
-    selectEnvironment: "Select Environment",
-    run_notebook_cell: "Run Notebook Cell",
-    run_vscode_command: "Run VSCode Command",
-    runSubagent: "Run Subagent",
-    renderMermaidDiagram: "Render Mermaid Diagram",
-    runTests: "Run Tests",
-    search_workspace_symbols: "Search Workspace Symbols",
-    semantic_search: "Semantic Search",
-    switch_agent: "Switch Agent",
-    terminal_selection: "Terminal Selection",
-    test_failure: "Test Failure",
-    test_search: "Test Search",
-    tool_replay: "Tool Replay",
-    tool_search: "Tool Search",
-    vscode_askQuestions: "VSCode Ask Questions",
-    vscode_get_confirmation: "VSCode Get Confirmation",
-    vscode_get_confirmation_with_options: "VSCode Get Confirmation With Options",
-    vscode_get_terminal_confirmation: "VSCode Get Terminal Confirmation",
-    vscode_listCodeUsages: "VSCode List Code Usages",
-    vscode_renameSymbol: "VSCode Rename Symbol",
-    "mcp_io_github_ups_get-library-docs": "Context7 MCP: Get Library Docs",
-    "mcp_io_github_ups_query-docs": "Context7 MCP: Query Docs",
-    "mcp_io_github_ups_resolve-library-id": "Context7 MCP: Resolve Library ID",
-    "mcp_context7_query-docs": "Context7 MCP: Query Docs",
-    "mcp_context7_resolve-library-id": "Context7 MCP: Resolve Library ID",
-    mcp_microsoft_pla_browser_evaluate: "Playwright MCP: Browser Evaluate",
-    mcp_microsoft_pla_browser_install: "Playwright MCP: Browser Install",
-    mcp_microsoft_pla_browser_navigate: "Playwright MCP: Browser Navigate",
-    mcp_microsoft_pla_browser_run_code: "Playwright MCP: Browser Run Code",
-    mcp_microsoft_pla_browser_click: "Playwright MCP: Browser Click",
-    mcp_microsoft_pla_browser_fill_form: "Playwright MCP: Browser Fill Form",
-    mcp_microsoft_pla_browser_press_key: "Playwright MCP: Browser Press Key",
-    mcp_microsoft_pla_browser_resize: "Playwright MCP: Browser Resize",
-    mcp_microsoft_pla_browser_snapshot: "Playwright MCP: Browser Snapshot",
-    mcp_microsoft_pla_browser_tabs: "Playwright MCP: Browser Tabs",
-    mcp_microsoft_pla_browser_take_screenshot: "Playwright MCP: Browser Take Screenshot",
-    mcp_microsoft_pla_browser_type: "Playwright MCP: Browser Type",
-    mcp_playwright_browser_click: "Playwright MCP: Browser Click",
-    mcp_playwright_browser_navigate: "Playwright MCP: Browser Navigate",
-    mcp_playwright_browser_snapshot: "Playwright MCP: Browser Snapshot",
-    mcp_playwright_browser_take_screenshot: "Playwright MCP: Browser Take Screenshot",
-    mcp_pylance_mcp_s_pylanceDocString: "Pylance MCP: Pylance Doc String",
-    "mcp_chrome-devtoo_click": "Chrome DevTools MCP: Click",
-    "mcp_chrome-devtoo_evaluate_script": "Chrome DevTools MCP: Evaluate Script",
-    "mcp_chrome-devtoo_fill": "Chrome DevTools MCP: Fill",
-    "mcp_chrome-devtoo_get_network_request": "Chrome DevTools MCP: Get Network Request",
-    "mcp_chrome-devtoo_list_console_messages": "Chrome DevTools MCP: List Console Messages",
-    "mcp_chrome-devtoo_list_pages": "Chrome DevTools MCP: List Pages",
-    "mcp_chrome-devtoo_navigate_page": "Chrome DevTools MCP: Navigate Page",
-    "mcp_chrome-devtoo_new_page": "Chrome DevTools MCP: New Page",
-    "mcp_chrome-devtoo_select_page": "Chrome DevTools MCP: Select Page",
-    "mcp_chrome-devtoo_take_screenshot": "Chrome DevTools MCP: Take Screenshot",
-    "mcp_chrome-devtoo_fill_form": "Chrome DevTools MCP: Fill Form",
-    "mcp_chrome-devtoo_hover": "Chrome DevTools MCP: Hover",
-    "mcp_chrome-devtoo_list_network_requests": "Chrome DevTools MCP: List Network Requests",
-    "mcp_chrome-devtoo_press_key": "Chrome DevTools MCP: Press Key",
-    "mcp_chrome-devtoo_take_snapshot": "Chrome DevTools MCP: Take Snapshot",
-    "mcp_chrome-devtoo_wait_for": "Chrome DevTools MCP: Wait For",
-    mcp_chrome_devtoo_click: "Chrome DevTools MCP: Click",
-    mcp_chrome_devtoo_evaluate_script: "Chrome DevTools MCP: Evaluate Script",
-    mcp_chrome_devtoo_fill: "Chrome DevTools MCP: Fill",
-    mcp_chrome_devtoo_get_console_message: "Chrome DevTools MCP: Get Console Message",
-    mcp_chrome_devtoo_get_network_request: "Chrome DevTools MCP: Get Network Request",
-    mcp_chrome_devtoo_list_console_messages: "Chrome DevTools MCP: List Console Messages",
-    mcp_chrome_devtoo_list_network_requests: "Chrome DevTools MCP: List Network Requests",
-    mcp_chrome_devtoo_list_pages: "Chrome DevTools MCP: List Pages",
-    mcp_chrome_devtoo_navigate_page: "Chrome DevTools MCP: Navigate Page",
-    mcp_chrome_devtoo_new_page: "Chrome DevTools MCP: New Page",
-    mcp_chrome_devtoo_take_snapshot: "Chrome DevTools MCP: Take Snapshot",
-    mcp_chrome_devtoo_wait_for: "Chrome DevTools MCP: Wait For",
-    mcp_io_github_chr_click: "Chrome DevTools MCP: Click",
-    mcp_io_github_chr_emulate: "Chrome DevTools MCP: Emulate",
-    mcp_io_github_chr_evaluate_script: "Chrome DevTools MCP: Evaluate Script",
-    mcp_io_github_chr_list_network_requests: "Chrome DevTools MCP: List Network Requests",
-    mcp_io_github_chr_list_pages: "Chrome DevTools MCP: List Pages",
-    mcp_io_github_chr_navigate_page: "Chrome DevTools MCP: Navigate Page",
-    mcp_io_github_chr_new_page: "Chrome DevTools MCP: New Page",
-    mcp_io_github_chr_resize_page: "Chrome DevTools MCP: Resize Page",
-    mcp_io_github_chr_select_page: "Chrome DevTools MCP: Select Page",
-    mcp_io_github_chr_take_snapshot: "Chrome DevTools MCP: Take Snapshot",
-    mcp_oraios_serena_activate_project: "Serena: Activate Project",
-    mcp_oraios_serena_check_onboarding_performed: "Serena: Check Onboarding Performed",
-    mcp_oraios_serena_create_text_file: "Serena: Create Text File",
-    mcp_oraios_serena_delete_lines: "Serena: Delete Lines",
-    mcp_oraios_serena_delete_memory: "Serena: Delete Memory",
-    mcp_oraios_serena_edit_memory: "Serena: Edit Memory",
-    mcp_oraios_serena_execute_shell_command: "Serena: Execute Shell Command",
-    mcp_oraios_serena_find_file: "Serena: Find File",
-    mcp_oraios_serena_find_referencing_symbols: "Serena: Find Referencing Symbols",
-    mcp_oraios_serena_find_symbol: "Serena: Find Symbol",
-    mcp_oraios_serena_get_current_config: "Serena: Get Current Config",
-    mcp_oraios_serena_get_symbols_overview: "Serena: Get Symbols Overview",
-    mcp_oraios_serena_initial_instructions: "Serena: Initial Instructions",
-    mcp_oraios_serena_insert_after_symbol: "Serena: Insert After Symbol",
-    mcp_oraios_serena_insert_at_line: "Serena: Insert At Line",
-    mcp_oraios_serena_insert_before_symbol: "Serena: Insert Before Symbol",
-    mcp_oraios_serena_jet_brains_find_referencing_symbols: "Serena: JetBrains Find Referencing Symbols",
-    mcp_oraios_serena_jet_brains_find_symbol: "Serena: JetBrains Find Symbol",
-    mcp_oraios_serena_jet_brains_get_symbols_overview: "Serena: JetBrains Get Symbols Overview",
-    mcp_oraios_serena_jet_brains_type_hierarchy: "Serena: JetBrains Type Hierarchy",
-    mcp_oraios_serena_list_dir: "Serena: List Dir",
-    mcp_oraios_serena_list_memories: "Serena: List Memories",
-    mcp_oraios_serena_onboarding: "Serena: Onboarding",
-    mcp_oraios_serena_open_dashboard: "Serena: Open Dashboard",
-    mcp_oraios_serena_prepare_for_new_conversation: "Serena: Prepare For New Conversation",
-    mcp_oraios_serena_read_file: "Serena: Read File",
-    mcp_oraios_serena_read_memory: "Serena: Read Memory",
-    mcp_oraios_serena_remove_project: "Serena: Remove Project",
-    mcp_oraios_serena_rename_symbol: "Serena: Rename Symbol",
-    mcp_oraios_serena_replace_content: "Serena: Replace Content",
-    mcp_oraios_serena_replace_lines: "Serena: Replace Lines",
-    mcp_oraios_serena_replace_symbol_body: "Serena: Replace Symbol Body",
-    mcp_oraios_serena_restart_language_server: "Serena: Restart Language Server",
-    mcp_oraios_serena_search_for_pattern: "Serena: Search For Pattern",
-    mcp_oraios_serena_summarize_changes: "Serena: Summarize Changes",
-    mcp_oraios_serena_switch_modes: "Serena: Switch Modes",
-    mcp_oraios_serena_think_about_collected_information: "Serena: Think About Collected Information",
-    mcp_oraios_serena_think_about_task_adherence: "Serena: Think About Task Adherence",
-    mcp_oraios_serena_think_about_whether_you_are_done: "Serena: Think About Whether You Are Done",
-    mcp_oraios_serena_write_memory: "Serena: Write Memory",
-    "mcp_visuals-mcp_display_image": "Visuals MCP: Display Image",
-    bash: "Bash",
-    "claude-code": "Claude Code",
-    "copilot-cloud-agent": "Copilot Cloud Agent",
-    agent: "Agent",
-    copilotcli: "Copilot CLI",
-    "github.copilot.default": "GitHub Copilot Default",
-    "github.copilot.workspace": "GitHub Copilot Workspace",
-    "github.copilot.vscode": "GitHub Copilot VSCode",
-    glob: "Glob",
-    file_glob_search: "File Glob Search",
-    grep: "Grep",
-    kill_terminal: "Kill Terminal",
-    read: "Read",
-    view: "View",
-    vscode_editFile_internal: "VSCode Edit File (Internal)",
-    vscode_fetchWebPage_internal: "VSCode Fetch Web Page (Internal)",
-    vscode_searchExtensions_internal: "VSCode Search Extensions (Internal)",
-    "vscode-websearchforcopilot_webSearch": "VSCode WebSearch for Copilot: Web Search",
-    webfetch: "Web Fetch",
-    write: "Write",
-    edit: "Edit",
-    multiedit: "Multi Edit",
-    question: "Question",
-    skill: "Skill",
-    read_skill: "Read Skill",
-    task: "Task",
-    todowrite: "Todo Write",
-    todos: "Todos",
-    websearch: "Web Search",
-    navigate_page: "Navigate Page",
-    open_browser_page: "Open Browser Page",
-    read_page: "Read Page",
-    run_playwright_code: "Run Playwright Code",
-    screenshot_page: "Screenshot Page",
-    task_complete: "Task Complete",
-    "pdf-utilities.pdf": "PDF Utilities: PDF"
-  };
-
-  // src/webview/usage/main.ts
+  // src/webview/environmental/main.ts
+  var CO2_GRAMS_PER_CAR_KM = 120;
+  var CO2_GRAMS_PER_KETTLE_BOIL = 20;
+  var CO2_GRAMS_PER_TRAIN_KM = 41;
+  var CO2_GRAMS_PER_FLIGHT_KM = 180;
+  var CO2_GRAMS_PER_PHONE_CHARGE = 8;
+  var CO2_GRAMS_PER_LED_HOUR = 3;
+  var WATER_LITERS_PER_SHOWER_MINUTE = 8;
+  var WATER_LITERS_PER_WASHER_LOAD = 50;
+  var WATER_LITERS_PER_MUG = 0.25;
+  var WATER_LITERS_PER_BATHTUB = 150;
+  var WATER_LITERS_PER_DISHWASHER = 12;
+  var WATER_LITERS_DAILY_DRINKING = 2;
   var vscode = acquireVsCodeApi();
-  var initialData = window.__INITIAL_USAGE__;
-  var hygieneMatrixState = null;
-  var repoAnalysisState = /* @__PURE__ */ new Map();
-  var selectedRepoPath = null;
-  var isSwitchingRepository = false;
-  var isBatchAnalysisInProgress = false;
-  var currentWorkspacePaths = [];
-  function escapeHtml(text) {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  var initialData = window.__INITIAL_ENVIRONMENTAL__;
+  function calculateProjection(last30DaysValue) {
+    return last30DaysValue / 30 * 365.25;
   }
-  var TOOL_NAME_MAP = toolNames_default || null;
-  function lookupToolName(id) {
-    if (!TOOL_NAME_MAP) {
-      return id;
+  function smartFixed(value) {
+    if (value < 1e-3) {
+      return formatFixed(value, 6);
     }
-    return TOOL_NAME_MAP[id] || id;
-  }
-  function lookupMcpToolName(id) {
-    const full = lookupToolName(id);
-    const colonIdx = full.indexOf(":");
-    if (colonIdx !== -1) {
-      return full.substring(colonIdx + 1).trim();
+    if (value < 1) {
+      return formatFixed(value, 4);
     }
-    return full;
-  }
-  function getUnknownMcpTools(stats) {
-    const allTools = /* @__PURE__ */ new Set();
-    Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
-    Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
-    Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
-    Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
-    Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
-    Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
-    return Array.from(allTools).filter((tool) => lookupToolName(tool) === tool).sort();
-  }
-  function createMcpToolIssueUrl(unknownTools) {
-    const repoUrl = "https://github.com/rajbos/github-copilot-token-usage";
-    const title = encodeURIComponent("Add missing friendly names for tools");
-    const toolList = unknownTools.map((tool) => `- \`${tool}\``).join("\n");
-    const body = encodeURIComponent(
-      `## Unknown Tools Found
-
-The following tools were detected but don't have friendly display names:
-
-${toolList}
-
-Please add friendly names for these tools to improve the user experience.`
-    );
-    const labels = encodeURIComponent("MCP Toolnames");
-    return `${repoUrl}/issues/new?title=${title}&body=${body}&labels=${labels}`;
-  }
-  function renderMissedPotential(stats) {
-    const missed = stats.missedPotential || window.__INITIAL_USAGE__?.missedPotential || [];
-    if (missed.length === 0) {
-      return `
-			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: var(--success-fg); margin-bottom: 8px;">
-					\u2705 No other AI tool configs missing a Copilot counterpart
-				</div>
-				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-					All active workspaces that contain instruction files for other AI tools (e.g. .cursorrules, CLAUDE.md, AGENTS.md) also have Copilot customization files configured.
-				</div>
-				<div style="font-size: 11px; color: var(--text-secondary);">
-					A workspace appears here when it has instruction files for other AI tools but no Copilot customization files \u2014 indicating Copilot may be under-configured compared to other tools. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
-				</div>
-			</div>
-		`;
+    if (value <= 100) {
+      return formatFixed(value, 2);
     }
-    return `
-        <div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 6px;">
-            <div style="font-size: 13px; font-weight: 600; color: var(--warning-fg); margin-bottom: 8px;">
-                \u26A0\uFE0F Missed Potential: Non-Copilot Instruction Files
-            </div>
-            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-                These active workspaces use other AI tools but lack Copilot customizations. <a href="https://code.visualstudio.com/docs/copilot/customization/custom-instructions" style="color: var(--link-color);" target="_blank">Learn how to add Copilot instructions</a>.
-            </div>
-            <div class="customization-matrix-container">
-                <table class="customization-matrix">
-                    <thead>
-                        <tr>
-                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">\u{1F4C2} Workspace</th>
-                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Sessions</th>
-                            <th style="text-align: center; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Interactions</th>
-                            <th style="text-align: left; padding: 8px; border-bottom: 2px solid rgba(251, 191, 36, 0.2);">Non-Copilot Files Found</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${missed.map((ws) => `
-                            <tr style="background: rgba(251, 191, 36, 0.05);">
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); font-family: 'Courier New', monospace; font-size: 12px;">
-                                    ${escapeHtml(ws.workspaceName)}
-                                </td>
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
-                                    ${formatNumber(ws.sessionCount)}
-                                </td>
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2); text-align: center; color: var(--text-primary);">
-                                    ${formatNumber(ws.interactionCount)}
-                                </td>
-                                <td style="padding: 6px 8px; border-bottom: 1px solid rgba(251, 191, 36, 0.2);">
-                                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                                        ${ws.nonCopilotFiles.map((f) => `
-                                            <div style="font-size: 11px; display: flex; align-items: center; gap: 6px;">
-                                                <span>${f.icon || "\u{1F4C4}"}</span>
-                                                <span style="font-weight: 500;">${escapeHtml(f.label || "")}:</span>
-                                                <span style="font-family: monospace; color: var(--text-muted);">${escapeHtml(f.relativePath)}</span>
-                                            </div>
-                                        `).join("")}
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join("")}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `;
-  }
-  function renderToolsTable(byTool, limit2 = 10, nameResolver = lookupToolName) {
-    const sortedTools = Object.entries(byTool).sort(([, a], [, b]) => b - a).slice(0, limit2);
-    if (sortedTools.length === 0) {
-      return '<div style="color: var(--text-muted);">No tools used yet</div>';
+    if (value <= 1e3) {
+      return formatFixed(value, 1);
     }
-    const rows = sortedTools.map(([tool, count], idx) => {
-      const friendly = escapeHtml(nameResolver(tool));
-      const idEscaped = escapeHtml(tool);
-      return `
-		    <tr>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); width:40px; max-width:40px; text-align:center;">${idx + 1}</td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); word-break:break-word; overflow-wrap:break-word; max-width:0;"> <strong title="${idEscaped}">${friendly}</strong></td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px; white-space:nowrap;">${formatNumber(count)}</td>
-		    </tr>`;
-    }).join("");
-    return `
-		<table style="width:100%; border-collapse:collapse; table-layout:fixed;">
-			<thead>
-				<tr style="color:var(--text-secondary); font-size:12px; text-align:left;">
-					<th style="padding:8px 12px; opacity:0.9; width:40px;">#</th>
-					<th style="padding:8px 12px; opacity:0.9;">Tool</th>
-					<th style="padding:8px 12px; opacity:0.9; text-align:right; width:90px;">Calls</th>
-				</tr>
-			</thead>
-			<tbody>
-				${rows}
-			</tbody>
-		</table>`;
+    return formatFixed(Math.round(value), 0);
   }
-  function unionFill(map, keys) {
-    const result = { ...map };
-    for (const k of keys) {
-      if (!(k in result)) {
-        result[k] = 0;
-      }
+  var co2AnalogyItems = (grams) => [
+    { icon: "\u{1F697}", text: `${smartFixed(grams / CO2_GRAMS_PER_CAR_KM)} km driving (EU petrol car)` },
+    { icon: "\u{1F682}", text: `${smartFixed(grams / CO2_GRAMS_PER_TRAIN_KM)} km by train (EU intercity)` },
+    { icon: "\u2708\uFE0F", text: `${smartFixed(grams / CO2_GRAMS_PER_FLIGHT_KM)} km flying (economy, short-haul)` },
+    { icon: "\u{1FAD6}", text: `${smartFixed(grams / CO2_GRAMS_PER_KETTLE_BOIL)} kettle boils` },
+    { icon: "\u{1F4F1}", text: `${smartFixed(grams / CO2_GRAMS_PER_PHONE_CHARGE)} smartphone charges` },
+    { icon: "\u{1F4A1}", text: `${smartFixed(grams / CO2_GRAMS_PER_LED_HOUR)} hours of LED lighting (10 W)` }
+  ];
+  var waterAnalogyItems = (liters) => [
+    { icon: "\u2615", text: `${smartFixed(liters / WATER_LITERS_PER_MUG)} mugs of tea/coffee` },
+    { icon: "\u{1F6BF}", text: `${smartFixed(liters / WATER_LITERS_PER_SHOWER_MINUTE)} shower minutes` },
+    { icon: "\u{1F455}", text: `${smartFixed(liters / WATER_LITERS_PER_WASHER_LOAD)} washing machine loads` },
+    { icon: "\u{1F6C1}", text: `${smartFixed(liters / WATER_LITERS_PER_BATHTUB)} standard bathtubs` },
+    { icon: "\u{1F37D}\uFE0F", text: `${smartFixed(liters / WATER_LITERS_PER_DISHWASHER)} dishwasher cycles` },
+    { icon: "\u{1F4A7}", text: `${smartFixed(liters / WATER_LITERS_DAILY_DRINKING)} days of drinking water` }
+  ];
+  var treeAnalogyItems = (fraction) => {
+    const daysAbsorbed = fraction * 365.25;
+    if (fraction >= 1) {
+      return [
+        { icon: "\u{1F333}", text: `${smartFixed(fraction)} \xD7 a tree's full annual CO\u2082 absorption` },
+        { icon: "\u{1F332}", text: `Plant ${Math.ceil(fraction)} trees to fully offset this per year` }
+      ];
     }
-    return result;
-  }
-  function sanitizeStats(raw) {
-    if (!raw || typeof raw !== "object") {
-      return null;
-    }
-    const coerceNumber = (value) => {
-      const n = Number(value);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const sanitizeModeUsage = (mode) => ({
-      ask: coerceNumber(mode?.ask),
-      edit: coerceNumber(mode?.edit),
-      agent: coerceNumber(mode?.agent),
-      plan: coerceNumber(mode?.plan),
-      customAgent: coerceNumber(mode?.customAgent)
-    });
-    const sanitizeContextRefs = (refs) => ({
-      file: coerceNumber(refs?.file),
-      selection: coerceNumber(refs?.selection),
-      implicitSelection: coerceNumber(refs?.implicitSelection),
-      symbol: coerceNumber(refs?.symbol),
-      codebase: coerceNumber(refs?.codebase),
-      workspace: coerceNumber(refs?.workspace),
-      terminal: coerceNumber(refs?.terminal),
-      vscode: coerceNumber(refs?.vscode),
-      terminalLastCommand: coerceNumber(refs?.terminalLastCommand),
-      terminalSelection: coerceNumber(refs?.terminalSelection),
-      clipboard: coerceNumber(refs?.clipboard),
-      changes: coerceNumber(refs?.changes),
-      outputPanel: coerceNumber(refs?.outputPanel),
-      problemsPanel: coerceNumber(refs?.problemsPanel),
-      byKind: refs?.byKind ?? {},
-      copilotInstructions: coerceNumber(refs?.copilotInstructions),
-      agentsMd: coerceNumber(refs?.agentsMd),
-      byPath: refs?.byPath ?? {}
-    });
-    const sanitizePeriod = (period) => ({
-      sessions: coerceNumber(period?.sessions),
-      modeUsage: sanitizeModeUsage(period?.modeUsage ?? {}),
-      contextReferences: sanitizeContextRefs(period?.contextReferences ?? {}),
-      toolCalls: {
-        total: coerceNumber(period?.toolCalls?.total),
-        byTool: period?.toolCalls?.byTool ?? {}
-      },
-      mcpTools: {
-        total: coerceNumber(period?.mcpTools?.total),
-        byServer: period?.mcpTools?.byServer ?? {},
-        byTool: period?.mcpTools?.byTool ?? {}
-      },
-      modelSwitching: period?.modelSwitching ?? {
-        modelsPerSession: [],
-        totalSessions: 0,
-        averageModelsPerSession: 0,
-        maxModelsPerSession: 0,
-        minModelsPerSession: 0,
-        switchingFrequency: 0,
-        standardModels: [],
-        premiumModels: [],
-        unknownModels: [],
-        mixedTierSessions: 0,
-        standardRequests: 0,
-        premiumRequests: 0,
-        unknownRequests: 0,
-        totalRequests: 0
-      }
-    });
-    try {
-      const sanitized = {
-        today: sanitizePeriod(raw.today),
-        last30Days: sanitizePeriod(raw.last30Days),
-        month: sanitizePeriod(raw.month),
-        lastUpdated: typeof raw.lastUpdated === "string" ? raw.lastUpdated : "",
-        backendConfigured: !!raw.backendConfigured
-      };
-      return sanitized;
-    } catch {
-      return null;
-    }
-  }
-  function renderLayout(stats) {
+    return [
+      { icon: "\u{1F333}", text: `${smartFixed(fraction * 100)} % of one tree's annual absorption` },
+      { icon: "\u{1F4C5}", text: `1 tree absorbs this CO\u2082 in about ${smartFixed(daysAbsorbed)} days` }
+    ];
+  };
+  function render(stats) {
     const root = document.getElementById("root");
     if (!root) {
       return;
     }
-    const matrix = stats?.customizationMatrix ?? window.__INITIAL_USAGE__?.customizationMatrix;
-    hygieneMatrixState = matrix ?? null;
-    if (!hygieneMatrixState || hygieneMatrixState.workspaces.length === 0) {
-      selectedRepoPath = null;
+    const projectedCo2 = calculateProjection(stats.last30Days.co2);
+    const projectedWater = calculateProjection(stats.last30Days.waterUsage);
+    const projectedTrees = calculateProjection(stats.last30Days.treesEquivalent);
+    const projectedTokens = Math.round(calculateProjection(stats.last30Days.tokens));
+    const lastUpdated = new Date(stats.lastUpdated);
+    root.replaceChildren();
+    const themeStyle = document.createElement("style");
+    themeStyle.textContent = theme_default;
+    const style = document.createElement("style");
+    style.textContent = styles_default;
+    const container = el("div", "container");
+    const header = el("div", "header");
+    const title = el("div", "title", "\u{1F33F} Environmental Impact");
+    const buttonRow = el("div", "button-row");
+    buttonRow.append(
+      createButton(BUTTONS["btn-refresh"]),
+      createButton(BUTTONS["btn-details"]),
+      createButton(BUTTONS["btn-chart"]),
+      createButton(BUTTONS["btn-usage"]),
+      createButton(BUTTONS["btn-diagnostics"]),
+      createButton(BUTTONS["btn-maturity"])
+    );
+    if (stats.backendConfigured) {
+      buttonRow.append(createButton(BUTTONS["btn-dashboard"]));
     }
-    if (Array.isArray(stats.currentWorkspacePaths)) {
-      currentWorkspacePaths = stats.currentWorkspacePaths;
-    }
-    let customizationHtml = "";
-    if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
-      customizationHtml = `
-			<div class="section">
-				<div class="section-title"><span>\u{1F6E0}\uFE0F</span><span>Copilot Customization Files</span></div>
-				<div class="section-subtitle">Showing workspace customization status for active workspaces</div>
-				<div style="color: var(--text-muted); padding:12px;">No workspaces with customization files detected in the last 30 days.</div>
-			</div>`;
-    } else {
-      customizationHtml = `
-			<div style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
-					\u{1F6E0}\uFE0F Copilot Customization Files
-				</div>
-				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-					Showing ${matrix.totalWorkspaces} workspace(s) with Copilot activity in the last 30 days.
-					${matrix.workspacesWithIssues > 0 ? `<span class="stale-warning">\u26A0\uFE0F ${matrix.workspacesWithIssues} workspace(s) have no customization files.</span>` : "\u2705 All workspaces have up-to-date customizations."}
-				</div>
-				<div class="customization-matrix-container">
-					<table class="customization-matrix">
-						<thead>
-							<tr>
-								<th style="text-align: left; padding: 8px; border-bottom: 2px solid var(--border-color);">\u{1F4C2} Workspace</th>
-								<th style="text-align: center; padding: 8px; border-bottom: 2px solid var(--border-color);">Sessions</th>
-								${matrix.customizationTypes.map((type) => `
-									<th style="text-align: center; padding: 8px; border-bottom: 2px solid var(--border-color);" title="${escapeHtml(type.label)}">
-										${escapeHtml(type.icon)}
-									</th>
-								`).join("")}
-							</tr>
-						</thead>
-						<tbody>
-							${matrix.workspaces.map((ws) => {
-        const hasNoCustomization = Object.values(ws.typeStatuses).every((s) => s === "\u274C");
-        return `
-								<tr>
-									<td style="padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-family: 'Courier New', monospace; font-size: 12px;">
-										${escapeHtml(ws.workspaceName)}${hasNoCustomization ? ' <span title="No customization files" style="font-family: sans-serif;">\u26A0\uFE0F</span>' : ""}
-									</td>
-									<td style="padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; color: var(--link-color); font-weight: 600;">
-										${ws.sessionCount}
-									</td>
-									${matrix.customizationTypes.map((type) => {
-          const status = ws.typeStatuses[type.id] || "\u2753";
-          const statusLabel = status === "\u2705" ? "Present and fresh" : status === "\u26A0\uFE0F" ? "Present but stale" : status === "\u274C" ? "Missing" : "Status unknown";
-          return `
-										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
-											<span aria-hidden="true">${escapeHtml(status)}</span>
-											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${statusLabel}</span>
-										</td>
-										`;
-        }).join("")}
-								</tr>
-							`;
-      }).join("")}
-						</tbody>
-					</table>
-				</div>
-				<div style="margin-top: 12px; font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
-					<div style="display: flex; gap: 16px; flex-wrap: wrap;">
-						${matrix.customizationTypes.map((type) => `
-							<span>${escapeHtml(type.icon)} ${escapeHtml(type.label)}</span>
-						`).join("")}
-					</div>
-					<div style="margin-top: 8px;">
-						\u2705 = Present &amp; Fresh&nbsp;&nbsp;\u2022&nbsp;&nbsp;\u26A0\uFE0F = Present but Stale&nbsp;&nbsp;\u2022&nbsp;&nbsp;\u274C = Missing
-					</div>
-				</div>
-			</div>`;
-    }
-    const allToolKeys = [.../* @__PURE__ */ new Set([
-      ...Object.keys(stats.today.toolCalls.byTool),
-      ...Object.keys(stats.last30Days.toolCalls.byTool),
-      ...Object.keys(stats.month.toolCalls.byTool)
-    ])];
-    const allMcpToolKeys = [.../* @__PURE__ */ new Set([
-      ...Object.keys(stats.today.mcpTools.byTool),
-      ...Object.keys(stats.last30Days.mcpTools.byTool),
-      ...Object.keys(stats.month.mcpTools.byTool)
-    ])];
-    const allMcpServerKeys = [.../* @__PURE__ */ new Set([
-      ...Object.keys(stats.today.mcpTools.byServer),
-      ...Object.keys(stats.last30Days.mcpTools.byServer),
-      ...Object.keys(stats.month.mcpTools.byServer)
-    ])];
-    const allStandardModels = [.../* @__PURE__ */ new Set([
-      ...stats.today.modelSwitching.standardModels,
-      ...stats.last30Days.modelSwitching.standardModels,
-      ...stats.month.modelSwitching.standardModels
-    ])];
-    const allPremiumModels = [.../* @__PURE__ */ new Set([
-      ...stats.today.modelSwitching.premiumModels,
-      ...stats.last30Days.modelSwitching.premiumModels,
-      ...stats.month.modelSwitching.premiumModels
-    ])];
-    const allUnknownModels = [.../* @__PURE__ */ new Set([
-      ...stats.today.modelSwitching.unknownModels,
-      ...stats.last30Days.modelSwitching.unknownModels,
-      ...stats.month.modelSwitching.unknownModels
-    ])];
-    const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
-    const last30DaysTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
-    const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent + stats.today.modeUsage.plan + stats.today.modeUsage.customAgent;
-    const last30DaysTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent + stats.last30Days.modeUsage.plan + stats.last30Days.modeUsage.customAgent;
-    root.innerHTML = `
-		<style>${theme_default}</style>
-		<style>${styles_default}</style>
-		<div class="container">
-			<div class="header">
-				<div class="header-left">
-					<span class="header-icon">\u{1F4CA}</span>
-					<span class="header-title">Usage Analysis</span>
-				</div>
-				<div class="button-row">
-				${buttonHtml("btn-refresh")}
-				${buttonHtml("btn-details")}
-				${buttonHtml("btn-chart")}
-				${buttonHtml("btn-environmental")}
-				${buttonHtml("btn-diagnostics")}
-				${buttonHtml("btn-maturity")}
-				${stats.backendConfigured ? buttonHtml("btn-dashboard") : ""}
-				</div>
-			</div>
-
-			<div class="info-box">
-				<div class="info-box-title">\u{1F4CB} About This Dashboard</div>
-				<div>
-					This dashboard analyzes your GitHub Copilot usage patterns by examining session log files.
-					It tracks modes (ask/edit/agent), tool usage, context references (#file, @workspace, etc.),
-					and MCP (Model Context Protocol) tools to help you understand how you interact with Copilot.
-				</div>
-			</div>
-
-			<!-- Mode Usage Section -->
-			<div class="section">
-				<div class="section-title"><span>\u{1F3AF}</span><span>Interaction Modes</span></div>
-				<div class="section-subtitle">How you're using Copilot: Ask (chat), Edit (code edits), or Agent (autonomous tasks)</div>
-				<div class="two-column">
-					<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Today</h4>
-						<div class="bar-chart">
-							<div class="bar-item">
-								<div class="bar-label"><span>\u{1F4AC} Ask Mode</span><span><strong>${formatNumber(stats.today.modeUsage.ask)}</strong> (${formatPercent(todayTotalModes > 0 ? stats.today.modeUsage.ask / todayTotalModes * 100 : 0, 0)})</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? (stats.today.modeUsage.ask / todayTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
-							</div>
-							<div class="bar-item">
-								<div class="bar-label"><span>\u270F\uFE0F Edit Mode</span><span><strong>${formatNumber(stats.today.modeUsage.edit)}</strong> (${formatPercent(todayTotalModes > 0 ? stats.today.modeUsage.edit / todayTotalModes * 100 : 0, 0)})</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? (stats.today.modeUsage.edit / todayTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
-							</div>
-							<div class="bar-item">
-								<div class="bar-label"><span>\u{1F916} Agent Mode</span><span><strong>${formatNumber(stats.today.modeUsage.agent)}</strong> (${formatPercent(todayTotalModes > 0 ? stats.today.modeUsage.agent / todayTotalModes * 100 : 0, 0)})</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? (stats.today.modeUsage.agent / todayTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
-							</div>						<div class="bar-item">
-							<div class="bar-label"><span>\u{1F4CB} Plan Mode</span><span><strong>${formatNumber(stats.today.modeUsage.plan)}</strong> (${formatPercent(todayTotalModes > 0 ? stats.today.modeUsage.plan / todayTotalModes * 100 : 0, 0)})</span></div>
-							<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? (stats.today.modeUsage.plan / todayTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #f59e0b, #fbbf24);"></div></div>
-						</div>
-						<div class="bar-item">
-							<div class="bar-label"><span>\u26A1 Custom Agent</span><span><strong>${formatNumber(stats.today.modeUsage.customAgent)}</strong> (${formatPercent(todayTotalModes > 0 ? stats.today.modeUsage.customAgent / todayTotalModes * 100 : 0, 0)})</span></div>
-							<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? (stats.today.modeUsage.customAgent / todayTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div>
-						</div>						</div>
-					</div>
-					<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4CA} Last 30 Days</h4>
-						<div class="bar-chart">
-							<div class="bar-item">
-								<div class="bar-label"><span>\u{1F4AC} Ask Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.ask)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? stats.last30Days.modeUsage.ask / last30DaysTotalModes * 100 : 0, 0)})</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? (stats.last30Days.modeUsage.ask / last30DaysTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div></div>
-							</div>
-							<div class="bar-item">
-								<div class="bar-label"><span>\u270F\uFE0F Edit Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.edit)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? stats.last30Days.modeUsage.edit / last30DaysTotalModes * 100 : 0, 0)})</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? (stats.last30Days.modeUsage.edit / last30DaysTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #10b981, #34d399);"></div></div>
-							</div>
-							<div class="bar-item">
-								<div class="bar-label"><span>\u{1F916} Agent Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.agent)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? stats.last30Days.modeUsage.agent / last30DaysTotalModes * 100 : 0, 0)})</span></div>
-								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? (stats.last30Days.modeUsage.agent / last30DaysTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div></div>
-							</div>						<div class="bar-item">
-							<div class="bar-label"><span>\u{1F4CB} Plan Mode</span><span><strong>${formatNumber(stats.last30Days.modeUsage.plan)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? stats.last30Days.modeUsage.plan / last30DaysTotalModes * 100 : 0, 0)})</span></div>
-							<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? (stats.last30Days.modeUsage.plan / last30DaysTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #f59e0b, #fbbf24);"></div></div>
-						</div>
-						<div class="bar-item">
-							<div class="bar-label"><span>\u26A1 Custom Agent</span><span><strong>${formatNumber(stats.last30Days.modeUsage.customAgent)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? stats.last30Days.modeUsage.customAgent / last30DaysTotalModes * 100 : 0, 0)})</span></div>
-							<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? (stats.last30Days.modeUsage.customAgent / last30DaysTotalModes * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div>
-						</div>						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Context References Section -->
-			<div class="section">
-				<div class="section-title"><span>\u{1F517}</span><span>Context References</span></div>
-				<div class="section-subtitle">How often you reference files, selections, symbols, and workspace context</div>
-				<div class="stats-grid">
-					<div class="stat-card"><div class="stat-label">\u{1F4C4} #file</div><div class="stat-value">${stats.last30Days.contextReferences.file}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.file}</div></div>
-					<div class="stat-card"><div class="stat-label">\u2702\uFE0F #selection</div><div class="stat-value">${stats.last30Days.contextReferences.selection}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.selection}</div></div>
-					<div class="stat-card" title="Text selected in your editor providing passive context to Copilot"><div class="stat-label">\u2728 Implicit Selection</div><div class="stat-value">${stats.last30Days.contextReferences.implicitSelection}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.implicitSelection}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F524} #symbol</div><div class="stat-value">${stats.last30Days.contextReferences.symbol}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.symbol}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F5C2}\uFE0F #codebase</div><div class="stat-value">${stats.last30Days.contextReferences.codebase}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.codebase}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F4C1} @workspace</div><div class="stat-value">${stats.last30Days.contextReferences.workspace}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.workspace}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F4BB} @terminal</div><div class="stat-value">${stats.last30Days.contextReferences.terminal}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.terminal}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F527} @vscode</div><div class="stat-value">${stats.last30Days.contextReferences.vscode}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.vscode}</div></div>
-					<div class="stat-card" title="Last command run in the terminal"><div class="stat-label">\u2328\uFE0F #terminalLastCommand</div><div class="stat-value">${stats.last30Days.contextReferences.terminalLastCommand || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.terminalLastCommand || 0}</div></div>
-					<div class="stat-card" title="Selected terminal output"><div class="stat-label">\u{1F5B1}\uFE0F #terminalSelection</div><div class="stat-value">${stats.last30Days.contextReferences.terminalSelection || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.terminalSelection || 0}</div></div>
-					<div class="stat-card" title="Clipboard contents"><div class="stat-label">\u{1F4CB} #clipboard</div><div class="stat-value">${stats.last30Days.contextReferences.clipboard || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.clipboard || 0}</div></div>
-					<div class="stat-card" title="Uncommitted git changes"><div class="stat-label">\u{1F4DD} #changes</div><div class="stat-value">${stats.last30Days.contextReferences.changes || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.changes || 0}</div></div>
-					<div class="stat-card" title="Output panel contents"><div class="stat-label">\u{1F4E4} #outputPanel</div><div class="stat-value">${stats.last30Days.contextReferences.outputPanel || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.outputPanel || 0}</div></div>
-					<div class="stat-card" title="Problems panel contents"><div class="stat-label">\u26A0\uFE0F #problemsPanel</div><div class="stat-value">${stats.last30Days.contextReferences.problemsPanel || 0}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.problemsPanel || 0}</div></div>
-					<div class="stat-card" title="copilot-instructions.md file references detected in session logs"><div class="stat-label">\u{1F4CB} Copilot Instructions</div><div class="stat-value">${stats.last30Days.contextReferences.copilotInstructions}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.copilotInstructions}</div></div>
-					<div class="stat-card" title="agents.md file references detected in session logs"><div class="stat-label">\u{1F916} Agents.md</div><div class="stat-value">${stats.last30Days.contextReferences.agentsMd}</div><div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Today: ${stats.today.contextReferences.agentsMd}</div></div>
-					<div class="stat-card" style="background: var(--list-active-bg); border: 2px solid var(--border-color); color: var(--list-active-fg);"><div class="stat-label" style="color: var(--list-active-fg); opacity: 0.85;">\u{1F4CA} Total References</div><div class="stat-value" style="color: var(--list-active-fg);">${last30DaysTotalRefs}</div><div style="font-size: 10px; color: var(--list-active-fg); opacity: 0.75; margin-top: 4px;">Today: ${todayTotalRefs}</div></div>
-				</div>
-				${Object.keys(stats.last30Days.contextReferences.byKind).length > 0 ? `
-					<div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
-						<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">\u{1F4CE} Attached Files by Type (Last 30 Days)</div>
-						<div style="font-size: 12px; color: var(--text-primary);">
-							${Object.entries(stats.last30Days.contextReferences.byKind).sort(([, a], [, b]) => b - a).slice(0, 5).map(([kind, count]) => `<div style="margin-bottom: 4px;"><span style="color: var(--link-color);">${escapeHtml(kind)}:</span> ${count}</div>`).join("")}
-						</div>
-					</div>
-				` : ""}
-				${Object.keys(stats.last30Days.contextReferences.byPath).length > 0 ? `
-					<div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
-						<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">\u{1F4C1} Most Referenced Files (Last 30 Days)</div>
-						<div style="font-size: 11px; color: var(--text-primary);">
-							${Object.entries(stats.last30Days.contextReferences.byPath).sort(([, a], [, b]) => b - a).slice(0, 10).map(([path, count]) => `<div style="margin-bottom: 4px; font-family: 'Courier New', monospace;"><span style="color: var(--link-color);">${count}\xD7</span> ${escapeHtml(path)}</div>`).join("")}
-						</div>
-					</div>
-				` : ""}
-			</div>
-
-			${customizationHtml}
-			${renderMissedPotential(stats)}
-
-			<!-- Repository Setup Section -->
-			<div class="repo-hygiene-section" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
-				<div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
-					\u{1F3D7}\uFE0F Repository Hygiene Analysis
-				</div>
-				<div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-					Analyze repository hygiene and structure to identify missing configuration files and best practices.
-				</div>
-				${matrix && matrix.workspaces && matrix.workspaces.length > 0 ? `
-					<div style="margin-bottom: 12px;">
-						<vscode-button id="btn-analyse-all" style="margin-bottom: 8px;">Analyze All Repositories (${matrix.workspaces.length})</vscode-button>
-					</div>
-					<div id="repo-list-pane-container" class="repo-hygiene-pane">
-						<div class="repo-hygiene-pane-header">\u{1F4C1} Repository List</div>
-						<div id="repo-list-pane" class="repo-hygiene-pane-body"></div>
-					</div>
-					<div id="repo-details-pane-container" class="repo-hygiene-pane repo-hygiene-pane-collapsed">
-						<div class="repo-hygiene-pane-header">\u{1F4CA} Repository Details</div>
-						<div id="repo-details-pane" class="repo-hygiene-pane-body"></div>
-					</div>
-				` : `
-					<vscode-button id="btn-analyse-repo">Analyze Repo for Best Practices</vscode-button>
-					<div id="repo-analysis-results" class="repo-hygiene-results" style="margin-top: 12px;"></div>
-				`}
-			</div>
-
-			<!-- Tool Calls Section -->
-			<div class="section">
-				<div class="section-title"><span>\u{1F527}</span><span>Tool Usage</span></div>
-				<div class="section-subtitle">Functions and tools invoked by Copilot during interactions</div>
-				<div class="three-column">
-					<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.today.toolCalls.total)}</div>
-						${renderToolsTable(unionFill(stats.today.toolCalls.byTool, allToolKeys), 10)}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C6} Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.last30Days.toolCalls.total)}</div>
-							${renderToolsTable(unionFill(stats.last30Days.toolCalls.byTool, allToolKeys), 10)}
-						</div>
-					</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
-							${renderToolsTable(unionFill(stats.month.toolCalls.byTool, allToolKeys), 10)}
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- MCP Tools Section -->
-			<div class="section">
-				<div class="section-title"><span>\u{1F50C}</span><span>MCP Tools</span></div>
-				<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
-				${(() => {
-      const unknownTools = getUnknownMcpTools(stats);
-      if (unknownTools.length > 0) {
-        const issueUrl = createMcpToolIssueUrl(unknownTools);
-        const toolListHtml = unknownTools.map((tool) => {
-          const todayCount = (stats.today.toolCalls.byTool[tool] || 0) + (stats.today.mcpTools.byTool[tool] || 0);
-          const last30Count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
-          const monthCount = (stats.month.toolCalls.byTool[tool] || 0) + (stats.month.mcpTools.byTool[tool] || 0);
-          const countParts = [];
-          if (todayCount > 0) {
-            countParts.push(`${todayCount} today`);
-          }
-          if (last30Count > todayCount) {
-            countParts.push(`${last30Count} in the last 30d`);
-          }
-          if (monthCount > last30Count) {
-            countParts.push(`${monthCount} this month`);
-          }
-          const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${countParts.join(" | ")})</span>` : "";
-          return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${countHtml}</span>`;
-        }).join(" ");
-        return `
-							<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
-								<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
-									${toolListHtml}
-								</div>
-								<a href="${issueUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--button-bg); color: var(--button-fg); border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 500;">
-									<span>\u{1F4DD}</span>
-									<span>Report Unknown Tools</span>
-								</a>
-							</div>
-						`;
-      }
-      return "";
-    })()}
-				<div class="three-column">
-					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Today</h4>
-						<div class="list">
-							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
-							${allMcpServerKeys.length > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.today.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-						</div>
-					</div>
-					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C6} Last 30 Days</h4>
-						<div class="list">
-							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
-							${allMcpServerKeys.length > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.last30Days.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-						</div>
-					</div>
-					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Previous Month</h4>
-						<div class="list">
-							<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
-							${allMcpServerKeys.length > 0 ? `
-								<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.month.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-							` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-						</div>
-					</div>
-				</div>
-				<div class="three-column" style="margin-top: 12px;">
-					<div>
-						${allMcpToolKeys.length > 0 ? `
-							<div class="list">
-								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.today.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-							</div>
-						` : ""}
-					</div>
-					<div>
-						${allMcpToolKeys.length > 0 ? `
-							<div class="list">
-								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.last30Days.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-							</div>
-						` : ""}
-					</div>
-					<div>
-						${allMcpToolKeys.length > 0 ? `
-							<div class="list">
-								<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable(unionFill(stats.month.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-							</div>
-						` : ""}
-					</div>
-				</div>
-			</div>
-
-			<!-- Multi-Model Usage Section -->
-			<div class="section">
-				<div class="section-title"><span>\u{1F500}</span><span>Multi-Model Usage</span></div>
-				<div class="section-subtitle">Track model diversity and switching patterns in your conversations</div>
-				<div class="three-column">
-					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Today</h4>
-						<div class="stats-grid" style="grid-template-columns: 1fr;">
-							<div class="stat-card">
-								<div class="stat-label">\u{1F4CA} Avg Models per Conversation</div>
-								<div class="stat-value">${formatFixed(stats.today.modelSwitching.averageModelsPerSession, 1)}</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-label">\u{1F504} Switching Frequency</div>
-								<div class="stat-value">${formatPercent(stats.today.modelSwitching.switchingFrequency, 0)}</div>
-								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-label">\u{1F4C8} Max Models in Session</div>
-								<div class="stat-value">${formatNumber(stats.today.modelSwitching.maxModelsPerSession || 0)}</div>
-							</div>
-						</div>
-						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
-							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
-							<div style="min-height: 90px;">
-								${allStandardModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--link-color);">\u{1F535} Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allStandardModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${allPremiumModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--warning-fg);">\u2B50 Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allPremiumModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${allUnknownModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--text-muted);">\u2753 Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allUnknownModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : ""}
-							</div>
-							${stats.today.modelSwitching.totalRequests > 0 ? `
-								<div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); min-height: 65px;">
-									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
-									${stats.today.modelSwitching.standardRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--link-color);">\u{1F535} Standard: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.standardRequests)} (${formatPercent(stats.today.modelSwitching.standardRequests / stats.today.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-									${stats.today.modelSwitching.premiumRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--warning-fg);">\u2B50 Premium: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.premiumRequests)} (${formatPercent(stats.today.modelSwitching.premiumRequests / stats.today.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-									${stats.today.modelSwitching.unknownRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--text-muted);">\u2753 Unknown: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.today.modelSwitching.unknownRequests)} (${formatPercent(stats.today.modelSwitching.unknownRequests / stats.today.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-								</div>
-							` : ""}
-							${stats.today.modelSwitching.mixedTierSessions > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
-									<span style="font-size: 11px; color: var(--link-color);">\u{1F500} Mixed tier sessions: ${formatNumber(stats.today.modelSwitching.mixedTierSessions)}</span>
-								</div>
-							` : ""}
-						</div>
-					</div>
-					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C6} Last 30 Days</h4>
-						<div class="stats-grid" style="grid-template-columns: 1fr;">
-							<div class="stat-card">
-								<div class="stat-label">\u{1F4CA} Avg Models per Conversation</div>
-								<div class="stat-value">${formatFixed(stats.last30Days.modelSwitching.averageModelsPerSession, 1)}</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-label">\u{1F504} Switching Frequency</div>
-								<div class="stat-value">${formatPercent(stats.last30Days.modelSwitching.switchingFrequency, 0)}</div>
-								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-label">\u{1F4C8} Max Models in Session</div>
-								<div class="stat-value">${formatNumber(stats.last30Days.modelSwitching.maxModelsPerSession || 0)}</div>
-							</div>
-						</div>
-						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
-							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
-							<div style="min-height: 90px;">
-								${allStandardModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--link-color);">\u{1F535} Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allStandardModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${allPremiumModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--warning-fg);">\u2B50 Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allPremiumModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${allUnknownModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--text-muted);">\u2753 Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allUnknownModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : ""}
-							</div>
-							${stats.last30Days.modelSwitching.totalRequests > 0 ? `
-								<div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); min-height: 65px;">
-									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
-									${stats.last30Days.modelSwitching.standardRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--link-color);">\u{1F535} Standard: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.standardRequests)} (${formatPercent(stats.last30Days.modelSwitching.standardRequests / stats.last30Days.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-									${stats.last30Days.modelSwitching.premiumRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--warning-fg);">\u2B50 Premium: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.premiumRequests)} (${formatPercent(stats.last30Days.modelSwitching.premiumRequests / stats.last30Days.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-									${stats.last30Days.modelSwitching.unknownRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--text-muted);">\u2753 Unknown: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.last30Days.modelSwitching.unknownRequests)} (${formatPercent(stats.last30Days.modelSwitching.unknownRequests / stats.last30Days.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-								</div>
-							` : ""}
-							${stats.last30Days.modelSwitching.mixedTierSessions > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
-									<span style="font-size: 11px; color: var(--link-color);">\u{1F500} Mixed tier sessions: ${formatNumber(stats.last30Days.modelSwitching.mixedTierSessions)}</span>
-								</div>
-							` : ""}
-						</div>
-					</div>
-					<div>
-						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">\u{1F4C5} Previous Month</h4>
-						<div class="stats-grid" style="grid-template-columns: 1fr;">
-							<div class="stat-card">
-								<div class="stat-label">\u{1F4CA} Avg Models per Conversation</div>
-								<div class="stat-value">${formatFixed(stats.month.modelSwitching.averageModelsPerSession, 1)}</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-label">\u{1F504} Switching Frequency</div>
-								<div class="stat-value">${formatPercent(stats.month.modelSwitching.switchingFrequency, 0)}</div>
-								<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sessions with >1 model</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-label">\u{1F4C8} Max Models in Session</div>
-								<div class="stat-value">${formatNumber(stats.month.modelSwitching.maxModelsPerSession || 0)}</div>
-							</div>
-						</div>
-						<div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 6px;">
-							<div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Models by Tier:</div>
-							<div style="min-height: 90px;">
-								${allStandardModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--link-color);">\u{1F535} Standard:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allStandardModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${allPremiumModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--warning-fg);">\u2B50 Premium:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allPremiumModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : '<div style="margin-bottom: 6px; height: 21px;"></div>'}
-								${allUnknownModels.length > 0 ? `
-									<div style="margin-bottom: 6px;">
-										<span style="color: var(--text-muted);">\u2753 Unknown:</span>
-										<span style="font-size: 11px; color: var(--text-primary);">${allUnknownModels.map(escapeHtml).join(", ")}</span>
-									</div>
-								` : ""}
-							</div>
-							${stats.month.modelSwitching.totalRequests > 0 ? `
-								<div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); min-height: 65px;">
-									<div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Request Count:</div>
-									${stats.month.modelSwitching.standardRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--link-color);">\u{1F535} Standard: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.standardRequests)} (${formatPercent(stats.month.modelSwitching.standardRequests / stats.month.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-									${stats.month.modelSwitching.premiumRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--warning-fg);">\u2B50 Premium: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.premiumRequests)} (${formatPercent(stats.month.modelSwitching.premiumRequests / stats.month.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-									${stats.month.modelSwitching.unknownRequests > 0 ? `
-										<div style="margin-bottom: 4px; font-size: 11px;">
-											<span style="color: var(--text-muted);">\u2753 Unknown: </span>
-											<span style="color: var(--text-primary);">${formatNumber(stats.month.modelSwitching.unknownRequests)} (${formatPercent(stats.month.modelSwitching.unknownRequests / stats.month.modelSwitching.totalRequests * 100)})</span>
-										</div>
-									` : ""}
-								</div>
-							` : ""}
-							${stats.month.modelSwitching.mixedTierSessions > 0 ? `
-								<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
-									<span style="font-size: 11px; color: var(--link-color);">\u{1F500} Mixed tier sessions: ${formatNumber(stats.month.modelSwitching.mixedTierSessions)}</span>
-								</div>
-							` : ""}
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Summary Section -->
-			<div class="section">
-				<div class="section-title"><span>\u{1F4C8}</span><span>Sessions Summary</span></div>
-				<div class="stats-grid">
-					<div class="stat-card"><div class="stat-label">\u{1F4C5} Today Sessions</div><div class="stat-value">${formatNumber(stats.today.sessions)}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F4C6} Last 30 Days Sessions</div><div class="stat-value">${formatNumber(stats.last30Days.sessions)}</div></div>
-					<div class="stat-card"><div class="stat-label">\u{1F4C5} Previous Month Sessions</div><div class="stat-value">${formatNumber(stats.month.sessions)}</div></div>
-				</div>
-			</div>
-
-			<div class="footer">
-				Last updated: ${escapeHtml(new Date(stats.lastUpdated).toLocaleString())} \xB7 Updates every 5 minutes
-			</div>
-		</div>
-	`;
-    document.getElementById("btn-refresh")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "refresh" });
-    });
-    document.getElementById("btn-details")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "showDetails" });
-    });
-    document.getElementById("btn-chart")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "showChart" });
-    });
-    document.getElementById("btn-diagnostics")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "showDiagnostics" });
-    });
-    document.getElementById("btn-maturity")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "showMaturity" });
-    });
-    document.getElementById("btn-dashboard")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "showDashboard" });
-    });
-    document.getElementById("btn-environmental")?.addEventListener("click", () => {
-      vscode.postMessage({ command: "showEnvironmental" });
-    });
-    document.getElementById("btn-analyse-repo")?.addEventListener("click", () => {
-      const btn = document.getElementById("btn-analyse-repo");
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "Analyzing...";
-      }
-      vscode.postMessage({ command: "analyseRepository" });
-    });
-    document.getElementById("btn-analyse-all")?.addEventListener("click", () => {
-      const btn = document.getElementById("btn-analyse-all");
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "Analyzing All...";
-      }
-      isBatchAnalysisInProgress = true;
-      isSwitchingRepository = true;
-      selectedRepoPath = null;
-      renderRepositoryHygienePanels();
-      vscode.postMessage({ command: "analyseAllRepositories" });
-    });
-    document.getElementById("repo-list-pane")?.addEventListener("click", (e) => {
-      const target = e.target;
-      const actionButton = target.closest(".btn-repo-action");
-      if (!actionButton) {
-        return;
-      }
-      const workspacePath = actionButton.getAttribute("data-workspace-path");
-      const action = actionButton.getAttribute("data-action");
-      if (!workspacePath || !action) {
-        return;
-      }
-      if (action === "details") {
-        selectedRepoPath = workspacePath;
-        isSwitchingRepository = false;
-        renderRepositoryHygienePanels();
-        return;
-      }
-      if (action === "analyze") {
-        actionButton.disabled = true;
-        actionButton.textContent = "Analyzing...";
-        isBatchAnalysisInProgress = false;
-        vscode.postMessage({ command: "analyseRepository", workspacePath });
-      }
-    });
-    document.getElementById("repo-details-pane")?.addEventListener("click", (e) => {
-      const target = e.target;
-      if (target.closest("#btn-switch-repository")) {
-        isSwitchingRepository = true;
-        renderRepositoryHygienePanels();
-      }
-    });
-    renderRepositoryHygienePanels();
-    Array.from(document.getElementsByClassName("cf-copy")).forEach((el2) => {
-      el2.addEventListener("click", (ev) => {
-        const target = ev.currentTarget;
-        const path = target.getAttribute("data-path") || "";
-        if (navigator.clipboard && path) {
-          navigator.clipboard.writeText(path).then(() => {
-            target.textContent = "Copied";
-            setTimeout(() => {
-              target.textContent = "Copy";
-            }, 1200);
-          }).catch(() => {
-            vscode.postMessage({ command: "copyFailed", path });
+    header.append(title, buttonRow);
+    const footer = el("div", "footer", `Last updated: ${lastUpdated.toLocaleString()} \xB7 Updates every 5 minutes`);
+    const sections = el("div", "sections");
+    sections.append(buildImpactCards(stats, projectedTokens, projectedCo2, projectedWater, projectedTrees));
+    sections.append(buildEstimatesSection());
+    container.append(header, sections, footer);
+    root.append(themeStyle, style, container);
+    wireButtons();
+  }
+  function buildImpactCards(stats, projectedTokens, projectedCo2, projectedWater, projectedTrees) {
+    const section = el("div", "section");
+    const heading = el("h3");
+    heading.textContent = "\u{1F30D} Impact at a Glance";
+    section.append(heading);
+    const intro = el("p", "section-intro");
+    intro.textContent = "All figures are estimates based on average data center energy and water consumption figures. Analogies use European averages. Treat these as order-of-magnitude indicators, not precise measurements.";
+    section.append(intro);
+    const periods = [
+      // Tokens card: 4 periods, no analogies
+      [
+        ["\u{1F4C5} Today", formatNumber(stats.today.tokens), null],
+        ["\u{1F4C8} Last 30 Days", formatNumber(stats.last30Days.tokens), null],
+        ["\u{1F4C6} Previous Month", formatNumber(stats.lastMonth.tokens), null],
+        ["\u{1F30D} Projected Year", formatNumber(projectedTokens), null]
+      ],
+      // CO₂ card
+      [
+        ["\u{1F4C5} Today", `${smartFixed(stats.today.co2)} g`, co2AnalogyItems(stats.today.co2)],
+        ["\u{1F4C8} Last 30 Days", `${smartFixed(stats.last30Days.co2)} g`, co2AnalogyItems(stats.last30Days.co2)],
+        ["\u{1F4C6} Previous Month", `${smartFixed(stats.lastMonth.co2)} g`, co2AnalogyItems(stats.lastMonth.co2)],
+        ["\u{1F30D} Projected Year", `${smartFixed(projectedCo2)} g`, co2AnalogyItems(projectedCo2)]
+      ],
+      // Water card
+      [
+        ["\u{1F4C5} Today", `${smartFixed(stats.today.waterUsage)} L`, waterAnalogyItems(stats.today.waterUsage)],
+        ["\u{1F4C8} Last 30 Days", `${smartFixed(stats.last30Days.waterUsage)} L`, waterAnalogyItems(stats.last30Days.waterUsage)],
+        ["\u{1F4C6} Previous Month", `${smartFixed(stats.lastMonth.waterUsage)} L`, waterAnalogyItems(stats.lastMonth.waterUsage)],
+        ["\u{1F30D} Projected Year", `${smartFixed(projectedWater)} L`, waterAnalogyItems(projectedWater)]
+      ],
+      // Trees card
+      [
+        ["\u{1F4C5} Today", `${smartFixed(stats.today.treesEquivalent)} \u{1F333}`, treeAnalogyItems(stats.today.treesEquivalent)],
+        ["\u{1F4C8} Last 30 Days", `${smartFixed(stats.last30Days.treesEquivalent)} \u{1F333}`, treeAnalogyItems(stats.last30Days.treesEquivalent)],
+        ["\u{1F4C6} Previous Month", `${smartFixed(stats.lastMonth.treesEquivalent)} \u{1F333}`, treeAnalogyItems(stats.lastMonth.treesEquivalent)],
+        ["\u{1F30D} Projected Year", `${smartFixed(projectedTrees)} \u{1F333}`, treeAnalogyItems(projectedTrees)]
+      ]
+    ];
+    const metricHeaders = [
+      { icon: "\u{1F7E3}", label: "Tokens (total)", color: "#c37bff" },
+      { icon: "\u{1F331}", label: "Estimated CO\u2082", color: "#7fe36f" },
+      { icon: "\u{1F4A7}", label: "Estimated Water", color: "#6fc3ff" },
+      { icon: "\u{1F333}", label: "Tree equivalent", color: "#9de67f" }
+    ];
+    const cards = el("div", "metric-cards");
+    periods.forEach((periodCols, i) => {
+      const card = el("div", "metric-card");
+      const cardHeader = el("div", "metric-card-header");
+      const iconEl = el("span", "metric-card-icon", metricHeaders[i].icon);
+      iconEl.style.color = metricHeaders[i].color;
+      const labelEl = el("span", "metric-card-label", metricHeaders[i].label);
+      cardHeader.append(iconEl, labelEl);
+      card.append(cardHeader);
+      const grid = el("div", "analogy-grid");
+      periodCols.forEach(([periodLabel, primaryValue, analogies]) => {
+        const col = el("div", "analogy-col");
+        col.append(el("div", "analogy-col-header", periodLabel));
+        col.append(el("div", "metric-primary-value", primaryValue));
+        if (analogies) {
+          analogies.forEach((item) => {
+            const itemEl = el("div", "analogy-item");
+            const itemIcon = el("span", "analogy-icon", item.icon);
+            const itemText = document.createElement("span");
+            itemText.textContent = item.text;
+            itemEl.append(itemIcon, itemText);
+            col.append(itemEl);
           });
         }
+        grid.append(col);
       });
+      card.append(grid);
+      cards.append(card);
     });
+    section.append(cards);
+    return section;
+  }
+  function buildEstimatesSection() {
+    const section = el("div", "section");
+    const heading = el("h3");
+    heading.textContent = "\u{1F4A1} Calculation & Estimates";
+    section.append(heading);
+    const notes = document.createElement("ul");
+    notes.className = "notes";
+    const items = [
+      "Cost estimate uses public API pricing with input/output token counts; GitHub Copilot billing may differ from direct API usage.",
+      "Estimated CO\u2082 is based on ~0.2 g CO\u2082e per 1,000 tokens (average data center energy mix and PUE).",
+      "Estimated water usage is based on ~0.3 L per 1,000 tokens (data center cooling estimates).",
+      "Tree equivalent represents the fraction of a single mature tree's annual CO\u2082 absorption (~21 kg/year).",
+      "CO\u2082 analogies: petrol car \u2248 120 g/km \xB7 intercity train \u2248 41 g/km \xB7 economy flight \u2248 180 g/km (ICAO avg.) \xB7 smartphone charge \u2248 8 g \xB7 LED bulb \u2248 3 g/hr (10 W, EU grid) \xB7 kettle boil \u2248 20 g.",
+      "Water analogies: shower \u2248 8 L/min \xB7 washing machine \u2248 50 L \xB7 standard bathtub \u2248 150 L \xB7 dishwasher \u2248 12 L \xB7 mug of tea \u2248 250 mL \xB7 daily drinking water \u2248 2 L/person.",
+      "All analogies are order-of-magnitude estimates. Actual values depend on your region's energy mix and device efficiency."
+    ];
+    items.forEach((text) => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      notes.append(li);
+    });
+    section.append(notes);
+    return section;
+  }
+  function wireButtons() {
+    document.getElementById("btn-refresh")?.addEventListener("click", () => vscode.postMessage({ command: "refresh" }));
+    document.getElementById("btn-details")?.addEventListener("click", () => vscode.postMessage({ command: "showDetails" }));
+    document.getElementById("btn-chart")?.addEventListener("click", () => vscode.postMessage({ command: "showChart" }));
+    document.getElementById("btn-usage")?.addEventListener("click", () => vscode.postMessage({ command: "showUsageAnalysis" }));
+    document.getElementById("btn-diagnostics")?.addEventListener("click", () => vscode.postMessage({ command: "showDiagnostics" }));
+    document.getElementById("btn-maturity")?.addEventListener("click", () => vscode.postMessage({ command: "showMaturity" }));
+    document.getElementById("btn-dashboard")?.addEventListener("click", () => vscode.postMessage({ command: "showDashboard" }));
   }
   window.addEventListener("message", (event) => {
     const message = event.data;
-    switch (message.command) {
-      case "repoAnalysisResults":
-        displayRepoAnalysisResults(message.data, message.workspacePath);
-        break;
-      case "repoAnalysisError":
-        displayRepoAnalysisError(message.error, message.workspacePath);
-        break;
-      case "repoAnalysisBatchComplete":
-        handleBatchAnalysisComplete();
-        break;
-      case "updateStats":
-        if (message.data?.locale) {
-          setFormatLocale(message.data.locale);
-        }
-        {
-          const sanitized = sanitizeStats(message.data);
-          if (sanitized) {
-            renderLayout(sanitized);
-            renderRepositoryHygienePanels();
-          }
-        }
-        break;
-      case "highlightUnknownTools": {
-        const el2 = document.getElementById("unknown-mcp-tools-section");
-        if (el2) {
-          el2.scrollIntoView({ behavior: "smooth", block: "center" });
-          el2.style.transition = "box-shadow 0.3s ease";
-          el2.style.boxShadow = "0 0 0 3px var(--vscode-focusBorder)";
-          setTimeout(() => {
-            el2.style.boxShadow = "";
-          }, 2e3);
-        }
-        break;
-      }
+    if (message.command === "updateStats") {
+      render(message.data);
     }
   });
-  function getWorkspaceName(workspacePath) {
-    const workspace = hygieneMatrixState?.workspaces.find((ws) => ws.workspacePath === workspacePath);
-    return workspace?.workspaceName || workspacePath;
-  }
-  function getScoreLabel(workspacePath) {
-    const record = repoAnalysisState.get(workspacePath);
-    if (record?.data?.summary) {
-      const percentage = toFiniteNumber(record.data.summary.percentage);
-      return `${Math.round(percentage)}%`;
-    }
-    if (record?.error) {
-      return "Error";
-    }
-    return "\u2014";
-  }
-  function toFiniteNumber(value) {
-    const numeric = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(numeric) ? numeric : 0;
-  }
-  function buildRepoAnalysisBodyElement(data, workspacePath) {
-    const summary = data?.summary || {};
-    const checks = Array.isArray(data?.checks) ? data.checks : [];
-    const recommendations = Array.isArray(data?.recommendations) ? [...data.recommendations] : [];
-    const docsLinks = {
-      "git-repo": "https://docs.github.com/en/get-started/using-git/about-git",
-      "gitignore": "https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files",
-      "env-example": "https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions",
-      "editorconfig": "https://editorconfig.org/",
-      "linter": "https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning",
-      "formatter": "https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide",
-      "type-safety": "https://docs.github.com/en/code-security/code-scanning/reference/code-ql-built-in-queries/javascript-typescript-built-in-queries",
-      "commit-messages": "https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/about-commits",
-      "conventional-commits": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets",
-      "ci-config": "https://docs.github.com/en/actions/about-github-actions/understanding-github-actions",
-      "scripts": "https://docs.github.com/en/actions/tutorials/build-and-test-code/nodejs",
-      "task-runner": "https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/add-scripts",
-      "devcontainer": "https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration",
-      "dockerfile": "https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry",
-      "version-pinning": "https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/setting-up-your-nodejs-project-for-codespaces",
-      "license": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository"
-    };
-    const container = el("div");
-    const header = el("div");
-    header.setAttribute("style", "display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;");
-    const title = el("div");
-    title.setAttribute("style", "font-size: 14px; font-weight: 600; color: var(--text-primary);");
-    title.textContent = "\u{1F4CA} Repository Hygiene Score";
-    const score = el("div");
-    score.setAttribute("style", "font-size: 24px; font-weight: 700; color: var(--link-color);");
-    score.textContent = `${Math.round(toFiniteNumber(summary.percentage))}%`;
-    header.append(title, score);
-    container.appendChild(header);
-    const statsGrid = el("div");
-    statsGrid.setAttribute("style", "display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;");
-    const statCards = [
-      {
-        count: summary.passedChecks,
-        label: "Passed",
-        cardStyle: "text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;",
-        countStyle: "font-size: 18px; font-weight: 600; color: var(--success-fg);"
-      },
-      {
-        count: summary.warningChecks,
-        label: "Warnings",
-        cardStyle: "text-align: center; padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;",
-        countStyle: "font-size: 18px; font-weight: 600; color: var(--warning-fg);"
-      },
-      {
-        count: summary.failedChecks,
-        label: "Failed",
-        cardStyle: "text-align: center; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;",
-        countStyle: "font-size: 18px; font-weight: 600; color: #ef4444;"
-      }
-    ];
-    for (const statCard of statCards) {
-      const card = el("div");
-      card.setAttribute("style", statCard.cardStyle);
-      const count = el("div");
-      count.setAttribute("style", statCard.countStyle);
-      count.textContent = String(toFiniteNumber(statCard.count));
-      const label = el("div");
-      label.setAttribute("style", "font-size: 10px; color: var(--text-secondary);");
-      label.textContent = statCard.label;
-      card.append(count, label);
-      statsGrid.appendChild(card);
-    }
-    container.appendChild(statsGrid);
-    const scoreSummary = el("div");
-    scoreSummary.setAttribute("style", "font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 16px;");
-    scoreSummary.textContent = `Score: ${toFiniteNumber(summary.totalScore)} / ${toFiniteNumber(summary.maxScore)} points`;
-    container.appendChild(scoreSummary);
-    const priorityOrder = { high: 1, medium: 2, low: 3 };
-    recommendations.sort((a, b) => (priorityOrder[a?.priority] || 99) - (priorityOrder[b?.priority] || 99));
-    const categories = {};
-    for (const check of checks) {
-      const categoryId = typeof check?.category === "string" && check.category.length > 0 ? check.category : "other";
-      if (!categories[categoryId]) {
-        categories[categoryId] = [];
-      }
-      categories[categoryId].push(check);
-    }
-    const categoryLabels = {
-      versionControl: "\u{1F504} Version Control",
-      codeQuality: "\u2728 Code Quality",
-      cicd: "\u{1F680} CI/CD",
-      environment: "\u{1F527} Environment",
-      documentation: "\u{1F4DA} Documentation"
-    };
-    for (const [categoryId, categoryChecks] of Object.entries(categories)) {
-      const section = el("div");
-      section.setAttribute("style", "margin-bottom: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden;");
-      const sectionHeader = el("div");
-      sectionHeader.setAttribute("style", "padding: 8px 12px; background: var(--list-hover-bg); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;");
-      const categoryName = el("span");
-      categoryName.setAttribute("style", "font-size: 12px; font-weight: 600; color: var(--text-primary);");
-      categoryName.textContent = categoryLabels[categoryId] || categoryId;
-      const categorySummary = summary?.categories?.[categoryId];
-      const categoryPct = el("span");
-      categoryPct.setAttribute("style", "font-size: 11px; color: var(--link-color); font-weight: 600;");
-      categoryPct.textContent = `${Math.round(toFiniteNumber(categorySummary?.percentage))}%`;
-      sectionHeader.append(categoryName, categoryPct);
-      section.appendChild(sectionHeader);
-      for (const check of categoryChecks) {
-        const status = check?.status === "pass" || check?.status === "warning" ? check.status : "fail";
-        const statusIcon = status === "pass" ? "\u2705" : status === "warning" ? "\u26A0\uFE0F" : "\u274C";
-        const statusColor = status === "pass" ? "#22c55e" : status === "warning" ? "#f59e0b" : "#ef4444";
-        const checkRow = el("div");
-        checkRow.setAttribute("style", "padding: 8px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: flex-start; gap: 8px;");
-        const icon = el("span");
-        icon.setAttribute("style", "font-size: 16px;");
-        icon.textContent = statusIcon;
-        const content = el("div");
-        content.setAttribute("style", "flex: 1;");
-        const checkLabel = el("div");
-        checkLabel.setAttribute("style", `font-size: 12px; font-weight: 600; color: ${statusColor};`);
-        checkLabel.textContent = typeof check?.label === "string" ? check.label : "";
-        const checkDetail = el("div");
-        checkDetail.setAttribute("style", "font-size: 11px; color: var(--text-secondary); margin-top: 2px;");
-        checkDetail.textContent = typeof check?.detail === "string" ? check.detail : "";
-        content.append(checkLabel, checkDetail);
-        if (typeof check?.hint === "string" && check.hint.length > 0) {
-          const hint = el("div");
-          hint.setAttribute("style", "font-size: 10px; color: var(--link-color); margin-top: 4px; font-style: italic;");
-          hint.textContent = `\u{1F4A1} ${check.hint}`;
-          content.appendChild(hint);
-        }
-        const checkId = typeof check?.id === "string" ? check.id : "";
-        const docUrl = docsLinks[checkId];
-        if (docUrl) {
-          const docLink = el("a");
-          docLink.setAttribute("href", docUrl);
-          docLink.setAttribute("style", "font-size: 10px; color: var(--link-color); margin-top: 4px; display: inline-block;");
-          docLink.setAttribute("title", "View official documentation");
-          docLink.textContent = "\u{1F4D6} View documentation";
-          content.appendChild(docLink);
-        }
-        const weight = el("span");
-        weight.setAttribute("style", "font-size: 10px; color: var(--text-muted); min-width: 30px; text-align: right;");
-        weight.textContent = `+${toFiniteNumber(check?.weight)}`;
-        checkRow.append(icon, content, weight);
-        section.appendChild(checkRow);
-      }
-      container.appendChild(section);
-    }
-    if (recommendations.length > 0) {
-      const recommendationsSection = el("div");
-      recommendationsSection.setAttribute("style", "margin-top: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden;");
-      const recommendationsHeader = el("div");
-      recommendationsHeader.setAttribute("style", "padding: 8px 12px; background: var(--list-hover-bg); border-bottom: 1px solid var(--border-color);");
-      const recommendationsTitle = el("span");
-      recommendationsTitle.setAttribute("style", "font-size: 12px; font-weight: 600; color: var(--text-primary);");
-      recommendationsTitle.textContent = "\u{1F4A1} Top Recommendations";
-      recommendationsHeader.appendChild(recommendationsTitle);
-      recommendationsSection.appendChild(recommendationsHeader);
-      for (const recommendation of recommendations.slice(0, 5)) {
-        const priority = recommendation?.priority === "high" || recommendation?.priority === "medium" ? recommendation.priority : "low";
-        const priorityColor = priority === "high" ? "#ef4444" : priority === "medium" ? "#f59e0b" : "#60a5fa";
-        const row = el("div");
-        row.setAttribute("style", "padding: 8px; border-bottom: 1px solid var(--border-subtle); display: flex; gap: 8px;");
-        const priorityLabel = el("span");
-        priorityLabel.setAttribute("style", `font-size: 10px; font-weight: 600; color: ${priorityColor}; min-width: 50px;`);
-        priorityLabel.textContent = String(priority).toUpperCase();
-        const content = el("div");
-        content.setAttribute("style", "flex: 1;");
-        const action = el("div");
-        action.setAttribute("style", "font-size: 11px; color: var(--text-primary);");
-        action.textContent = typeof recommendation?.action === "string" ? recommendation.action : "";
-        const impact = el("div");
-        impact.setAttribute("style", "font-size: 10px; color: var(--text-muted); margin-top: 2px;");
-        impact.textContent = typeof recommendation?.impact === "string" ? recommendation.impact : "";
-        content.append(action, impact);
-        const weight = el("span");
-        weight.setAttribute("style", "font-size: 10px; color: var(--text-muted); min-width: 30px; text-align: right;");
-        weight.textContent = `+${toFiniteNumber(recommendation?.weight)}`;
-        row.append(priorityLabel, content, weight);
-        recommendationsSection.appendChild(row);
-      }
-      container.appendChild(recommendationsSection);
-    }
-    const failedChecks = checks.filter((c) => c?.status === "fail" || c?.status === "warning");
-    if (failedChecks.length > 0) {
-      const copilotSection = el("div");
-      copilotSection.setAttribute("style", "margin-top: 16px; padding: 12px; background: rgba(96, 165, 250, 0.07); border: 1px solid rgba(96, 165, 250, 0.3); border-radius: 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px;");
-      const copilotText = el("div");
-      copilotText.setAttribute("style", "font-size: 11px; color: var(--text-secondary); flex: 1;");
-      copilotText.textContent = "Let Copilot help you fix the identified issues in this repository.";
-      const copilotBtn = document.createElement("vscode-button");
-      copilotBtn.setAttribute("style", "min-width: 180px;");
-      copilotBtn.textContent = "\u{1F916} Ask Copilot to Improve";
-      copilotBtn.addEventListener("click", () => {
-        const failedLines = failedChecks.map((c) => `- ${c.label}: ${c.detail || ""}${c.hint ? ` (${c.hint})` : ""}`).join("\n");
-        const prompt = `Please help me improve this repository by addressing the following best practice issues:
-
-${failedLines}
-
-For each issue, please provide specific steps or code changes to fix it.`;
-        const isRepoOpen = !workspacePath || currentWorkspacePaths.some(
-          (p) => p.toLowerCase() === workspacePath.toLowerCase()
-        );
-        if (isRepoOpen) {
-          vscode.postMessage({ command: "openCopilotChatWithPrompt", prompt });
-        } else {
-          const repoFolderName = workspacePath.split(/[/\\]/).filter(Boolean).pop() ?? workspacePath;
-          copilotSection.replaceChildren();
-          copilotSection.setAttribute("style", "margin-top: 16px; padding: 12px; background: rgba(251, 191, 36, 0.07); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 4px; display: flex; flex-direction: column; gap: 8px;");
-          const instructions = el("div");
-          instructions.setAttribute("style", "font-size: 11px; color: var(--warning-fg);");
-          instructions.textContent = `\u26A0\uFE0F Open "${repoFolderName}" in VS Code first, then paste this prompt into Copilot Chat:`;
-          const promptBox = el("pre");
-          promptBox.setAttribute("style", "font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; font-family: monospace; margin: 0;");
-          promptBox.textContent = prompt;
-          const copyBtn = document.createElement("vscode-button");
-          copyBtn.setAttribute("appearance", "secondary");
-          copyBtn.textContent = "\u{1F4CB} Copy prompt";
-          copyBtn.addEventListener("click", () => {
-            navigator.clipboard.writeText(prompt).then(() => {
-              copyBtn.textContent = "\u2705 Copied!";
-              setTimeout(() => {
-                copyBtn.textContent = "\u{1F4CB} Copy prompt";
-              }, 2e3);
-            });
-          });
-          copilotSection.append(instructions, promptBox, copyBtn);
-        }
-      });
-      copilotSection.append(copilotText, copilotBtn);
-      container.appendChild(copilotSection);
-    }
-    return container;
-  }
-  function renderRepositoryHygienePanels() {
-    const listPane = document.getElementById("repo-list-pane");
-    const listContainer = document.getElementById("repo-list-pane-container");
-    const detailsPane = document.getElementById("repo-details-pane");
-    const detailsContainer = document.getElementById("repo-details-pane-container");
-    if (!listPane || !listContainer || !detailsPane || !detailsContainer || !hygieneMatrixState) {
-      return;
-    }
-    const hasSelectedRepository = !!selectedRepoPath && !isSwitchingRepository;
-    const visibleWorkspaces = hasSelectedRepository ? hygieneMatrixState.workspaces.filter((ws) => ws.workspacePath === selectedRepoPath) : hygieneMatrixState.workspaces;
-    listContainer.classList.remove("repo-hygiene-pane-collapsed");
-    detailsContainer.classList.toggle("repo-hygiene-pane-collapsed", !hasSelectedRepository);
-    listPane.innerHTML = visibleWorkspaces.map((ws, idx) => {
-      const record2 = repoAnalysisState.get(ws.workspacePath);
-      const hasResult = !!record2?.data?.summary;
-      const scoreLabel = getScoreLabel(ws.workspacePath);
-      const buttonLabel = hasResult ? "Details" : "Analyze";
-      const buttonAction = hasResult ? "details" : "analyze";
-      const isCurrentSelection = selectedRepoPath === ws.workspacePath && hasSelectedRepository;
-      return `
-			<div class="repo-item" style="padding: 8px 12px; border-bottom: ${idx < visibleWorkspaces.length - 1 ? "1px solid var(--border-subtle)" : "none"}; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-				<div style="flex: 1; min-width: 0;">
-					<div class="repo-name" style="font-size: 12px; font-weight: 600; color: var(--text-primary); font-family: 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.workspacePath)}">
-						${escapeHtml(ws.workspaceName)}
-					</div>
-					<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">
-						${Number(ws.sessionCount) || 0} ${ws.sessionCount === 1 ? "session" : "sessions"} \xB7 ${Number(ws.interactionCount) || 0} ${ws.interactionCount === 1 ? "interaction" : "interactions"} \xB7 Score: ${escapeHtml(scoreLabel)}
-					</div>
-				</div>
-				<vscode-button class="btn-repo-action" data-action="${buttonAction}" data-workspace-path="${escapeHtml(ws.workspacePath)}" ${isCurrentSelection ? 'disabled="true"' : ""} style="min-width: 80px;">
-					${buttonLabel}
-				</vscode-button>
-			</div>
-		`;
-    }).join("");
-    if (!hasSelectedRepository || !selectedRepoPath) {
-      detailsPane.replaceChildren();
-      return;
-    }
-    const workspaceName = getWorkspaceName(selectedRepoPath);
-    const record = repoAnalysisState.get(selectedRepoPath);
-    if (record?.data) {
-      detailsPane.replaceChildren();
-      const card = el("div", "repo-details-card");
-      card.setAttribute("style", "padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;");
-      const header = el("div", "repo-details-card-header");
-      header.setAttribute("style", "display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;");
-      const label = el("div");
-      label.setAttribute("style", "font-size: 12px; color: var(--text-secondary);");
-      label.textContent = "Repository: ";
-      const repoName = el("span");
-      repoName.setAttribute("style", "color: var(--text-primary); font-weight: 600; font-family: 'Courier New', monospace;");
-      repoName.textContent = workspaceName;
-      label.appendChild(repoName);
-      const switchButton = document.createElement("vscode-button");
-      switchButton.id = "btn-switch-repository";
-      switchButton.setAttribute("style", "min-width: 120px;");
-      switchButton.textContent = "Switch Repository";
-      header.append(label, switchButton);
-      card.append(header, buildRepoAnalysisBodyElement(record.data, selectedRepoPath ?? void 0));
-      detailsPane.appendChild(card);
-      return;
-    }
-    if (record?.error) {
-      detailsPane.innerHTML = `
-			<div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px;">
-				<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
-					<div style="font-size: 11px; color: #fca5a5;">Repository: ${escapeHtml(workspaceName)}</div>
-					<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
-				</div>
-				<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">\u274C Analysis Failed</div>
-				<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(record.error)}</div>
-			</div>
-		`;
-      return;
-    }
-    detailsPane.innerHTML = `
-		<div style="padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
-			<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
-				<div style="font-size: 12px; color: var(--text-secondary);">Repository: <span style="color: var(--text-primary); font-weight: 600; font-family: 'Courier New', monospace;">${escapeHtml(workspaceName)}</span></div>
-				<vscode-button id="btn-switch-repository" style="min-width: 120px;">Switch Repository</vscode-button>
-			</div>
-			<div style="font-size: 11px; color: var(--text-muted);">No analysis data yet. Click Analyze in the list.</div>
-		</div>
-	`;
-  }
-  function displayRepoAnalysisResults(data, workspacePath) {
-    if (workspacePath) {
-      repoAnalysisState.set(workspacePath, { data, error: void 0 });
-      if (!isBatchAnalysisInProgress) {
-        selectedRepoPath = workspacePath;
-        isSwitchingRepository = false;
-      }
-      renderRepositoryHygienePanels();
-      return;
-    }
-    const btn = document.getElementById("btn-analyse-repo");
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Analyze Repo for Best Practices";
-    }
-    const resultsHost = document.getElementById("repo-analysis-results");
-    if (resultsHost) {
-      resultsHost.replaceChildren();
-      const card = el("div", "repo-analysis-card");
-      card.setAttribute("style", "padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 12px;");
-      card.appendChild(buildRepoAnalysisBodyElement(data, workspacePath));
-      resultsHost.appendChild(card);
-    }
-  }
-  function displayRepoAnalysisError(error, workspacePath) {
-    if (workspacePath) {
-      repoAnalysisState.set(workspacePath, { data: void 0, error });
-      if (!isBatchAnalysisInProgress) {
-        selectedRepoPath = workspacePath;
-        isSwitchingRepository = false;
-      }
-      renderRepositoryHygienePanels();
-      return;
-    }
-    const btn = document.getElementById("btn-analyse-repo");
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Analyze Repo for Best Practices";
-    }
-    const resultsHost = document.getElementById("repo-analysis-results");
-    if (resultsHost) {
-      resultsHost.innerHTML = `
-			<div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; margin-bottom: 12px;">
-				<div style="font-size: 12px; font-weight: 600; color: #ef4444; margin-bottom: 4px;">\u274C Analysis Failed</div>
-				<div style="font-size: 11px; color: #fca5a5;">${escapeHtml(error)}</div>
-			</div>
-		`;
-    }
-  }
-  function handleBatchAnalysisComplete() {
-    isBatchAnalysisInProgress = false;
-    isSwitchingRepository = true;
-    selectedRepoPath = null;
-    renderRepositoryHygienePanels();
-    const btn = document.getElementById("btn-analyse-all");
-    if (btn) {
-      btn.disabled = false;
-      const matrix = initialData?.customizationMatrix;
-      const count = matrix?.workspaces?.length || 0;
-      btn.textContent = `Analyze All Repositories (${count})`;
-    }
-  }
   async function bootstrap() {
     const { provideVSCodeDesignSystem: provideVSCodeDesignSystem2, vsCodeButton: vsCodeButton2 } = await Promise.resolve().then(() => (init_dist3(), dist_exports));
     provideVSCodeDesignSystem2().register(vsCodeButton2());
-    if (!initialData) {
+    if (initialData) {
+      render(initialData);
+    } else {
       const root = document.getElementById("root");
       if (root) {
-        root.textContent = "No data available.";
+        root.textContent = "";
+        const fallback = document.createElement("div");
+        fallback.style.padding = "16px";
+        fallback.style.color = "#e7e7e7";
+        fallback.textContent = "No data available.";
+        root.append(fallback);
       }
-      return;
     }
-    console.log("[Usage Analysis] Browser default locale:", Intl.DateTimeFormat().resolvedOptions().locale);
-    console.log("[Usage Analysis] Received locale from extension:", initialData.locale);
-    console.log("[Usage Analysis] Test format 1234567.89 with received locale:", new Intl.NumberFormat(initialData.locale).format(123456789e-2));
-    setFormatLocale(initialData.locale);
-    renderLayout(initialData);
   }
-  void bootstrap();
+  bootstrap();
 })();
 /*! Bundled license information:
 
@@ -21995,4 +20524,4 @@ tabbable/dist/index.esm.js:
   * @license MIT, https://github.com/focus-trap/tabbable/blob/master/LICENSE
   *)
 */
-//# sourceMappingURL=usage.js.map
+//# sourceMappingURL=environmental.js.map

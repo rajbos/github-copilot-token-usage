@@ -33,5 +33,15 @@ namespace CopilotTokenTracker.ToolWindow
             if (_control == null) { return Task.CompletedTask; }
             return _control.RefreshAsync();
         }
+
+        /// <summary>
+        /// Resets the current view to the default (details) and refreshes.
+        /// Use this when a view is stuck or rendering incorrectly.
+        /// </summary>
+        public Task ResetViewAsync()
+        {
+            if (_control == null) { return Task.CompletedTask; }
+            return _control.ResetViewAsync();
+        }
     }
 }

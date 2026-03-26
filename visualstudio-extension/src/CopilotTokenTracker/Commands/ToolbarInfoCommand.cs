@@ -20,7 +20,8 @@ namespace CopilotTokenTracker.Commands
         public static readonly Guid CommandSet = new Guid(ShowTokenTrackerCommand.CommandSetGuidString);
         public const int CommandId = 0x0200;
 
-        private static readonly TimeSpan StatsRefreshInterval = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan StatsRefreshInterval      = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan StatsRetryInterval        = TimeSpan.FromSeconds(30);
 
         private readonly AsyncPackage _package;
         private readonly OleMenuCommand _menuCommand;
@@ -62,9 +63,19 @@ namespace CopilotTokenTracker.Commands
             try
             {
                 var stats = await StatsBuilder.BuildAsync();
-                var today  = FormatTokenCount(stats.Today.Tokens);
-                var last30 = FormatTokenCount(stats.Last30Days.Tokens);
-                var text   = $"Copilot: {today} | {last30}";
+                string text;
+                if (stats == null)
+                {
+                    text = "Copilot: ? | ?";
+                    // Retry sooner rather than waiting the full 5-minute interval
+                    _statsTimer?.Change(StatsRetryInterval, StatsRefreshInterval);
+                }
+                else
+                {
+                    var today  = FormatTokenCount(stats.Today.Tokens);
+                    var last30 = FormatTokenCount(stats.Last30Days.Tokens);
+                    text = $"Copilot: {today} | {last30}";
+                }
 
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
                 _menuCommand.Text = text;
@@ -119,8 +130,10 @@ namespace CopilotTokenTracker.Commands
 
                     if (pane is ToolWindow.TokenTrackerToolWindow trackerWindow)
                     {
-                        Utilities.OutputLogger.Log("Tool window found, refreshing...");
-                        await trackerWindow.RefreshAsync();
+                        Utilities.OutputLogger.Log("Tool window found, resetting to details view...");
+                        await trackerWindow.ResetViewAsync();
+                        // The view fetch may have populated the CLI cache; sync toolbar text now.
+                        await RefreshStatsAsync();
                     }
                     else
                     {

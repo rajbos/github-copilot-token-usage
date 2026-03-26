@@ -30,12 +30,14 @@
         _vsApi = {
             /**
              * Posts a message to the .NET host.
-             * @param {any} msg  Will be JSON-serialised if it is not already a string.
+             * Pass the value directly — WebView2 serialises objects to JSON so the
+             * host receives a proper JSON object via WebMessageAsJson.
+             * Pre-stringifying would cause double-encoding (the host would see a
+             * JSON string instead of a JSON object and postMessage routing would fail).
              */
             postMessage: function (msg) {
-                var payload = (typeof msg === 'string') ? msg : JSON.stringify(msg);
                 if (global.chrome && global.chrome.webview) {
-                    global.chrome.webview.postMessage(payload);
+                    global.chrome.webview.postMessage(msg);
                 }
             },
 

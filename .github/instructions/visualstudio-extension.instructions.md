@@ -29,6 +29,39 @@ Or from the repo root:
 ./build.ps1 -Project visualstudio
 ```
 
+## Build Validation
+
+VSIX projects require Visual Studio's MSBuild toolchain — **not `dotnet build`**.
+
+### Correct way: use `build.ps1`
+
+Always build the VS extension via the root orchestrator:
+```powershell
+# From the repo root:
+./build.ps1 -Project visualstudio
+```
+
+This uses `vswhere.exe` to locate the correct `MSBuild.exe` from the Visual Studio install. Running `dotnet build` against the `.csproj` directly **always fails** with:
+```
+error MSB4018: The "GenerateResourceAndCtoFileManifests" task failed unexpectedly.
+```
+That error is a `dotnet build` / VSSDK incompatibility, **not a code error** — ignore it if seen.
+
+### Checking for C# compiler errors without a full build
+
+```powershell
+# From the repo root:
+./build.ps1 -Project visualstudio 2>&1 | Select-String -Pattern "error CS|FAILED"
+# No "error CS" lines = no compiler errors
+```
+
+- The language server (Roslyn / `get_errors` tool) surfaces C# errors in the IDE without a build run.
+- After editing C# files, call `get_errors` on the changed files first, then run `./build.ps1 -Project visualstudio` to confirm a clean MSBuild result.
+
+### C# interpolated verbatim strings (`$@"..."`) — escaping `{` / `}`
+
+HTML templates in `ThemedHtmlBuilder.cs` use C# `$@"..."` strings. Literal `{` and `}` characters inside embedded JavaScript **must** be doubled (`{{` / `}}`) to avoid being treated as interpolation holes. Forgetting this produces `CS1073`, `CS1012`, `CS1011` errors at the JS lines.
+
 ## Session File Discovery
 
 Visual Studio Copilot Chat stores sessions as MessagePack-encoded binary files:

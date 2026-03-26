@@ -1,38 +1,121 @@
 /**
  * `fluency` command - Show Copilot Fluency Score based on usage patterns.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { discoverSessionFiles, calculateUsageAnalysisStats, fmt } from '../helpers';
 import { calculateMaturityScores } from '../../../vscode-extension/src/maturityScoring';
+import type { WorkspaceCustomizationMatrix } from '../../../vscode-extension/src/types';
+
+/**
+ * Builds a WorkspaceCustomizationMatrix by deriving workspace folder paths from
+ * VS Code-style session file paths (workspaceStorage/<hash>/chatSessions/<file>),
+ * then checking each workspace for .github/copilot-instructions.md or agents.md.
+ *
+ * Non-VS Code session files (Crush, OpenCode, Copilot CLI, Visual Studio) are skipped.
+ */
+async function buildCustomizationMatrix(sessionFiles: string[]): Promise<WorkspaceCustomizationMatrix | undefined> {
+	const workspacePaths = new Set<string>();
+
+	for (const sessionFile of sessionFiles) {
+		// Expected structure: .../workspaceStorage/<hash>/chatSessions/<file>
+		// Go up 2 levels to reach the hash directory, then read workspace.json
+		const chatSessionsDir = path.dirname(sessionFile);
+		if (path.basename(chatSessionsDir) !== 'chatSessions') { continue; }
+		const hashDir = path.dirname(chatSessionsDir);
+		const workspaceJsonPath = path.join(hashDir, 'workspace.json');
+
+		try {
+			if (!fs.existsSync(workspaceJsonPath)) { continue; }
+			const content = JSON.parse(await fs.promises.readFile(workspaceJsonPath, 'utf-8'));
+			const folderUri: string | undefined = content.folder;
+			if (!folderUri || !folderUri.startsWith('file://')) { continue; }
+
+			// Convert file URI to a local path, handling Windows drive letters
+			let folderPath = decodeURIComponent(folderUri.replace(/^file:\/\//, ''));
+			// On Windows, file:///C:/... becomes /C:/... — strip the leading slash
+			if (/^\/[A-Za-z]:/.test(folderPath)) { folderPath = folderPath.slice(1); }
+			workspacePaths.add(folderPath);
+		} catch {
+			// Skip unreadable workspace.json files
+		}
+	}
+
+	if (workspacePaths.size === 0) { return undefined; }
+
+	let workspacesWithIssues = 0;
+	for (const wsPath of workspacePaths) {
+		try {
+			const hasInstructions = fs.existsSync(path.join(wsPath, '.github', 'copilot-instructions.md'));
+			const hasAgentsMd    = fs.existsSync(path.join(wsPath, 'agents.md'));
+			if (!hasInstructions && !hasAgentsMd) { workspacesWithIssues++; }
+		} catch {
+			workspacesWithIssues++; // Count inaccessible workspaces as lacking customization
+		}
+	}
+
+	return {
+		customizationTypes: [],
+		workspaces: [],
+		totalWorkspaces: workspacePaths.size,
+		workspacesWithIssues,
+	};
+}
 
 export const fluencyCommand = new Command('fluency')
 	.description('Show your Copilot Fluency Score and improvement tips')
 	.option('-t, --tips', 'Show improvement tips for each category')
+	.option('--json', 'Output raw JSON (for machine consumption)')
 	.action(async (options) => {
-		console.log(chalk.bold.cyan('\n🎯 Copilot Token Tracker - Fluency Score\n'));
+		if (!options.json) {
+			console.log(chalk.bold.cyan('\n🎯 Copilot Token Tracker - Fluency Score\n'));
+		}
 
-		process.stdout.write(chalk.dim('Scanning for session files...'));
+		if (!options.json) { process.stdout.write(chalk.dim('Scanning for session files...')); }
 		const files = await discoverSessionFiles();
-		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+		if (!options.json) { process.stdout.write('\r' + ' '.repeat(50) + '\r'); }
 
 		if (files.length === 0) {
-			console.log(chalk.yellow('⚠️  No session files found.'));
+			if (options.json) {
+				process.stdout.write('{}');
+			} else {
+				console.log(chalk.yellow('⚠️  No session files found.'));
+			}
 			return;
 		}
 
-		process.stdout.write(chalk.dim('Analyzing usage patterns...'));
+		if (!options.json) { process.stdout.write(chalk.dim('Analyzing usage patterns...')); }
 
 		// Calculate usage analysis stats
 		const usageStats = await calculateUsageAnalysisStats(files);
-		process.stdout.write('\r' + ' '.repeat(50) + '\r');
+		if (!options.json) { process.stdout.write('\r' + ' '.repeat(50) + '\r'); }
+
+		// Build a customization matrix from workspace folder paths inferred from session file paths.
+		// This matches what the VS Code extension does (scanning workspace folders for instructions files).
+		const customizationMatrix = await buildCustomizationMatrix(files);
 
 		// Calculate maturity scores
 		const scores = await calculateMaturityScores(
-			undefined,
+			customizationMatrix,
 			async () => usageStats,
 			false
 		);
+
+		if (options.json) {
+			// Machine-readable output: emit pure JSON to stdout and exit
+			const payload = {
+				overallStage: scores.overallStage,
+				overallLabel: scores.overallLabel,
+				categories: scores.categories,
+				period: scores.period,
+				lastUpdated: scores.lastUpdated,
+				backendConfigured: false,
+			};
+			process.stdout.write(JSON.stringify(payload));
+			return;
+		}
 
 		// Overall score
 		const stageColors: Record<number, typeof chalk.red> = {

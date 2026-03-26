@@ -496,6 +496,41 @@ export function analyzeRequestContext(request: any, refs: ContextReferenceUsage)
 }
 
 /**
+ * Classifies unique models by tier and counts requests per tier.
+ * Called before each early return in analyzeSessionUsage so that all session
+ * formats (OpenCode, Visual Studio, Crush, Continue) populate the tier-breakdown
+ * shown by the Multi-Model Usage section in the usage analysis view.
+ */
+function applyModelTierClassification(
+	deps: Pick<UsageAnalysisDeps, 'modelPricing'>,
+	uniqueModels: string[],
+	allModelRequests: string[],
+	analysis: SessionUsageAnalysis
+): void {
+	const standard: string[] = [];
+	const premium: string[] = [];
+	const unknown: string[] = [];
+	for (const model of uniqueModels) {
+		const tier = getModelTier(model, deps.modelPricing);
+		if (tier === 'standard') { standard.push(model); }
+		else if (tier === 'premium') { premium.push(model); }
+		else { unknown.push(model); }
+	}
+	analysis.modelSwitching.tiers = { standard, premium, unknown };
+	analysis.modelSwitching.hasMixedTiers = standard.length > 0 && premium.length > 0;
+	let stdReq = 0, premReq = 0, unkReq = 0;
+	for (const model of allModelRequests) {
+		const tier = getModelTier(model, deps.modelPricing);
+		if (tier === 'standard') { stdReq++; }
+		else if (tier === 'premium') { premReq++; }
+		else { unkReq++; }
+	}
+	analysis.modelSwitching.standardRequests = stdReq;
+	analysis.modelSwitching.premiumRequests = premReq;
+	analysis.modelSwitching.unknownRequests = unkReq;
+}
+
+/**
  * Calculate model switching statistics for a session file.
  * This method updates the analysis.modelSwitching field in place.
  */
@@ -969,18 +1004,30 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			const models: string[] = [];
 			for (let i = 1; i < objects.length; i++) {
 				const isRequest = i % 2 === 1;
+				// VS session objects are [version, innerData] tuples; inner data is at index [1]
+				const objData = objects[i]?.[1];
 				if (isRequest) {
 					analysis.modeUsage.ask++;
 				} else {
-					const model = deps.visualStudio.getModelId(objects[i], false);
+					const model = deps.visualStudio.getModelId(objData, false);
 					if (model) { models.push(model); }
-					// Count tool calls from response content
-					for (const c of (objects[i]?.Content || [])) {
-						const inner = Array.isArray(c) ? c[1] : null;
+					// Count tool calls from response content (at objData.Content, not objects[i].Content)
+					for (const c of ((objData?.Content ?? []) as any[])) {
+						const inner: any = Array.isArray(c) ? c[1] : null;
 						if (inner?.Function) {
 							analysis.toolCalls.total++;
-							const toolName = String(inner.Function.Description || 'tool');
-							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							const toolName = String(inner.Function.Name || inner.Function.Description || 'tool');
+							if (isMcpTool(toolName)) {
+								analysis.mcpTools.total++;
+								const serverName = extractMcpServerName(toolName, deps.toolNameMap);
+								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+								const normalizedTool = normalizeMcpToolName(toolName);
+								analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
+								// Don't count as regular tool call
+								analysis.toolCalls.total--;
+							} else {
+								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							}
 						}
 					}
 				}
@@ -994,40 +1041,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				if (models[i] !== models[i - 1]) { switchCount++; }
 			}
 			analysis.modelSwitching.switchCount = switchCount;
-			return analysis;
-		}
-
-		// Handle Visual Studio sessions
-		if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
-			const objects = deps.visualStudio.decodeSessionFile(sessionFile);
-			const models: string[] = [];
-			for (let i = 1; i < objects.length; i++) {
-				const isRequest = i % 2 === 1;
-				if (isRequest) {
-					analysis.modeUsage.ask++;
-				} else {
-					const model = deps.visualStudio.getModelId(objects[i], false);
-					if (model) { models.push(model); }
-					// Count tool calls from response content
-					for (const c of (objects[i]?.Content || [])) {
-						const inner = Array.isArray(c) ? c[1] : null;
-						if (inner?.Function) {
-							analysis.toolCalls.total++;
-							const toolName = String(inner.Function.Description || 'tool');
-							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-						}
-					}
-				}
-			}
-			const uniqueModels = [...new Set(models)];
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-			analysis.modelSwitching.totalRequests = models.length;
-			let switchCount = 0;
-			for (let i = 1; i < models.length; i++) {
-				if (models[i] !== models[i - 1]) { switchCount++; }
-			}
-			analysis.modelSwitching.switchCount = switchCount;
+			applyModelTierClassification(deps, uniqueModels, models, analysis);
 			return analysis;
 		}
 
@@ -1062,6 +1076,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				if (models[i] !== models[i - 1]) { switchCount++; }
 			}
 			analysis.modelSwitching.switchCount = switchCount;
+			applyModelTierClassification(deps, uniqueModels, models, analysis);
 			return analysis;
 		}
 
@@ -1094,6 +1109,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				if (models[ki] !== models[ki - 1]) { switchCount++; }
 			}
 			analysis.modelSwitching.switchCount = switchCount;
+			applyModelTierClassification(deps, uniqueModels, models, analysis);
 			return analysis;
 		}
 
