@@ -1,8 +1,8 @@
 ---
-name: Bug report
-about: Create a report to help us improve the Copilot Token Tracker extension
-title: '[BUG] '
-labels: bug
+name: Bug report — VS Code Extension
+about: Report a bug in the Copilot Token Tracker VS Code extension
+title: '[BUG][vscode] '
+labels: "bug, vscode-extension"
 assignees: ''
 
 ---

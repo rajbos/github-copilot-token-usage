@@ -1,9 +1,9 @@
-name: Release
+name: VS Code Extension - Release
 
 on:
   push:
     tags:
-      - 'v*'  # Tag push: build + GitHub release only (no marketplace publish)
+      - 'vscode/v*'  # Tag push: build + GitHub release only (no marketplace publish)
   workflow_dispatch:  # Manual trigger: full pipeline including marketplace publish
     inputs:
       create_tag:
@@ -72,8 +72,8 @@ jobs:
           # For manual triggers, use package.json version
           TAG_VERSION="${{ steps.package_version.outputs.package_version }}"
         else
-          # For tag triggers, extract from the tag
-          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          # For tag triggers, strip the vscode/v prefix
+          TAG_VERSION=${GITHUB_REF#refs/tags/vscode/v}
         fi
         echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
         echo "Release version: $TAG_VERSION"
@@ -93,7 +93,7 @@ jobs:
       id: tag_name
       run: |
         if [ "${{ steps.trigger_type.outputs.is_manual }}" == "true" ]; then
-          TAG_NAME="v${{ steps.extract_version.outputs.tag_version }}"
+          TAG_NAME="vscode/v${{ steps.extract_version.outputs.tag_version }}"
         else
           TAG_NAME="${{ github.ref_name }}"
         fi
@@ -132,7 +132,7 @@ jobs:
           const fs = require('fs');
           const version = process.argv[1];
           const notes = fs.readFileSync('/tmp/release_notes.md', 'utf8').trim();
-          let changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          let changelog = fs.readFileSync('vscode-extension/CHANGELOG.md', 'utf8');
           const marker = '## [Unreleased]';
           const idx = changelog.indexOf(marker);
           if (idx >= 0) {
@@ -140,8 +140,8 @@ jobs:
             const section = '\n## [' + version + ']\n\n' + notes + '\n';
             changelog = changelog.slice(0, insertAt) + section + changelog.slice(insertAt);
           }
-          fs.writeFileSync('CHANGELOG.md', changelog);
-          console.log('✅ Updated CHANGELOG.md with v' + version + ' notes for VSIX packaging');
+          fs.writeFileSync('vscode-extension/CHANGELOG.md', changelog);
+          console.log('✅ Updated vscode-extension/CHANGELOG.md with v' + version + ' notes for VSIX packaging');
         " "$VERSION"
 
     - name: Create changelog branch and commit
@@ -151,7 +151,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         VERSION="${{ steps.extract_version.outputs.tag_version }}"
-        BRANCH="changelog/v${VERSION}"
+        BRANCH="vscode/changelog/v${VERSION}"
         echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
         git config --local user.name "github-actions[bot]"
@@ -165,23 +165,23 @@ jobs:
           exit 1
         fi
 
-        if git diff --quiet CHANGELOG.md; then
-          echo "ℹ️ No changes to CHANGELOG.md, skipping branch + commit"
+        if git diff --quiet vscode-extension/CHANGELOG.md; then
+          echo "ℹ️ No changes to vscode-extension/CHANGELOG.md, skipping branch + commit"
           exit 0
         fi
 
         git checkout -b "$BRANCH"
-        git add CHANGELOG.md
-        git commit -m "docs: update CHANGELOG.md for v${VERSION}"
+        git add vscode-extension/CHANGELOG.md
+        git commit -m "docs: update vscode-extension/CHANGELOG.md for v${VERSION}"
         git push origin "$BRANCH"
-        echo "✅ Pushed CHANGELOG.md update to $BRANCH"
+        echo "✅ Pushed vscode-extension/CHANGELOG.md update to $BRANCH"
 
     - name: Create tag for manual trigger
       if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag == true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        VERSION="v${{ steps.package_version.outputs.package_version }}"
+        VERSION="vscode/v${{ steps.package_version.outputs.package_version }}"
         echo "Creating tag: $VERSION"
         
         # Check if tag already exists on remote using exit code
@@ -270,7 +270,7 @@ jobs:
         
         # Create release with auto-generated notes and upload VSIX file
         gh release create "${{ steps.tag_name.outputs.tag_name }}" \
-          --title "Release ${{ steps.extract_version.outputs.tag_version }}" \
+          --title "VS Code Extension v${{ steps.extract_version.outputs.tag_version }}" \
           --notes-file /tmp/release_notes.md \
           vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
 

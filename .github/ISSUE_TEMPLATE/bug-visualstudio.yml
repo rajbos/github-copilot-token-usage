@@ -1,0 +1,91 @@
+name: Bug report — Visual Studio Extension
+description: Report a bug in the Copilot Token Tracker Visual Studio extension
+title: "[BUG][visualstudio] "
+labels:
+  - bug
+  - visual-studio-extension
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug in the **Copilot Token Tracker Visual Studio extension**.
+        Please fill in as much detail as possible so we can reproduce and fix the issue quickly.
+        > **Note:** This extension currently targets **Windows only** with Visual Studio 2022+.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Open Visual Studio
+        2. ...
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include any error messages or output from the Activity Log.
+    validations:
+      required: true
+
+  - type: input
+    id: vs-version
+    attributes:
+      label: Visual Studio version
+      description: "Full version string from Help > About Microsoft Visual Studio."
+      placeholder: "e.g. Visual Studio 2022 17.10.0"
+    validations:
+      required: true
+
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      description: "Found in Extensions > Manage Extensions."
+      placeholder: "e.g. 0.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: Windows version
+      description: "e.g. Windows 11 24H2"
+      placeholder: "e.g. Windows 11 23H2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: activity-log
+    attributes:
+      label: Activity Log (if applicable)
+      description: |
+        If Visual Studio shows unexpected behavior, share the relevant portion of the Activity Log:
+        Help > Open Visual Studio Activity Log (`ActivityLog.xml`)
+      render: xml
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context, screenshots, or information that may help.

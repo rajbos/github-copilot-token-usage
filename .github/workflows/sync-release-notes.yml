@@ -39,30 +39,36 @@ jobs:
     - name: Check for changes
       id: changes
       run: |
-        if git diff --quiet CHANGELOG.md; then
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "No changes detected in CHANGELOG.md"
-        else
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "Changes detected in CHANGELOG.md"
-        fi
+        CHANGED=false
+        for f in vscode-extension/CHANGELOG.md cli/CHANGELOG.md visualstudio-extension/CHANGELOG.md; do
+          if [ -f "$f" ] && ! git diff --quiet "$f"; then
+            echo "Changes detected in $f"
+            CHANGED=true
+          fi
+        done
+        echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
 
     - name: Create Pull Request
       if: steps.changes.outputs.changed == 'true'
       uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
       with:
-        branch: update-changelog
-        title: "docs: sync CHANGELOG.md with GitHub release notes"
+        branch: update-changelogs
+        title: "docs: sync per-project CHANGELOG files with GitHub release notes"
         body: |
-          Automatically syncs CHANGELOG.md with the latest GitHub release notes.
+          Automatically syncs per-project CHANGELOG files with the latest GitHub release notes.
+
+          Updated files (if changed):
+          - `vscode-extension/CHANGELOG.md`
+          - `cli/CHANGELOG.md`
+          - `visualstudio-extension/CHANGELOG.md`
           
           Triggered by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        commit-message: "docs: sync CHANGELOG.md with GitHub release notes"
+        commit-message: "docs: sync per-project CHANGELOG files with GitHub release notes"
         
     - name: Summary
       run: |
         if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
-          echo "✅ A PR has been created to update CHANGELOG.md with GitHub release notes"
+          echo "✅ A PR has been created to update per-project CHANGELOG files with GitHub release notes"
         else
-          echo "ℹ️ CHANGELOG.md was already up to date with GitHub release notes"
+          echo "ℹ️ All CHANGELOG files were already up to date with GitHub release notes"
         fi
