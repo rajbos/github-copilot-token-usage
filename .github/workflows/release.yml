@@ -313,6 +313,7 @@ jobs:
 
   publish:
     needs: release
+    name: Publish VS Code
     if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace
     runs-on: ubuntu-latest
     permissions:
@@ -387,6 +388,7 @@ jobs:
         } >> "$GITHUB_STEP_SUMMARY"
 
   build-visualstudio:
+    name: Publish Visual Studio Extension
     needs: release
     # Windows required: Node.js SEA (bundle-exe.ps1) and MSBuild/VSSDK are Windows-only
     runs-on: windows-latest
