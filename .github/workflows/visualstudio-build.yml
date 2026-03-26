@@ -184,9 +184,19 @@ jobs:
             Write-Error "❌ VS_MARKETPLACE_PAT secret is not configured."
             exit 1
           }
+          # VsixPublisher.exe is the correct tool for Visual Studio IDE extensions
+          # (not @vscode/vsce, which is for VS Code extensions only)
+          $vsixPublisher = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" `
+            -Recurse -Filter "VsixPublisher.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $vsixPublisher) {
+            Write-Error "❌ VsixPublisher.exe not found on this runner."
+            exit 1
+          }
+          Write-Host "Found: $($vsixPublisher.FullName)"
           $vsix = "${{ steps.vsix.outputs.vsix_path }}"
           Write-Host "Publishing $vsix to Visual Studio Marketplace..."
-          & npx @vscode/vsce publish --packagePath $vsix --pat $env:VS_MARKETPLACE_PAT
+          & $vsixPublisher.FullName publish -payload $vsix -personalAccessToken $env:VS_MARKETPLACE_PAT
           if ($LASTEXITCODE -ne 0) { throw "Marketplace publish failed" }
           Write-Host "✅ Published to Visual Studio Marketplace"
 
