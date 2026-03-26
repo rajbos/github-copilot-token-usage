@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 [assembly: InternalsVisibleTo("CopilotTokenTracker.Tests")]
 
 [assembly: AssemblyTitle("AI Engineering Fluency")]
-[assembly: AssemblyDescription("Shows GitHub Copilot token usage statistics inside Visual Studio.")]
+[assembly: AssemblyDescription("Measure and grow your AI engineering fluency inside Visual Studio.")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("RobBos")]
 [assembly: AssemblyProduct("AI Engineering Fluency")]
