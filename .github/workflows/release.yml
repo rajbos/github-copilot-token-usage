@@ -44,7 +44,8 @@ jobs:
       with:
         node-version: '20.x'
         cache: 'npm'
-        
+        cache-dependency-path: vscode-extension/package-lock.json
+
     - name: Determine trigger type
       id: trigger_type
       run: |
