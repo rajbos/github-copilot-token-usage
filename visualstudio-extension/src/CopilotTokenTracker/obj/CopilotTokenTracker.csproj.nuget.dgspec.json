@@ -1,33 +1,27 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj": {}
+    "/home/runner/work/github-copilot-token-usage/github-copilot-token-usage/visualstudio-extension/src/CopilotTokenTracker/CopilotTokenTracker.csproj": {}
   },
   "projects": {
-    "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj": {
+    "/home/runner/work/github-copilot-token-usage/github-copilot-token-usage/visualstudio-extension/src/CopilotTokenTracker/CopilotTokenTracker.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj",
+        "projectUniqueName": "/home/runner/work/github-copilot-token-usage/github-copilot-token-usage/visualstudio-extension/src/CopilotTokenTracker/CopilotTokenTracker.csproj",
         "projectName": "CopilotTokenTracker",
-        "projectPath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\CopilotTokenTracker.csproj",
-        "packagesPath": "C:\\Users\\RobBos\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\visualstudio-extension\\src\\CopilotTokenTracker\\obj\\",
+        "projectPath": "/home/runner/work/github-copilot-token-usage/github-copilot-token-usage/visualstudio-extension/src/CopilotTokenTracker/CopilotTokenTracker.csproj",
+        "packagesPath": "/tmp/codeql-scratch-6bddd284d0015d44/dbs/csharp/working/packages",
+        "outputPath": "/home/runner/work/github-copilot-token-usage/github-copilot-token-usage/visualstudio-extension/src/CopilotTokenTracker/obj/",
         "projectStyle": "PackageReference",
         "skipContentFileWrite": true,
         "UsingMicrosoftNETSdk": false,
-        "fallbackFolders": [
-          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
-        ],
         "configFilePaths": [
-          "C:\\Users\\RobBos\\AppData\\Roaming\\NuGet\\NuGet.Config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "/home/runner/.nuget/NuGet/NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net472"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {

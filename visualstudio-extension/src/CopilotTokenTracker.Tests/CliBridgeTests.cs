@@ -1,5 +1,6 @@
 using CopilotTokenTracker.Data;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Threading.Tasks;
 
 namespace CopilotTokenTracker.Tests
 {
@@ -25,6 +26,15 @@ namespace CopilotTokenTracker.Tests
             // the method is callable and returns a bool without throwing.
             var result = CliBridge.IsAvailable();
             Assert.IsTrue(result == true || result == false);
+        }
+
+        [TestMethod]
+        public void GetAllDataAsync_ReturnsTask()
+        {
+            // GetAllDataAsync() returns a Task regardless of whether the CLI exe is present.
+            // Verify the method is callable and returns a non-null Task without throwing.
+            var task = CliBridge.GetAllDataAsync();
+            Assert.IsNotNull(task);
         }
     }
 }
