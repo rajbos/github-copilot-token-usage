@@ -6,7 +6,7 @@ using Task = System.Threading.Tasks.Task;
 namespace CopilotTokenTracker.Commands
 {
     /// <summary>
-    /// "View > Copilot Token Tracker" menu command.
+    /// "View > AI Engineering Fluency" menu command.
     /// Shows (or focuses) the TokenTrackerToolWindow and triggers a data refresh.
     /// </summary>
     internal sealed class ShowTokenTrackerCommand

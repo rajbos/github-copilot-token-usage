@@ -9,7 +9,7 @@ using Task = System.Threading.Tasks.Task;
 namespace CopilotTokenTracker
 {
     /// <summary>
-    /// Main VS package for Copilot Token Tracker.
+    /// Main VS package for AI Engineering Fluency.
     ///
     /// Registers the tool window and the Show command, and initialises the
     /// session-discovery background refresh on IDE startup.
@@ -40,7 +40,7 @@ namespace CopilotTokenTracker
             {
                 // Initialize logging
                 Utilities.OutputLogger.Initialize(this);
-                Utilities.OutputLogger.Log("=== Copilot Token Tracker Extension Starting ===");
+                Utilities.OutputLogger.Log("=== AI Engineering Fluency Extension Starting ===");
                 Utilities.OutputLogger.Log($"Package GUID: {PackageGuidString}");
                 Utilities.OutputLogger.Log($"Visual Studio Version: {this.ApplicationRegistryRoot}");
 
@@ -57,7 +57,7 @@ namespace CopilotTokenTracker
                 Utilities.OutputLogger.Log("=== Extension Initialized Successfully ===");
 
                 // Don't auto-show the tool window during init — it can crash if
-                // WebView2 isn't ready yet. Users open it via View > Copilot Token Tracker.
+                // WebView2 isn't ready yet. Users open it via View > AI Engineering Fluency.
             }
             catch (Exception ex)
             {
@@ -67,7 +67,7 @@ namespace CopilotTokenTracker
         }
 
         /// <summary>
-        /// Make the "Copilot Token Tracker" toolbar visible via DTE CommandBars.
+        /// Make the "AI Engineering Fluency" toolbar visible via DTE CommandBars.
         /// Uses late-binding (dynamic) to avoid a hard reference on the
         /// CommandBars interop assembly.
         /// </summary>
@@ -79,7 +79,7 @@ namespace CopilotTokenTracker
                 if (GetService(typeof(EnvDTE.DTE)) is EnvDTE80.DTE2 dte)
                 {
                     dynamic bars = dte.CommandBars;
-                    dynamic toolbar = bars["Copilot Token Tracker"];
+                    dynamic toolbar = bars["AI Engineering Fluency"];
                     if (!(bool)toolbar.Visible)
                     {
                         toolbar.Visible = true;

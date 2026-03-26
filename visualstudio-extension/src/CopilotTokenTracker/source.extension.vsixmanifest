@@ -3,11 +3,11 @@
     xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"
     xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="CopilotTokenTracker.VS.RobBos"
+    <Identity Id="AIEngineeringFluency.VS.RobBos"
               Version="1.0.0"
               Language="en-US"
               Publisher="Rob Bos" />
-    <DisplayName>Copilot Token Tracker</DisplayName>
+    <DisplayName>AI Engineering Fluency</DisplayName>
     <Description xml:space="preserve">
       Shows GitHub Copilot token usage statistics inside Visual Studio.
       Displays today's and last-30-days token usage, per-model breakdown,
