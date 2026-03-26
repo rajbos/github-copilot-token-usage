@@ -518,6 +518,145 @@ function createEmptyUsageAnalysisPeriod(): UsageAnalysisPeriod {
 	};
 }
 
+/** A single day's aggregated token data for the chart view. */
+interface DailyEntry {
+	tokens: number;
+	sessions: number;
+	modelUsage: ModelUsage;
+	editorUsage: { [editor: string]: { tokens: number; sessions: number } };
+}
+
+/**
+ * Process session files and return per-day stats for the last 30 days.
+ * Returns `{ labels, days }` where labels are sorted YYYY-MM-DD strings and
+ * days are the corresponding aggregated stats.
+ */
+export async function calculateDailyStats(sessionFiles: string[]): Promise<{
+	labels: string[];
+	days: DailyEntry[];
+}> {
+	const now = new Date();
+	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+
+	// Fill in all 31 days (today inclusive) with zeroes so the chart has continuous labels
+	const dailyMap = new Map<string, DailyEntry>();
+	const cursor = new Date(last30DaysStart);
+	while (cursor <= now) {
+		const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+		dailyMap.set(key, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+		cursor.setDate(cursor.getDate() + 1);
+	}
+
+	for (const file of sessionFiles) {
+		const data = await processSessionFile(file);
+		if (!data || data.tokens === 0 || data.interactions === 0) { continue; }
+		if (data.lastModified < last30DaysStart) { continue; }
+
+		const d = data.lastModified;
+		const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		const entry = dailyMap.get(dateKey);
+		if (!entry) { continue; }
+
+		entry.tokens += data.tokens;
+		entry.sessions++;
+
+		for (const [model, usage] of Object.entries(data.modelUsage)) {
+			if (!entry.modelUsage[model]) {
+				entry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+			}
+			entry.modelUsage[model].inputTokens += usage.inputTokens;
+			entry.modelUsage[model].outputTokens += usage.outputTokens;
+		}
+
+		const editor = data.editorSource;
+		if (!entry.editorUsage[editor]) {
+			entry.editorUsage[editor] = { tokens: 0, sessions: 0 };
+		}
+		entry.editorUsage[editor].tokens += data.tokens;
+		entry.editorUsage[editor].sessions++;
+	}
+
+	const labels = Array.from(dailyMap.keys()).sort();
+	const days = labels.map(l => dailyMap.get(l)!);
+	return { labels, days };
+}
+
+const CHART_COLORS = [
+	{ bg: 'rgba(54, 162, 235, 0.6)',  border: 'rgba(54, 162, 235, 1)' },
+	{ bg: 'rgba(255, 99, 132, 0.6)',  border: 'rgba(255, 99, 132, 1)' },
+	{ bg: 'rgba(75, 192, 192, 0.6)',  border: 'rgba(75, 192, 192, 1)' },
+	{ bg: 'rgba(153, 102, 255, 0.6)', border: 'rgba(153, 102, 255, 1)' },
+	{ bg: 'rgba(255, 159, 64, 0.6)',  border: 'rgba(255, 159, 64, 1)' },
+	{ bg: 'rgba(255, 205, 86, 0.6)',  border: 'rgba(255, 205, 86, 1)' },
+	{ bg: 'rgba(201, 203, 207, 0.6)', border: 'rgba(201, 203, 207, 1)' },
+	{ bg: 'rgba(100, 181, 246, 0.6)', border: 'rgba(100, 181, 246, 1)' },
+];
+
+/**
+ * Build the JSON payload consumed by the chart webview from the daily stats arrays
+ * returned by `calculateDailyStats`.
+ */
+export function buildChartPayload(labels: string[], days: DailyEntry[]): object {
+	const tokensData  = days.map(d => d.tokens);
+	const sessionsData = days.map(d => d.sessions);
+
+	const allModels = new Set<string>();
+	days.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
+	const modelDatasets = Array.from(allModels).map((model, idx) => {
+		const color = CHART_COLORS[idx % CHART_COLORS.length];
+		return {
+			label: model,
+			data: days.map(d => {
+				const u = d.modelUsage[model];
+				return u ? u.inputTokens + u.outputTokens : 0;
+			}),
+			backgroundColor: color.bg,
+			borderColor: color.border,
+			borderWidth: 1,
+		};
+	});
+
+	const allEditors = new Set<string>();
+	days.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
+	const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+		const color = CHART_COLORS[idx % CHART_COLORS.length];
+		return {
+			label: editor,
+			data: days.map(d => d.editorUsage[editor]?.tokens || 0),
+			backgroundColor: color.bg,
+			borderColor: color.border,
+			borderWidth: 1,
+		};
+	});
+
+	const editorTotalsMap: Record<string, number> = {};
+	days.forEach(d => {
+		Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+			editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
+		});
+	});
+
+	const totalTokens   = tokensData.reduce((a, b) => a + b, 0);
+	const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+
+	return {
+		labels,
+		tokensData,
+		sessionsData,
+		modelDatasets,
+		editorDatasets,
+		editorTotalsMap,
+		repositoryDatasets: [],
+		repositoryTotalsMap: {},
+		dailyCount: labels.length,
+		totalTokens,
+		avgTokensPerDay: labels.length > 0 ? Math.round(totalTokens / labels.length) : 0,
+		totalSessions,
+		lastUpdated: new Date().toISOString(),
+		backendConfigured: false,
+	};
+}
+
 /** Format a number with thousand separators */
 export function fmt(n: number): string {
 	return n.toLocaleString('en-US');
