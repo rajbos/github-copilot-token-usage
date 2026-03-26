@@ -66,7 +66,7 @@ namespace CopilotTokenTracker.Commands
                 string text;
                 if (stats == null)
                 {
-                    text = "Copilot: ? | ?";
+                    text = "AI Engineering Fluency: ? | ?";
                     // Retry sooner rather than waiting the full 5-minute interval
                     _statsTimer?.Change(StatsRetryInterval, StatsRefreshInterval);
                 }
@@ -74,7 +74,7 @@ namespace CopilotTokenTracker.Commands
                 {
                     var today  = FormatTokenCount(stats.Today.Tokens);
                     var last30 = FormatTokenCount(stats.Last30Days.Tokens);
-                    text = $"Copilot: {today} | {last30}";
+                    text = $"AI Engineering Fluency: {today} | {last30}";
                 }
 
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
@@ -85,7 +85,7 @@ namespace CopilotTokenTracker.Commands
                 try
                 {
                     await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
-                    _menuCommand.Text = "Copilot: error";
+                    _menuCommand.Text = "AI Engineering Fluency: error";
                 }
                 catch { /* package may be disposed */ }
             }

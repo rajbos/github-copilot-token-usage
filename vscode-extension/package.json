@@ -1,7 +1,7 @@
 {
   "name": "copilot-token-tracker",
-  "displayName": "Copilot Token Tracker",
-  "description": "Shows daily and monthly (estimated) GitHub Copilot token usage stats in VS Code status bar",
+  "displayName": "AI Engineering Fluency",
+  "description": "Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and productivity insights in VS Code.",
   "version": "0.0.22",
   "publisher": "RobBos",
   "engines": {
@@ -27,101 +27,101 @@
       {
         "command": "copilot-token-tracker.refresh",
         "title": "Refresh Token Usage",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showDetails",
         "title": "Show Token Usage Details",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showChart",
         "title": "Show Token Usage Chart",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showUsageAnalysis",
         "title": "Show Usage Analysis Dashboard",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.generateDiagnosticReport",
         "title": "Generate Diagnostic Report",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showMaturity",
-        "title": "Show Copilot Fluency Score",
-        "category": "Copilot Token Tracker"
+        "title": "Show AI Engineering Fluency Score",
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showFluencyLevelViewer",
         "title": "Show Fluency Level Viewer (Debug Only)",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.configureBackend",
         "title": "Configure Backend",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.copyBackendConfig",
         "title": "Copy Backend Config (No Secrets)",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.exportCurrentView",
         "title": "Export Current View (JSON)",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.setBackendSharedKey",
         "title": "Set Backend Storage Shared Key",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.rotateBackendSharedKey",
         "title": "Rotate Backend Storage Shared Key",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.clearBackendSharedKey",
         "title": "Clear Backend Storage Shared Key",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.toggleBackendWorkspaceMachineNameSync",
         "title": "Backend: Toggle Workspace/Machine Name Sync",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.setSharingProfile",
         "title": "Set Sharing Profile",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.clearAzureSettings",
         "title": "Clear Azure Settings",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.clearCache",
         "title": "Clear Cache",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showDashboard",
         "title": "Show Team Dashboard",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       },
       {
         "command": "copilot-token-tracker.showEnvironmental",
         "title": "Show Environmental Impact",
-        "category": "Copilot Token Tracker"
+        "category": "AI Engineering Fluency"
       }
     ],
     "configuration": {
-      "title": "Copilot Token Tracker",
+      "title": "AI Engineering Fluency",
       "properties": {
         "copilotTokenTracker.backend.enabled": {
           "type": "boolean",

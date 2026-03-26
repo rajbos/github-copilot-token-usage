@@ -64,7 +64,7 @@
         <CommandFlag>TextChanges</CommandFlag>
         <CommandFlag>IconAndText</CommandFlag>
         <Strings>
-          <ButtonText>Copilot: loading…</ButtonText>
+          <ButtonText>AI Engineering Fluency: loading…</ButtonText>
           <CommandName>CopilotTokenTracker.ToolbarInfo</CommandName>
           <ToolTipText>Today's tokens | Last 30 days tokens — click to reset to details view</ToolTipText>
         </Strings>

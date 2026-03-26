@@ -42,7 +42,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 		if (!this.panel) {
 			this.panel = vscode.window.createWebviewPanel(
 				'copilotBackendConfig',
-				'Copilot Token Tracker: Configure Backend',
+				'AI Engineering Fluency: Configure Backend',
 				{ viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
 				{ enableScripts: true, retainContextWhenHidden: false }
 			);

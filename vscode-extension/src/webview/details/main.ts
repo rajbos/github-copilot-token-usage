@@ -127,7 +127,7 @@ function renderShell(
 
 	const container = el('div', 'container');
 	const header = el('div', 'header');
-	const title = el('div', 'title', '🤖 Copilot Token Usage');
+	const title = el('div', 'title', 'AI Engineering Fluency');
 	const buttonRow = el('div', 'button-row');
 
 	buttonRow.append(
@@ -176,7 +176,7 @@ function buildMetricsSection(
 ): HTMLElement {
 	const section = el('div', 'section');
 	const heading = el('h3');
-	heading.textContent = '🤖 Copilot Token Usage';
+	heading.textContent = 'AI Engineering Fluency';
 	section.append(heading);
 
 	const table = document.createElement('table');
