@@ -146,9 +146,100 @@ jobs:
         working-directory: visualstudio-extension
         run: nuget restore CopilotTokenTracker.sln
 
+      - name: Restore test project (SDK-style)
+        working-directory: visualstudio-extension
+        run: dotnet restore src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj
+
       - name: Build solution (Release)
         working-directory: visualstudio-extension
         run: msbuild CopilotTokenTracker.sln /p:Configuration=Release /t:Build /v:minimal
+
+      # ── Run unit tests with coverage ──────────────────────────────────────
+
+      - name: Run unit tests with coverage
+        working-directory: visualstudio-extension
+        run: >-
+          dotnet test src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj
+          --no-build
+          --configuration Release
+          --logger "trx;LogFileName=test-results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: Generate coverage summary
+        if: always()
+        shell: pwsh
+        working-directory: visualstudio-extension
+        run: |
+          $coverageFile = Get-ChildItem -Path TestResults -Filter "coverage.cobertura.xml" -Recurse |
+                          Select-Object -First 1
+          if (-not $coverageFile) {
+            Write-Host "⚠️ No coverage file found"
+            "## ⚠️ Unit Test Coverage`nNo coverage data collected." >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          Write-Host "Coverage file: $($coverageFile.FullName)"
+
+          [xml]$xml = Get-Content $coverageFile.FullName
+
+          $lineRate   = [double]$xml.coverage.'line-rate'   * 100
+          $branchRate = [double]$xml.coverage.'branch-rate' * 100
+
+          $linePct   = [math]::Round($lineRate, 1)
+          $branchPct = [math]::Round($branchRate, 1)
+
+          # Build per-package (namespace) breakdown
+          $packageRows = ""
+          foreach ($pkg in $xml.coverage.packages.package) {
+              $pkgName = $pkg.name
+              $pkgLine   = [math]::Round([double]$pkg.'line-rate'   * 100, 1)
+              $pkgBranch = [math]::Round([double]$pkg.'branch-rate' * 100, 1)
+              $packageRows += "| ``$pkgName`` | $pkgLine% | $pkgBranch% |`n"
+          }
+
+          # Build per-class breakdown for classes with notable coverage data
+          $classRows = ""
+          foreach ($pkg in $xml.coverage.packages.package) {
+              foreach ($cls in $pkg.classes.class) {
+                  $clsName = $cls.name
+                  $clsLine   = [math]::Round([double]$cls.'line-rate'   * 100, 1)
+                  $clsBranch = [math]::Round([double]$cls.'branch-rate' * 100, 1)
+                  $classRows += "| ``$clsName`` | $clsLine% | $clsBranch% |`n"
+              }
+          }
+
+          # Write step summary
+          $summary = @"
+          ## 🧪 Visual Studio Extension — Unit Test Coverage
+
+          | Metric | Coverage |
+          |--------|----------|
+          | **Line Coverage** | $linePct% |
+          | **Branch Coverage** | $branchPct% |
+
+          ### By Namespace
+
+          | Namespace | Line | Branch |
+          |-----------|------|--------|
+          $packageRows
+
+          ### By Class
+
+          | Class | Line | Branch |
+          |-------|------|--------|
+          $classRows
+          "@
+
+          $summary >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "✅ Coverage: $linePct% line, $branchPct% branch"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: vs-test-results-${{ github.sha }}
+          path: visualstudio-extension/TestResults/
+          retention-days: 30
 
       # ── Collect the produced .vsix ─────────────────────────────────────────
 

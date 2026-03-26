@@ -63,7 +63,7 @@ namespace CopilotTokenTracker.Data
 
         // ── Helpers ──────────────────────────────────────────────────────────────
 
-        private static EnvironmentalPeriod MapEnvironmentalPeriod(PeriodStats p)
+        internal static EnvironmentalPeriod MapEnvironmentalPeriod(PeriodStats p)
             => new EnvironmentalPeriod
             {
                 Tokens          = p.Tokens,

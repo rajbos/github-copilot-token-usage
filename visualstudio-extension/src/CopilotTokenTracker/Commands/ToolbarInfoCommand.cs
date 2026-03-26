@@ -91,7 +91,7 @@ namespace CopilotTokenTracker.Commands
             }
         }
 
-        private static string FormatTokenCount(long tokens)
+        internal static string FormatTokenCount(long tokens)
         {
             if (tokens >= 1_000_000)
                 return (tokens / 1_000_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "M";

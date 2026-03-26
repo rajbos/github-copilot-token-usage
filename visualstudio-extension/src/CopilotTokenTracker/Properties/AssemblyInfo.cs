@@ -1,5 +1,8 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+
+[assembly: InternalsVisibleTo("CopilotTokenTracker.Tests")]
 
 [assembly: AssemblyTitle("AI Engineering Fluency")]
 [assembly: AssemblyDescription("Shows GitHub Copilot token usage statistics inside Visual Studio.")]

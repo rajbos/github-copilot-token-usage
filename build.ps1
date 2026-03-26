@@ -141,9 +141,32 @@ function Build-VisualStudio {
     }
 
     switch ($Target) {
-        'build'   { & $msbuild $sln /p:Configuration=Release /t:Build   /v:minimal }
+        'build'   {
+            # Restore SDK-style test project (needs dotnet restore, not nuget restore)
+            dotnet restore "$PSScriptRoot/visualstudio-extension/src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj"
+            & $msbuild $sln /p:Configuration=Release /t:Build   /v:minimal
+        }
         'package' { & $msbuild $sln /p:Configuration=Release /t:Rebuild /v:minimal }
-        'test'    { Write-Host "    (no VS extension tests yet)" }
+        'test'    {
+            # 1. Restore SDK-style test project first, then build the full solution with MSBuild
+            dotnet restore "$PSScriptRoot/visualstudio-extension/src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj"
+            & $msbuild $sln /p:Configuration=Release /t:Build /v:minimal
+            if ($LASTEXITCODE -ne 0) { throw "MSBuild failed before running tests" }
+
+            # 2. Run tests with dotnet test --no-build (avoids re-invoking VSSDK build targets)
+            Push-Location "$PSScriptRoot/visualstudio-extension"
+            try {
+                $testProj = "src/CopilotTokenTracker.Tests/CopilotTokenTracker.Tests.csproj"
+                dotnet test $testProj `
+                    --no-build `
+                    --configuration Release `
+                    --collect:"XPlat Code Coverage" `
+                    --results-directory TestResults `
+                    --logger "console;verbosity=normal"
+                if ($LASTEXITCODE -ne 0) { throw "Unit tests failed" }
+            }
+            finally { Pop-Location }
+        }
         'clean'   { & $msbuild $sln /p:Configuration=Release /t:Clean   /v:minimal }
     }
     Write-Ok "visualstudio-extension done."
