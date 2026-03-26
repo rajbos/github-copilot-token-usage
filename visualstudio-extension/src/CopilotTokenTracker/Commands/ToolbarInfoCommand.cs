@@ -57,16 +57,18 @@ namespace CopilotTokenTracker.Commands
             Utilities.OutputLogger.Log("ToolbarInfoCommand initialized - timers started");
         }
 
-        /// <summary>Fetch fresh stats and update the toolbar button text.</summary>
+        /// <summary>Fetch fresh stats and update the toolbar button text and tooltip.</summary>
         private async Task RefreshStatsAsync()
         {
             try
             {
                 var stats = await StatsBuilder.BuildAsync();
                 string text;
+                string tooltip;
                 if (stats == null)
                 {
-                    text = "AI Engineering Fluency: ? | ?";
+                    text    = "AI Engineering Fluency: ? | ?";
+                    tooltip = "AI Engineering Fluency — today's tokens | last 30 days tokens";
                     // Retry sooner rather than waiting the full 5-minute interval
                     _statsTimer?.Change(StatsRetryInterval, StatsRefreshInterval);
                 }
@@ -74,18 +76,24 @@ namespace CopilotTokenTracker.Commands
                 {
                     var today  = FormatTokenCount(stats.Today.Tokens);
                     var last30 = FormatTokenCount(stats.Last30Days.Tokens);
-                    text = $"AI Engineering Fluency: {today} | {last30}";
+                    text    = $"AI Engineering Fluency: {today} | {last30}";
+                    tooltip = $"AI Engineering Fluency\n" +
+                              $"Today:       {stats.Today.Tokens:N0} tokens ({today})\n" +
+                              $"Last 30 days: {stats.Last30Days.Tokens:N0} tokens ({last30})\n" +
+                              $"Click to open the dashboard";
                 }
 
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
-                _menuCommand.Text = text;
+                _menuCommand.Text        = text;
+                _menuCommand.ToolTipText = tooltip;
             }
             catch
             {
                 try
                 {
                     await _package.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
-                    _menuCommand.Text = "AI Engineering Fluency: error";
+                    _menuCommand.Text        = "AI Engineering Fluency: error";
+                    _menuCommand.ToolTipText = "AI Engineering Fluency — failed to load stats";
                 }
                 catch { /* package may be disposed */ }
             }
