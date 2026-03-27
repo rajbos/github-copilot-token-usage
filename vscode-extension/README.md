@@ -1,12 +1,12 @@
-# Copilot Token Tracker — VS Code Extension
+# AI Engineering Fluency — VS Code Extension
 
-Tracks your GitHub Copilot token usage directly inside VS Code. Reads local session logs and displays today's and monthly usage in the status bar, with rich detail views and optional cloud sync.
+Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and productivity insights directly inside VS Code. Reads local session logs and displays today's and monthly usage in the status bar, with rich detail views and optional cloud sync.
 
 ## Install
 
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/RobBos.copilot-token-tracker)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)
 
-Search for **"Copilot Token Tracker"** in the VS Code Extensions panel, or install via the Marketplace link above.
+Search for **"AI Engineering Fluency"** in the VS Code Extensions panel, or install via the Marketplace link above.
 
 ---
 
@@ -122,7 +122,7 @@ The extension includes a comprehensive usage analysis dashboard that helps you u
 
 1. Click the status bar item to open the details panel
 2. Click the **"📊 Usage Analysis"** button
-3. Or use the Command Palette: `Copilot Token Tracker: Show Usage Analysis Dashboard`
+3. Or use the Command Palette: `AI Engineering Fluency: Show Usage Analysis Dashboard`
 
 For detailed information about the metrics, see [Usage Analysis Documentation](https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/USAGE-ANALYSIS.md).
 
@@ -149,7 +149,7 @@ Generate a diagnostic report to help troubleshoot issues. The report includes:
 
 Alternatively, use the Command Palette:
 - Press `Ctrl+Shift+P` / `Cmd+Shift+P`
-- Type `Copilot Token Tracker: Generate Diagnostic Report`
+- Type `AI Engineering Fluency: Generate Diagnostic Report`
 
 > **Note**: The diagnostic report does not include any of your code or conversation content. It only includes file locations, sizes, and aggregated statistics.
 
@@ -204,21 +204,21 @@ To share usage with team members, configure all participants to point at the sam
 
 ### Commands
 
-- `Copilot Token Tracker: Configure Backend` — guided setup wizard for Azure resources and settings
-- `Copilot Token Tracker: Copy Backend Config` — copies shareable config without secrets
-- `Copilot Token Tracker: Export Current View` — exports filtered backend/local view as JSON
+- `AI Engineering Fluency: Configure Backend` — guided setup wizard for Azure resources and settings
+- `AI Engineering Fluency: Copy Backend Config` — copies shareable config without secrets
+- `AI Engineering Fluency: Export Current View` — exports filtered backend/local view as JSON
 
 Shared Key management (only if using shared-key auth):
-- `Copilot Token Tracker: Set Backend Shared Key`
-- `Copilot Token Tracker: Rotate Backend Shared Key`
-- `Copilot Token Tracker: Clear Backend Shared Key`
+- `AI Engineering Fluency: Set Backend Shared Key`
+- `AI Engineering Fluency: Rotate Backend Shared Key`
+- `AI Engineering Fluency: Clear Backend Shared Key`
 
 Other:
-- `Copilot Token Tracker: Ask About Usage`
+- `AI Engineering Fluency: Ask About Usage`
 
 ### Backend Settings Configurator
 
-Use **Copilot Token Tracker: Configure Backend** to open the settings panel with five sections: Overview, Sharing, Azure, Advanced, and Review & Apply.
+Use **AI Engineering Fluency: Configure Backend** to open the settings panel with five sections: Overview, Sharing, Azure, Advanced, and Review & Apply.
 
 **Privacy profiles** (Sharing section):
 - **Off** – All data stays local; nothing syncs to Azure
@@ -228,7 +228,7 @@ Use **Copilot Token Tracker: Configure Backend** to open the settings panel with
 - **Team Identified** – Team alias or Entra object ID included; full workspace names available
 
 **Guided setup workflow:**
-1. Run **Copilot Token Tracker: Configure Backend** command
+1. Run **AI Engineering Fluency: Configure Backend** command
 2. Navigate to Sharing section to choose your privacy profile
 3. Go to Azure section, enable backend, and use **Open configure walkthrough** to provision Azure resources
 4. Advanced section sets dataset ID and lookback days (7/30/90)
