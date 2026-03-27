@@ -1,6 +1,6 @@
 // Import shared utilities
 import { getModelDisplayName } from '../shared/modelUtils';
-import { getEditorIcon, getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost } from '../shared/formatUtils';
+import { getEditorIcon, getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost, formatCompact, setCompactNumbers } from '../shared/formatUtils';
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
 // Token estimators loaded from JSON
@@ -38,6 +38,7 @@ type DetailedStats = {
 	last30Days: PeriodStats;
 	lastUpdated: string | Date;
 	backendConfigured?: boolean;
+	compactNumbers?: boolean;
 	sortSettings?: {
 		editor?: { key?: string; dir?: string };
 		model?: { key?: string; dir?: string };
@@ -80,6 +81,7 @@ function calculateProjection(last30DaysValue: number): number {
 }
 
 function render(stats: DetailedStats): void {
+	setCompactNumbers(stats.compactNumbers !== false);
 	const root = document.getElementById('root');
 	if (!root) { return; }
 
@@ -205,14 +207,14 @@ function buildMetricsSection(
 
 	const tbody = document.createElement('tbody');
 	const rows: Array<{ label: string; icon: string; color?: string; today: string; last30Days: string; lastMonth: string; projected: string }> = [
-		{ label: 'Tokens (total)', icon: '🟣', color: '#c37bff', today: formatNumber(stats.today.tokens), last30Days: formatNumber(stats.last30Days.tokens), lastMonth: formatNumber(stats.lastMonth.tokens), projected: formatNumber(projections.projectedTokens) },
-		{ label: 'Tokens (user estimated)', icon: '📝', color: '#b39ddb', today: formatNumber(stats.today.estimatedTokens), last30Days: formatNumber(stats.last30Days.estimatedTokens), lastMonth: formatNumber(stats.lastMonth.estimatedTokens), projected: '—' },
+		{ label: 'Tokens (total)', icon: '🟣', color: '#c37bff', today: formatCompact(stats.today.tokens), last30Days: formatCompact(stats.last30Days.tokens), lastMonth: formatCompact(stats.lastMonth.tokens), projected: formatCompact(projections.projectedTokens) },
+		{ label: 'Tokens (user estimated)', icon: '📝', color: '#b39ddb', today: formatCompact(stats.today.estimatedTokens), last30Days: formatCompact(stats.last30Days.estimatedTokens), lastMonth: formatCompact(stats.lastMonth.estimatedTokens), projected: '—' },
 		{ label: 'Service overhead %', icon: '☁️', color: '#90a4ae', today: (stats.today.actualTokens || 0) > 0 ? formatPercent(((stats.today.tokens - stats.today.estimatedTokens) / stats.today.tokens) * 100) : '—', last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatPercent(((stats.last30Days.tokens - stats.last30Days.estimatedTokens) / stats.last30Days.tokens) * 100) : '—', lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatPercent(((stats.lastMonth.tokens - stats.lastMonth.estimatedTokens) / stats.lastMonth.tokens) * 100) : '—', projected: '—' },
-		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatNumber(stats.today.thinkingTokens || 0), last30Days: formatNumber(stats.last30Days.thinkingTokens || 0), lastMonth: formatNumber(stats.lastMonth.thinkingTokens || 0), projected: '—' },
+		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatCompact(stats.today.thinkingTokens || 0), last30Days: formatCompact(stats.last30Days.thinkingTokens || 0), lastMonth: formatCompact(stats.lastMonth.thinkingTokens || 0), projected: '—' },
 		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
 		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },
-		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatNumber(stats.today.avgTokensPerSession), last30Days: formatNumber(stats.last30Days.avgTokensPerSession), lastMonth: formatNumber(stats.lastMonth.avgTokensPerSession), projected: '—' }
+		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatCompact(stats.today.avgTokensPerSession), last30Days: formatCompact(stats.last30Days.avgTokensPerSession), lastMonth: formatCompact(stats.lastMonth.avgTokensPerSession), projected: '—' }
 	];
 
 	rows.forEach(row => {
@@ -325,25 +327,25 @@ function buildEditorTbody(stats: DetailedStats, allEditors: string[]): HTMLTable
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
-		todayTd.textContent = formatNumber(todayUsage.tokens);
+		todayTd.textContent = formatCompact(todayUsage.tokens);
 		const todaySub = el('div', 'muted', `${formatPercent(todayPercent)} · ${todayUsage.sessions} sessions`);
 		todayTd.append(todaySub);
 
 		const last30DaysTd = document.createElement('td');
 		last30DaysTd.className = 'value-right align-right';
-		last30DaysTd.textContent = formatNumber(last30DaysUsage.tokens);
+		last30DaysTd.textContent = formatCompact(last30DaysUsage.tokens);
 		const last30DaysSub = el('div', 'muted', `${formatPercent(last30DaysPercent)} · ${last30DaysUsage.sessions} sessions`);
 		last30DaysTd.append(last30DaysSub);
 
 		const lastMonthTd = document.createElement('td');
 		lastMonthTd.className = 'value-right align-right';
-		lastMonthTd.textContent = formatNumber(lastMonthUsage.tokens);
+		lastMonthTd.textContent = formatCompact(lastMonthUsage.tokens);
 		const lastMonthSub = el('div', 'muted', `${formatPercent(lastMonthPercent)} · ${lastMonthUsage.sessions} sessions`);
 		lastMonthTd.append(lastMonthSub);
 
 		const projTd = document.createElement('td');
 		projTd.className = 'value-right align-right';
-		projTd.textContent = formatNumber(projectedTokens);
+		projTd.textContent = formatCompact(projectedTokens);
 		const projSub = el('div', 'muted', `${projectedSessions} sessions`);
 		projTd.append(projSub);
 
@@ -481,25 +483,25 @@ function buildModelTbody(stats: DetailedStats, allModels: string[]): HTMLTableSe
 
 		const todayTd = document.createElement('td');
 		todayTd.className = 'value-right align-right';
-		todayTd.textContent = formatNumber(item.todayTotal);
+		todayTd.textContent = formatCompact(item.todayTotal);
 		const todaySub = el('div', 'muted', `↑${formatPercent(item.todayInputPct)} ↓${formatPercent(item.todayOutputPct)}`);
 		todayTd.append(todaySub);
 
 		const last30DaysTd = document.createElement('td');
 		last30DaysTd.className = 'value-right align-right';
-		last30DaysTd.textContent = formatNumber(item.last30DaysTotal);
+		last30DaysTd.textContent = formatCompact(item.last30DaysTotal);
 		const last30DaysSub = el('div', 'muted', `↑${formatPercent(item.last30DaysInputPct)} ↓${formatPercent(item.last30DaysOutputPct)}`);
 		last30DaysTd.append(last30DaysSub);
 
 		const lastMonthTd = document.createElement('td');
 		lastMonthTd.className = 'value-right align-right';
-		lastMonthTd.textContent = formatNumber(item.lastMonthTotal);
+		lastMonthTd.textContent = formatCompact(item.lastMonthTotal);
 		const lastMonthSub = el('div', 'muted', `↑${formatPercent(item.lastMonthInputPct)} ↓${formatPercent(item.lastMonthOutputPct)}`);
 		lastMonthTd.append(lastMonthSub);
 
 		const projTd = document.createElement('td');
 		projTd.className = 'value-right align-right';
-		projTd.textContent = formatNumber(item.projected);
+		projTd.textContent = formatCompact(item.projected);
 
 		tr.append(labelTd, todayTd, last30DaysTd, lastMonthTd, projTd);
 		tbody.append(tr);

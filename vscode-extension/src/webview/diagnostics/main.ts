@@ -974,6 +974,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
 				<button class="tab" data-tab="cache">💾 Cache</button>
 				<button class="tab" data-tab="backend">☁️ Azure Storage</button>
+				<button class="tab" data-tab="display">⚙️ Settings</button>
 				${data.isDebugMode ? '<button class="tab" data-tab="debug">🐛 Debug</button>' : ''}
 			</div>
 
@@ -1063,6 +1064,25 @@ function renderLayout(data: DiagnosticsData): void {
 
 			<div id="tab-backend" class="tab-content">
 				${renderBackendStoragePanel(data.backendStorageInfo)}
+			</div>
+			<div id="tab-display" class="tab-content">
+				<div class="info-box">
+					<div class="info-box-title">⚙️ Display Settings</div>
+					<div>Configure how numbers are displayed across the extension. Changes take effect immediately in the Settings editor and are applied the next time a view is opened or refreshed.</div>
+				</div>
+				<div class="backend-card">
+					<h4 style="color: #fff; font-size: 14px; margin-bottom: 12px;">🔢 Number Formatting</h4>
+					<p style="color: #ccc; margin-bottom: 12px;">
+						Token counts can be shown in compact format using K/M suffixes (e.g. <strong>1.5K</strong>, <strong>1.2M</strong>)
+						for quick scanning, or as full numbers (e.g. <strong>1,500</strong>, <strong>1,200,000</strong>) for precision.
+					</p>
+					<div class="button-group">
+						<button class="button" id="btn-open-display-settings">
+							<span>⚙️</span>
+							<span>Open Display Settings</span>
+						</button>
+					</div>
+				</div>
 			</div>
 			${data.isDebugMode ? renderDebugTab(data.globalStateCounters) : ''}
 		</div>
@@ -1482,6 +1502,12 @@ function renderLayout(data: DiagnosticsData): void {
       .getElementById("btn-open-settings")
       ?.addEventListener("click", () => {
         vscode.postMessage({ command: "openSettings" });
+      });
+
+    document
+      .getElementById("btn-open-display-settings")
+      ?.addEventListener("click", () => {
+        vscode.postMessage({ command: "openDisplaySettings" });
       });
   }
 

@@ -1,7 +1,7 @@
 // Environmental Impact webview
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
-import { formatFixed, formatNumber } from '../shared/formatUtils';
+import { formatFixed, formatNumber, formatCompact, setCompactNumbers } from '../shared/formatUtils';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -46,6 +46,7 @@ type EnvironmentalStats = {
 	last30Days: PeriodStats;
 	lastUpdated: string | Date;
 	backendConfigured?: boolean;
+	compactNumbers?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -113,6 +114,7 @@ const treeAnalogyItems = (fraction: number): AnalogyItem[] => {
 };
 
 function render(stats: EnvironmentalStats): void {
+	setCompactNumbers(stats.compactNumbers !== false);
 	const root = document.getElementById('root');
 	if (!root) { return; }
 
@@ -179,10 +181,10 @@ function buildImpactCards(
 	const periods: Array<[string, string, AnalogyItem[] | null]>[] = [
 		// Tokens card: 4 periods, no analogies
 		[
-			['📅 Today', formatNumber(stats.today.tokens), null],
-			['📈 Last 30 Days', formatNumber(stats.last30Days.tokens), null],
-			['📆 Previous Month', formatNumber(stats.lastMonth.tokens), null],
-			['🌍 Projected Year', formatNumber(projectedTokens), null],
+			['📅 Today', formatCompact(stats.today.tokens), null],
+			['📈 Last 30 Days', formatCompact(stats.last30Days.tokens), null],
+			['📆 Previous Month', formatCompact(stats.lastMonth.tokens), null],
+			['🌍 Projected Year', formatCompact(projectedTokens), null],
 		],
 		// CO₂ card
 		[

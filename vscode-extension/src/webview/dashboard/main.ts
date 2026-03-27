@@ -1,7 +1,7 @@
 // Import shared utilities
 import { BUTTONS } from "../shared/buttonConfig";
 import { createButton, el } from "../shared/domUtils";
-import { formatCost, formatNumber } from "../shared/formatUtils";
+import { formatCost, formatNumber, formatCompact, setCompactNumbers } from "../shared/formatUtils";
 import { getModelDisplayName } from "../shared/modelUtils";
 import themeStyles from "../shared/theme.css";
 import styles from "./styles.css";
@@ -49,6 +49,7 @@ interface DashboardStats {
     lastDate?: string | null;
   };
   lastUpdated: string | Date;
+  compactNumbers?: boolean;
 }
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -127,6 +128,7 @@ function showError(message: string): void {
 }
 
 function render(stats: DashboardStats): void {
+  setCompactNumbers(stats.compactNumbers !== false);
   const root = document.getElementById("root");
   if (!root) {
     return;
@@ -192,7 +194,7 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
   const grid = el("div", "stats-grid");
 
   grid.append(
-    buildStatCard("Total Tokens", formatNumber(personal.totalTokens)),
+    buildStatCard("Total Tokens", formatCompact(personal.totalTokens)),
     buildStatCard("Interactions", formatNumber(personal.totalInteractions)),
     buildStatCard("Estimated Cost", formatCost(personal.totalCost)),
     buildStatCard("Devices", personal.devices.length.toString()),
@@ -213,12 +215,12 @@ function buildTeamSection(stats: DashboardStats): HTMLElement {
   teamGrid.append(
     buildStatCard(
       "Team Total",
-      formatNumber(stats.team.totalTokens) + " tokens",
+      formatCompact(stats.team.totalTokens) + " tokens",
     ),
     buildStatCard("Team Members", stats.team.members.length.toString()),
     buildStatCard(
       "Avg per User",
-      formatNumber(Math.round(stats.team.averageTokensPerUser)) + " tokens",
+      formatCompact(Math.round(stats.team.averageTokensPerUser)) + " tokens",
     ),
   );
 
@@ -282,7 +284,7 @@ function buildModelBreakdown(modelUsage: ModelUsage): HTMLElement {
   for (const { model, tokens } of models) {
     const item = el("div", "model-item");
     const modelName = el("span", "model-name", getModelDisplayName(model));
-    const tokenCount = el("span", "token-count", formatNumber(tokens));
+    const tokenCount = el("span", "token-count", formatCompact(tokens));
     item.append(modelName, tokenCount);
     modelList.append(item);
   }
@@ -372,7 +374,7 @@ function buildLeaderboard(stats: DashboardStats): HTMLElement {
     const tokensCell = el(
       "td",
       "number-cell",
-      formatNumber(member.totalTokens),
+      formatCompact(member.totalTokens),
     );
     const daysCell = el("td", "number-cell", formatNumber(member.daysActive));
     const sessionsCell = el("td", "number-cell", formatNumber(member.sessions));
