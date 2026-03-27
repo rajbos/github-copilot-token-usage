@@ -6,11 +6,11 @@ Command-line interface for analyzing GitHub Copilot token usage from local sessi
 
 ```bash
 # Run directly with npx (no install required)
-npx copilot-token-tracker-cli stats
+npx @rajbos/ai-engineering-fluency stats
 
 # Or install globally
-npm install -g copilot-token-tracker-cli
-copilot-token-tracker stats
+npm install -g @rajbos/ai-engineering-fluency
+ai-engineering-fluency stats
 ```
 
 ---
@@ -22,8 +22,8 @@ copilot-token-tracker stats
 Show discovered session files, sessions, chat turns, and token counts.
 
 ```bash
-copilot-token-tracker stats
-copilot-token-tracker stats --verbose  # Show per-folder breakdown
+ai-engineering-fluency stats
+ai-engineering-fluency stats --verbose  # Show per-folder breakdown
 ```
 
 ```
@@ -46,9 +46,9 @@ Total                     53 files   │  397 sessions  │  5,917 turns  │  2
 Show token usage broken down by time period.
 
 ```bash
-copilot-token-tracker usage
-copilot-token-tracker usage --models  # Show per-model breakdown
-copilot-token-tracker usage --cost    # Show estimated cost
+ai-engineering-fluency usage
+ai-engineering-fluency usage --models  # Show per-model breakdown
+ai-engineering-fluency usage --cost    # Show estimated cost
 ```
 
 ```
@@ -76,8 +76,8 @@ All time           1,841,200        2,312,650      4,153,850
 Show the environmental impact of your Copilot usage (CO₂ emissions, water usage, tree equivalents).
 
 ```bash
-copilot-token-tracker environmental
-copilot-token-tracker env  # Short alias
+ai-engineering-fluency environmental
+ai-engineering-fluency env  # Short alias
 ```
 
 ```
@@ -100,8 +100,8 @@ All figures are estimates based on published AI energy-use research.
 Show your Copilot Fluency Score across multiple categories (Prompt Engineering, Context Engineering, Agentic, Tool Usage, Customization, Workflow Integration).
 
 ```bash
-copilot-token-tracker fluency
-copilot-token-tracker fluency --tips  # Show improvement tips
+ai-engineering-fluency fluency
+ai-engineering-fluency fluency --tips  # Show improvement tips
 ```
 
 ```
@@ -127,7 +127,7 @@ Run with --tips to see how to advance each category.
 Show all locations searched for session files, whether each path exists, and per-location stats.
 
 ```bash
-copilot-token-tracker diagnostics
+ai-engineering-fluency diagnostics
 ```
 
 ```
