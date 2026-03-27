@@ -45,7 +45,7 @@ Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session fi
 Run anywhere with Node.js — no editor required. Get usage stats, fluency scores, and environmental impact from the terminal.
 
 ```bash
-npx copilot-token-tracker-cli stats
+npx @rajbos/ai-engineering-fluency stats
 ```
 
 📖 [Full CLI documentation](docs/cli/README.md)
