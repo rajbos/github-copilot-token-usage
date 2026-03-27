@@ -496,6 +496,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private scheduleInitialUpdate(): void {
 		this.log('🚀 Starting token usage analysis...');
+		// Use a longer delay (3 s) so that:
+		// 1. VS Code and other extensions finish their own startup work first.
+		// 2. On macOS, the TCC privacy framework has time to resolve any first-time
+		//    folder-access permissions before our synchronous filesystem scan begins.
+		//    Without this delay the sync fs calls block the shared extension-host
+		//    event loop and make VS Code appear frozen.
+		// Previously a "wait for Copilot ready" gate provided a similar natural delay;
+		// this explicit wait restores that behaviour for users who do not have Copilot.
 		setTimeout(async () => {
 			try {
 				await this.updateTokenStats();
@@ -505,7 +513,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} catch (error) {
 				this.error('Error in initial update:', error);
 			}
-		}, 100);
+		}, 3000);
 	}
 
 	/**
@@ -5449,7 +5457,7 @@ ${hashtag}`;
     for (const entity of allEntities) {
       const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
       const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
-      const machineId = (entity.machineId ?? "").toString();
+      const machineId = (entity.machineId ?? "").toString().replace(/^mc:/, ""); // Strip mc: prefix
       const workspaceId = (entity.workspaceId ?? "").toString();
       const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
       const inputTokens = Number.isFinite(Number(entity.inputTokens))
