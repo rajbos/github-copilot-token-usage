@@ -5771,14 +5771,28 @@ ${hashtag}`;
       }
     }
 
-    // Fetch local stats to surface the sync coverage gap in the dashboard
+    // Fetch local stats to surface the sync coverage gap in the dashboard.
+    // Use the same lookback window as the backend so the comparison is apples-to-apples.
     let localTokens: number | undefined;
     let localInteractions: number | undefined;
     try {
       const localStats = await this.calculateDetailedStats(undefined);
-      localTokens = localStats.last30Days.tokens;
-      const p = localStats.last30Days;
-      localInteractions = p.sessions * p.avgInteractionsPerSession;
+      const lookback = settings.lookbackDays ?? 30;
+      if (lookback >= 30) {
+        // last30Days already covers the full window
+        localTokens = localStats.last30Days.tokens;
+        const p = localStats.last30Days;
+        localInteractions = p.sessions * p.avgInteractionsPerSession;
+      } else {
+        // Sum daily stats for exactly the configured lookback window
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - lookback);
+        const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+        const dailyStats = this.lastDailyStats ?? [];
+        const inWindow = dailyStats.filter(d => d.date >= cutoffStr);
+        localTokens = inWindow.reduce((sum, d) => sum + d.tokens, 0);
+        localInteractions = inWindow.reduce((sum, d) => sum + d.interactions, 0);
+      }
     } catch {
       // Non-critical: leave undefined
     }
@@ -7115,6 +7129,10 @@ export function activate(context: vscode.ExtensionContext) {
         (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
         (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+      isCrushSession: (sessionFile: string) =>
+        (tokenTracker as any).crush.isCrushSessionFile(sessionFile),
+      getCrushSessionData: (sessionFile: string) =>
+        (tokenTracker as any).crush.getCrushSessionData(sessionFile),
       isVSSessionFile: (sessionFile: string) =>
         (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
     });

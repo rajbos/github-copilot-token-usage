@@ -84,6 +84,9 @@ export interface SyncServiceDeps {
 	// OpenCode session handling
 	isOpenCodeSession?: (sessionFile: string) => boolean;
 	getOpenCodeSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
+	// Crush session handling (per-project crush.db virtual paths)
+	isCrushSession?: (sessionFile: string) => boolean;
+	getCrushSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
 	// Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
 	isVSSessionFile?: (sessionFile: string) => boolean;
 }
@@ -713,6 +716,44 @@ export class SyncService {
 					continue;
 				} catch (e) {
 					this.deps.warn(`Backend sync: failed to process OpenCode session ${sessionFile}: ${e}`);
+					continue;
+				}
+			}
+
+			// Handle Crush sessions separately (virtual paths pointing to crush.db SQLite entries)
+			if (this.deps.isCrushSession && this.deps.isCrushSession(sessionFile)) {
+				if (!this.deps.getCrushSessionData) {
+					filesSkipped++;
+					continue;
+				}
+
+				try {
+					const data = await this.deps.getCrushSessionData(sessionFile);
+					const eventMs = data.timestamp || fileMtimeMs;
+
+					if (!eventMs || eventMs < startMs) {
+						filesSkipped++;
+						continue;
+					}
+
+					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+					// Crush paths: <project>/.crush/crush.db#<id>  — no workspaceStorage segment
+					const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
+					await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
+
+					for (const [model, usage] of Object.entries(data.modelUsage)) {
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						upsertDailyRollup(rollups as any, key, {
+							inputTokens: (usage as any).inputTokens || 0,
+							outputTokens: (usage as any).outputTokens || 0,
+							interactions: (usage as any).interactions || 0,
+						});
+					}
+
+					filesProcessed++;
+					continue;
+				} catch (e) {
+					this.deps.warn(`Backend sync: failed to process Crush session ${sessionFile}: ${e}`);
 					continue;
 				}
 			}

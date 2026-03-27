@@ -73,6 +73,14 @@ export interface BackendFacadeDeps {
     modelUsage: ModelUsage;
     timestamp: number;
   }>;
+  // Crush session handling (per-project crush.db virtual paths)
+  isCrushSession?: (sessionFile: string) => boolean;
+  getCrushSessionData?: (sessionFile: string) => Promise<{
+    tokens: number;
+    interactions: number;
+    modelUsage: ModelUsage;
+    timestamp: number;
+  }>;
   // Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
   isVSSessionFile?: (sessionFile: string) => boolean;
 }
@@ -128,6 +136,8 @@ export class BackendFacade {
         statSessionFile: deps.statSessionFile,
         isOpenCodeSession: deps.isOpenCodeSession,
         getOpenCodeSessionData: deps.getOpenCodeSessionData,
+        isCrushSession: deps.isCrushSession,
+        getCrushSessionData: deps.getCrushSessionData,
         isVSSessionFile: deps.isVSSessionFile,
       },
       this.credentialService,

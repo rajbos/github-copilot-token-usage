@@ -185,14 +185,14 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   );
 
   const sections = el("div", "sections");
-  sections.append(buildPersonalSection(stats.personal));
+  sections.append(buildPersonalSection(stats.personal, stats.lookbackDays ?? 30));
   sections.append(buildTeamSection(stats));
 
   container.append(header, sections, footer);
   root.append(themeStyle, style, container);
 }
 
-function buildPersonalSection(personal: UserSummary): HTMLElement {
+function buildPersonalSection(personal: UserSummary, lookbackDays: number): HTMLElement {
   const section = el("div", "section");
   const sectionTitle = el(
     "h2",
@@ -224,7 +224,7 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
       "margin-top: 12px; padding: 10px 14px; background: var(--vscode-inputValidation-warningBackground, rgba(200,120,0,0.1)); border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(200,120,0,0.5)); border-radius: 6px; font-size: 12px; color: var(--vscode-foreground, #ccc);";
     const warningTitle = el("div", "");
     warningTitle.style.cssText = "font-weight: 600; margin-bottom: 4px;";
-    warningTitle.textContent = `⚠️ Only ${syncCoverage}% of your local activity is synced to cloud (${formatCompact(syncedTokens)} of ${formatCompact(localTokens)} local tokens in last 30 days)`;
+    warningTitle.textContent = `⚠️ Only ${syncCoverage}% of your local activity is synced to cloud (${formatCompact(syncedTokens)} of ${formatCompact(localTokens)} local tokens in last ${lookbackDays} days)`;
     const warningNote = el("div", "");
     warningNote.style.cssText = "font-size: 11px; opacity: 0.7; margin-top: 3px;";
     warningNote.textContent = "To close the gap: increase the lookback window, run a manual sync, or check that blob upload is enabled and configured.";
