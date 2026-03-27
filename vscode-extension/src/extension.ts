@@ -5293,10 +5293,10 @@ ${hashtag}`;
       );
     }
 
-    // Query backend for last 30 days
+    // Query backend for the configured lookback window
     const now = new Date();
     const todayKey = BackendUtility.toUtcDayKey(now);
-    const startKey = BackendUtility.addDaysUtc(todayKey, -29);
+    const startKey = BackendUtility.addDaysUtc(todayKey, -(settings.lookbackDays - 1));
 
     // Fetch ALL entities across all datasets using the facade's public API
     const allEntities = await this.backend.getAllAggEntitiesForRange(
@@ -5707,6 +5707,7 @@ ${hashtag}`;
         firstDate,
         lastDate,
       },
+      lookbackDays: settings.lookbackDays,
       lastUpdated: new Date().toISOString(),
     };
   }

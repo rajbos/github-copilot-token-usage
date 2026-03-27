@@ -48,6 +48,7 @@ interface DashboardStats {
     firstDate?: string | null;
     lastDate?: string | null;
   };
+  lookbackDays?: number;
   lastUpdated: string | Date;
   compactNumbers?: boolean;
 }
@@ -153,7 +154,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   const header = el("div", "header");
   const titleGroup = el("div", "title-group");
   const title = el("div", "title", "📊 Team Dashboard");
-  const period = el("div", "period", "Last 30 days");
+  const period = el("div", "period", `Last ${stats.lookbackDays ?? 30} days`);
   titleGroup.append(title, period);
   const buttonRow = el("div", "button-row");
 
@@ -225,29 +226,27 @@ function buildTeamSection(stats: DashboardStats): HTMLElement {
   );
 
   // Add date range info if available
-  console.log(
-    "Team firstDate:",
-    stats.team.firstDate,
-    "lastDate:",
-    stats.team.lastDate,
-  );
   let dateInfo: HTMLElement | null = null;
   if (stats.team.firstDate || stats.team.lastDate) {
     dateInfo = el("div", "info-box");
     dateInfo.style.cssText =
-      "margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 13px; color: #aaa;";
+      "margin-top: 16px; padding: 12px 14px; background: var(--vscode-inputValidation-infoBackground, rgba(0,120,212,0.1)); border: 1px solid var(--vscode-inputValidation-infoBorder, rgba(0,120,212,0.4)); border-radius: 6px; font-size: 13px; color: var(--vscode-foreground, #ccc);";
     const firstDate = stats.team.firstDate;
     const lastDate = stats.team.lastDate;
+    const rangeLabel = el("div", "");
+    rangeLabel.style.cssText = "font-weight: 600; margin-bottom: 4px;";
     if (firstDate && lastDate) {
-      dateInfo.textContent = `📅 Data Range: ${firstDate} to ${lastDate}`;
+      rangeLabel.textContent = `📅 Synced data range: ${firstDate} → ${lastDate}`;
     } else if (firstDate) {
-      dateInfo.textContent = `📅 First Data: ${firstDate}`;
+      rangeLabel.textContent = `📅 First synced data: ${firstDate}`;
     } else if (lastDate) {
-      dateInfo.textContent = `📅 Last Data: ${lastDate}`;
+      rangeLabel.textContent = `📅 Last synced data: ${lastDate}`;
     }
-    console.log("Date info element created");
-  } else {
-    console.log("No date range data available");
+    const rangeNote = el("div", "");
+    rangeNote.style.cssText = "font-size: 11px; opacity: 0.7; margin-top: 3px;";
+    const lookback = stats.lookbackDays ?? 30;
+    rangeNote.textContent = `Dashboard is filtered to the last ${lookback} days. This reflects what team members have synced to cloud storage. Older data may exist locally but was outside their configured upload window.`;
+    dateInfo.append(rangeLabel, rangeNote);
   }
 
   const leaderboard = buildLeaderboard(stats);
