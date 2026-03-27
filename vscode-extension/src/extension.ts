@@ -5296,7 +5296,7 @@ ${hashtag}`;
         });
       });
       this.log('✅ Historical data backfill complete');
-      vscode.window.showInformationMessage('Historical data backfill complete. Refreshing dashboard...');
+      vscode.window.setStatusBarMessage('$(check) Backfill complete. Refreshing dashboard...', 5000);
       // Invalidate the cached dashboard data so the refresh reflects the new backfill
       this.lastDashboardData = undefined;
       await this.refreshDashboardPanel();
@@ -5319,6 +5319,8 @@ ${hashtag}`;
 
     const { BackendUtility } =
       await import("./backend/services/utilityService.js");
+    const { computeBackendSharingPolicy, hashMachineIdForTeam } =
+      await import("./backend/sharingProfile.js");
     const settings = this.backend.getSettings();
 
     // Log backend settings for debugging
@@ -5326,10 +5328,26 @@ ${hashtag}`;
       `[Dashboard] Backend settings - userIdentityMode: ${settings.userIdentityMode}, configured userId: "${settings.userId}", datasetId: "${settings.datasetId}"`,
     );
 
+    // Compute the effective sharing policy so we know how entities were stored
+    const sharingPolicy = computeBackendSharingPolicy({
+      enabled: settings.enabled ?? true,
+      profile: settings.sharingProfile ?? 'off',
+      shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames ?? false,
+    });
+
     // Resolve the effective userId for the current user based on backend config
     const currentUserId = await this.backend.resolveEffectiveUserId(settings);
 
-    if (!currentUserId) {
+    // When includeUserDimension is false (soloFull / teamAnonymized), entities are stored
+    // without a userId. In that case, fall back to matching personal data by machineId.
+    const rawMachineId = vscode.env.machineId;
+    const currentMachineId = sharingPolicy.includeUserDimension
+      ? "" // not needed — we match by userId
+      : sharingPolicy.machineIdStrategy === "hashed"
+        ? hashMachineIdForTeam({ datasetId: settings.datasetId ?? "", machineId: rawMachineId })
+        : rawMachineId; // 'raw' strategy (soloFull)
+
+    if (!currentUserId && !currentMachineId) {
       this.warn(
         "[Dashboard] No user identity available. Ensure sharing profile includes user dimension.",
       );
@@ -5456,8 +5474,12 @@ ${hashtag}`;
         }
       }
 
-      // Personal data aggregation - match against resolved userId
-      if (currentUserId && userId === currentUserId) {
+      // Personal data aggregation - match against resolved userId (or machineId when
+      // includeUserDimension is false, i.e. soloFull / teamAnonymized profiles).
+      const isCurrentUser = sharingPolicy.includeUserDimension
+        ? (currentUserId !== "" && userId === currentUserId)
+        : (currentMachineId !== "" && machineId === currentMachineId);
+      if (isCurrentUser) {
         personalTotalTokens += tokens;
         personalTotalInteractions += interactions;
         personalDevices.add(machineId);
@@ -5470,9 +5492,12 @@ ${hashtag}`;
         personalModelUsage[model].outputTokens += outputTokens;
       }
 
-      // Team data aggregation - use userId|datasetId as key to track users across datasets
-      if (userId && userId.trim()) {
-        const userKey = `${userId}|${datasetId}`;
+      // Team data aggregation - use userId|datasetId as key to track users across datasets.
+      // When includeUserDimension is false, use machineId as the team member key so that
+      // each machine appears as a distinct entry even though no userId was stored.
+      const teamMemberKey = (userId && userId.trim()) ? userId : (machineId ? `machine:${machineId}` : "");
+      if (teamMemberKey) {
+        const userKey = `${teamMemberKey}|${datasetId}`;
         if (!userMap.has(userKey)) {
           userMap.set(userKey, {
             tokens: 0,
@@ -5713,11 +5738,15 @@ ${hashtag}`;
     // For the current user, override the fluency score with the locally-computed one.
     // Azure Table Storage only contains recently-synced schema-v4 entities (a small window),
     // while calculateMaturityScores() uses the full local session log history.
-    if (currentUserId) {
+    // When includeUserDimension is false, the team member key is "machine:<machineId>".
+    const currentTeamMemberKey = currentUserId
+      ? currentUserId
+      : currentMachineId ? `machine:${currentMachineId}` : "";
+    if (currentTeamMemberKey) {
       try {
         const localMaturity = await this.calculateMaturityScores(true);
         for (const member of teamMembers) {
-          if (member.userId === currentUserId) {
+          if (member.userId === currentTeamMemberKey) {
             member.fluencyStage = localMaturity.overallStage;
             member.fluencyLabel = localMaturity.overallLabel;
             member.fluencyCategories = localMaturity.categories.map(c => ({
