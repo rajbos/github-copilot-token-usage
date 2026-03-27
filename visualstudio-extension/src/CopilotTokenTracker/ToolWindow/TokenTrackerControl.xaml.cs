@@ -82,7 +82,22 @@ namespace CopilotTokenTracker.ToolWindow
                 WebView.Visibility  = Visibility.Visible;
                 FallbackText.Visibility = Visibility.Collapsed;
 
-                await RefreshAsync();
+                // Pre-load all view data with a single CLI call to eliminate per-view spinners
+                await PrewarmAllViewsAsync();
+
+                // Navigate to the initial view — served instantly from the prewarmed cache
+                _currentView = "details";
+                if (_viewHtmlCache.TryGetValue("details", out var initialHtml))
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    WebView.CoreWebView2.NavigateToString(initialHtml);
+                    Utilities.OutputLogger.Log("Initial view loaded from prewarmed cache");
+                }
+                else
+                {
+                    // Fallback: prewarming failed, load the details view individually
+                    await RefreshAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -140,6 +155,52 @@ namespace CopilotTokenTracker.ToolWindow
         }
 
         // ── Data fetching ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Fetches all view data in a single CLI call and pre-populates <see cref="_viewHtmlCache"/>
+        /// for every view. After this completes, navigating between views is instant —
+        /// no per-view spinner is shown.
+        /// </summary>
+        private async Task PrewarmAllViewsAsync()
+        {
+            Utilities.OutputLogger.Log("Prewarming all views with a single CLI call…");
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            FallbackText.Text       = "Loading…";
+            FallbackText.Visibility = Visibility.Visible;
+
+            try
+            {
+                // One CLI invocation fetches data for every view and populates all caches
+                await CliBridge.GetAllDataAsync();
+
+                // Build and cache the HTML for each view using the freshly populated caches
+                var views = new[] { "details", "chart", "usage", "environmental", "maturity" };
+                foreach (var view in views)
+                {
+                    try
+                    {
+                        var statsJson = await FetchStatsJsonAsync(view);
+                        _viewHtmlCache[view] = ThemedHtmlBuilder.Build(view, statsJson);
+                        Utilities.OutputLogger.Log($"Prewarmed view: {view}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Utilities.OutputLogger.LogWarning($"Failed to prewarm view '{view}': {ex.Message}");
+                    }
+                }
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                FallbackText.Visibility = Visibility.Collapsed;
+                Utilities.OutputLogger.Log("All views prewarmed successfully");
+            }
+            catch (Exception ex)
+            {
+                Utilities.OutputLogger.LogError("PrewarmAllViewsAsync: failed", ex);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                FallbackText.Text = $"Error loading token data:\n{ex.Message}";
+            }
+        }
 
         private static async Task<string> FetchStatsJsonAsync(string view)
         {
