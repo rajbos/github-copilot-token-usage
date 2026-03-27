@@ -5277,10 +5277,24 @@ ${hashtag}`;
     }
 
     this.log('🔄 Starting historical data backfill...');
-    this.dashboardPanel?.webview.postMessage({ command: 'dashboardLoading' });
+    this.dashboardPanel?.webview.postMessage({
+      command: 'backfillProgress',
+      text: 'Backfill starting — scanning local session files...',
+      processed: 0,
+      total: 0,
+      daysFound: 0,
+    });
 
     try {
-      await this.backend.backfillHistoricalData();
+      await this.backend.backfillHistoricalData(365, (processed, total, daysFound) => {
+        this.dashboardPanel?.webview.postMessage({
+          command: 'backfillProgress',
+          text: `Backfill in progress: ${processed}${total > 0 ? `/${total}` : ''} files scanned, ${daysFound} days found...`,
+          processed,
+          total,
+          daysFound,
+        });
+      });
       this.log('✅ Historical data backfill complete');
       vscode.window.showInformationMessage('Historical data backfill complete. Refreshing dashboard...');
       // Invalidate the cached dashboard data so the refresh reflects the new backfill

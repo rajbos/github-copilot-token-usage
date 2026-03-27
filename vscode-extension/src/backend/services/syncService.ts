@@ -607,13 +607,14 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
 	}> {
 		const lookbackDays = args.lookbackDays;
 		const skipMtimeFilter = args.skipMtimeFilter === true;
+		const onProgress = args.onProgress;
 		const userId = (args.userId ?? '').trim() || undefined;
 		const now = new Date();
 		// Include all events from the start of the first day in the range (UTC).
@@ -644,7 +645,8 @@ export class SyncService {
 		let filesSkipped = 0;
 		let filesProcessed = 0;
 		
-		this.deps.log(`Backend sync: analyzing ${sessionFiles.length} session files`);
+		const totalFiles = sessionFiles.length;
+		this.deps.log(`Backend sync: analyzing ${totalFiles} session files`);
 
 		for (const sessionFile of sessionFiles) {
 			let fileMtimeMs: number | undefined;
@@ -659,6 +661,11 @@ export class SyncService {
 					continue;
 				}
 				filesProcessed++;
+				// Report progress every 10 files (avoids flooding the callback)
+				if (onProgress && filesProcessed % 10 === 0) {
+					const daysFound = new Set(Array.from(rollups.values()).map(r => r.key.day)).size;
+					onProgress(filesProcessed, totalFiles, daysFound);
+				}
 			} catch (e) {
 				this.deps.warn(`Backend sync: failed to stat session file ${sessionFile}: ${e}`);
 				continue;
@@ -1058,7 +1065,7 @@ export class SyncService {
 	 * mtime-based file-age filter (e.g. the backend was configured after a large volume of
 	 * activity had already accumulated locally).
 	 */
-	async backfillSync(settings: BackendSettings, isConfigured: boolean, maxLookbackDays = 365): Promise<void> {
+	async backfillSync(settings: BackendSettings, isConfigured: boolean, maxLookbackDays = 365, onProgress?: (processed: number, total: number, daysFound: number) => void): Promise<void> {
 		const sharingPolicy = computeBackendSharingPolicy({
 			enabled: settings.enabled,
 			profile: settings.sharingProfile,
@@ -1084,7 +1091,8 @@ export class SyncService {
 		const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({
 			lookbackDays: maxLookbackDays,
 			userId: resolvedIdentity.userId,
-			skipMtimeFilter: true // backfill: open every file regardless of age
+			skipMtimeFilter: true, // backfill: open every file regardless of age
+			onProgress
 		});
 
 		const dayKeys = new Set<string>();

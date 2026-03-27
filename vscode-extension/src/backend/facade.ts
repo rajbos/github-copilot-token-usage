@@ -447,9 +447,9 @@ export class BackendFacade {
    * rollups for every day within the given lookback window (default 365 days).
    * Use this when the normal sync has missed data due to the mtime filter.
    */
-  public async backfillHistoricalData(maxLookbackDays = 365): Promise<void> {
+  public async backfillHistoricalData(maxLookbackDays = 365, onProgress?: (processed: number, total: number, daysFound: number) => void): Promise<void> {
     const settings = this.getSettings();
-    await this.syncService.backfillSync(settings, this.isConfigured(settings), maxLookbackDays);
+    await this.syncService.backfillSync(settings, this.isConfigured(settings), maxLookbackDays, onProgress);
     this.clearQueryCache();
   }
 

@@ -74,6 +74,9 @@ const initialData = window.__INITIAL_DASHBOARD__;
 console.log("[CopilotTokenTracker] dashboard webview loaded");
 console.log("[CopilotTokenTracker] initialData:", initialData);
 
+/** Reference to the loading text element so backfillProgress messages can update it in place. */
+let loadingTextEl: HTMLElement | null = null;
+
 function showLoading(): void {
   const root = document.getElementById("root");
   if (!root) {
@@ -96,6 +99,7 @@ function showLoading(): void {
   const loading = el("div", "loading-indicator");
   const spinner = el("div", "spinner");
   const loadingText = el("div", "loading-text", "Loading dashboard data...");
+  loadingTextEl = loadingText;
   loading.append(spinner, loadingText);
 
   container.append(header, loading);
@@ -103,6 +107,7 @@ function showLoading(): void {
 }
 
 function showError(message: string): void {
+  loadingTextEl = null;
   const root = document.getElementById("root");
   if (!root) {
     return;
@@ -131,6 +136,7 @@ function showError(message: string): void {
 }
 
 function render(stats: DashboardStats): void {
+  loadingTextEl = null;
   setCompactNumbers(stats.compactNumbers !== false);
   const root = document.getElementById("root");
   if (!root) {
@@ -625,6 +631,17 @@ window.addEventListener("message", (event) => {
     case "dashboardError":
       showError(message.message);
       break;
+    case "backfillProgress": {
+      const progressText = message.text ?? "Backfill in progress...";
+      if (!loadingTextEl) {
+        showLoading(); // ensures loadingTextEl is set
+      }
+      const textEl = loadingTextEl;
+      if (textEl) {
+        textEl.textContent = progressText;
+      }
+      break;
+    }
   }
 });
 
