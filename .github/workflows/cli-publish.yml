@@ -71,10 +71,13 @@ jobs:
 
       - name: Determine trigger type
         id: trigger_type
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/cli/v* ]]; then
+          if [[ "$EVENT_NAME" == "push" && "$GIT_REF" == refs/tags/cli/v* ]]; then
             echo "is_tag=true" >> "$GITHUB_OUTPUT"
-            TAG_VERSION=${GITHUB_REF#refs/tags/cli/v}
+            TAG_VERSION=${GIT_REF#refs/tags/cli/v}
             echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
             echo "Triggered by tag push: cli/v$TAG_VERSION"
           else
