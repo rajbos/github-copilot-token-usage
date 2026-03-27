@@ -1,6 +1,7 @@
 // @ts-nocheck // Chart.js ESM bundle is loaded dynamically; skip CJS resolution noise
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
+import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -29,6 +30,7 @@ type InitialChartData = {
 	totalSessions: number;
 	lastUpdated: string;
 	backendConfigured?: boolean;
+	compactNumbers?: boolean;
 };
 
 // VS Code injects this in the webview environment
@@ -62,6 +64,7 @@ let currentView: 'total' | 'model' | 'editor' | 'repository' = 'total';
 let pendingView: typeof currentView | null = null;
 
 function renderLayout(data: InitialChartData): void {
+	setCompactNumbers(data.compactNumbers !== false);
 	const root = document.getElementById('root');
 	if (!root) {
 		return;
@@ -99,8 +102,8 @@ function renderLayout(data: InitialChartData): void {
 	const cards = el('div', 'cards');
 	cards.append(
 		buildCard('Total Days', data.dailyCount.toLocaleString()),
-		buildCard('Total Tokens', data.totalTokens.toLocaleString()),
-		buildCard('Avg Tokens / Day', data.avgTokensPerDay.toLocaleString()),
+		buildCard('Total Tokens', formatCompact(data.totalTokens)),
+		buildCard('Avg Tokens / Day', formatCompact(data.avgTokensPerDay)),
 		buildCard('Total Sessions', data.totalSessions.toLocaleString())
 	);
 	summarySection.append(cards);
@@ -155,7 +158,7 @@ function buildEditorCards(editorTotals: Record<string, number>): HTMLElement | n
 	}
 	const wrap = el('div', 'cards');
 	entries.forEach(([editor, tokens]) => {
-		wrap.append(buildCard(editor, tokens.toLocaleString()));
+		wrap.append(buildCard(editor, formatCompact(tokens)));
 	});
 	return wrap;
 }

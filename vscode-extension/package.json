@@ -123,6 +123,11 @@
     "configuration": {
       "title": "AI Engineering Fluency",
       "properties": {
+        "copilotTokenTracker.display.compactNumbers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000)."
+        },
         "copilotTokenTracker.backend.enabled": {
           "type": "boolean",
           "default": false,

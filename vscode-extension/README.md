@@ -50,23 +50,23 @@ Search for **"AI Engineering Fluency"** in the VS Code Extensions panel, or inst
 
 The extension shows token usage in the format: `# <today> | <last 30 days>` in the status bar:
 
-![Status Bar Display](../../docs/images/01%20Toolbar%20info.png)
+![Status Bar Display](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/docs/images/01%20Toolbar%20info.png)
 
 Hovering on the status bar item shows a detailed breakdown of token usage:
 
-![Hover Details](../../docs/images/02%20Popup.png)
+![Hover Details](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/docs/images/02%20Popup.png)
 
 Clicking the status bar item opens a detailed view with comprehensive statistics:
 
-![Detailed View](../../docs/images/03%20Detail%20panel.png)
+![Detailed View](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/docs/images/03%20Detail%20panel.png)
 
 Chart overview per day, with option to view per model as well:
 
-![Chart View](../../docs/images/04%20Chart.png)
+![Chart View](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/docs/images/04%20Chart.png)
 
 Or per supported editor:
 
-![Chart View per Editor](../../docs/images/04%20Chart_02.png)
+![Chart View per Editor](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/docs/images/04%20Chart_02.png)
 
 Supported editors shown in the chart:
 
@@ -93,7 +93,7 @@ The extension includes a **Copilot Fluency Score** dashboard that evaluates your
 - ⚙️ **Customization**: Repository customization and model selection
 - 🔄 **Workflow Integration**: Regular usage and mode diversity
 
-![Fluency Score](../../docs/images/05%20Fluency%20Score.png)
+![Fluency Score](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/docs/images/05%20Fluency%20Score.png)
 
 **Fluency Level Viewer (Debug Mode)**
 
@@ -103,7 +103,7 @@ A debug-only tool that displays all fluency score rules, thresholds, and tips fo
 - **Features**: View all stage requirements and advancement tips for each category
 - **Use Cases**: Test scoring logic, debug scoring issues, plan improvements
 
-For detailed scoring rules, see [Fluency Levels Documentation](../FLUENCY-LEVELS.md).
+For detailed scoring rules, see [Fluency Levels Documentation](https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md).
 
 ---
 
@@ -124,7 +124,7 @@ The extension includes a comprehensive usage analysis dashboard that helps you u
 2. Click the **"📊 Usage Analysis"** button
 3. Or use the Command Palette: `AI Engineering Fluency: Show Usage Analysis Dashboard`
 
-For detailed information about the metrics, see [Usage Analysis Documentation](../USAGE-ANALYSIS.md).
+For detailed information about the metrics, see [Usage Analysis Documentation](https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/USAGE-ANALYSIS.md).
 
 ---
 
@@ -175,7 +175,7 @@ To enable log file uploads:
 }
 ```
 
-See [Blob Upload Guide](../BLOB-UPLOAD.md) for detailed setup instructions and security considerations.
+See [Blob Upload Guide](https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/BLOB-UPLOAD.md) for detailed setup instructions and security considerations.
 
 ### Authentication
 

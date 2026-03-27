@@ -43,9 +43,12 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: "**/package-lock.json"
 
       - name: Install JavaScript dependencies
-        run: npm ci
+        run: |
+          cd vscode-extension && npm ci
+          cd ../cli && npm ci
 
       # Download session log files from Azure Blob Storage (optional)
       # This step only runs if Azure Storage credentials are configured in the `copilot` environment

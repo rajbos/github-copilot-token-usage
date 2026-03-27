@@ -89,6 +89,7 @@ export interface ChartDataPayload {
   totalSessions: number;
   lastUpdated: string;
   backendConfigured: boolean;
+  compactNumbers?: boolean;
 }
 
 export interface SessionFileCache {
