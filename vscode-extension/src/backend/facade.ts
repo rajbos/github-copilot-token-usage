@@ -441,6 +441,18 @@ export class BackendFacade {
     return result;
   }
 
+  /**
+   * Backfill historical data to Azure Table Storage.
+   * Scans ALL local session files (ignoring the mtime-based age filter) and upserts daily
+   * rollups for every day within the given lookback window (default 365 days).
+   * Use this when the normal sync has missed data due to the mtime filter.
+   */
+  public async backfillHistoricalData(maxLookbackDays = 365): Promise<void> {
+    const settings = this.getSettings();
+    await this.syncService.backfillSync(settings, this.isConfigured(settings), maxLookbackDays);
+    this.clearQueryCache();
+  }
+
   public async tryGetBackendDetailedStatsForStatusBar(
     settings: BackendSettings,
   ): Promise<any | undefined> {

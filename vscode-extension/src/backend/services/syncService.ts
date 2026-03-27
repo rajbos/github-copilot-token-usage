@@ -607,12 +607,13 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[] }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
 	}> {
 		const lookbackDays = args.lookbackDays;
+		const skipMtimeFilter = args.skipMtimeFilter === true;
 		const userId = (args.userId ?? '').trim() || undefined;
 		const now = new Date();
 		// Include all events from the start of the first day in the range (UTC).
@@ -652,9 +653,8 @@ export class SyncService {
 				const fileStat = await this.deps.statSessionFile(sessionFile);
 				fileMtimeMs = fileStat.mtimeMs;
 				
-
-				// Skip files older than lookback period
-				if (fileMtimeMs < startMs) {
+				// Skip files older than lookback period (unless backfill mode bypasses this filter)
+				if (!skipMtimeFilter && fileMtimeMs < startMs) {
 					filesSkipped++;
 					continue;
 				}
@@ -1046,5 +1046,91 @@ export class SyncService {
 			}
 		});
 		return this.syncQueue;
+	}
+
+	/**
+	 * Backfill historical data to Azure Table Storage.
+	 * Scans ALL local session files (ignoring file mtime) and upserts daily rollups for every
+	 * day that has local data within the given lookback window. This is safe to run at any time
+	 * because the underlying upsert operation is idempotent.
+	 *
+	 * Use this to recover from situations where the normal sync missed data due to the
+	 * mtime-based file-age filter (e.g. the backend was configured after a large volume of
+	 * activity had already accumulated locally).
+	 */
+	async backfillSync(settings: BackendSettings, isConfigured: boolean, maxLookbackDays = 365): Promise<void> {
+		const sharingPolicy = computeBackendSharingPolicy({
+			enabled: settings.enabled,
+			profile: settings.sharingProfile,
+			shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
+		});
+		if (!sharingPolicy.allowCloudSync || !isConfigured) {
+			this.deps.warn('Backfill: skipping (cloud sync disabled or backend not configured)');
+			return;
+		}
+
+		this.deps.log(`Backfill: starting deep scan (up to ${maxLookbackDays} days, mtime filter disabled)`);
+
+		const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
+		if (!creds) {
+			this.deps.warn('Backfill: skipping (credentials not available)');
+			return;
+		}
+
+		await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);
+		await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
+
+		const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(settings, sharingPolicy.includeUserDimension);
+		const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({
+			lookbackDays: maxLookbackDays,
+			userId: resolvedIdentity.userId,
+			skipMtimeFilter: true // backfill: open every file regardless of age
+		});
+
+		const dayKeys = new Set<string>();
+		for (const { key } of rollups.values()) { dayKeys.add(key.day); }
+		const sortedDays = Array.from(dayKeys).sort();
+		this.deps.log(`Backfill: found data for ${sortedDays.length} days: ${sortedDays.slice(0, 10).join(', ')}${sortedDays.length > 10 ? '…' : ''}`);
+
+		const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+		const entities = [];
+		for (const { key, value } of rollups.values()) {
+			const effectiveUserId = (key.userId ?? '').trim() || undefined;
+			const includeConsent = sharingPolicy.includeUserDimension && !!effectiveUserId;
+			const includeNames = sharingPolicy.includeNames;
+			const workspaceIdToStore = sharingPolicy.workspaceIdStrategy === 'hashed'
+				? hashWorkspaceIdForTeam({ datasetId: settings.datasetId, workspaceId: key.workspaceId })
+				: key.workspaceId;
+			const machineIdToStore = sharingPolicy.machineIdStrategy === 'hashed'
+				? hashMachineIdForTeam({ datasetId: settings.datasetId, machineId: key.machineId })
+				: key.machineId;
+			const workspaceName = includeNames ? workspaceNamesById[key.workspaceId] : undefined;
+			const machineName = includeNames ? machineNamesById[key.machineId] : undefined;
+			const entity = createDailyAggEntity({
+				datasetId: settings.datasetId,
+				day: key.day,
+				model: key.model,
+				workspaceId: workspaceIdToStore,
+				workspaceName,
+				machineId: machineIdToStore,
+				machineName,
+				userId: effectiveUserId,
+				userKeyType: resolvedIdentity.userKeyType,
+				shareWithTeam: includeConsent ? true : undefined,
+				consentAt: validateConsentTimestamp(settings.shareConsentAt, this.deps.log),
+				inputTokens: value.inputTokens,
+				outputTokens: value.outputTokens,
+				interactions: value.interactions,
+				fluencyMetrics: value.fluencyMetrics
+			});
+			entities.push(entity);
+		}
+
+		const { successCount, errors } = await this.dataPlaneService.upsertEntitiesBatch(tableClient, entities);
+		if (errors.length > 0) {
+			this.deps.warn(`Backfill: ${successCount}/${entities.length} entities synced, ${errors.length} failed`);
+		} else {
+			this.deps.log(`Backfill: ${successCount} entities synced successfully across ${sortedDays.length} days`);
+		}
 	}
 }

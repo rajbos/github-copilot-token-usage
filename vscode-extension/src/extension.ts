@@ -5141,6 +5141,9 @@ ${hashtag}`;
         case "deleteUserDataset":
           await this.dispatch('deleteUserDataset', () => this.handleDeleteUserDataset(message.userId, message.datasetId));
           break;
+        case "backfillHistoricalData":
+          await this.dispatch('backfillHistoricalData', () => this.handleBackfillHistoricalData());
+          break;
       }
     });
 
@@ -5263,6 +5266,34 @@ ${hashtag}`;
    * Calculates a fluency stage (1-4) for a team member based on aggregated Azure Table Storage metrics.
    * Applies the same 6-category scoring thresholds as calculateMaturityScores().
    */
+
+  /**
+   * Backfill historical token data to Azure Table Storage by scanning all local session files
+   * without the normal mtime-based age filter.
+   */
+  private async handleBackfillHistoricalData(): Promise<void> {
+    if (!this.backend) {
+      return;
+    }
+
+    this.log('🔄 Starting historical data backfill...');
+    this.dashboardPanel?.webview.postMessage({ command: 'dashboardLoading' });
+
+    try {
+      await this.backend.backfillHistoricalData();
+      this.log('✅ Historical data backfill complete');
+      vscode.window.showInformationMessage('Historical data backfill complete. Refreshing dashboard...');
+      // Invalidate the cached dashboard data so the refresh reflects the new backfill
+      this.lastDashboardData = undefined;
+      await this.refreshDashboardPanel();
+    } catch (error) {
+      this.error('Backfill failed:', error);
+      this.dashboardPanel?.webview.postMessage({
+        command: 'dashboardError',
+        message: 'Backfill failed. Please check backend configuration and try again.',
+      });
+    }
+  }
 
   /**
    * Fetches and aggregates data for the Team Dashboard.
@@ -5689,6 +5720,18 @@ ${hashtag}`;
       }
     }
 
+    // Fetch local stats to surface the sync coverage gap in the dashboard
+    let localTokens: number | undefined;
+    let localInteractions: number | undefined;
+    try {
+      const localStats = await this.calculateDetailedStats(undefined);
+      localTokens = localStats.last30Days.tokens;
+      const p = localStats.last30Days;
+      localInteractions = p.sessions * p.avgInteractionsPerSession;
+    } catch {
+      // Non-critical: leave undefined
+    }
+
     return {
       personal: {
         userId: currentUserId || "",
@@ -5698,6 +5741,8 @@ ${hashtag}`;
         devices: Array.from(personalDevices),
         workspaces: Array.from(personalWorkspaces),
         modelUsage: personalModelUsage,
+        localTokens,
+        localInteractions,
       },
       team: {
         members: teamMembers,

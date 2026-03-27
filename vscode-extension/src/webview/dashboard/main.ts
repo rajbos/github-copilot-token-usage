@@ -16,6 +16,8 @@ interface UserSummary {
   devices: string[];
   workspaces: string[];
   modelUsage: ModelUsage;
+  localTokens?: number;
+  localInteractions?: number;
 }
 
 interface TeamMemberStats {
@@ -195,8 +197,8 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
   const grid = el("div", "stats-grid");
 
   grid.append(
-    buildStatCard("Total Tokens", formatCompact(personal.totalTokens)),
-    buildStatCard("Interactions", formatNumber(personal.totalInteractions)),
+    buildStatCard("Synced Tokens", formatCompact(personal.totalTokens)),
+    buildStatCard("Synced Interactions", formatNumber(personal.totalInteractions)),
     buildStatCard("Estimated Cost", formatCost(personal.totalCost)),
     buildStatCard("Devices", personal.devices.length.toString()),
     buildStatCard("Workspaces", personal.workspaces.length.toString()),
@@ -204,7 +206,35 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
 
   const modelSection = buildModelBreakdown(personal.modelUsage);
 
-  section.append(sectionTitle, grid, modelSection);
+  // Show sync coverage warning when local activity significantly exceeds synced data
+  const localTokens = personal.localTokens ?? 0;
+  const syncedTokens = personal.totalTokens;
+  const showSyncWarning = localTokens > 0 && syncedTokens < localTokens * 0.9;
+
+  if (showSyncWarning) {
+    const syncCoverage = localTokens > 0 ? Math.round((syncedTokens / localTokens) * 100) : 100;
+    const warning = el("div", "sync-warning");
+    warning.style.cssText =
+      "margin-top: 12px; padding: 10px 14px; background: var(--vscode-inputValidation-warningBackground, rgba(200,120,0,0.1)); border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(200,120,0,0.5)); border-radius: 6px; font-size: 12px; color: var(--vscode-foreground, #ccc);";
+    const warningTitle = el("div", "");
+    warningTitle.style.cssText = "font-weight: 600; margin-bottom: 4px;";
+    warningTitle.textContent = `⚠️ Only ${syncCoverage}% of your local activity is synced to cloud (${formatCompact(syncedTokens)} of ${formatCompact(localTokens)} local tokens in last 30 days)`;
+    const warningNote = el("div", "");
+    warningNote.style.cssText = "font-size: 11px; opacity: 0.7; margin-top: 3px;";
+    warningNote.textContent = "To close the gap: increase the lookback window, run a manual sync, or check that blob upload is enabled and configured.";
+    const backfillBtn = document.createElement("button");
+    backfillBtn.textContent = "⏫ Backfill Historical Data";
+    backfillBtn.style.cssText =
+      "margin-top: 10px; padding: 5px 12px; font-size: 12px; cursor: pointer; border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #ccc); border-radius: 4px;";
+    backfillBtn.title = "Scan all local session files and upload missing daily data to Azure Storage";
+    backfillBtn.addEventListener("click", () => {
+      vscode.postMessage({ command: "backfillHistoricalData" });
+    });
+    warning.append(warningTitle, warningNote, backfillBtn);
+    section.append(sectionTitle, grid, warning, modelSection);
+  } else {
+    section.append(sectionTitle, grid, modelSection);
+  }
   return section;
 }
 
