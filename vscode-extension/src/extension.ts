@@ -7078,6 +7078,8 @@ export function activate(context: vscode.ExtensionContext) {
         (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
         (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+      isVSSessionFile: (sessionFile: string) =>
+        (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
     });
 
     const backendHandler = new BackendCommandHandler({

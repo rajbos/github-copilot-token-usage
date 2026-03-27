@@ -84,6 +84,8 @@ export interface SyncServiceDeps {
 	// OpenCode session handling
 	isOpenCodeSession?: (sessionFile: string) => boolean;
 	getOpenCodeSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
+	// Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
+	isVSSessionFile?: (sessionFile: string) => boolean;
 }
 
 /**
@@ -668,6 +670,12 @@ export class SyncService {
 				}
 			} catch (e) {
 				this.deps.warn(`Backend sync: failed to stat session file ${sessionFile}: ${e}`);
+				continue;
+			}
+
+			// Skip Visual Studio session files — they are binary MessagePack, not JSON
+			if (this.deps.isVSSessionFile && this.deps.isVSSessionFile(sessionFile)) {
+				filesSkipped++;
 				continue;
 			}
 

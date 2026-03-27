@@ -73,6 +73,8 @@ export interface BackendFacadeDeps {
     modelUsage: ModelUsage;
     timestamp: number;
   }>;
+  // Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
+  isVSSessionFile?: (sessionFile: string) => boolean;
 }
 
 export class BackendFacade {
@@ -126,6 +128,7 @@ export class BackendFacade {
         statSessionFile: deps.statSessionFile,
         isOpenCodeSession: deps.isOpenCodeSession,
         getOpenCodeSessionData: deps.getOpenCodeSessionData,
+        isVSSessionFile: deps.isVSSessionFile,
       },
       this.credentialService,
       this.dataPlaneService,
