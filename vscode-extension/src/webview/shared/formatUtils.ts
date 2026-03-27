@@ -3,6 +3,7 @@ import tokenEstimatorsJson from '../../tokenEstimators.json';
 
 const tokenEstimators: Record<string, number> = tokenEstimatorsJson.estimators;
 let currentLocale: string | undefined;
+let compactNumbersEnabled = true;
 
 /**
  * Sets an optional locale used by format helpers.
@@ -10,6 +11,14 @@ let currentLocale: string | undefined;
  */
 export function setFormatLocale(locale?: string): void {
 	currentLocale = locale;
+}
+
+/**
+ * Sets whether compact number formatting (K/M suffixes) is enabled.
+ * When disabled, formatCompact falls back to formatNumber.
+ */
+export function setCompactNumbers(enabled: boolean): void {
+	compactNumbersEnabled = enabled;
 }
 
 /**
@@ -62,6 +71,21 @@ export function formatPercent(value: number, digits = 1): string {
  */
 export function formatNumber(value: number): string {
 	return value.toLocaleString(currentLocale);
+}
+
+/**
+ * Formats a number with K/M suffixes for compact display (e.g. 1,500 → 1.5K, 1,200,000 → 1.2M).
+ * Numbers below 1,000 are shown without a suffix.
+ * Falls back to formatNumber when compact numbers are disabled via setCompactNumbers(false).
+ */
+export function formatCompact(value: number): string {
+	if (!compactNumbersEnabled) {
+		return formatNumber(value);
+	}
+	return new Intl.NumberFormat(currentLocale, {
+		notation: 'compact',
+		maximumFractionDigits: 1
+	}).format(value);
 }
 
 /**

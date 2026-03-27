@@ -1,5 +1,6 @@
 // Log Viewer webview - displays session file details and chat turns
 import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
+import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -56,6 +57,7 @@ type SessionLogData = {
 	lastInteraction: string | null;
 	turns: ChatTurn[];
 	usageAnalysis?: SessionUsageAnalysis;
+	compactNumbers?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -287,7 +289,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<td><span class="${categoryClass}">${escapeHtml(detail.category)}</span></td>
 					<td>${escapeHtml(detail.label)}</td>
 					<td class="count-cell">${detail.percentageOfPrompt}%</td>
-					<td class="count-cell">${deducedTokens.toLocaleString()}</td>
+					<td class="count-cell">${formatCompact(deducedTokens)}</td>
 					<td><div class="bar-cell"><div class="bar-fill ${categoryClass}-bar" style="width: ${barWidth}%"></div></div></td>
 				</tr>`;
 			}).join('');
@@ -301,8 +303,8 @@ function renderTurnCard(turn: ChatTurn): string {
 			promptBreakdownHtml = `
 				<div class="prompt-breakdown">
 					<div class="breakdown-summary">
-						<span class="category-system">System: ${systemPct}% (~${systemTokens.toLocaleString()} tokens)</span>
-						<span class="category-user">User Context: ${userPct}% (~${userTokens.toLocaleString()} tokens)</span>
+					<span class="category-system">System: ${systemPct}% (~${formatCompact(systemTokens)} tokens)</span>
+					<span class="category-user">User Context: ${userPct}% (~${formatCompact(userTokens)} tokens)</span>
 					</div>
 					<table class="prompt-breakdown-table">
 						<thead>
@@ -329,10 +331,10 @@ function renderTurnCard(turn: ChatTurn): string {
 						<span class="collapse-arrow">▶</span>
 						<span class="actual-usage-header-inline">📊 ACTUAL LLM USAGE</span>
 						<span class="actual-usage-summary-text">
-							<span class="usage-badge">↑${au.promptTokens.toLocaleString()}</span>
-							<span class="usage-badge">↓${au.completionTokens.toLocaleString()}</span>
-							<span class="usage-badge usage-total">Σ${actualTotal.toLocaleString()}</span>
-							<span class="usage-badge ${deltaClass(deltaTotal)}">delta: ${deltaSign(deltaTotal)}${deltaTotal.toLocaleString()}</span>
+							<span class="usage-badge">↑${formatCompact(au.promptTokens)}</span>
+							<span class="usage-badge">↓${formatCompact(au.completionTokens)}</span>
+							<span class="usage-badge usage-total">Σ${formatCompact(actualTotal)}</span>
+							<span class="usage-badge ${deltaClass(deltaTotal)}">delta: ${deltaSign(deltaTotal)}${formatCompact(deltaTotal)}</span>
 							${au.details ? `<span class="usage-badge usage-model-info">${escapeHtml(au.details)}</span>` : ''}
 						</span>
 					</summary>
@@ -350,23 +352,23 @@ function renderTurnCard(turn: ChatTurn): string {
 							<tbody>
 								<tr>
 									<td>↑ Prompt / Input</td>
-									<td class="count-cell">${turn.inputTokensEstimate.toLocaleString()}</td>
-									<td class="count-cell">${au.promptTokens.toLocaleString()}</td>
-									<td class="count-cell ${deltaClass(deltaInput)}">${deltaSign(deltaInput)}${deltaInput.toLocaleString()}</td>
+							<td class="count-cell">${formatCompact(turn.inputTokensEstimate)}</td>
+								<td class="count-cell">${formatCompact(au.promptTokens)}</td>
+								<td class="count-cell ${deltaClass(deltaInput)}">${deltaSign(deltaInput)}${formatCompact(deltaInput)}</td>
 									<td class="count-cell">${turn.inputTokensEstimate > 0 ? (au.promptTokens / turn.inputTokensEstimate).toFixed(1) + 'x' : 'N/A'}</td>
 								</tr>
 								<tr>
 									<td>↓ Completion / Output</td>
-									<td class="count-cell">${turn.outputTokensEstimate.toLocaleString()}</td>
-									<td class="count-cell">${au.completionTokens.toLocaleString()}</td>
-									<td class="count-cell ${deltaClass(deltaOutput)}">${deltaSign(deltaOutput)}${deltaOutput.toLocaleString()}</td>
+							<td class="count-cell">${formatCompact(turn.outputTokensEstimate)}</td>
+								<td class="count-cell">${formatCompact(au.completionTokens)}</td>
+								<td class="count-cell ${deltaClass(deltaOutput)}">${deltaSign(deltaOutput)}${formatCompact(deltaOutput)}</td>
 									<td class="count-cell">${turn.outputTokensEstimate > 0 ? (au.completionTokens / turn.outputTokensEstimate).toFixed(1) + 'x' : 'N/A'}</td>
 								</tr>
 								<tr class="usage-total-row">
 									<td><strong>Σ Total</strong></td>
-									<td class="count-cell"><strong>${estimatedTotal.toLocaleString()}</strong></td>
-									<td class="count-cell"><strong>${actualTotal.toLocaleString()}</strong></td>
-									<td class="count-cell ${deltaClass(deltaTotal)}"><strong>${deltaSign(deltaTotal)}${deltaTotal.toLocaleString()}</strong></td>
+							<td class="count-cell"><strong>${formatCompact(estimatedTotal)}</strong></td>
+								<td class="count-cell"><strong>${formatCompact(actualTotal)}</strong></td>
+								<td class="count-cell ${deltaClass(deltaTotal)}"><strong>${deltaSign(deltaTotal)}${formatCompact(deltaTotal)}</strong></td>
 									<td class="count-cell"><strong>${estimatedTotal > 0 ? (actualTotal / estimatedTotal).toFixed(1) + 'x' : 'N/A'}</strong></td>
 								</tr>
 							</tbody>
@@ -491,9 +493,9 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
-				<span class="turn-tokens">📊 ${totalTokens.toLocaleString()} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
-				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${turn.thinkingTokensEstimate.toLocaleString()} thinking</span>` : ''}
-				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens).toLocaleString()} actual</span>` : ''}
+				<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
+				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${formatCompact(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens)} actual</span>` : ''}
 					${contextHeaderHtml}
 				</div>
 				<div class="turn-time">${formatDate(turn.timestamp)}</div>
@@ -520,6 +522,7 @@ function renderTurnCard(turn: ChatTurn): string {
 }
 
 function renderLayout(data: SessionLogData): void {
+	setCompactNumbers(data.compactNumbers !== false);
 	const root = document.getElementById('root');
 	if (!root) { return; }
 	
@@ -604,19 +607,19 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				<div class="summary-card">
 					<div class="summary-label">📊 Estimated Tokens</div>
-					<div class="summary-value">${totalTokens.toLocaleString()}</div>
+					<div class="summary-value">${formatCompact(totalTokens)}</div>
 					<div class="summary-sub">Input + Output estimated from text</div>
 				</div>
 				${hasAnyActualUsage ? `
 				<div class="summary-card actual-usage-card">
 					<div class="summary-label">📊 Actual Tokens</div>
-					<div class="summary-value">${actualTotal.toLocaleString()}</div>
-					<div class="summary-sub">↑${actualPromptTotal.toLocaleString()} prompt, ↓${actualCompletionTotal.toLocaleString()} completion</div>
+					<div class="summary-value">${formatCompact(actualTotal)}</div>
+					<div class="summary-sub">↑${formatCompact(actualPromptTotal)} prompt, ↓${formatCompact(actualCompletionTotal)} completion</div>
 				</div>
 				` : ''}
 				${totalThinkingTokens > 0 ? `<div class="summary-card">
 					<div class="summary-label">🧠 Thinking Tokens</div>
-					<div class="summary-value">${totalThinkingTokens.toLocaleString()}</div>
+					<div class="summary-value">${formatCompact(totalThinkingTokens)}</div>
 					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
 				</div>` : ''}
 				<div class="summary-card">
@@ -681,7 +684,7 @@ function renderLayout(data: SessionLogData): void {
 						<td><span class="${categoryClass}">${escapeHtml(entry.category)}</span></td>
 						<td>${escapeHtml(entry.label)}</td>
 						<td class="count-cell">${pct}%</td>
-						<td class="count-cell">${entry.totalTokens.toLocaleString()}</td>
+						<td class="count-cell">${formatCompact(entry.totalTokens)}</td>
 						<td><div class="bar-cell"><div class="bar-fill ${categoryClass}-bar" style="width: ${Math.min(pct, 100)}%"></div></div></td>
 					</tr>`;
 				}).join('');
@@ -701,16 +704,16 @@ function renderLayout(data: SessionLogData): void {
 						<table class="usage-comparison-table">
 							<thead><tr><th>Metric</th><th>Estimated</th><th>Actual</th><th>Ratio</th></tr></thead>
 							<tbody>
-								<tr><td>↑ Prompt</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0).toLocaleString()}</td><td class="count-cell">${actualPromptTotal.toLocaleString()}</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0) > 0 ? (actualPromptTotal / data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0)).toFixed(1) + 'x' : 'N/A'}</td></tr>
-								<tr><td>↓ Completion</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0).toLocaleString()}</td><td class="count-cell">${actualCompletionTotal.toLocaleString()}</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0) > 0 ? (actualCompletionTotal / data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0)).toFixed(1) + 'x' : 'N/A'}</td></tr>
-								<tr class="usage-total-row"><td><strong>Σ Total</strong></td><td class="count-cell"><strong>${totalTokens.toLocaleString()}</strong></td><td class="count-cell"><strong>${actualTotal.toLocaleString()}</strong></td><td class="count-cell"><strong>${estimateRatio}x</strong></td></tr>
+								<tr><td>↑ Prompt</td><td class="count-cell">${formatCompact(data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0))}</td><td class="count-cell">${formatCompact(actualPromptTotal)}</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0) > 0 ? (actualPromptTotal / data.turns.reduce((s,t) => s + t.inputTokensEstimate, 0)).toFixed(1) + 'x' : 'N/A'}</td></tr>
+								<tr><td>↓ Completion</td><td class="count-cell">${formatCompact(data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0))}</td><td class="count-cell">${formatCompact(actualCompletionTotal)}</td><td class="count-cell">${data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0) > 0 ? (actualCompletionTotal / data.turns.reduce((s,t) => s + t.outputTokensEstimate, 0)).toFixed(1) + 'x' : 'N/A'}</td></tr>
+								<tr class="usage-total-row"><td><strong>Σ Total</strong></td><td class="count-cell"><strong>${formatCompact(totalTokens)}</strong></td><td class="count-cell"><strong>${formatCompact(actualTotal)}</strong></td><td class="count-cell"><strong>${estimateRatio}x</strong></td></tr>
 							</tbody>
 						</table>
 					</div>` : ''}
 					${hasBreakdown ? `<div class="session-usage-breakdown">
 						<div class="breakdown-summary">
-							<span class="category-system">System: ~${systemTokens.toLocaleString()} tokens</span>
-							<span class="category-user">User Context: ~${userTokens.toLocaleString()} tokens</span>
+							<span class="category-system">System: ~${formatCompact(systemTokens)} tokens</span>
+							<span class="category-user">User Context: ~${formatCompact(userTokens)} tokens</span>
 						</div>
 						<table class="prompt-breakdown-table">
 							<thead><tr><th>Category</th><th>Label</th><th>Avg %</th><th>Total ~Tokens</th><th>Distribution</th></tr></thead>

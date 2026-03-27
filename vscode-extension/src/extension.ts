@@ -476,6 +476,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		this.log('Status bar item created and shown');
 
+		// Re-render open panels when display settings change
+		context.subscriptions.push(
+			vscode.workspace.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration('copilotTokenTracker.display')) {
+					this.refreshOpenPanelsForSettingChange();
+				}
+			})
+		);
+
 		// Smart initial update with delay for extension loading
 		this.scheduleInitialUpdate();
 
@@ -597,7 +606,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
 			});
 
-			this.statusBarItem.text = `$(symbol-numeric) ${detailedStats.today.tokens.toLocaleString()} | ${detailedStats.last30Days.tokens.toLocaleString()}`;
+			this.statusBarItem.text = `$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`;
 
 			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
@@ -648,6 +657,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							last30Days: detailedStats.last30Days,
 							lastUpdated: detailedStats.lastUpdated.toISOString(),
 							backendConfigured: this.isBackendConfigured(),
+							compactNumbers: this.getCompactNumbersSetting(),
 						},
 					});
 				} else {
@@ -660,7 +670,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const dailyStats = this.lastDailyStats;
 				if (silent) {
 					// Background update: send data via postMessage to preserve the active chart view toggle
-					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: this.buildChartData(dailyStats) });
+					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: { ...this.buildChartData(dailyStats), compactNumbers: this.getCompactNumbersSetting() } });
 				} else {
 					this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 				}
@@ -713,6 +723,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							last30Days: detailedStats.last30Days,
 							lastUpdated: detailedStats.lastUpdated.toISOString(),
 							backendConfigured: this.isBackendConfigured(),
+							compactNumbers: this.getCompactNumbersSetting(),
 						},
 					});
 				} else {
@@ -1127,6 +1138,40 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private formatDateKey(date: Date): string {
 		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+	}
+
+	/**
+	 * Formats a token count using K/M suffixes for compact display (e.g. 1,500 → 1.5K, 1,200,000 → 1.2M).
+	 * Falls back to full locale number when the compact numbers setting is disabled.
+	 */
+	private formatCompact(value: number): string {
+		if (!this.getCompactNumbersSetting()) {
+			return value.toLocaleString();
+		}
+		return new Intl.NumberFormat(undefined, {
+			notation: 'compact',
+			maximumFractionDigits: 1
+		}).format(value);
+	}
+
+	private getCompactNumbersSetting(): boolean {
+		return vscode.workspace.getConfiguration('copilotTokenTracker').get<boolean>('display.compactNumbers', true);
+	}
+
+	private refreshOpenPanelsForSettingChange(): void {
+		const stats = this.lastDetailedStats;
+		if (!stats) { return; }
+		// Refresh status bar text (respects new compact setting)
+		this.statusBarItem.text = `$(symbol-numeric) ${this.formatCompact(stats.today.tokens)} | ${this.formatCompact(stats.last30Days.tokens)}`;
+		if (this.detailsPanel) {
+			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+		}
+		if (this.environmentalPanel) {
+			this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
+		}
+		if (this.chartPanel && this.lastDailyStats) {
+			this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, this.lastDailyStats);
+		}
 	}
 
 	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
@@ -3613,6 +3658,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const dataWithBackend = {
 			...stats,
 			backendConfigured: this.isBackendConfigured(),
+			compactNumbers: this.getCompactNumbersSetting(),
 		};
 		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
 
@@ -4279,7 +4325,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 			`script-src 'nonce-${nonce}'`
 		].join('; ');
 
-		const initialData = JSON.stringify(logData).replace(/</g, '\\u003c');
+		const initialData = JSON.stringify({ ...logData, compactNumbers: this.getCompactNumbersSetting() }).replace(/</g, '\\u003c');
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -5682,7 +5728,7 @@ ${hashtag}`;
     ].join("; ");
 
     const dataWithBackend = data
-      ? { ...data, backendConfigured: this.isBackendConfigured() }
+      ? { ...data, backendConfigured: this.isBackendConfigured(), compactNumbers: this.getCompactNumbersSetting() }
       : undefined;
     const initialDataScript = dataWithBackend
       ? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, "\\u003c")};</script>`
@@ -5750,6 +5796,7 @@ ${hashtag}`;
       ...stats,
       backendConfigured: this.isBackendConfigured(),
       sortSettings,
+      compactNumbers: this.getCompactNumbersSetting(),
     };
     const initialData = JSON.stringify(dataWithBackend).replace(
       /</g,
@@ -6195,6 +6242,14 @@ ${hashtag}`;
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
               "copilotTokenTracker.backend",
+            )
+          );
+          break;
+        case "openDisplaySettings":
+          await this.dispatch('openDisplaySettings:diagnostics', () =>
+            vscode.commands.executeCommand(
+              "workbench.action.openSettings",
+              "copilotTokenTracker.display",
             )
           );
           break;
@@ -6775,6 +6830,7 @@ ${hashtag}`;
       totalSessions,
       lastUpdated: new Date().toISOString(),
       backendConfigured: this.isBackendConfigured(),
+      compactNumbers: this.getCompactNumbersSetting(),
     };
   }
 
