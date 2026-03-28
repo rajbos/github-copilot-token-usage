@@ -5295,9 +5295,13 @@ ${hashtag}`;
 
     try {
       await this.backend.backfillHistoricalData(365, (processed, total, daysFound) => {
+        // processed === -1 is a sentinel signalling the upload phase (total = entity count, daysFound = days)
+        const text = processed === -1
+          ? `Backfill: uploading ${total} entries for ${daysFound} days to Azure...`
+          : `Backfill in progress: ${processed}${total > 0 ? `/${total}` : ''} files scanned, ${daysFound} days found...`;
         this.dashboardPanel?.webview.postMessage({
           command: 'backfillProgress',
-          text: `Backfill in progress: ${processed}${total > 0 ? `/${total}` : ''} files scanned, ${daysFound} days found...`,
+          text,
           processed,
           total,
           daysFound,

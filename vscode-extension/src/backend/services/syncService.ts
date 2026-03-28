@@ -20,6 +20,7 @@ import { createDailyAggEntity } from '../storageTables';
 import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
+import { isJsonlContent } from '../../tokenEstimation';
 
 /**
  * Interface for blob upload service to avoid circular dependency.
@@ -354,8 +355,62 @@ export class SyncService {
 						// skip malformed line
 					}
 				}
+			} else if (isJsonlContent(content)) {
+				// VS Code chat session files have .json extension but use JSONL (patch-based) format.
+				// Process kind:2 events where k[0]==='requests' — each appends requests to the array.
+				// Deduplicate by requestId so incrementally-added requests are counted once.
+				// Track the session-level defaultModel from kind:0 and kind:2/selectedModel events so
+				// that requests without an explicit modelId still resolve to the correct model key
+				// (matching what getModelUsageFromSession stores in cachedData.modelUsage).
+				let defaultModel = 'gpt-4o';
+				const seenRequestIds = new Set<string>();
+				const lines = content.trim().split('\n');
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (!event || typeof event !== 'object') { continue; }
+						// Extract session-level default model (same logic as getModelUsageFromSession)
+						if (event.kind === 0) {
+							const modelId = event.v?.selectedModel?.identifier ||
+								event.v?.selectedModel?.metadata?.id ||
+								event.v?.inputState?.selectedModel?.metadata?.id;
+							if (modelId) { defaultModel = modelId.replace(/^copilot\//, ''); }
+						}
+						if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'selectedModel') {
+							const modelId = event.v?.identifier || event.v?.metadata?.id;
+							if (modelId) { defaultModel = modelId.replace(/^copilot\//, ''); }
+						}
+						// kind:2, k[0]==='requests' events append new request(s)
+						if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								const req = request as ChatRequest;
+								const reqId = (req as any).requestId as string | undefined;
+								if (reqId && seenRequestIds.has(reqId)) { continue; }
+								if (reqId) { seenRequestIds.add(reqId); }
+								const normalizedTs = this.utility.normalizeTimestampToMs(
+									typeof req.timestamp !== 'undefined' ? req.timestamp : undefined
+								);
+								const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+								if (!eventMs || eventMs < startMs) { continue; }
+								const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+								// Use per-request modelId if present, otherwise fall back to the session
+								// default model (mirrors getModelUsageFromSession delta logic)
+								const rawModel = (req as any).modelId || (req as any).result?.metadata?.modelId;
+								const model = rawModel ? (rawModel as string).replace(/^copilot\//, '') : defaultModel;
+								if (!dayModelInteractions.has(dayKey)) {
+									dayModelInteractions.set(dayKey, new Map());
+								}
+								const dayMap = dayModelInteractions.get(dayKey)!;
+								dayMap.set(model, (dayMap.get(model) || 0) + 1);
+							}
+						}
+					} catch {
+						// skip malformed lines
+					}
+				}
 			} else {
-				// Handle JSON format (VS Code Copilot Chat)
+				// Handle regular JSON format (VS Code Copilot Chat legacy / OpenCode JSON)
 				try {
 					const sessionJson = JSON.parse(content);
 					if (!sessionJson || typeof sessionJson !== 'object') {
@@ -374,7 +429,6 @@ export class SyncService {
 						
 						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 						const model = this.deps.getModelFromRequest(req);
-						
 
 						// Track interaction for this day+model
 						if (!dayModelInteractions.has(dayKey)) {
@@ -711,8 +765,6 @@ export class SyncService {
 							interactions: (usage as any).interactions || 0
 						});
 					}
-					
-					filesProcessed++;
 					continue;
 				} catch (e) {
 					this.deps.warn(`Backend sync: failed to process OpenCode session ${sessionFile}: ${e}`);
@@ -749,8 +801,6 @@ export class SyncService {
 							interactions: (usage as any).interactions || 0,
 						});
 					}
-
-					filesProcessed++;
 					continue;
 				} catch (e) {
 					this.deps.warn(`Backend sync: failed to process Crush session ${sessionFile}: ${e}`);
@@ -794,8 +844,11 @@ export class SyncService {
 				this.deps.warn(`Backend sync: failed to read session file ${sessionFile}: ${e}`);
 				continue;
 			}
-			// JSONL (Copilot CLI)
-			if (sessionFile.endsWith('.jsonl')) {
+			// JSONL (Copilot CLI or VS Code chat .json with JSONL content)
+			if (sessionFile.endsWith('.jsonl') || isJsonlContent(content)) {
+				let defaultModel = 'gpt-4o';
+				const isVsCodeFormat = !sessionFile.endsWith('.jsonl');
+				const seenReqIds = new Set<string>();
 				const lines = content.trim().split('\n');
 				for (const line of lines) {
 					if (!line.trim()) {
@@ -806,13 +859,54 @@ export class SyncService {
 						if (!event || typeof event !== 'object') {
 							continue;
 						}
+						// VS Code delta-based: track default model from session header events
+						if (isVsCodeFormat) {
+							if (event.kind === 0) {
+								const mId = event.v?.selectedModel?.identifier || event.v?.selectedModel?.metadata?.id || event.v?.inputState?.selectedModel?.metadata?.id;
+								if (mId) { defaultModel = mId.replace(/^copilot\//, ''); }
+							}
+							if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'selectedModel') {
+								const mId = event.v?.identifier || event.v?.metadata?.id;
+								if (mId) { defaultModel = mId.replace(/^copilot\//, ''); }
+							}
+							if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'requests' && Array.isArray(event.v)) {
+								for (const request of event.v) {
+									const req = request as ChatRequest;
+									const reqId = (req as any).requestId as string | undefined;
+									if (reqId && seenReqIds.has(reqId)) { continue; }
+									if (reqId) { seenReqIds.add(reqId); }
+									const normalizedTs = this.utility.normalizeTimestampToMs(typeof req.timestamp !== 'undefined' ? req.timestamp : undefined);
+									const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+									if (!eventMs || eventMs < startMs) { continue; }
+									const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+									const rawModel = (req as any).modelId || (req as any).result?.metadata?.modelId;
+									const model = rawModel ? (rawModel as string).replace(/^copilot\//, '') : defaultModel;
+
+									let inputTokens = 0;
+									let outputTokens = 0;
+									if ((req as any).message?.text) {
+										inputTokens = this.deps.estimateTokensFromText((req as any).message.text, model);
+									}
+									if (Array.isArray((req as any).response)) {
+										for (const r of (req as any).response) {
+											if (typeof r?.value === 'string') { outputTokens += this.deps.estimateTokensFromText(r.value, model); }
+										}
+									}
+									if (inputTokens === 0 && outputTokens === 0) { continue; }
+									const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+									upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions: 1 });
+								}
+							}
+							continue; // processed as VS Code delta event; skip CLI logic below
+						}
+						// Copilot CLI non-delta format below
 						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
 						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
 						if (!eventMs || eventMs < startMs) {
 							continue;
 						}
 						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-						const model = (event.model || 'gpt-4o').toString();
+						const model = (event.model || defaultModel).toString();
 
 						let inputTokens = 0;
 						let outputTokens = 0;
@@ -1182,6 +1276,9 @@ export class SyncService {
 			});
 			entities.push(entity);
 		}
+
+		// Signal upload phase to caller before the (potentially slow) upsert
+		onProgress?.(-1, entities.length, sortedDays.length);
 
 		const { successCount, errors } = await this.dataPlaneService.upsertEntitiesBatch(tableClient, entities);
 		if (errors.length > 0) {
