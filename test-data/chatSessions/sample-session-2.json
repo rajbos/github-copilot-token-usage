@@ -41,7 +41,7 @@
       ],
       "result": {
         "metadata": {
-          "model": "claude-3.5-sonnet"
+          "model": "claude-sonnet-3.5"
         }
       }
     },
@@ -68,7 +68,7 @@
       ],
       "result": {
         "metadata": {
-          "model": "claude-3.5-sonnet"
+          "model": "claude-sonnet-3.5"
         }
       }
     },
