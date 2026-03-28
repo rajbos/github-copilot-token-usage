@@ -1,9 +1,9 @@
 name: Sync Release Notes
 
+# Manual-only trigger — automated changelog sync is handled by the Release workflow.
+# Use this to re-sync CHANGELOG.md from GitHub releases at any time.
 on:
-  workflow_dispatch:  # Manual trigger
-  release:
-    types: [published, edited]  # Automatic trigger when releases are published or edited
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,75 +12,63 @@ jobs:
   sync-release-notes:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Need write permission to update CHANGELOG.md
+      contents: write
+      pull-requests: write
       
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
         egress-policy: audit
 
     - name: Checkout code
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
-        fetch-depth: 0  # Fetch all history so we can work with all releases
+        fetch-depth: 0
         
     - name: Setup Node.js
-      uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
         node-version: '20.x'
         
     - name: Sync GitHub release notes to CHANGELOG.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Run the sync script from the scripts directory
-        node scripts/sync-changelog.js
+      run: node scripts/sync-changelog.js
         
     - name: Check for changes
       id: changes
       run: |
-        if git diff --quiet CHANGELOG.md; then
-          echo "changed=false" >> $GITHUB_OUTPUT
-          echo "No changes detected in CHANGELOG.md"
-        else
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "Changes detected in CHANGELOG.md"
-        fi
-        
-    - name: Ensure on main branch
-      if: steps.changes.outputs.changed == 'true'
-      run: |
-        git checkout -b update-changelog
-        
-    - name: Commit and push changes
-      if: steps.changes.outputs.changed == 'true'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add CHANGELOG.md
-        git commit -m "docs: sync CHANGELOG.md with GitHub release notes
-
-        This commit automatically updates the CHANGELOG.md file to match
-        the release notes from GitHub releases, ensuring consistency
-        between local documentation and published releases."
-        git push
+        CHANGED=false
+        for f in vscode-extension/CHANGELOG.md cli/CHANGELOG.md visualstudio-extension/CHANGELOG.md; do
+          if [ -f "$f" ] && ! git diff --quiet "$f"; then
+            echo "Changes detected in $f"
+            CHANGED=true
+          fi
+        done
+        echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
 
     - name: Create Pull Request
       if: steps.changes.outputs.changed == 'true'
-      uses: peter-evans/create-pull-request@98357b18bf14b5342f975ff684046ec3b2a07725 # v8.0.0
+      uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
       with:
-        branch: update-changelog
-        title: "docs: sync CHANGELOG.md with GitHub release notes"
+        branch: update-changelogs
+        title: "docs: sync per-project CHANGELOG files with GitHub release notes"
         body: |
-          This pull request updates the CHANGELOG.md file to reflect the latest
-          GitHub release notes, ensuring that the changelog is always up to date
-          with the published releases.
+          Automatically syncs per-project CHANGELOG files with the latest GitHub release notes.
+
+          Updated files (if changed):
+          - `vscode-extension/CHANGELOG.md`
+          - `cli/CHANGELOG.md`
+          - `visualstudio-extension/CHANGELOG.md`
+          
+          Triggered by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        commit-message: "docs: sync per-project CHANGELOG files with GitHub release notes"
         
     - name: Summary
       run: |
         if [ "${{ steps.changes.outputs.changed }}" == "true" ]; then
-          echo "✅ CHANGELOG.md has been successfully updated with GitHub release notes"
+          echo "✅ A PR has been created to update per-project CHANGELOG files with GitHub release notes"
         else
-          echo "ℹ️ CHANGELOG.md was already up to date with GitHub release notes"
+          echo "ℹ️ All CHANGELOG files were already up to date with GitHub release notes"
         fi

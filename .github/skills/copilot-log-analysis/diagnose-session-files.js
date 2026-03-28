@@ -235,6 +235,56 @@ function scanGlobalStorage(userPath) {
 }
 
 /**
+ * Get OpenCode data directory path
+ * OpenCode stores data in XDG data directories
+ */
+function getOpenCodeSessionPaths() {
+    const homedir = os.homedir();
+    const platform = os.platform();
+    let dataDir;
+
+    if (platform === 'win32') {
+        dataDir = path.join(homedir, '.local', 'share', 'opencode');
+    } else {
+        const xdgDataHome = process.env.XDG_DATA_HOME || path.join(homedir, '.local', 'share');
+        dataDir = path.join(xdgDataHome, 'opencode');
+    }
+
+    return [{
+        type: 'OpenCode Sessions',
+        path: path.join(dataDir, 'storage', 'session', 'global'),
+        messageDir: path.join(dataDir, 'storage', 'message'),
+        description: 'OpenCode AI coding agent sessions'
+    }];
+}
+
+/**
+ * Scan OpenCode session directory for ses_*.json files
+ */
+function scanOpenCodeSessions(sessionGlobalPath) {
+    const sessionFiles = [];
+
+    if (!fs.existsSync(sessionGlobalPath)) {
+        return sessionFiles;
+    }
+
+    try {
+        const files = fs.readdirSync(sessionGlobalPath);
+        for (const file of files) {
+            if (file.startsWith('ses_') && file.endsWith('.json')) {
+                const filePath = path.join(sessionGlobalPath, file);
+                try {
+                    const stats = fs.statSync(filePath);
+                    sessionFiles.push({ filePath, stats, location: 'opencode-session' });
+                } catch (e) { /* ignore */ }
+            }
+        }
+    } catch (e) { /* ignore */ }
+
+    return sessionFiles;
+}
+
+/**
  * Scan Copilot CLI session-state directory
  */
 function scanCopilotCliSessions(sessionStatePath) {
@@ -353,6 +403,32 @@ function runDiagnostics() {
             }
         } else {
             logInfo(`${cliPath.type} directory not found: ${cliPath.path}`);
+        }
+    }
+
+    // Scan OpenCode sessions
+    logSection('Scanning OpenCode Sessions');
+
+    const openCodePaths = getOpenCodeSessionPaths();
+    for (const ocPath of openCodePaths) {
+        const exists = fs.existsSync(ocPath.path);
+
+        if (exists) {
+            logSuccess(`Found ${ocPath.type}`);
+            log(`     Path: ${ocPath.path}`, colors.dim);
+            log(`     Description: ${ocPath.description}`, colors.dim);
+
+            const ocFiles = scanOpenCodeSessions(ocPath.path);
+            if (ocFiles.length > 0) {
+                log(`     📁 Sessions: ${ocFiles.length} files`, colors.green);
+                for (const f of ocFiles) {
+                    allSessionFiles.push({ ...f, source: 'OpenCode' });
+                }
+            } else {
+                logInfo('No session files found');
+            }
+        } else {
+            logInfo(`${ocPath.type} directory not found: ${ocPath.path}`);
         }
     }
 

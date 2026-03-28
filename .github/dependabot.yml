@@ -57,3 +57,26 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    # Group minor and patch updates to reduce PR noise
+    groups:
+      minor-and-patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: npm
+    directory: /.github/scripts
+    schedule:
+      interval: daily
+
+  - package-ecosystem: npm
+    directory: /.github/skills/azure-storage-loader
+    schedule:
+      interval: daily
+
+  - package-ecosystem: npm
+    directory: /cli
+    schedule:
+      interval: daily

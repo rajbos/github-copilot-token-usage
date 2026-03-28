@@ -53,12 +53,16 @@ See `session-file-schema.json` → `jsonlIncrementalSchema` for full details.
 
 ## Official Source References
 
-The session file schemas are defined in the `vscode-copilot-chat` repository:
 
-- [Chat Session Provider](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/vscode.proposed.chatSessionsProvider.d.ts) - Session metadata interfaces
-- [Edit Log Service](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/multiFileEdit/common/editLogService.ts) - Edit logging
-- [Session Content Builder](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/chatSessions/vscode-node/copilotCloudSessionContentBuilder.ts) - Streaming responses
-- [Workspace Recorder](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/workspaceRecorder/vscode-node/workspaceRecorder.ts) - JSONL logging
+The session file schemas are defined in the following repositories:
+
+- [vscode-copilot-chat](https://github.com/microsoft/vscode-copilot-chat):
+  - [Chat Session Provider](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/vscode.proposed.chatSessionsProvider.d.ts) - Session metadata interfaces
+  - [Edit Log Service](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/multiFileEdit/common/editLogService.ts) - Edit logging
+  - [Session Content Builder](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/chatSessions/vscode-node/copilotCloudSessionContentBuilder.ts) - Streaming responses
+  - [Workspace Recorder](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/extension/workspaceRecorder/vscode-node/workspaceRecorder.ts) - JSONL logging
+- [OpenCode](https://github.com/anomalyco/opencode):
+  - OpenCode session log and database schema
 
 ## Updating the Schema
 

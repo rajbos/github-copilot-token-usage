@@ -1,0 +1,129 @@
+name: CLI - Build & Validate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cli/**'
+      - 'vscode-extension/src/sessionDiscovery.ts'
+      - 'vscode-extension/src/sessionParser.ts'
+      - 'vscode-extension/src/tokenEstimation.ts'
+      - 'vscode-extension/src/maturityScoring.ts'
+      - 'vscode-extension/src/usageAnalysis.ts'
+      - 'vscode-extension/src/opencode.ts'
+      - 'vscode-extension/src/types.ts'
+      - 'vscode-extension/src/tokenEstimators.json'
+      - 'vscode-extension/src/modelPricing.json'
+      - 'vscode-extension/src/toolNames.json'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      cli-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.cli-relevant == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Check for CLI-relevant file changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            cli-relevant:
+              - 'cli/**'
+              - 'vscode-extension/src/sessionDiscovery.ts'
+              - 'vscode-extension/src/sessionParser.ts'
+              - 'vscode-extension/src/tokenEstimation.ts'
+              - 'vscode-extension/src/maturityScoring.ts'
+              - 'vscode-extension/src/usageAnalysis.ts'
+              - 'vscode-extension/src/opencode.ts'
+              - 'vscode-extension/src/types.ts'
+              - 'vscode-extension/src/tokenEstimators.json'
+              - 'vscode-extension/src/modelPricing.json'
+              - 'vscode-extension/src/toolNames.json'
+
+  build-and-validate:
+    needs: check-changes
+    if: needs.check-changes.outputs.cli-relevant == 'true'
+    runs-on: ubuntu-latest
+    env:
+        node-version: 22
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js ${{ env.node-version }}
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ env.node-version }}
+
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm ci
+
+      - name: Build CLI
+        working-directory: cli
+        run: npm run build
+
+      - name: Validate CLI --help
+        working-directory: cli
+        run: node dist/cli.js --help
+
+      - name: Validate CLI --version
+        working-directory: cli
+        run: node dist/cli.js --version
+
+      - name: Validate stats command
+        working-directory: cli
+        run: node dist/cli.js stats --verbose
+
+      - name: Validate usage command
+        working-directory: cli
+        run: node dist/cli.js usage
+
+      - name: Validate environmental command
+        working-directory: cli
+        run: node dist/cli.js environmental
+
+      - name: Validate fluency command
+        working-directory: cli
+        run: node dist/cli.js fluency --tips
+
+      - name: Validate diagnostics command
+        working-directory: cli
+        run: node dist/cli.js diagnostics
+
+      - name: Validate chart command
+        working-directory: cli
+        run: node dist/cli.js chart --json
+
+      - name: Validate usage-analysis command
+        working-directory: cli
+        run: node dist/cli.js usage-analysis --json
+
+      - name: Build production bundle
+        working-directory: cli
+        run: npm run build:production
+
+      - name: Verify production bundle runs
+        working-directory: cli
+        run: node dist/cli.js --help

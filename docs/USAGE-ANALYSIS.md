@@ -1,3 +1,9 @@
+---
+title: Usage Analysis Dashboard
+description: Guide to the Usage Analysis Dashboard features and tracked metrics
+lastUpdated: 2026-01-26
+status: current
+---
 # Usage Analysis Dashboard
 
 ## Overview
@@ -43,6 +49,12 @@ Tracks how often you provide different types of context to Copilot:
 - **✂️ #selection**: References to selected code or text
 - **🔤 #symbol**: References to code symbols (functions, classes, variables)
 - **🗂️ #codebase**: References to the entire codebase for search/analysis
+- **⌨️ #terminalLastCommand**: References to the last command run in terminal
+- **🖱️ #terminalSelection**: References to selected terminal output
+- **📋 #clipboard**: References to clipboard contents
+- **📝 #changes**: References to uncommitted git changes
+- **📤 #outputPanel**: References to output panel contents
+- **⚠️ #problemsPanel**: References to problems panel contents
 - **📁 @workspace**: References to workspace-wide context
 - **💻 @terminal**: References to terminal or command-line context
 - **🔧 @vscode**: References to VS Code settings or environment
@@ -98,7 +110,7 @@ The extension analyzes two types of session files:
 The dashboard shows metrics for two time periods:
 
 - **📅 Today**: All sessions modified today (based on file modification time)
-- **📊 This Month**: All sessions modified in the current calendar month
+- **📊 Last 30 Days**: All sessions modified in the last 30 days
 
 ### Caching
 
@@ -119,6 +131,9 @@ Session analysis data is cached alongside token counts to improve performance:
 
 - **High #file usage**: You often work with specific files
 - **High #selection usage**: You frequently reference selected code
+- **High #terminalLastCommand usage**: You often ask about terminal commands or errors
+- **High #changes usage**: You frequently review uncommitted changes with Copilot
+- **High #outputPanel or #problemsPanel usage**: You use Copilot to debug build/test output
 - **High @workspace usage**: You provide broad context for better suggestions
 - **Low context usage**: Consider providing more context for better results
 
@@ -135,7 +150,7 @@ Session analysis data is cached alongside token counts to improve performance:
 
 ## Tips for Optimization
 
-1. **Provide Rich Context**: Use #file, #selection, and @workspace to give Copilot better context
+1. **Provide Rich Context**: Use #file, #selection, #terminalLastCommand, #changes, and @workspace to give Copilot better context
 2. **Try Different Modes**: Experiment with ask vs. edit mode for different tasks
 3. **Leverage Agent Mode**: For complex tasks, consider using agent mode or Copilot CLI
 4. **Monitor Tool Usage**: Tools can extend Copilot's capabilities - check which are being used

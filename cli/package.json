@@ -1,0 +1,44 @@
+{
+  "name": "@rajbos/ai-engineering-fluency",
+  "version": "0.0.4",
+  "description": "AI Engineering Fluency - CLI tool to analyze GitHub Copilot token usage from local session files",
+  "license": "MIT",
+  "author": "RobBos",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rajbos/github-copilot-token-usage.git",
+    "directory": "cli"
+  },
+  "keywords": [
+    "github-copilot",
+    "token-usage",
+    "copilot",
+    "cli",
+    "token-tracker"
+  ],
+  "bin": {
+    "ai-engineering-fluency": "dist/cli.js"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "node esbuild.js",
+    "build:production": "node esbuild.js --production",
+    "bundle-exe": "pwsh -NoProfile -File bundle-exe.ps1",
+    "lint": "eslint src",
+    "check-types": "tsc --noEmit",
+    "test": "node dist/cli.js --help && node dist/cli.js --version"
+  },
+  "devDependencies": {
+    "commander": "^14.0.3",
+    "chalk": "^5.6.2",
+    "esbuild": "^0.27.4",
+    "typescript": "^6.0.2",
+    "@types/node": "^25.5.0",
+    "sql.js": "^1.12.0"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  }
+}

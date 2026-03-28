@@ -1,8 +1,8 @@
 ---
-name: Feature request
-about: Suggest an idea for the Copilot Token Tracker extension
-title: '[FEATURE] '
-labels: enhancement
+name: Feature request — VS Code Extension
+about: Suggest a new feature or improvement for the Copilot Token Tracker VS Code extension
+title: '[FEATURE][vscode] '
+labels: "enhancement, vscode-extension"
 assignees: ''
 
 ---

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0"
+    xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"
+    xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Id="AIEngineeringFluency.VS.RobBos"
+              Version="1.0.1"
+              Language="en-US"
+              Publisher="Rob Bos" />
+    <DisplayName>AI Engineering Fluency</DisplayName>
+    <Description xml:space="preserve">
+      Measure and grow your AI engineering fluency inside Visual Studio.
+      Tracks GitHub Copilot token usage, shows today's and last-30-days
+      activity, per-model breakdowns, and detailed session analysis —
+      powered by the same webview panels as the VS Code extension.
+    </Description>
+    <Tags>GitHub Copilot, token usage, AI, productivity</Tags>
+  </Metadata>
+
+  <Installation>
+    <!-- Support all Visual Studio editions: Community, Pro, Enterprise, and future editions -->
+    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0, )">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+    <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="[17.0, )">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+    <InstallationTarget Id="Microsoft.VisualStudio.Enterprise" Version="[17.0, )">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP"
+                DisplayName="Microsoft .NET Framework"
+                d:Source="Manual"
+                Version="[4.5,)" />
+  </Dependencies>
+
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor"
+                  Version="[17.0, )"
+                  DisplayName="Visual Studio core editor" />
+  </Prerequisites>
+
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage"
+           d:Source="Project"
+           d:ProjectName="%CurrentProject%"
+           Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+  </Assets>
+</PackageManifest>

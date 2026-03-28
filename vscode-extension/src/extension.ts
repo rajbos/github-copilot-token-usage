@@ -1,0 +1,7162 @@
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import * as childProcess from 'child_process';
+import tokenEstimatorsData from './tokenEstimators.json';
+import modelPricingData from './modelPricing.json';
+import toolNamesData from './toolNames.json';
+import customizationPatternsData from './customizationPatterns.json';
+import { REPO_HYGIENE_SKILL } from './backend/repoHygieneSkill';
+import { BackendFacade } from './backend/facade';
+import { BackendCommandHandler } from './backend/commands';
+import * as packageJson from '../package.json';
+import { getModelDisplayName } from './webview/shared/modelUtils';
+import { ConfirmationMessages } from "./backend/ui/messages";
+
+import type {
+  TokenUsageStats,
+  ModelUsage,
+  ModelPricing,
+  EditorUsage,
+  RepositoryUsage,
+  PeriodStats,
+  DetailedStats,
+  DailyTokenStats,
+  ChartDataPayload,
+  SessionFileCache,
+  CustomizationFileEntry,
+  SessionUsageAnalysis,
+  ToolCallUsage,
+  ModeUsage,
+  ContextReferenceUsage,
+  McpToolUsage,
+  EditScopeUsage,
+  ApplyButtonUsage,
+  SessionDurationData,
+  ConversationPatterns,
+  AgentTypeUsage,
+  ModelSwitchingAnalysis,
+  MissedPotentialWorkspace,
+  UsageAnalysisStats,
+  CustomizationTypeStatus,
+  WorkspaceCustomizationRow,
+  WorkspaceCustomizationMatrix,
+  UsageAnalysisPeriod,
+  SessionFileDetails,
+  PromptTokenDetail,
+  ActualUsage,
+  ChatTurn,
+  SessionLogData,
+  WorkspaceCustomizationSummary
+} from './types';
+import { OpenCodeDataAccess } from './opencode';
+import { CrushDataAccess } from './crush';
+import { VisualStudioDataAccess } from './visualstudio';
+import { ContinueDataAccess } from './continue';
+import {
+  estimateTokensFromText as _estimateTokensFromText,
+  estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
+  extractPerRequestUsageFromRawLines as _extractPerRequestUsageFromRawLines,
+  getModelFromRequest as _getModelFromRequest,
+  isJsonlContent as _isJsonlContent,
+  isUuidPointerFile as _isUuidPointerFile,
+  applyDelta as _applyDelta,
+  getModelTier as _getModelTier,
+  calculateEstimatedCost as _calculateEstimatedCost,
+  createEmptyContextRefs as _createEmptyContextRefs,
+  getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
+} from './tokenEstimation';
+import { SessionDiscovery } from './sessionDiscovery';
+import { CacheManager } from './cacheManager';
+import {
+  mergeUsageAnalysis as _mergeUsageAnalysis,
+  analyzeContextReferences as _analyzeContextReferences,
+  analyzeContentReferences as _analyzeContentReferences,
+  analyzeVariableData as _analyzeVariableData,
+  deriveConversationPatterns as _deriveConversationPatterns,
+  analyzeRequestContext as _analyzeRequestContext,
+  calculateModelSwitching as _calculateModelSwitching,
+  trackEnhancedMetrics as _trackEnhancedMetrics,
+  analyzeSessionUsage as _analyzeSessionUsage,
+  getModelUsageFromSession as _getModelUsageFromSession,
+  type UsageAnalysisDeps,
+} from './usageAnalysis';
+import {
+  getFluencyLevelData as _getFluencyLevelData,
+  calculateFluencyScoreForTeamMember as _calculateFluencyScoreForTeamMember,
+  calculateMaturityScores as _calculateMaturityScores,
+} from './maturityScoring';
+import {
+  parseWorkspaceStorageJsonFile as _parseWorkspaceStorageJsonFile,
+  extractWorkspaceIdFromSessionPath as _extractWorkspaceIdFromSessionPath,
+  resolveWorkspaceFolderFromSessionPath as _resolveWorkspaceFolderFromSessionPath,
+  globToRegExp as _globToRegExp,
+  resolveExactWorkspacePath as _resolveExactWorkspacePath,
+  scanWorkspaceCustomizationFiles as _scanWorkspaceCustomizationFiles,
+  getRepositoryUrl as _getRepositoryUrl,
+  getModeType as _getModeType,
+  extractCustomAgentName as _extractCustomAgentName,
+  getEditorTypeFromPath as _getEditorTypeFromPath,
+  getEditorNameFromRoot as _getEditorNameFromRoot,
+  getRepoDisplayName as _getRepoDisplayName,
+  detectEditorSource as _detectEditorSource,
+  parseGitRemoteUrl as _parseGitRemoteUrl,
+  extractRepositoryFromContentReferences as _extractRepositoryFromContentReferences,
+  isMcpTool as _isMcpTool,
+  normalizeMcpToolName as _normalizeMcpToolName,
+  extractMcpServerName as _extractMcpServerName,
+} from './workspaceHelpers';
+
+class CopilotTokenTracker implements vscode.Disposable {
+	// Cache version - increment this when making changes that require cache invalidation
+	private static readonly CACHE_VERSION = 31; // Fix Continue token estimation (use text length, not non-existent promptLength field)
+	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
+	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
+
+	private diagnosticsPanel?: vscode.WebviewPanel;
+	// Tracks whether the diagnostics panel has already received its session files
+	private diagnosticsHasLoadedFiles: boolean = false;
+	// Cache of the last loaded detailed session files for diagnostics view
+	private diagnosticsCachedFiles: SessionFileDetails[] = [];
+	// Cache of the last diagnostic report text for copy/issue operations
+	private lastDiagnosticReport: string = '';
+	private logViewerPanel?: vscode.WebviewPanel;
+	private openCode: OpenCodeDataAccess;
+	private crush: CrushDataAccess;
+	private visualStudio: VisualStudioDataAccess;
+	private continue_: ContinueDataAccess;
+	private cacheManager: CacheManager;
+
+	private get usageAnalysisDeps(): UsageAnalysisDeps {
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+	}
+	private sessionDiscovery: SessionDiscovery;
+	private statusBarItem: vscode.StatusBarItem;
+	private readonly extensionUri: vscode.Uri;
+	private readonly context: vscode.ExtensionContext;
+
+
+	/**
+	 * Resolve the workspace folder full path from a session file path.
+	 * Looks for a `workspaceStorage/<id>/` segment and reads `workspace.json` or `meta.json`.
+	 * Synchronous by design to keep the analysis flow simple and cached.
+	 */
+	// Helper: read a workspaceStorage JSON file and extract a candidate folder path from configured keys
+
+	/**
+	 * Extract workspace ID from a session file path, if it's workspace-scoped.
+	 * Returns the workspace ID or undefined if not a workspace-scoped session.
+	 */
+
+
+	/**
+	 * Convert a simple glob pattern to a RegExp.
+	 * Supports: ** (match multiple path segments), * (match within a segment), ?.
+	 */
+
+	/**
+	 * Resolve an exact relative path in a workspace.
+	 * When `caseInsensitive` is true, path segments are matched case-insensitively.
+	 */
+
+	/**
+	 * Scan a workspace folder for customization files according to `customizationPatterns.json`.
+	 */
+	private _disposed = false;
+	private updateInterval: NodeJS.Timeout | undefined;
+	private detailsPanel: vscode.WebviewPanel | undefined;
+	private chartPanel: vscode.WebviewPanel | undefined;
+	private analysisPanel: vscode.WebviewPanel | undefined;
+	private maturityPanel: vscode.WebviewPanel | undefined;
+	private dashboardPanel: vscode.WebviewPanel | undefined;
+	private fluencyLevelViewerPanel: vscode.WebviewPanel | undefined;
+	private environmentalPanel: vscode.WebviewPanel | undefined;
+	private outputChannel: vscode.OutputChannel;
+	private lastDetailedStats: DetailedStats | undefined;
+	private lastDailyStats: DailyTokenStats[] | undefined;
+	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
+	private lastDashboardData: any | undefined;
+	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
+	private co2Per1kTokens = 0.2; // gCO2e per 1000 tokens, a rough estimate
+	private co2AbsorptionPerTreePerYear = 21000; // grams of CO2 per tree per year
+	private waterUsagePer1kTokens = 0.3; // liters of water per 1000 tokens, based on data center usage estimates
+	private _cacheHits = 0; // Counter for cache hits during usage analysis
+	private _cacheMisses = 0; // Counter for cache misses during usage analysis
+	// Short-term cache to avoid rescanning filesystem during rapid successive calls (e.g., diagnostics load)
+
+	// Cached sql.js SQL module (lazy initialized)
+
+	// In-flight command tracker — prevents concurrent execution of the same webview command
+	private readonly _inFlightCommands = new Set<string>();
+
+	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
+	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
+
+	// Cache mapping workspaceFolderPath -> found customization files (avoid re-scanning)
+	private _customizationFilesCache: Map<string, CustomizationFileEntry[]> = new Map();
+
+	// Last computed customization matrix for usage analysis (typed)
+	private _lastCustomizationMatrix?: WorkspaceCustomizationMatrix;
+	private _lastMissedPotential?: MissedPotentialWorkspace[];
+
+	// Model pricing data - loaded from modelPricing.json
+	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
+	// Reference: Anthropic Claude Pricing (https://www.anthropic.com/pricing) - Standard rates
+	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
+	// These are reference prices for cost estimation purposes only
+	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
+
+	// Tool name mapping - loaded from toolNames.json for friendly display names
+	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
+
+	// Backend facade instance for accessing table storage data
+	private backend: BackendFacade | undefined;
+
+	// Helper method to get repository URL from package.json
+	private getRepositoryUrl(): string {
+		return _getRepositoryUrl();
+	}
+
+	/**
+	 * Determine the editor type from a session file path
+	 * Returns: 'VS Code', 'VS Code Insiders', 'VSCodium', 'Cursor', 'Copilot CLI', or 'Unknown'
+	 */
+	/**
+	 * Detect the actual mode type from inputState.mode object.
+	 * Returns 'ask', 'edit', 'agent', 'plan', or 'customAgent'.
+	 */
+	private getModeType(mode: any): 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' {
+		return _getModeType(mode);
+	}
+
+	/**
+	 * Extract custom agent name from a file:// URI pointing to a .agent.md file.
+	 * Returns the filename without the .agent.md extension.
+	 */
+
+
+
+
+
+
+
+
+
+
+
+
+	private getEditorTypeFromPath(filePath: string): string {
+		return _getEditorTypeFromPath(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
+	}
+
+	/**
+	 * Stat a session file, handling virtual paths for both OpenCode and Crush.
+	 * Must be used instead of fs.promises.stat() directly.
+	 */
+	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			return this.visualStudio.statSessionFile(sessionFile);
+		}
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			return this.visualStudio.statSessionFile(sessionFile);
+		}
+		if (this.crush.isCrushSessionFile(sessionFile)) {
+			return this.crush.statSessionFile(sessionFile);
+		}
+		return this.openCode.statSessionFile(sessionFile);
+	}
+
+	/**
+	 * Determine a friendly editor name from an editor root path (folder name)
+	 * e.g. 'C:\...\AppData\Roaming\Code' -> 'VS Code'
+	 */
+	private getEditorNameFromRoot(rootPath: string): string {
+		return _getEditorNameFromRoot(rootPath);
+	}
+
+	/**
+	 * Extract a friendly display name from a repository URL.
+	 * Supports HTTPS, SSH, and git:// URLs.
+	 * @param repoUrl The full repository URL
+	 * @returns A shortened display name like "owner/repo"
+	 */
+	private getRepoDisplayName(repoUrl: string): string {
+		return _getRepoDisplayName(repoUrl);
+	}
+
+	// Logging methods
+	public log(message: string): void {
+		if (this._disposed) { return; }
+		const timestamp = new Date().toLocaleTimeString();
+		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+	}
+
+	private warn(message: string): void {
+		if (this._disposed) { return; }
+		const timestamp = new Date().toLocaleTimeString();
+		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
+	}
+
+	private error(message: string, error?: any): void {
+		if (this._disposed) { return; }
+		const timestamp = new Date().toLocaleTimeString();
+		this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
+		if (error) {
+			this.outputChannel.appendLine(`[${timestamp}] ${error}`);
+		}
+	}
+
+	/**
+	 * Dispatch a webview command with in-flight deduplication and error handling.
+	 * If a command with the same key is already executing, the new call is silently dropped.
+	 * Use panel-prefixed keys for panel-specific commands (e.g. 'refresh:details') and plain
+	 * command names for shared navigation commands (e.g. 'showDetails').
+	 */
+	private async dispatch(commandKey: string, handler: () => unknown): Promise<void> {
+		if (this._inFlightCommands.has(commandKey)) {
+			this.log(`⏳ Command '${commandKey}' already in flight, skipping`);
+			return;
+		}
+		this._inFlightCommands.add(commandKey);
+		try {
+			await handler();
+		} catch (error) {
+			this.error(`Webview command '${commandKey}' failed`, error);
+			vscode.window.showErrorMessage(`Operation failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			this._inFlightCommands.delete(commandKey);
+		}
+	}
+
+	/**
+	 * Dispatch a shared navigation command that is common across all webview panels.
+	 * Returns true if the command was recognised and dispatched, false if it is panel-specific.
+	 */
+	private async dispatchSharedCommand(command: string): Promise<boolean> {
+		const handlers: Record<string, () => unknown> = {
+			showDetails:            () => this.showDetails(),
+			showChart:              () => this.showChart(),
+			showUsageAnalysis:      () => this.showUsageAnalysis(),
+			showDiagnostics:        () => this.showDiagnosticReport(),
+			showMaturity:           () => this.showMaturity(),
+			showDashboard:          () => this.showDashboard(),
+			showEnvironmental:      () => this.showEnvironmental(),
+			showFluencyLevelViewer: () => this.showFluencyLevelViewer(),
+		};
+		const handler = handlers[command];
+		if (!handler) { return false; }
+		await this.dispatch(command, handler);
+		return true;
+	}
+
+	// Cache management methods
+	/**
+	 * Checks if the cache is valid for a file by comparing mtime and size.
+	 * If the cache entry is missing size (old format), treat as invalid so it will be upgraded.
+	 */
+
+	private getCachedSessionData(filePath: string): SessionFileCache | undefined {
+		return this.cacheManager.getCachedSessionData(filePath);
+	}
+
+	/**
+	 * Sets the cache entry for a session file, including file size.
+	 */
+	private setCachedSessionData(filePath: string, data: SessionFileCache, fileSize?: number): void {
+		return this.cacheManager.setCachedSessionData(filePath, data);
+	}
+
+
+	/**
+	 * Generate a cache identifier based on VS Code extension mode.
+	 * VS Code editions (stable vs insiders) already have separate globalState storage,
+	 * so we only need to distinguish between production and development (debug) mode.
+	 * In development mode, each VS Code window gets a unique cache identifier using
+	 * the session ID, preventing the Extension Development Host from sharing/fighting
+	 * with the main dev window's cache.
+	 */
+
+	/**
+	 * Get the path for the cache lock file.
+	 * Uses globalStorageUri which is already scoped per VS Code edition.
+	 */
+
+	/**
+	 * Acquire an exclusive file lock for cache writes.
+	 * Uses atomic file creation (O_EXCL / CREATE_NEW) to prevent concurrent writes
+	 * across multiple VS Code windows of the same edition.
+	 * Returns true if lock acquired, false if another instance holds it.
+	 */
+
+	/**
+	 * Release the cache lock file, but only if we own it.
+	 */
+
+	// Persistent cache storage methods
+
+	/**
+	 * One-time migration: remove old per-session cache keys that were created by
+	 * earlier versions of the extension (keys containing sessionId or timestamp).
+	 * Also removes the legacy unscoped keys ('sessionFileCache', 'sessionFileCacheVersion').
+	 */
+
+	private async saveCacheToStorage(): Promise<void> {
+		return this.cacheManager.saveCacheToStorage();
+	}
+
+	public async clearCache(): Promise<void> {
+		try {
+			// Show the output channel so users can see what's happening
+			this.outputChannel.show(true);
+			this.log('Clearing session file cache...');
+
+				const cacheId = this.cacheManager.getCacheIdentifier();
+			const cacheKey = `sessionFileCache_${cacheId}`;
+			const versionKey = `sessionFileCacheVersion_${cacheId}`;
+			
+			const cacheSize = this.cacheManager.cache.size;
+			this.cacheManager.cache.clear();
+			await this.context.globalState.update(cacheKey, undefined);
+			await this.context.globalState.update(versionKey, undefined);
+			// Reset diagnostics loaded flag so the diagnostics view will reload files
+			this.diagnosticsHasLoadedFiles = false;
+			this.diagnosticsCachedFiles = [];
+			// Clear cached computed stats so details panel doesn't show stale data
+			this.lastDetailedStats = undefined;
+			this.lastDailyStats = undefined;
+			this.lastUsageAnalysisStats = undefined;
+			this.lastDashboardData = undefined;
+
+			this.log(`Cache cleared successfully. Removed ${cacheSize} entries.`);
+			vscode.window.showInformationMessage('Cache cleared successfully. Reloading statistics...');
+
+			// Trigger a refresh after clearing the cache
+			this.log('Reloading token statistics...');
+			await this.updateTokenStats();
+			this.log('Token statistics reloaded successfully.');
+		} catch (error) {
+			this.error('Error clearing cache:', error);
+			vscode.window.showErrorMessage('Failed to clear cache: ' + error);
+		}
+	}
+
+	constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
+		this.extensionUri = extensionUri;
+		this.openCode = new OpenCodeDataAccess(extensionUri);
+		this.crush = new CrushDataAccess(extensionUri);
+		this.continue_ = new ContinueDataAccess();
+		this.visualStudio = new VisualStudioDataAccess();
+		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
+		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_ });
+		this.context = context;
+		// Create output channel for extension logs
+		this.outputChannel = vscode.window.createOutputChannel('AI Engineering Fluency');
+		// CRITICAL: Add output channel to context.subscriptions so VS Code doesn't dispose it
+		context.subscriptions.push(this.outputChannel);
+		this.log('Constructor called');
+
+		// Load persisted cache from storage
+		this.cacheManager.loadCacheFromStorage();
+
+		// Check GitHub Copilot extension status
+		this.sessionDiscovery.checkCopilotExtension();
+
+		// Create status bar item
+		this.statusBarItem = vscode.window.createStatusBarItem(
+			'copilot-token-tracker',
+			vscode.StatusBarAlignment.Right,
+			100
+		);
+		this.statusBarItem.name = "AI Engineering Fluency";
+		this.statusBarItem.text = "$(loading~spin) AI Fluency: Loading...";
+		this.statusBarItem.tooltip = "AI Engineering Fluency — daily and 30-day token usage - Click to open details";
+		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
+		this.statusBarItem.show();
+
+		this.log('Status bar item created and shown');
+
+		// Re-render open panels when display settings change
+		context.subscriptions.push(
+			vscode.workspace.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration('copilotTokenTracker.display')) {
+					this.refreshOpenPanelsForSettingChange();
+				}
+			})
+		);
+
+		// Smart initial update with delay for extension loading
+		this.scheduleInitialUpdate();
+
+		// Update every 5 minutes (cache is saved automatically after each update)
+		this.updateInterval = setInterval(() => {
+			this.updateTokenStats(true); // Silent update from timer
+		}, 5 * 60 * 1000);
+	}
+
+	private scheduleInitialUpdate(): void {
+		this.log('🚀 Starting token usage analysis...');
+		setTimeout(async () => {
+			try {
+				await this.updateTokenStats();
+				this.startBackendSyncAfterInitialAnalysis();
+				await this.showFluencyScoreNewsBanner();
+				await this.showUnknownMcpToolsBanner();
+			} catch (error) {
+				this.error('Error in initial update:', error);
+			}
+		}, 100);
+	}
+
+	/**
+	 * Start backend sync timer after initial token analysis completes.
+	 * This avoids resource contention during extension startup.
+	 */
+	private startBackendSyncAfterInitialAnalysis(): void {
+		try {
+			const backend = (this as any).backend;
+			if (backend && typeof backend.startTimerIfEnabled === 'function') {
+				backend.startTimerIfEnabled();
+			}
+		} catch (error) {
+			this.warn('Failed to start backend sync timer: ' + error);
+		}
+	}
+
+	private async showFluencyScoreNewsBanner(): Promise<void> {
+		const dismissedKey = 'news.fluencyScoreBanner.v1.dismissed';
+		if (this.context.globalState.get<boolean>(dismissedKey)) {
+			return;
+		}
+		// If the user already opened the fluency view themselves, no need to prompt them
+		const fluencyViewedKey = 'fluencyScore.everOpened';
+		if (this.context.globalState.get<boolean>(fluencyViewedKey)) {
+			await this.context.globalState.update(dismissedKey, true);
+			return;
+		}
+		const openCountKey = 'extension.openCount';
+		const openCount = (this.context.globalState.get<number>(openCountKey) ?? 0) + 1;
+		await this.context.globalState.update(openCountKey, openCount);
+		if (openCount < 5) {
+			return;
+		}
+		const open = 'Open Fluency Score';
+		const dismiss = 'Dismiss';
+		const choice = await vscode.window.showInformationMessage(
+			'🎯 New: AI Engineering Fluency Score dashboard — track how deeply your team uses GitHub Copilot across 6 categories and 4 stages.',
+			open,
+			dismiss
+		);
+		await this.context.globalState.update(dismissedKey, true);
+		if (choice === open) {
+			await this.showMaturity();
+		}
+	}
+
+	private getUnknownMcpToolsFromStats(stats: UsageAnalysisStats): string[] {
+		const allTools = new Set<string>();
+		Object.keys(stats.today.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.last30Days.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.month.mcpTools.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.today.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.last30Days.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		Object.keys(stats.month.toolCalls.byTool).forEach(tool => allTools.add(tool));
+		return Array.from(allTools).filter(tool => !this.toolNameMap[tool]).sort();
+	}
+
+	private async showUnknownMcpToolsBanner(): Promise<void> {
+		const dismissedKey = 'news.unknownMcpTools.dismissedVersion';
+		const dismissedVersion = this.context.globalState.get<string>(dismissedKey);
+		if (dismissedVersion === packageJson.version) {
+			return;
+		}
+		const openCountKey = 'extension.unknownMcpOpenCount';
+		const openCount = (this.context.globalState.get<number>(openCountKey) ?? 0) + 1;
+		await this.context.globalState.update(openCountKey, openCount);
+		if (openCount < 8) {
+			return;
+		}
+		const stats = await this.calculateUsageAnalysisStats(true);
+		const unknownTools = this.getUnknownMcpToolsFromStats(stats);
+		if (unknownTools.length === 0) {
+			return;
+		}
+		const open = 'Open Usage Analysis';
+		const dismiss = 'Dismiss';
+		const choice = await vscode.window.showInformationMessage(
+			`🔌 Found ${unknownTools.length} tool${unknownTools.length > 1 ? 's' : ''} without friendly names. Help improve the extension by reporting them.`,
+
+			open,
+			dismiss
+		);
+		await this.context.globalState.update(dismissedKey, packageJson.version);
+		if (choice === open) {
+			await this.showUsageAnalysis();
+			setTimeout(() => {
+				this.analysisPanel?.webview.postMessage({ command: 'highlightUnknownTools' });
+			}, 500);
+		}
+	}
+
+	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
+		try {
+			this.log('Updating token stats...');
+			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
+				const percentage = Math.round((completed / total) * 100);
+				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
+			});
+
+			this.statusBarItem.text = `$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`;
+
+			// Create detailed tooltip with improved style
+			const tooltip = new vscode.MarkdownString();
+			tooltip.isTrusted = false;
+			// Title
+			tooltip.appendMarkdown('#### AI Engineering Fluency');
+			tooltip.appendMarkdown('\n---\n');
+			// Table layout for Today
+			tooltip.appendMarkdown(`📅 Today  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :     | ${detailedStats.today.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.today.avgTokensPerSession.toLocaleString()} |\n`);
+
+			tooltip.appendMarkdown('\n---\n');
+
+			// Table layout for Last 30 Days
+			tooltip.appendMarkdown(`📊 Last 30 Days  \n`);
+			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
+			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.last30Days.tokens.toLocaleString()} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.last30Days.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.last30Days.co2.toFixed(2)} grams |\n`);
+			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.last30Days.waterUsage.toFixed(3)} liters |\n`);
+			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.last30Days.sessions} |\n`);
+			tooltip.appendMarkdown(`| Average interactions/session :      | ${detailedStats.last30Days.avgInteractionsPerSession} |\n`);
+			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.last30Days.avgTokensPerSession.toLocaleString()} |\n`);
+			// Footer
+			tooltip.appendMarkdown('\n---\n');
+			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
+			tooltip.appendMarkdown('*Updates automatically every 5 minutes.*');
+
+			this.statusBarItem.tooltip = tooltip;
+
+			// If the details panel is open, update its content
+			if (this.detailsPanel) {
+				if (silent) {
+					// Background update: send data via postMessage to preserve UI state (scroll position, open sections)
+					void this.detailsPanel.webview.postMessage({
+						command: 'updateStats',
+						data: {
+							today: detailedStats.today,
+							month: detailedStats.month,
+							lastMonth: detailedStats.lastMonth,
+							last30Days: detailedStats.last30Days,
+							lastUpdated: detailedStats.lastUpdated.toISOString(),
+							backendConfigured: this.isBackendConfigured(),
+							compactNumbers: this.getCompactNumbersSetting(),
+						},
+					});
+				} else {
+					this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, detailedStats);
+				}
+			}
+
+			// If the chart panel is open, update its content (daily stats were computed in calculateDetailedStats)
+			if (this.chartPanel && this.lastDailyStats) {
+				const dailyStats = this.lastDailyStats;
+				if (silent) {
+					// Background update: send data via postMessage to preserve the active chart view toggle
+					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: { ...this.buildChartData(dailyStats), compactNumbers: this.getCompactNumbersSetting() } });
+				} else {
+					this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+				}
+			}
+
+			// If the analysis panel is open, update its content via postMessage to preserve repo hygiene results
+			if (this.analysisPanel) {
+				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation on refresh
+				if (silent) {
+					// Background update: send data via postMessage so repo analysis results are preserved.
+					// The webview re-renders stats but repoAnalysisState (module-level) restores analysis results.
+					void this.analysisPanel.webview.postMessage({
+						command: 'updateStats',
+						data: {
+							today: analysisStats.today,
+							last30Days: analysisStats.last30Days,
+							month: analysisStats.month,
+							locale: analysisStats.locale,
+							customizationMatrix: analysisStats.customizationMatrix || null,
+							missedPotential: analysisStats.missedPotential || [],
+							lastUpdated: analysisStats.lastUpdated.toISOString(),
+							backendConfigured: this.isBackendConfigured(),
+							currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
+						},
+					});
+				} else {
+					this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+				}
+			} else {
+				// Pre-populate the cache even when panel isn't open, so first open is fast
+				await this.calculateUsageAnalysisStats(false);
+			}
+
+			// If the maturity panel is open, update its content.
+			// During background (silent) updates, skip to preserve demo panel state and user overrides.
+			if (this.maturityPanel && !silent) {
+				const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
+				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
+			}
+
+			// If the environmental panel is open, update its content
+			if (this.environmentalPanel) {
+				if (silent) {
+					void this.environmentalPanel.webview.postMessage({
+						command: 'updateStats',
+						data: {
+							today: detailedStats.today,
+							month: detailedStats.month,
+							lastMonth: detailedStats.lastMonth,
+							last30Days: detailedStats.last30Days,
+							lastUpdated: detailedStats.lastUpdated.toISOString(),
+							backendConfigured: this.isBackendConfigured(),
+							compactNumbers: this.getCompactNumbersSetting(),
+						},
+					});
+				} else {
+					this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, detailedStats);
+				}
+			}
+
+			this.log(`Updated stats - Today: ${detailedStats.today.tokens}, Last 30 Days: ${detailedStats.last30Days.tokens}`);
+			// Store the stats for reuse without recalculation
+			this.lastDetailedStats = detailedStats;
+
+			// Save cache to ensure it's persisted for next run (don't await to avoid blocking UI)
+			this.saveCacheToStorage().catch(err => {
+				this.warn(`Failed to save cache: ${err}`);
+			});
+
+			return detailedStats;
+		} catch (error) {
+			this.error('Error updating token stats:', error);
+			this.statusBarItem.text = '$(error) Token Error';
+			this.statusBarItem.tooltip = 'Error calculating token usage';
+			return undefined;
+		}
+	}
+
+	private async calculateTokenUsage(): Promise<Pick<TokenUsageStats, 'todayTokens' | 'monthTokens'>> {
+		const now = new Date();
+		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+		let todayTokens = 0;
+		let monthTokens = 0;
+
+		try {
+			// Get session files from both workspace and global storage
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+
+			for (const sessionFile of sessionFiles) {
+				try {
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
+
+					// Only process files modified in the current month
+					if (mtime >= monthStart.getTime()) {
+						const tokens = (await this.getSessionFileDataCached(sessionFile, mtime, fileSize)).tokens;
+
+						monthTokens += tokens;
+
+						// If modified today, add to today's count
+						if (mtime >= todayStart.getTime()) {
+							todayTokens += tokens;
+						}
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
+				}
+			}
+		} catch (error) {
+			this.error('Error calculating token usage:', error);
+		}
+
+		return {
+			todayTokens,
+			monthTokens
+		};
+	}
+
+	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<DetailedStats> {
+		const now = new Date();
+		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		// Calculate Previous Month boundaries
+		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
+		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
+		// Calculate last 30 days boundary (midnight, so numbers don't shift during a refresh)
+		const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+
+		const todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const lastMonthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		const last30DaysStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+
+		// Also compute daily stats for the chart as a byproduct (avoids a second full file scan)
+		const dailyStatsMap = new Map<string, DailyTokenStats>();
+
+		try {
+			// Clean expired cache entries
+			this.cacheManager.clearExpiredCache();
+
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+			this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
+
+			if (sessionFiles.length === 0) {
+				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
+			}
+
+			let cacheHits = 0;
+			let cacheMisses = 0;
+			let skippedFiles = 0;
+
+			for (let i = 0; i < sessionFiles.length; i++) {
+				const sessionFile = sessionFiles[i];
+
+				if (progressCallback) {
+					progressCallback(i + 1, sessionFiles.length);
+				}
+
+				try {
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
+
+					// Skip files modified before last 30 days (quick filter)
+					// This is the main performance optimization - filters out old sessions without reading file content
+					if (mtime < last30DaysStart.getTime()) {
+						skippedFiles++;
+						continue;
+					}
+
+					// Get all session data in one call (cache validates via mtime+size comparison)
+					const cachedData = this.getCachedSessionData(sessionFile);
+					const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
+					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+					const interactions = sessionData.interactions;
+					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
+					if (interactions === 0) {
+						skippedFiles++;
+						continue;
+					}
+
+					// Extract remaining data from the cached session
+					const estimatedTokens = sessionData.tokens; // Text-based estimate (user content only)
+					const actualTokens = sessionData.actualTokens || 0; // Actual LLM API tokens (when available)
+					const tokens = actualTokens > 0 ? actualTokens : estimatedTokens; // Best available
+					const modelUsage = sessionData.modelUsage;
+					const editorType = this.getEditorTypeFromPath(sessionFile);
+
+					// For date filtering, get lastInteraction from session details
+					const details = await this.getSessionFileDetails(sessionFile);
+					const lastActivity = details.lastInteraction
+						? new Date(details.lastInteraction)
+						: new Date(details.modified);
+
+					// Update cache statistics (do this once per file)
+					if (wasCached) {
+						cacheHits++;
+					} else {
+						cacheMisses++;
+					}
+
+					// Check if activity is within last 30 days
+					if (lastActivity >= last30DaysStart) {
+						last30DaysStats.tokens += tokens;
+						last30DaysStats.estimatedTokens += estimatedTokens;
+						last30DaysStats.actualTokens += actualTokens;
+						last30DaysStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+						last30DaysStats.sessions += 1;
+						last30DaysStats.interactions += interactions;
+
+						// Add editor usage to last 30 days stats
+						if (!last30DaysStats.editorUsage[editorType]) {
+							last30DaysStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						last30DaysStats.editorUsage[editorType].tokens += tokens;
+						last30DaysStats.editorUsage[editorType].sessions += 1;
+
+						// Add model usage to last 30 days stats
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!last30DaysStats.modelUsage[model]) {
+								last30DaysStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							last30DaysStats.modelUsage[model].inputTokens += usage.inputTokens;
+							last30DaysStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+
+						// Accumulate daily stats for the chart view
+						const dateKey = this.formatDateKey(lastActivity);
+						const repository = sessionData.repository || 'Unknown';
+						if (!dailyStatsMap.has(dateKey)) {
+							dailyStatsMap.set(dateKey, {
+								date: dateKey,
+								tokens: 0,
+								sessions: 0,
+								interactions: 0,
+								modelUsage: {},
+								editorUsage: {},
+								repositoryUsage: {}
+							});
+						}
+						const dailyEntry = dailyStatsMap.get(dateKey)!;
+						dailyEntry.tokens += tokens;
+						dailyEntry.sessions += 1;
+						dailyEntry.interactions += interactions;
+						if (!dailyEntry.editorUsage[editorType]) {
+							dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						dailyEntry.editorUsage[editorType].tokens += tokens;
+						dailyEntry.editorUsage[editorType].sessions += 1;
+						if (!dailyEntry.repositoryUsage[repository]) {
+							dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
+						}
+						dailyEntry.repositoryUsage[repository].tokens += tokens;
+						dailyEntry.repositoryUsage[repository].sessions += 1;
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!dailyEntry.modelUsage[model]) {
+								dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
+							dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+					}
+
+					if (lastActivity >= monthStart) {
+						monthStats.tokens += tokens;
+						monthStats.estimatedTokens += estimatedTokens;
+						monthStats.actualTokens += actualTokens;
+						monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+						monthStats.sessions += 1;
+						monthStats.interactions += interactions;
+
+						// Add editor usage to month stats
+						if (!monthStats.editorUsage[editorType]) {
+							monthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						monthStats.editorUsage[editorType].tokens += tokens;
+						monthStats.editorUsage[editorType].sessions += 1;
+
+						// Add model usage to month stats
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!monthStats.modelUsage[model]) {
+								monthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							monthStats.modelUsage[model].inputTokens += usage.inputTokens;
+							monthStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+
+						if (lastActivity >= todayStart) {
+							todayStats.tokens += tokens;
+							todayStats.estimatedTokens += estimatedTokens;
+							todayStats.actualTokens += actualTokens;
+							todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+							todayStats.sessions += 1;
+							todayStats.interactions += interactions;
+
+							// Add editor usage to today stats
+							if (!todayStats.editorUsage[editorType]) {
+								todayStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+							}
+							todayStats.editorUsage[editorType].tokens += tokens;
+							todayStats.editorUsage[editorType].sessions += 1;
+
+							// Add model usage to today stats
+							for (const [model, usage] of Object.entries(modelUsage)) {
+								if (!todayStats.modelUsage[model]) {
+									todayStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+								}
+								todayStats.modelUsage[model].inputTokens += usage.inputTokens;
+								todayStats.modelUsage[model].outputTokens += usage.outputTokens;
+							}
+						}
+					}
+					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
+						// Session is from Previous Month - only track lastMonth stats
+						lastMonthStats.tokens += tokens;
+						lastMonthStats.estimatedTokens += estimatedTokens;
+						lastMonthStats.actualTokens += actualTokens;
+						lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+						lastMonthStats.sessions += 1;
+						lastMonthStats.interactions += interactions;
+
+						// Add editor usage to Previous Month stats
+						if (!lastMonthStats.editorUsage[editorType]) {
+							lastMonthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						lastMonthStats.editorUsage[editorType].tokens += tokens;
+						lastMonthStats.editorUsage[editorType].sessions += 1;
+
+						// Add model usage to Previous Month stats
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!lastMonthStats.modelUsage[model]) {
+								lastMonthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							lastMonthStats.modelUsage[model].inputTokens += usage.inputTokens;
+							lastMonthStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+					}
+					else {
+						// Session is too old (no activity in last 30 days), skip it
+						skippedFiles++;
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
+				}
+			}
+
+			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
+			if (skippedFiles > 0) {
+				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
+			}
+			const totalCacheAccesses = cacheHits + cacheMisses;
+			this.log(`💾 Cache performance: ${cacheHits} hits, ${cacheMisses} misses (${totalCacheAccesses > 0 ? ((cacheHits / totalCacheAccesses) * 100).toFixed(1) : 0}% hit rate)`);
+		} catch (error) {
+			this.error('Error calculating detailed stats:', error);
+		}
+
+		// Finalize daily stats: fill in missing days with zero values
+		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const existingDates = new Set(dailyStatsMap.keys());
+		const fillDate = new Date(thirtyDaysAgo);
+		while (fillDate <= today) {
+			const dateKey = this.formatDateKey(fillDate);
+			if (!existingDates.has(dateKey)) {
+				dailyStatsMap.set(dateKey, {
+					date: dateKey,
+					tokens: 0,
+					sessions: 0,
+					interactions: 0,
+					modelUsage: {},
+					editorUsage: {},
+					repositoryUsage: {}
+				});
+			}
+			fillDate.setDate(fillDate.getDate() + 1);
+		}
+		this.lastDailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
+		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
+		const lastMonthCo2 = (lastMonthStats.tokens / 1000) * this.co2Per1kTokens;
+		const last30DaysCo2 = (last30DaysStats.tokens / 1000) * this.co2Per1kTokens;
+
+		const todayWater = (todayStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const monthWater = (monthStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const lastMonthWater = (lastMonthStats.tokens / 1000) * this.waterUsagePer1kTokens;
+		const last30DaysWater = (last30DaysStats.tokens / 1000) * this.waterUsagePer1kTokens;
+
+		const todayCost = this.calculateEstimatedCost(todayStats.modelUsage);
+		const monthCost = this.calculateEstimatedCost(monthStats.modelUsage);
+		const lastMonthCost = this.calculateEstimatedCost(lastMonthStats.modelUsage);
+		const last30DaysCost = this.calculateEstimatedCost(last30DaysStats.modelUsage);
+
+		const result: DetailedStats = {
+			today: {
+				tokens: todayStats.tokens,
+				thinkingTokens: todayStats.thinkingTokens,
+				estimatedTokens: todayStats.estimatedTokens,
+				actualTokens: todayStats.actualTokens,
+				sessions: todayStats.sessions,
+				avgInteractionsPerSession: todayStats.sessions > 0 ? Math.round(todayStats.interactions / todayStats.sessions) : 0,
+				avgTokensPerSession: todayStats.sessions > 0 ? Math.round(todayStats.tokens / todayStats.sessions) : 0,
+				modelUsage: todayStats.modelUsage,
+				editorUsage: todayStats.editorUsage,
+				co2: todayCo2,
+				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: todayWater,
+				estimatedCost: todayCost
+			},
+			month: {
+				tokens: monthStats.tokens,
+				thinkingTokens: monthStats.thinkingTokens,
+				estimatedTokens: monthStats.estimatedTokens,
+				actualTokens: monthStats.actualTokens,
+				sessions: monthStats.sessions,
+				avgInteractionsPerSession: monthStats.sessions > 0 ? Math.round(monthStats.interactions / monthStats.sessions) : 0,
+				avgTokensPerSession: monthStats.sessions > 0 ? Math.round(monthStats.tokens / monthStats.sessions) : 0,
+				modelUsage: monthStats.modelUsage,
+				editorUsage: monthStats.editorUsage,
+				co2: monthCo2,
+				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: monthWater,
+				estimatedCost: monthCost
+			},
+			lastMonth: {
+				tokens: lastMonthStats.tokens,
+				thinkingTokens: lastMonthStats.thinkingTokens,
+				estimatedTokens: lastMonthStats.estimatedTokens,
+				actualTokens: lastMonthStats.actualTokens,
+				sessions: lastMonthStats.sessions,
+				avgInteractionsPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.interactions / lastMonthStats.sessions) : 0,
+				avgTokensPerSession: lastMonthStats.sessions > 0 ? Math.round(lastMonthStats.tokens / lastMonthStats.sessions) : 0,
+				modelUsage: lastMonthStats.modelUsage,
+				editorUsage: lastMonthStats.editorUsage,
+				co2: lastMonthCo2,
+				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: lastMonthWater,
+				estimatedCost: lastMonthCost
+			},
+			last30Days: {
+				tokens: last30DaysStats.tokens,
+				thinkingTokens: last30DaysStats.thinkingTokens,
+				estimatedTokens: last30DaysStats.estimatedTokens,
+				actualTokens: last30DaysStats.actualTokens,
+				sessions: last30DaysStats.sessions,
+				avgInteractionsPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.interactions / last30DaysStats.sessions) : 0,
+				avgTokensPerSession: last30DaysStats.sessions > 0 ? Math.round(last30DaysStats.tokens / last30DaysStats.sessions) : 0,
+				modelUsage: last30DaysStats.modelUsage,
+				editorUsage: last30DaysStats.editorUsage,
+				co2: last30DaysCo2,
+				treesEquivalent: last30DaysCo2 / this.co2AbsorptionPerTreePerYear,
+				waterUsage: last30DaysWater,
+				estimatedCost: last30DaysCost
+			},
+			lastUpdated: now
+		};
+
+		return result;
+	}
+
+	private formatDateKey(date: Date): string {
+		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+	}
+
+	/**
+	 * Formats a token count using K/M suffixes for compact display (e.g. 1,500 → 1.5K, 1,200,000 → 1.2M).
+	 * Falls back to full locale number when the compact numbers setting is disabled.
+	 */
+	private formatCompact(value: number): string {
+		if (!this.getCompactNumbersSetting()) {
+			return value.toLocaleString();
+		}
+		return new Intl.NumberFormat(undefined, {
+			notation: 'compact',
+			maximumFractionDigits: 1
+		}).format(value);
+	}
+
+	private getCompactNumbersSetting(): boolean {
+		return vscode.workspace.getConfiguration('copilotTokenTracker').get<boolean>('display.compactNumbers', true);
+	}
+
+	private refreshOpenPanelsForSettingChange(): void {
+		const stats = this.lastDetailedStats;
+		if (!stats) { return; }
+		// Refresh status bar text (respects new compact setting)
+		this.statusBarItem.text = `$(symbol-numeric) ${this.formatCompact(stats.today.tokens)} | ${this.formatCompact(stats.last30Days.tokens)}`;
+		if (this.detailsPanel) {
+			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+		}
+		if (this.environmentalPanel) {
+			this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
+		}
+		if (this.chartPanel && this.lastDailyStats) {
+			this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, this.lastDailyStats);
+		}
+	}
+
+	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
+		const now = new Date();
+		// Use last 30 days instead of current month for better chart visibility
+		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+
+		// Map to store daily stats by date string (YYYY-MM-DD)
+		const dailyStatsMap = new Map<string, DailyTokenStats>();
+
+		try {
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+			this.log(`📈 Preparing chart data from ${sessionFiles.length} session file(s)...`);
+
+			for (const sessionFile of sessionFiles) {
+				try {
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
+
+					// Only process files modified in the last 30 days
+					if (mtime >= thirtyDaysAgo.getTime()) {
+						// Get all session data in one call to avoid multiple cache lookups
+						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+						const tokens = sessionData.tokens;
+						const interactions = sessionData.interactions;
+						const modelUsage = sessionData.modelUsage;
+						const editorType = this.getEditorTypeFromPath(sessionFile);
+
+						// Get repository from cached session data
+						const repository = sessionData.repository || 'Unknown';
+
+						// Get the date in YYYY-MM-DD format
+						const dateKey = this.formatDateKey(new Date(mtime));
+
+						// Initialize or update the daily stats
+						if (!dailyStatsMap.has(dateKey)) {
+							dailyStatsMap.set(dateKey, {
+								date: dateKey,
+								tokens: 0,
+								sessions: 0,
+								interactions: 0,
+								modelUsage: {},
+								editorUsage: {},
+								repositoryUsage: {}
+							});
+						}
+
+						const dailyStats = dailyStatsMap.get(dateKey)!;
+						dailyStats.tokens += tokens;
+						dailyStats.sessions += 1;
+						dailyStats.interactions += interactions;
+
+						// Merge editor usage
+						if (!dailyStats.editorUsage[editorType]) {
+							dailyStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+						}
+						dailyStats.editorUsage[editorType].tokens += tokens;
+						dailyStats.editorUsage[editorType].sessions += 1;
+
+						// Merge repository usage
+						if (!dailyStats.repositoryUsage[repository]) {
+							dailyStats.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
+						}
+						dailyStats.repositoryUsage[repository].tokens += tokens;
+						dailyStats.repositoryUsage[repository].sessions += 1;
+
+						// Merge model usage
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!dailyStats.modelUsage[model]) {
+								dailyStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							}
+							dailyStats.modelUsage[model].inputTokens += usage.inputTokens;
+							dailyStats.modelUsage[model].outputTokens += usage.outputTokens;
+						}
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
+				}
+			}
+		} catch (error) {
+			this.error('Error calculating daily stats:', error);
+		}
+
+		// Convert map to array and sort by date
+		let dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+		// Always fill in all 30 days to show complete chart
+		const today = new Date();
+
+		// Create a set of existing dates for quick lookup
+		const existingDates = new Set(dailyStatsArray.map(s => s.date));
+
+		// Generate all dates from 30 days ago to today
+		const allDates: string[] = [];
+		const currentDate = new Date(thirtyDaysAgo);
+
+		while (currentDate <= today) {
+			const dateKey = this.formatDateKey(currentDate);
+			allDates.push(dateKey);
+			currentDate.setDate(currentDate.getDate() + 1);
+		}
+
+		// Add missing dates with zero values
+		for (const dateKey of allDates) {
+			if (!existingDates.has(dateKey)) {
+				dailyStatsMap.set(dateKey, {
+					date: dateKey,
+					tokens: 0,
+					sessions: 0,
+					interactions: 0,
+					modelUsage: {},
+					editorUsage: {},
+					repositoryUsage: {}
+				});
+			}
+		}
+
+		// Re-convert map to array and sort by date
+		dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+		return dailyStatsArray;
+	}
+
+	private detectMissedPotential(
+		workspaceSessionCounts: Map<string, number>,
+		workspaceInteractionCounts: Map<string, number>
+	): MissedPotentialWorkspace[] {
+		const missedPotential: MissedPotentialWorkspace[] = [];
+
+		for (const [workspacePath, sessionCount] of workspaceSessionCounts) {
+			const files = this._customizationFilesCache.get(workspacePath) || [];
+			
+			// Check for Copilot files (category "copilot" or undefined for backward compatibility)
+			const hasCopilotFiles = files.some(f => !f.category || f.category === 'copilot');
+			
+			// Check for non-Copilot files (must be explicitly "non-copilot")
+			const nonCopilotFiles = files.filter(f => f.category === 'non-copilot');
+			
+			// Missed potential = has non-Copilot files AND NO Copilot files
+			if (nonCopilotFiles.length > 0 && !hasCopilotFiles) {
+				missedPotential.push({
+					workspacePath,
+					workspaceName: path.basename(workspacePath),
+					sessionCount,
+					interactionCount: workspaceInteractionCounts.get(workspacePath) || 0,
+					nonCopilotFiles
+				});
+			}
+		}
+
+		// Sort by interaction count (descending) so most active "missed" repos are first
+		missedPotential.sort((a, b) => b.interactionCount - a.interactionCount);
+
+		return missedPotential;
+	}
+
+	/**
+	 * Calculate usage analysis statistics for today and last 30 days
+	 * @param useCache If true, return cached stats if available. If false, force recalculation.
+	 */
+	private async calculateUsageAnalysisStats(useCache = true): Promise<UsageAnalysisStats> {
+		// Return cached stats if available and cache is allowed
+		if (useCache && this.lastUsageAnalysisStats) {
+			this.log('🔍 [Usage Analysis] Using cached stats');
+			return this.lastUsageAnalysisStats;
+		}
+
+		const now = new Date();
+		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+		this.log('🔍 [Usage Analysis] Starting calculation...');
+		this._cacheHits = 0; // Reset cache hit counter
+		this._cacheMisses = 0; // Reset cache miss counter
+
+		const emptyPeriod = (): UsageAnalysisPeriod => ({
+			sessions: 0,
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				implicitSelection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
+				byKind: {},
+				copilotInstructions: 0,
+				agentsMd: 0,
+				byPath: {}
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} },
+			modelSwitching: {
+				modelsPerSession: [],
+				totalSessions: 0,
+				averageModelsPerSession: 0,
+				maxModelsPerSession: 0,
+				minModelsPerSession: 0,
+				switchingFrequency: 0,
+				standardModels: [],
+				premiumModels: [],
+				unknownModels: [],
+				mixedTierSessions: 0,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
+			},
+			repositories: [],
+			repositoriesWithCustomization: [],
+			editScope: {
+				singleFileEdits: 0,
+				multiFileEdits: 0,
+				totalEditedFiles: 0,
+				avgFilesPerSession: 0
+			},
+			applyUsage: {
+				totalApplies: 0,
+				totalCodeBlocks: 0,
+				applyRate: 0
+			},
+			sessionDuration: {
+				totalDurationMs: 0,
+				avgDurationMs: 0,
+				avgFirstProgressMs: 0,
+				avgTotalElapsedMs: 0,
+				avgWaitTimeMs: 0
+			},
+			conversationPatterns: {
+				multiTurnSessions: 0,
+				singleTurnSessions: 0,
+				avgTurnsPerSession: 0,
+				maxTurnsInSession: 0
+			},
+			agentTypes: {
+				editsAgent: 0,
+				defaultAgent: 0,
+				workspaceAgent: 0,
+				other: 0
+			}
+		});
+
+		const todayStats = emptyPeriod();
+		const last30DaysStats = emptyPeriod();
+		const monthStats = emptyPeriod();
+
+		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
+		const workspaceSessionCounts = new Map<string, number>();
+		// Track interaction counts per resolved workspace (for prioritization)
+		const workspaceInteractionCounts = new Map<string, number>();
+		// Track unresolved workspace IDs (failed resolution or no workspace)
+		const unresolvedWorkspaceIds = new Set<string>();
+		// Track interaction counts for unresolved workspace IDs
+		const unresolvedWorkspaceInteractionCounts = new Map<string, number>();
+
+		// Clear short-lived caches for this analysis run
+		this._workspaceIdToFolderCache.clear();
+		this._customizationFilesCache.clear();
+
+		try {
+			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+			this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
+
+			let processed = 0;
+			const progressInterval = Math.max(1, Math.floor(sessionFiles.length / 20)); // Log every 5%
+
+			for (const sessionFile of sessionFiles) {
+				try {
+					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
+
+					// Check if file is within the last 30 days (widest range)
+					if (mtime >= last30DaysStart.getTime()) {
+						
+						// Get all session data in one call to avoid multiple cache lookups
+						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+						const interactions = sessionData.interactions;
+						const analysis = sessionData.usageAnalysis || {
+							toolCalls: { total: 0, byTool: {} },
+							modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+							contextReferences: {
+								file: 0,
+								selection: 0,
+								implicitSelection: 0,
+								symbol: 0,
+								codebase: 0,
+								workspace: 0,
+								terminal: 0,
+								vscode: 0,
+								terminalLastCommand: 0,
+								terminalSelection: 0,
+								clipboard: 0,
+								changes: 0,
+								outputPanel: 0,
+								problemsPanel: 0,
+								byKind: {},
+								copilotInstructions: 0,
+								agentsMd: 0,
+								byPath: {}
+							},
+							mcpTools: { total: 0, byServer: {}, byTool: {} },
+							modelSwitching: {
+								uniqueModels: [],
+								modelCount: 0,
+								switchCount: 0,
+								tiers: { standard: [], premium: [], unknown: [] },
+								hasMixedTiers: false,
+								standardRequests: 0,
+								premiumRequests: 0,
+								unknownRequests: 0,
+								totalRequests: 0
+							}
+						};
+
+						// Exclude empty sessions (no interactions) from usage analysis
+						if (interactions === 0) {
+							// Skip counting this session as it contains no user interactions
+							processed++;
+							if (processed % progressInterval === 0) {
+								this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
+							}
+							continue;
+						}
+
+						// Add to last 30 days stats
+						last30DaysStats.sessions++;
+						this.mergeUsageAnalysis(last30DaysStats, analysis);
+
+						// Resolve workspace folder and track session counts; also pre-scan customization files for this workspace
+						// Extract workspace ID first (this operation should be safe and not throw)
+						const workspaceId = _extractWorkspaceIdFromSessionPath(sessionFile);
+						try {
+							const workspaceFolder = _resolveWorkspaceFolderFromSessionPath(sessionFile, this._workspaceIdToFolderCache);
+							if (workspaceFolder) {
+								const norm = path.normalize(workspaceFolder);
+								workspaceSessionCounts.set(norm, (workspaceSessionCounts.get(norm) || 0) + 1);
+								workspaceInteractionCounts.set(norm, (workspaceInteractionCounts.get(norm) || 0) + interactions);
+								if (!this._customizationFilesCache.has(norm)) {
+									try {
+										const files = _scanWorkspaceCustomizationFiles(norm);
+										this._customizationFilesCache.set(norm, files);
+									} catch (e) {
+										// ignore scan errors per workspace
+									}
+								}
+							} else if (workspaceId) {
+								// Workspace resolution failed but we have a workspace ID
+								// Track it as unresolved so it counts toward total repos
+								unresolvedWorkspaceIds.add(workspaceId);
+								unresolvedWorkspaceInteractionCounts.set(workspaceId, (unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0) + interactions);
+							}
+						} catch (e) {
+							// Resolution threw an exception; track as unresolved if we have a workspace ID
+							if (workspaceId) {
+								unresolvedWorkspaceIds.add(workspaceId);
+								unresolvedWorkspaceInteractionCounts.set(workspaceId, (unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0) + interactions);
+							}
+						}
+
+						// Add to month stats if modified this calendar month
+						if (mtime >= monthStart.getTime()) {
+							monthStats.sessions++;
+							this.mergeUsageAnalysis(monthStats, analysis);
+						}
+
+						// Add to today stats if modified today
+						if (mtime >= todayStart.getTime()) {
+							todayStats.sessions++;
+							this.mergeUsageAnalysis(todayStats, analysis);
+						}
+					}
+
+					processed++;
+					if (processed % progressInterval === 0) {
+						this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
+					}
+				} catch (fileError) {
+					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+					processed++;
+				}
+			}
+
+			// Deduplicate workspace paths that resolve to the same physical repository.
+			// Two sources of duplication are handled:
+			//
+			// 1. Case differences on case-insensitive filesystems (Windows/macOS):
+			//    Different VS Code variants may store the same folder as "C:\Users\..." vs "c:\users\...".
+			//    Detected by lowercasing the full path.
+			//
+			// 2. Remote/devcontainer paths for the same local repo:
+			//    Opening a devcontainer for a local project stores a vscode-remote:// URI whose
+			//    resolved fsPath is the *container-internal* path (e.g. "/workspaces/my-repo"),
+			//    while normal sessions store the local Windows path.
+			//    Both have the same basename, and one of them is a non-local path
+			//    (starts with "/workspaces/" or is a Unix-style absolute path on Windows).
+			//    Detected by matching basename case-insensitively when one entry is a remote path.
+			//
+			// In both cases: session/interaction counts are summed; customization file scan results
+			// are kept from whichever path has more files (the local path wins for scanning).
+			{
+				const mergeInto = (winner: string, loser: string) => {
+					workspaceSessionCounts.set(winner,
+						(workspaceSessionCounts.get(winner) || 0) + (workspaceSessionCounts.get(loser) || 0));
+					workspaceInteractionCounts.set(winner,
+						(workspaceInteractionCounts.get(winner) || 0) + (workspaceInteractionCounts.get(loser) || 0));
+					workspaceSessionCounts.delete(loser);
+					workspaceInteractionCounts.delete(loser);
+					const winnerFiles = this._customizationFilesCache.get(winner) || [];
+					const loserFiles = this._customizationFilesCache.get(loser) || [];
+					if (winnerFiles.length === 0 && loserFiles.length > 0) {
+						this._customizationFilesCache.set(winner, loserFiles);
+					}
+					this._customizationFilesCache.delete(loser);
+				};
+
+				// Helper: true when path looks like a remote/devcontainer path on Windows
+				// (Unix-style absolute path, e.g. "/workspaces/repo" or "/home/user/repo")
+				const isRemotePath = (p: string) => {
+					if (process.platform !== 'win32') { return false; }
+					const normalized = p.replace(/\\/g, '/');
+					return normalized.startsWith('/');
+				};
+
+				// Pass 1 — case-insensitive dedup (covers casing differences between editor variants)
+				if (process.platform === 'win32' || process.platform === 'darwin') {
+					const lowerToCanonical = new Map<string, string>();
+					for (const key of Array.from(workspaceSessionCounts.keys())) {
+						const lower = key.toLowerCase();
+						if (!lowerToCanonical.has(lower)) {
+							lowerToCanonical.set(lower, key);
+						} else {
+							const canonical = lowerToCanonical.get(lower)!;
+							// Prefer the local (non-remote) path as winner; otherwise more sessions wins
+							const canonicalIsRemote = isRemotePath(canonical);
+							const keyIsRemote = isRemotePath(key);
+							const winner = (!keyIsRemote && canonicalIsRemote)
+								? key
+								: (!canonicalIsRemote && keyIsRemote)
+									? canonical
+									: (workspaceSessionCounts.get(key) || 0) >= (workspaceSessionCounts.get(canonical) || 0)
+										? key : canonical;
+							const loser = winner === key ? canonical : key;
+							mergeInto(winner, loser);
+							lowerToCanonical.set(lower, winner);
+						}
+					}
+				}
+
+				// Pass 2 — basename dedup for remote/devcontainer paths.
+				// When one path is a remote (Unix-style) path and another is a local path with the
+				// same basename, they represent the same physical repo opened via a devcontainer.
+				if (process.platform === 'win32') {
+					const basenameToLocal = new Map<string, string>(); // lower-basename → local path key
+					for (const key of Array.from(workspaceSessionCounts.keys())) {
+						if (!isRemotePath(key)) {
+							basenameToLocal.set(path.basename(key).toLowerCase(), key);
+						}
+					}
+					for (const key of Array.from(workspaceSessionCounts.keys())) {
+						if (isRemotePath(key)) {
+							const base = path.basename(key).toLowerCase();
+							const localKey = basenameToLocal.get(base);
+							if (localKey && workspaceSessionCounts.has(key)) {
+								// Merge remote into local — local wins because we can scan its files
+								mergeInto(localKey, key);
+							}
+						}
+					}
+				}
+			}
+
+			// Build the customization matrix using scanned workspace data and session counts
+			try {
+				// Unique customization types based on Copilot patterns only
+				const uniqueTypes = new Map<string, { icon: string; label: string }>();
+				for (const pattern of (customizationPatternsData as any).patterns || []) {
+					if (pattern.category && pattern.category !== 'copilot') {
+						continue;
+					}
+					if (!uniqueTypes.has(pattern.type)) {
+						uniqueTypes.set(pattern.type, { icon: pattern.icon || '', label: pattern.label || pattern.type });
+					}
+				}
+
+				const customizationTypes = Array.from(uniqueTypes.entries()).map(([id, v]) => ({ id, icon: v.icon, label: v.label }));
+
+				const matrixRows: WorkspaceCustomizationRow[] = [];
+				let workspacesWithIssues = 0;
+
+				for (const [folderPath, sessionCount] of workspaceSessionCounts) {
+					const files = this._customizationFilesCache.get(folderPath) || [];
+					const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
+					for (const type of customizationTypes) {
+						const filesOfType = files.filter(f => f.type === type.id);
+						if (filesOfType.length === 0) {
+							typeStatuses[type.id] = '❌';
+						} else if (filesOfType.some(f => f.isStale)) {
+							typeStatuses[type.id] = '⚠️';
+						} else {
+							typeStatuses[type.id] = '✅';
+						}
+					}
+
+					// Count workspaces that have NO customization files present at all
+					const hasNoCustomizationFiles = customizationTypes.every(t => typeStatuses[t.id] === '❌');
+					if (hasNoCustomizationFiles) { workspacesWithIssues++; }
+
+					matrixRows.push({
+						workspacePath: folderPath,
+						workspaceName: path.basename(folderPath),
+						sessionCount,
+						interactionCount: workspaceInteractionCounts.get(folderPath) || 0,
+						typeStatuses
+					});
+				}
+
+				// Add unresolved workspaces as rows with all customization types marked as ❌
+				// This ensures they count toward total repos and are assumed to have NO customizations
+				for (const workspaceId of unresolvedWorkspaceIds) {
+					const typeStatuses: { [typeId: string]: CustomizationTypeStatus } = {};
+					for (const type of customizationTypes) {
+						typeStatuses[type.id] = '❌';
+					}
+					workspacesWithIssues++; // Unresolved workspaces are counted as having no customization
+					
+					// Generate display name with smart truncation
+					const displayId = workspaceId.length > CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH
+						? `${workspaceId.substring(0, CopilotTokenTracker.WORKSPACE_ID_DISPLAY_LENGTH)}...`
+						: workspaceId;
+					
+					matrixRows.push({
+						workspacePath: `<unresolved:${workspaceId}>`,
+						workspaceName: `Unresolved (${displayId})`,
+						// Session count is 0 because we only track counts in workspaceSessionCounts for successfully resolved workspaces.
+						// The presence of this workspace in unresolvedWorkspaceIds means we encountered session files for it,
+						// but couldn't resolve its folder path, so we couldn't increment a count in workspaceSessionCounts.
+						sessionCount: 0,
+						interactionCount: unresolvedWorkspaceInteractionCounts.get(workspaceId) || 0,
+						typeStatuses
+					});
+				}
+
+				matrixRows.sort((a, b) => {
+					if (b.interactionCount !== a.interactionCount) {
+						return b.interactionCount - a.interactionCount;
+					}
+					return b.sessionCount - a.sessionCount;
+				});
+
+				const customizationMatrix: WorkspaceCustomizationMatrix = {
+					customizationTypes,
+					workspaces: matrixRows,
+					totalWorkspaces: matrixRows.length,
+					workspacesWithIssues
+				};
+
+				this._lastCustomizationMatrix = customizationMatrix;
+				
+				// Calculate missed potential (workspaces with non-Copilot instruction files but no Copilot files)
+				this._lastMissedPotential = this.detectMissedPotential(workspaceSessionCounts, workspaceInteractionCounts);
+			} catch (e) {
+				// ignore overall customization scanning errors
+			}
+		} catch (error) {
+			this.error('Error calculating usage analysis stats:', error);
+		}
+
+		// Log cache statistics
+		this.log(`🔍 [Usage Analysis] Cache stats: ${this._cacheHits} hits, ${this._cacheMisses} misses`);
+
+		const stats: UsageAnalysisStats = {
+			today: todayStats,
+			last30Days: last30DaysStats,
+			month: monthStats,
+			locale: Intl.DateTimeFormat().resolvedOptions().locale,
+			lastUpdated: now,
+			customizationMatrix: this._lastCustomizationMatrix,
+			missedPotential: this._lastMissedPotential || []
+		};
+
+		// Cache the result for future use
+		this.lastUsageAnalysisStats = stats;
+
+		return stats;
+	}
+
+	/**
+	 * Merge usage analysis data into period stats
+	 */
+	private mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: SessionUsageAnalysis): void {
+		return _mergeUsageAnalysis(period, analysis);
+	}
+
+	private async countInteractionsInSession(sessionFile: string): Promise<number> {
+		try {
+			// Handle OpenCode sessions
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+				return await this.openCode.countOpenCodeInteractions(sessionFile);
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFile)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFile);
+				return this.visualStudio.countInteractions(objects);
+			}
+
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				return await this.crush.countCrushInteractions(sessionFile);
+			}
+
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				return this.continue_.countContinueInteractions(sessionFile);
+			}
+
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			if (this.isUuidPointerFile(fileContent)) {
+				return 0; // No interactions to count in pointer files
+			}
+
+			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
+				const lines = fileContent.trim().split('\n');
+				let interactions = 0;
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						// Handle Copilot CLI format
+						if (event.type === 'user.message') {
+							interactions++;
+						}
+						// Handle VS Code incremental format (kind: 2 with requests array)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.requestId) {
+									interactions++;
+								}
+							}
+						}
+					} catch (e) {
+						// Skip malformed lines
+					}
+				}
+				return interactions;
+			}
+
+			// Handle regular .json files
+			const sessionContent = JSON.parse(fileContent);
+
+			// Count the number of requests as interactions
+			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				// Each request in the array represents one user interaction
+				return sessionContent.requests.length;
+			}
+
+			return 0;
+		} catch (error) {
+			this.warn(`Error counting interactions in ${sessionFile}: ${error}`);
+			return 0;
+		}
+	}
+
+
+	/**
+	 * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
+	 */
+
+	/**
+	 * Calculate model switching statistics for a session file.
+	 * This method updates the analysis.modelSwitching field in place.
+	 */
+
+	/**
+	 * Check if a tool name indicates it's an MCP (Model Context Protocol) tool.
+	 * MCP tools are identified by names starting with "mcp." or "mcp_"
+	 */
+	private isMcpTool(toolName: string): boolean {
+		return _isMcpTool(toolName);
+	}
+
+	/**
+	 * Normalize an MCP tool name so that equivalent tools from different servers
+	 * (local stdio vs remote) are counted under a single canonical key in "By Tool" views.
+	 * Maps mcp_github_github_<action> → mcp_io_github_git_<action>.
+	 */
+
+	/**
+	 * Extract server name from an MCP tool name.
+	 * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
+	 * For example: "mcp.io.github.git.assign_copilot_to_issue" → "GitHub MCP"
+	 * Uses the display name from toolNames.json (the part before the colon).
+	 * Falls back to extracting the second segment if no mapping exists.
+	 */
+	private extractMcpServerName(toolName: string): string {
+		return _extractMcpServerName(toolName, this.toolNameMap);
+	}
+
+	/**
+	 * Derive conversation patterns from already-computed mode usage.
+	 * Called before every return in analyzeSessionUsage to ensure all file formats get patterns.
+	 */
+
+	/**
+	 * Track enhanced metrics from session files:
+	 * - Edit scope (single vs multi-file edits)
+	 * - Apply button usage (codeblockUri with isEdit flag)
+	 * - Session duration data
+	 * - Conversation patterns (multi-turn sessions)
+	 * - Agent type usage
+	 */
+
+	/**
+	 * Analyze a request object for all context references.
+	 * This is the unified method that processes text, contentReferences, and variableData.
+	 */
+	private analyzeRequestContext(request: any, refs: ContextReferenceUsage): void {
+		return _analyzeRequestContext(request, refs);
+	}
+
+	/**
+	 * Analyze text for context references like #file, #selection, @workspace
+	 */
+	private analyzeContextReferences(text: string, refs: ContextReferenceUsage): void {
+		return _analyzeContextReferences(text, refs);
+	}
+
+	/**
+	 * Analyze contentReferences from session log data to track specific file attachments.
+	 * Looks for kind: "reference" entries and tracks by kind, path patterns.
+	 * Also increments specific category counters like refs.file when appropriate.
+	 */
+
+	/**
+	 * Analyze variableData to track prompt file attachments and other variable-based context.
+	 * This captures automatic attachments like copilot-instructions.md via variable system.
+	 */
+
+	/**
+	 * Extract repository remote URL from file paths found in contentReferences.
+	 * Looks for .git/config file in the workspace root to get the origin remote URL.
+	 * @param contentReferences Array of content reference objects from session data
+	 * @returns The repository remote URL if found, undefined otherwise
+	 */
+	private async extractRepositoryFromContentReferences(contentReferences: any[]): Promise<string | undefined> {
+		return _extractRepositoryFromContentReferences(contentReferences);
+	}
+
+
+	private async extractSessionMetadata(sessionFile: string): Promise<{
+		title: string | undefined;
+		firstInteraction: string | null;
+		lastInteraction: string | null;
+	}> {
+		let title: string | undefined;
+		const timestamps: number[] = [];
+
+		try {
+			// Handle OpenCode sessions
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+				// Read session metadata from DB or JSON file
+				let session: any = null;
+				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
+				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
+					session = await this.openCode.readOpenCodeDbSession(sessionId);
+				} else {
+					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+					session = JSON.parse(fileContent);
+				}
+				if (session) {
+					title = session.title || session.slug;
+					if (session.time?.created) { timestamps.push(session.time.created); }
+					if (session.time?.updated) { timestamps.push(session.time.updated); }
+				}
+				// Also check message timestamps for more precision
+				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
+				for (const msg of messages) {
+					if (msg.time?.created) { timestamps.push(msg.time.created); }
+					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
+				}
+				let firstInteraction: string | null = null;
+				let lastInteraction: string | null = null;
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					firstInteraction = new Date(timestamps[0]).toISOString();
+					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFile)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFile);
+				const vsTitle = this.visualStudio.getSessionTitle(objects);
+				if (vsTitle) { title = vsTitle; }
+				const vsTs = this.visualStudio.getSessionTimestamps(objects);
+				if (vsTs.timeCreated) { timestamps.push(new Date(vsTs.timeCreated).getTime()); }
+				if (vsTs.timeUpdated) { timestamps.push(new Date(vsTs.timeUpdated).getTime()); }
+				const firstInteraction = timestamps.length > 0 ? new Date(Math.min(...timestamps)).toISOString() : null;
+				const lastInteraction = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				const session = await this.crush.readCrushSession(sessionFile);
+				if (session) {
+					title = session.title || undefined;
+					if (session.created_at) { timestamps.push(session.created_at * 1000); } // epoch seconds → ms
+					if (session.updated_at) { timestamps.push(session.updated_at * 1000); }
+				}
+				// Also pull message timestamps for precision
+				const messages = await this.crush.getCrushMessages(sessionFile);
+				for (const msg of messages) {
+					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
+					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
+				}
+				let firstInteraction: string | null = null;
+				let lastInteraction: string | null = null;
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					firstInteraction = new Date(timestamps[0]).toISOString();
+					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				const meta = this.continue_.getContinueSessionMeta(sessionFile);
+				title = meta?.title;
+				const sessionId = this.continue_.getContinueSessionId(sessionFile);
+				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
+				let firstInteraction: string | null = null;
+				let lastInteraction: string | null = null;
+				if (indexEntry?.dateCreated) {
+					firstInteraction = new Date(indexEntry.dateCreated).toISOString();
+					const fileStat = await fs.promises.stat(sessionFile);
+					lastInteraction = fileStat.mtime.toISOString();
+				}
+				return { title, firstInteraction, lastInteraction };
+			}
+
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			if (_isUuidPointerFile(fileContent)) {
+				return { title, firstInteraction: null, lastInteraction: null };
+			}
+
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || _isJsonlContent(fileContent);
+
+			if (isJsonlContent) {
+				const lines = fileContent.trim().split('\n');
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+
+						// Handle Copilot CLI format
+						if (event.type === 'user.message') {
+							const ts = event.timestamp || event.ts || event.data?.timestamp;
+							if (ts) { timestamps.push(new Date(ts).getTime()); }
+						}
+
+						// Handle VS Code incremental .jsonl format
+						if (event.kind === 0 && event.v) {
+							if (event.v.creationDate) { timestamps.push(event.v.creationDate); }
+							// Always update title - we want the LAST title in the file (matches VS Code UI)
+							if (event.v.customTitle) { title = event.v.customTitle; }
+						}
+
+						// Handle kind: 2 events (requests array with timestamps)
+						if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								if (request.timestamp) {
+									timestamps.push(request.timestamp);
+								}
+							}
+						}
+
+						// Check kind: 1 (value updates) for title changes
+						if (event.kind === 1 && event.k?.includes('customTitle') && event.v) {
+							title = event.v;
+						}
+					} catch {
+						// Skip malformed lines
+					}
+				}
+			} else {
+				// JSON format - try to parse
+				try {
+					const parsed = JSON.parse(fileContent);
+					if (parsed.customTitle) { title = parsed.customTitle; }
+					if (parsed.creationDate) { timestamps.push(parsed.creationDate); }
+					// Extract timestamps from requests array (like getSessionFileDetails does)
+					if (parsed.requests && Array.isArray(parsed.requests)) {
+						for (const request of parsed.requests) {
+							if (request.timestamp || request.ts || request.result?.timestamp) {
+								const ts = request.timestamp || request.ts || request.result?.timestamp;
+								timestamps.push(new Date(ts).getTime());
+							}
+						}
+					}
+				} catch {
+					// Unable to parse
+				}
+			}
+		} catch {
+			// File read error
+		}
+
+		let firstInteraction: string | null = null;
+		let lastInteraction: string | null = null;
+		if (timestamps.length > 0) {
+			timestamps.sort((a, b) => a - b);
+			firstInteraction = new Date(timestamps[0]).toISOString();
+			lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+		}
+
+		return { title, firstInteraction, lastInteraction };
+	}
+
+	// Cached versions of session file reading methods
+	private async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
+		// Check if we have valid cached data
+		const cached = this.getCachedSessionData(sessionFilePath);
+		if (cached && cached.mtime === mtime && cached.size === fileSize) {
+			this._cacheHits++;
+			return cached;
+		}
+
+		this._cacheMisses++;
+		// Cache miss - read and process the file once to get all data
+		const tokenResult = await this.estimateTokensFromSession(sessionFilePath);
+		const interactions = await this.countInteractionsInSession(sessionFilePath);
+		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath);
+		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath);
+
+		// Extract title and timestamps from the session file
+		const sessionMeta = await this.extractSessionMetadata(sessionFilePath);
+
+		const sessionData: SessionFileCache = {
+			tokens: tokenResult.tokens,
+			interactions,
+			modelUsage,
+			mtime,
+			size: fileSize,
+			usageAnalysis,
+			title: sessionMeta.title,
+			firstInteraction: sessionMeta.firstInteraction,
+			lastInteraction: sessionMeta.lastInteraction,
+			thinkingTokens: tokenResult.thinkingTokens,
+			actualTokens: tokenResult.actualTokens
+		};
+
+		this.setCachedSessionData(sessionFilePath, sessionData, fileSize);
+		return sessionData;
+	}
+
+
+
+
+	private async getUsageAnalysisFromSessionCached(sessionFile: string, mtime: number, fileSize: number): Promise<SessionUsageAnalysis> {
+		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+		const analysis = sessionData.usageAnalysis || {
+			toolCalls: { total: 0, byTool: {} },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+			contextReferences: {
+				file: 0,
+				selection: 0,
+				implicitSelection: 0,
+				symbol: 0,
+				codebase: 0,
+				workspace: 0,
+				terminal: 0,
+				vscode: 0,
+				terminalLastCommand: 0,
+				terminalSelection: 0,
+				clipboard: 0,
+				changes: 0,
+				outputPanel: 0,
+				problemsPanel: 0,
+				byKind: {},
+				copilotInstructions: 0,
+				agentsMd: 0,
+				byPath: {}
+			},
+			mcpTools: { total: 0, byServer: {}, byTool: {} },
+			modelSwitching: {
+				uniqueModels: [],
+				modelCount: 0,
+				switchCount: 0,
+				tiers: { standard: [], premium: [], unknown: [] },
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
+			}
+		};
+
+		// Ensure modelSwitching field exists for backward compatibility with old cache
+		if (!analysis.modelSwitching) {
+			analysis.modelSwitching = {
+				uniqueModels: [],
+				modelCount: 0,
+				switchCount: 0,
+				tiers: { standard: [], premium: [], unknown: [] },
+				hasMixedTiers: false,
+				standardRequests: 0,
+				premiumRequests: 0,
+				unknownRequests: 0,
+				totalRequests: 0
+			};
+		}
+
+		return analysis;
+	}
+
+	/**
+	 * Add editor root and name information to session file details.
+	 * Enriches the details object with editorRoot and editorName properties.
+	 */
+	private enrichDetailsWithEditorInfo(sessionFile: string, details: SessionFileDetails): void {
+		// OpenCode and Crush sessions have their own editorRoot/editorName logic — skip path splitting
+		if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+			details.editorRoot = this.openCode.getOpenCodeDataDir();
+			details.editorName = 'OpenCode';
+			return;
+		}
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			details.editorRoot = path.dirname(sessionFile);
+			details.editorName = 'Visual Studio';
+			return;
+		}
+		if (this.crush.isCrushSessionFile(sessionFile)) {
+			details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
+			details.editorName = 'Crush';
+			return;
+		}
+		try {
+			const parts = sessionFile.split(/[/\\]/);
+			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');
+			if (userIdx > 0) {
+				details.editorRoot = parts.slice(0, userIdx).join(require('path').sep);
+			} else {
+				details.editorRoot = require('path').dirname(sessionFile);
+			}
+			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
+		} catch (e) {
+			details.editorRoot = require('path').dirname(sessionFile);
+			details.editorName = this.getEditorNameFromRoot(details.editorRoot || '');
+		}
+	}
+
+	/**
+	 * Reconstruct SessionFileDetails from cached data without reading the file.
+	 * Returns undefined if cache is not valid or doesn't have all required data.
+	 */
+	private async getSessionFileDetailsFromCache(sessionFile: string, stat: fs.Stats): Promise<SessionFileDetails | undefined> {
+		const cached = this.getCachedSessionData(sessionFile);
+
+		// Validate cache against file stats
+		if (!cached || cached.mtime !== stat.mtime.getTime() || cached.size !== stat.size) {
+			return undefined;
+		}
+
+		// Check if cache has the required fields (for backward compatibility with old cache)
+		if (!cached.usageAnalysis?.contextReferences || typeof cached.interactions !== 'number' || cached.interactions < 0) {
+			return undefined;
+		}
+
+		// Determine lastInteraction: use the more recent of cached timestamp or file mtime
+		// This handles cases where file was modified but content timestamps are older
+		let lastInteraction: string | null = cached.lastInteraction || null;
+		if (lastInteraction) {
+			const cachedLastInteraction = new Date(lastInteraction);
+			if (stat.mtime > cachedLastInteraction) {
+				lastInteraction = stat.mtime.toISOString();
+			}
+		} else {
+			// No cached lastInteraction, use file mtime
+			lastInteraction = stat.mtime.toISOString();
+		}
+
+		// Reconstruct SessionFileDetails from cache
+		const details: SessionFileDetails = {
+			file: sessionFile,
+			size: cached.size || stat.size,
+			modified: stat.mtime.toISOString(),
+			interactions: cached.interactions,
+			contextReferences: cached.usageAnalysis.contextReferences,
+			firstInteraction: cached.firstInteraction || null,
+			lastInteraction: lastInteraction,
+			editorSource: this.detectEditorSource(sessionFile),
+			title: cached.title,
+			repository: cached.repository
+		};
+
+		// Add editor root and name
+		this.enrichDetailsWithEditorInfo(sessionFile, details);
+
+		return details;
+	}
+
+	/**
+	 * Update or create cache entry with session file details.
+	 * Merges new detail fields with existing cached data if available.
+	 */
+	private async updateCacheWithSessionDetails(
+		sessionFile: string,
+		stat: fs.Stats,
+		details: SessionFileDetails
+	): Promise<void> {
+		// Get existing cache entry if available
+		const existingCache = this.getCachedSessionData(sessionFile);
+
+		// Create or update cache entry
+		const cacheEntry: SessionFileCache = {
+			tokens: existingCache?.tokens || 0,
+			interactions: details.interactions,
+			modelUsage: existingCache?.modelUsage || {},
+			mtime: stat.mtime.getTime(),
+			size: stat.size,
+			actualTokens: existingCache?.actualTokens,
+			thinkingTokens: existingCache?.thinkingTokens,
+			usageAnalysis: existingCache?.usageAnalysis || {
+				toolCalls: { total: 0, byTool: {} },
+				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+				contextReferences: {
+					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+					workspace: 0, terminal: 0, vscode: 0,
+					terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
+					// Extended fields expected by SessionUsageAnalysis in the webview
+					byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+				},
+				mcpTools: { total: 0, byServer: {}, byTool: {} },
+				modelSwitching: {
+					uniqueModels: [],
+					modelCount: 0,
+					switchCount: 0,
+					tiers: { standard: [], premium: [], unknown: [] },
+					hasMixedTiers: false,
+					standardRequests: 0,
+					premiumRequests: 0,
+					unknownRequests: 0,
+					totalRequests: 0
+				}
+			},
+			firstInteraction: details.firstInteraction,
+			lastInteraction: details.lastInteraction,
+			title: details.title,
+			repository: details.repository
+		};
+
+		// Update the contextReferences in usageAnalysis with the current data
+		// usageAnalysis is guaranteed to exist here since we always initialize it above
+		cacheEntry.usageAnalysis!.contextReferences = details.contextReferences;
+
+		this.setCachedSessionData(sessionFile, cacheEntry, stat.size);
+	}
+
+	/**
+	 * Get detailed session file information for diagnostics view.
+	 * Analyzes session files to extract interactions, context references, and timestamps.
+	 * Uses cached data when available to avoid re-reading files.
+	 */
+	private async getSessionFileDetails(sessionFile: string): Promise<SessionFileDetails> {
+		const stat = await this.statSessionFile(sessionFile);
+
+		// Try to get details from cache first
+		const cachedDetails = await this.getSessionFileDetailsFromCache(sessionFile, stat);
+		if (cachedDetails) {
+			// Invalidate cache if repository field is missing (needed for new repository extraction feature)
+			// Only re-parse JSONL files since they're likely to have contentReferences
+			if (cachedDetails.repository === undefined && sessionFile.endsWith('.jsonl')) {
+				// Fall through to re-parse
+			} else {
+				this._cacheHits++;
+				return cachedDetails;
+			}
+		}
+
+		this._cacheMisses++;
+
+		const details: SessionFileDetails = {
+			file: sessionFile,
+			size: stat.size,
+			modified: stat.mtime.toISOString(),
+			interactions: 0,
+			contextReferences: {
+				file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+				workspace: 0, terminal: 0, vscode: 0,
+				terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0, problemsPanel: 0,
+				byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+			},
+			firstInteraction: null,
+			lastInteraction: null,
+			editorSource: this.detectEditorSource(sessionFile)
+		};
+
+		// Determine top-level editor root path for this session file (up to the folder before 'User')
+		this.enrichDetailsWithEditorInfo(sessionFile, details);
+
+		try {
+			// Handle OpenCode sessions
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+				// Read session metadata from DB or JSON file
+				let session: any = null;
+				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
+				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
+					session = await this.openCode.readOpenCodeDbSession(sessionId);
+				} else {
+					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+					session = JSON.parse(fileContent);
+				}
+				if (session) {
+					details.title = session.title || session.slug;
+				}
+				details.interactions = await this.openCode.countOpenCodeInteractions(sessionFile);
+				const timestamps: number[] = [];
+				if (session?.time?.created) { timestamps.push(session.time.created); }
+				if (session?.time?.updated) { timestamps.push(session.time.updated); }
+				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
+				for (const msg of messages) {
+					if (msg.time?.created) { timestamps.push(msg.time.created); }
+					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
+				}
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				// Set editor info for OpenCode
+				details.editorRoot = this.openCode.getOpenCodeDataDir();
+				details.editorName = 'OpenCode';
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFile)) {
+				const objects = this.visualStudio.decodeSessionFile(sessionFile);
+				details.editorSource = 'Visual Studio';
+				details.editorName = 'Visual Studio';
+				details.title = this.visualStudio.getSessionTitle(objects);
+				details.interactions = this.visualStudio.countInteractions(objects);
+				const vsMeta = this.visualStudio.getSessionTimestamps(objects);
+				if (vsMeta.timeCreated) { details.firstInteraction = new Date(vsMeta.timeCreated).toISOString(); }
+				if (vsMeta.timeUpdated) { details.lastInteraction = new Date(vsMeta.timeUpdated).toISOString(); }
+				this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				const session = await this.crush.readCrushSession(sessionFile);
+				if (session) {
+					details.title = session.title || undefined;
+				}
+				details.interactions = await this.crush.countCrushInteractions(sessionFile);
+				const timestamps: number[] = [];
+				if (session?.created_at) { timestamps.push(session.created_at * 1000); }
+				if (session?.updated_at) { timestamps.push(session.updated_at * 1000); }
+				const messages = await this.crush.getCrushMessages(sessionFile);
+				for (const msg of messages) {
+					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
+					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
+				}
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
+				}
+				details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
+				details.editorName = 'Crush';
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				const meta = this.continue_.getContinueSessionMeta(sessionFile);
+				if (meta) {
+					details.title = meta.title;
+					if (meta.workspaceDirectory) {
+						// workspaceDirectory is a file URI like file:///c%3A/Users/.../repo-name
+						try {
+							const wsPath = decodeURIComponent(meta.workspaceDirectory.replace(/^file:\/\/\//, '').replace(/^file:\/\//, ''));
+							details.repository = require('path').basename(wsPath);
+						} catch { /* ignore */ }
+					}
+				}
+				details.interactions = this.continue_.countContinueInteractions(sessionFile);
+				details.editorRoot = this.continue_.getContinueDataDir();
+				details.editorName = 'Continue';
+				// Use dateCreated from sessions.json index for accurate timestamps
+				const sessionId = this.continue_.getContinueSessionId(sessionFile);
+				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
+				if (indexEntry?.dateCreated) {
+					details.firstInteraction = new Date(indexEntry.dateCreated).toISOString();
+					details.lastInteraction = stat.mtime.toISOString();
+				} else {
+					details.firstInteraction = stat.mtime.toISOString();
+					details.lastInteraction = stat.mtime.toISOString();
+				}
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format where the file contains just a session ID)
+			// These files act as session pointers, with actual data stored elsewhere
+			if (this.isUuidPointerFile(fileContent)) {
+				// This is a session ID pointer file, not actual session data
+				// Skip parsing and return empty details (no interactions to count)
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
+				const timestamps: number[] = [];
+				const allContentReferences: any[] = []; // Collect for repository extraction
+
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then extract details
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+
+					// Extract session metadata from reconstructed state
+					if (sessionState.creationDate) {
+						timestamps.push(sessionState.creationDate);
+					}
+					if (sessionState.customTitle) {
+						details.title = sessionState.customTitle;
+					}
+
+					// Process reconstructed requests array
+					const requests = sessionState.requests || [];
+					details.interactions = requests.length;
+
+					for (const request of requests) {
+						if (!request) { continue; }
+
+						if (request.timestamp) {
+							timestamps.push(request.timestamp);
+						}
+
+						// Analyze all context references from this request (unified method)
+						this.analyzeRequestContext(request, details.contextReferences);
+
+						// Collect contentReferences for repository extraction
+						if (request.contentReferences && Array.isArray(request.contentReferences)) {
+							allContentReferences.push(...request.contentReferences);
+						}
+					}
+
+					if (timestamps.length > 0) {
+						timestamps.sort((a, b) => a - b);
+						details.firstInteraction = new Date(timestamps[0]).toISOString();
+						const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+						details.lastInteraction = lastTimestamp > stat.mtime
+							? lastTimestamp.toISOString()
+							: stat.mtime.toISOString();
+					} else {
+						details.lastInteraction = stat.mtime.toISOString();
+					}
+
+					// Extract repository from collected contentReferences
+					if (allContentReferences.length > 0) {
+						details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
+					}
+
+					// Update cache with the details we just collected
+					await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+
+					return details;
+				}
+
+				// Non-delta JSONL (Copilot CLI format) - process line-by-line
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+
+						// Handle Copilot CLI format (type: 'user.message')
+						if (event.type === 'user.message') {
+							details.interactions++;
+							if (event.timestamp || event.ts || event.data?.timestamp) {
+								const ts = event.timestamp || event.ts || event.data?.timestamp;
+								timestamps.push(new Date(ts).getTime());
+							}
+							if (event.data?.content) {
+								this.analyzeContextReferences(event.data.content, details.contextReferences);
+							}
+						}
+					} catch {
+						// Skip malformed lines
+					}
+				}
+
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					// Use the more recent of: extracted last timestamp OR file modification time
+					// This handles cases where new requests are added without timestamp fields
+					const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+					details.lastInteraction = lastTimestamp > stat.mtime
+						? lastTimestamp.toISOString()
+						: stat.mtime.toISOString();
+				} else {
+					// Fallback to file modification time if no timestamps in content
+					details.lastInteraction = stat.mtime.toISOString();
+				}
+
+				// Extract repository from collected contentReferences
+				if (allContentReferences.length > 0) {
+					details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
+				}
+
+				// Update cache with the details we just collected
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+
+				return details;
+			}
+
+			// Handle regular .json files
+			const sessionContent = JSON.parse(fileContent);
+
+			// Extract session title if available
+			if (sessionContent.customTitle) {
+				details.title = sessionContent.customTitle;
+			}
+
+			const hasRequests = sessionContent.requests && Array.isArray(sessionContent.requests);
+
+			if (hasRequests) {
+				details.interactions = sessionContent.requests.length;
+				const timestamps: number[] = [];
+				const allContentReferences: any[] = []; // Collect for repository extraction
+
+				for (const request of sessionContent.requests) {
+					// Extract timestamps from requests
+					if (request.timestamp || request.ts || request.result?.timestamp) {
+						const ts = request.timestamp || request.ts || request.result?.timestamp;
+						timestamps.push(new Date(ts).getTime());
+					}
+
+					// Analyze all context references from this request
+					this.analyzeRequestContext(request, details.contextReferences);
+					// Analyze context references
+					if (request.message?.text) {
+						this.analyzeContextReferences(request.message.text, details.contextReferences);
+					}
+					if (request.message?.parts) {
+						for (const part of request.message.parts) {
+							if (part.text) {
+								this.analyzeContextReferences(part.text, details.contextReferences);
+							}
+						}
+					}
+
+					// Collect contentReferences for repository extraction
+					if (request.contentReferences && Array.isArray(request.contentReferences)) {
+						allContentReferences.push(...request.contentReferences);
+					}
+
+					// Check variableData for @workspace, @terminal, @vscode references
+					if (request.variableData) {
+						const varDataStr = JSON.stringify(request.variableData).toLowerCase();
+						if (varDataStr.includes('workspace')) { details.contextReferences.workspace++; }
+						if (varDataStr.includes('terminal')) { details.contextReferences.terminal++; }
+						if (varDataStr.includes('vscode')) { details.contextReferences.vscode++; }
+					}
+				}
+
+				if (timestamps.length > 0) {
+					timestamps.sort((a, b) => a - b);
+					details.firstInteraction = new Date(timestamps[0]).toISOString();
+					// Use the more recent of: extracted last timestamp OR file modification time
+					// This handles cases where new requests are added without timestamp fields
+					const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
+					details.lastInteraction = lastTimestamp > stat.mtime
+						? lastTimestamp.toISOString()
+						: stat.mtime.toISOString();
+				} else {
+					// Fallback to file modification time if no timestamps in content
+					details.lastInteraction = stat.mtime.toISOString();
+				}
+
+				// Extract repository from collected contentReferences
+				if (allContentReferences.length > 0) {
+					details.repository = await this.extractRepositoryFromContentReferences(allContentReferences);
+				}
+			}
+
+			// Update cache with the details we just collected
+			await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+		} catch (error) {
+			this.warn(`Error analyzing session file details for ${sessionFile}: ${error}`);
+		}
+
+		return details;
+	}
+
+	/**
+	 * Detect which editor the session file belongs to based on its path.
+	 */
+	private detectEditorSource(filePath: string): string {
+		return _detectEditorSource(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
+	}
+
+	/**
+	 * Extract full session log data including chat turns for the log viewer.
+	 */
+	private async getSessionLogData(sessionFile: string): Promise<SessionLogData> {
+		const details = await this.getSessionFileDetails(sessionFile);
+		const turns: ChatTurn[] = [];
+
+		try {
+			// Handle OpenCode sessions
+			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
+				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
+				if (messages.length > 0) {
+					let turnNumber = 0;
+					let prevCumulativeTotal = 0; // track cumulative total to compute per-turn deltas
+					for (let i = 0; i < messages.length; i++) {
+						const msg = messages[i];
+						if (msg.role !== 'user') { continue; }
+						turnNumber++;
+						// Collect ALL assistant messages for this turn (agentic tool-use loops produce multiple)
+						const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
+						const userParts = await this.openCode.getOpenCodePartsForMessage(msg.id);
+						const userText = userParts.filter(p => p.type === 'text').map(p => p.text || '').join('\n');
+						let assistantText = '';
+						let thinkingText = '';
+						const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+						let model: string | null = null;
+						let thinkingTokens = 0;
+
+						// Process all assistant messages in this turn to collect text, tool calls, and token totals
+						let turnCumulativeTotal = prevCumulativeTotal;
+						for (const assistantMsg of turnAssistantMsgs) {
+							if (!model) {
+								model = assistantMsg.modelID || null;
+							}
+							thinkingTokens += assistantMsg.tokens?.reasoning || 0;
+							// Track the cumulative total — the last assistant message has the highest value
+							if (typeof assistantMsg.tokens?.total === 'number') {
+								turnCumulativeTotal = Math.max(turnCumulativeTotal, assistantMsg.tokens.total);
+							}
+							const assistantParts = await this.openCode.getOpenCodePartsForMessage(assistantMsg.id);
+							for (const part of assistantParts) {
+								if (part.type === 'text' && part.text) {
+									assistantText += part.text;
+								} else if (part.type === 'reasoning' && part.text) {
+									thinkingText += part.text;
+								} else if (part.type === 'tool' && part.tool) {
+									toolCalls.push({
+										toolName: part.tool,
+										arguments: part.state?.input ? JSON.stringify(part.state.input) : undefined,
+										result: part.state?.output || undefined
+									});
+								}
+							}
+						}
+
+						// Per-turn tokens = delta of cumulative total between this turn and previous
+						const turnTokens = turnCumulativeTotal - prevCumulativeTotal;
+						// Split proportionally: output+thinking are known, remainder is input
+						const turnOutputAndThinking = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.output || 0) + (m.tokens?.reasoning || 0), 0);
+						const turnInputTokens = Math.max(0, turnTokens - turnOutputAndThinking);
+
+						turns.push({
+							turnNumber,
+							timestamp: msg.time?.created ? new Date(msg.time.created).toISOString() : null,
+							mode: (msg.agent === 'build' || msg.agent === 'agent') ? 'agent' : (msg.agent === 'ask' ? 'ask' : 'agent'),
+							userMessage: userText,
+							assistantResponse: assistantText,
+							model,
+							toolCalls,
+							contextReferences: {
+								file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+								workspace: 0, terminal: 0, vscode: 0,
+								terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
+								outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+							},
+							mcpTools: [],
+							inputTokensEstimate: turnInputTokens,
+							outputTokensEstimate: turnOutputAndThinking - thinkingTokens,
+							thinkingTokensEstimate: thinkingTokens
+						});
+
+						prevCumulativeTotal = turnCumulativeTotal;
+					}
+				}
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: details.editorName || 'OpenCode',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+		// Handle Visual Studio sessions
+		if (this.visualStudio.isVSSessionFile(sessionFile)) {
+			const objects = this.visualStudio.decodeSessionFile(sessionFile);
+			let turnNumber = 0;
+			for (let i = 1; i < objects.length; i += 2) {
+				const req = objects[i];
+				const res = objects[i + 1];
+				if (!req) { continue; }
+				const reqData = req[1];
+				const resData = res?.[1];
+				turnNumber++;
+				const userText = this.visualStudio.extractTextFromContent(reqData?.Content || []);
+				const assistantText = res ? this.visualStudio.extractTextFromContent(resData?.Content || []) : '';
+				const model = this.visualStudio.getModelId(resData ?? reqData, !resData);
+				const contextText = this.visualStudio.extractContextText(reqData?.Context);
+								const inputTokens = this.estimateTokensFromText(userText + contextText, model ?? 'gpt-4');
+				const outputTokens = res ? this.estimateTokensFromText(assistantText, model ?? 'gpt-4') : 0;
+				const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+				for (const c of (resData?.Content || [])) {
+					const inner = Array.isArray(c) ? c[1] : null;
+					if (inner?.Function) {
+						toolCalls.push({
+							toolName: String(inner.Function.Description || 'tool'),
+							result: typeof inner.Function.Result === 'string' ? inner.Function.Result : undefined
+						});
+					}
+				}
+				turns.push({
+					turnNumber,
+					timestamp: reqData?.Timestamp ? new Date(reqData.Timestamp).toISOString() : null,
+					mode: 'ask' as const,
+					userMessage: userText,
+					assistantResponse: assistantText,
+					model,
+					toolCalls,
+					contextReferences: {
+						file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+						workspace: 0, terminal: 0, vscode: 0,
+						terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
+						outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+					},
+					mcpTools: [],
+					inputTokensEstimate: inputTokens,
+					outputTokensEstimate: outputTokens,
+					thinkingTokensEstimate: 0
+				});
+			}
+			return {
+				file: details.file,
+				title: details.title || null,
+				editorSource: details.editorSource,
+				editorName: 'Visual Studio',
+				size: details.size,
+				modified: details.modified,
+				interactions: details.interactions,
+				contextReferences: details.contextReferences,
+				firstInteraction: details.firstInteraction,
+				lastInteraction: details.lastInteraction,
+				turns,
+				usageAnalysis: undefined
+			};
+		}
+
+// Handle Crush sessions
+			if (this.crush.isCrushSessionFile(sessionFile)) {
+				const messages = await this.crush.getCrushMessages(sessionFile);
+				const session = await this.crush.readCrushSession(sessionFile);
+				const totalTokens = (session?.prompt_tokens ?? 0) + (session?.completion_tokens ?? 0);
+				const userMessages = messages.filter(m => m.role === 'user');
+				const numTurns = userMessages.length;
+				let turnNumber = 0;
+				for (let i = 0; i < messages.length; i++) {
+					const msg = messages[i];
+					if (msg.role !== 'user') { continue; }
+					turnNumber++;
+					// Collect assistant messages until the next user message
+					const turnAssistantMsgs: any[] = [];
+					for (let j = i + 1; j < messages.length; j++) {
+						if (messages[j].role === 'user') { break; }
+						if (messages[j].role === 'assistant') { turnAssistantMsgs.push(messages[j]); }
+					}
+					// Extract user text from parts
+					const userParts: any[] = Array.isArray(msg.parts) ? msg.parts : [];
+					const userText = userParts
+						.filter(p => p?.type === 'text' && p?.text)
+						.map(p => p.text as string)
+						.join('\n');
+					let assistantText = '';
+					const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+					let model: string | null = null;
+					for (const assistantMsg of turnAssistantMsgs) {
+						if (!model) { model = assistantMsg.model || null; }
+						const parts: any[] = Array.isArray(assistantMsg.parts) ? assistantMsg.parts : [];
+						for (const part of parts) {
+							if (part?.type === 'text' && part?.text) {
+								assistantText += part.text;
+							} else if (part?.type === 'tool_call' && part?.data?.name) {
+								toolCalls.push({
+									toolName: part.data.name,
+									arguments: part.data.arguments ? JSON.stringify(part.data.arguments) : undefined
+								});
+							}
+						}
+					}
+					// Distribute session token totals evenly across turns
+					const perTurnTokens = numTurns > 0 ? Math.round(totalTokens / numTurns) : 0;
+					const perTurnInput = session?.prompt_tokens && numTurns > 0 ? Math.round(session.prompt_tokens / numTurns) : 0;
+					const perTurnOutput = session?.completion_tokens && numTurns > 0 ? Math.round(session.completion_tokens / numTurns) : 0;
+					turns.push({
+						turnNumber,
+						timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : null,
+						mode: 'agent',
+						userMessage: userText,
+						assistantResponse: assistantText,
+						model,
+						toolCalls,
+						contextReferences: {
+							file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
+							workspace: 0, terminal: 0, vscode: 0,
+							terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
+							outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
+						},
+						mcpTools: [],
+						inputTokensEstimate: perTurnInput,
+						outputTokensEstimate: perTurnOutput,
+						thinkingTokensEstimate: 0
+					});
+				}
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: 'Crush',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+			// Handle Continue sessions
+			if (this.continue_.isContinueSessionFile(sessionFile)) {
+				const continueTurns = this.continue_.buildContinueTurns(sessionFile);
+				const emptyContextRefs = _createEmptyContextRefs();
+				for (const ct of continueTurns) {
+					turns.push({
+						turnNumber: turns.length + 1,
+						timestamp: null,
+						mode: 'ask',
+						userMessage: ct.userText,
+						assistantResponse: ct.assistantText,
+						model: ct.model,
+						toolCalls: ct.toolCalls,
+						contextReferences: emptyContextRefs,
+						mcpTools: [],
+						inputTokensEstimate: ct.inputTokens,
+						outputTokensEstimate: ct.outputTokens,
+						thinkingTokensEstimate: 0
+					});
+				}
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: details.editorName || 'Continue',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			if (this.isUuidPointerFile(fileContent)) {
+				// This is a session ID pointer file with no actual conversation data
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: details.editorName || details.editorSource,
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+			// Check for JSONL content (either by extension or content detection)
+			const isJsonlContent = sessionFile.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+
+			if (isJsonlContent) {
+				// Handle JSONL formats (CLI and VS Code incremental/delta-based)
+				const lines = fileContent.trim().split('\n').filter(l => l.trim());
+
+				// Detect if this is delta-based format (VS Code incremental)
+				let isDeltaBased = false;
+				if (lines.length > 0) {
+					try {
+						const firstLine = JSON.parse(lines[0]);
+						if (firstLine && typeof firstLine.kind === 'number') {
+							isDeltaBased = true;
+						}
+					} catch {
+						// Not delta format
+					}
+				}
+
+				if (isDeltaBased) {
+					// Delta-based format: reconstruct full state first, then extract turns
+					let sessionState: any = {};
+					for (const line of lines) {
+						try {
+							const delta = JSON.parse(line);
+							sessionState = this.applyDelta(sessionState, delta);
+						} catch {
+							// Skip invalid lines
+						}
+					}
+
+					// Extract session-level info
+					let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
+					let currentModel: string | null = null;
+
+					if (sessionState.inputState?.mode) {
+						sessionMode = this.getModeType(sessionState.inputState.mode);
+						if (sessionState.inputState?.selectedModel?.metadata?.id) {
+							currentModel = sessionState.inputState.selectedModel.metadata.id;
+						}
+					}
+
+					// Extract turns from reconstructed requests array
+					const requests = sessionState.requests || [];
+					// Pre-compute regex-based token extraction for lines that failed JSON.parse
+					const rawUsageFallback = this.extractPerRequestUsageFromRawLines(lines);
+					for (let i = 0; i < requests.length; i++) {
+						const request = requests[i];
+						if (!request || !request.requestId) { continue; }
+
+						const contextRefs = this.createEmptyContextRefs();
+						const userMessage = request.message?.text || '';
+
+						// Analyze all context references from this request
+						this.analyzeRequestContext(request, contextRefs);
+
+						// Get model from request or fall back to session model
+						const requestModel = request.modelId ||
+							currentModel ||
+							this.getModelFromRequest(request) ||
+							'gpt-4';
+
+						// Extract response data
+						const { responseText, thinkingText, toolCalls, mcpTools } = this.extractResponseData(request.response || []);
+						
+						// Extract actual usage data from request.result if available
+						let actualUsage: ActualUsage | undefined;
+						if (request.result?.usage) {
+							// OLD FORMAT (pre-Feb 2026): Tokens nested under request.result.usage
+							const u = request.result.usage;
+							actualUsage = {
+								completionTokens: typeof u.completionTokens === 'number' ? u.completionTokens : 0,
+								promptTokens: typeof u.promptTokens === 'number' ? u.promptTokens : 0,
+								promptTokenDetails: Array.isArray(u.promptTokenDetails) ? u.promptTokenDetails : undefined,
+								details: typeof request.result.details === 'string' ? request.result.details : undefined
+							};
+						} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
+							// NEW FORMAT (Feb 2026+): Tokens directly at request.result level
+							actualUsage = {
+								completionTokens: request.result.outputTokens,
+								promptTokens: request.result.promptTokens,
+								details: typeof request.result.details === 'string' ? request.result.details : undefined
+							};
+						} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
+							// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+							actualUsage = {
+								completionTokens: request.result.metadata.outputTokens,
+								promptTokens: request.result.metadata.promptTokens,
+								details: typeof request.result.details === 'string' ? request.result.details : undefined
+							};
+						}
+
+						// FALLBACK: If reconstruction missed result data (bad escape chars), use regex extraction
+						if (!actualUsage) {
+							const extracted = rawUsageFallback.get(i);
+							if (extracted) {
+								actualUsage = {
+									completionTokens: extracted.outputTokens,
+									promptTokens: extracted.promptTokens
+								};
+							}
+						}
+
+					const turn: ChatTurn = {
+						turnNumber: i + 1,
+						timestamp: request.timestamp ? new Date(request.timestamp).toISOString() : null,
+						mode: sessionMode,
+						userMessage,
+						assistantResponse: responseText,
+						model: requestModel,
+						toolCalls,
+						contextReferences: contextRefs,
+						mcpTools,
+						inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
+						outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
+						thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, requestModel),
+						actualUsage
+					};
+
+					turns.push(turn);
+				}
+			} else {
+			// Non-delta JSONL (Copilot CLI format)
+			let turnNumber = 0;
+
+			for (const line of lines) {
+				try {
+					const event = JSON.parse(line);
+
+					// Handle Copilot CLI format (type: 'user.message')
+					if (event.type === 'user.message' && event.data?.content) {
+						turnNumber++;
+						const contextRefs = this.createEmptyContextRefs();
+						const userMessage = event.data.content;
+						this.analyzeContextReferences(userMessage, contextRefs);
+						const turn: ChatTurn = {
+							turnNumber,
+							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
+							mode: 'agent', // CLI is typically agent mode
+							userMessage,
+							assistantResponse: '',
+							model: event.model || 'gpt-4o',
+							toolCalls: [],
+							contextReferences: contextRefs,
+							mcpTools: [],
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
+							outputTokensEstimate: 0,
+							thinkingTokensEstimate: 0
+						};
+						turns.push(turn);
+					}
+
+					// Handle CLI assistant response
+					if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
+						const lastTurn = turns[turns.length - 1];
+						lastTurn.assistantResponse += event.data.content;
+						lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+					}
+
+					// Handle CLI tool calls
+					if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
+						const lastTurn = turns[turns.length - 1];
+						const toolName = event.data?.toolName || event.toolName || 'unknown';
+
+						// Check if this is an MCP tool by name pattern
+						if (this.isMcpTool(toolName)) {
+							const serverName = this.extractMcpServerName(toolName);
+							lastTurn.mcpTools.push({ server: serverName, tool: toolName });
+						} else {
+							// Add to regular tool calls
+							lastTurn.toolCalls.push({
+								toolName,
+								arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+								result: event.type === 'tool.result' ? event.data?.output : undefined
+							});
+						}
+					}
+
+					// Handle explicit MCP tool calls from CLI
+					if ((event.type === 'mcp.tool.call' || event.data?.mcpServer) && turns.length > 0) {
+						const lastTurn = turns[turns.length - 1];
+						const serverName = event.data?.mcpServer || 'unknown';
+						const toolName = event.data?.toolName || event.toolName || 'unknown';
+						lastTurn.mcpTools.push({ server: serverName, tool: toolName });
+					}
+				} catch {
+					// Skip malformed lines
+				}
+			}
+		}
+				const sessionContent = JSON.parse(fileContent);
+				let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
+
+				// Detect session-level mode
+				if (sessionContent.mode) {
+					sessionMode = this.getModeType(sessionContent.mode);
+				}
+
+				if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+					let turnNumber = 0;
+					for (const request of sessionContent.requests) {
+						turnNumber++;
+
+						// Determine mode for this request
+						let requestMode = sessionMode;
+						if (request.agent?.id) {
+							const agentId = request.agent.id.toLowerCase();
+							if (agentId.includes('edit')) {
+								requestMode = 'edit';
+							} else if (agentId.includes('agent')) {
+								requestMode = 'agent';
+							}
+						}
+
+						// Extract user message
+						let userMessage = '';
+						if (request.message?.text) {
+							userMessage = request.message.text;
+						} else if (request.message?.parts) {
+							userMessage = request.message.parts
+								.filter((p: any) => p.text)
+								.map((p: any) => p.text)
+								.join('\n');
+						}
+
+						// Analyze context references
+						const contextRefs = this.createEmptyContextRefs();
+						this.analyzeRequestContext(request, contextRefs);
+
+						// Extract model
+						const model = this.getModelFromRequest(request);
+
+						// Extract response
+						let assistantResponse = '';
+						let thinkingText = '';
+						const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+						const mcpTools: { server: string; tool: string }[] = [];
+
+						if (request.response && Array.isArray(request.response)) {
+							const { responseText, thinkingText: tt, toolCalls: tc, mcpTools: mcp } = this.extractResponseData(request.response);
+							assistantResponse = responseText;
+							thinkingText = tt;
+							toolCalls.push(...tc);
+							mcpTools.push(...mcp);
+						}
+
+						const turn: ChatTurn = {
+							turnNumber,
+							timestamp: request.timestamp || request.ts || request.result?.timestamp || null,
+							mode: requestMode,
+							userMessage,
+							assistantResponse,
+							model,
+							toolCalls,
+							contextReferences: contextRefs,
+							mcpTools,
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, model),
+							outputTokensEstimate: this.estimateTokensFromText(assistantResponse, model),
+							thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, model)
+						};
+
+						turns.push(turn);
+					}
+				}
+			}
+		} catch (error) {
+			this.warn(`Error extracting chat turns from ${sessionFile}: ${error}`);
+		}
+
+		let usageAnalysis: SessionUsageAnalysis | undefined;
+		try {
+			const mtimeMs = new Date(details.modified).getTime();
+			usageAnalysis = await this.getUsageAnalysisFromSessionCached(sessionFile, mtimeMs, details.size);
+		} catch (usageError) {
+			this.warn(`Error loading usage analysis for ${sessionFile}: ${usageError}`);
+		}
+
+		return {
+			file: details.file,
+			title: details.title || null,
+			editorSource: details.editorSource,
+			editorName: details.editorName || details.editorSource,
+			size: details.size,
+			modified: details.modified,
+			interactions: details.interactions,
+			contextReferences: details.contextReferences,
+			firstInteraction: details.firstInteraction,
+			lastInteraction: details.lastInteraction,
+			turns,
+			usageAnalysis
+		};
+	}
+
+	private createEmptyContextRefs(): ContextReferenceUsage {
+		return _createEmptyContextRefs();
+	}
+
+	/**
+	 * Extract response data from a response array.
+	 */
+	private extractResponseData(response: any[]): {
+		responseText: string;
+		thinkingText: string;
+		toolCalls: { toolName: string; arguments?: string; result?: string }[];
+		mcpTools: { server: string; tool: string }[];
+	} {
+		let responseText = '';
+		let thinkingText = '';
+		const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+		const mcpTools: { server: string; tool: string }[] = [];
+
+		for (const item of response) {
+			// Separate thinking items
+			if (item.kind === 'thinking') {
+				if (item.value && typeof item.value === 'string') {
+					thinkingText += item.value;
+				}
+				continue;
+			}
+
+			// Extract text content
+			if (item.value && typeof item.value === 'string') {
+				responseText += item.value;
+			} else if (item.kind === 'markdownContent' && item.content?.value) {
+				responseText += item.content.value;
+			}
+
+			// Extract tool invocations
+			if (item.kind === 'toolInvocationSerialized' || item.kind === 'prepareToolInvocation') {
+				const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
+
+				// Check if this is an MCP tool by name pattern
+				if (this.isMcpTool(toolName)) {
+					const serverName = this.extractMcpServerName(toolName);
+					mcpTools.push({ server: serverName, tool: toolName });
+				} else {
+					// Add to regular tool calls
+					toolCalls.push({
+						toolName,
+						arguments: item.input ? JSON.stringify(item.input) : undefined,
+						result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+					});
+				}
+			}
+
+			// Extract MCP tools
+			if (item.kind === 'mcpServersStarting' && item.didStartServerIds) {
+				for (const serverId of item.didStartServerIds) {
+					mcpTools.push({ server: serverId, tool: 'start' });
+				}
+			}
+		}
+
+		return { responseText, thinkingText, toolCalls, mcpTools };
+	}
+
+	private calculateEstimatedCost(modelUsage: ModelUsage): number {
+		return _calculateEstimatedCost(modelUsage, this.modelPricing);
+	}
+
+
+
+
+
+
+
+	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
+		try {
+			// Handle OpenCode sessions - they have actual token counts in message files
+			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
+				const result = await this.openCode.getTokensFromOpenCodeSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
+				return { ...result, actualTokens: result.tokens };
+			}
+
+			// Handle Visual Studio sessions
+			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
+				return { ...result, actualTokens: result.tokens };
+			}
+
+			// Handle Crush sessions - actual token counts stored in sessions table
+			if (this.crush.isCrushSessionFile(sessionFilePath)) {
+				const result = await this.crush.getTokensFromCrushSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens };
+			}
+
+			// Handle Continue sessions - they have actual token counts in promptLogs
+			if (this.continue_.isContinueSessionFile(sessionFilePath)) {
+				const result = this.continue_.getTokensFromContinueSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens }; // Continue has actual counts
+			}
+
+			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			if (this.isUuidPointerFile(fileContent)) {
+				return { tokens: 0, thinkingTokens: 0, actualTokens: 0 };
+			}
+
+			// Handle .jsonl files OR .json files with JSONL content (each line is a separate JSON object)
+			const isJsonlContent = sessionFilePath.endsWith('.jsonl') || this.isJsonlContent(fileContent);
+			if (isJsonlContent) {
+				return this.estimateTokensFromJsonlSession(fileContent);
+			}
+
+			// Handle regular .json files
+			const sessionContent = JSON.parse(fileContent);
+			let totalInputTokens = 0;
+			let totalOutputTokens = 0;
+			let totalThinkingTokens = 0;
+			let totalActualTokens = 0;
+
+			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
+				for (const request of sessionContent.requests) {
+					// Estimate tokens from user message (input)
+					if (request.message && request.message.parts) {
+						for (const part of request.message.parts) {
+							if (part.text) {
+								totalInputTokens += this.estimateTokensFromText(part.text);
+							}
+						}
+					}
+
+					// Estimate tokens from assistant response (output)
+					if (request.response && Array.isArray(request.response)) {
+						for (const responseItem of request.response) {
+							// Separate thinking tokens
+							if (responseItem.kind === 'thinking' && responseItem.value) {
+								totalThinkingTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
+								continue;
+							}
+							if (responseItem.value) {
+								totalOutputTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
+							}
+						}
+					}
+
+					// Extract actual token counts from LLM API usage data
+					if (request.result?.usage) {
+						// OLD FORMAT (pre-Feb 2026)
+						const u = request.result.usage;
+						const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+						const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+						totalActualTokens += prompt + completion;
+					} else if (typeof request.result?.promptTokens === 'number' && typeof request.result?.outputTokens === 'number') {
+						// NEW FORMAT (Feb 2026+)
+						totalActualTokens += request.result.promptTokens + request.result.outputTokens;
+					} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						totalActualTokens += request.result.metadata.promptTokens + request.result.metadata.outputTokens;
+					}
+				}
+			}
+
+			return { tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: totalActualTokens };
+		} catch (error) {
+			this.warn(`Error parsing session file ${sessionFilePath}: ${error}`);
+			return { tokens: 0, thinkingTokens: 0, actualTokens: 0 };
+		}
+	}
+
+	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number } {
+		return _estimateTokensFromJsonlSession(fileContent);
+	}
+
+	private extractPerRequestUsageFromRawLines(lines: string[]): Map<number, { promptTokens: number; outputTokens: number }> {
+		return _extractPerRequestUsageFromRawLines(lines);
+	}
+
+
+
+
+
+
+
+
+	private getModelFromRequest(request: any): string {
+		return _getModelFromRequest(request, this.modelPricing);
+	}
+
+	private isJsonlContent(content: string): boolean {
+		return _isJsonlContent(content);
+	}
+
+	private isUuidPointerFile(content: string): boolean {
+		return _isUuidPointerFile(content);
+	}
+
+	private applyDelta(state: any, delta: any): any {
+		return _applyDelta(state, delta);
+	}
+
+
+	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
+		return _estimateTokensFromText(text, model, this.tokenEstimators);
+	}
+
+	public async showDetails(): Promise<void> {
+		this.log('📊 Opening Details panel');
+
+		// If panel already exists, just reveal it
+		if (this.detailsPanel) {
+			this.detailsPanel.reveal();
+			this.log('📊 Details panel revealed (already exists)');
+			return;
+		}
+
+		// Use cached stats if available, otherwise calculate
+		let stats = this.lastDetailedStats;
+		if (!stats) {
+			this.log('No cached stats available, calculating...');
+			stats = await this.updateTokenStats();
+			if (!stats) {
+				return;
+			}
+		}
+
+		// Create a small webview panel
+		this.detailsPanel = vscode.window.createWebviewPanel(
+			'copilotTokenDetails',
+			'AI Engineering Fluency',
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: true
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist')]
+			}
+		);
+
+		this.log('✅ Details panel created successfully');
+
+		// Set the HTML content
+		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+
+		// Handle messages from the webview
+		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			switch (message.command) {
+				case 'refresh':
+					await this.dispatch('refresh:details', () => this.refreshDetailsPanel());
+					break;
+				case 'saveSortSettings':
+					await this.dispatch('saveSortSettings:details', () =>
+						this.context.globalState.update('details.sortSettings', message.settings)
+					);
+					break;
+			}
+		});
+
+		// Handle panel disposal
+		this.detailsPanel.onDidDispose(() => {
+			this.log('📊 Details panel closed');
+			this.detailsPanel = undefined;
+		});
+	}
+
+	public async showEnvironmental(): Promise<void> {
+		this.log('🌿 Opening Environmental Impact view');
+
+		if (this.environmentalPanel) {
+			this.environmentalPanel.reveal();
+			this.log('🌿 Environmental Impact view revealed (already exists)');
+			return;
+		}
+
+		let stats = this.lastDetailedStats;
+		if (!stats) {
+			stats = await this.updateTokenStats();
+			if (!stats) {
+				return;
+			}
+		}
+
+		this.environmentalPanel = vscode.window.createWebviewPanel(
+			'copilotEnvironmental',
+			'Environmental Impact',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
+
+		this.environmentalPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (message.command === 'refresh') {
+				await this.dispatch('refresh:environmental', async () => {
+					const refreshed = await this.updateTokenStats();
+					if (refreshed && this.environmentalPanel) {
+						this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, refreshed);
+					}
+				});
+			}
+		});
+
+		this.environmentalPanel.onDidDispose(() => {
+			this.log('🌿 Environmental Impact view closed');
+			this.environmentalPanel = undefined;
+		});
+	}
+
+	private getEnvironmentalHtml(webview: vscode.Webview, stats: DetailedStats): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(
+			vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'environmental.js')
+		);
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`,
+		].join('; ');
+
+		const dataWithBackend = {
+			...stats,
+			backendConfigured: this.isBackendConfigured(),
+			compactNumbers: this.getCompactNumbersSetting(),
+		};
+		const initialData = JSON.stringify(dataWithBackend).replace(/</g, '\\u003c');
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Environmental Impact</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_ENVIRONMENTAL__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+	}
+
+	public async showChart(): Promise<void> {
+		this.log('📈 Opening Chart view');
+
+		// If panel already exists, just reveal it
+		if (this.chartPanel) {
+			this.chartPanel.reveal();
+			this.log('📈 Chart view revealed (already exists)');
+			return;
+		}
+
+		// Use daily stats computed by calculateDetailedStats if available, otherwise compute them
+		const dailyStats = this.lastDailyStats ?? await this.calculateDailyStats();
+
+		// Create webview panel
+		this.chartPanel = vscode.window.createWebviewPanel(
+			'copilotTokenChart',
+			'Token Usage Over Time',
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: true
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.log('✅ Chart view created successfully');
+
+		// Set the HTML content
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+
+		// Handle messages from the webview
+		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (message.command === 'refresh') {
+				await this.dispatch('refresh:chart', () => this.refreshChartPanel());
+			}
+		});
+
+		// Handle panel disposal
+		this.chartPanel.onDidDispose(() => {
+			this.log('📈 Chart view closed');
+			this.chartPanel = undefined;
+		});
+	}
+
+	public async showUsageAnalysis(): Promise<void> {
+		this.log('📊 Opening Usage Analysis dashboard');
+
+		// If panel already exists, dispose it and recreate with fresh data
+		if (this.analysisPanel) {
+			this.log('📊 Closing existing panel to refresh data...');
+			this.analysisPanel.dispose();
+			this.analysisPanel = undefined;
+		}
+
+		// Get usage analysis stats (use cached version for fast loading)
+		const analysisStats = await this.calculateUsageAnalysisStats(true);
+
+		// Create webview panel
+		this.analysisPanel = vscode.window.createWebviewPanel(
+			'copilotUsageAnalysis',
+			'AI Usage Analysis',
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: true
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: true, // Keep webview context to preserve analysis results when switching tabs
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		this.log('✅ Usage Analysis dashboard created successfully');
+
+		// Set the HTML content
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+
+		// Handle messages from the webview
+		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			switch (message.command) {
+				case 'refresh':
+					await this.dispatch('refresh:analysis', () => this.refreshAnalysisPanel());
+					break;
+				case 'analyseRepository':
+					await this.dispatch('analyseRepository', () => this.handleAnalyseRepository(message.workspacePath));
+					break;
+				case 'analyseAllRepositories':
+					await this.dispatch('analyseAllRepositories', () => this.handleAnalyseAllRepositories());
+					break;
+				case 'openCopilotChatWithPrompt':
+					await this.dispatch('openCopilotChatWithPrompt', () =>
+						vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true })
+					);
+					break;
+			}
+		});
+
+		// Handle panel disposal
+		this.analysisPanel.onDidDispose(() => {
+			this.log('📊 Usage Analysis dashboard closed');
+			this.analysisPanel = undefined;
+		});
+	}
+
+	private async handleAnalyseRepository(workspacePath?: string): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
+
+		try {
+			this.log(`🏗️ Running repository hygiene analysis${workspacePath ? ` for ${workspacePath}` : ''}`);
+			const results = await this.runRepoHygieneAnalysis(workspacePath);
+			this.analysisPanel.webview.postMessage({
+				command: 'repoAnalysisResults',
+				data: results,
+				workspacePath
+			});
+			this.log(`✅ Repository hygiene analysis complete${workspacePath ? ` for ${workspacePath}` : ''}`);
+		} catch (error) {
+			this.error(`Repository analysis failed: ${error}`);
+			this.analysisPanel.webview.postMessage({
+				command: 'repoAnalysisError',
+				error: error instanceof Error ? error.message : String(error),
+				workspacePath
+			});
+		}
+	}
+
+	private async handleAnalyseAllRepositories(): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
+
+		// Get all workspaces from the customization matrix
+		const matrix = this._lastCustomizationMatrix;
+		if (!matrix || !matrix.workspaces || matrix.workspaces.length === 0) {
+			this.warn('No workspaces available for batch analysis');
+			this.analysisPanel.webview.postMessage({
+				command: 'repoAnalysisBatchComplete'
+			});
+			return;
+		}
+
+		// Filter out unresolved workspaces (those with paths starting with '<unresolved:')
+		const workspaces = matrix.workspaces.filter(ws => !ws.workspacePath.startsWith('<unresolved:'));
+		
+		this.log(`🏗️ Starting batch repository analysis for ${workspaces.length} workspace(s)`);
+
+		// Run analyses in parallel with a concurrency limit
+		const CONCURRENCY_LIMIT = 3; // Analyze up to 3 repos at a time
+		const analyzeWorkspace = async (workspace: WorkspaceCustomizationRow) => {
+			try {
+				await this.handleAnalyseRepository(workspace.workspacePath);
+			} catch (error) {
+				this.warn(`Failed to analyze workspace ${workspace.workspacePath}: ${error}`);
+			}
+		};
+
+		// Process workspaces in batches
+		for (let i = 0; i < workspaces.length; i += CONCURRENCY_LIMIT) {
+			const batch = workspaces.slice(i, i + CONCURRENCY_LIMIT);
+			await Promise.all(batch.map(analyzeWorkspace));
+		}
+
+		this.log(`✅ Batch repository analysis complete for ${workspaces.length} workspace(s)`);
+		
+		// Notify the webview that all analyses are complete
+		this.analysisPanel.webview.postMessage({
+			command: 'repoAnalysisBatchComplete'
+		});
+	}
+
+	private async runRepoHygieneAnalysis(workspacePath?: string): Promise<any> {
+		// Determine which workspace to analyze
+		let workspaceRoot: string;
+		
+		if (workspacePath) {
+			// Use the provided workspace path
+			workspaceRoot = workspacePath;
+		} else {
+			// Fall back to the first open workspace folder
+			const firstFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!firstFolder) {
+				throw new Error('No workspace folder open');
+			}
+			workspaceRoot = firstFolder;
+		}
+
+		// Get repository info
+		let branchName = 'unknown';
+		let repoName = path.basename(workspaceRoot);
+		try {
+			const branch = childProcess.execSync('git rev-parse --abbrev-ref HEAD', {
+				cwd: workspaceRoot,
+				encoding: 'utf8',
+				timeout: 5000,
+				stdio: ['pipe', 'pipe', 'pipe']
+			}).trim();
+			branchName = branch;
+
+			try {
+				const remote = childProcess.execSync('git remote get-url origin', {
+					cwd: workspaceRoot,
+					encoding: 'utf8',
+					timeout: 5000,
+					stdio: ['pipe', 'pipe', 'pipe']
+				}).trim();
+				const match = remote.match(/[:/]([^/]+\/[^/]+?)(\.git)?$/);
+				if (match) {
+					repoName = match[1];
+				}
+			} catch {
+				// Ignore remote fetch errors
+			}
+		} catch {
+			// Ignore git errors
+		}
+
+		// Get workspace file tree for context
+		const fileTree = await this.getWorkspaceFileTree(workspaceRoot);
+
+		// Prepare the prompt for Copilot
+		const prompt = `You are a repository analyzer. Analyze this repository for hygiene and best practices.
+
+Use these skill instructions:
+
+${REPO_HYGIENE_SKILL}
+
+Repository: ${repoName}
+Branch: ${branchName}
+Workspace root: ${workspaceRoot}
+
+File tree (showing configuration files):
+${fileTree}
+
+Perform the 17 hygiene checks as specified in the skill instructions. Return ONLY a valid JSON object matching this exact schema:
+
+{
+  "summary": {
+    "totalScore": <number>,
+    "maxScore": 76,
+    "percentage": <number>,
+    "passedChecks": <number>,
+    "failedChecks": <number>,
+    "warningChecks": <number>,
+    "totalChecks": 17,
+    "categories": {
+      "versionControl": { "score": <number>, "maxScore": 13, "percentage": <number> },
+      "codeQuality": { "score": <number>, "maxScore": 17, "percentage": <number> },
+      "cicd": { "score": <number>, "maxScore": 10, "percentage": <number> },
+      "environment": { "score": <number>, "maxScore": 9, "percentage": <number> },
+      "documentation": { "score": <number>, "maxScore": 5, "percentage": <number> }
+    }
+  },
+  "checks": [
+    {
+      "id": "<string>",
+      "category": "<versionControl|codeQuality|cicd|environment|documentation>",
+      "label": "<string>",
+      "status": "<pass|fail|warning>",
+      "weight": <number>,
+      "found": <boolean>,
+      "detail": "<string>",
+      "hint": "<string or null>"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "<high|medium|low>",
+      "category": "<string>",
+      "action": "<string>",
+      "weight": <number>,
+      "impact": "<string>"
+    }
+  ],
+  "metadata": {
+    "scanVersion": "1.0.0",
+    "timestamp": "${new Date().toISOString()}",
+    "repository": "${repoName}",
+    "branch": "${branchName}",
+    "skillName": "repo-hygiene"
+  }
+}
+
+Return ONLY the JSON object, no markdown formatting, no explanations.`;
+
+		try {
+			// Use VS Code Language Model API to invoke Copilot
+			const models = await vscode.lm.selectChatModels({
+				vendor: 'copilot',
+				family: 'gpt-4o'
+			});
+
+			if (models.length === 0) {
+				throw new Error('No Copilot models available. Please ensure GitHub Copilot is installed and activated.');
+			}
+
+			const model = models[0];
+			this.log(`🤖 Using Copilot model: ${model.id} for repository analysis`);
+
+			const messages = [
+				vscode.LanguageModelChatMessage.User(prompt)
+			];
+
+			const cts = new vscode.CancellationTokenSource();
+			try {
+				const response = await model.sendRequest(messages, {}, cts.token);
+
+				let fullResponse = '';
+				for await (const chunk of response.text) {
+					fullResponse += chunk;
+				}
+
+				this.log(`📋 Copilot analysis response length: ${fullResponse.length} characters`);
+
+				// Extract JSON from response (in case it's wrapped in markdown code blocks)
+				let jsonText = fullResponse.trim();
+				const jsonMatch = jsonText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+				if (jsonMatch) {
+					jsonText = jsonMatch[1].trim();
+				}
+
+				// Parse the JSON response
+				const results = JSON.parse(jsonText);
+
+				// Validate the structure
+				if (!results.summary || !results.checks || !results.metadata) {
+					throw new Error('Invalid response structure from Copilot');
+				}
+
+				return results;
+			} finally {
+				cts.dispose();
+			}
+		} catch (error) {
+			this.error(`Failed to get analysis from Copilot: ${error}`);
+			throw new Error(`AI analysis failed: ${error instanceof Error ? error.message : String(error)}. Please try again or check that GitHub Copilot is properly configured.`);
+		}
+	}
+
+	private async getWorkspaceFileTree(workspaceRoot: string): Promise<string> {
+		// Get a filtered file tree showing only configuration files
+		const configPatterns = [
+			'.git', '.gitignore', '.env.example', '.env.sample', '.editorconfig',
+			'.eslintrc', 'eslint.config', '.prettierrc', 'prettier.config',
+			'tsconfig.json', 'jsconfig.json', 'package.json', 'Makefile',
+			'Dockerfile', 'docker-compose', '.github/workflows', '.devcontainer',
+			'LICENSE', '.nvmrc', '.node-version'
+		];
+
+		try {
+			const files: string[] = [];
+			const maxDepth = 3;
+
+			const scanDir = (dir: string, depth: number = 0) => {
+				if (depth > maxDepth) {
+					return;
+				}
+
+				try {
+					const entries = fs.readdirSync(dir, { withFileTypes: true });
+					for (const entry of entries) {
+						const fullPath = path.join(dir, entry.name);
+						const relativePath = path.relative(workspaceRoot, fullPath);
+
+						// Skip node_modules and other large directories
+						if (entry.name === 'node_modules' || entry.name === '.git' || 
+						    entry.name === 'dist' || entry.name === 'build' || entry.name === 'out') {
+							continue;
+						}
+
+						// Check if this file matches any config pattern
+						const isConfig = configPatterns.some(pattern => relativePath.includes(pattern));
+
+						if (isConfig) {
+							files.push(relativePath);
+						}
+
+						if (entry.isDirectory() && depth < maxDepth) {
+							scanDir(fullPath, depth + 1);
+						}
+					}
+				} catch (error) {
+					// Ignore permission errors
+				}
+			};
+
+			scanDir(workspaceRoot);
+
+			return files.length > 0 ? files.join('\n') : '(No configuration files detected)';
+		} catch (error) {
+			return '(Unable to scan workspace)';
+		}
+	}
+
+	public async showLogViewer(sessionFilePath: string): Promise<void> {
+		// Close existing log viewer panel if open
+		if (this.logViewerPanel) {
+			this.logViewerPanel.dispose();
+			this.logViewerPanel = undefined;
+		}
+
+		// Get session log data with chat turns
+		const logData = await this.getSessionLogData(sessionFilePath);
+
+		// Create webview panel
+		this.logViewerPanel = vscode.window.createWebviewPanel(
+			'copilotLogViewer',
+			`Session: ${logData.title || path.basename(sessionFilePath)}`,
+			{
+				viewColumn: vscode.ViewColumn.One,
+				preserveFocus: false
+			},
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		// Set the HTML content
+		this.logViewerPanel.webview.html = this.getLogViewerHtml(this.logViewerPanel.webview, logData);
+
+		// Handle messages from the webview
+		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			switch (message.command) {
+					case 'openRawFile':
+						await this.dispatch('openRawFile:logviewer', async () => {
+							try {
+								if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
+									// VS session files are binary MessagePack — show decoded JSON instead
+									const objects = this.visualStudio.decodeSessionFile(sessionFilePath);
+									const readable = objects.map((obj: any, i: number) => i === 0 ? obj : obj?.[1] ?? obj);
+									const jsonText = JSON.stringify(readable, null, 2);
+									const doc = await vscode.workspace.openTextDocument({ content: jsonText, language: 'json' });
+									await vscode.window.showTextDocument(doc);
+								} else {
+									await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
+								}
+							} catch (err) {
+								vscode.window.showErrorMessage('Could not open raw file: ' + sessionFilePath);
+							}
+						});
+					break;
+				case 'showToolCallPretty': {
+					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
+					this.log(`showToolCallPretty: turn=${turnNumber}, toolCallIdx=${toolCallIdx}, file=${sessionFilePath}`);
+					try {
+						const turn = logData.turns.find(t => t.turnNumber === turnNumber);
+						const turnIndex = logData.turns.findIndex(t => t.turnNumber === turnNumber);
+						const toolCall = turn?.toolCalls?.[toolCallIdx];
+						if (!toolCall) {
+							this.log('showToolCallPretty: tool call not found in session data');
+							vscode.window.showInformationMessage('Tool call not found in session data.');
+							break;
+						}
+
+						const safeParse = (text?: string) => {
+							if (!text) { return text; }
+							try { return JSON.parse(text); } catch { return text; }
+						};
+
+						const mapTurnForContext = (t?: ChatTurn) => t ? {
+							turnNumber: t.turnNumber,
+							timestamp: t.timestamp,
+							mode: t.mode,
+							model: t.model,
+							userMessage: t.userMessage,
+							assistantResponse: t.assistantResponse,
+							inputTokensEstimate: t.inputTokensEstimate,
+							outputTokensEstimate: t.outputTokensEstimate,
+							toolCalls: t.toolCalls?.map((tc, idx) => ({ index: idx, toolName: tc.toolName, arguments: tc.arguments, result: tc.result }))
+						} : undefined;
+
+						const mapToolCallForContext = (tc: { toolName: string; arguments?: string; result?: string }, idx: number, parentTurn?: ChatTurn) => ({
+							turn: parentTurn?.turnNumber ?? turnNumber,
+							toolCallIdx: idx,
+							toolName: tc.toolName,
+							model: parentTurn?.model,
+							mode: parentTurn?.mode,
+							timestamp: parentTurn?.timestamp,
+							userMessage: parentTurn?.userMessage,
+							assistantResponse: parentTurn?.assistantResponse,
+							inputTokensEstimate: parentTurn?.inputTokensEstimate,
+							outputTokensEstimate: parentTurn?.outputTokensEstimate,
+							argumentsRaw: tc.arguments ?? null,
+							argumentsParsed: safeParse(tc.arguments),
+							resultRaw: tc.result ?? null,
+							resultParsed: safeParse(tc.result)
+						});
+
+						const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 60) || 'toolcall';
+						const prettyName = sanitize(`${toolCall.toolName || 'tool'}-turn-${turnNumber}-call-${toolCallIdx}`);
+
+						const prettyPayload = {
+							turnBefore: turnIndex > 0 ? mapTurnForContext(logData.turns[turnIndex - 1]) : undefined,
+							toolCall: mapToolCallForContext(toolCall, toolCallIdx, turn),
+							turnAfter: turnIndex >= 0 && turnIndex < logData.turns.length - 1 ? mapTurnForContext(logData.turns[turnIndex + 1]) : undefined
+						};
+
+						const prettyUri = vscode.Uri.parse(`untitled:${prettyName}.json`);
+						const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === prettyUri.toString());
+						if (openDoc) {
+							await vscode.window.showTextDocument(openDoc, { preview: true });
+							break;
+						}
+
+						const doc = await vscode.workspace.openTextDocument(prettyUri);
+						const editor = await vscode.window.showTextDocument(doc, { preview: true });
+						const jsonText = JSON.stringify(prettyPayload, null, 2);
+						await editor.edit((editBuilder) => {
+							editBuilder.insert(new vscode.Position(0, 0), jsonText);
+						});
+						await vscode.languages.setTextDocumentLanguage(doc, 'json');
+					} catch (err) {
+						this.error('showToolCallPretty: error', err);
+						vscode.window.showErrorMessage('Could not open formatted tool call.');
+					}
+					break;
+				}
+				case 'revealToolCallSource': {
+					const { turnNumber, toolCallIdx } = message as { turnNumber: number; toolCallIdx: number };
+					this.log(`revealToolCallSource: turn=${turnNumber}, toolCallIdx=${toolCallIdx}, file=${sessionFilePath}`);
+					try {
+						const turn = logData.turns.find(t => t.turnNumber === turnNumber);
+						const toolCall = turn?.toolCalls?.[toolCallIdx];
+						if (!toolCall) {
+							this.log('revealToolCallSource: tool call not found in session data');
+							vscode.window.showInformationMessage('Tool call not found in session data.');
+							break;
+						}
+
+						const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+						const searchTerm = toolCall.toolName || '';
+						const matchIdx = searchTerm ? fileContent.indexOf(searchTerm) : -1;
+						this.log(`revealToolCallSource: searchTerm='${searchTerm}', matchIdx=${matchIdx}`);
+
+						const doc = await vscode.workspace.openTextDocument(sessionFilePath);
+						const editor = await vscode.window.showTextDocument(doc);
+
+						if (matchIdx >= 0) {
+							const pos = doc.positionAt(matchIdx);
+							editor.selection = new vscode.Selection(pos, pos);
+							editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+						} else {
+							vscode.window.showInformationMessage('Opened session file, but could not locate this tool call text.');
+						}
+					} catch (err) {
+						this.error('revealToolCallSource: error', err);
+						vscode.window.showErrorMessage('Could not reveal tool call in file.');
+					}
+					break;
+				}
+			}
+		});
+
+		// Handle panel disposal
+		this.logViewerPanel.onDidDispose(() => {
+			this.logViewerPanel = undefined;
+		});
+	}
+
+	/**
+	 * Opens a JSONL file in a formatted view with array brackets and commas.
+	 * Does not modify the original file.
+	 */
+	public async showFormattedJsonlFile(sessionFilePath: string): Promise<void> {
+		try {
+			// Read the file content
+			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf-8');
+
+			// Check if this is a UUID-only file (new Copilot CLI format)
+			if (this.isUuidPointerFile(fileContent)) {
+				vscode.window.showInformationMessage(
+					`This file contains only a session ID (${fileContent.trim()}). The actual session data is stored elsewhere in the Copilot CLI format.`
+				);
+				return;
+			}
+
+			// Parse JSONL into array of objects
+			const lines = fileContent.trim().split('\n').filter(line => line.trim().length > 0);
+			const jsonObjects: unknown[] = [];
+
+			for (let i = 0; i < lines.length; i++) {
+				try {
+					const obj = JSON.parse(lines[i]);
+					jsonObjects.push(obj);
+				} catch (e) {
+					// Skip malformed lines with detailed warning
+					this.warn(`Skipping malformed line ${i + 1} in ${sessionFilePath}: ${e}`);
+				}
+			}
+
+			// Format as JSON array
+			const formattedJson = JSON.stringify(jsonObjects, null, 2);
+
+			// Create an untitled document with the formatted content
+			const fileName = path.basename(sessionFilePath, path.extname(sessionFilePath));
+			const prettyUri = vscode.Uri.parse(`untitled:${fileName}-formatted.json`);
+
+			// Check if this document is already open and close it to refresh
+			const openDoc = vscode.workspace.textDocuments.find(d => d.uri.toString() === prettyUri.toString());
+			if (openDoc) {
+				// Close the existing document so we can create a fresh one with updated content
+				const editor = vscode.window.visibleTextEditors.find(e => e.document === openDoc);
+				if (editor) {
+					await vscode.window.showTextDocument(openDoc, editor.viewColumn);
+					await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+				}
+			}
+
+			// Create and open the document
+			const doc = await vscode.workspace.openTextDocument(prettyUri);
+			const editor = await vscode.window.showTextDocument(doc, { preview: true });
+
+			// Insert the formatted JSON
+			await editor.edit((editBuilder) => {
+				editBuilder.insert(new vscode.Position(0, 0), formattedJson);
+			});
+
+			// Set language mode to JSON for syntax highlighting
+			await vscode.languages.setTextDocumentLanguage(doc, 'json');
+
+		} catch (error) {
+			this.error(`Error formatting JSONL file ${sessionFilePath}:`, error);
+			throw error;
+		}
+	}
+
+	private getLogViewerHtml(webview: vscode.Webview, logData: SessionLogData): string {
+		const nonce = this.getNonce();
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'logviewer.js'));
+
+		const csp = [
+			`default-src 'none'`,
+			`img-src ${webview.cspSource} https: data:`,
+			`style-src 'unsafe-inline' ${webview.cspSource}`,
+			`font-src ${webview.cspSource} https: data:`,
+			`script-src 'nonce-${nonce}'`
+		].join('; ');
+
+		const initialData = JSON.stringify({ ...logData, compactNumbers: this.getCompactNumbersSetting() }).replace(/</g, '\\u003c');
+
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Session Log Viewer</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_LOGDATA__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+	}
+
+	private async refreshDetailsPanel(): Promise<void> {
+		if (!this.detailsPanel) {
+			return;
+		}
+
+		this.log('🔄 Refreshing Details panel');
+		// Update token stats and refresh the webview content
+		const stats = await this.updateTokenStats();
+		if (stats) {
+			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+			this.log('✅ Details panel refreshed');
+		}
+	}
+
+	private async refreshChartPanel(): Promise<void> {
+		if (!this.chartPanel) {
+			return;
+		}
+
+		this.log('🔄 Refreshing Chart view');
+		// Refresh all stats so the status bar and tooltip stay in sync
+		await this.updateTokenStats();
+		this.log('✅ Chart view refreshed');
+	}
+
+	private async refreshAnalysisPanel(): Promise<void> {
+		if (!this.analysisPanel) {
+			return;
+		}
+
+		this.log('🔄 Refreshing Usage Analysis dashboard');
+		// Force fresh usage analysis stats and re-render the webview
+		const analysisStats = await this.calculateUsageAnalysisStats(false);
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+		// Refresh token stats so the status bar and tooltip stay in sync
+		await this.updateTokenStats();
+		this.log('✅ Usage Analysis dashboard refreshed');
+	}
+
+	// ── Maturity / Fluency Score ───────────────────────────────────────
+
+	/**
+	 * Calculate maturity scores across 6 categories using last 30 days of usage data.
+	 * Each category is scored 1-4 based on threshold rules.
+	 * Overall stage = median of the 6 category scores.
+	 * @param useCache If true, use cached usage stats. If false, force recalculation.
+	 */
+	private async calculateMaturityScores(useCache = true): Promise<{
+		overallStage: number;
+		overallLabel: string;
+		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
+		period: UsageAnalysisPeriod;
+		lastUpdated: string;
+	}> {
+		return _calculateMaturityScores(this._lastCustomizationMatrix, (useCache) => this.calculateUsageAnalysisStats(useCache), useCache);
+	}
+
+	public async showMaturity(): Promise<void> {
+		this.log('🎯 Opening Copilot Fluency Score dashboard');
+		await this.context.globalState.update('fluencyScore.everOpened', true);
+
+		// If panel already exists, dispose and recreate with fresh data
+		if (this.maturityPanel) {
+			this.maturityPanel.dispose();
+			this.maturityPanel = undefined;
+		}
+
+		const maturityData = await this.calculateMaturityScores(true); // Use cached data for fast loading
+		const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+
+		this.maturityPanel = vscode.window.createWebviewPanel(
+			'copilotMaturity',
+			'AI Engineering Fluency Score',
+			{ viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+			{
+				enableScripts: true,
+				retainContextWhenHidden: false,
+				localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
+			}
+		);
+
+		const dismissedTips = await this.getDismissedFluencyTips();
+		const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
+
+		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
+			if (await this.dispatchSharedCommand(message.command)) { return; }
+			switch (message.command) {
+				case 'refresh':
+					await this.dispatch('refresh:maturity', () => this.refreshMaturityPanel());
+					break;
+				case 'searchMcpExtensions':
+					await this.dispatch('searchMcpExtensions', () =>
+						vscode.commands.executeCommand('workbench.extensions.search', '@tag:mcp')
+					);
+					break;
+				case 'shareToIssue': {
+					await this.dispatch('shareToIssue', async () => {
+						const scores = await this.calculateMaturityScores();
+						const categorySections = scores.categories.map(c => {
+							const evidenceList = c.evidence.length > 0
+								? c.evidence.map(e => `- ✅ ${e}`).join('\n')
+								: '- No significant activity detected';
+							return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
+						}).join('\n\n');
+						const body = `<h2>AI Engineering Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
+						const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
+						await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+					});
+					break;
+				}
+				case 'dismissTips':
+					if (message.category) {
+						await this.dispatch('dismissTips', async () => {
+							await this.dismissFluencyTips(message.category);
+							await this.refreshMaturityPanel();
+						});
+					}
+					break;
+				case 'resetDismissedTips':
+					await this.dispatch('resetDismissedTips', async () => {
+						await this.resetDismissedFluencyTips();
+						await this.refreshMaturityPanel();
+					});
+					break;
+				case 'shareToLinkedIn':
+					await this.dispatch('shareToLinkedIn', () => this.shareToSocialMedia('linkedin'));
+					break;
+				case 'shareToBluesky':
+					await this.dispatch('shareToBluesky', () => this.shareToSocialMedia('bluesky'));
+					break;
+				case 'shareToMastodon':
+					await this.dispatch('shareToMastodon', () => this.shareToSocialMedia('mastodon'));
+					break;
+				case 'downloadChartImage':
+					await this.dispatch('downloadChartImage', () => this.downloadChartImage());
+					break;
+				case 'saveChartImage':
+					if (message.data) {
+						await this.dispatch('saveChartImage', () => this.saveChartImageData(message.data));
+					}
+					break;
+				case 'exportPdf':
+					if (message.data) {
+						await this.dispatch('exportPdf', () => this.exportFluencyScorePdf(message.data));
+					}
+					break;
+				case 'exportPptx':
+					if (message.data) {
+						await this.dispatch('exportPptx', () => this.exportFluencyScorePptx(message.data));
+					}
+					break;
+			}
+		});
+
+	this.maturityPanel.onDidDispose(() => {
+		this.log('🎯 Copilot Fluency Score dashboard closed');
+		this.maturityPanel = undefined;
+	});
+}
+
+private async refreshMaturityPanel(): Promise<void> {
+	if (!this.maturityPanel) {
+		return;
+	}
+
+	this.log('🔄 Refreshing Copilot Fluency Score dashboard');
+	const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
+	const dismissedTips = await this.getDismissedFluencyTips();
+	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
+	const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
+	this.log('✅ Copilot Fluency Score dashboard refreshed');
+}
+
+private async getDismissedFluencyTips(): Promise<string[]> {
+	return this.context.globalState.get<string[]>('dismissedFluencyTips', []);
+}
+
+private async dismissFluencyTips(category: string): Promise<void> {
+	const dismissed = await this.getDismissedFluencyTips();
+	if (!dismissed.includes(category)) {
+		dismissed.push(category);
+		await this.context.globalState.update('dismissedFluencyTips', dismissed);
+		this.log(`Dismissed fluency tips for category: ${category}`);
+	}
+}
+
+private async resetDismissedFluencyTips(): Promise<void> {
+	await this.context.globalState.update('dismissedFluencyTips', []);
+	this.log('Reset all dismissed fluency tips');
+}
+
+/**
+ * Share Copilot Fluency Score to social media platforms
+ */
+private async shareToSocialMedia(platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
+	const scores = await this.calculateMaturityScores();
+	const marketplaceUrl = 'https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker';
+	const hashtag = '#CopilotFluencyScore';
+	
+	// Build share text with stats
+	const categoryScores = scores.categories.map(c => `${c.icon} ${c.category}: Stage ${c.stage}`).join('\n');
+	
+	const shareText = `🎯 My AI Engineering Fluency Score
+
+Overall: ${scores.overallLabel}
+
+${categoryScores}
+
+Track your Copilot usage and level up your AI-assisted development skills!
+
+Get the extension: ${marketplaceUrl}
+
+${hashtag}`;
+
+    switch (platform) {
+      case "linkedin": {
+        // LinkedIn share URL - opens in browser for user to add their own commentary
+        const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(marketplaceUrl)}`;
+
+        // Copy share text to clipboard for easy pasting
+        await vscode.env.clipboard.writeText(shareText);
+        await vscode.window
+          .showInformationMessage(
+            "Share text copied to clipboard! Paste it into your LinkedIn post.",
+            "Open LinkedIn",
+          )
+          .then(async (selection) => {
+            if (selection === "Open LinkedIn") {
+              await vscode.env.openExternal(vscode.Uri.parse(shareUrl));
+            }
+          });
+        break;
+      }
+
+      case "bluesky": {
+        // Copy share text to clipboard, then open Bluesky compose
+        await vscode.env.clipboard.writeText(shareText);
+        await vscode.window
+          .showInformationMessage(
+            "Share text copied to clipboard! Paste it into your Bluesky post.",
+            "Open Bluesky",
+          )
+          .then(async (selection) => {
+            if (selection === "Open Bluesky") {
+              await vscode.env.openExternal(
+                vscode.Uri.parse("https://bsky.app/intent/compose"),
+              );
+            }
+          });
+        break;
+      }
+
+      case "mastodon": {
+        // Mastodon share - ask user for their instance
+        const instance = await vscode.window.showInputBox({
+          prompt: "Enter your Mastodon instance (e.g., mastodon.social)",
+          placeHolder: "mastodon.social",
+          value: "mastodon.social",
+        });
+
+        if (instance) {
+          // Copy share text to clipboard, then open Mastodon compose
+          await vscode.env.clipboard.writeText(shareText);
+          await vscode.window
+            .showInformationMessage(
+              "Share text copied to clipboard! Paste it into your Mastodon post.",
+              "Open Mastodon",
+            )
+            .then(async (selection) => {
+              if (selection === "Open Mastodon") {
+                await vscode.env.openExternal(
+                  vscode.Uri.parse(`https://${instance}/share`),
+                );
+              }
+            });
+        }
+        break;
+      }
+    }
+
+    this.log(`Shared fluency score to ${platform}`);
+  }
+
+  /**
+   * Download the fluency chart as an image
+   */
+  private async downloadChartImage(): Promise<void> {
+    await vscode.window.showInformationMessage(
+      '💡 Click the "Download Chart Image" button to save the radar chart as a PNG file.',
+      "Got it",
+    );
+    this.log("Showed chart download instructions");
+  }
+
+  private async saveChartImageData(dataUrl: string): Promise<void> {
+    const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+    if (!base64Match) {
+      void vscode.window.showErrorMessage(
+        "Failed to process chart image data.",
+      );
+      return;
+    }
+
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file("copilot-fluency-score.png"),
+      filters: { "PNG Image": ["png"] },
+      title: "Save Fluency Score Chart",
+    });
+
+    if (!uri) {
+      return;
+    }
+
+    const buffer = Buffer.from(base64Match[1], "base64");
+    await vscode.workspace.fs.writeFile(uri, buffer);
+    void vscode.window
+      .showInformationMessage(
+        `Chart image saved to ${uri.fsPath}`,
+        "Open Image",
+      )
+      .then((selection) => {
+        if (selection === "Open Image") {
+          void vscode.env.openExternal(uri);
+        }
+      });
+    this.log(`Chart image saved to ${uri.fsPath}`);
+  }
+
+  /**
+   * Export Copilot Fluency Score as a landscape PDF with screenshot images
+   */
+  private async exportFluencyScorePdf(
+    images: { label: string; dataUrl: string }[],
+  ): Promise<void> {
+    try {
+      const jsPDF = (await import("jspdf")).default;
+
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file("copilot-fluency-score.pdf"),
+        filters: { "PDF Document": ["pdf"] },
+        title: "Export Fluency Score Report",
+      });
+
+      if (!uri) {
+        return;
+      }
+
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth(); // ~297mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // ~210mm
+      const margin = 10;
+
+      for (let i = 0; i < images.length; i++) {
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Page header
+        pdf.setFontSize(8);
+        pdf.setTextColor(128, 128, 128);
+        pdf.text(
+          `AI Engineering Fluency Score Report - Page ${i + 1} of ${images.length}`,
+          margin,
+          7,
+        );
+        pdf.text(new Date().toLocaleDateString(), pageWidth - margin, 7, {
+          align: "right",
+        });
+
+        // Insert the screenshot image, fitting within the page
+        const imgData = images[i].dataUrl;
+        const availW = pageWidth - 2 * margin;
+        const availH = pageHeight - 2 * margin - 5; // extra space for header/footer
+
+        // Determine image aspect ratio from the base64 PNG header
+        const imgProps = pdf.getImageProperties(imgData);
+        const imgW = imgProps.width;
+        const imgH = imgProps.height;
+        const scale = Math.min(availW / imgW, availH / imgH);
+        const drawW = imgW * scale;
+        const drawH = imgH * scale;
+        const x = margin + (availW - drawW) / 2;
+        const y = margin + 5 + (availH - drawH) / 2;
+
+        pdf.addImage(imgData, "PNG", x, y, drawW, drawH);
+
+        // Footer
+        pdf.setFontSize(8);
+        pdf.setTextColor(128, 128, 128);
+        pdf.text(
+          "Generated by AI Engineering Fluency Extension",
+          pageWidth / 2,
+          pageHeight - 5,
+          { align: "center" },
+        );
+      }
+
+      const pdfBuffer = Buffer.from(pdf.output("arraybuffer"));
+      await vscode.workspace.fs.writeFile(uri, pdfBuffer);
+
+      void vscode.window
+        .showInformationMessage(
+          `Fluency Score PDF saved to ${uri.fsPath}`,
+          "Open PDF",
+        )
+        .then((selection) => {
+          if (selection === "Open PDF") {
+            void vscode.env.openExternal(uri);
+          }
+        });
+
+      this.log(`Fluency Score PDF exported to ${uri.fsPath}`);
+    } catch (error) {
+      this.error(
+        "Failed to export PDF",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      void vscode.window.showErrorMessage(
+        `Failed to export PDF: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Export Copilot Fluency Score as a PowerPoint presentation with screenshot images
+   */
+  private async exportFluencyScorePptx(
+    images: { label: string; dataUrl: string }[],
+  ): Promise<void> {
+    try {
+      const PptxGenJSModule = await import("pptxgenjs");
+      const PptxGenJS = PptxGenJSModule.default as any;
+
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file("copilot-fluency-score.pptx"),
+        filters: { "PowerPoint Presentation": ["pptx"] },
+        title: "Export Fluency Score as PowerPoint",
+      });
+
+      if (!uri) {
+        return;
+      }
+
+      const pptx = new PptxGenJS();
+      pptx.layout = "LAYOUT_WIDE"; // 13.33" x 7.5" — great for presentations
+      pptx.author = "AI Engineering Fluency";
+      pptx.subject = "AI Engineering Fluency Score Report";
+      pptx.title = "AI Engineering Fluency Score";
+
+      const slideW = 13.33;
+      const slideH = 7.5;
+      const maxW = slideW - 0.8; // 0.4" margin each side
+      const maxH = slideH - 1.0; // room for footer
+
+      for (const img of images) {
+        const slide = pptx.addSlide();
+        slide.background = { color: "1b1b1e" };
+
+        // Decode PNG dimensions from the base64 data to preserve aspect ratio
+        let imgW = maxW;
+        let imgH = maxH;
+        try {
+          const base64 = img.dataUrl.split(",")[1];
+          const buf = Buffer.from(base64, "base64");
+          // PNG header: width at bytes 16-19, height at bytes 20-23 (big-endian)
+          if (
+            buf.length > 24 &&
+            buf[1] === 0x50 &&
+            buf[2] === 0x4e &&
+            buf[3] === 0x47
+          ) {
+            const pxW = buf.readUInt32BE(16);
+            const pxH = buf.readUInt32BE(20);
+            if (pxW > 0 && pxH > 0) {
+              const aspect = pxW / pxH;
+              // Fit within maxW x maxH preserving aspect ratio
+              if (aspect > maxW / maxH) {
+                imgW = maxW;
+                imgH = maxW / aspect;
+              } else {
+                imgH = maxH;
+                imgW = maxH * aspect;
+              }
+            }
+          }
+        } catch {
+          /* fall back to max dimensions */
+        }
+
+        const x = (slideW - imgW) / 2;
+        const y = (slideH - 1.0 - imgH) / 2 + 0.1; // center in area above footer
+
+        slide.addImage({
+          data: img.dataUrl,
+          x,
+          y,
+          w: imgW,
+          h: imgH,
+        });
+
+        // Footer text
+        slide.addText("Generated by AI Engineering Fluency Extension", {
+          x: 0,
+          y: 7.0,
+          w: 13.33,
+          h: 0.4,
+          fontSize: 8,
+          color: "808080",
+          align: "center",
+        });
+      }
+
+      const pptxBuffer = (await pptx.write({
+        outputType: "nodebuffer",
+      })) as Buffer;
+      await vscode.workspace.fs.writeFile(uri, pptxBuffer);
+
+      void vscode.window
+        .showInformationMessage(
+          `Fluency Score PPTX saved to ${uri.fsPath}`,
+          "Open File",
+        )
+        .then((selection) => {
+          if (selection === "Open File") {
+            void vscode.env.openExternal(uri);
+          }
+        });
+
+      this.log(`Fluency Score PPTX exported to ${uri.fsPath}`);
+    } catch (error) {
+      this.error(
+        "Failed to export PPTX",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      void vscode.window.showErrorMessage(
+        `Failed to export PPTX: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  public async showFluencyLevelViewer(): Promise<void> {
+    const isDebugMode =
+      this.context.extensionMode === vscode.ExtensionMode.Development;
+
+    this.log("🔍 Opening Fluency Level Viewer");
+
+    // If panel already exists, dispose and recreate with fresh data
+    if (this.fluencyLevelViewerPanel) {
+      this.fluencyLevelViewerPanel.dispose();
+      this.fluencyLevelViewerPanel = undefined;
+    }
+
+    const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
+
+    this.fluencyLevelViewerPanel = vscode.window.createWebviewPanel(
+      "copilotFluencyLevelViewer",
+      "Fluency Level Viewer",
+      { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: false,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+        ],
+      },
+    );
+
+    this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
+      this.fluencyLevelViewerPanel.webview,
+      fluencyLevelData,
+    );
+
+    this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        if (await this.dispatchSharedCommand(message.command)) { return; }
+        if (message.command === "refresh") {
+          await this.dispatch('refresh:fluencyLevelViewer', () => this.refreshFluencyLevelViewerPanel());
+        }
+      },
+    );
+
+    this.fluencyLevelViewerPanel.onDidDispose(() => {
+      this.log("🔍 Fluency Level Viewer closed");
+      this.fluencyLevelViewerPanel = undefined;
+    });
+  }
+
+  private async refreshFluencyLevelViewerPanel(): Promise<void> {
+    if (!this.fluencyLevelViewerPanel) {
+      return;
+    }
+
+    const isDebugMode =
+      this.context.extensionMode === vscode.ExtensionMode.Development;
+    this.log("🔄 Refreshing Fluency Level Viewer");
+    const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
+    this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
+      this.fluencyLevelViewerPanel.webview,
+      fluencyLevelData,
+    );
+    this.log("✅ Fluency Level Viewer refreshed");
+  }
+
+  private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
+		return _getFluencyLevelData(isDebugMode);
+  }
+
+  private getFluencyLevelViewerHtml(
+    webview: vscode.Webview,
+    data: {
+      categories: Array<{
+        category: string;
+        icon: string;
+        levels: Array<{
+          stage: number;
+          label: string;
+          description: string;
+          thresholds: string[];
+          tips: string[];
+        }>;
+      }>;
+      isDebugMode: boolean;
+    },
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "dist",
+        "webview",
+        "fluency-level-viewer.js",
+      ),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const dataWithBackend = {
+      ...data,
+      backendConfigured: this.isBackendConfigured(),
+    };
+    const initialData = JSON.stringify(dataWithBackend).replace(
+      /</g,
+      "\\u003c",
+    );
+
+    return `<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta http-equiv="Content-Security-Policy" content="${csp}" />
+		<title>Fluency Level Viewer</title>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script nonce="${nonce}">window.__INITIAL_FLUENCY_LEVEL_DATA__ = ${initialData};</script>
+		<script nonce="${nonce}" src="${scriptUri}"></script>
+	</body>
+	</html>`;
+  }
+
+  private getMaturityHtml(
+    webview: vscode.Webview,
+    data: {
+      overallStage: number;
+      overallLabel: string;
+      categories: {
+        category: string;
+        icon: string;
+        stage: number;
+        evidence: string[];
+        tips: string[];
+      }[];
+      period: UsageAnalysisPeriod;
+      lastUpdated: string;
+      dismissedTips?: string[];
+      isDebugMode?: boolean;
+      fluencyLevels?: Array<{
+        category: string;
+        icon: string;
+        levels: Array<{
+          stage: number;
+          label: string;
+          description: string;
+          thresholds: string[];
+          tips: string[];
+        }>;
+      }>;
+    },
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "maturity.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const dataWithBackend = {
+      ...data,
+      backendConfigured: this.isBackendConfigured(),
+    };
+    const initialData = JSON.stringify(dataWithBackend).replace(
+      /</g,
+      "\\u003c",
+    );
+
+    return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>AI Engineering Fluency Score</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_MATURITY__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+  }
+
+  /**
+   * Opens the Team Dashboard panel showing personal and team usage comparison.
+   */
+  public async showDashboard(): Promise<void> {
+    this.log("📊 Opening Team Dashboard");
+
+    // Check if backend is configured
+    if (!this.backend) {
+      vscode.window.showWarningMessage(
+        "Team Dashboard requires backend sync to be configured. Please configure backend settings first.",
+      );
+      return;
+    }
+
+    const settings = this.backend.getSettings();
+    if (!this.backend.isConfigured(settings)) {
+      vscode.window.showWarningMessage(
+        "Team Dashboard requires backend sync to be configured. Please configure backend settings first.",
+      );
+      return;
+    }
+
+    // If panel already exists, just reveal it
+    if (this.dashboardPanel) {
+      this.dashboardPanel.reveal();
+      this.log("📊 Team Dashboard revealed (already exists)");
+      return;
+    }
+
+    // Show panel immediately with loading state
+    this.dashboardPanel = vscode.window.createWebviewPanel(
+      "copilotDashboard",
+      "Team Dashboard",
+      { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+        ],
+      },
+    );
+
+    this.dashboardPanel.webview.html = this.getDashboardHtml(
+      this.dashboardPanel.webview,
+      undefined,
+    );
+
+    this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
+      if (await this.dispatchSharedCommand(message.command)) { return; }
+      switch (message.command) {
+        case "refresh":
+          await this.dispatch('refresh:dashboard', () => this.refreshDashboardPanel());
+          break;
+        case "deleteUserDataset":
+          await this.dispatch('deleteUserDataset', () => this.handleDeleteUserDataset(message.userId, message.datasetId));
+          break;
+      }
+    });
+
+    this.dashboardPanel.onDidDispose(() => {
+      this.log("📊 Team Dashboard closed");
+      this.dashboardPanel = undefined;
+    });
+
+    // If we have cached data, show it immediately so the panel renders fast
+    if (this.lastDashboardData) {
+      this.log("📊 Sending cached dashboard data immediately");
+      this.dashboardPanel.webview.postMessage({
+        command: "dashboardData",
+        data: this.lastDashboardData,
+      });
+    }
+
+    // Load (or refresh) data asynchronously and send to webview
+    try {
+      const dashboardData = await this.getDashboardData();
+      this.lastDashboardData = dashboardData;
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardData",
+        data: dashboardData,
+      });
+    } catch (error) {
+      this.error("Failed to load dashboard data:", error);
+      // Only show error state when there's no cached data to fall back on
+      if (!this.lastDashboardData) {
+        this.dashboardPanel?.webview.postMessage({
+          command: "dashboardError",
+          message:
+            "Failed to load dashboard data. Please check backend configuration and try again.",
+        });
+      }
+    }
+  }
+
+  private async refreshDashboardPanel(): Promise<void> {
+    if (!this.dashboardPanel) {
+      return;
+    }
+
+    this.log("🔄 Refreshing Team Dashboard");
+    this.dashboardPanel.webview.postMessage({ command: "dashboardLoading" });
+    try {
+      const dashboardData = await this.getDashboardData();
+      this.lastDashboardData = dashboardData;
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardData",
+        data: dashboardData,
+      });
+      this.log("✅ Team Dashboard refreshed");
+    } catch (error) {
+      this.error("Failed to refresh dashboard:", error);
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardError",
+        message: "Failed to refresh dashboard data.",
+      });
+    }
+  }
+
+  /**
+   * Handle per-row delete from the Team Dashboard.
+   * Shows a confirmation dialog, deletes table entities, then refreshes.
+   */
+  private async handleDeleteUserDataset(
+    userId: string,
+    datasetId: string,
+  ): Promise<void> {
+    if (!this.backend || !userId || !datasetId) {
+      return;
+    }
+
+    const conf = ConfirmationMessages.deleteUserDataset(userId, datasetId);
+    const choice = await vscode.window.showWarningMessage(
+      conf.message,
+      { modal: true, detail: conf.detail },
+      conf.button,
+    );
+
+    if (choice !== conf.button) {
+      return;
+    }
+
+    this.log(`🗑️ Deleting data for user "${userId}" in dataset "${datasetId}"`);
+    this.dashboardPanel?.webview.postMessage({ command: "dashboardLoading" });
+
+    try {
+      const result = await this.backend.deleteUserDataset(userId, datasetId);
+      if (result.errors.length > 0) {
+        this.warn(
+          `Partial deletion: ${result.deletedCount} deleted, ${result.errors.length} errors`,
+        );
+        vscode.window.showWarningMessage(
+          `Deleted ${result.deletedCount} entries with ${result.errors.length} errors. Dashboard will refresh.`,
+        );
+      } else {
+        this.log(
+          `✅ Deleted ${result.deletedCount} entries for user "${userId}" in dataset "${datasetId}"`,
+        );
+        vscode.window.showInformationMessage(
+          `Deleted ${result.deletedCount} data entries for "${userId}".`,
+        );
+      }
+
+      // Refresh the dashboard with fresh data
+      await this.refreshDashboardPanel();
+    } catch (error) {
+      this.error("Failed to delete user dataset:", error);
+      this.dashboardPanel?.webview.postMessage({
+        command: "dashboardError",
+        message:
+          "Failed to delete data. Please check backend configuration and try again.",
+      });
+    }
+  }
+
+  /**
+   * Calculates a fluency stage (1-4) for a team member based on aggregated Azure Table Storage metrics.
+   * Applies the same 6-category scoring thresholds as calculateMaturityScores().
+   */
+
+  /**
+   * Fetches and aggregates data for the Team Dashboard.
+   */
+  private async getDashboardData(): Promise<any> {
+    if (!this.backend) {
+      throw new Error("Backend not configured");
+    }
+
+    const { BackendUtility } =
+      await import("./backend/services/utilityService.js");
+    const settings = this.backend.getSettings();
+
+    // Log backend settings for debugging
+    this.log(
+      `[Dashboard] Backend settings - userIdentityMode: ${settings.userIdentityMode}, configured userId: "${settings.userId}", datasetId: "${settings.datasetId}"`,
+    );
+
+    // Resolve the effective userId for the current user based on backend config
+    const currentUserId = await this.backend.resolveEffectiveUserId(settings);
+
+    if (!currentUserId) {
+      this.warn(
+        "[Dashboard] No user identity available. Ensure sharing profile includes user dimension.",
+      );
+      this.warn(
+        `[Dashboard] Settings: mode=${settings.userIdentityMode}, userId="${settings.userId}"`,
+      );
+    }
+
+    // Query backend for last 30 days
+    const now = new Date();
+    const todayKey = BackendUtility.toUtcDayKey(now);
+    const startKey = BackendUtility.addDaysUtc(todayKey, -29);
+
+    // Fetch ALL entities across all datasets using the facade's public API
+    const allEntities = await this.backend.getAllAggEntitiesForRange(
+      settings,
+      startKey,
+      todayKey,
+    );
+
+    // Log all unique userIds and datasets in the data for debugging
+    const uniqueUserIds = new Set(
+      allEntities
+        .map((e) => (e.userId ?? "").toString())
+        .filter((id) => id.trim()),
+    );
+    const uniqueDatasets = new Set(
+      allEntities
+        .map((e) => (e.datasetId ?? "").toString())
+        .filter((id) => id.trim()),
+    );
+    this.log(
+      `[Dashboard] Fetched ${allEntities.length} entities for date range ${startKey} to ${todayKey}`,
+    );
+    this.log(
+      `[Dashboard] Current user ID resolved as: ${currentUserId || "(none)"}`,
+    );
+    this.log(
+      `[Dashboard] Datasets found: [${Array.from(uniqueDatasets)
+        .map((id) => `"${id}"`)
+        .join(", ")}]`,
+    );
+    this.log(
+      `[Dashboard] UserIds in data: [${Array.from(uniqueUserIds)
+        .map((id) => `"${id}"`)
+        .join(", ")}]`,
+    );
+
+    // Aggregate personal data (all machines and workspaces for current user)
+    const personalDevices = new Set<string>();
+    const personalWorkspaces = new Set<string>();
+    const personalModelUsage: {
+      [model: string]: { inputTokens: number; outputTokens: number };
+    } = {};
+    let personalTotalTokens = 0;
+    let personalTotalInteractions = 0;
+
+    // Aggregate team data (all users across all datasets)
+    const userMap = new Map<
+      string,
+      {
+        tokens: number;
+        interactions: number;
+        cost: number;
+        datasetId: string;
+        sessions: Set<string>; // Track unique day+workspace+machine as session proxy
+        models: Set<string>; // Track unique models used
+        workspaces: Set<string>; // Track unique workspaces
+        days: Set<string>; // Track unique days active
+      }
+    >();
+
+    // Aggregate fluency data per user (schema version 4+ entities only)
+    const userFluencyMap = new Map<string, {
+      askModeCount: number; editModeCount: number; agentModeCount: number;
+      planModeCount: number; customAgentModeCount: number;
+      toolCallsTotal: number; toolCallsByTool: Record<string, number>;
+      ctxFile: number; ctxSelection: number; ctxSymbol: number;
+      ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
+      ctxVscode: number; ctxClipboard: number; ctxChanges: number;
+      ctxProblemsPanel: number; ctxOutputPanel: number;
+      ctxTerminalLastCommand: number; ctxTerminalSelection: number;
+      ctxByKind: Record<string, number>;
+      mcpTotal: number; mcpByServer: Record<string, number>;
+      mixedTierSessions: number; switchingFreqSum: number; switchingFreqCount: number;
+      standardModels: Set<string>; premiumModels: Set<string>;
+      multiFileEdits: number; filesPerEditSum: number; filesPerEditCount: number;
+      editsAgentCount: number; workspaceAgentCount: number;
+      repositories: Set<string>; repositoriesWithCustomization: Set<string>;
+      applyRateSum: number; applyRateCount: number;
+      multiTurnSessions: number; turnsPerSessionSum: number; turnsPerSessionCount: number;
+      sessionCount: number; durationMsSum: number; durationMsCount: number;
+    }>();
+
+    // Track first and last data points for reference
+    let firstDate: string | null = null;
+    let lastDate: string | null = null;
+
+    for (const entity of allEntities) {
+      const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
+      const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
+      const machineId = (entity.machineId ?? "").toString();
+      const workspaceId = (entity.workspaceId ?? "").toString();
+      const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
+      const inputTokens = Number.isFinite(Number(entity.inputTokens))
+        ? Number(entity.inputTokens)
+        : 0;
+      const outputTokens = Number.isFinite(Number(entity.outputTokens))
+        ? Number(entity.outputTokens)
+        : 0;
+      const interactions = Number.isFinite(Number(entity.interactions))
+        ? Number(entity.interactions)
+        : 0;
+      const tokens = inputTokens + outputTokens;
+      const dayKey = (entity.day ?? "").toString().replace(/^d:/, ""); // Strip d: prefix
+
+      // Track date range
+      if (dayKey) {
+        if (!firstDate || dayKey < firstDate) {
+          firstDate = dayKey;
+        }
+        if (!lastDate || dayKey > lastDate) {
+          lastDate = dayKey;
+        }
+      }
+
+      // Personal data aggregation - match against resolved userId
+      if (currentUserId && userId === currentUserId) {
+        personalTotalTokens += tokens;
+        personalTotalInteractions += interactions;
+        personalDevices.add(machineId);
+        personalWorkspaces.add(workspaceId);
+
+        if (!personalModelUsage[model]) {
+          personalModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+        }
+        personalModelUsage[model].inputTokens += inputTokens;
+        personalModelUsage[model].outputTokens += outputTokens;
+      }
+
+      // Team data aggregation - use userId|datasetId as key to track users across datasets
+      if (userId && userId.trim()) {
+        const userKey = `${userId}|${datasetId}`;
+        if (!userMap.has(userKey)) {
+          userMap.set(userKey, {
+            tokens: 0,
+            interactions: 0,
+            cost: 0,
+            datasetId,
+            sessions: new Set<string>(),
+            models: new Set<string>(),
+            workspaces: new Set<string>(),
+            days: new Set<string>(),
+          });
+        }
+        const userData = userMap.get(userKey)!;
+        userData.tokens += tokens;
+        userData.interactions += interactions;
+        // Track unique sessions as day+workspace+machine combinations
+        const sessionKey = `${dayKey}|${workspaceId}|${machineId}`;
+        userData.sessions.add(sessionKey);
+        // Track unique models, workspaces, and days
+        if (model) {
+          userData.models.add(model);
+        }
+        if (workspaceId) {
+          userData.workspaces.add(workspaceId);
+        }
+        if (dayKey) {
+          userData.days.add(dayKey);
+        }
+
+        // Fluency data accumulation (schema version 4+)
+        if ((entity.schemaVersion ?? 0) >= 4) {
+          if (!userFluencyMap.has(userKey)) {
+            userFluencyMap.set(userKey, {
+              askModeCount: 0, editModeCount: 0, agentModeCount: 0,
+              planModeCount: 0, customAgentModeCount: 0,
+              toolCallsTotal: 0, toolCallsByTool: {},
+              ctxFile: 0, ctxSelection: 0, ctxSymbol: 0,
+              ctxCodebase: 0, ctxWorkspace: 0, ctxTerminal: 0,
+              ctxVscode: 0, ctxClipboard: 0, ctxChanges: 0,
+              ctxProblemsPanel: 0, ctxOutputPanel: 0,
+              ctxTerminalLastCommand: 0, ctxTerminalSelection: 0,
+              ctxByKind: {},
+              mcpTotal: 0, mcpByServer: {},
+              mixedTierSessions: 0, switchingFreqSum: 0, switchingFreqCount: 0,
+              standardModels: new Set(), premiumModels: new Set(),
+              multiFileEdits: 0, filesPerEditSum: 0, filesPerEditCount: 0,
+              editsAgentCount: 0, workspaceAgentCount: 0,
+              repositories: new Set(), repositoriesWithCustomization: new Set(),
+              applyRateSum: 0, applyRateCount: 0,
+              multiTurnSessions: 0, turnsPerSessionSum: 0, turnsPerSessionCount: 0,
+              sessionCount: 0, durationMsSum: 0, durationMsCount: 0,
+            });
+          }
+          const fd = userFluencyMap.get(userKey)!;
+          fd.askModeCount += typeof entity.askModeCount === "number" ? entity.askModeCount : 0;
+          fd.editModeCount += typeof entity.editModeCount === "number" ? entity.editModeCount : 0;
+          fd.agentModeCount += typeof entity.agentModeCount === "number" ? entity.agentModeCount : 0;
+          fd.planModeCount += typeof entity.planModeCount === "number" ? entity.planModeCount : 0;
+          fd.customAgentModeCount += typeof entity.customAgentModeCount === "number" ? entity.customAgentModeCount : 0;
+          if (entity.toolCallsJson) {
+            try {
+              const tc = JSON.parse(entity.toolCallsJson);
+              fd.toolCallsTotal += tc.total ?? 0;
+              for (const [tool, count] of Object.entries(tc.byTool ?? {})) {
+                fd.toolCallsByTool[tool] = (fd.toolCallsByTool[tool] ?? 0) + Number(count);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.contextRefsJson) {
+            try {
+              const cr = JSON.parse(entity.contextRefsJson);
+              fd.ctxFile += cr.file ?? 0;
+              fd.ctxSelection += cr.selection ?? 0;
+              fd.ctxSymbol += cr.symbol ?? 0;
+              fd.ctxCodebase += cr.codebase ?? 0;
+              fd.ctxWorkspace += cr.workspace ?? 0;
+              fd.ctxTerminal += cr.terminal ?? 0;
+              fd.ctxVscode += cr.vscode ?? 0;
+              fd.ctxClipboard += cr.clipboard ?? 0;
+              fd.ctxChanges += cr.changes ?? 0;
+              fd.ctxProblemsPanel += cr.problemsPanel ?? 0;
+              fd.ctxOutputPanel += cr.outputPanel ?? 0;
+              fd.ctxTerminalLastCommand += cr.terminalLastCommand ?? 0;
+              fd.ctxTerminalSelection += cr.terminalSelection ?? 0;
+              for (const [kind, count] of Object.entries(cr.byKind ?? {})) {
+                fd.ctxByKind[kind] = (fd.ctxByKind[kind] ?? 0) + Number(count);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.mcpToolsJson) {
+            try {
+              const mcp = JSON.parse(entity.mcpToolsJson);
+              fd.mcpTotal += mcp.total ?? 0;
+              for (const [server, data] of Object.entries(mcp.byServer ?? {})) {
+                fd.mcpByServer[server] = (fd.mcpByServer[server] ?? 0) + Number((data as { total?: number })?.total ?? data ?? 0);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.modelSwitchingJson) {
+            try {
+              const ms = JSON.parse(entity.modelSwitchingJson);
+              fd.mixedTierSessions += ms.mixedTierSessions ?? 0;
+              if (typeof ms.switchingFrequency === "number") {
+                fd.switchingFreqSum += ms.switchingFrequency;
+                fd.switchingFreqCount++;
+              }
+              for (const m of ms.standardModels ?? []) { fd.standardModels.add(m as string); }
+              for (const m of ms.premiumModels ?? []) { fd.premiumModels.add(m as string); }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.editScopeJson) {
+            try {
+              const es = JSON.parse(entity.editScopeJson);
+              fd.multiFileEdits += es.multiFileEdits ?? 0;
+              if (typeof es.avgFilesPerSession === "number" && es.avgFilesPerSession > 0) {
+                fd.filesPerEditSum += es.avgFilesPerSession;
+                fd.filesPerEditCount++;
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.agentTypesJson) {
+            try {
+              const at = JSON.parse(entity.agentTypesJson);
+              fd.editsAgentCount += at.editsAgent ?? 0;
+              fd.workspaceAgentCount += at.workspaceAgent ?? 0;
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.repositoriesJson) {
+            try {
+              const rj = JSON.parse(entity.repositoriesJson);
+              for (const r of rj.repositories ?? []) { fd.repositories.add(r as string); }
+              for (const r of rj.repositoriesWithCustomization ?? []) { fd.repositoriesWithCustomization.add(r as string); }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (entity.applyUsageJson) {
+            try {
+              const au = JSON.parse(entity.applyUsageJson);
+              if (typeof au.applyRate === "number") {
+                fd.applyRateSum += au.applyRate;
+                fd.applyRateCount++;
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+          if (typeof entity.multiTurnSessions === "number") { fd.multiTurnSessions += entity.multiTurnSessions; }
+          if (typeof entity.avgTurnsPerSession === "number" && entity.avgTurnsPerSession > 0) {
+            fd.turnsPerSessionSum += entity.avgTurnsPerSession;
+            fd.turnsPerSessionCount++;
+          }
+          if (typeof entity.sessionCount === "number") { fd.sessionCount += entity.sessionCount; }
+          if (entity.sessionDurationJson) {
+            try {
+              const sd = JSON.parse(entity.sessionDurationJson);
+              if (typeof sd.avgDurationMs === "number" && sd.avgDurationMs > 0) {
+                fd.durationMsSum += sd.avgDurationMs;
+                fd.durationMsCount++;
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+        }
+      }
+    }
+
+    // Calculate costs
+    const personalCost = this.calculateEstimatedCost(personalModelUsage);
+
+    // For team members, use a simplified cost estimate since we don't track
+    // per-user model usage in aggregated data yet.
+    // The personal cost uses the accurate model-aware calculation.
+    for (const [userId, userData] of userMap.entries()) {
+      userData.cost = (userData.tokens / 1000000) * 0.05;
+    }
+
+    // Build team leaderboard grouped by dataset
+    const teamMembers = Array.from(userMap.entries())
+      .map(([userKey, data]) => {
+        const [userId, datasetId] = userKey.split("|");
+        const sessionCount = data.sessions.size;
+        const avgTurnsPerSession =
+          sessionCount > 0 ? Math.round(data.interactions / sessionCount) : 0;
+        const avgTokensPerTurn =
+          data.interactions > 0
+            ? Math.round(data.tokens / data.interactions)
+            : 0;
+        const fluencyData = userFluencyMap.get(userKey);
+        const fluencyScore = fluencyData ? _calculateFluencyScoreForTeamMember(fluencyData, sessionCount) : undefined;
+        return {
+          userId,
+          datasetId,
+          totalTokens: data.tokens,
+          totalInteractions: data.interactions,
+          totalCost: data.cost,
+          sessions: sessionCount,
+          avgTurnsPerSession,
+          uniqueModels: data.models.size,
+          uniqueWorkspaces: data.workspaces.size,
+          daysActive: data.days.size,
+          avgTokensPerTurn,
+          rank: 0,
+          ...(fluencyScore ? {
+            fluencyStage: fluencyScore.stage,
+            fluencyLabel: fluencyScore.label,
+            fluencyCategories: fluencyScore.categories,
+          } : {}),
+        };
+      })
+      .sort((a, b) => b.totalTokens - a.totalTokens)
+      .map((member, index) => ({
+        ...member,
+        rank: index + 1,
+      }));
+
+    const teamTotalTokens = Array.from(userMap.values()).reduce(
+      (sum, u) => sum + u.tokens,
+      0,
+    );
+    const teamTotalInteractions = Array.from(userMap.values()).reduce(
+      (sum, u) => sum + u.interactions,
+      0,
+    );
+    const averageTokensPerUser =
+      userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
+
+    this.log(
+      `[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`,
+    );
+    this.log(
+      `[Dashboard] Personal stats: ${personalTotalTokens} tokens, ${personalTotalInteractions} interactions, ${personalDevices.size} devices, ${personalWorkspaces.size} workspaces`,
+    );
+
+    // Log each user's aggregated data for debugging
+    for (const [userKey, data] of userMap.entries()) {
+      const [userId, datasetId] = userKey.split("|");
+      this.log(
+        `[Dashboard] User "${userId}" (dataset: ${datasetId}): ${data.tokens} tokens, ${data.interactions} interactions`,
+      );
+    }
+
+    // For the current user, override the fluency score with the locally-computed one.
+    // Azure Table Storage only contains recently-synced schema-v4 entities (a small window),
+    // while calculateMaturityScores() uses the full local session log history.
+    if (currentUserId) {
+      try {
+        const localMaturity = await this.calculateMaturityScores(true);
+        for (const member of teamMembers) {
+          if (member.userId === currentUserId) {
+            member.fluencyStage = localMaturity.overallStage;
+            member.fluencyLabel = localMaturity.overallLabel;
+            member.fluencyCategories = localMaturity.categories.map(c => ({
+              category: c.category,
+              icon: c.icon,
+              stage: c.stage,
+              tips: c.tips,
+            }));
+            break;
+          }
+        }
+      } catch {
+        // Non-critical: leave whatever fluency score was already computed
+      }
+    }
+
+    return {
+      personal: {
+        userId: currentUserId || "",
+        totalTokens: personalTotalTokens,
+        totalInteractions: personalTotalInteractions,
+        totalCost: personalCost,
+        devices: Array.from(personalDevices),
+        workspaces: Array.from(personalWorkspaces),
+        modelUsage: personalModelUsage,
+      },
+      team: {
+        members: teamMembers,
+        totalTokens: teamTotalTokens,
+        totalInteractions: teamTotalInteractions,
+        averageTokensPerUser,
+        firstDate,
+        lastDate,
+      },
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+  private getDashboardHtml(
+    webview: vscode.Webview,
+    data: any | undefined,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "dashboard.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const dataWithBackend = data
+      ? { ...data, backendConfigured: this.isBackendConfigured(), compactNumbers: this.getCompactNumbersSetting() }
+      : undefined;
+    const initialDataScript = dataWithBackend
+      ? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, "\\u003c")};</script>`
+      : "";
+
+    return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Team Dashboard</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			${initialDataScript}
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+  }
+
+  private getNonce(): string {
+    const possible =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let text = "";
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+  }
+
+  /**
+   * Check if backend sync is configured for Team Dashboard access.
+   */
+  private isBackendConfigured(): boolean {
+    if (!this.backend) {
+      return false;
+    }
+    const settings = this.backend.getSettings();
+    return this.backend.isConfigured(settings);
+  }
+
+  private getDetailsHtml(
+    webview: vscode.Webview,
+    stats: DetailedStats,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "details.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const sortSettings = this.context.globalState.get('details.sortSettings', {
+      editor: { key: 'name', dir: 'asc' },
+      model: { key: 'name', dir: 'asc' },
+    });
+    const dataWithBackend = {
+      ...stats,
+      backendConfigured: this.isBackendConfigured(),
+      sortSettings,
+      compactNumbers: this.getCompactNumbersSetting(),
+    };
+    const initialData = JSON.stringify(dataWithBackend).replace(
+      /</g,
+      "\\u003c",
+    );
+
+    return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>AI Engineering Fluency</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+  }
+
+  public async generateDiagnosticReport(): Promise<string> {
+    this.log("Generating diagnostic report...");
+
+    const report: string[] = [];
+
+    // Header
+    report.push("=".repeat(70));
+    report.push("AI Engineering Fluency - Diagnostic Report");
+    report.push("=".repeat(70));
+    report.push("");
+
+    // Extension Information
+    report.push("## Extension Information");
+    report.push(
+      `Extension Version: ${vscode.extensions.getExtension("RobBos.copilot-token-tracker")?.packageJSON.version || "Unknown"}`,
+    );
+    report.push(`VS Code Version: ${vscode.version}`);
+    report.push("");
+
+    // System Information
+    report.push("## System Information");
+    report.push(`OS: ${os.platform()} ${os.release()} (${os.arch()})`);
+    report.push(`Node Version: ${process.version}`);
+    report.push(`Home Directory: ${os.homedir()}`);
+    report.push(
+      `Environment: ${process.env.CODESPACES === "true" ? "GitHub Codespaces" : vscode.env.remoteName || "Local"}`,
+    );
+    report.push(`VS Code Machine ID: ${vscode.env.machineId}`);
+    report.push(`VS Code Session ID: ${vscode.env.sessionId}`);
+    report.push(
+      `VS Code UI Kind: ${vscode.env.uiKind === vscode.UIKind.Desktop ? "Desktop" : "Web"}`,
+    );
+    report.push(`Remote Name: ${vscode.env.remoteName || "N/A"}`);
+    report.push("");
+
+    // GitHub Copilot Extension Status
+    report.push("## GitHub Copilot Extension Status");
+    const copilotExtension = vscode.extensions.getExtension("GitHub.copilot");
+    const copilotChatExtension = vscode.extensions.getExtension(
+      "GitHub.copilot-chat",
+    );
+
+    if (copilotExtension) {
+      report.push(`GitHub Copilot Extension:`);
+      report.push(`  - Installed: Yes`);
+      report.push(`  - Version: ${copilotExtension.packageJSON.version}`);
+      report.push(`  - Active: ${copilotExtension.isActive ? "Yes" : "No"}`);
+
+      // Try to get Copilot tier information if available
+      try {
+        const copilotApi = copilotExtension.exports;
+        if (copilotApi && copilotApi.status) {
+          const status = copilotApi.status;
+          // Display key status fields in a readable format
+          if (typeof status === "object") {
+            Object.keys(status).forEach((key) => {
+              const value = status[key];
+              if (value !== undefined && value !== null) {
+                report.push(`  - ${key}: ${value}`);
+              }
+            });
+          } else {
+            report.push(`  - Status: ${status}`);
+          }
+        }
+      } catch (error) {
+        this.log(`Could not retrieve Copilot tier information: ${error}`);
+      }
+    } else {
+      report.push(`GitHub Copilot Extension: Not Installed`);
+    }
+
+    if (copilotChatExtension) {
+      report.push(`GitHub Copilot Chat Extension:`);
+      report.push(`  - Installed: Yes`);
+      report.push(`  - Version: ${copilotChatExtension.packageJSON.version}`);
+      report.push(
+        `  - Active: ${copilotChatExtension.isActive ? "Yes" : "No"}`,
+      );
+    } else {
+      report.push(`GitHub Copilot Chat Extension: Not Installed`);
+    }
+    report.push("");
+
+    // Session Files Discovery
+    report.push("## Session Files Discovery");
+    try {
+      const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+      report.push(`Total Session Files Found: ${sessionFiles.length}`);
+      report.push("");
+
+      if (sessionFiles.length > 0) {
+        report.push("Session File Locations (first 20):");
+
+        // Use async file stat to avoid blocking the event loop
+        const filesToShow = sessionFiles.slice(0, 20);
+        const fileStats = await Promise.all(
+          filesToShow.map(async (file) => {
+            try {
+              const stat = await fs.promises.stat(file);
+              return { file, stat, error: null };
+            } catch (error) {
+              return { file, stat: null, error };
+            }
+          }),
+        );
+
+        fileStats.forEach((result, index) => {
+          if (result.stat) {
+            report.push(`  ${index + 1}. ${result.file}`);
+            report.push(`     - Size: ${result.stat.size} bytes`);
+            report.push(`     - Modified: ${result.stat.mtime.toISOString()}`);
+          } else {
+            report.push(`  ${index + 1}. ${result.file}`);
+            report.push(`     - Error: ${result.error}`);
+          }
+        });
+
+        if (sessionFiles.length > 20) {
+          report.push(`  ... and ${sessionFiles.length - 20} more files`);
+        }
+      } else {
+        report.push("No session files found. Possible reasons:");
+        report.push("  - Copilot extensions are not active");
+        report.push("  - No Copilot Chat conversations have been initiated");
+        report.push("  - Sessions stored in unsupported location");
+        report.push("  - Authentication required with GitHub Copilot");
+      }
+      report.push("");
+    } catch (error) {
+      report.push(`Error discovering session files: ${error}`);
+      report.push("");
+    }
+
+    // Cache Statistics
+    report.push("## Cache Statistics");
+    report.push(`Cached Session Files: ${this.cacheManager.cache.size}`);
+    report.push(`Cache Storage: Extension Global State`);
+    report.push("");
+    report.push(
+      "Cache provides faster loading by storing parsed session data with file modification timestamps.",
+    );
+    report.push(
+      "Files are only re-parsed when their modification time changes.",
+    );
+    report.push("");
+
+    // Token Statistics
+    report.push("## Token Usage Statistics");
+    try {
+      // Use cached session files to avoid redundant scans during diagnostic report generation
+      // DO NOT call calculateDetailedStats here - it triggers expensive re-analysis
+      // The loadDiagnosticDataInBackground method ensures stats are calculated if needed
+      try {
+        const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+        report.push(`Total Session Files Found: ${sessionFiles.length}`);
+        report.push("");
+
+        // Group session files by their parent directory
+        const dirCounts = new Map<string, number>();
+        for (const file of sessionFiles) {
+          const parent = require("path").dirname(file);
+          dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1);
+        }
+        if (dirCounts.size > 0) {
+          report.push("Session Files by Directory:");
+          for (const [dir, count] of dirCounts.entries()) {
+            report.push(`  ${dir}: ${count}`);
+          }
+          report.push("");
+        }
+
+        if (sessionFiles.length > 0) {
+          report.push("Session File Locations (first 20):");
+          const filesToShow = sessionFiles.slice(0, 20);
+          const fileStats = await Promise.all(
+            filesToShow.map(async (file) => {
+              try {
+                const stat = await fs.promises.stat(file);
+                return { file, stat, error: null };
+              } catch (error) {
+                return { file, stat: null, error };
+              }
+            }),
+          );
+          fileStats.forEach((result, index) => {
+            if (result.stat) {
+              report.push(`  ${index + 1}. ${result.file}`);
+              report.push(`     - Size: ${result.stat.size} bytes`);
+              report.push(
+                `     - Modified: ${result.stat.mtime.toISOString()}`,
+              );
+            } else {
+              report.push(`  ${index + 1}. ${result.file}`);
+              report.push(`     - Error: ${result.error}`);
+            }
+          });
+          if (sessionFiles.length > 20) {
+            report.push(`  ... and ${sessionFiles.length - 20} more files`);
+          }
+        } else {
+          report.push("No session files found. Possible reasons:");
+          report.push("  - Copilot extensions are not active");
+          report.push("  - No Copilot Chat conversations have been initiated");
+          report.push("  - Sessions stored in unsupported location");
+          report.push("  - Authentication required with GitHub Copilot");
+        }
+        report.push("");
+      } catch (error) {
+        report.push(`Error discovering session files: ${error}`);
+        report.push("");
+      }
+    } catch (error) {
+      report.push(`Error calculating token usage statistics: ${error}`);
+      report.push("");
+    }
+
+    // Footer
+    report.push("=".repeat(70));
+    report.push(`Report Generated: ${new Date().toISOString()}`);
+    report.push("=".repeat(70));
+    report.push("");
+    report.push(
+      "This report can be shared with the extension maintainers to help",
+    );
+    report.push(
+      "troubleshoot issues. No sensitive data from your code is included.",
+    );
+    report.push("");
+    report.push("Submit issues at:");
+    report.push(`${this.getRepositoryUrl()}/issues`);
+
+    const fullReport = report.join("\n");
+    this.log("Diagnostic report generated successfully");
+    return fullReport;
+  }
+
+  public async showDiagnosticReport(): Promise<void> {
+    this.log("🔍 Opening Diagnostic Report");
+
+    // If panel already exists, just reveal it and trigger a refresh in the background
+    if (this.diagnosticsPanel) {
+      this.diagnosticsPanel.reveal();
+      this.log("🔍 Diagnostic Report revealed (already exists)");
+      // Load data in background and update the webview
+      this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+      return;
+    }
+
+    // Create the panel immediately with loading state
+    this.diagnosticsPanel = vscode.window.createWebviewPanel(
+      "copilotTokenDiagnostics",
+      "Diagnostic Report",
+      {
+        viewColumn: vscode.ViewColumn.One,
+        preserveFocus: false,
+      },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true, // Keep webview context to avoid reloading session files
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+        ],
+      },
+    );
+
+    this.log("✅ Diagnostic Report panel created");
+
+    // Set the HTML content immediately with loading state
+    // Note: "Loading..." is the agreed contract between backend and frontend
+    // The webview checks for this value to show a loading indicator
+    this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
+      this.diagnosticsPanel.webview,
+      "Loading...", // Placeholder report
+      [], // Empty session files
+      [], // Empty detailed session files
+      [], // Empty session folders
+      null, // No backend info yet
+    );
+
+    // Handle messages from the webview
+    this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+      if (await this.dispatchSharedCommand(message.command)) { return; }
+      switch (message.command) {
+        case "copyReport":
+          await this.dispatch('copyReport:diagnostics', async () => {
+            await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
+            vscode.window.showInformationMessage(
+              "Diagnostic report copied to clipboard",
+            );
+          });
+          break;
+        case "openIssue":
+          await this.dispatch('openIssue:diagnostics', async () => {
+            await vscode.env.clipboard.writeText(this.lastDiagnosticReport);
+            vscode.window.showInformationMessage(
+              "Diagnostic report copied to clipboard. Please paste it into the GitHub issue.",
+            );
+            const shortBody = encodeURIComponent(
+              "The diagnostic report has been copied to the clipboard. Please paste it below.",
+            );
+          const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
+            await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+          });
+          break;
+        case "openSessionFile":
+          if (message.file) {
+            await this.dispatch('openSessionFile:diagnostics', async () => {
+              try {
+                // Open the session file in the log viewer
+                await this.showLogViewer(message.file);
+              } catch (err) {
+                vscode.window.showErrorMessage(
+                  "Could not open log viewer: " + message.file,
+                );
+              }
+            });
+          }
+          break;
+
+        case "openFormattedJsonlFile":
+          if (message.file) {
+            await this.dispatch('openFormattedJsonlFile:diagnostics', async () => {
+              try {
+                await this.showFormattedJsonlFile(message.file);
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                vscode.window.showErrorMessage(
+                  "Could not open formatted file: " +
+                    message.file +
+                    " (" +
+                    errorMsg +
+                    ")",
+                );
+              }
+            });
+          }
+          break;
+
+        case "revealPath":
+          if (message.path) {
+            await this.dispatch('revealPath:diagnostics', async () => {
+              try {
+                const fs = require("fs");
+                const pathModule = require("path");
+                const normalized = pathModule.normalize(message.path);
+
+                // If the path exists and is a directory, open it directly in the OS file manager.
+                // Using `vscode.env.openExternal` with a file URI reliably opens the folder itself.
+                try {
+                  const stat = await fs.promises.stat(normalized);
+                  if (stat.isDirectory()) {
+                    await vscode.env.openExternal(vscode.Uri.file(normalized));
+                  } else {
+                    // For files, reveal the file in OS (select it)
+                    await vscode.commands.executeCommand(
+                      "revealFileInOS",
+                      vscode.Uri.file(normalized),
+                    );
+                  }
+                } catch (err) {
+                  // If the stat fails, fallback to revealFileInOS which may still work
+                  await vscode.commands.executeCommand(
+                    "revealFileInOS",
+                    vscode.Uri.file(normalized),
+                  );
+                }
+              } catch (err) {
+                vscode.window.showErrorMessage(
+                  "Could not reveal: " + message.path,
+                );
+              }
+            });
+          }
+          break;
+        case "clearCache":
+          await this.dispatch('clearCache:diagnostics', async () => {
+            this.log("clearCache message received from diagnostics webview");
+            await this.clearCache();
+            // After clearing cache, refresh the diagnostic report if it's open
+            if (this.diagnosticsPanel) {
+              // Send completion message to webview before refreshing
+              this.diagnosticsPanel.webview.postMessage({
+                command: "cacheCleared",
+              });
+              // Wait a moment for the message to be processed
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              // Simply refresh the diagnostic report by revealing it again
+              // This will trigger a rebuild with fresh data
+              await this.showDiagnosticReport();
+            }
+          });
+          break;
+        case "configureBackend":
+          await this.dispatch('configureBackend:diagnostics', async () => {
+            // Execute the configureBackend command if it exists
+            try {
+              await vscode.commands.executeCommand(
+                "copilot-token-tracker.configureBackend",
+              );
+            } catch (err) {
+              // If command is not registered, show settings
+              vscode.window
+                .showInformationMessage(
+                  'Backend configuration is available in settings. Search for "AI Engineering Fluency: Backend" in settings.',
+                  "Open Settings",
+                )
+                .then((choice) => {
+                  if (choice === "Open Settings") {
+                    vscode.commands.executeCommand(
+                      "workbench.action.openSettings",
+                      "copilotTokenTracker.backend",
+                    );
+                  }
+                });
+            }
+          });
+          break;
+        case "openSettings":
+          await this.dispatch('openSettings:diagnostics', () =>
+            vscode.commands.executeCommand(
+              "workbench.action.openSettings",
+              "copilotTokenTracker.backend",
+            )
+          );
+          break;
+        case "openDisplaySettings":
+          await this.dispatch('openDisplaySettings:diagnostics', () =>
+            vscode.commands.executeCommand(
+              "workbench.action.openSettings",
+              "copilotTokenTracker.display",
+            )
+          );
+          break;
+        case "resetDebugCounters":
+          await this.dispatch('resetDebugCounters:diagnostics', async () => {
+            await this.context.globalState.update('extension.openCount', 0);
+            await this.context.globalState.update('extension.unknownMcpOpenCount', 0);
+            await this.context.globalState.update('news.fluencyScoreBanner.v1.dismissed', false);
+            await this.context.globalState.update('news.unknownMcpTools.dismissedVersion', undefined);
+            vscode.window.showInformationMessage('Debug counters and dismissed flags have been reset.');
+            await this.showDiagnosticReport();
+          });
+          break;
+        case "setDebugCounter":
+          if (typeof message.key === 'string' && typeof message.value === 'number') {
+            await this.dispatch('setDebugCounter:diagnostics', async () => {
+              await this.context.globalState.update(message.key, message.value);
+              vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+              await this.showDiagnosticReport();
+            });
+          }
+          break;
+        case "setDebugFlag":
+          if (typeof message.key === 'string' && typeof message.value === 'boolean') {
+            await this.dispatch('setDebugFlag:diagnostics', async () => {
+              await this.context.globalState.update(message.key, message.value);
+              vscode.window.showInformationMessage(`Set ${message.key} = ${message.value}`);
+              await this.showDiagnosticReport();
+            });
+          }
+          break;
+      }
+    });
+
+    // Handle panel disposal
+    this.diagnosticsPanel.onDidDispose(() => {
+      this.log("🔍 Diagnostic Report closed");
+      this.diagnosticsPanel = undefined;
+    });
+
+    // Load data in background and update the webview when ready
+    this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+  }
+
+  /**
+   * Load all diagnostic data in the background and update the webview progressively.
+   */
+  private async loadDiagnosticDataInBackground(
+    panel: vscode.WebviewPanel,
+  ): Promise<void> {
+    try {
+      this.log("🔄 Loading diagnostic data in background...");
+
+      // CRITICAL: Ensure stats have been calculated at least once to populate cache
+      // If this is the first diagnostic panel open and no stats exist yet,
+      // force an update now so the cache is populated before we load session files.
+      // This dramatically improves performance on first load (near 100% cache hit rate).
+      if (!this.lastDetailedStats) {
+        this.log(
+          "⚡ No cached stats found - forcing initial stats calculation to populate cache...",
+        );
+        await this.updateTokenStats(true);
+        this.log("✅ Cache populated, proceeding with diagnostics load");
+      }
+
+      // Load the diagnostic report
+      const report = await this.generateDiagnosticReport();
+      this.lastDiagnosticReport = report;
+
+      // Get session files
+      const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+
+      // Get first 20 session files with stats (quick preview)
+      const sessionFileData: {
+        file: string;
+        size: number;
+        modified: string;
+      }[] = [];
+      for (const file of sessionFiles.slice(0, 20)) {
+        try {
+          const stat = await this.statSessionFile(file);
+          sessionFileData.push({
+            file,
+            size: stat.size,
+            modified: stat.mtime.toISOString(),
+          });
+        } catch {
+          // Skip inaccessible files
+        }
+      }
+
+      // Build folder counts grouped by top-level VS Code user folder (editor roots)
+      const dirCounts = new Map<string, number>();
+      const pathModule = require("path");
+      const copilotSessionStateDir = pathModule.join(
+        os.homedir(),
+        ".copilot",
+        "session-state",
+      );
+      for (const file of sessionFiles) {
+        // Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
+        if (this.openCode.isOpenCodeDbSession(file)) {
+          const editorRoot = this.openCode.getOpenCodeDataDir();
+          dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+          continue;
+        }
+        const parts = file.split(/[\\\/]/);
+        const userIdx = parts.findIndex(
+          (p: string) => p.toLowerCase() === "user",
+        );
+        let editorRoot = "";
+        if (userIdx > 0) {
+          const rootParts = parts.slice(0, Math.min(parts.length, userIdx + 2));
+          editorRoot = pathModule.join(...rootParts);
+        } else {
+          editorRoot = pathModule.dirname(file);
+        }
+        // Group all CLI session-state subdirectories under the common parent
+        if (
+          editorRoot.startsWith(copilotSessionStateDir) &&
+          editorRoot !== copilotSessionStateDir
+        ) {
+          editorRoot = copilotSessionStateDir;
+        }
+        dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+      }
+      const sessionFolders = Array.from(dirCounts.entries()).map(
+        ([dir, count]) => ({
+          dir,
+          count,
+          editorName: this.getEditorNameFromRoot(dir),
+        }),
+      );
+
+      // Build candidate paths list for diagnostics
+      const candidatePaths = this.sessionDiscovery.getDiagnosticCandidatePaths();
+
+      // Get backend storage info
+      const backendStorageInfo = await this.getBackendStorageInfo();
+      this.log(
+        `Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`,
+      );
+
+      // Check if panel is still open before updating
+      if (!this.isPanelOpen(panel)) {
+        this.log("Diagnostic panel closed during data load, aborting update");
+        return;
+      }
+
+      // Send the loaded data to the webview
+      this.log(
+        `Sending backend info to webview: ${backendStorageInfo ? "present" : "missing"}`,
+      );
+      panel.webview.postMessage({
+        command: "diagnosticDataLoaded",
+        report,
+        sessionFiles: sessionFileData,
+        sessionFolders,
+        candidatePaths,
+        backendStorageInfo,
+      });
+
+      this.log("✅ Diagnostic data loaded and sent to webview");
+
+      // Now load detailed session files in the background
+      this.loadSessionFilesInBackground(panel, sessionFiles);
+    } catch (error) {
+      this.error(`Failed to load diagnostic data: ${error}`);
+      // Send error to webview if panel is still open
+      if (this.isPanelOpen(panel)) {
+        panel.webview.postMessage({
+          command: "diagnosticDataError",
+          error: String(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if a webview panel is still open and accessible.
+   * A panel is considered open if its viewColumn is defined.
+   */
+  private isPanelOpen(panel: vscode.WebviewPanel): boolean {
+    return panel.viewColumn !== undefined;
+  }
+
+  /**
+   * Load session file details in the background and send to webview.
+   */
+  private async loadSessionFilesInBackground(
+    panel: vscode.WebviewPanel,
+    sessionFiles: string[],
+  ): Promise<void> {
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const detailedSessionFiles: SessionFileDetails[] = [];
+
+    // Track cache performance for this load operation
+    const initialCacheHits = this._cacheHits;
+    const initialCacheMisses = this._cacheMisses;
+
+    // Sort files by modification time (most recent first) before taking first 500
+    // This ensures we prioritize recent sessions regardless of their folder location
+    const fileStats = await Promise.all(
+      sessionFiles.map(async (file) => {
+        try {
+          const stat = await this.statSessionFile(file);
+          return { file, mtime: stat.mtime.getTime() };
+        } catch {
+          return { file, mtime: 0 };
+        }
+      }),
+    );
+
+    const sortedFiles = fileStats
+      .sort((a, b) => b.mtime - a.mtime)
+      .map((item) => item.file);
+
+    // Process up to 500 most recent session files
+    for (const file of sortedFiles.slice(0, 500)) {
+      // Check if panel was disposed
+      if (!this.isPanelOpen(panel)) {
+        this.log("Diagnostic panel closed, stopping background load");
+        return;
+      }
+
+      try {
+        const details = await this.getSessionFileDetails(file);
+        // Only include sessions with activity (lastInteraction or file modified time) within the last x days
+        const lastActivity = details.lastInteraction
+          ? new Date(details.lastInteraction)
+          : new Date(details.modified);
+        if (lastActivity >= fourteenDaysAgo) {
+          detailedSessionFiles.push(details);
+        }
+      } catch {
+        // Skip inaccessible files
+      }
+    }
+
+    // Send the loaded data to the webview
+    try {
+      // Cache the loaded session files so we can re-send if the webview is recreated
+      if (panel === this.diagnosticsPanel) {
+        this.diagnosticsCachedFiles = detailedSessionFiles;
+      }
+      // Log summary stats
+      const withRepo = detailedSessionFiles.filter((s) => s.repository).length;
+      this.log(
+        `📊 Sending ${detailedSessionFiles.length} sessions to diagnostics (${withRepo} with repository info)`,
+      );
+      await panel.webview.postMessage({
+        command: "sessionFilesLoaded",
+        detailedSessionFiles,
+      });
+
+      // Calculate and log cache performance for this operation
+      const cacheHits = this._cacheHits - initialCacheHits;
+      const cacheMisses = this._cacheMisses - initialCacheMisses;
+      const totalAccesses = cacheHits + cacheMisses;
+      const hitRate =
+        totalAccesses > 0
+          ? ((cacheHits / totalAccesses) * 100).toFixed(1)
+          : "0.0";
+
+      this.log(
+        `Loaded ${detailedSessionFiles.length} session files in background (Cache: ${cacheHits} hits, ${cacheMisses} misses, ${hitRate}% hit rate)`,
+      );
+
+      // Mark diagnostics as loaded so we don't reload unnecessarily
+      if (panel === this.diagnosticsPanel) {
+        this.diagnosticsHasLoadedFiles = true;
+      }
+    } catch (err) {
+      // Panel may have been disposed
+      this.log("Could not send session files to panel (may be closed)");
+    }
+  }
+
+  /**
+   * Get backend storage information for diagnostics
+   */
+  private async getBackendStorageInfo(): Promise<any> {
+    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const enabled = config.get<boolean>("backend.enabled", false);
+    const storageAccount = config.get<string>("backend.storageAccount", "");
+    const subscriptionId = config.get<string>("backend.subscriptionId", "");
+    const resourceGroup = config.get<string>("backend.resourceGroup", "");
+    const aggTable = config.get<string>("backend.aggTable", "usageAggDaily");
+    const eventsTable = config.get<string>(
+      "backend.eventsTable",
+      "usageEvents",
+    );
+    const authMode = config.get<string>("backend.authMode", "entraId");
+    const sharingProfile = config.get<string>("backend.sharingProfile", "off");
+
+    // Get last sync time from global state
+    const lastSyncAt =
+      this.context.globalState.get<number>("backend.lastSyncAt");
+    const lastSyncTime = lastSyncAt ? new Date(lastSyncAt).toISOString() : null;
+
+    // Check if backend is configured (has required settings)
+    const isConfigured =
+      enabled && storageAccount && subscriptionId && resourceGroup;
+
+    // Get unique device count from session files (estimate based on unique workspace roots)
+    const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+    const workspaceIds = new Set<string>();
+    const pathModule = require("path");
+
+    for (const file of sessionFiles) {
+      const parts = file.split(/[\\\/]/);
+      const workspaceStorageIdx = parts.findIndex(
+        (p) => p.toLowerCase() === "workspacestorage",
+      );
+      if (workspaceStorageIdx >= 0 && workspaceStorageIdx < parts.length - 1) {
+        const workspaceId = parts[workspaceStorageIdx + 1];
+        if (workspaceId && workspaceId.length > 10) {
+          workspaceIds.add(workspaceId);
+        }
+      }
+    }
+
+    return {
+      enabled,
+      isConfigured,
+      storageAccount,
+      subscriptionId: subscriptionId
+        ? subscriptionId.substring(0, 8) + "..."
+        : "",
+      resourceGroup,
+      aggTable,
+      eventsTable,
+      authMode,
+      sharingProfile,
+      lastSyncTime,
+      deviceCount: workspaceIds.size,
+      sessionCount: sessionFiles.length,
+      recordCount: null, // Will be populated from Azure if configured
+    };
+  }
+
+  private getDiagnosticReportHtml(
+    webview: vscode.Webview,
+    report: string,
+    sessionFiles: { file: string; size: number; modified: string }[],
+    detailedSessionFiles: SessionFileDetails[],
+    sessionFolders: { dir: string; count: number }[] = [],
+    backendStorageInfo: any = null,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.extensionUri,
+        "dist",
+        "webview",
+        "diagnostics.js",
+      ),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    // Get cache information
+    let cacheSizeInMB = 0;
+    try {
+      // Estimate cache size by serializing to JSON
+      const cacheData = Object.fromEntries(this.cacheManager.cache);
+      const jsonString = JSON.stringify(cacheData);
+      cacheSizeInMB = (jsonString.length * 2) / (1024 * 1024); // UTF-16 encoding (2 bytes per char)
+    } catch {
+      cacheSizeInMB = 0;
+    }
+
+    // Try to read the persisted cache from VS Code global state to show its actual storage status
+    let persistedCacheSummary = "Not found in VS Code Global State";
+    try {
+      const persisted =
+        this.context.globalState.get<Record<string, SessionFileCache>>(
+          "sessionFileCache",
+        );
+      if (persisted && typeof persisted === "object") {
+        const count = Object.keys(persisted).length;
+        persistedCacheSummary = `VS Code Global State - sessionFileCache (${count} entr${count === 1 ? "y" : "ies"})`;
+      }
+    } catch (e) {
+      persistedCacheSummary = "Error reading VS Code Global State";
+    }
+
+    // Try to locate the actual storage file (state DB) for the extension global state
+    let storageFilePath: string | null = null;
+    try {
+      const extensionId = "RobBos.copilot-token-tracker";
+      const userPaths = this.sessionDiscovery.getVSCodeUserPaths();
+      for (const userPath of userPaths) {
+        try {
+          const candidate = path.join(userPath, "globalStorage", extensionId);
+          if (fs.existsSync(candidate)) {
+            const files = fs.readdirSync(candidate);
+            // Look for likely state files
+            const match = files.find(
+              (f) =>
+                f.includes("state") ||
+                f.endsWith(".vscdb") ||
+                f.endsWith(".json"),
+            );
+            if (match) {
+              storageFilePath = path.join(candidate, match);
+              break;
+            }
+          }
+        } catch (e) {
+          // ignore path access errors
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const cacheInfo = {
+      size: this.cacheManager.cache.size,
+      sizeInMB: cacheSizeInMB,
+      lastUpdated:
+        this.cacheManager.cache.size > 0 ? new Date().toISOString() : null,
+      location: persistedCacheSummary,
+      storagePath: storageFilePath,
+    };
+
+    const inspector = require('inspector') as { url(): string | undefined };
+    const isDebugMode = inspector.url() !== undefined;
+    const globalStateCounters = {
+      openCount: this.context.globalState.get<number>('extension.openCount') ?? 0,
+      unknownMcpOpenCount: this.context.globalState.get<number>('extension.unknownMcpOpenCount') ?? 0,
+      fluencyBannerDismissed: this.context.globalState.get<boolean>('news.fluencyScoreBanner.v1.dismissed') ?? false,
+      unknownMcpDismissedVersion: this.context.globalState.get<string>('news.unknownMcpTools.dismissedVersion') ?? '',
+    };
+
+    const initialData = JSON.stringify({
+      report,
+      sessionFiles,
+      detailedSessionFiles,
+      sessionFolders,
+      cacheInfo,
+      backendStorageInfo,
+      backendConfigured: this.isBackendConfigured(),
+      isDebugMode,
+      globalStateCounters,
+    }).replace(/</g, "\\u003c");
+
+    return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Diagnostic Report</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_DIAGNOSTICS__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+  }
+
+  private buildChartData(dailyStats: DailyTokenStats[]): ChartDataPayload {
+    // Transform dailyStats into the structure expected by the webview
+    const labels = dailyStats.map((d) => d.date);
+    const tokensData = dailyStats.map((d) => d.tokens);
+    const sessionsData = dailyStats.map((d) => d.sessions);
+
+    // Aggregate model usage across all days
+    const allModels = new Set<string>();
+    dailyStats.forEach((d) =>
+      Object.keys(d.modelUsage).forEach((m) => allModels.add(m)),
+    );
+
+    const modelColors = [
+      { bg: "rgba(54, 162, 235, 0.6)", border: "rgba(54, 162, 235, 1)" },
+      { bg: "rgba(255, 99, 132, 0.6)", border: "rgba(255, 99, 132, 1)" },
+      { bg: "rgba(75, 192, 192, 0.6)", border: "rgba(75, 192, 192, 1)" },
+      { bg: "rgba(153, 102, 255, 0.6)", border: "rgba(153, 102, 255, 1)" },
+      { bg: "rgba(255, 159, 64, 0.6)", border: "rgba(255, 159, 64, 1)" },
+      { bg: "rgba(255, 205, 86, 0.6)", border: "rgba(255, 205, 86, 1)" },
+      { bg: "rgba(201, 203, 207, 0.6)", border: "rgba(201, 203, 207, 1)" },
+      { bg: "rgba(100, 181, 246, 0.6)", border: "rgba(100, 181, 246, 1)" },
+    ];
+
+    const modelDatasets = Array.from(allModels).map((model, idx) => {
+      const color = modelColors[idx % modelColors.length];
+      return {
+        label: getModelDisplayName(model),
+        data: dailyStats.map((d) => {
+          const usage = d.modelUsage[model];
+          return usage ? usage.inputTokens + usage.outputTokens : 0;
+        }),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
+
+    // Aggregate editor usage across all days
+    const allEditors = new Set<string>();
+    dailyStats.forEach((d) =>
+      Object.keys(d.editorUsage).forEach((e) => allEditors.add(e)),
+    );
+
+    const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+      const color = modelColors[idx % modelColors.length];
+      return {
+        label: editor,
+        data: dailyStats.map((d) => d.editorUsage[editor]?.tokens || 0),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
+
+    // Aggregate repository usage across all days
+    const allRepositories = new Set<string>();
+    dailyStats.forEach((d) =>
+      Object.keys(d.repositoryUsage).forEach((r) => allRepositories.add(r)),
+    );
+
+    const repositoryDatasets = Array.from(allRepositories).map((repo, idx) => {
+      const color = modelColors[idx % modelColors.length];
+      const label = this.getRepoDisplayName(repo);
+      return {
+        label,
+        fullRepo: repo,
+        data: dailyStats.map((d) => d.repositoryUsage[repo]?.tokens || 0),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
+
+    // Calculate repository totals for summary
+    const repositoryTotalsMap: Record<string, number> = {};
+    dailyStats.forEach((d) => {
+      Object.entries(d.repositoryUsage).forEach(([repo, usage]) => {
+        const displayName = this.getRepoDisplayName(repo);
+        repositoryTotalsMap[displayName] =
+          (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+      });
+    });
+
+    // Calculate editor totals for summary cards
+    const editorTotalsMap: Record<string, number> = {};
+    dailyStats.forEach((d) => {
+      Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+        editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
+      });
+    });
+
+    const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+    const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+
+    return {
+      labels,
+      tokensData,
+      sessionsData,
+      modelDatasets,
+      editorDatasets,
+      editorTotalsMap,
+      repositoryDatasets,
+      repositoryTotalsMap,
+      dailyCount: dailyStats.length,
+      totalTokens,
+      avgTokensPerDay:
+        dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
+      totalSessions,
+      lastUpdated: new Date().toISOString(),
+      backendConfigured: this.isBackendConfigured(),
+      compactNumbers: this.getCompactNumbersSetting(),
+    };
+  }
+
+  private getChartHtml(
+    webview: vscode.Webview,
+    dailyStats: DailyTokenStats[],
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "chart.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    const chartData = this.buildChartData(dailyStats);
+
+    const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
+
+    return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>AI Engineering Fluency — Chart</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_CHART__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+  }
+
+  private getUsageAnalysisHtml(
+    webview: vscode.Webview,
+    stats: UsageAnalysisStats,
+  ): string {
+    const nonce = this.getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "usage.js"),
+    );
+
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
+      `style-src 'unsafe-inline' ${webview.cspSource}`,
+      `font-src ${webview.cspSource} https: data:`,
+      `script-src 'nonce-${nonce}'`,
+    ].join("; ");
+
+    // Detect user's locale for number formatting
+    const localeFromEnv =
+      process.env.LC_ALL || process.env.LC_NUMERIC || process.env.LANG;
+    const vscodeLanguage = vscode.env.language; // e.g., 'en', 'nl', 'de'
+    const intlLocale = Intl.DateTimeFormat().resolvedOptions().locale;
+
+    this.log(`[Locale Detection] VS Code language: ${vscodeLanguage}`);
+    this.log(
+      `[Locale Detection] Environment locale: ${localeFromEnv || "not set"}`,
+    );
+    this.log(`[Locale Detection] Intl default: ${intlLocale}`);
+
+    const detectedLocale = stats.locale || localeFromEnv || intlLocale;
+    this.log(`[Usage Analysis] Extension detected locale: ${detectedLocale}`);
+    this.log(
+      `[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`,
+    );
+
+    const initialData = JSON.stringify({
+      today: stats.today,
+      last30Days: stats.last30Days,
+      month: stats.month,
+      locale: detectedLocale,
+      customizationMatrix: stats.customizationMatrix || null,
+      missedPotential: stats.missedPotential || [],
+      lastUpdated: stats.lastUpdated.toISOString(),
+      backendConfigured: this.isBackendConfigured(),
+      currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
+    }).replace(/</g, "\\u003c");
+
+    return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<title>Usage Analysis</title>
+		</head>
+		<body>
+			<div id="root"></div>
+			<script nonce="${nonce}">window.__INITIAL_USAGE__ = ${initialData};</script>
+			<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+		</html>`;
+  }
+
+  public dispose(): void {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+    }
+    if (this.detailsPanel) {
+      this.detailsPanel.dispose();
+    }
+    if (this.chartPanel) {
+      this.chartPanel.dispose();
+    }
+    if (this.analysisPanel) {
+      this.analysisPanel.dispose();
+    }
+    if (this.maturityPanel) {
+      this.maturityPanel.dispose();
+    }
+    // Save cache to storage before disposing (fire-and-forget async operation)
+    // Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
+    // We can't await here since dispose() is synchronous
+    this.saveCacheToStorage().catch((err) => {
+      // Output channel will be disposed, so log to console as fallback
+      console.error("Error saving cache during disposal:", err);
+    });
+    if (this.logViewerPanel) {
+      this.logViewerPanel.dispose();
+    }
+    if (this.diagnosticsPanel) {
+      this.diagnosticsPanel.dispose();
+    }
+    this.statusBarItem.dispose();
+    this._disposed = true;
+    this.outputChannel.dispose();
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  // Create the token tracker
+  const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+
+  // Wire up backend facade and commands so the diagnostics webview can launch the
+  // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
+  try {
+    const backendFacade = new BackendFacade({
+      context,
+      log: (m: string) => (tokenTracker as any).log(m),
+      warn: (m: string) => (tokenTracker as any).warn(m),
+      updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
+      calculateEstimatedCost: (modelUsage: any) => {
+        let total = 0;
+        const pricing = (modelPricingData as any).pricing || {};
+        for (const [model, usage] of Object.entries(modelUsage || {})) {
+          const p = pricing[model] || pricing["gpt-4o-mini"];
+          if (!p) {
+            continue;
+          }
+          const usageData = usage as {
+            inputTokens?: number;
+            outputTokens?: number;
+          };
+          total +=
+            ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
+          total +=
+            ((usageData.outputTokens || 0) / 1_000_000) *
+            p.outputCostPerMillion;
+        }
+        return total;
+      },
+      co2Per1kTokens: 0.2,
+      waterUsagePer1kTokens: 0.3,
+      co2AbsorptionPerTreePerYear: 21000,
+      getCopilotSessionFiles: () =>
+        (tokenTracker as any).sessionDiscovery.getCopilotSessionFiles(),
+      estimateTokensFromText: (text: string, model?: string) =>
+        (tokenTracker as any).estimateTokensFromText(text, model),
+      getModelFromRequest: (req: any) =>
+        (tokenTracker as any).getModelFromRequest(req),
+      getSessionFileDataCached: (p: string, m: number, s: number) =>
+        (tokenTracker as any).getSessionFileDataCached(p, m, s),
+      statSessionFile: (sessionFile: string) =>
+        (tokenTracker as any).statSessionFile(sessionFile),
+      isOpenCodeSession: (sessionFile: string) =>
+        (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
+      getOpenCodeSessionData: (sessionFile: string) =>
+        (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+    });
+
+    const backendHandler = new BackendCommandHandler({
+      facade: backendFacade as any,
+      integration: undefined,
+      calculateEstimatedCost: (mu: any) => 0,
+      warn: (m: string) => (tokenTracker as any).warn(m),
+      log: (m: string) => (tokenTracker as any).log(m),
+    });
+
+    // Store backend facade in the tracker instance for dashboard access
+    (tokenTracker as any).backend = backendFacade;
+
+    // Backend sync timer will be started after initial token analysis completes
+    // (see startBackendSyncAfterInitialAnalysis method)
+
+    const configureBackendCommand = vscode.commands.registerCommand(
+      "copilot-token-tracker.configureBackend",
+      async () => {
+        await backendHandler.handleConfigureBackend();
+      },
+    );
+
+    context.subscriptions.push(configureBackendCommand);
+  } catch (err) {
+    // If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
+    (tokenTracker as any).warn(
+      "Failed to wire backend commands: " + String(err),
+    );
+  }
+
+  // Register the refresh command
+  const refreshCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.refresh",
+    async () => {
+      tokenTracker.log("Refresh command called");
+      await tokenTracker.updateTokenStats();
+      vscode.window.showInformationMessage("AI Engineering Fluency data refreshed");
+    },
+  );
+
+  // Register the show details command
+  const showDetailsCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showDetails",
+    async () => {
+      tokenTracker.log("Show details command called");
+      await tokenTracker.showDetails();
+    },
+  );
+
+  // Register the show chart command
+  const showChartCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showChart",
+    async () => {
+      tokenTracker.log("Show chart command called");
+      await tokenTracker.showChart();
+    },
+  );
+
+  // Register the show usage analysis command
+  const showUsageAnalysisCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showUsageAnalysis",
+    async () => {
+      tokenTracker.log("Show usage analysis command called");
+      await tokenTracker.showUsageAnalysis();
+    },
+  );
+
+  // Register the show maturity / fluency score command
+  const showMaturityCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showMaturity",
+    async () => {
+      tokenTracker.log("Show maturity command called");
+      await tokenTracker.showMaturity();
+    },
+  );
+
+  // Register the show dashboard command
+  const showDashboardCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showDashboard",
+    async () => {
+      tokenTracker.log("Show dashboard command called");
+      await tokenTracker.showDashboard();
+    },
+  );
+
+  const showEnvironmentalCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showEnvironmental",
+    async () => {
+      tokenTracker.log("Show environmental impact command called");
+      await tokenTracker.showEnvironmental();
+    },
+  );
+
+  // Register the show fluency level viewer command (debug-only)
+  const showFluencyLevelViewerCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.showFluencyLevelViewer",
+    async () => {
+      tokenTracker.log("Show fluency level viewer command called");
+      await tokenTracker.showFluencyLevelViewer();
+    },
+  );
+
+  // Register the generate diagnostic report command
+  const generateDiagnosticReportCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.generateDiagnosticReport",
+    async () => {
+      tokenTracker.log("Generate diagnostic report command called");
+      await tokenTracker.showDiagnosticReport();
+    },
+  );
+
+  // Register the clear cache command
+  const clearCacheCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.clearCache",
+    async () => {
+      tokenTracker.log("Clear cache command called");
+      await tokenTracker.clearCache();
+    },
+  );
+
+  // Add to subscriptions for proper cleanup
+  context.subscriptions.push(
+    refreshCommand,
+    showDetailsCommand,
+    showChartCommand,
+    showUsageAnalysisCommand,
+    showMaturityCommand,
+    showFluencyLevelViewerCommand,
+    showDashboardCommand,
+    showEnvironmentalCommand,
+    generateDiagnosticReportCommand,
+    clearCacheCommand,
+    tokenTracker,
+  );
+
+  tokenTracker.log("Extension activation complete");
+}
+
+export function deactivate() {
+  // Extension cleanup is handled in the CopilotTokenTracker class
+}

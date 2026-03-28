@@ -1,0 +1,348 @@
+{
+  "name": "copilot-token-tracker",
+  "displayName": "AI Engineering Fluency",
+  "description": "Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and productivity insights in VS Code.",
+  "version": "0.0.23",
+  "publisher": "RobBos",
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rajbos/github-copilot-token-usage"
+  },
+  "author": {
+    "name": "Rob Bos",
+    "email": "rob@example.com"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copilot-token-tracker.refresh",
+        "title": "Refresh Token Usage",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showDetails",
+        "title": "Show Token Usage Details",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showChart",
+        "title": "Show Token Usage Chart",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showUsageAnalysis",
+        "title": "Show Usage Analysis Dashboard",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.generateDiagnosticReport",
+        "title": "Generate Diagnostic Report",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showMaturity",
+        "title": "Show AI Engineering Fluency Score",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showFluencyLevelViewer",
+        "title": "Show Fluency Level Viewer (Debug Only)",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.configureBackend",
+        "title": "Configure Backend",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.copyBackendConfig",
+        "title": "Copy Backend Config (No Secrets)",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.exportCurrentView",
+        "title": "Export Current View (JSON)",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.setBackendSharedKey",
+        "title": "Set Backend Storage Shared Key",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.rotateBackendSharedKey",
+        "title": "Rotate Backend Storage Shared Key",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.clearBackendSharedKey",
+        "title": "Clear Backend Storage Shared Key",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.toggleBackendWorkspaceMachineNameSync",
+        "title": "Backend: Toggle Workspace/Machine Name Sync",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.setSharingProfile",
+        "title": "Set Sharing Profile",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.clearAzureSettings",
+        "title": "Clear Azure Settings",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.clearCache",
+        "title": "Clear Cache",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showDashboard",
+        "title": "Show Team Dashboard",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.showEnvironmental",
+        "title": "Show Environmental Impact",
+        "category": "AI Engineering Fluency"
+      }
+    ],
+    "configuration": {
+      "title": "AI Engineering Fluency",
+      "properties": {
+        "copilotTokenTracker.display.compactNumbers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000)."
+        },
+        "copilotTokenTracker.backend.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables)."
+        },
+        "copilotTokenTracker.backend.backend": {
+          "type": "string",
+          "enum": [
+            "storageTables"
+          ],
+          "default": "storageTables",
+          "description": "Backend sync backend. MVP supports Azure Storage Tables."
+        },
+        "copilotTokenTracker.backend.authMode": {
+          "type": "string",
+          "enum": [
+            "entraId",
+            "sharedKey"
+          ],
+          "default": "entraId",
+          "description": "Authentication mode for backend sync data-plane access. Default is Entra ID RBAC (DefaultAzureCredential). Shared Key uses VS Code SecretStorage and does not sync across devices."
+        },
+        "copilotTokenTracker.backend.datasetId": {
+          "type": "string",
+          "default": "default",
+          "description": "Logical dataset identifier to avoid accidental mixing when sharing a backend."
+        },
+        "copilotTokenTracker.backend.sharingProfile": {
+          "type": "string",
+          "enum": [
+            "off",
+            "soloFull",
+            "teamAnonymized",
+            "teamPseudonymous",
+            "teamIdentified"
+          ],
+          "default": "off",
+          "description": "Sharing Profile (single source of truth): off (no cloud sync), soloFull (personal full fidelity), teamAnonymized (no per-user key), teamPseudonymous (stable per-user key), teamIdentified (explicit identity)."
+        },
+        "copilotTokenTracker.backend.userId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional user identifier to enable team-wide reporting with per-user filtering. Empty disables the user dimension."
+        },
+        "copilotTokenTracker.backend.shareWithTeam": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicit consent flag. When false, no per-user identifier is written to the backend store."
+        },
+        "copilotTokenTracker.backend.shareWorkspaceMachineNames": {
+          "type": "boolean",
+          "default": false,
+          "description": "When team sharing is enabled, also write workspace and machine display names to the backend store (may contain sensitive information)."
+        },
+        "copilotTokenTracker.backend.shareConsentAt": {
+          "type": "string",
+          "default": "",
+          "description": "ISO timestamp when team sharing was enabled (consent recorded)."
+        },
+        "copilotTokenTracker.backend.userIdentityMode": {
+          "type": "string",
+          "enum": [
+            "pseudonymous",
+            "teamAlias",
+            "entraObjectId"
+          ],
+          "default": "pseudonymous",
+          "description": "How the per-user dimension is derived when team sharing is enabled. pseudonymous hashes Entra claims scoped to datasetId; teamAlias uses backend.userId (validated); entraObjectId stores a GUID (advanced)."
+        },
+        "copilotTokenTracker.backend.userIdMode": {
+          "type": "string",
+          "enum": [
+            "alias",
+            "custom"
+          ],
+          "default": "alias",
+          "description": "How the user identifier is intended to be used. 'alias' is recommended; 'custom' may contain personal data (PII)."
+        },
+        "copilotTokenTracker.backend.subscriptionId": {
+          "type": "string",
+          "default": "",
+          "description": "Azure subscription ID used for provisioning (wizard-managed)."
+        },
+        "copilotTokenTracker.backend.resourceGroup": {
+          "type": "string",
+          "default": "",
+          "description": "Azure resource group name for the Storage account (wizard-managed)."
+        },
+        "copilotTokenTracker.backend.storageAccount": {
+          "type": "string",
+          "default": "",
+          "description": "Azure Storage account name for backend sync (wizard-managed)."
+        },
+        "copilotTokenTracker.backend.aggTable": {
+          "type": "string",
+          "default": "usageAggDaily",
+          "description": "Azure Table name for daily rollups."
+        },
+        "copilotTokenTracker.backend.eventsTable": {
+          "type": "string",
+          "default": "usageEvents",
+          "description": "Azure Table name for optional raw events (not required for MVP reporting)."
+        },
+        "copilotTokenTracker.backend.lookbackDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 90,
+          "description": "Default backfill/lookback window (days) for syncing local usage to the backend store."
+        },
+        "copilotTokenTracker.backend.includeMachineBreakdown": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence."
+        },
+        "copilotTokenTracker.backend.blobUploadEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable uploading session log files to Azure Blob Storage. Files are uploaded with configurable frequency and can be used by GitHub Copilot Coding Agent."
+        },
+        "copilotTokenTracker.backend.blobContainerName": {
+          "type": "string",
+          "default": "copilot-session-logs",
+          "description": "Name of the Azure Blob Storage container for session log files."
+        },
+        "copilotTokenTracker.backend.blobUploadFrequencyHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 168,
+          "description": "How often to upload session log files to blob storage (in hours). Default is once per day (24 hours)."
+        },
+        "copilotTokenTracker.backend.blobCompressFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
+        },
+        "copilot-token-tracker.sampleDataDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "node -e \"const fs = require('fs'); fs.mkdirSync('out/test', { recursive: true }); fs.cpSync('package.json', 'out/package.json', { force: true }); fs.cpSync('package.json', 'out/test/package.json', { force: true });\" && tsc -p tsconfig.tests.json",
+    "watch-tests": "tsc -p tsconfig.tests.json -w",
+    "pretest": "npm run compile && npm run compile-tests && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:css": "stylelint \"src/webview/**/*.css\"",
+    "lint:json": "node ../scripts/validate-json.js",
+    "test": "vscode-test",
+    "test:node": "npm run compile-tests && node --require ./out/test/unit/vscode-shim-register.js --test --test-force-exit out/test/unit/*.test.js",
+    "test:coverage": "npm run compile-tests && node --require ./out/test/unit/vscode-shim-register.js --experimental-test-coverage --test --test-force-exit --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=60 --test-coverage-include=out/src/backend/**/*.js --test-coverage-include=out/src/utils/**/*.js out/test/unit/*.test.js",
+    "pre-release": "node ../scripts/pre-release.js",
+    "capture-screenshots": "pwsh -File ../scripts/capture-screenshots.ps1",
+    "sync-changelog": "node ../scripts/sync-changelog.js",
+    "sync-changelog:test": "node ../scripts/sync-changelog.js --test",
+    "screenshot:setup": "node ../scripts/screenshot-ui-views.js",
+    "screenshot:preview": "node ../scripts/generate-preview.js",
+    "screenshot:all": "node ../scripts/generate-all-previews.js",
+    "test:data": "node ../scripts/test-data-validation.js",
+    "cli:build": "cd cli && npm install && npm run build",
+    "cli:build:production": "cd cli && npm install && npm run build:production",
+    "cli:stats": "cd cli && node dist/cli.js stats",
+    "cli:usage": "cd cli && node dist/cli.js usage",
+    "cli:environmental": "cd cli && node dist/cli.js environmental",
+    "cli:fluency": "cd cli && node dist/cli.js fluency",
+    "cli": "cd cli && node dist/cli.js"
+  },
+  "devDependencies": {
+    "@github/copilot": "^1.0.10",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.5.0",
+    "@types/vscode": "1.110.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
+    "@typescript-eslint/parser": "^8.42.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.27.4",
+    "eslint": "^10.1.0",
+    "npm-run-all": "^4.1.5",
+    "stylelint": "^17.5.0",
+    "stylelint-config-standard": "^40.0.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@azure/arm-resources": "^7.0.0",
+    "@azure/arm-resources-subscriptions": "^2.1.0",
+    "@azure/arm-storage": "^19.1.0",
+    "@azure/arm-subscriptions": "^6.0.0",
+    "@azure/data-tables": "^13.3.2",
+    "@azure/identity": "^4.13.1",
+    "@azure/storage-blob": "^12.31.0",
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "chart.js": "^4.4.1",
+    "html-escape": "^2.0.0",
+    "html2canvas": "1.4.1",
+    "jsdom": "^29.0.1",
+    "jspdf": "4.2.1",
+    "pptxgenjs": "4.0.1",
+    "sql.js": "1.14.1",
+    "@msgpack/msgpack": "^3.1.3"
+  },
+  "overrides": {
+    "diff": ">=8.0.3",
+    "serialize-javascript": ">=7.0.3"
+  }
+}

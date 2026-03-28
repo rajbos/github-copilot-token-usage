@@ -1,250 +1,68 @@
 # GitHub Copilot Token Tracker
 
-A VS Code extension that shows your daily and monthly GitHub Copilot estimated token usage in the status bar. This uses the information from the log files of the GitHub Copilot Chat extension.
-
-## Features
-
-- **Real-time Token Tracking**: Displays current day and month token usage in the status bar
-- **Usage Analysis Dashboard**: Comprehensive analytics on how you use Copilot (modes, tool calls, context references, MCP tools)
-- **Automatic Updates**: Refreshes every 5 minutes to show the latest usage
-- **Click to Refresh**: Click the status bar item to manually refresh the token count
-- **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
-- **Intelligent Caching**: Caches processed session files to speed up subsequent updates when files haven't changed
-- **Diagnostic Reporting**: Generate comprehensive diagnostic reports to help troubleshoot issues
-
-## Status Bar Display
-
-The extension shows token usage in the format: `# <today> | <this month>` in the status bar:
-
-![Status Bar Display](docs/images/01%20Toolbar%20info.png)  
-
-Hovering on the status bar item shows a detailed breakdown of token usage:
-![Hover Details](docs/images/02%20Popup.png)  
-
-Clicking the status bar item opens a detailed view with comprehensive statistics:
-![Detailed View](docs/images/03%20Detail%20panel.png)  
-
-Chart overview per day, with option to view per model as well:  
-![Chart View](docs/images/04%20Chart.png)  
-
-Or per supported editor:
-![Chart View](docs/images/04%20Chart_02.png)  
-Supported editors are:
-
-- `Code` — Stable VS Code release
-- `Code - Insiders` — VS Code Insiders (preview) builds
-- `Code - Exploration` — Exploration/pre-release builds
-- `VSCodium` — Community-built VS Code distribution
-- `Cursor` — Cursor editor
-
-## Performance Optimization
-
-The extension uses intelligent caching to improve performance:
-
-- **File Modification Tracking**: Only re-processes session files when they have been modified since the last read
-- **Efficient Cache Management**: Stores calculated token counts, interaction counts, and model usage data for each file
-- **Memory Management**: Automatically limits cache size to prevent memory issues (maximum 1000 cached files)
-- **Cache Statistics**: Logs cache hit/miss rates to help monitor performance improvements
-
-This caching significantly reduces the time needed for periodic updates, especially when you have many chat session files.
-
-## Diagnostic Reporting
-
-If you experience issues with the extension, you can generate a diagnostic report to help troubleshoot problems. The diagnostic report includes:
-
-- Extension and VS Code version information
-- System details (OS, Node version, environment)
-- GitHub Copilot extension status and versions
-- Session file discovery results (locations only, no content)
-- Aggregated token usage statistics
-- Cache performance metrics
-
-**To generate a diagnostic report:**
-
-1. Click the status bar item to open the detailed view
-2. Click the **"Diagnostics"** button at the bottom
-3. Review the report in the new panel
-4. Use the **"Copy to Clipboard"** button to copy the report for sharing
-5. Use the **"Open GitHub Issue"** button to submit an issue with the report
-
-Alternatively, you can use the Command Palette:
-- Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS)
-- Type "Copilot Token Tracker: Generate Diagnostic Report"
-- Press Enter
-
-**Note**: The diagnostic report does not include any of your code or conversation content. It only includes file locations, sizes, and aggregated statistics.
-
-## Usage Analysis Dashboard
-
-The extension includes a comprehensive usage analysis dashboard that helps you understand how you interact with GitHub Copilot.
-
-**Tracked Metrics:**
-- **Interaction Modes**: Ask (chat), Edit (code modifications), Agent (autonomous tasks)
-- **Context References**: #file, #selection, #symbol, #codebase, @workspace, @terminal, @vscode
-- **Tool Calls**: Functions and tools invoked by Copilot
-- **MCP Tools**: Model Context Protocol server and tool usage
-
-**To access the dashboard:**
-1. Click the status bar item to open the details panel
-2. Click the **"📊 Usage Analysis"** button
-3. Or use the Command Palette: "Copilot Token Tracker: Show Usage Analysis Dashboard"
-
-The dashboard provides insights into your prompting patterns and helps you optimize your Copilot workflow. For detailed information about the metrics and how to interpret them, see [Usage Analysis Documentation](docs/USAGE-ANALYSIS.md).
-
-## Known Issues
-
-- The numbers shown are based on the logs that are available on your local machine. If you use multiple machines or the web version of Copilot, the numbers may not be accurate.
-- Premium Requests are not tracked and shown in this extension
-- The numbers are based on the amount of text in the chat sessions, not the actual tokens used. This is an estimation and may not be 100% accurate. We use an average character-to-token ratio for each model to estimate the token count, which is visible in the detail panel when you click on the status bar item.
-- Same for the information on amount of trees that are needed to compensate your usage.
-
-> **⚠️ Warning**
->
-> This extension has only been tested on **Windows**. Other operating systems may not be supported or may require adjustments. PR's or test results for that are most welcome!
-
-## Development
+Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Studio, and the command line. All data is read from local session logs — nothing leaves your machine unless you opt in to cloud sync.
 
 [![Build](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml)
 
-### Building the Extension
+## Supported AI engineering tools
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+- VS Code + GitHub Copilot (Stable, Insiders, Exploration)
+- VSCodium / Cursor
+- GitHub Copilot CLI
+- OpenCode + GitHub Copilot
+- Crush + GitHub Copilot
+- Visual Studio + GitHub Copilot
 
-2. Build the extension:
-   ```bash
-   npm run compile    # Development build
-   npm run package    # Production build
-   ```
+---
 
-3. Run tests:
-   ```bash
-   npm test
-   ```
+## Pick your tool
 
-4. Create VSIX package:
-   ```bash
-   npx vsce package
-   ```
+### 🖥️ VS Code Extension
 
-### Running the Extension Locally
-
-To test and debug the extension in a local VS Code environment:
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Start watch mode (automatically recompiles on file changes):
-   ```bash
-   npm run watch
-   ```
-
-3. In VS Code, press **F5** to launch the Extension Development Host
-   - This opens a new VS Code window with the extension running
-   - The original window shows debug output and allows you to set breakpoints
-
-4. In the Extension Development Host window:
-   - The extension will be active and you'll see the token tracker in the status bar
-   - Any changes you make to the code will be automatically compiled (thanks to watch mode)
-   - Reload the Extension Development Host window (Ctrl+R or Cmd+R) to see your changes
-
-5. To view console logs and debug information:
-   - In the Extension Development Host window, open Developer Tools: **Help > Toggle Developer Tools**
-   - Check the Console tab for any `console.log` output from the extension
-
-### Available Scripts
-
-- `npm run lint` - Run ESLint
-- `npm run check-types` - Run TypeScript type checking
-- `npm run compile` - Build development version
-- `npm run package` - Build production version
-- `npm run watch` - Watch mode for development
-- `npm test` - Run tests (requires VS Code)
-- `npm run test:data` - Validate test data files
-- `npm run screenshot:setup` - Set up screenshot generation (see [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md))
+Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more.
 
 ### Generating Screenshots
 
 The extension includes test data and automation tools for generating documentation screenshots. See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for complete instructions.
 
-Quick start:
 ```bash
-npm run screenshot:setup
+# Install from the VS Code Marketplace
+ext install RobBos.copilot-token-tracker
 ```
 
-This will guide you through the process of capturing screenshots of all extension views using synthetic test data.
+📖 [Full VS Code extension documentation](docs/vscode-extension/README.md)
 
-### CI/CD
+---
 
-The project includes comprehensive GitHub Actions workflows:
+### 🏗️ Visual Studio Extension
 
-- **Build Pipeline**: Tests the extension on Ubuntu, Windows, and macOS with Node.js 18.x and 20.x
-- **CI Pipeline**: Includes VS Code extension testing and VSIX package creation
-- **Release Pipeline**: Automated release creation when version tags are pushed
-- All builds must pass linting, type checking, compilation, and packaging steps
+Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session files directly.
 
-### Automated Releases
+> Counts are **estimated** — VS session files do not store raw LLM token counts.
 
-The project supports automated VSIX builds and releases through two methods:
+📖 [Full Visual Studio extension documentation](docs/visual-studio/README.md)
 
-#### Method 1: Manual Trigger via GitHub UI (Recommended)
+---
 
-1. Update the version in `package.json`
-2. Commit and push your changes to the main branch
-3. Go to GitHub Actions → Release workflow
-4. Click "Run workflow" and confirm
+### ⌨️ CLI
 
-The workflow will automatically:
-- Create a tag based on the version in `package.json`
-- Run the full build pipeline (lint, type-check, compile, test)
-- Create a VSIX package
-- Create a GitHub release with auto-generated release notes
-- Attach the VSIX file as a release asset
+Run anywhere with Node.js — no editor required. Get usage stats, fluency scores, and environmental impact from the terminal.
 
-Then run the `./publish.ps1` script to package the VSIX file locally.
-
-#### Method 2: Tag-Based Release (Traditional)
-
-1. Update the version in `package.json`
-2. Commit your changes
-3. Create and push a version tag:
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-The release workflow will:
-- Verify the tag version matches `package.json` version
-- Run the full build pipeline (lint, type-check, compile, test)
-- Create a VSIX package
-- Create a GitHub release with auto-generated release notes
-- Attach the VSIX file as a release asset
-
-**Note**: The workflow will fail if the tag version doesn't match the version in `package.json`.
-
-### Syncing Release Notes
-
-To keep the local `CHANGELOG.md` file synchronized with GitHub release notes:
-
-**Manual Sync:**
 ```bash
-npm run sync-changelog
+npx @rajbos/ai-engineering-fluency stats
 ```
 
-**Automatic Sync:**
-The project includes a GitHub workflow that automatically updates `CHANGELOG.md` whenever:
-- A new release is published
-- An existing release is edited
-- The workflow is manually triggered
+📖 [Full CLI documentation](docs/cli/README.md)
 
-**Test the Sync:**
-```bash
-npm run sync-changelog:test
-```
+---
 
-This ensures that the local changelog always reflects the latest release information from GitHub, preventing the documentation from becoming outdated.
+## Contributing
 
+Interested in contributing? Check out our [Contributing Guide](CONTRIBUTING.md) for:
+
+- 🐳 **DevContainer Setup** — Isolated development environment
+- 🔧 **Build & Debug Instructions** — How to run and test locally
+- 📋 **Code Guidelines** — Project structure and development principles
+- 🚀 **Release Process** — CI/CD pipelines and automated releases
+
+We welcome contributions of all kinds — bug fixes, new features, documentation improvements, and more!

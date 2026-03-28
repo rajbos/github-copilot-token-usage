@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CopilotTokenTrackerRunner</AssemblyName>
+    <RootNamespace>CopilotTokenTrackerRunner</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CopilotTokenTracker\CopilotTokenTracker.csproj" />
+  </ItemGroup>
+
+</Project>

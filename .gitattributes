@@ -1,0 +1,20 @@
+# Enforce consistent line endings across platforms
+# Default: LF for all text files
+* text=auto eol=lf
+
+# Windows script files should use CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Keep images and binaries untouched
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg text
+*.ico binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.pdf binary

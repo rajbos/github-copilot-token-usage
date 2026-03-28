@@ -1445,7 +1445,7 @@
       }
     },
     "fileMetadata": {
-      "modification_time": "File mtime is used to filter files by date (today, this month) instead of using timestamps in the JSON",
+      "modification_time": "File mtime is used to filter files by date (today, last 30 days) instead of using timestamps in the JSON",
       "file_path": "Path is parsed to determine editor type (workspace vs global vs CLI)"
     },
     "tokenEstimation": {

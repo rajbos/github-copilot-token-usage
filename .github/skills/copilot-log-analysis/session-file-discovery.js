@@ -146,6 +146,31 @@ function getCopilotSessionFiles() {
         sessionFiles.push(...files);
     }
 
+    // OpenCode session files (XDG data directory)
+    const xdgDataHome = (platform === 'win32')
+        ? path.join(homedir, '.local', 'share')
+        : (process.env.XDG_DATA_HOME || path.join(homedir, '.local', 'share'));
+    const openCodeSessionDir = path.join(xdgDataHome, 'opencode', 'storage', 'session');
+    if (fs.existsSync(openCodeSessionDir)) {
+        const scanOpenCode = (dir) => {
+            try {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory()) {
+                        scanOpenCode(path.join(dir, entry.name));
+                    } else if (entry.name.startsWith('ses_') && entry.name.endsWith('.json')) {
+                        const fullPath = path.join(dir, entry.name);
+                        try {
+                            const stats = fs.statSync(fullPath);
+                            if (stats.size > 0) { sessionFiles.push(fullPath); }
+                        } catch { /* ignore */ }
+                    }
+                }
+            } catch { /* ignore */ }
+        };
+        scanOpenCode(openCodeSessionDir);
+    }
+
     return { sessionFiles, foundPaths };
 }
 
@@ -157,6 +182,7 @@ function categorizeFile(filePath) {
     if (filePath.includes('emptyWindowChatSessions')) return 'Global Storage (Legacy)';
     if (filePath.includes('github.copilot-chat')) return 'Copilot Chat Extension';
     if (filePath.includes('.copilot')) return 'Copilot CLI';
+    if (filePath.includes('opencode')) return 'OpenCode';
     return 'Unknown';
 }
 
@@ -167,6 +193,7 @@ function getEditorType(filePath) {
     const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
     
     if (normalizedPath.includes('/.copilot/session-state/')) return 'Copilot CLI';
+    if (normalizedPath.includes('/opencode/storage/session/')) return 'OpenCode';
     if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) return 'VS Code Insiders';
     if (normalizedPath.includes('/code - exploration/') || normalizedPath.includes('/code%20-%20exploration/')) return 'VS Code Exploration';
     if (normalizedPath.includes('/vscodium/')) return 'VSCodium';

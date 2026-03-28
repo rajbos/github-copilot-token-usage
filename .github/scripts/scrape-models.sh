@@ -5,7 +5,7 @@ set -e
 # This script uses Puppeteer to load the page and extract model names
 
 echo "Installing Puppeteer..."
-npm install puppeteer
+npm ci
 
 echo "Creating scraper script..."
 cat > scrape.js << 'SCRAPE_EOF'
