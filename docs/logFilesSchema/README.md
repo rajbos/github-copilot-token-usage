@@ -38,13 +38,14 @@ Contains:
 
 ## Session File Formats
 
-The extension supports three distinct session file formats:
+The extension supports the following session file formats:
 
-| Format | Extension | Location | Discriminator |
-|--------|-----------|----------|---------------|
-| **JSON** | `.json` | workspaceStorage, globalStorage | N/A (standard JSON) |
-| **JSONL CLI** | `.jsonl` | `~/.copilot/session-state/` | `type` field (string) |
-| **JSONL Incremental** | `.jsonl` | workspaceStorage (VS Code Insiders) | `kind` field (number) |
+| Format | Tool | Extension | Location | Discriminator |
+|--------|------|-----------|----------|---------------|
+| **JSON** | GitHub Copilot | `.json` | workspaceStorage, globalStorage | N/A (standard JSON) |
+| **JSONL CLI** | GitHub Copilot | `.jsonl` | `~/.copilot/session-state/` | `type` field (string) |
+| **JSONL Incremental** | GitHub Copilot | `.jsonl` | workspaceStorage (VS Code Insiders) | `kind` field (number) |
+| **JSONL Claude Code** | Claude Code (Anthropic) | `.jsonl` | `~/.claude/projects/{hash}/` | Path-based: `~/.claude/` prefix |
 
 ### JSONL Format Detection
 
@@ -61,8 +62,17 @@ VS Code Insiders introduced a new incremental JSONL format that stores session d
 
 See `session-file-schema.json` → `jsonlIncrementalSchema` for full details.
 
-## Official Source References
+### Claude Code Format (New)
 
+Claude Code (Anthropic's CLI/IDE extension) writes sessions to `~/.claude/projects/{project-hash}/{session-uuid}.jsonl`:
+- Each line is a `user`, `assistant`, `queue-operation`, `file-history-snapshot`, or `ai-title` event
+- **Key advantage**: Assistant events contain actual Anthropic API token counts in `message.usage` — no estimation needed
+- Includes prompt cache fields: `cache_creation_input_tokens`, `cache_read_input_tokens`
+- Sub-agents are stored in `{session-uuid}/subagents/{agent-id}.jsonl`
+
+See `claude-code-session-schema.json` for full details.
+
+## Official Source References
 
 The session file schemas are defined in the following repositories:
 
