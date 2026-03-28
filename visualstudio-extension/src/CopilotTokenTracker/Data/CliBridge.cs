@@ -173,13 +173,14 @@ namespace CopilotTokenTracker.Data
                     return _inflightAllTask;
                 }
 
-                _inflightAllTask = RunGetAllDataAsync();
-                _ = _inflightAllTask.ContinueWith(_ =>
+                var task = RunGetAllDataAsync();
+                _inflightAllTask = task;
+                _ = task.ContinueWith(_ =>
                 {
                     lock (_allLock) { _inflightAllTask = null; }
                 }, System.Threading.Tasks.TaskContinuationOptions.ExecuteSynchronously);
 
-                return _inflightAllTask;
+                return task;
             }
         }
 
