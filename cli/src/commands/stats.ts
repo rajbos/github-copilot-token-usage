@@ -137,6 +137,7 @@ function getEditorDisplayName(source: string): string {
 		'cursor': 'Cursor',
 		'copilot-cli': 'Copilot CLI',
 		'opencode': 'OpenCode',
+		'claude-code': 'Claude Code',
 	};
 	return names[source] || source;
 }

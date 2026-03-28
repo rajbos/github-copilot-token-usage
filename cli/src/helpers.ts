@@ -11,6 +11,7 @@ import { OpenCodeDataAccess } from '../../vscode-extension/src/opencode';
 import { CrushDataAccess } from '../../vscode-extension/src/crush';
 import { ContinueDataAccess } from '../../vscode-extension/src/continue';
 import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio';
+import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
@@ -60,15 +61,21 @@ function createVisualStudio(): VisualStudioDataAccess {
 	return new VisualStudioDataAccess();
 }
 
+/** Create Claude Code data access instance for CLI */
+function createClaudeCode(): ClaudeCodeDataAccess {
+	return new ClaudeCodeDataAccess();
+}
+
 // Module-level singletons so sql.js WASM is only initialised once across all session files
 const _openCodeInstance = createOpenCode();
 const _crushInstance = createCrush();
 const _continueInstance = createContinue();
 const _visualStudioInstance = createVisualStudio();
+const _claudeCodeInstance = createClaudeCode();
 
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance });
+	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance });
 }
 
 /** Discover all session files on this machine */
@@ -136,6 +143,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/.copilot/')) { return 'copilot-cli'; }
 	if (normalized.includes('/.crush/crush.db#')) { return 'crush'; }
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
+	if (normalized.includes('/.claude/projects/')) { return 'claude-code'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
         if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
 	return 'vscode';
@@ -218,6 +226,24 @@ const crushResult: SessionData = {
                         setCached(filePath, stats.mtimeMs, stats.size, vsResult);
                         return vsResult;
                 }
+
+		// Handle Claude Code sessions (JSONL with actual Anthropic API token counts)
+		if (_claudeCodeInstance.isClaudeCodeSessionFile(filePath)) {
+			const result = _claudeCodeInstance.getTokensFromClaudeCodeSession(filePath);
+			const interactions = _claudeCodeInstance.countClaudeCodeInteractions(filePath);
+			const modelUsage = _claudeCodeInstance.getClaudeCodeModelUsage(filePath);
+			const claudeResult: SessionData = {
+				file: filePath,
+				tokens: result.tokens,
+				thinkingTokens: result.thinkingTokens,
+				interactions,
+				modelUsage,
+				lastModified: stats.mtime,
+				editorSource: getEditorSourceFromPath(filePath),
+			};
+			setCached(filePath, stats.mtimeMs, stats.size, claudeResult);
+			return claudeResult;
+		}
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');
 
@@ -411,6 +437,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		crush: _crushInstance,
 		continue_: _continueInstance,
 		visualStudio: _visualStudioInstance,
+		claudeCode: _claudeCodeInstance,
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,

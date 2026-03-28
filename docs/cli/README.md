@@ -157,6 +157,7 @@ The CLI scans the same session files as the [VS Code extension](../vscode-extens
 - **VS Code Remote** / Codespaces sessions
 - **Copilot CLI** agent mode sessions
 - **OpenCode** sessions (JSON and SQLite)
+- **Claude Code** sessions (Anthropic CLI/IDE extension, actual API token counts)
 
 ---
 

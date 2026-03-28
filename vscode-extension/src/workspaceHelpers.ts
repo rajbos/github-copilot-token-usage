@@ -679,6 +679,9 @@ export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: 
 	if (normalizedPath.includes('/.continue/sessions/')) {
 		return 'Continue';
 	}
+	if (normalizedPath.includes('/.claude/projects/')) {
+		return 'Claude Code';
+	}
 	if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
 		return 'VS Code Insiders';
 	}
@@ -716,6 +719,7 @@ export function detectEditorSource(filePath: string, isOpenCodeSessionFile?: (p:
 	if (isOpenCodeSessionFile?.(filePath)) { return 'OpenCode'; }
 	if (lowerPath.includes('/.crush/crush.db#')) { return 'Crush'; }
 	if (lowerPath.includes('/.continue/sessions/')) { return 'Continue'; }
+	if (lowerPath.includes('/.claude/projects/')) { return 'Claude Code'; }
 	if (lowerPath.includes('cursor')) { return 'Cursor'; }
 	if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
 	if (lowerPath.includes('vscodium')) { return 'VSCodium'; }
