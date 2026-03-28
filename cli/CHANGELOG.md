@@ -6,6 +6,13 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-03-28
+
+### ✨ Features & Improvements
+- Added Claude Code session file support as a usage analysis data source
+- Added formatting options (number formatting) to stats output
+- Fixed CLI output references
+
 ## [0.0.4] - 2026-03-26
 
 ### ✨ Features & Improvements
