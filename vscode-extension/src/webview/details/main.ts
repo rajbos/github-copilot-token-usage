@@ -422,7 +422,7 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	return section;
 }
 
-const TOP_N_MODELS = 10;
+const TOP_N_MODELS = 5;
 
 function buildModelTbody(stats: DetailedStats, topModels: string[], otherModels: string[], onToggleOther: () => void): HTMLTableSectionElement {
 	type ModelItem = {
