@@ -1,0 +1,785 @@
+{
+  "title": "Claude Code Session File Schema Documentation",
+  "description": "This document describes the structure of session log files created by Claude Code (Anthropic's CLI/IDE extension). These files contain actual Anthropic API token counts and can be used by the Copilot Token Tracker extension to report on Claude Code token usage.",
+  "version": "1.1",
+  "lastUpdated": "2026-03-28",
+  "schemaChanges": {
+    "1.1": {
+      "date": "2026-03-28",
+      "changes": [
+        "Added installationLocations section documenting %LOCALAPPDATA%\\claude-cli-nodejs\\ (Electron/Node.js app cache) and its MCP server log structure"
+      ]
+    },
+    "1.0": {
+      "date": "2026-03-28",
+      "changes": [
+        "Initial schema documentation based on observed session files from Claude Code v2.1.86"
+      ]
+    }
+  },
+  "officialSourceReferences": {
+    "description": "Claude Code is Anthropic's official CLI for Claude. Session files are written locally and never synced by default.",
+    "repository": "https://github.com/anthropics/claude-code",
+    "note": "The session file schema is internal to Claude Code and may evolve across versions. The fields documented here were observed in Claude Code v2.1.5 and v2.1.86."
+  },
+  "keyDifferencesFromCopilot": {
+    "description": "Notable differences between Claude Code session files and GitHub Copilot session files",
+    "actualTokenCounts": "Claude Code stores ACTUAL token counts from the Anthropic API in every assistant message. No estimation needed.",
+    "cacheTokens": "Includes separate fields for cache_creation_input_tokens and cache_read_input_tokens (prompt caching).",
+    "noContentText": "User message content is stored but assistant content is also stored in full — however, for token counting purposes only the usage object is needed.",
+    "messageLinkedList": "Messages form a linked list via parentUuid, enabling conversation tree reconstruction.",
+    "subagents": "Sub-agent conversations (spawned via the Agent tool) are stored in separate JSONL files under a subagents/ subdirectory.",
+    "statsCache": "A separate stats-cache.json file at ~/.claude/ contains pre-aggregated daily usage stats maintained by Claude Code itself."
+  },
+  "installationLocations": {
+    "description": "Directories written by Claude Code on Windows, aside from session files",
+    "appData_local": {
+      "path": "%LOCALAPPDATA%\\claude-cli-nodejs\\",
+      "description": "Electron/Node.js app cache for the Claude Code VSCode extension runtime. Named 'claude-cli-nodejs' because the VSCode extension runs Claude Code as a Node.js child process.",
+      "example_windows": "C:\\Users\\{username}\\AppData\\Local\\claude-cli-nodejs\\",
+      "subdirectories": {
+        "Cache": {
+          "path": "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache\\",
+          "description": "Per-project cache directories, one per unique working directory. Named using the same project-hash scheme as ~/.claude/projects/ (lowercase path with separators replaced by dashes).",
+          "subdirectories": {
+            "{project-hash}": {
+              "description": "One directory per project/cwd. Uses the same hash algorithm as the session file paths.",
+              "subdirectories": {
+                "mcp-logs-{entrypoint}": {
+                  "description": "MCP (Model Context Protocol) server initialization logs for this project. One subdirectory per entrypoint (e.g., mcp-logs-claude-vscode for the VSCode extension).",
+                  "files": {
+                    "{timestamp}.jsonl": {
+                      "description": "One JSONL log file per Claude Code session, named with the session start time in ISO 8601 format with colons replaced by dashes. Contains one JSON object per line recording MCP server connection attempts.",
+                      "example_filename": "2026-03-27T22-46-26-709Z.jsonl",
+                      "schema": {
+                        "error": {
+                          "type": "string",
+                          "description": "Error message if MCP server connection failed. Absent on success.",
+                          "example": "Failed to fetch tools: MCP error -32601: Method not found"
+                        },
+                        "timestamp": {
+                          "type": "string",
+                          "format": "ISO 8601",
+                          "description": "When the MCP connection attempt occurred",
+                          "example": "2026-03-27T22:47:31.005Z"
+                        },
+                        "sessionId": {
+                          "type": "string",
+                          "format": "UUID",
+                          "description": "The Claude Code session UUID this MCP attempt belongs to. Matches the session JSONL filename in ~/.claude/projects/.",
+                          "example": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00"
+                        },
+                        "cwd": {
+                          "type": "string",
+                          "description": "Working directory of the Claude Code session",
+                          "example": "c:\\Users\\{username}\\code\\repos\\myproject"
+                        }
+                      },
+                      "usedBy": "Not used for token counting. Useful for diagnosing MCP server configuration issues."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "fileLocations": {
+    "sessions": {
+      "path": "{HOME}/.claude/projects/{project-hash}/{session-uuid}.jsonl",
+      "description": "Main session JSONL file. One file per Claude Code session (conversation). Contains all user/assistant messages with actual API token usage.",
+      "example_windows": "C:\\Users\\{username}\\.claude\\projects\\c--Users-username-code-repos-myproject\\4817b4d3-a794-4be1-ac45-ea05f7dc9f00.jsonl",
+      "example_unix": "/home/{username}/.claude/projects/home-username-code-myproject/4817b4d3-a794-4be1-ac45-ea05f7dc9f00.jsonl"
+    },
+    "subagents": {
+      "path": "{HOME}/.claude/projects/{project-hash}/{session-uuid}/subagents/{agent-id}.jsonl",
+      "description": "Sub-agent session files. Created when the main session spawns a sub-agent via the Agent tool. Same JSONL format as main sessions but with agentId field and isSidechain: true on all entries.",
+      "example_windows": "C:\\Users\\{username}\\.claude\\projects\\c--Users-username-code-myproject\\b4b019cc-b5e0-44f9-ade1-f06673f37ec1\\subagents\\agent-a0d1d2d.jsonl"
+    },
+    "statsCache": {
+      "path": "{HOME}/.claude/stats-cache.json",
+      "description": "Pre-aggregated daily usage statistics maintained by Claude Code. Updated periodically (not necessarily after every session). May be stale if Claude Code has not been run recently.",
+      "example_windows": "C:\\Users\\{username}\\.claude\\stats-cache.json"
+    },
+    "activeSessions": {
+      "path": "{HOME}/.claude/sessions/{pid}.json",
+      "description": "Per-process session pointer file written while Claude Code is running. Contains the PID, session UUID, working directory, start time, kind (interactive/non-interactive), and entrypoint.",
+      "example": "{\"pid\":17320,\"sessionId\":\"4817b4d3-a794-4be1-ac45-ea05f7dc9f00\",\"cwd\":\"c:\\\\Users\\\\username\\\\code\",\"startedAt\":1774651588019,\"kind\":\"interactive\",\"entrypoint\":\"claude-vscode\"}"
+    }
+  },
+  "projectHashFormat": {
+    "description": "The {project-hash} segment in the path is derived from the project's working directory",
+    "algorithm": "The absolute path is lowercased, drive letter colon is removed, and all path separators (backslashes on Windows, forward slashes on Unix) are replaced with dashes.",
+    "examples": [
+      {
+        "cwd": "C:\\Users\\RobBos\\code\\repos\\myproject",
+        "hash": "c--Users-RobBos-code-repos-myproject"
+      },
+      {
+        "cwd": "/home/user/code/myproject",
+        "hash": "home-user-code-myproject"
+      }
+    ]
+  },
+  "fileFormat": {
+    "extension": ".jsonl",
+    "description": "JSON Lines format — one complete JSON object per line. Each line is an independent event/message.",
+    "encoding": "UTF-8"
+  },
+  "eventTypes": {
+    "description": "Each line in the JSONL file is one of the following event types, distinguished by the 'type' field",
+    "discriminatorField": "type",
+    "types": ["user", "assistant", "queue-operation", "file-history-snapshot", "ai-title"]
+  },
+  "commonFields": {
+    "description": "Fields present on most or all event types",
+    "fields": {
+      "type": {
+        "type": "string",
+        "description": "Event type discriminator. One of: user, assistant, queue-operation, file-history-snapshot, ai-title",
+        "usedBy": "Required — used to determine how to parse the rest of the line"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "ISO 8601",
+        "description": "When this event was recorded",
+        "example": "2026-03-27T22:47:31.013Z",
+        "usedBy": "Used to determine interaction timestamps and session duration"
+      },
+      "sessionId": {
+        "type": "string",
+        "format": "UUID",
+        "description": "The session UUID this event belongs to. Matches the filename.",
+        "example": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00",
+        "usedBy": "Used to correlate events; filename is sufficient"
+      }
+    }
+  },
+  "userEventSchema": {
+    "description": "A user message turn. Contains the user's input to Claude.",
+    "type_value": "user",
+    "fields": {
+      "uuid": {
+        "type": "string",
+        "format": "UUID",
+        "description": "Unique identifier for this message. Referenced by the assistant's parentUuid.",
+        "example": "e0d7fca7-bfec-4d81-a45c-973c0d2bdfab",
+        "usedBy": "Can be used to reconstruct conversation tree"
+      },
+      "parentUuid": {
+        "type": "string|null",
+        "format": "UUID",
+        "description": "UUID of the preceding message this replies to. null for the first message in a session.",
+        "example": "a6feddcc-710d-44ae-bb94-fefdee45ee6b",
+        "usedBy": "Conversation tree reconstruction"
+      },
+      "promptId": {
+        "type": "string",
+        "format": "UUID",
+        "description": "Groups a user message with all associated assistant messages (including streaming fragments). Shared across multiple assistant events for the same turn.",
+        "usedBy": "Interaction counting"
+      },
+      "isSidechain": {
+        "type": "boolean",
+        "description": "true for sub-agent sessions, false for the main conversation thread",
+        "usedBy": "Can be used to separate main vs sub-agent token usage"
+      },
+      "message": {
+        "type": "object",
+        "description": "The actual message content in Anthropic API format",
+        "properties": {
+          "role": {
+            "type": "string",
+            "value": "user"
+          },
+          "content": {
+            "type": "array|string",
+            "description": "Message content. Array of content blocks for structured content, or a plain string for simple messages (seen in subagent warmup messages).",
+            "items": {
+              "text_block": {
+                "type": "object",
+                "properties": {
+                  "type": { "value": "text" },
+                  "text": { "type": "string", "description": "User's text input" }
+                }
+              },
+              "tool_result_block": {
+                "type": "object",
+                "description": "Result returned from a tool call, fed back to the model",
+                "properties": {
+                  "type": { "value": "tool_result" },
+                  "tool_use_id": { "type": "string", "description": "Matches the tool_use id in the preceding assistant message" },
+                  "content": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": { "value": "text" },
+                        "text": { "type": "string", "description": "Tool output text" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "permissionMode": {
+        "type": "string",
+        "description": "The permission mode active for this message. e.g., 'default', 'acceptEdits'",
+        "example": "default",
+        "usedBy": "Not currently used for token counting"
+      },
+      "userType": {
+        "type": "string",
+        "description": "Always 'external' for user-initiated messages",
+        "usedBy": "Not currently used for token counting"
+      },
+      "entrypoint": {
+        "type": "string",
+        "description": "How Claude Code was launched. e.g., 'claude-vscode' (VSCode extension), 'claude-cli' (terminal)",
+        "example": "claude-vscode",
+        "usedBy": "Can be used to identify the editor/entrypoint"
+      },
+      "cwd": {
+        "type": "string",
+        "description": "Absolute path of the working directory when the message was sent",
+        "example": "c:\\Users\\RobBos\\code\\repos\\myproject",
+        "usedBy": "Used to identify the project/workspace"
+      },
+      "version": {
+        "type": "string",
+        "description": "Claude Code CLI version that created this message",
+        "example": "2.1.86",
+        "usedBy": "Not currently used for token counting"
+      },
+      "gitBranch": {
+        "type": "string",
+        "description": "Git branch active in the working directory at the time of the message",
+        "example": "team-dashboard",
+        "usedBy": "Not currently used for token counting"
+      },
+      "toolUseResult": {
+        "type": "object",
+        "description": "Present when this user message is the result of a tool execution (i.e., the model invoked a tool and this message contains its output back to the model). Contains tool result metadata.",
+        "usedBy": "Not currently used for token counting"
+      },
+      "sourceToolAssistantUUID": {
+        "type": "string",
+        "format": "UUID",
+        "description": "UUID of the assistant message that triggered this tool result. Present only on tool result user messages.",
+        "usedBy": "Conversation tree reconstruction"
+      }
+    },
+    "example": {
+      "parentUuid": null,
+      "isSidechain": false,
+      "promptId": "6cd34357-21e0-40a0-baec-e75f446d17e2",
+      "type": "user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "analyze the use of the extensions in this repo"
+          }
+        ]
+      },
+      "uuid": "e0d7fca7-bfec-4d81-a45c-973c0d2bdfab",
+      "timestamp": "2026-03-27T22:47:31.013Z",
+      "permissionMode": "default",
+      "userType": "external",
+      "entrypoint": "claude-vscode",
+      "cwd": "c:\\Users\\RobBos\\code\\repos\\myproject",
+      "sessionId": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00",
+      "version": "2.1.86",
+      "gitBranch": "team-dashboard"
+    }
+  },
+  "assistantEventSchema": {
+    "description": "An assistant response turn. Contains the model's output and ACTUAL token usage from the Anthropic API. A single user turn may produce multiple assistant events (streaming fragments, tool calls).",
+    "type_value": "assistant",
+    "note": "Multiple assistant events may share the same requestId (streaming fragments from one API call). Only the final event per requestId (with stop_reason != null) has complete token usage.",
+    "fields": {
+      "uuid": {
+        "type": "string",
+        "format": "UUID",
+        "description": "Unique identifier for this assistant message event",
+        "usedBy": "Referenced by the next user message's parentUuid"
+      },
+      "parentUuid": {
+        "type": "string",
+        "format": "UUID",
+        "description": "UUID of the user message this is a response to",
+        "usedBy": "Conversation tree reconstruction"
+      },
+      "requestId": {
+        "type": "string",
+        "description": "Anthropic API request ID (req_...). Shared by streaming fragments of the same API call.",
+        "example": "req_011CZUQ6Mrqaas2ZYHHuB7je",
+        "usedBy": "De-duplication: only count tokens once per unique requestId"
+      },
+      "isSidechain": {
+        "type": "boolean",
+        "description": "true for sub-agent sessions",
+        "usedBy": "Can separate main vs sub-agent token usage"
+      },
+      "slug": {
+        "type": "string",
+        "description": "Short human-readable identifier for the message",
+        "usedBy": "Not used for token counting"
+      },
+      "message": {
+        "type": "object",
+        "description": "The Anthropic API message response object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Anthropic message ID (msg_...)",
+            "example": "msg_0129W8zWLnU4o68dwRheMMFA"
+          },
+          "model": {
+            "type": "string",
+            "description": "The Claude model that generated this response",
+            "example": "claude-sonnet-4-6",
+            "usedBy": "Used to identify the model for per-model token breakdowns"
+          },
+          "type": {
+            "type": "string",
+            "value": "message"
+          },
+          "role": {
+            "type": "string",
+            "value": "assistant"
+          },
+          "content": {
+            "type": "array",
+            "description": "Response content blocks",
+            "items": {
+              "text_block": {
+                "type": "object",
+                "description": "Plain text response",
+                "properties": {
+                  "type": { "value": "text" },
+                  "text": { "type": "string", "description": "The assistant's text response" }
+                }
+              },
+              "thinking_block": {
+                "type": "object",
+                "description": "Extended thinking content (internal reasoning, shown separately in UI)",
+                "properties": {
+                  "type": { "value": "thinking" },
+                  "thinking": { "type": "string", "description": "The thinking/reasoning text" },
+                  "signature": { "type": "string", "description": "Cryptographic signature verifying this thinking block came from the model" }
+                }
+              },
+              "tool_use_block": {
+                "type": "object",
+                "description": "A tool call made by the assistant",
+                "properties": {
+                  "type": { "value": "tool_use" },
+                  "id": { "type": "string", "description": "Tool call ID (toolu_...)" },
+                  "name": { "type": "string", "description": "Tool name, e.g., 'Bash', 'Read', 'Write', 'Agent'" },
+                  "input": { "type": "object", "description": "Tool call arguments" },
+                  "caller": {
+                    "type": "object",
+                    "description": "Caller metadata",
+                    "properties": {
+                      "type": { "type": "string", "description": "e.g., 'direct'" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stop_reason": {
+            "type": "string|null",
+            "description": "Why the model stopped generating. null for streaming fragments, 'end_turn' for complete responses, 'tool_use' when a tool was called, 'max_tokens' if truncated.",
+            "values": [null, "end_turn", "tool_use", "max_tokens"],
+            "usedBy": "De-duplication: only count usage from events where stop_reason != null"
+          },
+          "stop_sequence": {
+            "type": "string|null",
+            "description": "The stop sequence that caused the model to stop, if applicable"
+          },
+          "usage": {
+            "type": "object",
+            "description": "ACTUAL token counts from the Anthropic API. Unlike Copilot session files which require estimation, these are exact counts.",
+            "usedBy": "Primary source for token counting — no estimation needed",
+            "properties": {
+              "input_tokens": {
+                "type": "number",
+                "description": "New input tokens processed that were NOT served from cache. Small when prompt caching is effective.",
+                "example": 3,
+                "usedBy": "Add to total input token count"
+              },
+              "output_tokens": {
+                "type": "number",
+                "description": "Output tokens generated by the model",
+                "example": 338,
+                "usedBy": "Add to total output token count"
+              },
+              "cache_creation_input_tokens": {
+                "type": "number",
+                "description": "Tokens written to the prompt cache in this request. These are charged at a higher rate than regular input tokens.",
+                "example": 4676,
+                "usedBy": "Track separately for accurate cost calculation; add to total input for usage volume"
+              },
+              "cache_read_input_tokens": {
+                "type": "number",
+                "description": "Tokens read from the prompt cache (not re-processed). Charged at a much lower rate. Indicates effective context reuse.",
+                "example": 11217,
+                "usedBy": "Track separately; significant indicator of caching efficiency"
+              },
+              "cache_creation": {
+                "type": "object",
+                "description": "Breakdown of cache creation by TTL tier (ephemeral prompt caching)",
+                "properties": {
+                  "ephemeral_5m_input_tokens": {
+                    "type": "number",
+                    "description": "Tokens cached with 5-minute TTL"
+                  },
+                  "ephemeral_1h_input_tokens": {
+                    "type": "number",
+                    "description": "Tokens cached with 1-hour TTL"
+                  }
+                },
+                "usedBy": "Detailed cache analysis; not required for basic token counting"
+              },
+              "server_tool_use": {
+                "type": "object",
+                "description": "Usage counts for server-side tools",
+                "properties": {
+                  "web_search_requests": {
+                    "type": "number",
+                    "description": "Number of web search requests made by the model"
+                  },
+                  "web_fetch_requests": {
+                    "type": "number",
+                    "description": "Number of web fetch (URL read) requests made"
+                  }
+                },
+                "usedBy": "Track tool usage; relevant if server-side tools are billed separately"
+              },
+              "service_tier": {
+                "type": "string",
+                "description": "API service tier used for this request",
+                "values": ["standard", "priority"],
+                "usedBy": "Not used for token counting"
+              },
+              "inference_geo": {
+                "type": "string",
+                "description": "Geographic region where inference was performed",
+                "example": "not_available",
+                "usedBy": "Not used for token counting"
+              },
+              "iterations": {
+                "type": "array",
+                "description": "Per-iteration token counts for multi-step reasoning (when applicable)",
+                "usedBy": "Not used for token counting (totals already in input/output_tokens)"
+              },
+              "speed": {
+                "type": "string",
+                "description": "Inference speed mode",
+                "values": ["standard", "fast"],
+                "usedBy": "Not used for token counting"
+              }
+            }
+          }
+        }
+      },
+      "entrypoint": {
+        "type": "string",
+        "description": "Same as user event — how Claude Code was launched",
+        "example": "claude-vscode"
+      },
+      "cwd": {
+        "type": "string",
+        "description": "Working directory when the response was generated"
+      },
+      "version": {
+        "type": "string",
+        "description": "Claude Code version"
+      },
+      "gitBranch": {
+        "type": "string",
+        "description": "Git branch at response time"
+      }
+    },
+    "example": {
+      "parentUuid": "e0d7fca7-bfec-4d81-a45c-973c0d2bdfab",
+      "isSidechain": false,
+      "message": {
+        "model": "claude-sonnet-4-6",
+        "id": "msg_0129W8zWLnU4o68dwRheMMFA",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_01DjW2nP8WA2RCetu3yYqi53",
+            "name": "Agent",
+            "input": {
+              "description": "Explore repo structure",
+              "subagent_type": "Explore"
+            }
+          }
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "usage": {
+          "input_tokens": 3,
+          "cache_creation_input_tokens": 4676,
+          "cache_read_input_tokens": 11217,
+          "output_tokens": 338,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 4676,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard"
+        }
+      },
+      "requestId": "req_011CZUQ6Mrqaas2ZYHHuB7je",
+      "type": "assistant",
+      "uuid": "a6feddcc-710d-44ae-bb94-fefdee45ee6b",
+      "timestamp": "2026-03-27T22:47:37.255Z",
+      "entrypoint": "claude-vscode",
+      "cwd": "c:\\Users\\RobBos\\code\\repos\\myproject",
+      "sessionId": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00",
+      "version": "2.1.86",
+      "gitBranch": "team-dashboard"
+    }
+  },
+  "queueOperationEventSchema": {
+    "description": "Internal queue management event, emitted at the start and end of each message exchange. Used by Claude Code for internal state management.",
+    "type_value": "queue-operation",
+    "usedBy": "Not used for token counting — skip these events",
+    "fields": {
+      "operation": {
+        "type": "string",
+        "values": ["enqueue", "dequeue"],
+        "description": "Whether the operation is queuing a request (enqueue) or processing it (dequeue)"
+      },
+      "sessionId": {
+        "type": "string",
+        "format": "UUID"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "ISO 8601"
+      }
+    },
+    "example": {
+      "type": "queue-operation",
+      "operation": "enqueue",
+      "timestamp": "2026-03-27T22:47:30.985Z",
+      "sessionId": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00"
+    }
+  },
+  "fileHistorySnapshotEventSchema": {
+    "description": "File state snapshot recorded at each user message turn to support undo functionality. Captures the state of any tracked files before Claude makes changes.",
+    "type_value": "file-history-snapshot",
+    "usedBy": "Not used for token counting — skip these events",
+    "fields": {
+      "messageId": {
+        "type": "string",
+        "format": "UUID",
+        "description": "The user message UUID this snapshot is associated with"
+      },
+      "snapshot": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "Same as the parent messageId"
+          },
+          "trackedFileBackups": {
+            "type": "object",
+            "description": "Map of file paths to their backed-up content. Empty object if no files were modified yet."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "ISO 8601"
+          }
+        }
+      },
+      "isSnapshotUpdate": {
+        "type": "boolean",
+        "description": "Whether this is an update to an existing snapshot rather than a new snapshot"
+      }
+    },
+    "example": {
+      "type": "file-history-snapshot",
+      "messageId": "e0d7fca7-bfec-4d81-a45c-973c0d2bdfab",
+      "snapshot": {
+        "messageId": "e0d7fca7-bfec-4d81-a45c-973c0d2bdfab",
+        "trackedFileBackups": {},
+        "timestamp": "2026-03-27T22:47:31.015Z"
+      },
+      "isSnapshotUpdate": false
+    }
+  },
+  "aiTitleEventSchema": {
+    "description": "AI-generated session title, written once per session after the first exchange. Used as a human-readable label for the session in history views.",
+    "type_value": "ai-title",
+    "usedBy": "Can be used as a display name for the session",
+    "fields": {
+      "sessionId": {
+        "type": "string",
+        "format": "UUID"
+      },
+      "aiTitle": {
+        "type": "string",
+        "description": "Human-readable title summarizing the session content",
+        "example": "Analyze repository extensions and local file storage"
+      }
+    },
+    "example": {
+      "type": "ai-title",
+      "sessionId": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00",
+      "aiTitle": "Analyze repository extensions and local file storage"
+    }
+  },
+  "subagentFiles": {
+    "description": "When Claude Code spawns a sub-agent via the Agent tool, a separate JSONL file is created under {session-uuid}/subagents/{agent-id}.jsonl. The format is identical to the main session JSONL with the following differences:",
+    "differences": {
+      "agentId": {
+        "present": true,
+        "description": "Short hex identifier for the sub-agent (e.g., 'a0d1d2d'). Present on all user and assistant events.",
+        "example": "a0d1d2d"
+      },
+      "isSidechain": {
+        "value": true,
+        "description": "Always true in subagent files"
+      },
+      "missingEventTypes": ["queue-operation", "file-history-snapshot", "ai-title"],
+      "messageFormat": {
+        "note": "Subagent user messages may use a plain string for message.content instead of an array of content blocks (e.g., warmup messages)"
+      }
+    }
+  },
+  "statsCacheSchema": {
+    "description": "Schema for ~/.claude/stats-cache.json — a pre-aggregated usage summary maintained by Claude Code itself.",
+    "note": "This file may be stale (lastComputedDate may be days or weeks behind). It only covers sessions that were present when the cache was last computed. For accurate up-to-date stats, parse the individual session JSONL files directly.",
+    "fields": {
+      "version": {
+        "type": "number",
+        "description": "Schema version",
+        "example": 1
+      },
+      "lastComputedDate": {
+        "type": "string",
+        "format": "YYYY-MM-DD",
+        "description": "Date when the cache was last recomputed by Claude Code"
+      },
+      "dailyActivity": {
+        "type": "array",
+        "description": "Per-day activity summary",
+        "items": {
+          "date": { "type": "string", "format": "YYYY-MM-DD" },
+          "messageCount": { "type": "number", "description": "Total messages exchanged" },
+          "sessionCount": { "type": "number", "description": "Number of sessions started" },
+          "toolCallCount": { "type": "number", "description": "Total tool calls made" }
+        }
+      },
+      "dailyModelTokens": {
+        "type": "array",
+        "description": "Per-day token usage by model",
+        "items": {
+          "date": { "type": "string", "format": "YYYY-MM-DD" },
+          "tokensByModel": {
+            "type": "object",
+            "description": "Map of model name to total tokens (sum of input + output)",
+            "example": { "claude-sonnet-4-5-20250929": 279887 }
+          }
+        }
+      },
+      "modelUsage": {
+        "type": "object",
+        "description": "Lifetime token usage aggregated per model",
+        "valueSchema": {
+          "inputTokens": { "type": "number" },
+          "outputTokens": { "type": "number" },
+          "cacheReadInputTokens": { "type": "number" },
+          "cacheCreationInputTokens": { "type": "number" },
+          "webSearchRequests": { "type": "number" },
+          "costUSD": { "type": "number", "description": "Calculated cost in USD (may be 0 if not computed)" },
+          "contextWindow": { "type": "number" },
+          "maxOutputTokens": { "type": "number" }
+        }
+      },
+      "totalSessions": { "type": "number" },
+      "totalMessages": { "type": "number" },
+      "longestSession": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string", "format": "UUID" },
+          "duration": { "type": "number", "description": "Session duration in milliseconds" },
+          "messageCount": { "type": "number" },
+          "timestamp": { "type": "string", "format": "ISO 8601", "description": "Session start time" }
+        }
+      },
+      "firstSessionDate": { "type": "string", "format": "ISO 8601" },
+      "hourCounts": {
+        "type": "object",
+        "description": "Map of hour (0-23) to number of sessions started in that hour",
+        "example": { "20": 1, "21": 1 }
+      }
+    }
+  },
+  "extensionIntegrationNotes": {
+    "description": "Guidance for integrating Claude Code session parsing into the Copilot Token Tracker extension",
+    "tokenCounting": {
+      "approach": "Use the 'usage' object in assistant events directly — no estimation needed",
+      "deduplication": "Multiple assistant events can share a requestId (streaming). Only count usage from the event with stop_reason != null, or sum unique requestIds.",
+      "inputTokens": "message.usage.input_tokens + message.usage.cache_creation_input_tokens + message.usage.cache_read_input_tokens = effective total input tokens processed",
+      "outputTokens": "message.usage.output_tokens",
+      "thinkingTokens": "Thinking tokens are included in output_tokens — no separate field",
+      "interactionCount": "Count distinct promptIds (or count user events with isSidechain=false)"
+    },
+    "sessionDiscovery": {
+      "glob": "{HOME}/.claude/projects/**/*.jsonl",
+      "excludeSubagents": "Exclude files under */subagents/* for main-session-only stats, or include for complete totals",
+      "projectMapping": "Reverse the project-hash algorithm to recover the original cwd: replace leading letter dash with letter colon (Windows), replace remaining dashes with appropriate separators"
+    },
+    "modelIdentification": {
+      "field": "assistant event → message.model",
+      "format": "Full model ID string, e.g., 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'",
+      "note": "Unlike Copilot where model is embedded in a freeform string, Claude Code provides the exact API model ID"
+    },
+    "modeDetection": {
+      "agentMode": "Check if any assistant event in the session has a tool_use content block with name='Agent'",
+      "toolCallDetection": "Count tool_use content blocks across all assistant events",
+      "toolNames": "Available from tool_use blocks: Bash, Read, Write, Edit, Glob, Grep, Agent, WebSearch, WebFetch, etc."
+    },
+    "editorType": {
+      "field": "user event → entrypoint",
+      "values": {
+        "claude-vscode": "VS Code extension",
+        "claude-cli": "Terminal CLI"
+      }
+    },
+    "timestamp": {
+      "firstInteraction": "timestamp of first user event with isSidechain=false",
+      "lastInteraction": "timestamp of last assistant event with isSidechain=false and stop_reason != null"
+    }
+  },
+  "notes": {
+    "actualVsEstimated": "The most significant difference from Copilot: Claude Code records ACTUAL Anthropic API token counts. The input_tokens + cache_creation_input_tokens + cache_read_input_tokens fields together give the true context size.",
+    "promptCachingImpact": "In typical Claude Code sessions, cache_read_input_tokens dominates because the system prompt and conversation history are cached. Only new content generates input_tokens. For cost calculation, the three fields must be weighted differently.",
+    "multipleAssistantEvents": "A single user turn may generate many assistant events as the model streams content or makes multiple tool calls. Each has its own usage accounting. Sum by unique requestId or use stop_reason to find final counts.",
+    "subagentTokens": "Sub-agents run as separate API calls and have their own token usage. Their JSONL files are separate, so including or excluding subagents is a clean decision.",
+    "noContentEstimation": "Unlike Copilot Token Tracker's character-based estimation, Claude Code session files make estimation unnecessary — always use the usage.input_tokens / output_tokens fields directly.",
+    "versionObserved": "Schema documented from Claude Code v2.1.5 and v2.1.86 (March 2026). Fields may be added in future versions."
+  }
+}

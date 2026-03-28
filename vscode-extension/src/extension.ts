@@ -54,6 +54,7 @@ import { OpenCodeDataAccess } from './opencode';
 import { CrushDataAccess } from './crush';
 import { VisualStudioDataAccess } from './visualstudio';
 import { ContinueDataAccess } from './continue';
+import { ClaudeCodeDataAccess } from './claudecode';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -126,10 +127,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private crush: CrushDataAccess;
 	private visualStudio: VisualStudioDataAccess;
 	private continue_: ContinueDataAccess;
+	private claudeCode: ClaudeCodeDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -447,8 +449,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.crush = new CrushDataAccess(extensionUri);
 		this.continue_ = new ContinueDataAccess();
 		this.visualStudio = new VisualStudioDataAccess();
+		this.claudeCode = new ClaudeCodeDataAccess();
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
-		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_ });
+		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode });
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('AI Engineering Fluency');
@@ -1801,6 +1804,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.continue_.countContinueInteractions(sessionFile);
 			}
 
+			// Handle Claude Code sessions
+			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
+				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -2030,6 +2038,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 					lastInteraction = fileStat.mtime.toISOString();
 				}
 				return { title, firstInteraction, lastInteraction };
+			}
+
+			// Handle Claude Code sessions
+			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
+				const meta = this.claudeCode.getClaudeCodeSessionMeta(sessionFile);
+				return {
+					title: meta?.title,
+					firstInteraction: meta?.firstInteraction || null,
+					lastInteraction: meta?.lastInteraction || null,
+				};
 			}
 
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
@@ -3424,6 +3442,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.continue_.isContinueSessionFile(sessionFilePath)) {
 				const result = this.continue_.getTokensFromContinueSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens }; // Continue has actual counts
+			}
+
+			// Handle Claude Code sessions - actual Anthropic API token counts
+			if (this.claudeCode.isClaudeCodeSessionFile(sessionFilePath)) {
+				const result = this.claudeCode.getTokensFromClaudeCodeSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens };
 			}
 
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');

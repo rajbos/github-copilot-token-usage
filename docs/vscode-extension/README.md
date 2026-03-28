@@ -77,6 +77,7 @@ Supported editors shown in the chart:
 - `Cursor` — Cursor editor
 - `OpenCode` — Terminal-based coding agent
 - `Crush` — Terminal-based coding agent
+- `Claude Code` — Anthropic CLI/IDE extension (actual API token counts, no estimation)
 - `Visual Studio` — Visual Studio IDE (2022+); token counts are **estimated** from prompt and response text length
 
 ---
@@ -249,7 +250,7 @@ The extension uses intelligent caching to improve performance:
 
 ## Known Issues
 
-- Numbers shown use **actual token counts** from the LLM API when available (e.g. Copilot Chat JSONL sessions and OpenCode sessions). When actual token data is not available, the extension falls back to **estimates** computed from text in the session logs.
+- Numbers shown use **actual token counts** from the LLM API when available (e.g. Copilot Chat JSONL sessions, OpenCode sessions, and Claude Code sessions). When actual token data is not available, the extension falls back to **estimates** computed from text in the session logs.
 - If you use multiple machines (or multiple VS Code profiles/windows), local-only mode will only reflect what's on the current machine. The cloud backend improves cross-device coverage.
 - Premium Requests are not tracked.
 - Dev Containers: Copilot Chat session logs are written to the host machine's user profile (outside the container). The extension currently does not read from host paths, so token tracking will not work inside a Dev Container. Run VS Code locally (outside the container) or mount the host user data directories into the container at the expected locations.

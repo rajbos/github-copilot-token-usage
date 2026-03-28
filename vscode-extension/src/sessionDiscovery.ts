@@ -9,6 +9,7 @@ import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from "./visualstudio";
+import type { ClaudeCodeDataAccess } from './claudecode';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -18,6 +19,7 @@ export interface SessionDiscoveryDeps {
 	crush: CrushDataAccess;
 	continue_: ContinueDataAccess;
 	visualStudio: VisualStudioDataAccess;
+	claudeCode: ClaudeCodeDataAccess;
 }
 
 export class SessionDiscovery {
@@ -148,6 +150,12 @@ export class SessionDiscovery {
 		let continueExists = false;
 		try { continueExists = fs.existsSync(continueSessionsDir); } catch { /* ignore */ }
 		candidates.push({ path: continueSessionsDir, exists: continueExists, source: 'Continue' });
+
+		// Claude Code projects directory
+		const claudeCodeProjectsDir = this.deps.claudeCode.getClaudeCodeProjectsDir();
+		let claudeCodeExists = false;
+		try { claudeCodeExists = fs.existsSync(claudeCodeProjectsDir); } catch { /* ignore */ }
+		candidates.push({ path: claudeCodeProjectsDir, exists: claudeCodeExists, source: 'Claude Code' });
 
 		return candidates;
 	}
@@ -475,6 +483,17 @@ export class SessionDiscovery {
 				}
 			} catch (vsError) {
 				this.deps.warn(`Could not read Visual Studio session files: ${vsError}`);
+			}
+
+			// Check for Claude Code session files (~/.claude/projects/**/*.jsonl)
+			try {
+				const claudeCodeFiles = this.deps.claudeCode.getClaudeCodeSessionFiles();
+				if (claudeCodeFiles.length > 0) {
+					this.deps.log(`📄 Found ${claudeCodeFiles.length} session file(s) in Claude Code (~/.claude/projects)`);
+					sessionFiles.push(...claudeCodeFiles);
+				}
+			} catch (claudeError) {
+				this.deps.warn(`Could not read Claude Code session files: ${claudeError}`);
 			}
 
 			// Log summary
