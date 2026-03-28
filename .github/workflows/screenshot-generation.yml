@@ -33,7 +33,7 @@ jobs:
         run: |
           echo "Checking test data..."
           ls -la test-data/chatSessions/
-          echo "Found $(ls test-data/chatSessions/*.json | wc -l) test session files"
+          echo "Found $(find test-data/chatSessions -name '*.json' | wc -l) test session files"
 
       - name: Generate HTML previews from test data
         run: node scripts/generate-all-previews.js
@@ -51,7 +51,7 @@ jobs:
           echo "=== Generated Screenshots ==="
           ls -lh docs/images/screenshots/*.png
           echo ""
-          echo "Total: $(ls docs/images/screenshots/*.png | wc -l) screenshots"
+          echo "Total: $(find docs/images/screenshots -name '*.png' | wc -l) screenshots"
 
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
@@ -63,15 +63,15 @@ jobs:
       - name: Workflow Summary
         if: always()
         run: |
-          echo "## 📸 Screenshot Generation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📸 Screenshot Generation Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           if ls docs/images/screenshots/*.png 1> /dev/null 2>&1; then
-            echo "### ✅ Screenshots Generated" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Screenshots Generated" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
             for f in docs/images/screenshots/*.png; do
               size=$(du -h "$f" | cut -f1)
-              echo "- \`$(basename $f)\` ($size)" >> $GITHUB_STEP_SUMMARY
+              echo "- \`$(basename "$f")\` ($size)" >> "$GITHUB_STEP_SUMMARY"
             done
           else
-            echo "### ❌ No screenshots found" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ No screenshots found" >> "$GITHUB_STEP_SUMMARY"
           fi
