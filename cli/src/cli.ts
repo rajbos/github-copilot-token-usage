@@ -12,6 +12,7 @@ import { fluencyCommand } from './commands/fluency';
 import { diagnosticsCommand } from './commands/diagnostics';
 import { chartCommand } from './commands/chart';
 import { usageAnalysisCommand } from './commands/usage-analysis';
+import { allCommand } from './commands/all';
 import { loadCache, saveCache, disableCache } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -44,5 +45,6 @@ program.addCommand(fluencyCommand);
 program.addCommand(diagnosticsCommand);
 program.addCommand(chartCommand);
 program.addCommand(usageAnalysisCommand);
+program.addCommand(allCommand);
 
 program.parse();
