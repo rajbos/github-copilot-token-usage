@@ -42,6 +42,7 @@ type DetailedStats = {
 	sortSettings?: {
 		editor?: { key?: string; dir?: string };
 		model?: { key?: string; dir?: string };
+		modelOtherExpanded?: boolean;
 	};
 };
 
@@ -72,6 +73,7 @@ let editorSortKey: TableSortKey = (_initSort?.editor?.key as TableSortKey) ?? 'n
 let editorSortDir: SortDir = (_initSort?.editor?.dir as SortDir) ?? 'asc';
 let modelSortKey: TableSortKey = (_initSort?.model?.key as TableSortKey) ?? 'name';
 let modelSortDir: SortDir = (_initSort?.model?.dir as SortDir) ?? 'asc';
+let modelOtherExpanded: boolean = (_initSort?.modelOtherExpanded) ?? false;
 
 function calculateProjection(last30DaysValue: number): number {
 	// Project annual value based on last 30 days average
@@ -265,7 +267,8 @@ function saveSortSettings(): void {
 		command: 'saveSortSettings',
 		settings: {
 			editor: { key: editorSortKey, dir: editorSortDir },
-			model: { key: modelSortKey, dir: modelSortDir }
+			model: { key: modelSortKey, dir: modelSortDir },
+			modelOtherExpanded
 		}
 	});
 }
@@ -419,7 +422,9 @@ function buildEditorUsageSection(stats: DetailedStats): HTMLElement | null {
 	return section;
 }
 
-function buildModelTbody(stats: DetailedStats, allModels: string[]): HTMLTableSectionElement {
+const TOP_N_MODELS = 10;
+
+function buildModelTbody(stats: DetailedStats, topModels: string[], otherModels: string[], onToggleOther: () => void): HTMLTableSectionElement {
 	type ModelItem = {
 		model: string;
 		todayTotal: number;
@@ -435,7 +440,7 @@ function buildModelTbody(stats: DetailedStats, allModels: string[]): HTMLTableSe
 		charsPerToken: number;
 	};
 
-	const items: ModelItem[] = allModels.map(model => {
+	function toModelItem(model: string): ModelItem {
 		const todayUsage = stats.today.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const last30DaysUsage = stats.last30Days.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
 		const lastMonthUsage = stats.lastMonth.modelUsage[model] || { inputTokens: 0, outputTokens: 0 };
@@ -456,29 +461,33 @@ function buildModelTbody(stats: DetailedStats, allModels: string[]): HTMLTableSe
 			projected: Math.round(calculateProjection(last30DaysTotal)),
 			charsPerToken: getCharsPerToken(model)
 		};
-	});
+	}
 
-	items.sort((a, b) => {
-		let cmp: number;
-		switch (modelSortKey) {
-			case 'name': cmp = a.model.localeCompare(b.model); break;
-			case 'today': cmp = a.todayTotal - b.todayTotal; break;
-			case 'last30Days': cmp = a.last30DaysTotal - b.last30DaysTotal; break;
-			case 'lastMonth': cmp = a.lastMonthTotal - b.lastMonthTotal; break;
-			case 'projected': cmp = a.projected - b.projected; break;
-			default: cmp = 0;
-		}
-		return modelSortDir === 'asc' ? cmp : -cmp;
-	});
+	function sortItems(items: ModelItem[]): void {
+		items.sort((a, b) => {
+			let cmp: number;
+			switch (modelSortKey) {
+				case 'name': cmp = a.model.localeCompare(b.model); break;
+				case 'today': cmp = a.todayTotal - b.todayTotal; break;
+				case 'last30Days': cmp = a.last30DaysTotal - b.last30DaysTotal; break;
+				case 'lastMonth': cmp = a.lastMonthTotal - b.lastMonthTotal; break;
+				case 'projected': cmp = a.projected - b.projected; break;
+				default: cmp = 0;
+			}
+			return modelSortDir === 'asc' ? cmp : -cmp;
+		});
+	}
 
-	const tbody = document.createElement('tbody');
-
-	items.forEach(item => {
+	function buildModelRow(item: ModelItem, isOtherChild: boolean): HTMLTableRowElement {
 		const tr = document.createElement('tr');
+		if (isOtherChild) {
+			tr.style.opacity = '0.85';
+		}
 		const labelTd = document.createElement('td');
 		const labelWrapper = document.createElement('span');
 		labelWrapper.className = 'metric-label';
-		labelWrapper.innerHTML = `${getModelDisplayName(item.model)} <span style="color:#9aa0a6;font-size:11px; font-weight:500;">(~${item.charsPerToken.toFixed(1)} chars/tk)</span>`;
+		const indent = isOtherChild ? '<span style="display:inline-block;width:12px"></span>' : '';
+		labelWrapper.innerHTML = `${indent}${getModelDisplayName(item.model)} <span style="color:#9aa0a6;font-size:11px; font-weight:500;">(~${item.charsPerToken.toFixed(1)} chars/tk)</span>`;
 		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
@@ -504,8 +513,89 @@ function buildModelTbody(stats: DetailedStats, allModels: string[]): HTMLTableSe
 		projTd.textContent = formatCompact(item.projected);
 
 		tr.append(labelTd, todayTd, last30DaysTd, lastMonthTd, projTd);
-		tbody.append(tr);
-	});
+		return tr;
+	}
+
+	const topItems = topModels.map(toModelItem);
+	sortItems(topItems);
+
+	const tbody = document.createElement('tbody');
+	topItems.forEach(item => tbody.append(buildModelRow(item, false)));
+
+	// "Other" group — only rendered when there are more than TOP_N_MODELS models
+	if (otherModels.length > 0) {
+		// Aggregate summed stats across all periods for the "Other" group
+		const sumUsage = (period: 'today' | 'last30Days' | 'lastMonth') =>
+			otherModels.reduce(
+				(acc, m) => {
+					const u = stats[period].modelUsage[m] || { inputTokens: 0, outputTokens: 0 };
+					return { inputTokens: acc.inputTokens + u.inputTokens, outputTokens: acc.outputTokens + u.outputTokens };
+				},
+				{ inputTokens: 0, outputTokens: 0 }
+			);
+		const otherToday = sumUsage('today');
+		const otherLast30 = sumUsage('last30Days');
+		const otherLastMonth = sumUsage('lastMonth');
+		const otherTodayTotal = otherToday.inputTokens + otherToday.outputTokens;
+		const otherLast30Total = otherLast30.inputTokens + otherLast30.outputTokens;
+		const otherLastMonthTotal = otherLastMonth.inputTokens + otherLastMonth.outputTokens;
+		const otherProjected = Math.round(calculateProjection(otherLast30Total));
+
+		const pct = (part: number, total: number) => (total > 0 ? (part / total) * 100 : 0);
+
+		// "Other" summary row
+		const otherTr = document.createElement('tr');
+		otherTr.style.cursor = 'pointer';
+		otherTr.style.background = 'var(--list-hover-bg)';
+		otherTr.title = modelOtherExpanded ? 'Collapse other models' : 'Expand other models';
+
+		const otherLabelTd = document.createElement('td');
+		const otherLabelWrapper = document.createElement('span');
+		otherLabelWrapper.className = 'metric-label';
+		const toggleIcon = modelOtherExpanded ? '▲' : '▼';
+		otherLabelWrapper.innerHTML = `<span style="color:var(--text-secondary);font-weight:600;">📦 Other (${otherModels.length} model${otherModels.length !== 1 ? 's' : ''})</span> <span style="font-size:10px;color:var(--text-muted)">${toggleIcon}</span>`;
+		otherLabelTd.append(otherLabelWrapper);
+
+		const otherTodayTd = document.createElement('td');
+		otherTodayTd.className = 'value-right align-right';
+		otherTodayTd.textContent = formatCompact(otherTodayTotal);
+		if (otherTodayTotal > 0) {
+			otherTodayTd.append(el('div', 'muted', `↑${formatPercent(pct(otherToday.inputTokens, otherTodayTotal))} ↓${formatPercent(pct(otherToday.outputTokens, otherTodayTotal))}`));
+		}
+
+		const otherLast30Td = document.createElement('td');
+		otherLast30Td.className = 'value-right align-right';
+		otherLast30Td.textContent = formatCompact(otherLast30Total);
+		if (otherLast30Total > 0) {
+			otherLast30Td.append(el('div', 'muted', `↑${formatPercent(pct(otherLast30.inputTokens, otherLast30Total))} ↓${formatPercent(pct(otherLast30.outputTokens, otherLast30Total))}`));
+		}
+
+		const otherLastMonthTd = document.createElement('td');
+		otherLastMonthTd.className = 'value-right align-right';
+		otherLastMonthTd.textContent = formatCompact(otherLastMonthTotal);
+		if (otherLastMonthTotal > 0) {
+			otherLastMonthTd.append(el('div', 'muted', `↑${formatPercent(pct(otherLastMonth.inputTokens, otherLastMonthTotal))} ↓${formatPercent(pct(otherLastMonth.outputTokens, otherLastMonthTotal))}`));
+		}
+
+		const otherProjTd = document.createElement('td');
+		otherProjTd.className = 'value-right align-right';
+		otherProjTd.textContent = formatCompact(otherProjected);
+
+		otherTr.append(otherLabelTd, otherTodayTd, otherLast30Td, otherLastMonthTd, otherProjTd);
+		otherTr.addEventListener('click', () => {
+			modelOtherExpanded = !modelOtherExpanded;
+			saveSortSettings();
+			onToggleOther();
+		});
+		tbody.append(otherTr);
+
+		// When expanded, show individual "other" model rows beneath the summary row
+		if (modelOtherExpanded) {
+			const otherItems = otherModels.map(toModelItem);
+			sortItems(otherItems);
+			otherItems.forEach(item => tbody.append(buildModelRow(item, true)));
+		}
+	}
 
 	return tbody;
 }
@@ -520,6 +610,15 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 	if (allModels.size === 0) {
 		return null;
 	}
+
+	// Determine top N models by last30Days usage; the rest go into the "Other" group
+	const sortedByLast30Days = Array.from(allModels).sort((a, b) => {
+		const aUsage = stats.last30Days.modelUsage[a] || { inputTokens: 0, outputTokens: 0 };
+		const bUsage = stats.last30Days.modelUsage[b] || { inputTokens: 0, outputTokens: 0 };
+		return (bUsage.inputTokens + bUsage.outputTokens) - (aUsage.inputTokens + aUsage.outputTokens);
+	});
+	const topModels = sortedByLast30Days.slice(0, TOP_N_MODELS);
+	const otherModels = sortedByLast30Days.slice(TOP_N_MODELS);
 
 	const section = el('div', 'section');
 	const heading = el('h3');
@@ -539,6 +638,13 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 		{ icon: '🌍', text: 'Projected Year', key: 'projected' }
 	];
 	const modelHeaderWraps: HTMLElement[] = [];
+
+	function rebuildTbody(): void {
+		const newTbody = buildModelTbody(stats, topModels, otherModels, rebuildTbody);
+		const oldTbody = table.querySelector('tbody');
+		if (oldTbody) { table.replaceChild(newTbody, oldTbody); } else { table.append(newTbody); }
+	}
+
 	modelColHeaders.forEach((h, idx) => {
 		const th = document.createElement('th');
 		th.className = idx === 0 ? '' : 'align-right';
@@ -559,16 +665,14 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 			modelHeaderWraps.forEach((w, i) => {
 				w.textContent = `${modelColHeaders[i].icon} ${modelColHeaders[i].text}${getSortIndicator(modelColHeaders[i].key, modelSortKey, modelSortDir)}`;
 			});
-			const newTbody = buildModelTbody(stats, Array.from(allModels));
-			const oldTbody = table.querySelector('tbody');
-			if (oldTbody) { table.replaceChild(newTbody, oldTbody); } else { table.append(newTbody); }
+			rebuildTbody();
 			saveSortSettings();
 		});
 		headerRow.append(th);
 	});
 	thead.append(headerRow);
 	table.append(thead);
-	table.append(buildModelTbody(stats, Array.from(allModels)));
+	rebuildTbody();
 	section.append(table);
 	return section;
 }
