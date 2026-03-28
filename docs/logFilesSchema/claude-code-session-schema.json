@@ -1,9 +1,15 @@
 {
   "title": "Claude Code Session File Schema Documentation",
   "description": "This document describes the structure of session log files created by Claude Code (Anthropic's CLI/IDE extension). These files contain actual Anthropic API token counts and can be used by the Copilot Token Tracker extension to report on Claude Code token usage.",
-  "version": "1.0",
+  "version": "1.1",
   "lastUpdated": "2026-03-28",
   "schemaChanges": {
+    "1.1": {
+      "date": "2026-03-28",
+      "changes": [
+        "Added installationLocations section documenting %LOCALAPPDATA%\\claude-cli-nodejs\\ (Electron/Node.js app cache) and its MCP server log structure"
+      ]
+    },
     "1.0": {
       "date": "2026-03-28",
       "changes": [
@@ -24,6 +30,61 @@
     "messageLinkedList": "Messages form a linked list via parentUuid, enabling conversation tree reconstruction.",
     "subagents": "Sub-agent conversations (spawned via the Agent tool) are stored in separate JSONL files under a subagents/ subdirectory.",
     "statsCache": "A separate stats-cache.json file at ~/.claude/ contains pre-aggregated daily usage stats maintained by Claude Code itself."
+  },
+  "installationLocations": {
+    "description": "Directories written by Claude Code on Windows, aside from session files",
+    "appData_local": {
+      "path": "%LOCALAPPDATA%\\claude-cli-nodejs\\",
+      "description": "Electron/Node.js app cache for the Claude Code VSCode extension runtime. Named 'claude-cli-nodejs' because the VSCode extension runs Claude Code as a Node.js child process.",
+      "example_windows": "C:\\Users\\{username}\\AppData\\Local\\claude-cli-nodejs\\",
+      "subdirectories": {
+        "Cache": {
+          "path": "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache\\",
+          "description": "Per-project cache directories, one per unique working directory. Named using the same project-hash scheme as ~/.claude/projects/ (lowercase path with separators replaced by dashes).",
+          "subdirectories": {
+            "{project-hash}": {
+              "description": "One directory per project/cwd. Uses the same hash algorithm as the session file paths.",
+              "subdirectories": {
+                "mcp-logs-{entrypoint}": {
+                  "description": "MCP (Model Context Protocol) server initialization logs for this project. One subdirectory per entrypoint (e.g., mcp-logs-claude-vscode for the VSCode extension).",
+                  "files": {
+                    "{timestamp}.jsonl": {
+                      "description": "One JSONL log file per Claude Code session, named with the session start time in ISO 8601 format with colons replaced by dashes. Contains one JSON object per line recording MCP server connection attempts.",
+                      "example_filename": "2026-03-27T22-46-26-709Z.jsonl",
+                      "schema": {
+                        "error": {
+                          "type": "string",
+                          "description": "Error message if MCP server connection failed. Absent on success.",
+                          "example": "Failed to fetch tools: MCP error -32601: Method not found"
+                        },
+                        "timestamp": {
+                          "type": "string",
+                          "format": "ISO 8601",
+                          "description": "When the MCP connection attempt occurred",
+                          "example": "2026-03-27T22:47:31.005Z"
+                        },
+                        "sessionId": {
+                          "type": "string",
+                          "format": "UUID",
+                          "description": "The Claude Code session UUID this MCP attempt belongs to. Matches the session JSONL filename in ~/.claude/projects/.",
+                          "example": "4817b4d3-a794-4be1-ac45-ea05f7dc9f00"
+                        },
+                        "cwd": {
+                          "type": "string",
+                          "description": "Working directory of the Claude Code session",
+                          "example": "c:\\Users\\{username}\\code\\repos\\myproject"
+                        }
+                      },
+                      "usedBy": "Not used for token counting. Useful for diagnosing MCP server configuration issues."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "fileLocations": {
     "sessions": {
