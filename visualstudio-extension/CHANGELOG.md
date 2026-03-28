@@ -6,6 +6,11 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-03-28
+
+### ✨ Features & Improvements
+- Load all webview panels with a single CLI call instead of one per view (performance improvement)
+
 ## [1.0.1] - 2026-03-26
 
 ### 🎉 Initial Release
