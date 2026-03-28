@@ -327,4 +327,8 @@
   ,"screenshot_page": "Screenshot Page"
   ,"task_complete": "Task Complete"
   ,"pdf-utilities.pdf": "PDF Utilities: PDF"
+  ,"container-tools_get-config": "Container Tools: Get Config"
+  ,"github-pull-request_activePullRequest": "GitHub Pull Request: Active Pull Request"
+  ,"github-pull-request_issue_fetch": "GitHub Pull Request: Issue Fetch"
+  ,"github-pull-request_pullRequestStatusChecks": "GitHub Pull Request: Pull Request Status Checks"
 }
