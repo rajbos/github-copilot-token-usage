@@ -9,8 +9,7 @@ on:
   push:
     paths:
       - 'vscode-extension/src/**'
-      - 'scripts/generate-all-previews.js'
-      - 'scripts/capture-screenshots.js'
+      - 'scripts/capture-real-screenshots.js'
       - 'test-data/**'
       - '.github/workflows/screenshot-generation.yml'
 
@@ -28,23 +27,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
 
-      - name: Verify test data exists
-        run: |
-          echo "Checking test data..."
-          ls -la test-data/chatSessions/
-          echo "Found $(find test-data/chatSessions -name '*.json' | wc -l) test session files"
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: npm ci
 
-      - name: Generate HTML previews from test data
-        run: node scripts/generate-all-previews.js
+      - name: Build extension (produces webview bundles)
+        working-directory: vscode-extension
+        run: npm run compile
 
       - name: Install Playwright
         run: |
           npm install playwright
           npx playwright install chromium --with-deps
 
-      - name: Capture screenshots
-        run: node scripts/capture-screenshots.js
+      - name: Capture real screenshots
+        run: node scripts/capture-real-screenshots.js
 
       - name: List generated screenshots
         run: |

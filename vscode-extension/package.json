@@ -297,6 +297,7 @@
     "screenshot:setup": "node ../scripts/screenshot-ui-views.js",
     "screenshot:preview": "node ../scripts/generate-preview.js",
     "screenshot:all": "node ../scripts/generate-all-previews.js",
+    "screenshot:real": "node ../scripts/capture-real-screenshots.js",
     "test:data": "node ../scripts/test-data-validation.js",
     "cli:build": "cd cli && npm install && npm run build",
     "cli:build:production": "cd cli && npm install && npm run build:production",
