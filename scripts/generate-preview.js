@@ -28,14 +28,10 @@ const testFiles = fs.readdirSync(testDataDir)
 
 console.log(`Found ${testFiles.length} test data files`);
 
-// Token estimators (from tokenEstimators.json)
-const tokenEstimators = {
-    'gpt-4o-2024-11-20': 0.28,
-    'gpt-4o': 0.28,
-    'claude-3.5-sonnet': 0.29,
-    'o1-2024-12-17': 0.27,
-    'o1': 0.27
-};
+// Load token estimators from the canonical source file
+const tokenEstimators = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'vscode-extension', 'src', 'tokenEstimators.json'), 'utf8')
+).estimators;
 
 // Process test data to calculate stats
 let totalTokens = 0;

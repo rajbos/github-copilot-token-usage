@@ -95,7 +95,7 @@ if (testDataFiles.length === 0) {
 console.log(`✅ Found ${testDataFiles.length} test data file(s) in ${testDataDir}`);
 
 // Check if extension is built
-const distPath = path.join(__dirname, '..', 'dist', 'extension.js');
+const distPath = path.join(__dirname, '..', 'vscode-extension', 'dist', 'extension.js');
 if (!fs.existsSync(distPath)) {
     console.error('❌ Extension not built. Please run: npm run compile');
     process.exit(1);

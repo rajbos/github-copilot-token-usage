@@ -32,23 +32,15 @@ const testFiles = fs.readdirSync(testDataDir)
 
 console.log(`\nFound ${testFiles.length} test data files\n`);
 
-// Token estimators (from tokenEstimators.json)
-const tokenEstimators = {
-    'gpt-4o-2024-11-20': 0.28,
-    'gpt-4o': 0.28,
-    'claude-3.5-sonnet': 0.29,
-    'o1-2024-12-17': 0.27,
-    'o1': 0.27
-};
+// Load token estimators from the canonical source file
+const tokenEstimators = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'vscode-extension', 'src', 'tokenEstimators.json'), 'utf8')
+).estimators;
 
-// Model pricing (from modelPricing.json)
-const modelPricing = {
-    'gpt-4o-2024-11-20': { inputCostPerMillion: 2.50, outputCostPerMillion: 10.00 },
-    'gpt-4o': { inputCostPerMillion: 2.50, outputCostPerMillion: 10.00 },
-    'claude-3.5-sonnet': { inputCostPerMillion: 3.00, outputCostPerMillion: 15.00 },
-    'o1-2024-12-17': { inputCostPerMillion: 15.00, outputCostPerMillion: 60.00 },
-    'o1': { inputCostPerMillion: 15.00, outputCostPerMillion: 60.00 }
-};
+// Load model pricing from the canonical source file
+const modelPricing = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'vscode-extension', 'src', 'modelPricing.json'), 'utf8')
+).pricing;
 
 // Process test data to calculate stats
 let totalTokens = 0;
@@ -163,8 +155,7 @@ console.log(`  Total tokens: ${totalTokens.toLocaleString()}`);
 console.log(`  Estimated cost: $${estimatedCost.toFixed(4)}\n`);
 
 const outputDir = path.join(__dirname, '..', 'docs', 'images', 'screenshots');
-
-// Common styles for all views
+fs.mkdirSync(outputDir, { recursive: true });
 const commonStyles = `
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -912,8 +903,10 @@ console.log(`  ${outputDir}/preview-usage.html`);
 console.log(`  ${outputDir}/preview-diagnostics.html\n`);
 
 if (takeScreenshots) {
-    console.log('📸 Screenshots will be taken...');
-    console.log('   Run: node scripts/capture-screenshots.js\n');
+    const { execSync } = require('child_process');
+    const captureScript = path.join(__dirname, 'capture-screenshots.js');
+    console.log('📸 Capturing screenshots...\n');
+    execSync(`node "${captureScript}"`, { stdio: 'inherit' });
 } else {
     console.log('💡 To capture screenshots, run:');
     console.log('   node scripts/capture-screenshots.js\n');
