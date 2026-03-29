@@ -22,4 +22,11 @@
     <ProjectReference Include="..\CopilotTokenTracker\CopilotTokenTracker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\CopilotTokenTracker\source.extension.vsixmanifest">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>source.extension.vsixmanifest</Link>
+    </Content>
+  </ItemGroup>
+
 </Project>
