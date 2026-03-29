@@ -16,6 +16,11 @@ on:
         required: false
         default: true
         type: boolean
+      vs_only:
+        description: 'Build and publish only the Visual Studio extension (uses existing tag/release, skips VS Code steps)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -126,6 +131,7 @@ jobs:
         echo "---"
 
     - name: Update CHANGELOG.md for VSIX packaging
+      if: inputs.vs_only != true
       run: |
         VERSION="${{ steps.extract_version.outputs.tag_version }}"
         node -e "
@@ -145,7 +151,7 @@ jobs:
         " "$VERSION"
 
     - name: Create changelog branch and commit
-      if: steps.trigger_type.outputs.is_manual == 'true'
+      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.vs_only != true
       id: changelog_branch
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -159,10 +165,8 @@ jobs:
 
         # Check if branch already exists on remote
         if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-          MSG="❌ Branch $BRANCH already exists on remote! Delete it or bump the version before re-running."
-          echo "$MSG"
-          echo "$MSG" > /tmp/changelog_error.txt
-          exit 1
+          echo "ℹ️ Branch $BRANCH already exists on remote — skipping changelog commit"
+          exit 0
         fi
 
         if git diff --quiet vscode-extension/CHANGELOG.md; then
@@ -177,7 +181,7 @@ jobs:
         echo "✅ Pushed vscode-extension/CHANGELOG.md update to $BRANCH"
 
     - name: Create tag for manual trigger
-      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag == true
+      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag == true && inputs.vs_only != true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -186,9 +190,8 @@ jobs:
         
         # Check if tag already exists on remote using exit code
         if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-          echo "❌ Tag $VERSION already exists on remote!"
-          echo "Please update the version in package.json or delete the existing tag."
-          exit 1
+          echo "ℹ️ Tag $VERSION already exists on remote — skipping tag creation"
+          exit 0
         fi
         
         # Create and push the tag
@@ -212,38 +215,47 @@ jobs:
         exit 1
         
     - name: Install dependencies
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npm ci
       
     - name: Run linting
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npm run lint
       
     - name: Run type checking
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npm run check-types
       
     - name: Compile extension
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npm run compile
       
     - name: Build production package
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npm run package
       
     - name: Compile tests
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npm run compile-tests
       
     - name: Run tests
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: xvfb-run -s "-screen 0 1024x768x24" npm test
       
     - name: Create VSIX package
+      if: inputs.vs_only != true
       working-directory: vscode-extension
       run: npx vsce package
       
     - name: Get VSIX filename
+      if: inputs.vs_only != true
       id: vsix_filename
       working-directory: vscode-extension
       run: |
@@ -252,6 +264,7 @@ jobs:
         echo "VSIX file: $VSIX_FILE"
 
     - name: Upload VSIX as workflow artifact
+      if: inputs.vs_only != true
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: vsix-package
@@ -259,6 +272,7 @@ jobs:
         retention-days: 90
         
     - name: Create Release
+      if: inputs.vs_only != true
       id: create_release
       shell: bash
       env:
@@ -268,17 +282,31 @@ jobs:
         set -o pipefail
         echo "Creating release for tag: ${{ steps.tag_name.outputs.tag_name }}"
         
-        # Create release with auto-generated notes and upload VSIX file
-        gh release create "${{ steps.tag_name.outputs.tag_name }}" \
-          --title "VS Code Extension v${{ steps.extract_version.outputs.tag_version }}" \
-          --notes-file /tmp/release_notes.md \
-          vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
+        # Create release (skip if it already exists — e.g. re-running after a downstream job failure)
+        TAG="${{ steps.tag_name.outputs.tag_name }}"
+        if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          echo "ℹ️ Release $TAG already exists — uploading VSIX with --clobber"
+          gh release upload "$TAG" \
+            vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} --clobber 2>&1 | tee /tmp/release_output.txt
+        else
+          gh release create "$TAG" \
+            --title "VS Code Extension v${{ steps.extract_version.outputs.tag_version }}" \
+            --notes-file /tmp/release_notes.md \
+            vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
+        fi
 
     - name: Release Summary
       if: always()
       shell: bash
       run: |
-        if [ "${{ steps.create_release.outcome }}" == "success" ]; then
+        if [ "${{ steps.create_release.outcome }}" == "skipped" ]; then
+          {
+            echo "# ⏭️ VS Code Release Skipped (vs_only mode)"
+            echo ""
+            echo "Version: ${{ steps.extract_version.outputs.tag_version }}"
+            echo "The Visual Studio extension job will build and upload to the existing release."
+          } >> "$GITHUB_STEP_SUMMARY"
+        elif [ "${{ steps.create_release.outcome }}" == "success" ]; then
           {
             echo "# ✅ Release Created Successfully"
             echo ""
@@ -311,7 +339,7 @@ jobs:
   publish:
     needs: release
     name: Publish VS Code Extension
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace && inputs.vs_only != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -535,6 +563,44 @@ jobs:
         retention-days: 30
 
     # ── (Optional) Publish to VS Marketplace ──────────────────────────────
+
+    - name: Check Visual Studio Marketplace version
+      if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace == true
+      id: vs_version_check
+      shell: pwsh
+      run: |
+        # Read local version from the vsixmanifest
+        $manifestPath = "visualstudio-extension/src/CopilotTokenTracker/source.extension.vsixmanifest"
+        [xml]$manifest = Get-Content $manifestPath
+        $localVersion = $manifest.PackageManifest.Metadata.Identity.Version
+        $extensionId  = $manifest.PackageManifest.Metadata.Identity.Id  # AIEngineeringFluency.VS.RobBos
+        Write-Host "Local version : $localVersion"
+        Write-Host "Extension Id  : $extensionId"
+
+        $body = @{
+            filters = @(@{ criteria = @(@{ filterType = 7; value = "RobBos.$extensionId" }) })
+            flags   = 512
+        } | ConvertTo-Json -Depth 10
+
+        try {
+          $r = Invoke-RestMethod -Method Post `
+            -Uri "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=3.0-preview.1" `
+            -Headers @{ "Content-Type" = "application/json"; "Accept" = "application/json;api-version=3.0-preview.1" } `
+            -Body $body
+          $marketplaceVersion = $r.results[0].extensions[0].versions[0].version
+          if (-not $marketplaceVersion) {
+            Write-Host "⚠️  Extension not found on VS Marketplace — proceeding with first publish."
+            exit 0
+          }
+          Write-Host "Marketplace version: $marketplaceVersion"
+          if ($localVersion -eq $marketplaceVersion) {
+            Write-Error "❌ Version $localVersion is already published on the Visual Studio Marketplace. Bump the version before publishing."
+            exit 1
+          }
+          Write-Host "✅ Version check passed: $localVersion is newer than marketplace $marketplaceVersion"
+        } catch {
+          Write-Warning "⚠️  Could not query VS Marketplace — proceeding with publish. Error: $_"
+        }
 
     - name: Publish to Visual Studio Marketplace
       if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace == true
