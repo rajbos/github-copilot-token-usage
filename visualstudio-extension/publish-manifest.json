@@ -6,7 +6,7 @@
   },
   "overview": "../docs/visual-studio/README.md",
   "priceCategory": "free",
-  "publisher": "Rob Bos",
+  "publisher": "RobBos",
   "private": false,
   "qna": true,
   "repo": "https://github.com/rajbos/github-copilot-token-usage",
