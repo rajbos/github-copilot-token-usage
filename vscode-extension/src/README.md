@@ -53,21 +53,25 @@ Contains pricing information for AI models, including input and output token cos
 **How to update:**
 1. Check official pricing pages:
    - OpenAI: https://openai.com/api/pricing/
-   - Anthropic: https://www.anthropic.com/pricing
-   - Google Gemini: https://ai.google.dev/pricing
+   - Anthropic: https://www.anthropic.com/pricing (also https://platform.claude.com/docs/en/about-claude/pricing)
+   - Google Gemini: https://ai.google.dev/gemini-api/docs/pricing
+   - xAI Grok: https://x.ai/api
    - GitHub Copilot Supported Models: https://docs.github.com/en/copilot/reference/ai-models/supported-models
+   - GitHub Copilot Premium Requests: https://docs.github.com/en/copilot/managing-copilot/monitoring-usage-and-entitlements/about-premium-requests
+   - OpenRouter (cross-provider verification): https://openrouter.ai
 2. Update the `pricing` object with new rates
 3. Update `metadata.lastUpdated` with current date
 4. Update source URLs and dates if needed
-5. Rebuild the extension after making changes
+5. Rebuild the extension after making changes (`npm run compile`)
 
 ### Current Gemini Model Pricing (per million tokens)
 
-Based on Google AI pricing (retrieved December 27, 2025):
+Based on Google AI pricing (retrieved March 30, 2026):
 
 - **Gemini 2.5 Pro**: $1.25 input / $10.00 output
-- **Gemini 3 Flash**: $0.50 input / $3.00 output  
+- **Gemini 3 Flash**: $0.50 input / $3.00 output
 - **Gemini 3 Pro**: $2.00 input / $12.00 output (for prompts ≤ 200k tokens)
+- **Gemini 3.1 Flash Lite**: $0.25 input / $1.50 output
 
 Note: These are the current GitHub Copilot supported Gemini models. Pricing from direct Google AI API usage applies.
 
