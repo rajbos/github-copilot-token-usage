@@ -8,6 +8,11 @@ import type {
 	WorkspaceCustomizationMatrix,
 	UsageAnalysisPeriod,
 } from './types';
+import automaticToolIds from './automaticTools.json';
+
+/** Set of tool IDs that Copilot uses autonomously (reading files, searching, etc.).
+ *  These are excluded from fluency scoring since the user doesn't configure them. */
+const AUTOMATIC_TOOL_SET = new Set<string>(automaticToolIds);
 
 /** Format a number with thousand separators for display. */
 function fmt(n: number): string {
@@ -440,6 +445,7 @@ export function calculateFluencyScoreForTeamMember(fd: {
     const hasModelSwitching = fd.mixedTierSessions > 0 || switchingFrequency > 0;
     const hasAgentMode = fd.agentModeCount > 0;
     const toolCount = Object.keys(fd.toolCallsByTool).length;
+    const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOL_SET.has(t)).length;
     const avgFilesPerSession = fd.filesPerEditCount > 0 ? fd.filesPerEditSum / fd.filesPerEditCount : 0;
     const avgApplyRate = fd.applyRateCount > 0 ? fd.applyRateSum / fd.applyRateCount : 0;
     const totalContextRefs = fd.ctxFile + fd.ctxSelection + fd.ctxSymbol + fd.ctxCodebase + fd.ctxWorkspace;
@@ -528,8 +534,8 @@ export function calculateFluencyScoreForTeamMember(fd: {
     if (fd.multiFileEdits > 0) { agStage = Math.max(agStage, 2); }
     if (avgFilesPerSession >= 3) { agStage = Math.max(agStage, 3); }
     if (fd.editsAgentCount > 0) { agStage = Math.max(agStage, 2); }
-    if (fd.agentModeCount >= 10 && toolCount >= 3) { agStage = Math.max(agStage, 3); }
-    if (fd.agentModeCount >= 50 && toolCount >= 5) { agStage = 4; }
+    if (fd.agentModeCount >= 10 && nonAutoToolCount >= 3) { agStage = Math.max(agStage, 3); }
+    if (fd.agentModeCount >= 50 && nonAutoToolCount >= 5) { agStage = 4; }
     if (fd.multiFileEdits >= 20 && avgFilesPerSession >= 3) { agStage = Math.max(agStage, 4); }
     const agTips: string[] = [];
     if (agStage < 2) { agTips.push("Try agent mode — it can run terminal commands, edit files, and explore codebases autonomously"); }
@@ -538,7 +544,7 @@ export function calculateFluencyScoreForTeamMember(fd: {
 
     // 4. Tool Usage
     let tuStage = 1;
-    if (toolCount > 0) { tuStage = 2; }
+    if (nonAutoToolCount > 0) { tuStage = 2; }
     if (fd.workspaceAgentCount > 0) { tuStage = Math.max(tuStage, 3); }
     const advancedToolIds = ["github_pull_request", "github_repo", "run_in_terminal", "editFiles", "listFiles"];
     const usedAdvancedCount = advancedToolIds.filter(t => (fd.toolCallsByTool[t] ?? 0) > 0).length;
@@ -855,12 +861,13 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Diverse tool usage in agent mode
 	const toolCount = Object.keys(p.toolCalls.byTool).length;
-	if (p.modeUsage.agent >= 10 && toolCount >= 3) {
+	const nonAutoToolCount = Object.keys(p.toolCalls.byTool).filter(t => !AUTOMATIC_TOOL_SET.has(t)).length;
+	if (p.modeUsage.agent >= 10 && nonAutoToolCount >= 3) {
 		agStage = 3;
 	}
 
 	// Heavy agentic use with many tool types or high multi-file edit rate
-	if (p.modeUsage.agent >= 50 && toolCount >= 5) {
+	if (p.modeUsage.agent >= 50 && nonAutoToolCount >= 5) {
 		agStage = 4;
 	}
 	if (p.editScope && p.editScope.multiFileEdits >= 20 && p.editScope.avgFilesPerSession >= 3) {
@@ -876,10 +883,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	const tuTips: string[] = [];
 	let tuStage = 1;
 
-	// Basic tool usage (primarily from agent mode)
-	if (toolCount > 0) {
-		tuEvidence.push(`${fmt(toolCount)} unique tools used`);
+	// Basic tool usage — only count tools the user intentionally enables/configures (not automatic agent tools)
+	if (nonAutoToolCount > 0) {
+		const autoCount = toolCount - nonAutoToolCount;
+		const autoNote = autoCount > 0 ? ` (+ ${fmt(autoCount)} automatic)` : '';
+		tuEvidence.push(`${fmt(nonAutoToolCount)} intentional tools used${autoNote}`);
 		tuStage = 2;
+	} else if (toolCount > 0) {
+		tuEvidence.push(`${fmt(toolCount)} tools used (all automatic — agent reads/searches)`);
 	}
 
 	// Agent type distribution (workspace agent shows advanced tool usage)
