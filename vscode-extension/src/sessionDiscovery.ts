@@ -521,14 +521,6 @@ export class SessionDiscovery {
 	}
 
 	/**
-	 * Async helper: resolves true if the path is accessible, false otherwise.
-	 * Prefer this over fs.existsSync() to avoid blocking the extension-host event loop.
-	 */
-	private async pathExists(p: string): Promise<boolean> {
-		try { await fs.promises.access(p); return true; } catch { return false; }
-	}
-
-	/**
 	 * Recursively scan a directory for session files (.json and .jsonl)
 	 * 
 	 * NOTE: Mirrors logic in .github/skills/copilot-log-analysis/session-file-discovery.js
