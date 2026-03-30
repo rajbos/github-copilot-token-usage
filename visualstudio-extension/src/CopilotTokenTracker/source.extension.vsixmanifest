@@ -9,8 +9,8 @@
               Publisher="Rob Bos" />
     <DisplayName>AI Engineering Fluency</DisplayName>
     <Description>Measure and grow your AI engineering fluency in Visual Studio. Tracks GitHub Copilot token usage, today's and last-30-days activity, per-model breakdowns, and detailed session analysis.</Description>
-    <Tags>GitHub Copilot, token usage, AI, productivity</Tags>
     <Icon>assets\logo.png</Icon>
+    <Tags>GitHub Copilot, token usage, AI, productivity</Tags>
   </Metadata>
 
   <Installation>
