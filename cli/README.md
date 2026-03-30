@@ -1,5 +1,7 @@
 # Copilot Token Tracker CLI
 
+![AI Engineering Fluency](../assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
+
 > For user-facing documentation and command examples, see [docs/cli/README.md](../docs/cli/README.md).
 
 ## Development

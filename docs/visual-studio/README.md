@@ -1,5 +1,7 @@
 # Copilot Token Tracker — Visual Studio Extension
 
+![AI Engineering Fluency](../../assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
+
 Tracks your GitHub Copilot token usage directly inside Visual Studio 2022+. Reads local Copilot Chat session files and displays usage statistics in a dedicated tool window.
 
 > **Status**: Early access / active development. Core tracking is functional; some features available in the VS Code extension are still in progress.
