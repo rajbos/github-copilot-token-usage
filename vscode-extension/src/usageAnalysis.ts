@@ -811,6 +811,7 @@ export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>
 					// Track edit scope and apply usage
 					if (request.response && Array.isArray(request.response)) {
 						for (const resp of request.response) {
+							if (!resp) { continue; }
 							if (resp.kind === 'textEditGroup' && resp.uri) {
 								const filePath = resp.uri.path || JSON.stringify(resp.uri);
 								editedFiles.add(filePath);
@@ -866,6 +867,7 @@ export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>
 					// Track edit scope and apply usage
 					if (request.response && Array.isArray(request.response)) {
 						for (const resp of request.response) {
+							if (!resp) { continue; }
 							if (resp.kind === 'textEditGroup' && resp.uri) {
 								const filePath = resp.uri.path || JSON.stringify(resp.uri);
 								editedFiles.add(filePath);
@@ -1258,6 +1260,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					// Extract tool calls and MCP tools from request.response array
 					if (request.response && Array.isArray(request.response)) {
 						for (const responseItem of request.response) {
+							if (!responseItem) { continue; }
 							if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
 								const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
 
@@ -1365,6 +1368,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 							// Extract tool calls from request.response array (when full request is added)
 							if (request.response && Array.isArray(request.response)) {
 								for (const responseItem of request.response) {
+									if (!responseItem) { continue; }
 									if (responseItem.kind === 'toolInvocationSerialized' || responseItem.kind === 'prepareToolInvocation') {
 										analysis.toolCalls.total++;
 										const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
@@ -1378,6 +1382,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					// Handle VS Code incremental format - tool invocations in responses
 					if (event.kind === 2 && event.k?.includes('response') && Array.isArray(event.v)) {
 						for (const responseItem of event.v) {
+							if (!responseItem) { continue; }
 							if (responseItem.kind === 'toolInvocationSerialized') {
 								analysis.toolCalls.total++;
 								const toolName = responseItem.toolId || responseItem.toolName || responseItem.invocationMessage?.toolName || responseItem.toolSpecificData?.kind || 'unknown';
@@ -1485,6 +1490,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				// Analyze response for tool calls and MCP tools
 				if (request.response && Array.isArray(request.response)) {
 					for (const responseItem of request.response) {
+						if (!responseItem) { continue; }
 						// Detect tool invocations
 						if (responseItem.kind === 'toolInvocationSerialized' ||
 							responseItem.kind === 'prepareToolInvocation') {
@@ -1698,7 +1704,7 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 						}
 						if (request.response && Array.isArray(request.response)) {
 							for (const responseItem of request.response) {
-								if (responseItem.value) {
+								if (responseItem?.value) {
 									modelUsage[requestModel].outputTokens += estimateTokensFromText(responseItem.value, requestModel, deps.tokenEstimators);
 								}
 							}
@@ -1766,7 +1772,7 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 					// Estimate tokens from assistant response (output)
 					if (request.response && Array.isArray(request.response)) {
 						for (const responseItem of request.response) {
-							if (responseItem.value) {
+							if (responseItem?.value) {
 								const tokens = estimateTokensFromText(responseItem.value, model, deps.tokenEstimators);
 								modelUsage[model].outputTokens += tokens;
 							}
