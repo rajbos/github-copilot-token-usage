@@ -37,6 +37,16 @@ export class SessionDiscovery {
 		this._sessionFilesCacheTime = 0;
 	}
 
+	/** Async replacement for fs.existsSync — does not block the event loop. */
+	private async pathExists(p: string): Promise<boolean> {
+		try {
+			await fs.promises.access(p);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	/**
 	 * Get all possible VS Code user data paths for all VS Code variants
 	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
@@ -232,7 +242,7 @@ export class SessionDiscovery {
 		for (let i = 0; i < allVSCodePaths.length; i++) {
 			const codeUserPath = allVSCodePaths[i];
 			try {
-				if (fs.existsSync(codeUserPath)) {
+				if (await this.pathExists(codeUserPath)) {
 					foundPaths.push(codeUserPath);
 				}
 			} catch (checkError) {
@@ -258,16 +268,16 @@ export class SessionDiscovery {
 				// Workspace storage sessions
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 				try {
-					if (fs.existsSync(workspaceStoragePath)) {
+					if (await this.pathExists(workspaceStoragePath)) {
 						try {
-							const workspaceDirs = fs.readdirSync(workspaceStoragePath);
+							const workspaceDirs = await fs.promises.readdir(workspaceStoragePath);
 
 							for (const workspaceDir of workspaceDirs) {
 								const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
 								try {
-									if (fs.existsSync(chatSessionsPath)) {
+									if (await this.pathExists(chatSessionsPath)) {
 										try {
-											const sessionFiles2 = fs.readdirSync(chatSessionsPath)
+											const sessionFiles2 = (await fs.promises.readdir(chatSessionsPath))
 												.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 												.map(file => path.join(chatSessionsPath, file));
 											if (sessionFiles2.length > 0) {
@@ -293,9 +303,9 @@ export class SessionDiscovery {
 				// Global storage sessions (legacy emptyWindowChatSessions)
 				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
 				try {
-					if (fs.existsSync(globalStoragePath)) {
+					if (await this.pathExists(globalStoragePath)) {
 						try {
-							const globalSessionFiles = fs.readdirSync(globalStoragePath)
+							const globalSessionFiles = (await fs.promises.readdir(globalStoragePath))
 								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
 								.map(file => path.join(globalStoragePath, file));
 							if (globalSessionFiles.length > 0) {
@@ -313,9 +323,9 @@ export class SessionDiscovery {
 				// GitHub Copilot Chat extension global storage
 				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
 				try {
-					if (fs.existsSync(copilotChatGlobalPath)) {
+					if (await this.pathExists(copilotChatGlobalPath)) {
 						this.deps.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
-						this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+						await this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
 					}
 				} catch (checkError) {
 					this.deps.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
@@ -324,11 +334,11 @@ export class SessionDiscovery {
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			this.deps.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath} (exists: ${fs.existsSync(copilotCliSessionPath)})`);
+			this.deps.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath}`);
 			try {
-				if (fs.existsSync(copilotCliSessionPath)) {
+				if (await this.pathExists(copilotCliSessionPath)) {
 					try {
-						const entries = fs.readdirSync(copilotCliSessionPath, { withFileTypes: true });
+						const entries = await fs.promises.readdir(copilotCliSessionPath, { withFileTypes: true });
 
 						// Collect flat .json/.jsonl files at the top level
 						const cliSessionFiles = entries
@@ -345,12 +355,10 @@ export class SessionDiscovery {
 						for (const subDir of subDirs) {
 							const eventsFile = path.join(copilotCliSessionPath, subDir.name, 'events.jsonl');
 							try {
-								if (fs.existsSync(eventsFile)) {
-									const stats = fs.statSync(eventsFile);
-									if (stats.size > 0) {
-										sessionFiles.push(eventsFile);
-										subDirSessionCount++;
-									}
+								const stats = await fs.promises.stat(eventsFile);
+								if (stats.size > 0) {
+									sessionFiles.push(eventsFile);
+									subDirSessionCount++;
 								}
 							} catch {
 								// Ignore individual file access errors
@@ -372,20 +380,20 @@ export class SessionDiscovery {
 			const openCodeDataDir = this.deps.openCode.getOpenCodeDataDir();
 			const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
 			const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
-			this.deps.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir} (exists: ${fs.existsSync(openCodeSessionDir)})`);
-			this.deps.log(`📁 Checking OpenCode DB path: ${openCodeDbPath} (exists: ${fs.existsSync(openCodeDbPath)})`);
+			this.deps.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir}`);
+			this.deps.log(`📁 Checking OpenCode DB path: ${openCodeDbPath}`);
 			try {
-				if (fs.existsSync(openCodeSessionDir)) {
-					const scanOpenCodeDir = (dir: string) => {
+				if (await this.pathExists(openCodeSessionDir)) {
+					const scanOpenCodeDir = async (dir: string) => {
 						try {
-							const entries = fs.readdirSync(dir, { withFileTypes: true });
+							const entries = await fs.promises.readdir(dir, { withFileTypes: true });
 							for (const entry of entries) {
 								if (entry.isDirectory()) {
-									scanOpenCodeDir(path.join(dir, entry.name));
+									await scanOpenCodeDir(path.join(dir, entry.name));
 								} else if (entry.name.startsWith('ses_') && entry.name.endsWith('.json')) {
 									const fullPath = path.join(dir, entry.name);
 									try {
-										const stats = fs.statSync(fullPath);
+										const stats = await fs.promises.stat(fullPath);
 										if (stats.size > 0) {
 											sessionFiles.push(fullPath);
 										}
@@ -398,7 +406,7 @@ export class SessionDiscovery {
 							// Ignore directory access errors
 						}
 					};
-					scanOpenCodeDir(openCodeSessionDir);
+					await scanOpenCodeDir(openCodeSessionDir);
 					const openCodeCount = sessionFiles.length - (sessionFiles.filter(f => !this.deps.openCode.isOpenCodeSessionFile(f))).length;
 					if (openCodeCount > 0) {
 						this.deps.log(`📄 Found ${openCodeCount} session files in OpenCode storage`);
@@ -411,7 +419,7 @@ export class SessionDiscovery {
 			// Check for OpenCode sessions in SQLite database (opencode.db)
 			// Newer OpenCode versions store sessions in SQLite instead of JSON files
 			try {
-				if (fs.existsSync(openCodeDbPath)) {
+				if (await this.pathExists(openCodeDbPath)) {
 					const existingSessionIds = new Set(
 						sessionFiles
 							.filter(f => this.deps.openCode.isOpenCodeSessionFile(f))
@@ -443,9 +451,9 @@ export class SessionDiscovery {
 				let crushTotal = 0;
 				for (const project of crushProjects) {
 					const dbPath = path.join(project.data_dir, 'crush.db');
-					this.deps.log(`📁 Checking Crush DB path: ${dbPath} (exists: ${fs.existsSync(dbPath)})`);
+					this.deps.log(`📁 Checking Crush DB path: ${dbPath}`);
 					try {
-						if (fs.existsSync(dbPath)) {
+						if (await this.pathExists(dbPath)) {
 							const sessionIds = await this.deps.crush.discoverSessionsInDb(dbPath);
 							for (const sessionId of sessionIds) {
 								// Virtual path: <data_dir>/crush.db#<uuid>
@@ -517,13 +525,13 @@ export class SessionDiscovery {
 	 * 
 	 * NOTE: Mirrors logic in .github/skills/copilot-log-analysis/session-file-discovery.js
 	 */
-	scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): void {
+	async scanDirectoryForSessionFiles(dir: string, sessionFiles: string[]): Promise<void> {
 		try {
-			const entries = fs.readdirSync(dir, { withFileTypes: true });
+			const entries = await fs.promises.readdir(dir, { withFileTypes: true });
 			for (const entry of entries) {
 				const fullPath = path.join(dir, entry.name);
 				if (entry.isDirectory()) {
-					this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
+					await this.scanDirectoryForSessionFiles(fullPath, sessionFiles);
 				} else if (entry.name.endsWith('.json') || entry.name.endsWith('.jsonl')) {
 					// Skip known non-session files (embeddings, indexes, etc.)
 					if (this.isNonSessionFile(entry.name)) {
@@ -531,7 +539,7 @@ export class SessionDiscovery {
 					}
 					// Only add files that look like session files (have reasonable content)
 					try {
-						const stats = fs.statSync(fullPath);
+						const stats = await fs.promises.stat(fullPath);
 						if (stats.size > 0) {
 							sessionFiles.push(fullPath);
 						}
