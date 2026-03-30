@@ -5780,23 +5780,18 @@ ${hashtag}`;
     let localTokens: number | undefined;
     let localInteractions: number | undefined;
     try {
-      const localStats = await this.calculateDetailedStats(undefined);
+      await this.calculateDetailedStats(undefined); // ensures lastDailyStats is fresh
       const lookback = settings.lookbackDays ?? 30;
-      if (lookback >= 30) {
-        // last30Days already covers the full window
-        localTokens = localStats.last30Days.tokens;
-        const p = localStats.last30Days;
-        localInteractions = p.sessions * p.avgInteractionsPerSession;
-      } else {
-        // Sum daily stats for exactly the configured lookback window
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - lookback);
-        const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-        const dailyStats = this.lastDailyStats ?? [];
-        const inWindow = dailyStats.filter(d => d.date >= cutoffStr);
-        localTokens = inWindow.reduce((sum, d) => sum + d.tokens, 0);
-        localInteractions = inWindow.reduce((sum, d) => sum + d.interactions, 0);
-      }
+      // Always derive exact counts from daily stats so we avoid the rounding loss introduced
+      // by avgInteractionsPerSession = Math.round(interactions / sessions).
+      // lastDailyStats covers the last 30 days; for longer windows it is the best available data.
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - lookback);
+      const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+      const dailyStats = this.lastDailyStats ?? [];
+      const inWindow = dailyStats.filter(d => d.date >= cutoffStr);
+      localTokens = inWindow.reduce((sum, d) => sum + d.tokens, 0);
+      localInteractions = inWindow.reduce((sum, d) => sum + d.interactions, 0);
     } catch {
       // Non-critical: leave undefined
     }
