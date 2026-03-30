@@ -15,9 +15,11 @@ Trigger this agent when:
 - New MCP tools appear in user session logs without display labels
 - The sync-toolnames workflow detects new upstream tools from `microsoft/vscode-copilot-chat`
 
-## Key File
+## Key Files
 
 **`src/toolNames.json`** — The single mapping file from raw tool identifiers to human-readable display names. Every tool the extension encounters gets looked up here; missing entries show as "Unknown" in the UI.
+
+**`src/automaticTools.json`** — An array of tool IDs that Copilot calls *automatically* on its own (file reads, directory listings, searches, error checks, confirmations, memory, etc.). These tools are excluded from fluency scoring because they don't reflect intentional user configuration. When adding new tool entries to `toolNames.json`, you **must also decide** whether each tool is automatic or intentional and add it to `automaticTools.json` if automatic.
 
 ## MCP Tool Name Conventions
 
@@ -95,7 +97,34 @@ Use these repos to look up tool definitions when needed:
 | Context7 | [upstash/context7](https://github.com/upstash/context7) | TypeScript | Library documentation retrieval |
 | Chrome DevTools MCP | [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) | TypeScript | Browser debugging tools |
 
-## Editing `src/toolNames.json`
+## Automatic vs. Intentional Tools
+
+When adding a new tool to `toolNames.json`, also determine if it belongs in `automaticTools.json`.
+
+**Add to `automaticTools.json` (automatic)** — tools the agent calls by itself without any user configuration:
+- File system reads: `read_file`, `list_dir`, `view`, `glob`, `grep`, file search variants
+- Codebase search: `semantic_search`, `code_search`, `search_workspace_symbols`
+- Project info: `get_errors`, `get_changed_files`, `read_project_structure`, `get_vscode_api`
+- Terminal reads (not execution): `terminal_selection`, `terminal_last_command`, `get_terminal_output`
+- Internal/session: `memory`, `detect_memories`, `tool_replay`, `vscode_get_confirmation*`, `ask_questions`, `switch_agent`, `bash`
+
+**Do NOT add to `automaticTools.json` (intentional)** — tools that require explicit user setup or represent deliberate action:
+- Terminal execution: `run_in_terminal`, `run_build`, `run_task`
+- File writing/editing: `edit_files`, `write_file`, `create_file`, `apply_patch`
+- Tests & runs: `runTests`, `run_notebook_cell`, `run_vscode_command`
+- External integrations: `fetch_webpage`, `websearch`, `webfetch`
+- MCP tools (all — user must configure the server)
+- GitHub integrations: `github_pull_request`, `github_repo`
+
+**Rule of thumb:** If the user must explicitly enable, configure, or consciously invoke the tool, it's intentional. If the agent just uses it as background context gathering, it's automatic.
+
+## Editing `src/automaticTools.json`
+
+- The file is a plain JSON array of tool ID strings
+- Add new entries at the end of the array (before the closing `]`)
+- Keep related tool variants together (e.g., all variants of `read_file`)
+
+
 
 ### Style Rules
 
@@ -124,5 +153,6 @@ The `sync-toolnames` workflow (`.github/workflows/sync-toolnames.yml`) automatic
 - [ ] For MCP tools, match the prefix to a known server or research the source
 - [ ] Generate friendly names following the conventions above
 - [ ] Add entries to `src/toolNames.json` in the correct location
+- [ ] For each new tool, decide if it is **automatic** or **intentional** — add automatic tools to `src/automaticTools.json`
 - [ ] Run `npm run compile` to validate
 - [ ] Run `npm run test:node` to confirm tests pass

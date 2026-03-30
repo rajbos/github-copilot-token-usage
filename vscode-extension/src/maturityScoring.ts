@@ -200,7 +200,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               label: "Stage 3: AI Collaborator",
               description: "Regular use of agent mode with diverse tools",
               thresholds: [
-                "At least 10 agent-mode interactions AND 3+ unique tools used OR",
+                "At least 10 agent-mode interactions AND 3+ intentional tools used OR",
                 "Average 3+ files per edit session OR",
                 "Using edits agent for focused editing tasks",
               ],
@@ -214,7 +214,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               label: "Stage 4: AI Strategist",
               description: "Heavy, strategic use of autonomous features",
               thresholds: [
-                "At least 50 agent-mode interactions AND 5+ tool types used OR",
+                "At least 50 agent-mode interactions AND 5+ intentional tools used OR",
                 "At least 20 multi-file edits with 3+ files per session average",
                 "Demonstrates mastery of agent orchestration",
               ],
@@ -234,7 +234,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               label: "Stage 1: AI Skeptic",
               description: "Not using tools beyond basic chat",
               thresholds: [
-                "Zero unique tools used",
+                "Zero intentional tools used (automatic tools like file reads and searches are excluded)",
                 "No MCP servers configured",
                 "No workspace agent sessions",
               ],
@@ -248,8 +248,8 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               label: "Stage 2: AI Explorer",
               description: "Beginning to use basic tools",
               thresholds: [
-                "At least 1 unique tool used",
-                "Using basic agent mode tools",
+                "At least 1 intentional tool used (e.g. run_in_terminal, editFiles, websearch, MCP tools)",
+                "Automatic tools (file reads, searches, error checks) do not count",
               ],
               tips: [
                 "Set up [MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) to connect Copilot to external tools (databases, APIs, cloud services) — [▶ MCP with Azure and GitHub](https://tech.hub.ms/github-copilot/videos/mcp-with-azure-and-github)",
