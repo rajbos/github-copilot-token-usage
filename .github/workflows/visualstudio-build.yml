@@ -130,6 +130,7 @@ jobs:
         run: |
           node dist/cli.js chart --json
           node dist/cli.js usage-analysis --json
+          node dist/cli.js all --json
 
       # ── Bundle CLI as Windows .exe (Node.js SEA) ───────────────────────────
 
