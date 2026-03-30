@@ -1,0 +1,99 @@
+[
+  "read_file",
+  "copilot_readFile",
+  "read",
+  "view",
+  "view_image",
+  "copilot_viewImage",
+
+  "list_dir",
+  "ls",
+  "copilot_listDirectory",
+
+  "find_files",
+  "file_search",
+  "file_glob_search",
+  "copilot_findFiles",
+  "opilot_findFiles",
+  "copilot_findTextInFiles",
+  "copilot_findTestFiles",
+  "test_search",
+
+  "grep_search",
+  "grep",
+  "glob",
+
+  "semantic_search",
+  "copilot_searchCodebase",
+  "code_search",
+  "copilot_getSearchResults",
+  "get_search_view_results",
+  "search_workspace_symbols",
+  "copilot_searchWorkspaceSymbols",
+  "vscode_listCodeUsages",
+  "get_symbols_by_name",
+
+  "get_errors",
+  "copilot_getErrors",
+
+  "get_changed_files",
+  "copilot_getChangedFiles",
+
+  "read_project_structure",
+  "copilot_readProjectStructure",
+
+  "get_doc_info",
+  "copilot_getDocInfo",
+
+  "get_vscode_api",
+  "copilot_getVSCodeAPI",
+
+  "get_project_setup_info",
+  "copilot_getProjectSetupInfo",
+
+  "get_projects_in_solution",
+  "get_python_executable_details",
+
+  "get_currentfile",
+  "get_file",
+
+  "vscode_get_confirmation",
+  "vscode_get_confirmation_with_options",
+  "vscode_get_terminal_confirmation",
+  "vscode_get_modified_files_confirmation",
+
+  "memory",
+  "copilot_memory",
+  "detect_memories",
+
+  "tool_replay",
+  "copilot_toolReplay",
+  "tool_search",
+
+  "get_task_output",
+  "job_output",
+  "get_terminal_output",
+  "await_terminal",
+
+  "terminal_selection",
+  "terminal_last_command",
+
+  "read_notebook_cell_output",
+  "copilot_readNotebookCellOutput",
+  "copilot_getNotebookSummary",
+
+  "test_failure",
+  "copilot_testFailure",
+
+  "ask_questions",
+  "copilot_askQuestions",
+
+  "switch_agent",
+  "copilot_switchAgent",
+
+  "bash",
+
+  "vscode_editFile_internal",
+  "vscode_fetchWebPage_internal",
+  "vscode_searchExtensions_internal"
+]

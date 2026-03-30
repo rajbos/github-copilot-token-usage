@@ -125,8 +125,10 @@ function escapeHtml(text: string): string {
 }
 
 import toolNames from '../../toolNames.json';
+import automaticToolIds from '../../automaticTools.json';
 
 let TOOL_NAME_MAP: { [key: string]: string } | null = toolNames || null;
+const AUTOMATIC_TOOL_SET_WV = new Set<string>(automaticToolIds as string[]);
 
 function lookupToolName(id: string): string {
 	if (!TOOL_NAME_MAP) {
@@ -256,10 +258,13 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 	    const rows = sortedTools.map(([tool, count], idx) => {
 		const friendly = escapeHtml(nameResolver(tool));
 		const idEscaped = escapeHtml(tool);
+		const autoBadge = AUTOMATIC_TOOL_SET_WV.has(tool)
+			? `<span title="Automatic tool — Copilot uses this internally and it does not count toward fluency scoring" style="margin-left:6px; padding:1px 5px; font-size:10px; border-radius:3px; background:var(--bg-secondary); color:var(--text-muted); border:1px solid var(--border-subtle); vertical-align:middle;">auto</span>`
+			: '';
 		return `
 		    <tr>
 			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); width:40px; max-width:40px; text-align:center;">${idx + 1}</td>
-			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); word-break:break-word; overflow-wrap:break-word; max-width:0;"> <strong title="${idEscaped}">${friendly}</strong></td>
+			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); word-break:break-word; overflow-wrap:break-word; max-width:0;"> <strong title="${idEscaped}">${friendly}</strong>${autoBadge}</td>
 			    <td style="padding:8px 12px; border-bottom:1px solid var(--border-subtle); text-align:right; width:90px; white-space:nowrap;">${formatNumber(count)}</td>
 		    </tr>`;
 	    }).join('');
