@@ -10,6 +10,7 @@ async function main() {
     "tokenEstimators.json",
     "modelPricing.json",
     "toolNames.json",
+    "automaticTools.json",
   ];
 
   for (const file of dataFiles) {
