@@ -75,6 +75,14 @@
       <DependentUpon>TokenTrackerControl.xaml</DependentUpon>
     </Compile>
   </ItemGroup>
+  <!-- Extension icon -->
+  <ItemGroup>
+    <Content Include="assets\logo.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <VSIXSubPath>assets\</VSIXSubPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
   <!-- VSIX manifest -->
   <ItemGroup>
     <None Include="Properties\Settings.settings">

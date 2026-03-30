@@ -9,6 +9,7 @@ import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from "./visualstudio";
+import type { ClaudeCodeDataAccess } from './claudecode';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -18,6 +19,7 @@ export interface SessionDiscoveryDeps {
 	crush: CrushDataAccess;
 	continue_: ContinueDataAccess;
 	visualStudio: VisualStudioDataAccess;
+	claudeCode: ClaudeCodeDataAccess;
 }
 
 export class SessionDiscovery {
@@ -33,6 +35,16 @@ export class SessionDiscovery {
 	clearCache(): void {
 		this._sessionFilesCache = null;
 		this._sessionFilesCacheTime = 0;
+	}
+
+	/** Async replacement for fs.existsSync — does not block the event loop. */
+	private async pathExists(p: string): Promise<boolean> {
+		try {
+			await fs.promises.access(p);
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	/**
@@ -148,6 +160,12 @@ export class SessionDiscovery {
 		let continueExists = false;
 		try { continueExists = fs.existsSync(continueSessionsDir); } catch { /* ignore */ }
 		candidates.push({ path: continueSessionsDir, exists: continueExists, source: 'Continue' });
+
+		// Claude Code projects directory
+		const claudeCodeProjectsDir = this.deps.claudeCode.getClaudeCodeProjectsDir();
+		let claudeCodeExists = false;
+		try { claudeCodeExists = fs.existsSync(claudeCodeProjectsDir); } catch { /* ignore */ }
+		candidates.push({ path: claudeCodeProjectsDir, exists: claudeCodeExists, source: 'Claude Code' });
 
 		return candidates;
 	}
@@ -316,10 +334,9 @@ export class SessionDiscovery {
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
-			const copilotCliExists = await this.pathExists(copilotCliSessionPath);
-			this.deps.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath} (exists: ${copilotCliExists})`);
+			this.deps.log(`📁 Checking Copilot CLI path: ${copilotCliSessionPath}`);
 			try {
-				if (copilotCliExists) {
+				if (await this.pathExists(copilotCliSessionPath)) {
 					try {
 						const entries = await fs.promises.readdir(copilotCliSessionPath, { withFileTypes: true });
 
@@ -338,8 +355,8 @@ export class SessionDiscovery {
 						for (const subDir of subDirs) {
 							const eventsFile = path.join(copilotCliSessionPath, subDir.name, 'events.jsonl');
 							try {
-								const eventsStats = await fs.promises.stat(eventsFile);
-								if (eventsStats.size > 0) {
+								const stats = await fs.promises.stat(eventsFile);
+								if (stats.size > 0) {
 									sessionFiles.push(eventsFile);
 									subDirSessionCount++;
 								}
@@ -363,13 +380,11 @@ export class SessionDiscovery {
 			const openCodeDataDir = this.deps.openCode.getOpenCodeDataDir();
 			const openCodeSessionDir = path.join(openCodeDataDir, 'storage', 'session');
 			const openCodeDbPath = path.join(openCodeDataDir, 'opencode.db');
-			const openCodeSessionDirExists = await this.pathExists(openCodeSessionDir);
-			const openCodeDbExists = await this.pathExists(openCodeDbPath);
-			this.deps.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir} (exists: ${openCodeSessionDirExists})`);
-			this.deps.log(`📁 Checking OpenCode DB path: ${openCodeDbPath} (exists: ${openCodeDbExists})`);
+			this.deps.log(`📁 Checking OpenCode JSON path: ${openCodeSessionDir}`);
+			this.deps.log(`📁 Checking OpenCode DB path: ${openCodeDbPath}`);
 			try {
-				if (openCodeSessionDirExists) {
-					const scanOpenCodeDir = async (dir: string): Promise<void> => {
+				if (await this.pathExists(openCodeSessionDir)) {
+					const scanOpenCodeDir = async (dir: string) => {
 						try {
 							const entries = await fs.promises.readdir(dir, { withFileTypes: true });
 							for (const entry of entries) {
@@ -404,7 +419,7 @@ export class SessionDiscovery {
 			// Check for OpenCode sessions in SQLite database (opencode.db)
 			// Newer OpenCode versions store sessions in SQLite instead of JSON files
 			try {
-				if (openCodeDbExists) {
+				if (await this.pathExists(openCodeDbPath)) {
 					const existingSessionIds = new Set(
 						sessionFiles
 							.filter(f => this.deps.openCode.isOpenCodeSessionFile(f))
@@ -436,10 +451,9 @@ export class SessionDiscovery {
 				let crushTotal = 0;
 				for (const project of crushProjects) {
 					const dbPath = path.join(project.data_dir, 'crush.db');
-					const crushDbExists = await this.pathExists(dbPath);
-					this.deps.log(`📁 Checking Crush DB path: ${dbPath} (exists: ${crushDbExists})`);
+					this.deps.log(`📁 Checking Crush DB path: ${dbPath}`);
 					try {
-						if (crushDbExists) {
+						if (await this.pathExists(dbPath)) {
 							const sessionIds = await this.deps.crush.discoverSessionsInDb(dbPath);
 							for (const sessionId of sessionIds) {
 								// Virtual path: <data_dir>/crush.db#<uuid>
@@ -477,6 +491,17 @@ export class SessionDiscovery {
 				}
 			} catch (vsError) {
 				this.deps.warn(`Could not read Visual Studio session files: ${vsError}`);
+			}
+
+			// Check for Claude Code session files (~/.claude/projects/**/*.jsonl)
+			try {
+				const claudeCodeFiles = this.deps.claudeCode.getClaudeCodeSessionFiles();
+				if (claudeCodeFiles.length > 0) {
+					this.deps.log(`📄 Found ${claudeCodeFiles.length} session file(s) in Claude Code (~/.claude/projects)`);
+					sessionFiles.push(...claudeCodeFiles);
+				}
+			} catch (claudeError) {
+				this.deps.warn(`Could not read Claude Code session files: ${claudeError}`);
 			}
 
 			// Log summary

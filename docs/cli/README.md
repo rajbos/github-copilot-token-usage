@@ -1,5 +1,7 @@
 # Copilot Token Tracker — CLI
 
+![AI Engineering Fluency](../../assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
+
 Command-line interface for analyzing GitHub Copilot token usage from local session files. Works anywhere Copilot Chat stores its session data — no VS Code required.
 
 ## Quick Start
@@ -157,6 +159,7 @@ The CLI scans the same session files as the [VS Code extension](../vscode-extens
 - **VS Code Remote** / Codespaces sessions
 - **Copilot CLI** agent mode sessions
 - **OpenCode** sessions (JSON and SQLite)
+- **Claude Code** sessions (Anthropic CLI/IDE extension, actual API token counts)
 
 ---
 

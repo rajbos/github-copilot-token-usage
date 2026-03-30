@@ -6,6 +6,14 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.24] - 2026-03-28
+
+### ✨ Features & Improvements
+- Added Claude Code session file support as a usage analysis data source
+- Added formatting options to details and log viewer panels
+- Added friendly display names for container-tools and github-pull-request tools
+- Added friendly display names for additional missing MCP/VS Code tools
+
 ## [0.0.23] - 2026-03-26
 
 ### ✨ Features & Improvements

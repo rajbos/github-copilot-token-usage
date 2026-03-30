@@ -39,6 +39,8 @@ import type { OpenCodeDataAccess } from './opencode';
 import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from './visualstudio';
+import type { ClaudeCodeDataAccess } from './claudecode';
+import { normalizeClaudeModelId } from './claudecode';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
@@ -46,6 +48,7 @@ export interface UsageAnalysisDeps {
 	crush?: CrushDataAccess;
 	continue_: ContinueDataAccess;
 	visualStudio?: VisualStudioDataAccess;
+	claudeCode?: ClaudeCodeDataAccess;
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
 	toolNameMap: { [key: string]: string };
@@ -501,6 +504,25 @@ export function analyzeRequestContext(request: any, refs: ContextReferenceUsage)
  * formats (OpenCode, Visual Studio, Crush, Continue) populate the tier-breakdown
  * shown by the Multi-Model Usage section in the usage analysis view.
  */
+/**
+ * Read Claude Code session events from a JSONL file for usage analysis.
+ * Lightweight: only used internally by analyzeSessionUsage.
+ */
+function readClaudeCodeEventsForAnalysis(sessionFilePath: string): any[] {
+	try {
+		const content = fs.readFileSync(sessionFilePath, 'utf8');
+		const lines = content.trim().split('\n');
+		const events: any[] = [];
+		for (const line of lines) {
+			if (!line.trim()) { continue; }
+			try { events.push(JSON.parse(line)); } catch { /* skip */ }
+		}
+		return events;
+	} catch {
+		return [];
+	}
+}
+
 function applyModelTierClassification(
 	deps: Pick<UsageAnalysisDeps, 'modelPricing'>,
 	uniqueModels: string[],
@@ -1113,6 +1135,51 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Claude Code sessions
+		if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
+			// Claude Code has actual token counts; usage analysis extracts tool calls and modes
+			const events = readClaudeCodeEventsForAnalysis(sessionFile);
+			const models: string[] = [];
+			const seenRequestIds = new Set<string>();
+			for (const event of events) {
+				if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
+					// Claude Code is always in agent mode
+					analysis.modeUsage.agent++;
+				}
+				if (event.type === 'assistant') {
+					const requestId = event.requestId;
+					if (requestId) {
+						if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) { continue; }
+						if (seenRequestIds.has(requestId)) { continue; }
+						seenRequestIds.add(requestId);
+					}
+					const model = normalizeClaudeModelId(event.message?.model);
+					if (model) { models.push(model); }
+					// Extract tool calls from content blocks
+					if (Array.isArray(event.message?.content)) {
+						for (const block of event.message.content) {
+							if (block.type === 'tool_use' && block.name) {
+								analysis.toolCalls.total++;
+								const toolName = block.name;
+								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							}
+						}
+					}
+				}
+			}
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCountCC = 0;
+			for (let ci = 1; ci < models.length; ci++) {
+				if (models[ci] !== models[ci - 1]) { switchCountCC++; }
+			}
+			analysis.modelSwitching.switchCount = switchCountCC;
+			applyModelTierClassification(deps, uniqueModels, models, analysis);
+			return analysis;
+		}
+
 		const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 		// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
@@ -1471,7 +1538,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Handle OpenCode sessions
@@ -1492,6 +1559,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 	// Handle Continue sessions
 	if (deps.continue_.isContinueSessionFile(sessionFile)) {
 		return deps.continue_.getContinueModelUsage(sessionFile);
+	}
+
+	// Handle Claude Code sessions
+	if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
+		return deps.claudeCode.getClaudeCodeModelUsage(sessionFile);
 	}
 
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;

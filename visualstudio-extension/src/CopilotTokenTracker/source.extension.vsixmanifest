@@ -4,16 +4,12 @@
     xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
     <Identity Id="AIEngineeringFluency.VS.RobBos"
-              Version="1.0.1"
+              Version="1.0.2"
               Language="en-US"
               Publisher="Rob Bos" />
     <DisplayName>AI Engineering Fluency</DisplayName>
-    <Description xml:space="preserve">
-      Measure and grow your AI engineering fluency inside Visual Studio.
-      Tracks GitHub Copilot token usage, shows today's and last-30-days
-      activity, per-model breakdowns, and detailed session analysis —
-      powered by the same webview panels as the VS Code extension.
-    </Description>
+    <Description>Measure and grow your AI engineering fluency in Visual Studio. Tracks GitHub Copilot token usage, today's and last-30-days activity, per-model breakdowns, and detailed session analysis.</Description>
+    <Icon>assets\logo.png</Icon>
     <Tags>GitHub Copilot, token usage, AI, productivity</Tags>
   </Metadata>
 
