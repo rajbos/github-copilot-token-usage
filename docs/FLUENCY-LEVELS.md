@@ -64,13 +64,15 @@ Measures adoption of autonomous, multi-step agent mode workflows.
 |-------|----------|
 | 1 | No agent-mode interactions |
 | 2 | At least 1 agent-mode interaction |
-| 3 | 10+ agent-mode interactions **and** 3+ unique tools used |
-| 4 | 50+ agent-mode interactions **and** 5+ unique tools used |
+| 3 | 10+ agent-mode interactions **and** 3+ unique intentional tools used |
+| 4 | 50+ agent-mode interactions **and** 5+ unique intentional tools used |
 
 **Boosters:**
 - Multi-file edit sessions detected → at least Stage 2
 - Average 3+ files per edit session → at least Stage 3
 - 20+ multi-file edits with average 3+ files per session → Stage 4
+
+> **Note:** Only *intentional* tools count toward the unique tool thresholds — tools that Copilot calls automatically (file reads, searches, error lookups, confirmations, memory, etc.) are excluded. See [Automatic vs. Intentional Tools](#automatic-vs-intentional-tools) below.
 
 ---
 
@@ -80,14 +82,38 @@ Measures breadth and depth of tool integration, including MCP servers.
 
 | Stage | Criteria |
 |-------|----------|
-| 1 | No tools used |
-| 2 | At least 1 unique tool used |
+| 1 | No intentional tools used |
+| 2 | At least 1 intentional tool used |
 | 3 | 2+ advanced tools used, **or** `@workspace` agent sessions detected, **or** any MCP server usage |
 | 4 | 2+ MCP servers used |
 
 **Recognised advanced tools:** GitHub Pull Request, GitHub Repository, Run In Terminal, Edit Files, List Files
 
+> **Note:** Only *intentional* tools count toward Stage 2. Automatic tools are still shown in the tool-usage table with an `auto` badge, but are not counted for scoring. See [Automatic vs. Intentional Tools](#automatic-vs-intentional-tools) below.
+
 ---
+
+### Automatic vs. Intentional Tools
+
+Copilot calls many tools on its own during agentic sessions to gather context — reading files, searching the codebase, checking errors, etc. These are called **automatic tools** and do **not** count toward fluency scoring because they do not reflect deliberate configuration choices by the user.
+
+**Automatic tools** (excluded from fluency scoring):
+- File operations: `read_file`, `list_dir`, `ls`, `view`, `find_files`, `glob`, `grep`, `grep_search`, `file_search`, `file_glob_search`
+- Codebase search: `semantic_search`, `code_search`, `search_workspace_symbols`, `get_symbols_by_name`
+- Project info: `get_errors`, `get_changed_files`, `read_project_structure`, `get_project_setup_info`, `get_vscode_api`, `get_doc_info`
+- Terminal reads: `terminal_selection`, `terminal_last_command`, `get_terminal_output`, `await_terminal`
+- Internal/session: `memory`, `detect_memories`, `tool_replay`, `vscode_get_confirmation*`, `ask_questions`, `switch_agent`, `bash`
+
+**Intentional tools** (count toward fluency scoring) include:
+- Terminal execution: `run_in_terminal`, `run_build`, `run_task`
+- File writing/editing: `edit_files`, `write_file`, `create_file`, `apply_patch`, `insert_edit_into_file`, `replace_string_in_file`
+- Tests and runs: `runTests`, `run_notebook_cell`, `run_vscode_command`, `create_and_run_task`
+- External integrations: `fetch_webpage`, `webfetch`, `websearch`, MCP tools (all)
+- GitHub: `github_pull_request`, `github_repo`
+- Browser: `open_integrated_browser`, `renderMermaidDiagram`
+- Extensions and packages: `install_extension`, `install_python_packages`
+
+The full list of automatic tool IDs is maintained in `vscode-extension/src/automaticTools.json`.
 
 ### 5. ⚙️ Customization
 
