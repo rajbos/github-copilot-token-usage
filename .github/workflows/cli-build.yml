@@ -120,6 +120,10 @@ jobs:
         working-directory: cli
         run: node dist/cli.js usage-analysis --json
 
+      - name: Validate all command (batched data for Visual Studio extension)
+        working-directory: cli
+        run: node dist/cli.js all --json
+
       - name: Build production bundle
         working-directory: cli
         run: npm run build:production
