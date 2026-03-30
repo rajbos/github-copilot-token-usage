@@ -7041,7 +7041,7 @@ export function activate(context: vscode.ExtensionContext) {
       isOpenCodeSession: (sessionFile: string) =>
         (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
-        (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+        (tokenTracker as any).openCode.getOpenCodeSessionData(sessionFile),
     });
 
     const backendHandler = new BackendCommandHandler({
