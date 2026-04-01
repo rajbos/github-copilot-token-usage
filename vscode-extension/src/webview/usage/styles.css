@@ -318,3 +318,40 @@ body {
 		grid-template-columns: 1fr;
 	}
 }
+
+
+.tab-bar {
+display: flex;
+gap: 2px;
+margin-bottom: 16px;
+border-bottom: 2px solid var(--border-color);
+padding-bottom: 0;
+flex-wrap: wrap;
+}
+
+.tab-button {
+background: transparent;
+border: none;
+border-bottom: 3px solid transparent;
+color: var(--text-secondary);
+padding: 8px 16px;
+font-size: 12px;
+font-weight: 600;
+cursor: pointer;
+border-radius: 4px 4px 0 0;
+transition: all 0.15s ease;
+white-space: nowrap;
+margin-bottom: -2px;
+font-family: inherit;
+}
+
+.tab-button:hover {
+color: var(--text-primary);
+background: var(--list-hover-bg);
+}
+
+.tab-button.active {
+color: var(--text-primary);
+border-bottom-color: var(--link-color);
+background: var(--bg-tertiary);
+}
