@@ -936,7 +936,7 @@ export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>
 /**
  * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
  */
-export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: string): Promise<SessionUsageAnalysis> {
+export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: string, preloadedContent?: string): Promise<SessionUsageAnalysis> {
 	const analysis: SessionUsageAnalysis = {
 		toolCalls: { total: 0, byTool: {} },
 		modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
@@ -1182,7 +1182,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
-		const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 		// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 		const isJsonl = sessionFile.endsWith('.jsonl') || isJsonlContent(fileContent);
@@ -1544,7 +1544,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Handle OpenCode sessions
@@ -1575,7 +1575,7 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
 
 	try {
-		const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 		// Check if this is a UUID-only file (new Copilot CLI format)
 		if (isUuidPointerFile(fileContent)) {

@@ -1804,7 +1804,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return _mergeUsageAnalysis(period, analysis);
 	}
 
-	private async countInteractionsInSession(sessionFile: string): Promise<number> {
+	private async countInteractionsInSession(sessionFile: string, preloadedContent?: string): Promise<number> {
 		try {
 			// Handle OpenCode sessions
 			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
@@ -1832,7 +1832,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
 			}
 
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
@@ -1969,7 +1969,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 
-	private async extractSessionMetadata(sessionFile: string): Promise<{
+	private async extractSessionMetadata(sessionFile: string, preloadedContent?: string): Promise<{
 		title: string | undefined;
 		firstInteraction: string | null;
 		lastInteraction: string | null;
@@ -2073,7 +2073,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 			}
 
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (_isUuidPointerFile(fileContent)) {
@@ -2163,14 +2163,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		this._cacheMisses++;
-		// Cache miss - read and process the file once to get all data
-		const tokenResult = await this.estimateTokensFromSession(sessionFilePath);
-		const interactions = await this.countInteractionsInSession(sessionFilePath);
-		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath);
-		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath);
+
+		// Pre-read file content once for regular Copilot Chat files to avoid 5 redundant reads
+		let preloadedContent: string | undefined;
+		const isSpecialSession =
+			this.openCode.isOpenCodeSessionFile(sessionFilePath) ||
+			this.visualStudio.isVSSessionFile(sessionFilePath) ||
+			this.crush.isCrushSessionFile(sessionFilePath) ||
+			this.continue_.isContinueSessionFile(sessionFilePath) ||
+			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath);
+		if (!isSpecialSession) {
+			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+		}
+
+		// Cache miss - process the file (using pre-read content when available)
+		const tokenResult = await this.estimateTokensFromSession(sessionFilePath, preloadedContent);
+		const interactions = await this.countInteractionsInSession(sessionFilePath, preloadedContent);
+		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath, preloadedContent);
+		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath, preloadedContent);
 
 		// Extract title and timestamps from the session file
-		const sessionMeta = await this.extractSessionMetadata(sessionFilePath);
+		const sessionMeta = await this.extractSessionMetadata(sessionFilePath, preloadedContent);
 
 		const sessionData: SessionFileCache = {
 			tokens: tokenResult.tokens,
@@ -3435,7 +3448,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 
 
-	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
+	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
 		try {
 			// Handle OpenCode sessions - they have actual token counts in message files
 			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
@@ -3473,7 +3486,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return { ...result, actualTokens: result.tokens };
 			}
 
-			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
