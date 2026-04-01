@@ -258,6 +258,48 @@ export class CrushDataAccess {
 	}
 
 	/**
+	 * Returns a unified session data object for backend sync — mirrors the shape
+	 * that OpenCodeDataAccess.getOpenCodeSessionData() produces.
+	 *
+	 * Timestamp: the session's `created_at` Unix-seconds converted to milliseconds.
+	 * Token counts: actual prompt_tokens + completion_tokens from the sessions table.
+	 * Model usage: proportionally distributed across assistant-message models.
+	 * Interactions: number of user-role messages.
+	 */
+	async getCrushSessionData(virtualPath: string): Promise<{
+		tokens: number;
+		interactions: number;
+		modelUsage: ModelUsage & { [key: string]: { inputTokens: number; outputTokens: number; interactions?: number } };
+		timestamp: number;
+	}> {
+		const session = await this.readCrushSession(virtualPath);
+		if (!session) {
+			return { tokens: 0, interactions: 0, modelUsage: {}, timestamp: 0 };
+		}
+		const prompt = typeof session.prompt_tokens === 'number' ? session.prompt_tokens : 0;
+		const completion = typeof session.completion_tokens === 'number' ? session.completion_tokens : 0;
+		const tokens = prompt + completion;
+		// created_at is a Unix timestamp in seconds
+		const timestamp = typeof session.created_at === 'number' ? session.created_at * 1000 : Date.now();
+		const modelUsage = await this.getCrushModelUsage(virtualPath);
+		const messages = await this.getCrushMessages(virtualPath);
+		const interactions = messages.filter(m => m.role === 'user').length;
+		// Annotate each model entry with an interaction count proportional to its token share
+		const totalTokens = prompt + completion;
+		const modelUsageWithInteractions: { [key: string]: { inputTokens: number; outputTokens: number; interactions?: number } } = {};
+		for (const [model, usage] of Object.entries(modelUsage)) {
+			const modelTotal = usage.inputTokens + usage.outputTokens;
+			const fraction = totalTokens > 0 ? modelTotal / totalTokens : 0;
+			modelUsageWithInteractions[model] = {
+				inputTokens: usage.inputTokens,
+				outputTokens: usage.outputTokens,
+				interactions: Math.round(interactions * fraction),
+			};
+		}
+		return { tokens, interactions, modelUsage: modelUsageWithInteractions, timestamp };
+	}
+
+	/**
 	 * Collect tool-call names from all assistant messages in a session.
 	 * Parses the JSON `parts` array for `{type:"tool_call",data:{name:...}}` entries.
 	 */

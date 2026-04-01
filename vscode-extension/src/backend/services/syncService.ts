@@ -20,6 +20,7 @@ import { createDailyAggEntity } from '../storageTables';
 import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
+import { isJsonlContent } from '../../tokenEstimation';
 
 /**
  * Interface for blob upload service to avoid circular dependency.
@@ -84,6 +85,11 @@ export interface SyncServiceDeps {
 	// OpenCode session handling
 	isOpenCodeSession?: (sessionFile: string) => boolean;
 	getOpenCodeSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
+	// Crush session handling (per-project crush.db virtual paths)
+	isCrushSession?: (sessionFile: string) => boolean;
+	getCrushSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
+	// Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
+	isVSSessionFile?: (sessionFile: string) => boolean;
 }
 
 /**
@@ -314,8 +320,23 @@ export class SyncService {
 			// Map to track per-day per-model interactions for proper distribution
 			const dayModelInteractions = new Map<string, Map<string, number>>();
 			
-			// Handle JSONL format (Copilot CLI)
-			if (sessionFile.endsWith('.jsonl')) {
+			// Detect whether this is a delta-based (VS Code Insiders) JSONL file or a CLI JSONL file.
+			// Both can use .jsonl extension, but delta-based files have kind:0/1/2 numeric events
+			// while CLI files use event types like user.message, assistant.message, etc.
+			// Check the first non-empty line for a numeric "kind" property to distinguish.
+			let isDeltaBasedJsonl = false;
+			if (isJsonlContent(content)) {
+				const firstLine = content.trim().split('\n')[0]?.trim();
+				if (firstLine) {
+					try {
+						const firstEvent = JSON.parse(firstLine);
+						isDeltaBasedJsonl = typeof firstEvent.kind === 'number';
+					} catch { /* not valid JSON, leave as false */ }
+				}
+			}
+
+			// Handle non-delta JSONL format (Copilot CLI)
+			if (sessionFile.endsWith('.jsonl') && !isDeltaBasedJsonl) {
 				const lines = content.trim().split('\n');
 			const todayKey = this.utility.toUtcDayKey(now);
 			let lineCount = 0;
@@ -349,8 +370,62 @@ export class SyncService {
 						// skip malformed line
 					}
 				}
+			} else if (isDeltaBasedJsonl) {
+				// VS Code delta-based JSONL files (.json or .jsonl extension with kind:0/1/2 events).
+				// Process kind:2 events where k[0]==='requests' — each appends requests to the array.
+				// Deduplicate by requestId so incrementally-added requests are counted once.
+				// Track the session-level defaultModel from kind:0 and kind:2/selectedModel events so
+				// that requests without an explicit modelId still resolve to the correct model key
+				// (matching what getModelUsageFromSession stores in cachedData.modelUsage).
+				let defaultModel = 'gpt-4o';
+				const seenRequestIds = new Set<string>();
+				const lines = content.trim().split('\n');
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (!event || typeof event !== 'object') { continue; }
+						// Extract session-level default model (same logic as getModelUsageFromSession)
+						if (event.kind === 0) {
+							const modelId = event.v?.selectedModel?.identifier ||
+								event.v?.selectedModel?.metadata?.id ||
+								event.v?.inputState?.selectedModel?.metadata?.id;
+							if (modelId) { defaultModel = modelId.replace(/^copilot\//, ''); }
+						}
+						if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'selectedModel') {
+							const modelId = event.v?.identifier || event.v?.metadata?.id;
+							if (modelId) { defaultModel = modelId.replace(/^copilot\//, ''); }
+						}
+						// kind:2, k[0]==='requests' events append new request(s)
+						if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'requests' && Array.isArray(event.v)) {
+							for (const request of event.v) {
+								const req = request as ChatRequest;
+								const reqId = (req as any).requestId as string | undefined;
+								if (reqId && seenRequestIds.has(reqId)) { continue; }
+								if (reqId) { seenRequestIds.add(reqId); }
+								const normalizedTs = this.utility.normalizeTimestampToMs(
+									typeof req.timestamp !== 'undefined' ? req.timestamp : undefined
+								);
+								const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+								if (!eventMs || eventMs < startMs) { continue; }
+								const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+								// Use per-request modelId if present, otherwise fall back to the session
+								// default model (mirrors getModelUsageFromSession delta logic)
+								const rawModel = (req as any).modelId || (req as any).result?.metadata?.modelId;
+								const model = rawModel ? (rawModel as string).replace(/^copilot\//, '') : defaultModel;
+								if (!dayModelInteractions.has(dayKey)) {
+									dayModelInteractions.set(dayKey, new Map());
+								}
+								const dayMap = dayModelInteractions.get(dayKey)!;
+								dayMap.set(model, (dayMap.get(model) || 0) + 1);
+							}
+						}
+					} catch {
+						// skip malformed lines
+					}
+				}
 			} else {
-				// Handle JSON format (VS Code Copilot Chat)
+				// Handle regular JSON format (VS Code Copilot Chat legacy / OpenCode JSON)
 				try {
 					const sessionJson = JSON.parse(content);
 					if (!sessionJson || typeof sessionJson !== 'object') {
@@ -369,7 +444,6 @@ export class SyncService {
 						
 						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 						const model = this.deps.getModelFromRequest(req);
-						
 
 						// Track interaction for this day+model
 						if (!dayModelInteractions.has(dayKey)) {
@@ -384,6 +458,43 @@ export class SyncService {
 				}
 			}
 			
+			// Remap event model names to cached model names when there is a mismatch.
+			// CLI sessions often omit the model in individual events (defaulting to 'gpt-4o')
+			// while session.shutdown provides the actual model (e.g. 'claude-sonnet-4.6').
+			// Without remapping, the lookup `cachedData.modelUsage[eventModel]` silently fails.
+			const cachedModelNames = Object.keys(cachedData.modelUsage);
+			if (cachedModelNames.length > 0) {
+				const allEventModels = new Set<string>();
+				for (const modelMap of dayModelInteractions.values()) {
+					for (const m of modelMap.keys()) { allEventModels.add(m); }
+				}
+				const unmappedModels = new Set<string>();
+				for (const m of allEventModels) {
+					if (!cachedData.modelUsage[m]) { unmappedModels.add(m); }
+				}
+				if (unmappedModels.size > 0) {
+					const totalCachedTokens = cachedModelNames.reduce((sum, m) =>
+						sum + cachedData.modelUsage[m].inputTokens + cachedData.modelUsage[m].outputTokens, 0);
+					for (const [, modelMap] of dayModelInteractions) {
+						let unmappedCount = 0;
+						for (const um of unmappedModels) {
+							unmappedCount += modelMap.get(um) || 0;
+							modelMap.delete(um);
+						}
+						if (unmappedCount > 0) {
+							for (const cm of cachedModelNames) {
+								const ct = cachedData.modelUsage[cm].inputTokens + cachedData.modelUsage[cm].outputTokens;
+								const share = totalCachedTokens > 0 ? ct / totalCachedTokens : 1 / cachedModelNames.length;
+								const redistributed = Math.round(unmappedCount * share);
+								if (redistributed > 0) {
+									modelMap.set(cm, (modelMap.get(cm) || 0) + redistributed);
+								}
+							}
+						}
+					}
+				}
+			}
+
 			// Now distribute cached token counts proportionally across day+model combinations
 			// based on the actual interaction distribution we just calculated
 			for (const [dayKey, modelMap] of dayModelInteractions) {
@@ -607,12 +718,14 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[] }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
 	}> {
 		const lookbackDays = args.lookbackDays;
+		const skipMtimeFilter = args.skipMtimeFilter === true;
+		const onProgress = args.onProgress;
 		const userId = (args.userId ?? '').trim() || undefined;
 		const now = new Date();
 		// Include all events from the start of the first day in the range (UTC).
@@ -643,7 +756,8 @@ export class SyncService {
 		let filesSkipped = 0;
 		let filesProcessed = 0;
 		
-		this.deps.log(`Backend sync: analyzing ${sessionFiles.length} session files`);
+		const totalFiles = sessionFiles.length;
+		this.deps.log(`Backend sync: analyzing ${totalFiles} session files`);
 
 		for (const sessionFile of sessionFiles) {
 			let fileMtimeMs: number | undefined;
@@ -652,15 +766,25 @@ export class SyncService {
 				const fileStat = await this.deps.statSessionFile(sessionFile);
 				fileMtimeMs = fileStat.mtimeMs;
 				
-
-				// Skip files older than lookback period
-				if (fileMtimeMs < startMs) {
+				// Skip files older than lookback period (unless backfill mode bypasses this filter)
+				if (!skipMtimeFilter && fileMtimeMs < startMs) {
 					filesSkipped++;
 					continue;
 				}
 				filesProcessed++;
+				// Report progress every 10 files (avoids flooding the callback)
+				if (onProgress && filesProcessed % 10 === 0) {
+					const daysFound = new Set(Array.from(rollups.values()).map(r => r.key.day)).size;
+					onProgress(filesProcessed, totalFiles, daysFound);
+				}
 			} catch (e) {
 				this.deps.warn(`Backend sync: failed to stat session file ${sessionFile}: ${e}`);
+				continue;
+			}
+
+			// Skip Visual Studio session files — they are binary MessagePack, not JSON
+			if (this.deps.isVSSessionFile && this.deps.isVSSessionFile(sessionFile)) {
+				filesSkipped++;
 				continue;
 			}
 
@@ -693,11 +817,45 @@ export class SyncService {
 							interactions: (usage as any).interactions || 0
 						});
 					}
-					
-					filesProcessed++;
 					continue;
 				} catch (e) {
 					this.deps.warn(`Backend sync: failed to process OpenCode session ${sessionFile}: ${e}`);
+					continue;
+				}
+			}
+
+			// Handle Crush sessions separately (virtual paths pointing to crush.db SQLite entries)
+			if (this.deps.isCrushSession && this.deps.isCrushSession(sessionFile)) {
+				if (!this.deps.getCrushSessionData) {
+					filesSkipped++;
+					continue;
+				}
+
+				try {
+					const data = await this.deps.getCrushSessionData(sessionFile);
+					const eventMs = data.timestamp || fileMtimeMs;
+
+					if (!eventMs || eventMs < startMs) {
+						filesSkipped++;
+						continue;
+					}
+
+					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+					// Crush paths: <project>/.crush/crush.db#<id>  — no workspaceStorage segment
+					const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
+					await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
+
+					for (const [model, usage] of Object.entries(data.modelUsage)) {
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						upsertDailyRollup(rollups as any, key, {
+							inputTokens: (usage as any).inputTokens || 0,
+							outputTokens: (usage as any).outputTokens || 0,
+							interactions: (usage as any).interactions || 0,
+						});
+					}
+					continue;
+				} catch (e) {
+					this.deps.warn(`Backend sync: failed to process Crush session ${sessionFile}: ${e}`);
 					continue;
 				}
 			}
@@ -738,8 +896,19 @@ export class SyncService {
 				this.deps.warn(`Backend sync: failed to read session file ${sessionFile}: ${e}`);
 				continue;
 			}
-			// JSONL (Copilot CLI)
-			if (sessionFile.endsWith('.jsonl')) {
+			// JSONL (Copilot CLI or VS Code chat .json/.jsonl with delta-based content)
+			if (sessionFile.endsWith('.jsonl') || isJsonlContent(content)) {
+				let defaultModel = 'gpt-4o';
+				// Delta-based format can come from .json or .jsonl files; detect by first-line kind property
+				let isVsCodeFormat = false;
+				const firstJsonlLine = content.trim().split('\n')[0]?.trim();
+				if (firstJsonlLine) {
+					try {
+						const firstEv = JSON.parse(firstJsonlLine);
+						isVsCodeFormat = typeof firstEv.kind === 'number';
+					} catch { /* leave as false */ }
+				}
+				const seenReqIds = new Set<string>();
 				const lines = content.trim().split('\n');
 				for (const line of lines) {
 					if (!line.trim()) {
@@ -750,13 +919,68 @@ export class SyncService {
 						if (!event || typeof event !== 'object') {
 							continue;
 						}
+						// VS Code delta-based: track default model from session header events
+						if (isVsCodeFormat) {
+							if (event.kind === 0) {
+								const mId = event.v?.selectedModel?.identifier || event.v?.selectedModel?.metadata?.id || event.v?.inputState?.selectedModel?.metadata?.id;
+								if (mId) { defaultModel = mId.replace(/^copilot\//, ''); }
+							}
+							if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'selectedModel') {
+								const mId = event.v?.identifier || event.v?.metadata?.id;
+								if (mId) { defaultModel = mId.replace(/^copilot\//, ''); }
+							}
+							if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'requests' && Array.isArray(event.v)) {
+								for (const request of event.v) {
+									const req = request as ChatRequest;
+									const reqId = (req as any).requestId as string | undefined;
+									if (reqId && seenReqIds.has(reqId)) { continue; }
+									if (reqId) { seenReqIds.add(reqId); }
+									const normalizedTs = this.utility.normalizeTimestampToMs(typeof req.timestamp !== 'undefined' ? req.timestamp : undefined);
+									const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
+									if (!eventMs || eventMs < startMs) { continue; }
+									const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+									const rawModel = (req as any).modelId || (req as any).result?.metadata?.modelId;
+									const model = rawModel ? (rawModel as string).replace(/^copilot\//, '') : defaultModel;
+
+									let inputTokens = 0;
+									let outputTokens = 0;
+									// Prefer actual API token counts when available in the request
+									const reqResult = (req as any).result;
+									if (reqResult?.usage) {
+										inputTokens = typeof reqResult.usage.promptTokens === 'number' ? reqResult.usage.promptTokens : 0;
+										outputTokens = typeof reqResult.usage.completionTokens === 'number' ? reqResult.usage.completionTokens : 0;
+									} else if (typeof reqResult?.promptTokens === 'number' && typeof reqResult?.outputTokens === 'number') {
+										inputTokens = reqResult.promptTokens;
+										outputTokens = reqResult.outputTokens;
+									} else if (reqResult?.metadata && typeof reqResult.metadata.promptTokens === 'number' && typeof reqResult.metadata.outputTokens === 'number') {
+										inputTokens = reqResult.metadata.promptTokens;
+										outputTokens = reqResult.metadata.outputTokens;
+									} else {
+										// Fallback to text-based estimation
+										if ((req as any).message?.text) {
+											inputTokens = this.deps.estimateTokensFromText((req as any).message.text, model);
+										}
+										if (Array.isArray((req as any).response)) {
+											for (const r of (req as any).response) {
+												if (typeof r?.value === 'string') { outputTokens += this.deps.estimateTokensFromText(r.value, model); }
+											}
+										}
+									}
+									if (inputTokens === 0 && outputTokens === 0) { continue; }
+									const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+									upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions: 1 });
+								}
+							}
+							continue; // processed as VS Code delta event; skip CLI logic below
+						}
+						// Copilot CLI non-delta format below
 						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
 						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
 						if (!eventMs || eventMs < startMs) {
 							continue;
 						}
 						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-						const model = (event.model || 'gpt-4o').toString();
+						const model = (event.model || defaultModel).toString();
 
 						let inputTokens = 0;
 						let outputTokens = 0;
@@ -813,17 +1037,34 @@ export class SyncService {
 
 					let inputTokens = 0;
 					let outputTokens = 0;
-					if (req.message && req.message.parts) {
-						for (const part of req.message.parts) {
-							if (part?.text) {
-								inputTokens += this.deps.estimateTokensFromText(part.text, model);
+					// Prefer actual API token counts when available
+					const result = (req as any).result;
+					if (result?.usage) {
+						// OLD FORMAT (pre-Feb 2026)
+						inputTokens = typeof result.usage.promptTokens === 'number' ? result.usage.promptTokens : 0;
+						outputTokens = typeof result.usage.completionTokens === 'number' ? result.usage.completionTokens : 0;
+					} else if (typeof result?.promptTokens === 'number' && typeof result?.outputTokens === 'number') {
+						// NEW FORMAT (Feb 2026+)
+						inputTokens = result.promptTokens;
+						outputTokens = result.outputTokens;
+					} else if (result?.metadata && typeof result.metadata.promptTokens === 'number' && typeof result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						inputTokens = result.metadata.promptTokens;
+						outputTokens = result.metadata.outputTokens;
+					} else {
+						// Fallback to text-based estimation
+						if (req.message && req.message.parts) {
+							for (const part of req.message.parts) {
+								if (part?.text) {
+									inputTokens += this.deps.estimateTokensFromText(part.text, model);
+								}
 							}
 						}
-					}
-					if (req.response && Array.isArray(req.response)) {
-						for (const responseItem of req.response) {
-							if (typeof responseItem?.value === 'string') {
-								outputTokens += this.deps.estimateTokensFromText(responseItem.value, model);
+						if (req.response && Array.isArray(req.response)) {
+							for (const responseItem of req.response) {
+								if (typeof responseItem?.value === 'string') {
+									outputTokens += this.deps.estimateTokensFromText(responseItem.value, model);
+								}
 							}
 						}
 					}
@@ -951,6 +1192,33 @@ export class SyncService {
 				this.deps.log(`Backend sync: upserting ${rollups.size} rollup entities (lookback ${settings.lookbackDays} days)`);
 
 				const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+
+				// One-time cleanup: delete stale Azure entities for this user before upserting.
+				// Previous syncs may have written rows with incorrect model names, which create phantom
+				// RowKey entries that inflate the dashboard total. We track 'backend.lastCleanSyncVersion'
+				// so this runs once per cache version bump and not on every sync cycle.
+				const CLEAN_SYNC_VERSION = 2; // Bump when the delete logic changes
+				const lastCleanVersion = this.deps.context?.globalState.get<number>('backend.lastCleanSyncVersion') ?? 0;
+				const cacheWasCleared = lastCleanVersion < CLEAN_SYNC_VERSION;
+				if (cacheWasCleared && resolvedIdentity.userId && sortedDays.length > 0) {
+					const startDayKey = sortedDays[0];
+					const endDayKey = sortedDays[sortedDays.length - 1];
+					this.deps.log(`Backend sync: cleaning stale entities for user "${resolvedIdentity.userId}" (${startDayKey} to ${endDayKey})`);
+					try {
+						const deleteResult = await this.dataPlaneService.deleteEntitiesForUserDataset({
+							tableClient,
+							userId: resolvedIdentity.userId,
+							datasetId: settings.datasetId,
+							startDayKey,
+							endDayKey,
+						});
+						this.deps.log(`Backend sync: deleted ${deleteResult.deletedCount} stale entities (${deleteResult.errors.length} errors)`);
+						await this.deps.context?.globalState.update('backend.lastCleanSyncVersion', CLEAN_SYNC_VERSION);
+					} catch (e) {
+						this.deps.warn(`Backend sync: failed to clean stale entities: ${e}`);
+					}
+				}
+
 				const entities = [];
 				for (const { key, value } of rollups.values()) {
 					const effectiveUserId = (key.userId ?? '').trim() || undefined;
@@ -1046,5 +1314,117 @@ export class SyncService {
 			}
 		});
 		return this.syncQueue;
+	}
+
+	/**
+	 * Backfill historical data to Azure Table Storage.
+	 * Scans ALL local session files (ignoring file mtime) and upserts daily rollups for every
+	 * day that has local data within the given lookback window. This is safe to run at any time
+	 * because the underlying upsert operation is idempotent.
+	 *
+	 * Use this to recover from situations where the normal sync missed data due to the
+	 * mtime-based file-age filter (e.g. the backend was configured after a large volume of
+	 * activity had already accumulated locally).
+	 */
+	async backfillSync(settings: BackendSettings, isConfigured: boolean, maxLookbackDays = 365, onProgress?: (processed: number, total: number, daysFound: number) => void): Promise<void> {
+		const sharingPolicy = computeBackendSharingPolicy({
+			enabled: settings.enabled,
+			profile: settings.sharingProfile,
+			shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
+		});
+		if (!sharingPolicy.allowCloudSync || !isConfigured) {
+			this.deps.warn('Backfill: skipping (cloud sync disabled or backend not configured)');
+			return;
+		}
+
+		this.deps.log(`Backfill: starting deep scan (up to ${maxLookbackDays} days, mtime filter disabled)`);
+
+		const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
+		if (!creds) {
+			this.deps.warn('Backfill: skipping (credentials not available)');
+			return;
+		}
+
+		await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);
+		await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
+
+		const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(settings, sharingPolicy.includeUserDimension);
+		const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({
+			lookbackDays: maxLookbackDays,
+			userId: resolvedIdentity.userId,
+			skipMtimeFilter: true, // backfill: open every file regardless of age
+			onProgress
+		});
+
+		const dayKeys = new Set<string>();
+		for (const { key } of rollups.values()) { dayKeys.add(key.day); }
+		const sortedDays = Array.from(dayKeys).sort();
+		this.deps.log(`Backfill: found data for ${sortedDays.length} days: ${sortedDays.slice(0, 10).join(', ')}${sortedDays.length > 10 ? '…' : ''}`);
+
+		const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+		const entities = [];
+		for (const { key, value } of rollups.values()) {
+			const effectiveUserId = (key.userId ?? '').trim() || undefined;
+			const includeConsent = sharingPolicy.includeUserDimension && !!effectiveUserId;
+			const includeNames = sharingPolicy.includeNames;
+			const workspaceIdToStore = sharingPolicy.workspaceIdStrategy === 'hashed'
+				? hashWorkspaceIdForTeam({ datasetId: settings.datasetId, workspaceId: key.workspaceId })
+				: key.workspaceId;
+			const machineIdToStore = sharingPolicy.machineIdStrategy === 'hashed'
+				? hashMachineIdForTeam({ datasetId: settings.datasetId, machineId: key.machineId })
+				: key.machineId;
+			const workspaceName = includeNames ? workspaceNamesById[key.workspaceId] : undefined;
+			const machineName = includeNames ? machineNamesById[key.machineId] : undefined;
+			const entity = createDailyAggEntity({
+				datasetId: settings.datasetId,
+				day: key.day,
+				model: key.model,
+				workspaceId: workspaceIdToStore,
+				workspaceName,
+				machineId: machineIdToStore,
+				machineName,
+				userId: effectiveUserId,
+				userKeyType: resolvedIdentity.userKeyType,
+				shareWithTeam: includeConsent ? true : undefined,
+				consentAt: validateConsentTimestamp(settings.shareConsentAt, this.deps.log),
+				inputTokens: value.inputTokens,
+				outputTokens: value.outputTokens,
+				interactions: value.interactions,
+				fluencyMetrics: value.fluencyMetrics
+			});
+			entities.push(entity);
+		}
+
+		// Signal upload phase to caller before the (potentially slow) upsert
+		onProgress?.(-1, entities.length, sortedDays.length);
+
+		// Delete stale entities for this user before upserting.
+		// Previous syncs may have written rows with incorrect model names (e.g. 'gpt-4o' instead
+		// of the actual model). Since the model name is part of the RowKey, corrected data creates
+		// new rows while old ones persist, causing over-counting on the dashboard.
+		if (resolvedIdentity.userId && sortedDays.length > 0) {
+			const startDayKey = sortedDays[0];
+			const endDayKey = sortedDays[sortedDays.length - 1];
+			this.deps.log(`Backfill: cleaning stale entities for user "${resolvedIdentity.userId}" in date range ${startDayKey} to ${endDayKey}`);
+			try {
+				const deleteResult = await this.dataPlaneService.deleteEntitiesForUserDataset({
+					tableClient,
+					userId: resolvedIdentity.userId,
+					datasetId: settings.datasetId,
+					startDayKey,
+					endDayKey,
+				});
+				this.deps.log(`Backfill: deleted ${deleteResult.deletedCount} stale entities (${deleteResult.errors.length} errors)`);
+			} catch (e) {
+				this.deps.warn(`Backfill: failed to clean stale entities (continuing with upsert): ${e}`);
+			}
+		}
+
+		const { successCount, errors } = await this.dataPlaneService.upsertEntitiesBatch(tableClient, entities);
+		if (errors.length > 0) {
+			this.deps.warn(`Backfill: ${successCount}/${entities.length} entities synced, ${errors.length} failed`);
+		} else {
+			this.deps.log(`Backfill: ${successCount} entities synced successfully across ${sortedDays.length} days`);
+		}
 	}
 }

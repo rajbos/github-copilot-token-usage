@@ -16,6 +16,8 @@ interface UserSummary {
   devices: string[];
   workspaces: string[];
   modelUsage: ModelUsage;
+  localTokens?: number;
+  localInteractions?: number;
 }
 
 interface TeamMemberStats {
@@ -48,6 +50,7 @@ interface DashboardStats {
     firstDate?: string | null;
     lastDate?: string | null;
   };
+  lookbackDays?: number;
   lastUpdated: string | Date;
   compactNumbers?: boolean;
 }
@@ -71,6 +74,9 @@ const initialData = window.__INITIAL_DASHBOARD__;
 console.log("[CopilotTokenTracker] dashboard webview loaded");
 console.log("[CopilotTokenTracker] initialData:", initialData);
 
+/** Reference to the loading text element so backfillProgress messages can update it in place. */
+let loadingTextEl: HTMLElement | null = null;
+
 function showLoading(): void {
   const root = document.getElementById("root");
   if (!root) {
@@ -93,6 +99,7 @@ function showLoading(): void {
   const loading = el("div", "loading-indicator");
   const spinner = el("div", "spinner");
   const loadingText = el("div", "loading-text", "Loading dashboard data...");
+  loadingTextEl = loadingText;
   loading.append(spinner, loadingText);
 
   container.append(header, loading);
@@ -100,6 +107,7 @@ function showLoading(): void {
 }
 
 function showError(message: string): void {
+  loadingTextEl = null;
   const root = document.getElementById("root");
   if (!root) {
     return;
@@ -128,6 +136,7 @@ function showError(message: string): void {
 }
 
 function render(stats: DashboardStats): void {
+  loadingTextEl = null;
   setCompactNumbers(stats.compactNumbers !== false);
   const root = document.getElementById("root");
   if (!root) {
@@ -153,7 +162,7 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   const header = el("div", "header");
   const titleGroup = el("div", "title-group");
   const title = el("div", "title", "📊 Team Dashboard");
-  const period = el("div", "period", "Last 30 days");
+  const period = el("div", "period", `Last ${stats.lookbackDays ?? 30} days`);
   titleGroup.append(title, period);
   const buttonRow = el("div", "button-row");
 
@@ -176,14 +185,14 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   );
 
   const sections = el("div", "sections");
-  sections.append(buildPersonalSection(stats.personal));
+  sections.append(buildPersonalSection(stats.personal, stats.lookbackDays ?? 30));
   sections.append(buildTeamSection(stats));
 
   container.append(header, sections, footer);
   root.append(themeStyle, style, container);
 }
 
-function buildPersonalSection(personal: UserSummary): HTMLElement {
+function buildPersonalSection(personal: UserSummary, lookbackDays: number): HTMLElement {
   const section = el("div", "section");
   const sectionTitle = el(
     "h2",
@@ -194,8 +203,8 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
   const grid = el("div", "stats-grid");
 
   grid.append(
-    buildStatCard("Total Tokens", formatCompact(personal.totalTokens)),
-    buildStatCard("Interactions", formatNumber(personal.totalInteractions)),
+    buildStatCard("Synced Tokens", formatCompact(personal.totalTokens)),
+    buildStatCard("Synced Interactions", formatNumber(personal.totalInteractions)),
     buildStatCard("Estimated Cost", formatCost(personal.totalCost)),
     buildStatCard("Devices", personal.devices.length.toString()),
     buildStatCard("Workspaces", personal.workspaces.length.toString()),
@@ -203,7 +212,35 @@ function buildPersonalSection(personal: UserSummary): HTMLElement {
 
   const modelSection = buildModelBreakdown(personal.modelUsage);
 
-  section.append(sectionTitle, grid, modelSection);
+  // Show sync coverage warning when local activity significantly exceeds synced data
+  const localTokens = personal.localTokens ?? 0;
+  const syncedTokens = personal.totalTokens;
+  const showSyncWarning = localTokens > 0 && syncedTokens < localTokens * 0.9;
+
+  if (showSyncWarning) {
+    const syncCoverage = localTokens > 0 ? Math.round((syncedTokens / localTokens) * 100) : 100;
+    const warning = el("div", "sync-warning");
+    warning.style.cssText =
+      "margin-top: 12px; padding: 10px 14px; background: var(--vscode-inputValidation-warningBackground, rgba(200,120,0,0.1)); border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(200,120,0,0.5)); border-radius: 6px; font-size: 12px; color: var(--vscode-foreground, #ccc);";
+    const warningTitle = el("div", "");
+    warningTitle.style.cssText = "font-weight: 600; margin-bottom: 4px;";
+    warningTitle.textContent = `⚠️ Only ${syncCoverage}% of your local activity is synced to cloud (${formatCompact(syncedTokens)} of ${formatCompact(localTokens)} local tokens in last ${lookbackDays} days)`;
+    const warningNote = el("div", "");
+    warningNote.style.cssText = "font-size: 11px; opacity: 0.7; margin-top: 3px;";
+    warningNote.textContent = "To close the gap: increase the lookback window, run a manual sync, or check that blob upload is enabled and configured.";
+    const backfillBtn = document.createElement("button");
+    backfillBtn.textContent = "⏫ Backfill Historical Data";
+    backfillBtn.style.cssText =
+      "margin-top: 10px; padding: 5px 12px; font-size: 12px; cursor: pointer; border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #ccc); border-radius: 4px;";
+    backfillBtn.title = "Scan all local session files and upload missing daily data to Azure Storage";
+    backfillBtn.addEventListener("click", () => {
+      vscode.postMessage({ command: "backfillHistoricalData" });
+    });
+    warning.append(warningTitle, warningNote, backfillBtn);
+    section.append(sectionTitle, grid, warning, modelSection);
+  } else {
+    section.append(sectionTitle, grid, modelSection);
+  }
   return section;
 }
 
@@ -225,29 +262,27 @@ function buildTeamSection(stats: DashboardStats): HTMLElement {
   );
 
   // Add date range info if available
-  console.log(
-    "Team firstDate:",
-    stats.team.firstDate,
-    "lastDate:",
-    stats.team.lastDate,
-  );
   let dateInfo: HTMLElement | null = null;
   if (stats.team.firstDate || stats.team.lastDate) {
     dateInfo = el("div", "info-box");
     dateInfo.style.cssText =
-      "margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 13px; color: #aaa;";
+      "margin-top: 16px; padding: 12px 14px; background: var(--vscode-inputValidation-infoBackground, rgba(0,120,212,0.1)); border: 1px solid var(--vscode-inputValidation-infoBorder, rgba(0,120,212,0.4)); border-radius: 6px; font-size: 13px; color: var(--vscode-foreground, #ccc);";
     const firstDate = stats.team.firstDate;
     const lastDate = stats.team.lastDate;
+    const rangeLabel = el("div", "");
+    rangeLabel.style.cssText = "font-weight: 600; margin-bottom: 4px;";
     if (firstDate && lastDate) {
-      dateInfo.textContent = `📅 Data Range: ${firstDate} to ${lastDate}`;
+      rangeLabel.textContent = `📅 Synced data range: ${firstDate} → ${lastDate}`;
     } else if (firstDate) {
-      dateInfo.textContent = `📅 First Data: ${firstDate}`;
+      rangeLabel.textContent = `📅 First synced data: ${firstDate}`;
     } else if (lastDate) {
-      dateInfo.textContent = `📅 Last Data: ${lastDate}`;
+      rangeLabel.textContent = `📅 Last synced data: ${lastDate}`;
     }
-    console.log("Date info element created");
-  } else {
-    console.log("No date range data available");
+    const rangeNote = el("div", "");
+    rangeNote.style.cssText = "font-size: 11px; opacity: 0.7; margin-top: 3px;";
+    const lookback = stats.lookbackDays ?? 30;
+    rangeNote.textContent = `Dashboard is filtered to the last ${lookback} days. This reflects what team members have synced to cloud storage. Older data may exist locally but was outside their configured upload window.`;
+    dateInfo.append(rangeLabel, rangeNote);
   }
 
   const leaderboard = buildLeaderboard(stats);
@@ -596,6 +631,17 @@ window.addEventListener("message", (event) => {
     case "dashboardError":
       showError(message.message);
       break;
+    case "backfillProgress": {
+      const progressText = message.text ?? "Backfill in progress...";
+      if (!loadingTextEl) {
+        showLoading(); // ensures loadingTextEl is set
+      }
+      const textEl = loadingTextEl;
+      if (textEl) {
+        textEl.textContent = progressText;
+      }
+      break;
+    }
   }
 });
 

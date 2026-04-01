@@ -210,6 +210,8 @@ export class CacheManager {
 			if (storedVersion !== this.cacheVersion) {
 				this.deps.log(`Cache version mismatch (stored: ${storedVersion}, current: ${this.cacheVersion}) for ${cacheId}. Clearing cache.`);
 				this.sessionFileCache = new Map();
+				// Reset the clean-sync flag so the next sync deletes stale Azure entities
+				try { this.context.globalState.update('backend.lastCleanSyncVersion', undefined); } catch { /* best-effort */ }
 				return;
 			}
 
