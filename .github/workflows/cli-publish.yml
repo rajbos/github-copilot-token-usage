@@ -58,7 +58,7 @@ jobs:
 
       - name: Install extension dependencies
         run: npm ci
-        working-directory: .
+        working-directory: vscode-extension
 
       - name: Install CLI dependencies
         run: npm ci
