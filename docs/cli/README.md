@@ -4,6 +4,8 @@
 
 Command-line interface for analyzing GitHub Copilot token usage from local session files. Works anywhere Copilot Chat stores its session data — no VS Code required.
 
+📦 **npm**: [@rajbos/ai-engineering-fluency](https://www.npmjs.com/package/@rajbos/ai-engineering-fluency)
+
 ## Quick Start
 
 ```bash
