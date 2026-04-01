@@ -111,7 +111,7 @@ import {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 31; // Fix Continue token estimation (use text length, not non-existent promptLength field)
+	private static readonly CACHE_VERSION = 35; // Fix CLI multi-shutdown accumulation + backfill pre-delete to clear stale Azure entities
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 

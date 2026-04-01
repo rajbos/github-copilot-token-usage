@@ -320,8 +320,23 @@ export class SyncService {
 			// Map to track per-day per-model interactions for proper distribution
 			const dayModelInteractions = new Map<string, Map<string, number>>();
 			
-			// Handle JSONL format (Copilot CLI)
-			if (sessionFile.endsWith('.jsonl')) {
+			// Detect whether this is a delta-based (VS Code Insiders) JSONL file or a CLI JSONL file.
+			// Both can use .jsonl extension, but delta-based files have kind:0/1/2 numeric events
+			// while CLI files use event types like user.message, assistant.message, etc.
+			// Check the first non-empty line for a numeric "kind" property to distinguish.
+			let isDeltaBasedJsonl = false;
+			if (isJsonlContent(content)) {
+				const firstLine = content.trim().split('\n')[0]?.trim();
+				if (firstLine) {
+					try {
+						const firstEvent = JSON.parse(firstLine);
+						isDeltaBasedJsonl = typeof firstEvent.kind === 'number';
+					} catch { /* not valid JSON, leave as false */ }
+				}
+			}
+
+			// Handle non-delta JSONL format (Copilot CLI)
+			if (sessionFile.endsWith('.jsonl') && !isDeltaBasedJsonl) {
 				const lines = content.trim().split('\n');
 			const todayKey = this.utility.toUtcDayKey(now);
 			let lineCount = 0;
@@ -355,8 +370,8 @@ export class SyncService {
 						// skip malformed line
 					}
 				}
-			} else if (isJsonlContent(content)) {
-				// VS Code chat session files have .json extension but use JSONL (patch-based) format.
+			} else if (isDeltaBasedJsonl) {
+				// VS Code delta-based JSONL files (.json or .jsonl extension with kind:0/1/2 events).
 				// Process kind:2 events where k[0]==='requests' — each appends requests to the array.
 				// Deduplicate by requestId so incrementally-added requests are counted once.
 				// Track the session-level defaultModel from kind:0 and kind:2/selectedModel events so
@@ -443,6 +458,43 @@ export class SyncService {
 				}
 			}
 			
+			// Remap event model names to cached model names when there is a mismatch.
+			// CLI sessions often omit the model in individual events (defaulting to 'gpt-4o')
+			// while session.shutdown provides the actual model (e.g. 'claude-sonnet-4.6').
+			// Without remapping, the lookup `cachedData.modelUsage[eventModel]` silently fails.
+			const cachedModelNames = Object.keys(cachedData.modelUsage);
+			if (cachedModelNames.length > 0) {
+				const allEventModels = new Set<string>();
+				for (const modelMap of dayModelInteractions.values()) {
+					for (const m of modelMap.keys()) { allEventModels.add(m); }
+				}
+				const unmappedModels = new Set<string>();
+				for (const m of allEventModels) {
+					if (!cachedData.modelUsage[m]) { unmappedModels.add(m); }
+				}
+				if (unmappedModels.size > 0) {
+					const totalCachedTokens = cachedModelNames.reduce((sum, m) =>
+						sum + cachedData.modelUsage[m].inputTokens + cachedData.modelUsage[m].outputTokens, 0);
+					for (const [, modelMap] of dayModelInteractions) {
+						let unmappedCount = 0;
+						for (const um of unmappedModels) {
+							unmappedCount += modelMap.get(um) || 0;
+							modelMap.delete(um);
+						}
+						if (unmappedCount > 0) {
+							for (const cm of cachedModelNames) {
+								const ct = cachedData.modelUsage[cm].inputTokens + cachedData.modelUsage[cm].outputTokens;
+								const share = totalCachedTokens > 0 ? ct / totalCachedTokens : 1 / cachedModelNames.length;
+								const redistributed = Math.round(unmappedCount * share);
+								if (redistributed > 0) {
+									modelMap.set(cm, (modelMap.get(cm) || 0) + redistributed);
+								}
+							}
+						}
+					}
+				}
+			}
+
 			// Now distribute cached token counts proportionally across day+model combinations
 			// based on the actual interaction distribution we just calculated
 			for (const [dayKey, modelMap] of dayModelInteractions) {
@@ -844,10 +896,18 @@ export class SyncService {
 				this.deps.warn(`Backend sync: failed to read session file ${sessionFile}: ${e}`);
 				continue;
 			}
-			// JSONL (Copilot CLI or VS Code chat .json with JSONL content)
+			// JSONL (Copilot CLI or VS Code chat .json/.jsonl with delta-based content)
 			if (sessionFile.endsWith('.jsonl') || isJsonlContent(content)) {
 				let defaultModel = 'gpt-4o';
-				const isVsCodeFormat = !sessionFile.endsWith('.jsonl');
+				// Delta-based format can come from .json or .jsonl files; detect by first-line kind property
+				let isVsCodeFormat = false;
+				const firstJsonlLine = content.trim().split('\n')[0]?.trim();
+				if (firstJsonlLine) {
+					try {
+						const firstEv = JSON.parse(firstJsonlLine);
+						isVsCodeFormat = typeof firstEv.kind === 'number';
+					} catch { /* leave as false */ }
+				}
 				const seenReqIds = new Set<string>();
 				const lines = content.trim().split('\n');
 				for (const line of lines) {
@@ -884,12 +944,26 @@ export class SyncService {
 
 									let inputTokens = 0;
 									let outputTokens = 0;
-									if ((req as any).message?.text) {
-										inputTokens = this.deps.estimateTokensFromText((req as any).message.text, model);
-									}
-									if (Array.isArray((req as any).response)) {
-										for (const r of (req as any).response) {
-											if (typeof r?.value === 'string') { outputTokens += this.deps.estimateTokensFromText(r.value, model); }
+									// Prefer actual API token counts when available in the request
+									const reqResult = (req as any).result;
+									if (reqResult?.usage) {
+										inputTokens = typeof reqResult.usage.promptTokens === 'number' ? reqResult.usage.promptTokens : 0;
+										outputTokens = typeof reqResult.usage.completionTokens === 'number' ? reqResult.usage.completionTokens : 0;
+									} else if (typeof reqResult?.promptTokens === 'number' && typeof reqResult?.outputTokens === 'number') {
+										inputTokens = reqResult.promptTokens;
+										outputTokens = reqResult.outputTokens;
+									} else if (reqResult?.metadata && typeof reqResult.metadata.promptTokens === 'number' && typeof reqResult.metadata.outputTokens === 'number') {
+										inputTokens = reqResult.metadata.promptTokens;
+										outputTokens = reqResult.metadata.outputTokens;
+									} else {
+										// Fallback to text-based estimation
+										if ((req as any).message?.text) {
+											inputTokens = this.deps.estimateTokensFromText((req as any).message.text, model);
+										}
+										if (Array.isArray((req as any).response)) {
+											for (const r of (req as any).response) {
+												if (typeof r?.value === 'string') { outputTokens += this.deps.estimateTokensFromText(r.value, model); }
+											}
 										}
 									}
 									if (inputTokens === 0 && outputTokens === 0) { continue; }
@@ -963,17 +1037,34 @@ export class SyncService {
 
 					let inputTokens = 0;
 					let outputTokens = 0;
-					if (req.message && req.message.parts) {
-						for (const part of req.message.parts) {
-							if (part?.text) {
-								inputTokens += this.deps.estimateTokensFromText(part.text, model);
+					// Prefer actual API token counts when available
+					const result = (req as any).result;
+					if (result?.usage) {
+						// OLD FORMAT (pre-Feb 2026)
+						inputTokens = typeof result.usage.promptTokens === 'number' ? result.usage.promptTokens : 0;
+						outputTokens = typeof result.usage.completionTokens === 'number' ? result.usage.completionTokens : 0;
+					} else if (typeof result?.promptTokens === 'number' && typeof result?.outputTokens === 'number') {
+						// NEW FORMAT (Feb 2026+)
+						inputTokens = result.promptTokens;
+						outputTokens = result.outputTokens;
+					} else if (result?.metadata && typeof result.metadata.promptTokens === 'number' && typeof result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						inputTokens = result.metadata.promptTokens;
+						outputTokens = result.metadata.outputTokens;
+					} else {
+						// Fallback to text-based estimation
+						if (req.message && req.message.parts) {
+							for (const part of req.message.parts) {
+								if (part?.text) {
+									inputTokens += this.deps.estimateTokensFromText(part.text, model);
+								}
 							}
 						}
-					}
-					if (req.response && Array.isArray(req.response)) {
-						for (const responseItem of req.response) {
-							if (typeof responseItem?.value === 'string') {
-								outputTokens += this.deps.estimateTokensFromText(responseItem.value, model);
+						if (req.response && Array.isArray(req.response)) {
+							for (const responseItem of req.response) {
+								if (typeof responseItem?.value === 'string') {
+									outputTokens += this.deps.estimateTokensFromText(responseItem.value, model);
+								}
 							}
 						}
 					}
@@ -1101,6 +1192,33 @@ export class SyncService {
 				this.deps.log(`Backend sync: upserting ${rollups.size} rollup entities (lookback ${settings.lookbackDays} days)`);
 
 				const tableClient = this.dataPlaneService.createTableClient(settings, creds.tableCredential);
+
+				// One-time cleanup: delete stale Azure entities for this user before upserting.
+				// Previous syncs may have written rows with incorrect model names, which create phantom
+				// RowKey entries that inflate the dashboard total. We track 'backend.lastCleanSyncVersion'
+				// so this runs once per cache version bump and not on every sync cycle.
+				const CLEAN_SYNC_VERSION = 2; // Bump when the delete logic changes
+				const lastCleanVersion = this.deps.context?.globalState.get<number>('backend.lastCleanSyncVersion') ?? 0;
+				const cacheWasCleared = lastCleanVersion < CLEAN_SYNC_VERSION;
+				if (cacheWasCleared && resolvedIdentity.userId && sortedDays.length > 0) {
+					const startDayKey = sortedDays[0];
+					const endDayKey = sortedDays[sortedDays.length - 1];
+					this.deps.log(`Backend sync: cleaning stale entities for user "${resolvedIdentity.userId}" (${startDayKey} to ${endDayKey})`);
+					try {
+						const deleteResult = await this.dataPlaneService.deleteEntitiesForUserDataset({
+							tableClient,
+							userId: resolvedIdentity.userId,
+							datasetId: settings.datasetId,
+							startDayKey,
+							endDayKey,
+						});
+						this.deps.log(`Backend sync: deleted ${deleteResult.deletedCount} stale entities (${deleteResult.errors.length} errors)`);
+						await this.deps.context?.globalState.update('backend.lastCleanSyncVersion', CLEAN_SYNC_VERSION);
+					} catch (e) {
+						this.deps.warn(`Backend sync: failed to clean stale entities: ${e}`);
+					}
+				}
+
 				const entities = [];
 				for (const { key, value } of rollups.values()) {
 					const effectiveUserId = (key.userId ?? '').trim() || undefined;
@@ -1279,6 +1397,28 @@ export class SyncService {
 
 		// Signal upload phase to caller before the (potentially slow) upsert
 		onProgress?.(-1, entities.length, sortedDays.length);
+
+		// Delete stale entities for this user before upserting.
+		// Previous syncs may have written rows with incorrect model names (e.g. 'gpt-4o' instead
+		// of the actual model). Since the model name is part of the RowKey, corrected data creates
+		// new rows while old ones persist, causing over-counting on the dashboard.
+		if (resolvedIdentity.userId && sortedDays.length > 0) {
+			const startDayKey = sortedDays[0];
+			const endDayKey = sortedDays[sortedDays.length - 1];
+			this.deps.log(`Backfill: cleaning stale entities for user "${resolvedIdentity.userId}" in date range ${startDayKey} to ${endDayKey}`);
+			try {
+				const deleteResult = await this.dataPlaneService.deleteEntitiesForUserDataset({
+					tableClient,
+					userId: resolvedIdentity.userId,
+					datasetId: settings.datasetId,
+					startDayKey,
+					endDayKey,
+				});
+				this.deps.log(`Backfill: deleted ${deleteResult.deletedCount} stale entities (${deleteResult.errors.length} errors)`);
+			} catch (e) {
+				this.deps.warn(`Backfill: failed to clean stale entities (continuing with upsert): ${e}`);
+			}
+		}
 
 		const { successCount, errors } = await this.dataPlaneService.upsertEntitiesBatch(tableClient, entities);
 		if (errors.length > 0) {

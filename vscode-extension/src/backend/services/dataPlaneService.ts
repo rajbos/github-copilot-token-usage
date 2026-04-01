@@ -309,11 +309,13 @@ export class DataPlaneService {
     const dsPrefix = `ds:${datasetId}`;
     const uPrefix = `u:${userId}`;
 
-    const startDate = new Date(startDayKey);
-    const endDate = new Date(endDayKey);
-    endDate.setUTCHours(23, 59, 59, 999);
-
-    const filter = `Timestamp ge datetime'${startDate.toISOString()}' and Timestamp le datetime'${endDate.toISOString()}'`;
+    // Filter by PartitionKey range instead of system Timestamp.
+    // PartitionKey format is "ds:{datasetId}|d:{YYYY-MM-DD}".
+    // Using system Timestamp would miss entities written by older syncs (e.g. written March 1
+    // for day "2026-03-15") because their Timestamp predates the startDayKey.
+    const pkStart = buildAggPartitionKey(datasetId, startDayKey);
+    const pkEnd = buildAggPartitionKey(datasetId, endDayKey);
+    const filter = `PartitionKey ge '${pkStart}' and PartitionKey le '${pkEnd}'`;
 
     this.log(
       `Deleting entities for user "${userId}" in dataset "${datasetId}" (${startDayKey} to ${endDayKey})`,
