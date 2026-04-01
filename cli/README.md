@@ -4,6 +4,8 @@
 
 > For user-facing documentation and command examples, see [docs/cli/README.md](../docs/cli/README.md).
 
+📦 **npm**: [@rajbos/ai-engineering-fluency](https://www.npmjs.com/package/@rajbos/ai-engineering-fluency)
+
 ## Development
 
 ```bash
