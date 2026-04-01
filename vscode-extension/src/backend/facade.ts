@@ -73,6 +73,16 @@ export interface BackendFacadeDeps {
     modelUsage: ModelUsage;
     timestamp: number;
   }>;
+  // Crush session handling (per-project crush.db virtual paths)
+  isCrushSession?: (sessionFile: string) => boolean;
+  getCrushSessionData?: (sessionFile: string) => Promise<{
+    tokens: number;
+    interactions: number;
+    modelUsage: ModelUsage;
+    timestamp: number;
+  }>;
+  // Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
+  isVSSessionFile?: (sessionFile: string) => boolean;
 }
 
 export class BackendFacade {
@@ -126,6 +136,9 @@ export class BackendFacade {
         statSessionFile: deps.statSessionFile,
         isOpenCodeSession: deps.isOpenCodeSession,
         getOpenCodeSessionData: deps.getOpenCodeSessionData,
+        isCrushSession: deps.isCrushSession,
+        getCrushSessionData: deps.getCrushSessionData,
+        isVSSessionFile: deps.isVSSessionFile,
       },
       this.credentialService,
       this.dataPlaneService,
@@ -439,6 +452,18 @@ export class BackendFacade {
     this.clearQueryCache();
     // UI update is now handled by syncService after successful completion
     return result;
+  }
+
+  /**
+   * Backfill historical data to Azure Table Storage.
+   * Scans ALL local session files (ignoring the mtime-based age filter) and upserts daily
+   * rollups for every day within the given lookback window (default 365 days).
+   * Use this when the normal sync has missed data due to the mtime filter.
+   */
+  public async backfillHistoricalData(maxLookbackDays = 365, onProgress?: (processed: number, total: number, daysFound: number) => void): Promise<void> {
+    const settings = this.getSettings();
+    await this.syncService.backfillSync(settings, this.isConfigured(settings), maxLookbackDays, onProgress);
+    this.clearQueryCache();
   }
 
   public async tryGetBackendDetailedStatsForStatusBar(

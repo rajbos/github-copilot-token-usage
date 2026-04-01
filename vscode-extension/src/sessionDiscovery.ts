@@ -207,8 +207,8 @@ export class SessionDiscovery {
 		if (sampleDir && sampleDir.trim().length > 0) {
 			const resolvedSampleDir = sampleDir.trim();
 			try {
-				if (fs.existsSync(resolvedSampleDir)) {
-					const sampleFiles = fs.readdirSync(resolvedSampleDir)
+				if (await this.pathExists(resolvedSampleDir)) {
+					const sampleFiles = (await fs.promises.readdir(resolvedSampleDir))
 						.filter(f => f.endsWith('.json') || f.endsWith('.jsonl'))
 						.map(f => path.join(resolvedSampleDir, f));
 					this.deps.log(`📸 Sample data mode: using ${sampleFiles.length} file(s) from ${resolvedSampleDir}`);

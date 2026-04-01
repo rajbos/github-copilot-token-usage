@@ -111,7 +111,7 @@ import {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 31; // Fix Continue token estimation (use text length, not non-existent promptLength field)
+	private static readonly CACHE_VERSION = 35; // Fix CLI multi-shutdown accumulation + backfill pre-delete to clear stale Azure entities
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -499,6 +499,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private scheduleInitialUpdate(): void {
 		this.log('🚀 Starting token usage analysis...');
+		// Use a longer delay (3 s) so that:
+		// 1. VS Code and other extensions finish their own startup work first.
+		// 2. On macOS, the TCC privacy framework has time to resolve any first-time
+		//    folder-access permissions before our synchronous filesystem scan begins.
+		//    Without this delay the sync fs calls block the shared extension-host
+		//    event loop and make VS Code appear frozen.
+		// Previously a "wait for Copilot ready" gate provided a similar natural delay;
+		// this explicit wait restores that behaviour for users who do not have Copilot.
 		setTimeout(async () => {
 			try {
 				await this.updateTokenStats();
@@ -508,7 +516,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} catch (error) {
 				this.error('Error in initial update:', error);
 			}
-		}, 100);
+		}, 3000);
 	}
 
 	/**
@@ -5165,6 +5173,9 @@ ${hashtag}`;
         case "deleteUserDataset":
           await this.dispatch('deleteUserDataset', () => this.handleDeleteUserDataset(message.userId, message.datasetId));
           break;
+        case "backfillHistoricalData":
+          await this.dispatch('backfillHistoricalData', () => this.handleBackfillHistoricalData());
+          break;
       }
     });
 
@@ -5289,6 +5300,52 @@ ${hashtag}`;
    */
 
   /**
+   * Backfill historical token data to Azure Table Storage by scanning all local session files
+   * without the normal mtime-based age filter.
+   */
+  private async handleBackfillHistoricalData(): Promise<void> {
+    if (!this.backend) {
+      return;
+    }
+
+    this.log('🔄 Starting historical data backfill...');
+    this.dashboardPanel?.webview.postMessage({
+      command: 'backfillProgress',
+      text: 'Backfill starting — scanning local session files...',
+      processed: 0,
+      total: 0,
+      daysFound: 0,
+    });
+
+    try {
+      await this.backend.backfillHistoricalData(365, (processed, total, daysFound) => {
+        // processed === -1 is a sentinel signalling the upload phase (total = entity count, daysFound = days)
+        const text = processed === -1
+          ? `Backfill: uploading ${total} entries for ${daysFound} days to Azure...`
+          : `Backfill in progress: ${processed}${total > 0 ? `/${total}` : ''} files scanned, ${daysFound} days found...`;
+        this.dashboardPanel?.webview.postMessage({
+          command: 'backfillProgress',
+          text,
+          processed,
+          total,
+          daysFound,
+        });
+      });
+      this.log('✅ Historical data backfill complete');
+      vscode.window.setStatusBarMessage('$(check) Backfill complete. Refreshing dashboard...', 5000);
+      // Invalidate the cached dashboard data so the refresh reflects the new backfill
+      this.lastDashboardData = undefined;
+      await this.refreshDashboardPanel();
+    } catch (error) {
+      this.error('Backfill failed:', error);
+      this.dashboardPanel?.webview.postMessage({
+        command: 'dashboardError',
+        message: 'Backfill failed. Please check backend configuration and try again.',
+      });
+    }
+  }
+
+  /**
    * Fetches and aggregates data for the Team Dashboard.
    */
   private async getDashboardData(): Promise<any> {
@@ -5298,6 +5355,8 @@ ${hashtag}`;
 
     const { BackendUtility } =
       await import("./backend/services/utilityService.js");
+    const { computeBackendSharingPolicy, hashMachineIdForTeam } =
+      await import("./backend/sharingProfile.js");
     const settings = this.backend.getSettings();
 
     // Log backend settings for debugging
@@ -5305,10 +5364,26 @@ ${hashtag}`;
       `[Dashboard] Backend settings - userIdentityMode: ${settings.userIdentityMode}, configured userId: "${settings.userId}", datasetId: "${settings.datasetId}"`,
     );
 
+    // Compute the effective sharing policy so we know how entities were stored
+    const sharingPolicy = computeBackendSharingPolicy({
+      enabled: settings.enabled ?? true,
+      profile: settings.sharingProfile ?? 'off',
+      shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames ?? false,
+    });
+
     // Resolve the effective userId for the current user based on backend config
     const currentUserId = await this.backend.resolveEffectiveUserId(settings);
 
-    if (!currentUserId) {
+    // When includeUserDimension is false (soloFull / teamAnonymized), entities are stored
+    // without a userId. In that case, fall back to matching personal data by machineId.
+    const rawMachineId = vscode.env.machineId;
+    const currentMachineId = sharingPolicy.includeUserDimension
+      ? "" // not needed — we match by userId
+      : sharingPolicy.machineIdStrategy === "hashed"
+        ? hashMachineIdForTeam({ datasetId: settings.datasetId ?? "", machineId: rawMachineId })
+        : rawMachineId; // 'raw' strategy (soloFull)
+
+    if (!currentUserId && !currentMachineId) {
       this.warn(
         "[Dashboard] No user identity available. Ensure sharing profile includes user dimension.",
       );
@@ -5317,10 +5392,10 @@ ${hashtag}`;
       );
     }
 
-    // Query backend for last 30 days
+    // Query backend for the configured lookback window
     const now = new Date();
     const todayKey = BackendUtility.toUtcDayKey(now);
-    const startKey = BackendUtility.addDaysUtc(todayKey, -29);
+    const startKey = BackendUtility.addDaysUtc(todayKey, -(settings.lookbackDays - 1));
 
     // Fetch ALL entities across all datasets using the facade's public API
     const allEntities = await this.backend.getAllAggEntitiesForRange(
@@ -5410,7 +5485,7 @@ ${hashtag}`;
     for (const entity of allEntities) {
       const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
       const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
-      const machineId = (entity.machineId ?? "").toString();
+      const machineId = (entity.machineId ?? "").toString().replace(/^mc:/, ""); // Strip mc: prefix
       const workspaceId = (entity.workspaceId ?? "").toString();
       const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
       const inputTokens = Number.isFinite(Number(entity.inputTokens))
@@ -5435,8 +5510,12 @@ ${hashtag}`;
         }
       }
 
-      // Personal data aggregation - match against resolved userId
-      if (currentUserId && userId === currentUserId) {
+      // Personal data aggregation - match against resolved userId (or machineId when
+      // includeUserDimension is false, i.e. soloFull / teamAnonymized profiles).
+      const isCurrentUser = sharingPolicy.includeUserDimension
+        ? (currentUserId !== "" && userId === currentUserId)
+        : (currentMachineId !== "" && machineId === currentMachineId);
+      if (isCurrentUser) {
         personalTotalTokens += tokens;
         personalTotalInteractions += interactions;
         personalDevices.add(machineId);
@@ -5449,9 +5528,12 @@ ${hashtag}`;
         personalModelUsage[model].outputTokens += outputTokens;
       }
 
-      // Team data aggregation - use userId|datasetId as key to track users across datasets
-      if (userId && userId.trim()) {
-        const userKey = `${userId}|${datasetId}`;
+      // Team data aggregation - use userId|datasetId as key to track users across datasets.
+      // When includeUserDimension is false, use machineId as the team member key so that
+      // each machine appears as a distinct entry even though no userId was stored.
+      const teamMemberKey = (userId && userId.trim()) ? userId : (machineId ? `machine:${machineId}` : "");
+      if (teamMemberKey) {
+        const userKey = `${teamMemberKey}|${datasetId}`;
         if (!userMap.has(userKey)) {
           userMap.set(userKey, {
             tokens: 0,
@@ -5692,11 +5774,15 @@ ${hashtag}`;
     // For the current user, override the fluency score with the locally-computed one.
     // Azure Table Storage only contains recently-synced schema-v4 entities (a small window),
     // while calculateMaturityScores() uses the full local session log history.
-    if (currentUserId) {
+    // When includeUserDimension is false, the team member key is "machine:<machineId>".
+    const currentTeamMemberKey = currentUserId
+      ? currentUserId
+      : currentMachineId ? `machine:${currentMachineId}` : "";
+    if (currentTeamMemberKey) {
       try {
         const localMaturity = await this.calculateMaturityScores(true);
         for (const member of teamMembers) {
-          if (member.userId === currentUserId) {
+          if (member.userId === currentTeamMemberKey) {
             member.fluencyStage = localMaturity.overallStage;
             member.fluencyLabel = localMaturity.overallLabel;
             member.fluencyCategories = localMaturity.categories.map(c => ({
@@ -5713,6 +5799,27 @@ ${hashtag}`;
       }
     }
 
+    // Fetch local stats to surface the sync coverage gap in the dashboard.
+    // Use the same lookback window as the backend so the comparison is apples-to-apples.
+    let localTokens: number | undefined;
+    let localInteractions: number | undefined;
+    try {
+      await this.calculateDetailedStats(undefined); // ensures lastDailyStats is fresh
+      const lookback = settings.lookbackDays ?? 30;
+      // Always derive exact counts from daily stats so we avoid the rounding loss introduced
+      // by avgInteractionsPerSession = Math.round(interactions / sessions).
+      // lastDailyStats covers the last 30 days; for longer windows it is the best available data.
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - lookback);
+      const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+      const dailyStats = this.lastDailyStats ?? [];
+      const inWindow = dailyStats.filter(d => d.date >= cutoffStr);
+      localTokens = inWindow.reduce((sum, d) => sum + d.tokens, 0);
+      localInteractions = inWindow.reduce((sum, d) => sum + d.interactions, 0);
+    } catch {
+      // Non-critical: leave undefined
+    }
+
     return {
       personal: {
         userId: currentUserId || "",
@@ -5722,6 +5829,8 @@ ${hashtag}`;
         devices: Array.from(personalDevices),
         workspaces: Array.from(personalWorkspaces),
         modelUsage: personalModelUsage,
+        localTokens,
+        localInteractions,
       },
       team: {
         members: teamMembers,
@@ -5731,6 +5840,7 @@ ${hashtag}`;
         firstDate,
         lastDate,
       },
+      lookbackDays: settings.lookbackDays,
       lastUpdated: new Date().toISOString(),
     };
   }
@@ -7041,7 +7151,13 @@ export function activate(context: vscode.ExtensionContext) {
       isOpenCodeSession: (sessionFile: string) =>
         (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
-        (tokenTracker as any).openCode.getOpenCodeSessionData(sessionFile),
+        (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+      isCrushSession: (sessionFile: string) =>
+        (tokenTracker as any).crush.isCrushSessionFile(sessionFile),
+      getCrushSessionData: (sessionFile: string) =>
+        (tokenTracker as any).crush.getCrushSessionData(sessionFile),
+      isVSSessionFile: (sessionFile: string) =>
+        (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
     });
 
     const backendHandler = new BackendCommandHandler({

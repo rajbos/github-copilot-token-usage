@@ -1637,16 +1637,20 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 
 					// For non-delta formats, estimate from event text (CLI format)
 					if (!isDeltaBased) {
-						// Copilot CLI: session.shutdown has exact per-model token totals
+						// Copilot CLI: session.shutdown has exact per-model token totals.
+						// A single events.jsonl can contain multiple session segments (e.g. resumed
+						// sessions), each ending with its own shutdown event. Accumulate across all
+						// shutdown events so no segment's tokens are lost.
 						if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
-							cliShutdownModelUsage = {};
+							if (!cliShutdownModelUsage) { cliShutdownModelUsage = {}; }
 							for (const [modelName, metrics] of Object.entries(event.data.modelMetrics) as [string, any][]) {
 								const usage = metrics?.usage;
 								if (usage) {
-									cliShutdownModelUsage[modelName] = {
-										inputTokens: typeof usage.inputTokens === 'number' ? usage.inputTokens : 0,
-										outputTokens: typeof usage.outputTokens === 'number' ? usage.outputTokens : 0,
-									};
+									if (!cliShutdownModelUsage[modelName]) {
+										cliShutdownModelUsage[modelName] = { inputTokens: 0, outputTokens: 0 };
+									}
+									cliShutdownModelUsage[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
+									cliShutdownModelUsage[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
 								}
 							}
 						} else if (event.type === 'user.message' && event.data?.content) {
@@ -1697,6 +1701,10 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 						// NEW FORMAT (Feb 2026+)
 						modelUsage[requestModel].inputTokens += request.result.promptTokens;
 						modelUsage[requestModel].outputTokens += request.result.outputTokens;
+					} else if (request.result?.metadata && typeof request.result.metadata.promptTokens === 'number' && typeof request.result.metadata.outputTokens === 'number') {
+						// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
+						modelUsage[requestModel].inputTokens += request.result.metadata.promptTokens;
+						modelUsage[requestModel].outputTokens += request.result.metadata.outputTokens;
 					} else {
 						// Fallback to text-based estimation
 						if (request.message?.text) {
