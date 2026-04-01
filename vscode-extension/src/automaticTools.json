@@ -51,6 +51,7 @@
   "get_project_setup_info",
   "copilot_getProjectSetupInfo",
 
+  "get_files_in_project",
   "get_projects_in_solution",
   "get_python_executable_details",
 
