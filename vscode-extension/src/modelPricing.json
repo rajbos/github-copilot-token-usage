@@ -2,29 +2,46 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-03-09",
+    "lastUpdated": "2026-03-30",
     "sources": [
       {
         "name": "OpenAI API Pricing",
         "url": "https://openai.com/api/pricing/",
-        "retrievedDate": "2026-01-16"
+        "retrievedDate": "2026-03-30"
       },
       {
         "name": "Anthropic Claude Pricing",
         "url": "https://www.anthropic.com/pricing",
-        "note": "Standard rates",
-        "retrievedDate": "2026-01-16"
+        "note": "Standard rates; also see https://platform.claude.com/docs/en/about-claude/pricing",
+        "retrievedDate": "2026-03-30"
       },
       {
         "name": "Google AI Gemini API Pricing",
-        "url": "https://ai.google.dev/pricing",
-        "retrievedDate": "2026-01-16"
+        "url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "retrievedDate": "2026-03-30"
+      },
+      {
+        "name": "xAI Grok API Pricing",
+        "url": "https://x.ai/api",
+        "retrievedDate": "2026-03-30"
       },
       {
         "name": "GitHub Copilot Supported Models",
         "url": "https://docs.github.com/en/copilot/reference/ai-models/supported-models",
-        "retrievedDate": "2026-01-30",
+        "retrievedDate": "2026-03-30",
         "note": "Source for tier/multiplier data"
+      },
+      {
+        "name": "GitHub Copilot Premium Requests",
+        "url": "https://docs.github.com/en/copilot/managing-copilot/monitoring-usage-and-entitlements/about-premium-requests",
+        "retrievedDate": "2026-03-30",
+        "note": "Source for premium request multiplier values"
+      },
+      {
+        "name": "OpenRouter Model Pricing",
+        "url": "https://openrouter.ai",
+        "retrievedDate": "2026-03-30",
+        "note": "Cross-provider pricing aggregator used for verification"
       }
     ],
     "disclaimer": "GitHub Copilot uses these models but pricing may differ from direct API usage. These are reference prices for cost estimation purposes only."
@@ -109,11 +126,20 @@
       "multiplier": 1
     },
     "gpt-5.4": {
-      "inputCostPerMillion": 0.00,
-      "outputCostPerMillion": 0.00,
+      "inputCostPerMillion": 2.50,
+      "outputCostPerMillion": 15.0,
       "category": "GPT-5 models",
       "tier": "premium",
-      "multiplier": 1
+      "multiplier": 1,
+      "displayNames": ["GPT-5.4"]
+    },
+    "gpt-5.4-mini": {
+      "inputCostPerMillion": 0.25,
+      "outputCostPerMillion": 2.0,
+      "category": "GPT-5 models",
+      "tier": "standard",
+      "multiplier": 0,
+      "displayNames": ["GPT-5.4 mini"]
     },
     "gpt-4": {
       "inputCostPerMillion": 3.0,
@@ -201,11 +227,12 @@
       "multiplier": 1
     },
     "claude-sonnet-4.6": {
-      "inputCostPerMillion": 0.00,
-      "outputCostPerMillion": 0.00,
+      "inputCostPerMillion": 3.0,
+      "outputCostPerMillion": 15.0,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
-      "multiplier": 3
+      "multiplier": 3,
+      "displayNames": ["Claude Sonnet 4.6"]
     },
     "claude-haiku": {
       "inputCostPerMillion": 0.25,
@@ -257,16 +284,16 @@
       "multiplier": 30
     },
     "o3-mini": {
-      "inputCostPerMillion": 4.0,
-      "outputCostPerMillion": 16.0,
+      "inputCostPerMillion": 1.10,
+      "outputCostPerMillion": 4.40,
       "category": "OpenAI reasoning models",
       "tier": "premium",
       "multiplier": 1,
       "displayNames": ["o3-mini"]
     },
     "o4-mini": {
-      "inputCostPerMillion": 4.0,
-      "outputCostPerMillion": 16.0,
+      "inputCostPerMillion": 1.10,
+      "outputCostPerMillion": 4.40,
       "category": "OpenAI reasoning models",
       "tier": "premium",
       "multiplier": 1,
@@ -362,6 +389,14 @@
       "tier": "premium",
       "multiplier": 1,
       "displayNames": ["Gemini 3.1 Pro", "Gemini 3.1 Pro (Preview)"]
+    },
+    "gemini-3.1-flash-lite": {
+      "inputCostPerMillion": 0.25,
+      "outputCostPerMillion": 1.50,
+      "category": "Google Gemini models",
+      "tier": "unknown",
+      "multiplier": 0.33,
+      "displayNames": ["Gemini 3.1 Flash Lite"]
     },
     "grok-code-fast-1": {
       "inputCostPerMillion": 0.20,
