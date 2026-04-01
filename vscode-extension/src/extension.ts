@@ -270,6 +270,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
+	 * Run async tasks over session files with bounded concurrency (default: 20).
+	 * Prevents I/O saturation when processing hundreds of session files in parallel.
+	 */
+	private async runWithConcurrency<R>(
+		files: string[],
+		fn: (file: string, index: number) => Promise<R>,
+		limit = 20
+	): Promise<(R | undefined)[]> {
+		if (files.length === 0) { return []; }
+		const results: (R | undefined)[] = new Array(files.length);
+		let idx = 0;
+		const workers = Array.from({ length: Math.min(limit, files.length) }, async () => {
+			while (idx < files.length) {
+				const i = idx++;
+				try { results[i] = await fn(files[i], i); } catch { results[i] = undefined; }
+			}
+		});
+		await Promise.all(workers);
+		return results;
+	}
+
+	/**
 	 * Determine a friendly editor name from an editor root path (folder name)
 	 * e.g. 'C:\...\AppData\Roaming\Code' -> 'VS Code'
 	 */
@@ -772,27 +794,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Get session files from both workspace and global storage
 			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 
-			for (const sessionFile of sessionFiles) {
-				try {
-					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
-					const mtime = fileStats.mtime.getTime();
-					const fileSize = fileStats.size;
+			const fileResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
+				const fileStats = await this.statSessionFile(sessionFile);
+				const mtime = fileStats.mtime.getTime();
+				const fileSize = fileStats.size;
+				if (mtime < monthStart.getTime()) { return null; }
+				const tokens = (await this.getSessionFileDataCached(sessionFile, mtime, fileSize)).tokens;
+				return { mtime, tokens };
+			});
 
-					// Only process files modified in the current month
-					if (mtime >= monthStart.getTime()) {
-						const tokens = (await this.getSessionFileDataCached(sessionFile, mtime, fileSize)).tokens;
-
-						monthTokens += tokens;
-
-						// If modified today, add to today's count
-						if (mtime >= todayStart.getTime()) {
-							todayTokens += tokens;
-						}
-					}
-				} catch (fileError) {
-					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
-				}
+			for (const r of fileResults) {
+				if (!r) { continue; }
+				monthTokens += r.tokens;
+				if (r.mtime >= todayStart.getTime()) { todayTokens += r.tokens; }
 			}
 		} catch (error) {
 			this.error('Error calculating token usage:', error);
@@ -837,38 +851,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let cacheMisses = 0;
 			let skippedFiles = 0;
 
-			for (let i = 0; i < sessionFiles.length; i++) {
-				const sessionFile = sessionFiles[i];
+			// Gather per-file data (stat + cache lookup + details) in parallel with bounded concurrency,
+			// then aggregate results sequentially. This avoids serialising hundreds of cheap cache hits.
+			const sessionDataResults = await this.runWithConcurrency(sessionFiles, async (sessionFile, i) => {
+				if (progressCallback) { progressCallback(i + 1, sessionFiles.length); }
+				const fileStats = await this.statSessionFile(sessionFile);
+				const mtime = fileStats.mtime.getTime();
+				const fileSize = fileStats.size;
+				if (mtime < last30DaysStart.getTime()) { return null; }
+				const cachedData = this.getCachedSessionData(sessionFile);
+				const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
+				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+				if (sessionData.interactions === 0) { return null; }
+				const details = await this.getSessionFileDetails(sessionFile);
+				return { sessionFile, sessionData, details, mtime, wasCached };
+			});
 
-				if (progressCallback) {
-					progressCallback(i + 1, sessionFiles.length);
-				}
+			for (const r of sessionDataResults) {
+				if (!r) { skippedFiles++; continue; }
+				const { sessionFile, sessionData, details, mtime, wasCached } = r;
 
 				try {
-					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
-					const mtime = fileStats.mtime.getTime();
-					const fileSize = fileStats.size;
-
-					// Skip files modified before last 30 days (quick filter)
-					// This is the main performance optimization - filters out old sessions without reading file content
-					if (mtime < last30DaysStart.getTime()) {
-						skippedFiles++;
-						continue;
-					}
-
-					// Get all session data in one call (cache validates via mtime+size comparison)
-					const cachedData = this.getCachedSessionData(sessionFile);
-					const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
-					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-					const interactions = sessionData.interactions;
-					// Skip empty sessions (no interactions = just opened chat panel, no messages sent)
-					if (interactions === 0) {
-						skippedFiles++;
-						continue;
-					}
-
 					// Extract remaining data from the cached session
+					const interactions = sessionData.interactions;
 					const estimatedTokens = sessionData.tokens; // Text-based estimate (user content only)
 					const actualTokens = sessionData.actualTokens || 0; // Actual LLM API tokens (when available)
 					const tokens = actualTokens > 0 ? actualTokens : estimatedTokens; // Best available
@@ -876,7 +881,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const editorType = this.getEditorTypeFromPath(sessionFile);
 
 					// For date filtering, get lastInteraction from session details
-					const details = await this.getSessionFileDetails(sessionFile);
 					const lastActivity = details.lastInteraction
 						? new Date(details.lastInteraction)
 						: new Date(details.modified);
@@ -1197,68 +1201,69 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
 			this.log(`📈 Preparing chart data from ${sessionFiles.length} session file(s)...`);
 
-			for (const sessionFile of sessionFiles) {
+			const dailyResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
+				const fileStats = await this.statSessionFile(sessionFile);
+				const mtime = fileStats.mtime.getTime();
+				const fileSize = fileStats.size;
+				if (mtime < thirtyDaysAgo.getTime()) { return null; }
+				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+				return { sessionFile, sessionData, mtime };
+			});
+
+			for (const r of dailyResults) {
+				if (!r) { continue; }
+				const { sessionFile, sessionData, mtime } = r;
 				try {
-					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
-					const mtime = fileStats.mtime.getTime();
-					const fileSize = fileStats.size;
+					const tokens = sessionData.tokens;
+					const interactions = sessionData.interactions;
+					const modelUsage = sessionData.modelUsage;
+					const editorType = this.getEditorTypeFromPath(sessionFile);
 
-					// Only process files modified in the last 30 days
-					if (mtime >= thirtyDaysAgo.getTime()) {
-						// Get all session data in one call to avoid multiple cache lookups
-						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-						const tokens = sessionData.tokens;
-						const interactions = sessionData.interactions;
-						const modelUsage = sessionData.modelUsage;
-						const editorType = this.getEditorTypeFromPath(sessionFile);
+					// Get repository from cached session data
+					const repository = sessionData.repository || 'Unknown';
 
-						// Get repository from cached session data
-						const repository = sessionData.repository || 'Unknown';
+					// Get the date in YYYY-MM-DD format
+					const dateKey = this.formatDateKey(new Date(mtime));
 
-						// Get the date in YYYY-MM-DD format
-						const dateKey = this.formatDateKey(new Date(mtime));
+					// Initialize or update the daily stats
+					if (!dailyStatsMap.has(dateKey)) {
+						dailyStatsMap.set(dateKey, {
+							date: dateKey,
+							tokens: 0,
+							sessions: 0,
+							interactions: 0,
+							modelUsage: {},
+							editorUsage: {},
+							repositoryUsage: {}
+						});
+					}
 
-						// Initialize or update the daily stats
-						if (!dailyStatsMap.has(dateKey)) {
-							dailyStatsMap.set(dateKey, {
-								date: dateKey,
-								tokens: 0,
-								sessions: 0,
-								interactions: 0,
-								modelUsage: {},
-								editorUsage: {},
-								repositoryUsage: {}
-							});
+					const dailyStats = dailyStatsMap.get(dateKey)!;
+					dailyStats.tokens += tokens;
+					dailyStats.sessions += 1;
+					dailyStats.interactions += interactions;
+
+					// Merge editor usage
+					if (!dailyStats.editorUsage[editorType]) {
+						dailyStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+					}
+					dailyStats.editorUsage[editorType].tokens += tokens;
+					dailyStats.editorUsage[editorType].sessions += 1;
+
+					// Merge repository usage
+					if (!dailyStats.repositoryUsage[repository]) {
+						dailyStats.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
+					}
+					dailyStats.repositoryUsage[repository].tokens += tokens;
+					dailyStats.repositoryUsage[repository].sessions += 1;
+
+					// Merge model usage
+					for (const [model, usage] of Object.entries(modelUsage)) {
+						if (!dailyStats.modelUsage[model]) {
+							dailyStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 						}
-
-						const dailyStats = dailyStatsMap.get(dateKey)!;
-						dailyStats.tokens += tokens;
-						dailyStats.sessions += 1;
-						dailyStats.interactions += interactions;
-
-						// Merge editor usage
-						if (!dailyStats.editorUsage[editorType]) {
-							dailyStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-						}
-						dailyStats.editorUsage[editorType].tokens += tokens;
-						dailyStats.editorUsage[editorType].sessions += 1;
-
-						// Merge repository usage
-						if (!dailyStats.repositoryUsage[repository]) {
-							dailyStats.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
-						}
-						dailyStats.repositoryUsage[repository].tokens += tokens;
-						dailyStats.repositoryUsage[repository].sessions += 1;
-
-						// Merge model usage
-						for (const [model, usage] of Object.entries(modelUsage)) {
-							if (!dailyStats.modelUsage[model]) {
-								dailyStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-							}
-							dailyStats.modelUsage[model].inputTokens += usage.inputTokens;
-							dailyStats.modelUsage[model].outputTokens += usage.outputTokens;
-						}
+						dailyStats.modelUsage[model].inputTokens += usage.inputTokens;
+						dailyStats.modelUsage[model].outputTokens += usage.outputTokens;
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
@@ -1460,27 +1465,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let processed = 0;
 			const progressInterval = Math.max(1, Math.floor(sessionFiles.length / 20)); // Log every 5%
 
-			for (const sessionFile of sessionFiles) {
-				try {
-					// Always stat the file to detect modifications (stat is cheap, reading is expensive)
-					const fileStats = await this.statSessionFile(sessionFile);
-					const mtime = fileStats.mtime.getTime();
-					const fileSize = fileStats.size;
+			// Gather stat + session data in parallel, then aggregate sequentially.
+			// The workspace/customization-cache mutations below are not async, so they are safe
+			// to run in the sequential aggregation pass even after parallel data fetch.
+			const usageResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
+				const fileStats = await this.statSessionFile(sessionFile);
+				const mtime = fileStats.mtime.getTime();
+				const fileSize = fileStats.size;
+				if (mtime < last30DaysStart.getTime()) { return null; }
+				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+				return { sessionFile, sessionData, mtime };
+			});
 
-					// Check if file is within the last 30 days (widest range)
-					if (mtime >= last30DaysStart.getTime()) {
-						
-						// Get all session data in one call to avoid multiple cache lookups
-						const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-						const interactions = sessionData.interactions;
-						const analysis = sessionData.usageAnalysis || {
-							toolCalls: { total: 0, byTool: {} },
-							modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
-							contextReferences: {
-								file: 0,
-								selection: 0,
-								implicitSelection: 0,
-								symbol: 0,
+			for (const r of usageResults) {
+				try {
+					if (!r) {
+						processed++;
+						if (processed % progressInterval === 0) {
+							this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
+						}
+						continue;
+					}
+					const { sessionFile, sessionData, mtime } = r;
+
+					const interactions = sessionData.interactions;
+					const analysis = sessionData.usageAnalysis || {
+						toolCalls: { total: 0, byTool: {} },
+						modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+						contextReferences: {
+							file: 0,
+							selection: 0,
+							implicitSelection: 0,
+							symbol: 0,
 								codebase: 0,
 								workspace: 0,
 								terminal: 0,
@@ -1566,14 +1582,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 							todayStats.sessions++;
 							this.mergeUsageAnalysis(todayStats, analysis);
 						}
-					}
 
 					processed++;
 					if (processed % progressInterval === 0) {
 						this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
 					}
 				} catch (fileError) {
-					this.warn(`Error processing session file ${sessionFile} for usage analysis: ${fileError}`);
+					this.warn(`Error processing session file for usage analysis: ${fileError}`);
 					processed++;
 				}
 			}
@@ -1789,7 +1804,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return _mergeUsageAnalysis(period, analysis);
 	}
 
-	private async countInteractionsInSession(sessionFile: string): Promise<number> {
+	private async countInteractionsInSession(sessionFile: string, preloadedContent?: string): Promise<number> {
 		try {
 			// Handle OpenCode sessions
 			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
@@ -1817,7 +1832,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
 			}
 
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {
@@ -1954,7 +1969,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 
-	private async extractSessionMetadata(sessionFile: string): Promise<{
+	private async extractSessionMetadata(sessionFile: string, preloadedContent?: string): Promise<{
 		title: string | undefined;
 		firstInteraction: string | null;
 		lastInteraction: string | null;
@@ -2058,7 +2073,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 			}
 
-			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (_isUuidPointerFile(fileContent)) {
@@ -2148,14 +2163,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		this._cacheMisses++;
-		// Cache miss - read and process the file once to get all data
-		const tokenResult = await this.estimateTokensFromSession(sessionFilePath);
-		const interactions = await this.countInteractionsInSession(sessionFilePath);
-		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath);
-		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath);
+
+		// Pre-read file content once for regular Copilot Chat files to avoid 5 redundant reads
+		let preloadedContent: string | undefined;
+		const isSpecialSession =
+			this.openCode.isOpenCodeSessionFile(sessionFilePath) ||
+			this.visualStudio.isVSSessionFile(sessionFilePath) ||
+			this.crush.isCrushSessionFile(sessionFilePath) ||
+			this.continue_.isContinueSessionFile(sessionFilePath) ||
+			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath);
+		if (!isSpecialSession) {
+			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+		}
+
+		// Cache miss - process the file (using pre-read content when available)
+		const tokenResult = await this.estimateTokensFromSession(sessionFilePath, preloadedContent);
+		const interactions = await this.countInteractionsInSession(sessionFilePath, preloadedContent);
+		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath, preloadedContent);
+		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath, preloadedContent);
 
 		// Extract title and timestamps from the session file
-		const sessionMeta = await this.extractSessionMetadata(sessionFilePath);
+		const sessionMeta = await this.extractSessionMetadata(sessionFilePath, preloadedContent);
 
 		const sessionData: SessionFileCache = {
 			tokens: tokenResult.tokens,
@@ -3420,7 +3448,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 
 
-	private async estimateTokensFromSession(sessionFilePath: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
+	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
 		try {
 			// Handle OpenCode sessions - they have actual token counts in message files
 			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
@@ -3458,7 +3486,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return { ...result, actualTokens: result.tokens };
 			}
 
-			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf8');
+			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (this.isUuidPointerFile(fileContent)) {

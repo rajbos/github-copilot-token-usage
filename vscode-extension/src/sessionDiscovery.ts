@@ -237,22 +237,11 @@ export class SessionDiscovery {
 			this.deps.log(`   📁 ${candidatePath}`);
 		}
 
-		// Track which paths we actually found
-		const foundPaths: string[] = [];
-		for (let i = 0; i < allVSCodePaths.length; i++) {
-			const codeUserPath = allVSCodePaths[i];
-			try {
-				if (await this.pathExists(codeUserPath)) {
-					foundPaths.push(codeUserPath);
-				}
-			} catch (checkError) {
-				this.deps.warn(`Could not check path ${codeUserPath}: ${checkError}`);
-			}
-			// Update progress
-			if ((i + 1) % 5 === 0 || i === allVSCodePaths.length - 1) {
-				this.deps.log(`📂 Reading local folders [${i + 1}/${allVSCodePaths.length}]`);
-			}
-		}
+		// Check all VS Code paths in parallel — typically 10 paths, one syscall each
+		const existenceResults = await Promise.all(
+			allVSCodePaths.map(p => this.pathExists(p).catch(() => false))
+		);
+		const foundPaths = allVSCodePaths.filter((_, i) => existenceResults[i]);
 
 		this.deps.log(`✅ Found ${foundPaths.length} of ${allVSCodePaths.length} VS Code paths exist on disk:`);
 		for (const fp of foundPaths) {
@@ -260,41 +249,31 @@ export class SessionDiscovery {
 		}
 
 		try {
-			// Scan all found VS Code paths for session files
-			for (let i = 0; i < foundPaths.length; i++) {
-				const codeUserPath = foundPaths[i];
+			// Scan all found VS Code paths for session files — process all variants in parallel
+			await Promise.all(foundPaths.map(async (codeUserPath) => {
 				const pathName = path.basename(path.dirname(codeUserPath));
 
-				// Workspace storage sessions
+				// Workspace storage sessions — scan all workspace dirs in parallel
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 				try {
 					if (await this.pathExists(workspaceStoragePath)) {
-						try {
-							const workspaceDirs = await fs.promises.readdir(workspaceStoragePath);
-
-							for (const workspaceDir of workspaceDirs) {
-								const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-								try {
-									if (await this.pathExists(chatSessionsPath)) {
-										try {
-											const sessionFiles2 = (await fs.promises.readdir(chatSessionsPath))
-												.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-												.map(file => path.join(chatSessionsPath, file));
-											if (sessionFiles2.length > 0) {
-												this.deps.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
-												sessionFiles.push(...sessionFiles2);
-											}
-										} catch (readError) {
-											this.deps.warn(`Could not read chat sessions in ${chatSessionsPath}: ${readError}`);
-										}
+						const workspaceDirs = await fs.promises.readdir(workspaceStoragePath);
+						await Promise.all(workspaceDirs.map(async (workspaceDir) => {
+							const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
+							try {
+								if (await this.pathExists(chatSessionsPath)) {
+									const sessionFiles2 = (await fs.promises.readdir(chatSessionsPath))
+										.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+										.map(file => path.join(chatSessionsPath, file));
+									if (sessionFiles2.length > 0) {
+										this.deps.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
+										sessionFiles.push(...sessionFiles2);
 									}
-								} catch (checkError) {
-									this.deps.warn(`Could not check chat sessions path ${chatSessionsPath}: ${checkError}`);
 								}
+							} catch {
+								// Ignore individual workspace dir errors
 							}
-						} catch (readError) {
-							this.deps.warn(`Could not read workspace storage in ${workspaceStoragePath}: ${readError}`);
-						}
+						}));
 					}
 				} catch (checkError) {
 					this.deps.warn(`Could not check workspace storage path ${workspaceStoragePath}: ${checkError}`);
@@ -304,16 +283,12 @@ export class SessionDiscovery {
 				const globalStoragePath = path.join(codeUserPath, 'globalStorage', 'emptyWindowChatSessions');
 				try {
 					if (await this.pathExists(globalStoragePath)) {
-						try {
-							const globalSessionFiles = (await fs.promises.readdir(globalStoragePath))
-								.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-								.map(file => path.join(globalStoragePath, file));
-							if (globalSessionFiles.length > 0) {
-								this.deps.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
-								sessionFiles.push(...globalSessionFiles);
-							}
-						} catch (readError) {
-							this.deps.warn(`Could not read global storage in ${globalStoragePath}: ${readError}`);
+						const globalSessionFiles = (await fs.promises.readdir(globalStoragePath))
+							.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+							.map(file => path.join(globalStoragePath, file));
+						if (globalSessionFiles.length > 0) {
+							this.deps.log(`📄 Found ${globalSessionFiles.length} session files in ${pathName}/globalStorage/emptyWindowChatSessions`);
+							sessionFiles.push(...globalSessionFiles);
 						}
 					}
 				} catch (checkError) {
@@ -330,7 +305,7 @@ export class SessionDiscovery {
 				} catch (checkError) {
 					this.deps.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
 				}
-			}
+			}));
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
@@ -351,21 +326,20 @@ export class SessionDiscovery {
 
 						// Scan UUID subdirectories for events.jsonl (newer Copilot CLI format)
 						const subDirs = entries.filter(e => e.isDirectory());
-						let subDirSessionCount = 0;
-						for (const subDir of subDirs) {
-							const eventsFile = path.join(copilotCliSessionPath, subDir.name, 'events.jsonl');
-							try {
-								const stats = await fs.promises.stat(eventsFile);
-								if (stats.size > 0) {
-									sessionFiles.push(eventsFile);
-									subDirSessionCount++;
+						const subDirFiles = (await Promise.all(
+							subDirs.map(async (subDir) => {
+								const eventsFile = path.join(copilotCliSessionPath, subDir.name, 'events.jsonl');
+								try {
+									const stats = await fs.promises.stat(eventsFile);
+									return stats.size > 0 ? eventsFile : null;
+								} catch {
+									return null;
 								}
-							} catch {
-								// Ignore individual file access errors
-							}
-						}
-						if (subDirSessionCount > 0) {
-							this.deps.log(`📄 Found ${subDirSessionCount} session files in Copilot CLI subdirectories`);
+							})
+						)).filter((f): f is string => f !== null);
+						if (subDirFiles.length > 0) {
+							this.deps.log(`📄 Found ${subDirFiles.length} session files in Copilot CLI subdirectories`);
+							sessionFiles.push(...subDirFiles);
 						}
 					} catch (readError) {
 						this.deps.warn(`Could not read Copilot CLI session path in ${copilotCliSessionPath}: ${readError}`);
@@ -448,26 +422,26 @@ export class SessionDiscovery {
 			try {
 				const crushProjects = this.deps.crush.readCrushProjects();
 				this.deps.log(`📁 Crush: found ${crushProjects.length} project(s) in projects.json`);
-				let crushTotal = 0;
-				for (const project of crushProjects) {
-					const dbPath = path.join(project.data_dir, 'crush.db');
-					this.deps.log(`📁 Checking Crush DB path: ${dbPath}`);
-					try {
-						if (await this.pathExists(dbPath)) {
-							const sessionIds = await this.deps.crush.discoverSessionsInDb(dbPath);
-							for (const sessionId of sessionIds) {
-								// Virtual path: <data_dir>/crush.db#<uuid>
-								sessionFiles.push(path.join(project.data_dir, `crush.db#${sessionId}`));
-								crushTotal++;
+				const crushSessionArrays = await Promise.all(
+					crushProjects.map(async (project) => {
+						const dbPath = path.join(project.data_dir, 'crush.db');
+						this.deps.log(`📁 Checking Crush DB path: ${dbPath}`);
+						try {
+							if (await this.pathExists(dbPath)) {
+								const sessionIds = await this.deps.crush.discoverSessionsInDb(dbPath);
+								return sessionIds.map(id => path.join(project.data_dir, `crush.db#${id}`));
 							}
+						} catch (projectError) {
+							this.deps.warn(`Could not read Crush database for ${project.path}: ${projectError}`);
 						}
-					} catch (projectError) {
-						this.deps.warn(`Could not read Crush database for ${project.path}: ${projectError}`);
-					}
-				}
+						return [] as string[];
+					})
+				);
+				const crushTotal = crushSessionArrays.reduce((sum, arr) => sum + arr.length, 0);
 				if (crushTotal > 0) {
 					this.deps.log(`📄 Found ${crushTotal} session(s) in Crush database(s)`);
 				}
+				sessionFiles.push(...crushSessionArrays.flat());
 			} catch (crushError) {
 				this.deps.warn(`Could not read Crush projects: ${crushError}`);
 			}

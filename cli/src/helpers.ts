@@ -145,8 +145,30 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
 	if (normalized.includes('/.claude/projects/')) { return 'claude-code'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
-        if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
+	if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
 	return 'vscode';
+}
+
+/**
+ * Run async tasks with bounded concurrency.
+ * Items are processed up to `limit` at a time, avoiding I/O and memory saturation.
+ */
+async function runWithConcurrency<T, R>(
+	items: T[],
+	fn: (item: T, index: number) => Promise<R>,
+	limit = 20
+): Promise<(R | undefined)[]> {
+	if (items.length === 0) { return []; }
+	const results: (R | undefined)[] = new Array(items.length);
+	let idx = 0;
+	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		while (idx < items.length) {
+			const i = idx++;
+			try { results[i] = await fn(items[i], i); } catch { results[i] = undefined; }
+		}
+	});
+	await Promise.all(workers);
+	return results;
 }
 
 export interface SessionData {
@@ -331,13 +353,13 @@ export async function calculateDetailedStats(
 	};
 
 	let processed = 0;
-	for (const file of sessionFiles) {
+	const sessionResults = await runWithConcurrency(sessionFiles, async (file) => {
 		const data = await processSessionFile(file);
-		processed++;
-		if (progressCallback) {
-			progressCallback(processed, sessionFiles.length);
-		}
+		if (progressCallback) { progressCallback(++processed, sessionFiles.length); }
+		return data;
+	});
 
+	for (const data of sessionResults) {
 		if (!data || data.tokens === 0) {
 			continue;
 		}
