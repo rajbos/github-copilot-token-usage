@@ -6,6 +6,15 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.26]
+
+### ✨ Features & Improvements
+- Split usage analysis view into 3 tabs for better navigation (#540)
+- Added missing friendly display names for MCP and VS Code tools (#539)
+
+### 🐛 Bug Fixes
+- Fixed loading stalls during session discovery (#545)
+
 ## [0.0.24] - 2026-03-28
 
 ### ✨ Features & Improvements
