@@ -48,6 +48,29 @@ export class SessionDiscovery {
 	}
 
 	/**
+	 * Run async tasks with bounded concurrency to avoid saturating the extension host.
+	 */
+	private async runWithConcurrency<T>(
+		items: T[],
+		fn: (item: T, index: number) => Promise<void>,
+		limit = 8
+	): Promise<void> {
+		if (items.length === 0) { return; }
+		let index = 0;
+		const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+			while (index < items.length) {
+				const i = index++;
+				try {
+					await fn(items[i], i);
+				} catch (error) {
+					this.deps.warn(`Failed to process session discovery item at index ${i}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		});
+		await Promise.all(workers);
+	}
+
+	/**
 	 * Get all possible VS Code user data paths for all VS Code variants
 	 * Supports: Code (stable), Code - Insiders, VSCodium, remote servers, etc.
 	 * 
@@ -249,16 +272,16 @@ export class SessionDiscovery {
 		}
 
 		try {
-			// Scan all found VS Code paths for session files — process all variants in parallel
-			await Promise.all(foundPaths.map(async (codeUserPath) => {
+			// Scan all found VS Code paths for session files with bounded concurrency.
+			await this.runWithConcurrency(foundPaths, async (codeUserPath) => {
 				const pathName = path.basename(path.dirname(codeUserPath));
 
-				// Workspace storage sessions — scan all workspace dirs in parallel
+				// Workspace storage sessions — also bounded to avoid spawning hundreds of FS ops at once.
 				const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 				try {
 					if (await this.pathExists(workspaceStoragePath)) {
 						const workspaceDirs = await fs.promises.readdir(workspaceStoragePath);
-						await Promise.all(workspaceDirs.map(async (workspaceDir) => {
+						await this.runWithConcurrency(workspaceDirs, async (workspaceDir) => {
 							const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
 							try {
 								if (await this.pathExists(chatSessionsPath)) {
@@ -273,7 +296,7 @@ export class SessionDiscovery {
 							} catch {
 								// Ignore individual workspace dir errors
 							}
-						}));
+						}, 6);
 					}
 				} catch (checkError) {
 					this.deps.warn(`Could not check workspace storage path ${workspaceStoragePath}: ${checkError}`);
@@ -305,7 +328,7 @@ export class SessionDiscovery {
 				} catch (checkError) {
 					this.deps.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
 				}
-			}));
+			}, 4);
 
 			// Check for Copilot CLI session-state directory (new location for agent mode sessions)
 			const copilotCliSessionPath = path.join(os.homedir(), '.copilot', 'session-state');
