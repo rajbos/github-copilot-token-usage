@@ -60,7 +60,11 @@ export class SessionDiscovery {
 		const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
 			while (index < items.length) {
 				const i = index++;
-				await fn(items[i], i);
+				try {
+					await fn(items[i], i);
+				} catch (error) {
+					this.deps.warn(`Failed to process session discovery item at index ${i}: ${error instanceof Error ? error.message : String(error)}`);
+				}
 			}
 		});
 		await Promise.all(workers);
