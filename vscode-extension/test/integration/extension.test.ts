@@ -19,6 +19,11 @@ suite('Extension Test Suite', () => {
 	});
 
 	test('Commands should be registered', async () => {
+		const extension = vscode.extensions.getExtension('RobBos.copilot-token-tracker');
+		if (extension && !extension.isActive) {
+			await extension.activate();
+		}
+
 		const commands = await vscode.commands.getCommands(true);
 		
 		const expectedCommands = [
