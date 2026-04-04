@@ -14,6 +14,7 @@ Thank you for your interest in contributing to the Copilot Token Tracker extensi
 - [Code Guidelines](#code-guidelines)
 - [Testing](#testing)
 - [CI/CD](#cicd)
+- [Pre-Release Checklist](#pre-release-checklist)
 - [Release Process](#release-process)
 - [Submitting Changes](#submitting-changes)
 
@@ -136,13 +137,35 @@ Without a devcontainer, you'd need to:
 
 ### DevContainer Configuration Notes
 
-The `.devcontainer/devcontainer.json` uses `updateContentCommand` instead of `postCreateCommand` for dependency installation:
+The repository provides two devcontainer configurations:
 
-- **Why `updateContentCommand`?** This lifecycle hook runs after workspace content is updated (including initial clone), making it more reliable for dependency installation in GitHub Codespaces and similar environments.
-- **Benefits:** More reliable timing, better suited for `npm ci` operations, and follows devcontainer best practices.
-- **Lifecycle Order:** The devcontainer executes hooks in this order: `onCreateCommand` → `updateContentCommand` → `postCreateCommand` → `postStartCommand`.
+1. **`.devcontainer/devcontainer.json`** (default) - Optimized for **GitHub Codespaces** and cloud environments
+2. **`.devcontainer/devcontainer-local.json`** - Optimized for **local Windows development** with host mounts
 
-Using `updateContentCommand` prevents timeout issues that can occur with `postCreateCommand` during initial codespace creation, especially for projects with many dependencies.
+#### Default Configuration (Codespaces)
+
+The default `devcontainer.json` is designed to work reliably in GitHub Codespaces and other cloud environments:
+
+- Uses `updateContentCommand` instead of `postCreateCommand` for dependency installation (more reliable timing)
+- No host mounts (not available in cloud environments)
+- Includes memory optimization (`NODE_OPTIONS: --max-old-space-size=4096`)
+
+**Why `updateContentCommand`?** This lifecycle hook runs after workspace content is updated (including initial clone), making it more reliable than `postCreateCommand` which runs once during container creation and can timeout with large dependency trees.
+
+#### Local Configuration (Windows with Mounts)
+
+The `devcontainer-local.json` configuration adds features for local development:
+
+- **Host Mounts:** Binds your VS Code session data (including Copilot logs) into the container so the extension can track your actual usage
+- **PowerShell Init:** Runs `.devcontainer/init-mounts.ps1` to ensure mount directories exist on Windows
+- **Volume for node_modules:** Uses a Docker volume for faster dependency installation
+
+**To use the local configuration:**
+1. Open the repository in VS Code
+2. Press `F1` and select "Dev Containers: Reopen in Container"
+3. Choose "Copilot Token Tracker Extension (Local with Mounts)"
+
+**Note:** The local configuration with mounts is **Windows-only** due to the use of `%APPDATA%` environment variables and PowerShell. For local development on Linux/macOS, use the default configuration.
 
 ## Manual Local Setup
 
@@ -244,6 +267,8 @@ npx vsce package
 ## Available Scripts
 
 - `npm run lint` - Run ESLint to check code quality
+- `npm run lint:css` - Run Stylelint to check CSS code quality
+- `npm run lint:json` - Validate all JSON files in the repository
 - `npm run check-types` - Run TypeScript type checking
 - `npm run compile` - Build development version (includes linting and type checking)
 - `npm run package` - Build production version (optimized)
@@ -347,6 +372,28 @@ This will:
 - Type-check with TypeScript
 - Build the extension with esbuild
 
+### JSON File Validation
+
+The repository includes automatic validation of all JSON files. This ensures that:
+
+- All JSON files contain valid JSON syntax
+- JSONC files (JSON with Comments) are properly formatted
+- Configuration files (tsconfig, VS Code settings) are valid
+
+**Validated Files:**
+
+- Core JSON data: `src/tokenEstimators.json`, `src/modelPricing.json`, `src/toolNames.json`, `src/customizationPatterns.json`
+- Configuration: `package.json`, `tsconfig.json`, `.vscode/*.json`, `.devcontainer/devcontainer.json`
+- Schemas: `docs/logFilesSchema/*.json`
+
+**Run JSON validation manually:**
+
+```bash
+npm run lint:json
+```
+
+**Note:** JSON validation is automatically run in CI/CD pipelines to catch syntax errors early.
+
 ## Testing
 
 - Test the extension manually in the Extension Development Host (F5)
@@ -369,79 +416,73 @@ The project includes comprehensive GitHub Actions workflows:
 
 ### What Gets Tested
 
-1. **Linting:** ESLint checks for code quality issues
-2. **Type Checking:** TypeScript validates all types
-3. **Compilation:** esbuild creates the production bundle
-4. **Packaging:** VSIX package is created and validated
-5. **Extension Tests:** VS Code extension tests run in CI
+1. **JSON Validation:** All JSON and JSONC files are validated for correct syntax
+2. **Linting:** ESLint checks for code quality issues
+3. **Type Checking:** TypeScript validates all types
+4. **Compilation:** esbuild creates the production bundle
+5. **Packaging:** VSIX package is created and validated
+6. **Extension Tests:** VS Code extension tests run in CI
 
 All builds must pass these checks before merging.
 
+## Pre-Release Checklist
+
+Run `npm run pre-release` to validate the version and compile.
+
+- [ ] Version bumped in `package.json`
+- [ ] `npm run compile` completed successfully
+- [ ] Commit and push to main branch
+- [ ] Trigger Release workflow (GitHub UI → Actions → Release → Run workflow)
+
+The workflow handles everything else: tagging, building, testing, creating the GitHub release, publishing to the marketplace, and updating the changelog.
+
 ## Release Process
 
-The project supports automated VSIX builds and releases through two methods:
+The project uses a fully automated release pipeline via GitHub Actions.
 
-### Method 1: Manual Trigger via GitHub UI (Recommended)
-
-1. **Update the version** in `package.json`
-2. **Commit and push** your changes to the main branch
-3. **Go to GitHub Actions** → Release workflow
-4. **Click "Run workflow"** and confirm
-
-The workflow will automatically:
-
-- Create a tag based on the version in `package.json`
-- Run the full build pipeline (lint, type-check, compile, test)
-- Create a VSIX package
-- Create a GitHub release with auto-generated release notes
-- Attach the VSIX file as a release asset
-
-Then run the `./publish.ps1` script to publish to the marketplace.
-
-### Method 2: Tag-Based Release (Traditional)
+### One-Step Release (Recommended)
 
 1. **Update the version** in `package.json`
-2. **Commit your changes**
-3. **Create and push a version tag:**
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
+2. **Commit and push** to the main branch
+3. **Go to GitHub Actions** → Release workflow → **Run workflow**
 
-The release workflow will:
+The workflow inputs:
+- `create_tag` — Creates a git tag from the `package.json` version (default: true)
+- `publish_marketplace` — Publishes to the VS Code Marketplace (default: true)
 
-- Verify the tag version matches `package.json` version
-- Run the full build pipeline (lint, type-check, compile, test)
-- Create a VSIX package
-- Create a GitHub release with auto-generated release notes
-- Attach the VSIX file as a release asset
+The workflow automatically:
 
-**Note**: The workflow will fail if the tag version doesn't match the version in `package.json`.
+1. Creates a version tag (e.g., `v0.0.19`)
+2. Generates release notes from merged PRs (using `.github/release.yml` categories)
+3. Updates `CHANGELOG.md` in the VSIX package so the extension ships with current notes
+4. Runs the full build pipeline (lint, type-check, compile, test)
+5. Creates a GitHub Release with the VSIX attached
+6. Publishes to the VS Code Marketplace (using the `VSCE_PAT` secret)
+7. Opens a PR to sync `CHANGELOG.md` in the repository
 
-### Syncing Release Notes
+> **Security:** Only users with repository write access can trigger the `workflow_dispatch`. The `VSCE_PAT` secret must be configured in repository settings (Settings → Secrets and variables → Actions). Create a PAT at https://dev.azure.com with the "Marketplace (Publish)" scope.
 
-The project automatically keeps `CHANGELOG.md` synchronized with GitHub release notes:
+### Tag-Based Release (Build Only)
 
-**Manual Sync:**
+Pushing a version tag (e.g., `git push origin v0.0.19`) triggers the build and creates a GitHub release, but does **not** publish to the marketplace. Use the workflow dispatch for the full pipeline.
+
+### Manual Changelog Sync
+
+To manually sync the changelog with all GitHub release notes:
 
 ```bash
 npm run sync-changelog
 ```
 
-**Automatic Sync:**
-The GitHub workflow automatically updates `CHANGELOG.md` whenever:
+Or trigger the **Sync Release Notes** workflow from the Actions tab.
 
-- A new release is published
-- An existing release is edited
-- The workflow is manually triggered
+### Manual Publish (Fallback)
 
-**Test the Sync:**
+If you need to re-publish manually (e.g., after a marketplace upload failure):
 
-```bash
-npm run sync-changelog:test
+```powershell
+.\publish.ps1 -VsixPath ".\copilot-token-tracker-0.0.19.vsix"
 ```
-
-This ensures the local changelog always reflects the latest release information from GitHub.
 
 ## Submitting Changes
 

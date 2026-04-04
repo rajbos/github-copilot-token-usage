@@ -1,0 +1,203 @@
+name: CLI - Publish to npm and GitHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      dry_run:
+        description: 'Dry run (do not actually publish)'
+        required: false
+        default: false
+        type: boolean
+
+  push:
+    tags:
+      - 'cli/v*'  # Tag push: publish to npm + create GitHub release
+    #branches:
+    #  - main
+    paths:
+      - '.github/workflows/cli-publish.yml'
+      - 'cli/package.json'
+      - 'cli/package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish CLI to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # needed to push version bump branch, create PR, and create GitHub release
+      pull-requests: write # needed to open the version bump PR
+      id-token: write      # required for OIDC authentication to npm registry
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install extension dependencies
+        run: npm ci
+        working-directory: vscode-extension
+
+      - name: Install CLI dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build:production
+
+      - name: Validate CLI works
+        run: node dist/cli.js --help
+
+      - name: Determine trigger type
+        id: trigger_type
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" && "$GIT_REF" == refs/tags/cli/v* ]]; then
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+            TAG_VERSION=${GIT_REF#refs/tags/cli/v}
+            echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+            echo "Triggered by tag push: cli/v$TAG_VERSION"
+          else
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+            echo "tag_version=" >> "$GITHUB_OUTPUT"
+            echo "Triggered by workflow_dispatch"
+          fi
+        working-directory: .
+
+      - name: Bump version (workflow_dispatch only)
+        if: steps.trigger_type.outputs.is_tag != 'true'
+        run: npm version ${{ inputs.version_bump }} --no-git-tag-version
+
+      - name: Verify version matches tag (tag trigger only)
+        if: steps.trigger_type.outputs.is_tag == 'true'
+        run: |
+          PACKAGE_VERSION=$(node -p 'require("./package.json").version')
+          TAG_VERSION="${{ steps.trigger_type.outputs.tag_version }}"
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "  package.json: $PACKAGE_VERSION"
+            echo "  tag:          $TAG_VERSION"
+            echo "Please ensure the version in cli/package.json matches the pushed tag."
+            exit 1
+          fi
+          echo "✅ Version check passed: $PACKAGE_VERSION"
+
+      - name: Get new version
+        id: version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Check if version is already published
+        id: check_published
+        run: |
+          PACKAGE_NAME=$(node -p 'require("./package.json").name')
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Checking npm registry for ${PACKAGE_NAME}@${VERSION}..."
+          if npm view "${PACKAGE_NAME}@${VERSION}" version 2>&1; then
+            echo "Version ${VERSION} is already published to npm. Skipping publish."
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version ${VERSION} is not yet published. Proceeding with publish."
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' }}
+        run: NODE_AUTH_TOKEN="" npm publish
+
+      - name: Dry run publish
+        if: ${{ inputs.dry_run }}
+        run: NODE_AUTH_TOKEN="" npm publish public --dry-run
+
+      - name: Commit version bump and create PR
+        if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag != 'true' }}
+        run: |
+          cd ..
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b cli/bump-version-v${{ steps.version.outputs.version }}
+          git add cli/package.json cli/package-lock.json
+          git commit -m "chore(cli): bump version to v${{ steps.version.outputs.version }}"
+          git push origin cli/bump-version-v${{ steps.version.outputs.version }}
+          gh pr create \
+            --title "chore(cli): bump version to v${{ steps.version.outputs.version }}" \
+            --body "Automated version bump after publishing \`@rajbos/ai-engineering-fluency@${{ steps.version.outputs.version }}\` to npm." \
+            --base main \
+            --head cli/bump-version-v${{ steps.version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes
+        if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="cli/v${{ steps.version.outputs.version }}"
+          echo "Generating release notes for $TAG_NAME..."
+          if gh api repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="${TAG_NAME}" \
+            --jq '.body' > /tmp/release_notes.md 2>/dev/null && [ -s /tmp/release_notes.md ]; then
+            echo "✅ Generated release notes from merged PRs"
+          else
+            echo "CLI v${{ steps.version.outputs.version }}" > /tmp/release_notes.md
+          fi
+        working-directory: .
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="cli/v${{ steps.version.outputs.version }}"
+          gh release create "$TAG_NAME" \
+            --title "CLI v${{ steps.version.outputs.version }}" \
+            --notes-file /tmp/release_notes.md
+          echo "✅ GitHub release created: $TAG_NAME"
+        working-directory: .
+
+      - name: Summary
+        run: |
+          {
+            if [ "${{ steps.check_published.outputs.already_published }}" = "true" ]; then
+              echo "## CLI Package Publish Skipped ⏭️"
+              echo ""
+              echo "Version **v${{ steps.version.outputs.version }}** is already published to npm."
+            else
+              echo "## CLI Package Published 📦"
+              echo ""
+              echo "- **Version:** v${{ steps.version.outputs.version }}"
+              echo "- **Dry run:** ${{ inputs.dry_run }}"
+              echo ""
+              if [ "${{ inputs.dry_run }}" = "false" ]; then
+                echo "Install with: \`npx @rajbos/ai-engineering-fluency\`"
+                echo ""
+                if [ "${{ steps.trigger_type.outputs.is_tag }}" = "true" ]; then
+                  echo "A GitHub release has been created: cli/v${{ steps.version.outputs.version }}"
+                else
+                  echo "A PR has been opened to merge the version bump back to main."
+                fi
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,72 @@
+/**
+ * Shared theme variables for all webview panels
+ * Uses VS Code theme tokens for automatic light/dark theme support
+ */
+
+:root {
+	/* VS Code base colors */
+	--bg-primary: var(--vscode-editor-background);
+	--bg-secondary: var(--vscode-sideBar-background);
+	--bg-tertiary: var(--vscode-editorWidget-background);
+	--text-primary: var(--vscode-editor-foreground);
+	--text-secondary: var(--vscode-descriptionForeground);
+	--text-muted: var(--vscode-disabledForeground);
+	--border-color: var(--vscode-panel-border);
+	--border-subtle: var(--vscode-widget-border);
+	
+	/* Button colors */
+	--button-bg: var(--vscode-button-background);
+	--button-fg: var(--vscode-button-foreground);
+	--button-hover-bg: var(--vscode-button-hoverBackground);
+	--button-secondary-bg: var(--vscode-button-secondaryBackground);
+	--button-secondary-fg: var(--vscode-button-secondaryForeground);
+	--button-secondary-hover-bg: var(--vscode-button-secondaryHoverBackground);
+	
+	/* Input colors */
+	--input-bg: var(--vscode-input-background);
+	--input-fg: var(--vscode-input-foreground);
+	--input-border: var(--vscode-input-border);
+	
+	/* List/card colors */
+	--list-hover-bg: var(--vscode-list-hoverBackground);
+	--list-active-bg: var(--vscode-list-activeSelectionBackground);
+	--list-active-fg: var(--vscode-list-activeSelectionForeground);
+	--list-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
+	
+	/* Alternating row colors for better readability */
+	--row-alternate-bg: var(--vscode-list-inactiveSelectionBackground);
+	
+	/* Badge colors */
+	--badge-bg: var(--vscode-badge-background);
+	--badge-fg: var(--vscode-badge-foreground);
+	
+	/* Focus colors */
+	--focus-border: var(--vscode-focusBorder);
+	
+	/* Link colors */
+	--link-color: var(--vscode-textLink-foreground);
+	--link-hover-color: var(--vscode-textLink-activeForeground);
+	
+	/* Status colors */
+	--error-fg: var(--vscode-errorForeground);
+	--warning-fg: var(--vscode-editorWarning-foreground);
+	--success-fg: var(--vscode-terminal-ansiGreen);
+	
+	/* Shadow for cards */
+	--shadow-color: rgb(0, 0, 0, 0.16);
+	--shadow-hover-color: rgb(0, 0, 0, 0.24);
+}
+
+/* Light theme adjustments */
+body[data-vscode-theme-kind="vscode-light"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+	--shadow-color: rgb(0, 0, 0, 0.08);
+	--shadow-hover-color: rgb(0, 0, 0, 0.12);
+}
+
+/* High contrast mode adjustments */
+body[data-vscode-theme-kind="vscode-high-contrast"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+	--border-color: var(--vscode-contrastBorder);
+	--border-subtle: var(--vscode-contrastBorder);
+}

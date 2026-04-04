@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  VS Command Table for AI Engineering Fluency.
+  - "AI Engineering Fluency" entry under the View menu.
+  - Dedicated "AI Engineering Fluency" toolbar showing live token counts.
+-->
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable"
+              xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+  <Extern href="KnownImageIds.vsct"/>
+
+  <Commands package="guidCopilotTokenTrackerPackage">
+
+    <Menus>
+      <!-- Our own toolbar — shows up in View > Toolbars as "AI Engineering Fluency" -->
+      <Menu guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbar"
+            type="Toolbar" priority="0x0000">
+        <CommandFlag>DefaultDocked</CommandFlag>
+        <CommandFlag>AlwaysCreate</CommandFlag>
+        <Strings>
+          <ButtonText>AI Engineering Fluency</ButtonText>
+        </Strings>
+      </Menu>
+    </Menus>
+
+    <Groups>
+      <!-- View menu group -->
+      <Group guid="guidCopilotTokenTrackerCmdSet" id="MyMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW"/>
+      </Group>
+
+      <!-- Group inside our custom toolbar -->
+      <Group guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbarGroup" priority="0x0000">
+        <Parent guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbar"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <!-- View menu command -->
+      <Button guid="guidCopilotTokenTrackerCmdSet"
+              id="ShowTokenTrackerCommandId"
+              priority="0x0100"
+              type="Button">
+        <Parent guid="guidCopilotTokenTrackerCmdSet" id="MyMenuGroup" />
+        <Icon guid="ImageCatalogGuid" id="StatusInformation" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>AI Engineering Fluency</ButtonText>
+          <CommandName>View.AIEngineeringFluency</CommandName>
+          <ToolTipText>Open the AI Engineering Fluency tool window</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- Toolbar button — text updated at runtime to show token counts -->
+      <Button guid="guidCopilotTokenTrackerCmdSet"
+              id="ToolbarInfoCommandId"
+              priority="0x0100"
+              type="Button">
+        <Parent guid="guidCopilotTokenTrackerCmdSet" id="CopilotToolbarGroup" />
+        <Icon guid="ImageCatalogGuid" id="StatusInformation" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>AI Engineering Fluency: loading…</ButtonText>
+          <CommandName>CopilotTokenTracker.ToolbarInfo</CommandName>
+          <ToolTipText>AI Engineering Fluency — today's tokens | last 30 days tokens — click to open dashboard</ToolTipText>
+        </Strings>
+      </Button>
+    </Buttons>
+
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidCopilotTokenTrackerPackage"
+                value="{6B8CA5B3-1A9F-4C2E-8F3D-7E2A1B4C9D0F}" />
+
+    <GuidSymbol name="guidCopilotTokenTrackerCmdSet"
+                value="{B1C2D3E4-F5A6-B7C8-D9E0-F1A2B3C4D5E6}">
+      <IDSymbol name="MyMenuGroup"              value="0x1020" />
+      <IDSymbol name="ShowTokenTrackerCommandId" value="0x0100" />
+      <IDSymbol name="CopilotToolbar"           value="0x1040" />
+      <IDSymbol name="CopilotToolbarGroup"      value="0x1050" />
+      <IDSymbol name="ToolbarInfoCommandId"     value="0x0200" />
+    </GuidSymbol>
+  </Symbols>
+
+</CommandTable>

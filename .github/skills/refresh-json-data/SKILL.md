@@ -106,9 +106,12 @@ Before updating these files, ensure you have:
 
 1. **Check official pricing pages**:
    - OpenAI: https://openai.com/api/pricing/
-   - Anthropic: https://www.anthropic.com/pricing
-   - Google Gemini: https://ai.google.dev/pricing
+   - Anthropic: https://www.anthropic.com/pricing (also https://platform.claude.com/docs/en/about-claude/pricing)
+   - Google Gemini: https://ai.google.dev/gemini-api/docs/pricing
+   - xAI Grok: https://x.ai/api
    - GitHub Copilot Models: https://docs.github.com/en/copilot/reference/ai-models/supported-models
+   - GitHub Copilot Premium Requests: https://docs.github.com/en/copilot/managing-copilot/monitoring-usage-and-entitlements/about-premium-requests
+   - OpenRouter (cross-provider verification): https://openrouter.ai
 
 2. **Update pricing entries** in the `pricing` object:
    ```json

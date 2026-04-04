@@ -1,0 +1,221 @@
+{
+  "description": "Defines Copilot customization file patterns to scan in workspaces",
+  "lastUpdated": "2026-02-11",
+  "stalenessThresholdDays": 90,
+  "excludeDirs": ["node_modules", ".git", "dist", "build", "out", "__pycache__", ".venv", ".next", "coverage"],
+  "patterns": [
+    {
+      "id": "copilot-instructions",
+      "type": "instructions",
+      "category": "copilot",
+      "icon": "📋",
+      "label": "Instructions",
+      "path": ".github/copilot-instructions.md",
+      "scanMode": "exact"
+    },
+    {
+      "id": "copilot-setup",
+      "type": "coding-agent",
+      "category": "copilot",
+      "icon": "⚙️",
+      "label": "Coding Agent Setup",
+      "path": ".github/copilot-setup.md",
+      "scanMode": "exact"
+    },
+    {
+      "id": "mcp-config",
+      "type": "mcp-config",
+      "category": "copilot",
+      "icon": "🔌",
+      "label": "MCP Server Config",
+      "path": ".vscode/mcp.json",
+      "scanMode": "exact"
+    },
+    {
+      "id": "skills",
+      "type": "skill",
+      "category": "copilot",
+      "icon": "🧠",
+      "label": "Skill Files",
+      "path": ".github/skills/*/SKILL.md",
+      "scanMode": "oneLevel"
+    },
+    {
+      "id": "agents-dir",
+      "type": "agent",
+      "category": "copilot",
+      "icon": "🤖",
+      "label": "Custom agents",
+      "path": ".github/agents/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 3
+    },
+    {
+      "id": "scoped-instructions",
+      "type": "instructions",
+      "category": "copilot",
+      "icon": "📋",
+      "label": "Scoped Instructions",
+      "path": "**/*.instructions.md",
+      "scanMode": "recursive",
+      "maxDepth": 5
+    },
+    {
+      "id": "agents-md",
+      "type": "agent",
+      "category": "copilot",
+      "icon": "🤖",
+      "label": "AGENTS.md",
+      "path": "**/AGENTS.md",
+      "scanMode": "recursive",
+      "maxDepth": 5,
+      "caseInsensitive": true
+    },
+    {
+      "id": "amazonq-rules",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🟠",
+      "label": "Amazon Q Rules",
+      "path": ".amazonq/rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 3
+    },
+    {
+      "id": "claude-code",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🎭",
+      "label": "Claude Code",
+      "path": "CLAUDE.md",
+      "scanMode": "exact",
+      "caseInsensitive": true
+    },
+    {
+      "id": "gemini-cli",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "💎",
+      "label": "Gemini CLI",
+      "path": "GEMINI.md",
+      "scanMode": "exact",
+      "caseInsensitive": true
+    },
+    {
+      "id": "cursor-rules-md",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🔷",
+      "label": "Cursor Rules",
+      "path": ".cursor/rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    },
+    {
+      "id": "cursor-dotrules-md",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🔷",
+      "label": "Cursor Rules (.rules)",
+      "path": ".cursor/.rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    },
+    {
+      "id": "cursor-rules-mdc",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🔷",
+      "label": "Cursor Rules (MDC)",
+      "path": ".cursor/rules/*.mdc",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    },
+    {
+      "id": "cursor-dotrules-mdc",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🔷",
+      "label": "Cursor Rules (.rules, MDC)",
+      "path": ".cursor/.rules/*.mdc",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    },
+    {
+      "id": "windsurf-rules",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🌊",
+      "label": "Windsurf Rules",
+      "path": ".windsurf/rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    },
+    {
+      "id": "windsurf-workflows",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🌊",
+      "label": "Windsurf Workflows",
+      "path": ".windsurf/workflows/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    },
+    {
+      "id": "windsurf-global",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🌊",
+      "label": "Windsurf Global Rules",
+      "path": "global_rules.md",
+      "scanMode": "exact",
+      "caseInsensitive": true
+    },
+    {
+      "id": "aider-config",
+      "type": "non-copilot-config",
+      "category": "non-copilot",
+      "icon": "🤖",
+      "label": "aider Config",
+      "path": ".aider.conf.yml",
+      "scanMode": "exact"
+    },
+    {
+      "id": "continue-rc",
+      "type": "non-copilot-config",
+      "category": "non-copilot",
+      "icon": "➡️",
+      "label": "Continue Config",
+      "path": ".continuerc.json",
+      "scanMode": "exact"
+    },
+    {
+      "id": "continue-config",
+      "type": "non-copilot-config",
+      "category": "non-copilot",
+      "icon": "➡️",
+      "label": "Continue Config",
+      "path": "config.json",
+      "scanMode": "exact"
+    },
+    {
+      "id": "cline-rules",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🧵",
+      "label": "Cline Rules",
+      "path": ".clinerules",
+      "scanMode": "exact"
+    },
+    {
+      "id": "jetbrains-ai",
+      "type": "non-copilot-instructions",
+      "category": "non-copilot",
+      "icon": "🧠",
+      "label": "JetBrains AI Rules",
+      "path": ".aiassistant/rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2
+    }
+  ]
+}

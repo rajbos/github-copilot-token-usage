@@ -61,6 +61,22 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Refreshing pricing information from provider APIs
 - Keeping model data current with latest releases
 
+### session-log-data
+
+**Purpose**: Describes the data files available in the coding agent environment after `copilot-setup-steps.yml` runs.
+
+**Use this skill when:**
+- Analyzing downloaded session logs or aggregated usage data in the coding agent
+- Generating reports from token usage data
+- Calculating estimated costs from usage data
+- Understanding which data files are available and their schemas
+
+**Contents:**
+- Data file locations and schemas (`./session-logs/`, `./usage-data/`)
+- Analysis examples using jq, Node.js, and Python
+- Cost estimation using model pricing data
+- Data availability checks
+
 ### load-cache-data
 
 **Purpose**: Load and inspect the last 10 rows from the local session file cache to iterate with real data.

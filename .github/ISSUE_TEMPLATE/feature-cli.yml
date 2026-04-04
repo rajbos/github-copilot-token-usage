@@ -1,0 +1,57 @@
+name: Feature request — CLI
+description: Suggest a new feature or improvement for the AI Engineering Fluency CLI tool (@rajbos/ai-engineering-fluency)
+title: "[FEATURE][cli] "
+labels:
+  - enhancement
+  - cli
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement to the **AI Engineering Fluency CLI** tool.
+        Please provide as much detail as possible to help us understand the request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Is your feature request related to a problem? Describe it clearly.
+      placeholder: "I'm always frustrated when I try to..."
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Desired solution
+      description: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any alternative solutions or workarounds you have tried.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: Who benefits from this feature, and in what workflow?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Critical — I cannot use the CLI effectively without this
+        - High — This would significantly improve my experience
+        - Medium — Nice to have
+        - Low — Just a suggestion
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context, links to similar tools, examples, or screenshots.

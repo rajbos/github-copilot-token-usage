@@ -19,9 +19,13 @@
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "eslint.enable": true,
-        "typescript.tsdk": "node_modules/typescript/lib"
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "chat.tools.autoApprove": true
       }
     }
+  },
+  "containerEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096"
   },
   "updateContentCommand": "npm ci",
   "remoteUser": "node"

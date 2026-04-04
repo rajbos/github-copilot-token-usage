@@ -309,6 +309,25 @@ Key extension modules referenced:
 - **Access Control**: Use least-privilege RBAC roles when possible
 - **Audit Logs**: Enable Azure Storage logs for compliance
 
+## Coding Agent Integration
+
+When running as the GitHub Copilot Coding Agent, the `load-table-data.js` script is executed automatically during the `copilot-setup-steps.yml` workflow. The aggregated usage data is downloaded to `./usage-data/usage-agg-daily.json` in the workspace root.
+
+**How it works:**
+1. The workflow installs dependencies: `cd .github/skills/azure-storage-loader && npm install --production`
+2. Runs `load-table-data.js` with env vars from the `copilot` GitHub environment
+3. Outputs JSON to `./usage-data/usage-agg-daily.json`
+4. Uses shared key (`COPILOT_STORAGE_KEY` secret) or Entra ID authentication
+
+**Environment variables** (set in the `copilot` GitHub environment):
+- `COPILOT_STORAGE_ACCOUNT` (required): Storage account name
+- `COPILOT_TABLE_NAME` (optional, default: `usageAggDaily`): Table name
+- `COPILOT_DATASET_ID` (optional, default: `default`): Dataset identifier
+- `COPILOT_TABLE_DATA_DAYS` (optional, default: `30`): Days of data to fetch
+- `COPILOT_STORAGE_KEY` (secret, optional): Storage account key for shared key auth
+
+See the `session-log-data` skill (`.github/skills/session-log-data/SKILL.md`) for details on the downloaded data format and analysis examples.
+
 ## Related Files
 
 - `src/backend/storageTables.ts`: Core table operations and schema

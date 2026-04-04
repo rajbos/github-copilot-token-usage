@@ -27,6 +27,19 @@ Supported variants: Code (Stable), Code - Insiders, Code - Exploration, VSCodium
 ### Copilot CLI
 - **Agent mode sessions**: `~/.copilot/session-state/*.jsonl` (JSONL format)
 
+### OpenCode
+- **Sessions (SQLite)**: `~/.local/share/opencode/opencode.db` (primary)
+- **Sessions (JSON files)**: `~/.local/share/opencode/storage/session/` (legacy fallback)
+
+### Crush
+- **Sessions (SQLite)**: `<project>/.crush/crush.db` (per-project database)
+- **Projects registry**: `~/.crush/projects.json` (global list of known projects)
+
+### Visual Studio
+- **Sessions (binary)**: `<project>\.vs\<solution>\copilot-chat\<hash>\sessions\<uuid>`
+- Format: MessagePack-encoded binary (1-byte version prefix + stream of objects)
+- **Note**: Visual Studio does **not** store actual LLM token counts. Token usage is estimated from the length of prompt text, injected file/document context, and response text.
+
 ## File Formats
 
 ### JSON Files (.json)
@@ -76,6 +89,9 @@ Tracked editors:
 - VSCodium
 - Cursor
 - Copilot CLI
+- OpenCode
+- Crush
+- Visual Studio (token counts estimated from text length — no actual LLM usage data stored)
 - Unknown
 
 ### 6. Cost Estimation

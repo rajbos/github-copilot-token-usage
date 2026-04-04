@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/vsix-publish.json",
+  "categories": [ "Coding" ],
+  "identity": {
+    "internalName": "AIEngineeringFluency"
+  },
+  "overview": "../docs/visual-studio/README.md",
+  "priceCategory": "free",
+  "publisher": "RobBos",
+  "private": false,
+  "qna": true,
+  "repo": "https://github.com/rajbos/github-copilot-token-usage",
+  "tags": [ "GitHub Copilot", "token usage", "AI", "productivity", "fluency" ]
+}

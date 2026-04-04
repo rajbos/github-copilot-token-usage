@@ -8,3 +8,16 @@ node_modules
 .github/scripts/scraper.log
 .github/scripts/scraped-models.json
 example.json
+log-example.txt
+visualstudio-extension/.vs/
+visualstudio-extension/src/CopilotTokenTracker/bin/
+visualstudio-extension/src/CopilotTokenTracker/obj/
+visualstudio-extension/src/CopilotTokenTracker/cli-bundle/
+visualstudio-extension/src/CopilotTokenTrackerRunner/bin/
+visualstudio-extension/src/CopilotTokenTrackerRunner/obj/
+visualstudio-extension/src/CopilotTokenTrackerRunner/cli-bundle/
+visualstudio-extension/visualstudio-extension/src/CopilotTokenTrackerRunner/obj/
+visualstudio-extension/src/CopilotTokenTracker/obj/project.nuget.cache
+visualstudio-extension/src/CopilotTokenTracker.Tests/bin/
+visualstudio-extension/src/CopilotTokenTracker.Tests/obj/
+visualstudio-extension/TestResults/

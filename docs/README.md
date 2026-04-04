@@ -11,6 +11,10 @@ tags: [documentation, index]
 
 This directory contains documentation for the GitHub Copilot Token Tracker extension.
 
+## Fluency Score
+
+- **[FLUENCY-LEVELS.md](FLUENCY-LEVELS.md)** — Detailed scoring rules for the Copilot Fluency Score dashboard (stages, categories, thresholds)
+
 ## Log Files Schema Documentation
 
 For comprehensive documentation about Copilot session log file schemas, see:

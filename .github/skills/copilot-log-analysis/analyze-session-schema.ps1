@@ -182,6 +182,16 @@ $locations["copilot-cli"] = @{
     files = @()
 }
 
+# Add OpenCode location
+$openCodeDataDir = Join-Path $env:USERPROFILE ".local\share\opencode"
+if (Test-Path $openCodeDataDir) {
+    $locations["opencode"] = @{
+        pattern = Join-Path $openCodeDataDir "storage\session\global\ses_*.json"
+        description = "OpenCode sessions"
+        files = @()
+    }
+}
+
 # Collect files
 Write-Host "Scanning for session files..."
 Write-Host ""

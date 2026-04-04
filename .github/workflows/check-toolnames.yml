@@ -1,0 +1,142 @@
+name: Check Toolnames in Issue
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  # Checks each tool name in the issue body against src/toolNames.json on main
+  # and posts a comment with the status of each one.
+  check-toolnames:
+    runs-on: ubuntu-latest
+    if: github.event.label.name == 'Toolnames checkup'
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout main branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Validate issue body for hidden content
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TEXT: ${{ github.event.issue.body }}
+          ITEM_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+          CONTEXT_TYPE: issue
+          FINDINGS_FILE: /tmp/validation-findings.txt
+        run: bash .github/workflows/validate-input.sh
+
+      - name: Check toolnames and post comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          echo "=== Checking toolnames and building comment ==="
+          
+          python3 - << 'PYEOF'
+          import json
+          import os
+          import re
+          import sys
+          
+          issue_body = os.environ.get("ISSUE_BODY", "")
+          issue_number = os.environ.get("ISSUE_NUMBER", "")
+          repo = os.environ.get("REPO", "")
+          run_id = os.environ.get("RUN_ID", "")
+          server_url = os.environ.get("SERVER_URL", "https://github.com")
+          
+          COMMENT_FILE = "/tmp/toolnames-comment.md"
+          MAX_BODY_LEN = 100_000  # guard against extremely large issue bodies
+          
+          # Truncate untrusted input to prevent resource exhaustion
+          if len(issue_body) > MAX_BODY_LEN:
+              issue_body = issue_body[:MAX_BODY_LEN]
+              print("Warning: issue body was truncated to 100 KB", file=sys.stderr)
+          
+          # Extract backtick-wrapped strings and filter to plausible tool-name shapes
+          # (no path separators or spaces; reasonable length).  This avoids matching
+          # inline-code snippets like `src/toolNames.json` or prose code examples.
+          raw_matches = re.findall(r'`([^`\n]+)`', issue_body)
+          tools = sorted(set(
+              m for m in raw_matches
+              if "/" not in m and " " not in m and len(m) <= 128
+          ))
+          print(f"Found {len(tools)} candidate tool name(s): {tools}", file=sys.stderr)
+          
+          if not tools:
+              print("No candidate tool names found in issue body. Skipping.", file=sys.stderr)
+              with open(COMMENT_FILE, "w") as f:
+                  f.write("## 🔍 Toolnames Checkup\n\n_No candidate tool names (backtick-wrapped identifiers without path separators) were found in the issue body._\n")
+          else:
+              with open("vscode-extension/src/toolNames.json", "r") as f:
+                  known_tools = json.load(f)
+          
+              already_added = []
+              needs_adding = []
+          
+              for tool in tools:
+                  if tool in known_tools:
+                      already_added.append((tool, known_tools[tool]))
+                  else:
+                      needs_adding.append(tool)
+          
+              lines = ["## 🔍 Toolnames Checkup", ""]
+              lines.append("Checked the tool names in this issue against `vscode-extension/src/toolNames.json` on the `main` branch:")
+              lines.append("")
+          
+              if already_added:
+                  lines.append("### ✅ Already mapped")
+                  lines.append("")
+                  lines.append("| Tool Name | Friendly Name |")
+                  lines.append("| --- | --- |")
+                  for tool, friendly in already_added:
+                      lines.append(f"| `{tool}` | {friendly} |")
+                  lines.append("")
+          
+              if needs_adding:
+                  lines.append("### ❌ Not yet in `toolNames.json`")
+                  lines.append("")
+                  lines.append("| Tool Name |")
+                  lines.append("| --- |")
+                  for tool in needs_adding:
+                      lines.append(f"| `{tool}` |")
+                  lines.append("")
+          
+              if already_added and not needs_adding:
+                  lines.append("> **All tool names in this issue are already mapped.** This issue may be a duplicate — consider closing it.")
+              elif needs_adding:
+                  lines.append(f"> **{len(needs_adding)} tool name(s) still need to be added.** Please use the `tool-names` custom agent or update `vscode-extension/src/toolNames.json` manually.")
+          
+              lines.append("")
+              lines.append(f"_Workflow run: {server_url}/{repo}/actions/runs/{run_id}_")
+          
+              comment_body = "\n".join(lines)
+              with open(COMMENT_FILE, "w") as f:
+                  f.write(comment_body)
+              print("=== Comment preview ===", file=sys.stderr)
+              print(comment_body, file=sys.stderr)
+          PYEOF
+          
+          echo "=== Posting comment to issue #${ISSUE_NUMBER} ==="
+          gh issue comment "$ISSUE_NUMBER" \
+              --repo "$REPO" \
+              --body-file /tmp/toolnames-comment.md
+          
+          echo "✅ Comment posted successfully"
