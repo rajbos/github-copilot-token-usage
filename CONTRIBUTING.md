@@ -147,16 +147,21 @@ The repository provides two devcontainer configurations:
 The default `devcontainer.json` is designed to work reliably in GitHub Codespaces and other cloud environments:
 
 - Uses `updateContentCommand` instead of `postCreateCommand` for dependency installation (more reliable timing)
+- Minimal features (Git only) for fast container creation
 - No host mounts (not available in cloud environments)
 - Includes memory optimization (`NODE_OPTIONS: --max-old-space-size=4096`)
+- Working directory aware: runs `cd vscode-extension && npm ci` (repo uses monorepo structure)
 
 **Why `updateContentCommand`?** This lifecycle hook runs after workspace content is updated (including initial clone), making it more reliable than `postCreateCommand` which runs once during container creation and can timeout with large dependency trees.
+
+**Why minimal features?** PowerShell feature installation can timeout in Codespaces. The default config only includes Git, which is essential for development.
 
 #### Local Configuration (Windows with Mounts)
 
 The `devcontainer-local.json` configuration adds features for local development:
 
 - **Host Mounts:** Binds your VS Code session data (including Copilot logs) into the container so the extension can track your actual usage
+- **PowerShell Feature:** Includes PowerShell for running build scripts like `build.ps1`
 - **PowerShell Init:** Runs `.devcontainer/init-mounts.ps1` to ensure mount directories exist on Windows
 - **Volume for node_modules:** Uses a Docker volume for faster dependency installation
 
