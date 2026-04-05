@@ -33,6 +33,6 @@
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096"
   },
-  "updateContentCommand": "npm ci",
+  "updateContentCommand": "cd vscode-extension && npm ci",
   "remoteUser": "node"
 }
