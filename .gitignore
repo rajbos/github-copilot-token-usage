@@ -7,6 +7,11 @@ node_modules
 .github/scripts/models.txt
 .github/scripts/scraper.log
 .github/scripts/scraped-models.json
+docs/images/screenshots/screenshot-instructions.html
+docs/images/screenshots/details-view-preview.html
+docs/images/screenshots/preview-*.html
+docs/images/screenshots/harness-*.html
+docs/images/screenshots/*.png
 example.json
 log-example.txt
 visualstudio-extension/.vs/

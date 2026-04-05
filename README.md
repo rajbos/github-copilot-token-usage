@@ -24,6 +24,10 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 
 Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more.
 
+### Generating Screenshots
+
+The extension includes test data and automation tools for generating documentation screenshots. See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for complete instructions.
+
 ```bash
 # Install from the VS Code Marketplace
 ext install RobBos.copilot-token-tracker

@@ -225,7 +225,28 @@ export class SessionDiscovery {
 			return this._sessionFilesCache;
 		}
 
-		// Screenshot/demo mode: if a sample data directory is configured, use it exclusively
+		// Screenshot/demo mode: env var takes priority, then VS Code setting
+		const envSampleDir = process.env.COPILOT_TEST_DATA_PATH;
+		if (envSampleDir && envSampleDir.trim().length > 0) {
+			const resolvedEnvDir = envSampleDir.trim();
+			try {
+				if (fs.existsSync(resolvedEnvDir)) {
+					const sampleFiles = fs.readdirSync(resolvedEnvDir)
+						.filter(f => f.endsWith('.json') || f.endsWith('.jsonl'))
+						.map(f => path.join(resolvedEnvDir, f));
+					this.deps.log(`📸 Sample data mode (COPILOT_TEST_DATA_PATH): using ${sampleFiles.length} file(s) from ${resolvedEnvDir}`);
+					this._sessionFilesCache = sampleFiles;
+					this._sessionFilesCacheTime = now;
+					return sampleFiles;
+				} else {
+					this.deps.warn(`COPILOT_TEST_DATA_PATH directory not found: ${resolvedEnvDir}`);
+				}
+			} catch (err) {
+				this.deps.warn(`Error reading COPILOT_TEST_DATA_PATH directory: ${err}`);
+			}
+		}
+
+		// Screenshot/demo mode: if a sample data directory is configured via VS Code setting, use it exclusively
 		const sampleDir = vscode.workspace.getConfiguration('copilot-token-tracker').get<string>('sampleDataDirectory');
 		if (sampleDir && sampleDir.trim().length > 0) {
 			const resolvedSampleDir = sampleDir.trim();

@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "sessionId": "test-session-003",
+  "responderUsername": "GitHub Copilot",
+  "responderAvatarIconUri": {
+    "id": "copilot"
+  },
+  "initialLocation": {
+    "type": 1,
+    "location": {
+      "uri": {
+        "scheme": "file",
+        "path": "/workspace/database.sql"
+      }
+    }
+  },
+  "creationDate": 1705824000000,
+  "lastMessageDate": 1705827600000,
+  "mode": "agent",
+  "requests": [
+    {
+      "requestId": "req-006",
+      "message": {
+        "text": "@workspace Create a SQL schema for a blog system with users, posts, and comments",
+        "parts": [
+          {
+            "range": {
+              "start": 0,
+              "endExclusive": 82
+            },
+            "text": "@workspace Create a SQL schema for a blog system with users, posts, and comments",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "value": "Here's a comprehensive SQL schema for a blog system:\n\n```sql\n-- Users table\nCREATE TABLE users (\n    user_id SERIAL PRIMARY KEY,\n    username VARCHAR(50) NOT NULL UNIQUE,\n    email VARCHAR(255) NOT NULL UNIQUE,\n    password_hash VARCHAR(255) NOT NULL,\n    display_name VARCHAR(100),\n    bio TEXT,\n    avatar_url VARCHAR(500),\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    last_login TIMESTAMP,\n    is_active BOOLEAN DEFAULT TRUE\n);\n\n-- Posts table\nCREATE TABLE posts (\n    post_id SERIAL PRIMARY KEY,\n    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,\n    title VARCHAR(200) NOT NULL,\n    slug VARCHAR(250) NOT NULL UNIQUE,\n    content TEXT NOT NULL,\n    excerpt TEXT,\n    featured_image_url VARCHAR(500),\n    status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),\n    view_count INTEGER DEFAULT 0,\n    published_at TIMESTAMP,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Comments table\nCREATE TABLE comments (\n    comment_id SERIAL PRIMARY KEY,\n    post_id INTEGER NOT NULL REFERENCES posts(post_id) ON DELETE CASCADE,\n    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,\n    parent_comment_id INTEGER REFERENCES comments(comment_id) ON DELETE CASCADE,\n    content TEXT NOT NULL,\n    is_approved BOOLEAN DEFAULT FALSE,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Create indexes for better query performance\nCREATE INDEX idx_posts_user_id ON posts(user_id);\nCREATE INDEX idx_posts_status ON posts(status);\nCREATE INDEX idx_posts_published_at ON posts(published_at);\nCREATE INDEX idx_comments_post_id ON comments(post_id);\nCREATE INDEX idx_comments_user_id ON comments(user_id);\n```\n\nThis schema includes:\n- User management with authentication fields\n- Posts with draft/published status\n- Nested comments (via parent_comment_id)\n- Proper foreign key relationships\n- Indexes for common queries",
+          "kind": "markdownContent"
+        }
+      ],
+      "result": {
+        "metadata": {
+          "model": "o1-2024-12-17"
+        }
+      }
+    }
+  ]
+}

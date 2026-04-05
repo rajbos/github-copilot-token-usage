@@ -1,0 +1,76 @@
+{
+  "version": 3,
+  "sessionId": "test-session-001",
+  "responderUsername": "GitHub Copilot",
+  "responderAvatarIconUri": {
+    "id": "copilot"
+  },
+  "initialLocation": {
+    "type": 1,
+    "location": {
+      "uri": {
+        "scheme": "file",
+        "path": "/workspace/test.ts"
+      }
+    }
+  },
+  "creationDate": 1705651200000,
+  "lastMessageDate": 1705654800000,
+  "mode": "ask",
+  "requests": [
+    {
+      "requestId": "req-001",
+      "message": {
+        "text": "How do I create a React component with TypeScript?",
+        "parts": [
+          {
+            "range": {
+              "start": 0,
+              "endExclusive": 51
+            },
+            "text": "How do I create a React component with TypeScript?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "value": "To create a React component with TypeScript, you can use the following pattern:\n\n```typescript\nimport React from 'react';\n\ninterface MyComponentProps {\n  title: string;\n  count: number;\n}\n\nconst MyComponent: React.FC<MyComponentProps> = ({ title, count }) => {\n  return (\n    <div>\n      <h1>{title}</h1>\n      <p>Count: {count}</p>\n    </div>\n  );\n};\n\nexport default MyComponent;\n```\n\nThis defines a functional component with typed props using an interface.",
+          "kind": "markdownContent"
+        }
+      ],
+      "result": {
+        "metadata": {
+          "model": "gpt-4o-2024-11-20"
+        }
+      }
+    },
+    {
+      "requestId": "req-002",
+      "message": {
+        "text": "Can you show me how to add state to this component?",
+        "parts": [
+          {
+            "range": {
+              "start": 0,
+              "endExclusive": 52
+            },
+            "text": "Can you show me how to add state to this component?",
+            "kind": "text"
+          }
+        ]
+      },
+      "response": [
+        {
+          "value": "Sure! Here's how to add state using the useState hook:\n\n```typescript\nimport React, { useState } from 'react';\n\ninterface MyComponentProps {\n  title: string;\n  initialCount: number;\n}\n\nconst MyComponent: React.FC<MyComponentProps> = ({ title, initialCount }) => {\n  const [count, setCount] = useState<number>(initialCount);\n\n  const increment = () => {\n    setCount(count + 1);\n  };\n\n  return (\n    <div>\n      <h1>{title}</h1>\n      <p>Count: {count}</p>\n      <button onClick={increment}>Increment</button>\n    </div>\n  );\n};\n\nexport default MyComponent;\n```\n\nThe useState hook lets you add state to functional components. The generic type <number> ensures type safety.",
+          "kind": "markdownContent"
+        }
+      ],
+      "result": {
+        "metadata": {
+          "model": "gpt-4o-2024-11-20"
+        }
+      }
+    }
+  ]
+}
