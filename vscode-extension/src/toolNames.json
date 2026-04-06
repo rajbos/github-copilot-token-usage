@@ -45,6 +45,7 @@
   ,"mcp_gitkraken_git_status": "GitKraken MCP: Git Status"
   ,"mcp_gitkraken_git_branch": "GitKraken MCP: Git Branch"
   ,"mcp_gitkraken_git_checkout": "GitKraken MCP: Git Checkout"
+  ,"mcp_gitkraken_git_log_or_diff": "GitKraken MCP: Git Log or Diff"
   ,"mcp_gitkraken_gitkraken_workspace_list": "GitKraken MCP: List Workspaces"
   ,"mcp_pencil_batch_design": "Pencil MCP: Batch Design"
   ,"mcp_pencil_get_editor_state": "Pencil MCP: Get Editor State"
