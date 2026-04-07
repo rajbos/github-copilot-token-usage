@@ -6,11 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
-## [0.0.26]
+## [0.0.26] - 2026-04-07
 
 ### ✨ Features & Improvements
 - Split usage analysis view into 3 tabs for better navigation (#540)
 - Added missing friendly display names for MCP and VS Code tools (#539)
+- Added friendly display names for `mcp_gitkraken_git_log_or_diff`, `copilot_runInTerminal`, `mcp_laravel-boost_tinker`, and Power BI MCP tools (#553, #554, #555)
 
 ### 🐛 Bug Fixes
 - Fixed loading stalls during session discovery (#545)
