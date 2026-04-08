@@ -260,7 +260,7 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 		const friendly = escapeHtml(nameResolver(tool));
 		const idEscaped = escapeHtml(tool);
 		const autoBadge = AUTOMATIC_TOOL_SET_WV.has(tool)
-			? `<span title="Automatic tool — Copilot uses this internally and it does not count toward fluency scoring" style="margin-left:6px; padding:1px 5px; font-size:10px; border-radius:3px; background:var(--badge-bg); color:var(--badge-fg); vertical-align:middle;">auto</span>`
+			? `<span class="auto-badge" title="Automatic tool — Copilot uses this internally and it does not count toward fluency scoring">auto</span>`
 			: '';
 		return `
 		    <tr>
