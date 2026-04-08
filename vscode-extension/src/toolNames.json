@@ -340,4 +340,10 @@
   ,"github-pull-request_issue_fetch": "GitHub Pull Request: Issue Fetch"
   ,"github-pull-request_pullRequestStatusChecks": "GitHub Pull Request: Pull Request Status Checks"
   ,"mcp_powerbi-model_connection_operations": "Power BI MCP: Connection Operations"
+  ,"MiniMax_web_search": "MiniMax: Web Search"
+  ,"dingDocuments_get_document_content": "Ding Documents: Get Document Content"
+  ,"dingDocuments_list_nodes": "Ding Documents: List Nodes"
+  ,"dingDocuments_search_documents": "Ding Documents: Search Documents"
+  ,"fetch_fetch": "Fetch: Fetch"
+  ,"invalid": "Invalid"
 }
