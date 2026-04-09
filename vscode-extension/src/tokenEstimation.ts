@@ -151,6 +151,33 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 }
 
 /**
+ * Asynchronously reconstruct the full session state from delta-based JSONL lines.
+ * Yields to the event loop every `yieldInterval` lines to prevent starving the
+ * extension host's single-threaded event loop on large files.
+ */
+export async function reconstructJsonlStateAsync(lines: string[], yieldInterval = 500): Promise<{ sessionState: any; isDeltaBased: boolean }> {
+	let sessionState: any = {};
+	let isDeltaBased = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (!line.trim()) { continue; }
+		try {
+			const delta = JSON.parse(line);
+			if (typeof delta.kind === 'number') {
+				isDeltaBased = true;
+				sessionState = applyDelta(sessionState, delta);
+			}
+		} catch {
+			// Skip invalid lines
+		}
+		if (isDeltaBased && i > 0 && i % yieldInterval === 0) {
+			await new Promise<void>(resolve => setTimeout(resolve, 0));
+		}
+	}
+	return { sessionState, isDeltaBased };
+}
+
+/**
  * Extract per-request actual token usage from raw JSONL lines using regex.
  * Handles cases where lines with result data fail JSON.parse due to bad escape characters.
  * Supports both old format (usage.promptTokens/completionTokens) and new format (promptTokens/outputTokens).
