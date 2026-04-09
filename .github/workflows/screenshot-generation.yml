@@ -1,0 +1,77 @@
+name: Generate Extension Screenshots
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+
+  push:
+    paths:
+      - 'vscode-extension/src/**'
+      - 'scripts/capture-real-screenshots.js'
+      - 'test-data/**'
+      - '.github/workflows/screenshot-generation.yml'
+
+jobs:
+  generate-screenshots:
+    name: Generate UI Screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Build extension (produces webview bundles)
+        working-directory: vscode-extension
+        run: npm run compile
+
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Capture real screenshots
+        run: node scripts/capture-real-screenshots.js
+
+      - name: List generated screenshots
+        run: |
+          echo "=== Generated Screenshots ==="
+          ls -lh docs/images/screenshots/*.png
+          echo ""
+          echo "Total: $(find docs/images/screenshots -name '*.png' | wc -l) screenshots"
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-screenshots
+          path: docs/images/screenshots/*.png
+          retention-days: 90
+
+      - name: Workflow Summary
+        if: always()
+        run: |
+          echo "## 📸 Screenshot Generation Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if ls docs/images/screenshots/*.png 1> /dev/null 2>&1; then
+            echo "### ✅ Screenshots Generated" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            for f in docs/images/screenshots/*.png; do
+              size=$(du -h "$f" | cut -f1)
+              echo "- \`$(basename "$f")\` ($size)" >> "$GITHUB_STEP_SUMMARY"
+            done
+          else
+            echo "### ❌ No screenshots found" >> "$GITHUB_STEP_SUMMARY"
+          fi
