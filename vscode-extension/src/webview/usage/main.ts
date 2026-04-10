@@ -473,9 +473,20 @@ function sanitizeRepoPrStatsData(input: unknown): RepoPrStatsResult {
 				aiReviewRequestedPrs: toSafeNumber(r.aiReviewRequestedPrs),
 				aiDetails: aiDetails.map((d) => {
 					const detail = (d && typeof d === 'object') ? (d as Record<string, unknown>) : {};
+					const validAiTypes = ['copilot', 'claude', 'openai', 'other-ai'] as const;
+					const validRoles = ['author', 'reviewer-requested'] as const;
+					const aiType = validAiTypes.includes(detail.aiType as typeof validAiTypes[number])
+						? detail.aiType as typeof validAiTypes[number]
+						: 'other-ai';
+					const role = validRoles.includes(detail.role as typeof validRoles[number])
+						? detail.role as typeof validRoles[number]
+						: 'author';
 					return {
-						label: escapeHtml(typeof detail.label === 'string' ? detail.label : ''),
-						count: toSafeNumber(detail.count),
+						number: toSafeNumber(detail.number),
+						title: escapeHtml(typeof detail.title === 'string' ? detail.title : ''),
+						url: toSafeHttpUrl(detail.url),
+						aiType,
+						role,
 					};
 				}),
 			};
