@@ -485,9 +485,9 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		}
 		return `<tr>
 			<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}${detailsHtml}</td>
-			<td style="${cellCenter} color:var(--link-color); font-weight:600;">${r.totalPrs}</td>
-			<td style="${cellCenter}">${r.aiAuthoredPrs > 0 ? `<span style="color:var(--link-color); font-weight:600;">${r.aiAuthoredPrs}</span>` : '0'}</td>
-			<td style="${cellCenter}">${r.aiReviewRequestedPrs > 0 ? `<span style="color:var(--link-color); font-weight:600;">${r.aiReviewRequestedPrs}</span>` : '0'}</td>
+			<td style="${cellCenter} font-weight:600;">${r.totalPrs}</td>
+			<td style="${cellCenter}">${r.aiAuthoredPrs > 0 ? `<span style="font-weight:600;">${r.aiAuthoredPrs}</span>` : '0'}</td>
+			<td style="${cellCenter}">${r.aiReviewRequestedPrs > 0 ? `<span style="font-weight:600;">${r.aiReviewRequestedPrs}</span>` : '0'}</td>
 		</tr>`;
 	}).join('');
 
