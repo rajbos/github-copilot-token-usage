@@ -447,6 +447,8 @@ jobs:
   build-visualstudio:
     name: Publish Visual Studio Extension
     needs: release
+    # Only run on tag pushes (to attach vsix to release) or when explicitly building the VS extension
+    if: github.event_name == 'push' || inputs.vs_only == true
     # Windows required: Node.js SEA (bundle-exe.ps1) and MSBuild/VSSDK are Windows-only
     runs-on: windows-latest
     permissions:
@@ -587,7 +589,12 @@ jobs:
             -Uri "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=3.0-preview.1" `
             -Headers @{ "Content-Type" = "application/json"; "Accept" = "application/json;api-version=3.0-preview.1" } `
             -Body $body
-          $marketplaceVersion = $r.results[0].extensions[0].versions[0].version
+          $ext = $r.results[0].extensions[0]
+          if (-not $ext -or -not $ext.versions) {
+            Write-Host "⚠️  Extension not found on VS Marketplace — proceeding with first publish."
+            exit 0
+          }
+          $marketplaceVersion = $ext.versions[0].version
           if (-not $marketplaceVersion) {
             Write-Host "⚠️  Extension not found on VS Marketplace — proceeding with first publish."
             exit 0
@@ -599,7 +606,8 @@ jobs:
           }
           Write-Host "✅ Version check passed: $localVersion is newer than marketplace $marketplaceVersion"
         } catch {
-          Write-Warning "⚠️  Could not query VS Marketplace — proceeding with publish. Error: $_"
+          Write-Error "❌ Could not query VS Marketplace — aborting to prevent duplicate publish. Error: $_"
+          exit 1
         }
 
     - name: Publish to Visual Studio Marketplace
