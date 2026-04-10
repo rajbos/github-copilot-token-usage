@@ -437,7 +437,7 @@ function setupTabs(): void {
 }
 
 function renderReposPrContent(data: RepoPrStatsResult): string {
-	const sinceDate = new Date(data.since).toLocaleDateString();
+	const sinceDate = escapeHtml(new Date(data.since).toLocaleDateString());
 	if (!data.authenticated) {
 		return `
 			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
@@ -475,7 +475,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		let detailsHtml = '';
 		if (r.aiDetails.length > 0) {
 			const items = r.aiDetails.map(d =>
-				`<li><a href="${escapeHtml(d.url)}" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? d.aiType} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
+				`<li><a href="${escapeHtml(d.url)}" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? escapeHtml(String(d.aiType))} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
 			).join('');
 			detailsHtml = `
 				<details style="margin-top:4px; font-size:11px;">
