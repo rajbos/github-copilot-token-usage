@@ -1308,23 +1308,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	/**
 	 * Restore GitHub authentication session on extension startup.
-	 * Attempts to silently retrieve an existing session if user was previously authenticated.
+	 * Always attempts a silent getSession so that a pre-existing VS Code GitHub
+	 * session (e.g. from GitHub Copilot) is picked up automatically.
 	 */
 	private async restoreGitHubSession(): Promise<void> {
 		try {
-			const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
-			if (wasAuthenticated) {
-				this.log('Attempting to restore GitHub authentication session...');
-				// Try to get the existing session without prompting the user
-				// createIfNone: false ensures we don't prompt for authentication
-				const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
-				if (session) {
-					this.githubSession = session;
-					this.log(`✅ GitHub session restored for ${session.account.label}`);
-					// Update the stored username in case it changed
-					await this.context.globalState.update('github.username', session.account.label);
-				} else {
-					// Session doesn't exist anymore - clear the authenticated state
+			// Always try silently — never prompt. This picks up sessions from Copilot
+			// or other extensions that already authenticated the user with GitHub.
+			const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+			if (session) {
+				this.githubSession = session;
+				this.log(`✅ GitHub session found for ${session.account.label}`);
+				await this.context.globalState.update('github.authenticated', true);
+				await this.context.globalState.update('github.username', session.account.label);
+			} else {
+				const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+				if (wasAuthenticated) {
+					// Session was present before but is gone now — clear stored state
 					this.log('GitHub session not found - clearing authenticated state');
 					await this.context.globalState.update('github.authenticated', false);
 					await this.context.globalState.update('github.username', undefined);
@@ -1332,7 +1332,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		} catch (error) {
 			this.warn('Failed to restore GitHub session: ' + String(error));
-			// Clear authentication state on error
 			await this.context.globalState.update('github.authenticated', false);
 			await this.context.globalState.update('github.username', undefined);
 		}
