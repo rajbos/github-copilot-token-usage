@@ -502,7 +502,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 					<tr>
 						<th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">📂 Repository</th>
 						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">PRs</th>
-						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="PRs where the PR author's GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)">🤖 AI Authored</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="PRs where the PR author's GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)">🤖 Cloud Agent Authored</th>
 						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Open PRs where an AI agent was listed as a requested reviewer">👁 AI Review Req†</th>
 					</tr>
 				</thead>
@@ -513,7 +513,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		</div>
 		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
 			† AI Review Requested counts are for open PRs only. GitHub removes reviewer data after a PR is merged or closed.<br/>
-			🤖 AI Authored = PR author's GitHub login contains "copilot", "claude", "openai", or "codex".
+			🤖 Cloud Agent Authored = PR author's GitHub login contains "copilot", "claude", "openai", or "codex".
 		</div>`;
 }
 
@@ -523,7 +523,7 @@ function updateReposPrPanel(data: RepoPrStatsResult): void {
 	container.innerHTML = `
 		<div class="section-title"><span>🤖</span><span>AI Activity in Repository PRs</span></div>
 		<div class="section-subtitle">
-			PRs from the last 30 days across your known repositories, showing how many were <strong>authored by AI agents</strong>
+			PRs from the last 30 days across your known repositories, showing how many were <strong>authored by cloud agents</strong>
 			(i.e. opened by a bot account like <code>copilot-swe-agent</code>, <code>claude-code-action</code>, or <code>openai-code-agent</code>)
 			or had an AI agent requested as a reviewer.
 		</div>
