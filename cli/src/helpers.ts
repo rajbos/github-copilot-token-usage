@@ -12,6 +12,7 @@ import { CrushDataAccess } from '../../vscode-extension/src/crush';
 import { ContinueDataAccess } from '../../vscode-extension/src/continue';
 import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio';
 import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
+import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claudedesktop';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
@@ -66,16 +67,22 @@ function createClaudeCode(): ClaudeCodeDataAccess {
 	return new ClaudeCodeDataAccess();
 }
 
+/** Create Claude Desktop Cowork data access instance for CLI */
+function createClaudeDesktopCowork(): ClaudeDesktopCoworkDataAccess {
+	return new ClaudeDesktopCoworkDataAccess();
+}
+
 // Module-level singletons so sql.js WASM is only initialised once across all session files
 const _openCodeInstance = createOpenCode();
 const _crushInstance = createCrush();
 const _continueInstance = createContinue();
 const _visualStudioInstance = createVisualStudio();
 const _claudeCodeInstance = createClaudeCode();
+const _claudeDesktopCoworkInstance = createClaudeDesktopCowork();
 
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance });
+	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance, claudeDesktopCowork: _claudeDesktopCoworkInstance });
 }
 
 /** Discover all session files on this machine */
@@ -143,6 +150,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/.copilot/')) { return 'copilot-cli'; }
 	if (normalized.includes('/.crush/crush.db#')) { return 'crush'; }
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
+	if (normalized.includes('/local-agent-mode-sessions/')) { return 'claude-desktop-cowork'; }
 	if (normalized.includes('/.claude/projects/')) { return 'claude-code'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
 	if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
@@ -248,6 +256,24 @@ const crushResult: SessionData = {
                         setCached(filePath, stats.mtimeMs, stats.size, vsResult);
                         return vsResult;
                 }
+
+		// Handle Claude Desktop Cowork sessions (JSONL with actual Anthropic API token counts)
+		if (_claudeDesktopCoworkInstance.isCoworkSessionFile(filePath)) {
+			const result = _claudeDesktopCoworkInstance.getTokensFromCoworkSession(filePath);
+			const interactions = _claudeDesktopCoworkInstance.countCoworkInteractions(filePath);
+			const modelUsage = _claudeDesktopCoworkInstance.getCoworkModelUsage(filePath);
+			const coworkResult: SessionData = {
+				file: filePath,
+				tokens: result.tokens,
+				thinkingTokens: result.thinkingTokens,
+				interactions,
+				modelUsage,
+				lastModified: stats.mtime,
+				editorSource: getEditorSourceFromPath(filePath),
+			};
+			setCached(filePath, stats.mtimeMs, stats.size, coworkResult);
+			return coworkResult;
+		}
 
 		// Handle Claude Code sessions (JSONL with actual Anthropic API token counts)
 		if (_claudeCodeInstance.isClaudeCodeSessionFile(filePath)) {
@@ -460,6 +486,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		continue_: _continueInstance,
 		visualStudio: _visualStudioInstance,
 		claudeCode: _claudeCodeInstance,
+		claudeDesktopCowork: _claudeDesktopCoworkInstance,
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,

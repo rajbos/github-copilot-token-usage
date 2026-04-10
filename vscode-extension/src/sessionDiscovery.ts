@@ -10,6 +10,7 @@ import type { CrushDataAccess } from './crush';
 import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from "./visualstudio";
 import type { ClaudeCodeDataAccess } from './claudecode';
+import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -20,6 +21,7 @@ export interface SessionDiscoveryDeps {
 	continue_: ContinueDataAccess;
 	visualStudio: VisualStudioDataAccess;
 	claudeCode: ClaudeCodeDataAccess;
+	claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
 	sampleDataDirectoryOverride?: () => string | undefined;
 }
 
@@ -190,6 +192,14 @@ export class SessionDiscovery {
 		let claudeCodeExists = false;
 		try { claudeCodeExists = fs.existsSync(claudeCodeProjectsDir); } catch { /* ignore */ }
 		candidates.push({ path: claudeCodeProjectsDir, exists: claudeCodeExists, source: 'Claude Code' });
+
+		// Claude Desktop Cowork sessions directory
+		const coworkBaseDir = this.deps.claudeDesktopCowork.getCoworkBaseDir();
+		if (coworkBaseDir) {
+			let coworkExists = false;
+			try { coworkExists = fs.existsSync(coworkBaseDir); } catch { /* ignore */ }
+			candidates.push({ path: coworkBaseDir, exists: coworkExists, source: 'Claude Desktop (Cowork)' });
+		}
 
 		return candidates;
 	}
@@ -501,6 +511,17 @@ export class SessionDiscovery {
 				}
 			} catch (claudeError) {
 				this.deps.warn(`Could not read Claude Code session files: ${claudeError}`);
+			}
+
+			// Check for Claude Desktop Cowork session files
+			try {
+				const coworkFiles = this.deps.claudeDesktopCowork.getCoworkSessionFiles();
+				if (coworkFiles.length > 0) {
+					this.deps.log(`📄 Found ${coworkFiles.length} session file(s) in Claude Desktop Cowork`);
+					sessionFiles.push(...coworkFiles);
+				}
+			} catch (coworkError) {
+				this.deps.warn(`Could not read Claude Desktop Cowork session files: ${coworkError}`);
 			}
 
 			// Log summary

@@ -55,6 +55,7 @@ import { CrushDataAccess } from './crush';
 import { VisualStudioDataAccess } from './visualstudio';
 import { ContinueDataAccess } from './continue';
 import { ClaudeCodeDataAccess } from './claudecode';
+import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -156,10 +157,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private visualStudio: VisualStudioDataAccess;
 	private continue_: ContinueDataAccess;
 	private claudeCode: ClaudeCodeDataAccess;
+	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -804,6 +806,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.continue_ = new ContinueDataAccess();
 		this.visualStudio = new VisualStudioDataAccess();
 		this.claudeCode = new ClaudeCodeDataAccess();
+		this.claudeDesktopCowork = new ClaudeDesktopCoworkDataAccess();
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({
 			log: (m) => this.log(m),
@@ -814,6 +817,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			visualStudio: this.visualStudio,
 			continue_: this.continue_,
 			claudeCode: this.claudeCode,
+			claudeDesktopCowork: this.claudeDesktopCowork,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
 		});
 		this.context = context;
@@ -2171,6 +2175,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.continue_.countContinueInteractions(sessionFile);
 			}
 
+			// Handle Claude Desktop Cowork sessions
+			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
+				return this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
+			}
+
 			// Handle Claude Code sessions
 			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
 				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
@@ -2407,6 +2416,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return { title, firstInteraction, lastInteraction };
 			}
 
+			// Handle Claude Desktop Cowork sessions
+			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
+				const meta = this.claudeDesktopCowork.getCoworkSessionMeta(sessionFile);
+				return {
+					title: meta?.title,
+					firstInteraction: meta?.firstInteraction || null,
+					lastInteraction: meta?.lastInteraction || null,
+				};
+			}
+
 			// Handle Claude Code sessions
 			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
 				const meta = this.claudeCode.getClaudeCodeSessionMeta(sessionFile);
@@ -2515,6 +2534,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.visualStudio.isVSSessionFile(sessionFilePath) ||
 			this.crush.isCrushSessionFile(sessionFilePath) ||
 			this.continue_.isContinueSessionFile(sessionFilePath) ||
+			this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath) ||
 			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath);
 		if (!isSpecialSession) {
 			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
@@ -3808,6 +3828,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (this.continue_.isContinueSessionFile(sessionFilePath)) {
 				const result = this.continue_.getTokensFromContinueSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens }; // Continue has actual counts
+			}
+
+			// Handle Claude Desktop Cowork sessions — actual Anthropic API token counts
+			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath)) {
+				const result = this.claudeDesktopCowork.getTokensFromCoworkSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens };
 			}
 
 			// Handle Claude Code sessions - actual Anthropic API token counts

@@ -138,6 +138,7 @@ function getEditorDisplayName(source: string): string {
 		'copilot-cli': 'Copilot CLI',
 		'opencode': 'OpenCode',
 		'claude-code': 'Claude Code',
+		'claude-desktop-cowork': 'Claude Desktop (Cowork)',
 	};
 	return names[source] || source;
 }

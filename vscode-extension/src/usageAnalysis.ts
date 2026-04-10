@@ -41,6 +41,7 @@ import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from './visualstudio';
 import type { ClaudeCodeDataAccess } from './claudecode';
 import { normalizeClaudeModelId } from './claudecode';
+import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
@@ -49,6 +50,7 @@ export interface UsageAnalysisDeps {
 	continue_: ContinueDataAccess;
 	visualStudio?: VisualStudioDataAccess;
 	claudeCode?: ClaudeCodeDataAccess;
+	claudeDesktopCowork?: ClaudeDesktopCoworkDataAccess;
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
 	toolNameMap: { [key: string]: string };
@@ -1137,6 +1139,48 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Claude Desktop Cowork sessions — same JSONL format as Claude Code
+		if (deps.claudeDesktopCowork?.isCoworkSessionFile(sessionFile)) {
+			const events = readClaudeCodeEventsForAnalysis(sessionFile);
+			const models: string[] = [];
+			const seenRequestIds = new Set<string>();
+			for (const event of events) {
+				if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
+					analysis.modeUsage.agent++;
+				}
+				if (event.type === 'assistant') {
+					const requestId = event.requestId;
+					if (requestId) {
+						if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) { continue; }
+						if (seenRequestIds.has(requestId)) { continue; }
+						seenRequestIds.add(requestId);
+					}
+					const model = normalizeClaudeModelId(event.message?.model);
+					if (model) { models.push(model); }
+					if (Array.isArray(event.message?.content)) {
+						for (const block of event.message.content) {
+							if (block.type === 'tool_use' && block.name) {
+								analysis.toolCalls.total++;
+								const toolName = block.name;
+								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+							}
+						}
+					}
+				}
+			}
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCountCW = 0;
+			for (let cwi = 1; cwi < models.length; cwi++) {
+				if (models[cwi] !== models[cwi - 1]) { switchCountCW++; }
+			}
+			analysis.modelSwitching.switchCount = switchCountCW;
+			applyModelTierClassification(deps, uniqueModels, models, analysis);
+			return analysis;
+		}
+
 		// Handle Claude Code sessions
 		if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
 			// Claude Code has actual token counts; usage analysis extracts tool calls and modes
@@ -1599,6 +1643,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 	// Handle Continue sessions
 	if (deps.continue_.isContinueSessionFile(sessionFile)) {
 		return deps.continue_.getContinueModelUsage(sessionFile);
+	}
+
+	// Handle Claude Desktop Cowork sessions
+	if (deps.claudeDesktopCowork?.isCoworkSessionFile(sessionFile)) {
+		return deps.claudeDesktopCowork.getCoworkModelUsage(sessionFile);
 	}
 
 	// Handle Claude Code sessions
