@@ -455,7 +455,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 	const aiLabel: Record<string, string> = {
 		copilot: '🤖 Copilot',
 		claude: '🧠 Claude',
-		openai: '✨ OpenAI',
+		openai: '✨ Codex',
 		'other-ai': '🤖 AI',
 	};
 
