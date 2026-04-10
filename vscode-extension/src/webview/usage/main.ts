@@ -459,19 +459,23 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		'other-ai': '🤖 AI',
 	};
 
+	// Cell style shared across data rows — matches the customization matrix look
+	const cell = 'padding: 6px 8px; border-bottom: 1px solid var(--border-subtle);';
+	const cellCenter = `${cell} text-align: center;`;
+
 	const rows = data.repos.map((r) => {
-		const repoLink = `<a href="${escapeHtml(r.repoUrl)}" style="color:var(--text-link);">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
+		const repoLink = `<a href="${escapeHtml(r.repoUrl)}" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
 		if (r.error) {
 			return `<tr>
-				<td>${repoLink}</td>
-				<td colspan="3" style="color:var(--text-secondary); font-style:italic;">${escapeHtml(r.error)}</td>
+				<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}</td>
+				<td colspan="3" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</td>
 			</tr>`;
 		}
-		// Collapse detail links
+		// Collapsible detail list
 		let detailsHtml = '';
 		if (r.aiDetails.length > 0) {
 			const items = r.aiDetails.map(d =>
-				`<li><a href="${escapeHtml(d.url)}" style="color:var(--text-link);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? d.aiType} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
+				`<li><a href="${escapeHtml(d.url)}" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? d.aiType} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
 			).join('');
 			detailsHtml = `
 				<details style="margin-top:4px; font-size:11px;">
@@ -480,32 +484,36 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 				</details>`;
 		}
 		return `<tr>
-			<td>${repoLink}${detailsHtml}</td>
-			<td style="text-align:center;">${r.totalPrs}</td>
-			<td style="text-align:center;">${r.aiAuthoredPrs}</td>
-			<td style="text-align:center;">${r.aiReviewRequestedPrs}</td>
+			<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}${detailsHtml}</td>
+			<td style="${cellCenter} color:var(--link-color); font-weight:600;">${r.totalPrs}</td>
+			<td style="${cellCenter}">${r.aiAuthoredPrs > 0 ? `<span style="color:var(--link-color); font-weight:600;">${r.aiAuthoredPrs}</span>` : '0'}</td>
+			<td style="${cellCenter}">${r.aiReviewRequestedPrs > 0 ? `<span style="color:var(--link-color); font-weight:600;">${r.aiReviewRequestedPrs}</span>` : '0'}</td>
 		</tr>`;
 	}).join('');
 
 	return `
-		<div style="font-size:11px; color:var(--text-secondary); margin-bottom:8px;">
-			Showing PRs created since ${sinceDate}. Reviewer requests shown for open PRs only — merged/closed PR reviews are not captured by the GitHub API.
+		<div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
+			Showing PRs created since ${sinceDate}.
+			Reviewer requests are only visible for <strong>open</strong> PRs — the GitHub API clears this field after a PR is merged or closed.
 		</div>
-		<table style="width:100%; border-collapse:collapse; font-size:12px;">
-			<thead>
-				<tr style="border-bottom:1px solid var(--border-color); color:var(--text-secondary); font-size:11px;">
-					<th style="text-align:left; padding:4px 8px;">Repository</th>
-					<th style="text-align:center; padding:4px 8px;">Total PRs</th>
-					<th style="text-align:center; padding:4px 8px;">AI Authored</th>
-					<th style="text-align:center; padding:4px 8px;">AI Review Requested†</th>
-				</tr>
-			</thead>
-			<tbody>
-				${rows}
-			</tbody>
-		</table>
-		<div style="font-size:10px; color:var(--text-secondary); margin-top:8px;">
-			† Review requests visible only on open PRs. Closed/merged PRs don't expose reviewer data in the GitHub API.
+		<div class="customization-matrix-container">
+			<table class="customization-matrix" style="width:100%; border-collapse:collapse;">
+				<thead>
+					<tr>
+						<th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">📂 Repository</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">PRs</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="PRs where the PR author's GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action)">🤖 AI Authored</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Open PRs where an AI agent was listed as a requested reviewer">👁 AI Review Req†</th>
+					</tr>
+				</thead>
+				<tbody>
+					${rows}
+				</tbody>
+			</table>
+		</div>
+		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
+			† AI Review Requested counts are for open PRs only. GitHub removes reviewer data after a PR is merged or closed.<br/>
+			🤖 AI Authored = PR author's GitHub login contains "copilot", "claude", "openai", or "codex".
 		</div>`;
 }
 
@@ -514,7 +522,11 @@ function updateReposPrPanel(data: RepoPrStatsResult): void {
 	if (!container) { return; }
 	container.innerHTML = `
 		<div class="section-title"><span>🤖</span><span>AI Activity in Repository PRs</span></div>
-		<div class="section-subtitle">PRs from the last 30 days across your known repositories — authored or reviewed by AI agents.</div>
+		<div class="section-subtitle">
+			PRs from the last 30 days across your known repositories, showing how many were <strong>authored by AI agents</strong>
+			(i.e. opened by a bot account like <code>copilot-swe-agent</code> or <code>claude-code-action</code>)
+			or had an AI agent requested as a reviewer.
+		</div>
 		${renderReposPrContent(data)}
 	`;
 }
