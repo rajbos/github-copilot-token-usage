@@ -1379,6 +1379,13 @@ function renderLayout(data: DiagnosticsData): void {
       }
 
       // Diagnostic data loaded successfully - no console needed as this is normal operation
+    } else if (message.command === "githubAuthUpdated") {
+      // Update GitHub Auth tab with new authentication status
+      const githubTabContent = document.getElementById("tab-github");
+      if (githubTabContent) {
+        githubTabContent.innerHTML = renderGitHubAuthPanel(message.githubAuth);
+        setupGitHubAuthHandlers();
+      }
     } else if (message.command === "diagnosticDataError") {
       // Show error message
       console.error("Error loading diagnostic data:", message.error);
@@ -1488,14 +1495,14 @@ function renderLayout(data: DiagnosticsData): void {
         }
       });
     });
+  }
 
+  function setupGitHubAuthHandlers(): void {
     document.getElementById('btn-authenticate-github')?.addEventListener('click', () => {
-      console.log('[DEBUG] Authenticate GitHub button clicked');
       vscode.postMessage({ command: 'authenticateGitHub' });
     });
 
     document.getElementById('btn-sign-out-github')?.addEventListener('click', () => {
-      console.log('[DEBUG] Sign out GitHub button clicked');
       vscode.postMessage({ command: 'signOutGitHub' });
     });
   }
@@ -1835,6 +1842,7 @@ function renderLayout(data: DiagnosticsData): void {
   setupBackendButtonHandlers();
   setupFileLinks();
   setupStorageLinkHandlers();
+  setupGitHubAuthHandlers();
 
   // Restore active tab from saved state, with fallback to default
   const savedState = vscode.getState();

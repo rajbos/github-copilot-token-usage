@@ -7125,6 +7125,28 @@ ${hashtag}`;
             });
           }
           break;
+        case "authenticateGitHub":
+          await this.dispatch('authenticateGitHub:diagnostics', async () => {
+            await this.authenticateWithGitHub();
+            if (this.diagnosticsPanel) {
+              this.diagnosticsPanel.webview.postMessage({
+                command: 'githubAuthUpdated',
+                githubAuth: this.getGitHubAuthStatus(),
+              });
+            }
+          });
+          break;
+        case "signOutGitHub":
+          await this.dispatch('signOutGitHub:diagnostics', async () => {
+            await this.signOutFromGitHub();
+            if (this.diagnosticsPanel) {
+              this.diagnosticsPanel.webview.postMessage({
+                command: 'githubAuthUpdated',
+                githubAuth: this.getGitHubAuthStatus(),
+              });
+            }
+          });
+          break;
       }
     });
 
