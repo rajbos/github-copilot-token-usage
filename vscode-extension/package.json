@@ -61,6 +61,11 @@
         "category": "AI Engineering Fluency"
       },
       {
+        "command": "copilot-token-tracker.runLocalViewRegression",
+        "title": "Run Local View Regression (Debug Only)",
+        "category": "AI Engineering Fluency"
+      },
+      {
         "command": "copilot-token-tracker.configureBackend",
         "title": "Configure Backend",
         "category": "AI Engineering Fluency"

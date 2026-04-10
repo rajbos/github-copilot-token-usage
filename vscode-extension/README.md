@@ -20,6 +20,7 @@ Search for **"AI Engineering Fluency"** in the VS Code Extensions panel, or inst
 - **Social Media Sharing**: Share your Fluency Score achievements on LinkedIn, Bluesky, and Mastodon with #CopilotFluencyScore
 - **Usage Analysis Dashboard**: Comprehensive analytics on how you use Copilot (modes, tool calls, context references, MCP tools)
 - **Fluency Level Viewer**: Debug-only tool to explore all scoring rules and thresholds (requires active debugger)
+- **Local View Regression**: Debug-only check that opens the main views with bundled sample data and reports whether each webview rendered non-empty output
 - **Automatic Updates**: Refreshes every 5 minutes to show the latest usage
 - **Click to Refresh**: Click the status bar item to manually refresh the token count
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
@@ -106,6 +107,16 @@ A debug-only tool that displays all fluency score rules, thresholds, and tips fo
 - **Use Cases**: Test scoring logic, debug scoring issues, plan improvements
 
 For detailed scoring rules, see [Fluency Levels Documentation](https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md).
+
+**Local View Regression (Debug Mode)**
+
+A debug-only regression helper that opens the main local views in the Extension Development Host and reports whether each webview rendered non-empty content.
+
+- **Access**: Run `AI Engineering Fluency: Run Local View Regression (Debug Only)` from the Command Palette while debugging the extension
+- **Data Source**: Uses your real local session data first; if none is found, it falls back to the bundled sample session fixtures under `vscode-extension/test/fixtures/sample-session-data/chatSessions`
+- **Coverage**: Details, Chart, Usage Analysis, Fluency Score, Environmental Impact, Diagnostics, and Fluency Level Viewer
+- **Output**: Shows a pass/fail summary in the extension output channel and leaves the opened views visible for quick manual inspection
+- **Note**: Team Dashboard is intentionally skipped because it requires a configured backend
 
 ---
 
