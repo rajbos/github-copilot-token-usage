@@ -556,11 +556,11 @@ function applyModelTierClassification(
  * Calculate model switching statistics for a session file.
  * This method updates the analysis.modelSwitching field in place.
  */
-export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'openCode' | 'continue_' | 'tokenEstimators'>, sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
+export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'openCode' | 'continue_' | 'tokenEstimators'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string): Promise<void> {
 	try {
 		// Use non-cached method to avoid circular dependency
 		// (getSessionFileDataCached -> analyzeSessionUsage -> getModelUsageFromSessionCached -> getSessionFileDataCached)
-		const modelUsage = await getModelUsageFromSession(deps, sessionFile);
+		const modelUsage = await getModelUsageFromSession(deps, sessionFile, preloadedContent);
 		const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
 
 		// Skip if modelUsage is undefined or empty (not a valid session file)
@@ -593,7 +593,7 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
 		analysis.modelSwitching.hasMixedTiers = standardModels.length > 0 && premiumModels.length > 0;
 
 		// Count requests per tier and model switches by examining request sequence
-		const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 		// Check if this is a UUID-only file (new Copilot CLI format)
 		if (isUuidPointerFile(fileContent)) {
 			return;
@@ -719,9 +719,9 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
  * - Conversation patterns (multi-turn sessions)
  * - Agent type usage
  */
-export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>, sessionFile: string, analysis: SessionUsageAnalysis): Promise<void> {
+export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string): Promise<void> {
 	try {
-		const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
+		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 		// Check if this is a UUID-only file (new Copilot CLI format)
 		if (isUuidPointerFile(fileContent)) {
@@ -1280,8 +1280,42 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					}
 				}
 
-				// Calculate model switching for delta-based JSONL files
-				await calculateModelSwitching(deps, sessionFile, analysis);
+				// Compute model switching inline from the already-reconstructed state
+				// to avoid re-reading and re-parsing the file in calculateModelSwitching.
+				{
+					// Derive the session-level default model from reconstructed state,
+					// mirroring the selectedModel extraction used in the line-by-line path.
+					const sessionDefaultModel = (
+						sessionState.selectedModel?.identifier ||
+						sessionState.selectedModel?.metadata?.id ||
+						sessionState.inputState?.selectedModel?.metadata?.id ||
+						'gpt-4o'
+					).replace(/^copilot\//, '');
+
+					const models: string[] = [];
+					for (const req of requests) {
+						if (!req || !req.requestId) { continue; }
+						let reqModel = sessionDefaultModel;
+						if (req.modelId) {
+							reqModel = req.modelId.replace(/^copilot\//, '');
+						} else if (req.result?.metadata?.modelId) {
+							reqModel = req.result.metadata.modelId.replace(/^copilot\//, '');
+						} else if (req.result?.details) {
+							reqModel = getModelFromRequest(req, deps.modelPricing);
+						}
+						models.push(reqModel);
+					}
+					const uniqueModels = [...new Set(models)];
+					analysis.modelSwitching.uniqueModels = uniqueModels;
+					analysis.modelSwitching.modelCount = uniqueModels.length;
+					analysis.modelSwitching.totalRequests = models.length;
+					let switchCount = 0;
+					for (let mi = 1; mi < models.length; mi++) {
+						if (models[mi] !== models[mi - 1]) { switchCount++; }
+					}
+					analysis.modelSwitching.switchCount = switchCount;
+					applyModelTierClassification(deps, uniqueModels, models, analysis);
+				}
 
 				// Derive conversation patterns from mode usage before returning
 				deriveConversationPatterns(analysis);
@@ -1439,7 +1473,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				}
 			}
 			// Calculate model switching for JSONL files before returning
-			await calculateModelSwitching(deps, sessionFile, analysis);
+			await calculateModelSwitching(deps, sessionFile, analysis, fileContent);
 
 			// Derive conversation patterns from mode usage before returning
 			deriveConversationPatterns(analysis);
@@ -1531,15 +1565,15 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				}
 			}
 		}
+
+		// Calculate model switching statistics from session (pass preloaded content to avoid re-reading)
+		await calculateModelSwitching(deps, sessionFile, analysis, fileContent);
+
+		// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
+		await trackEnhancedMetrics(deps, sessionFile, analysis, fileContent);
 	} catch (error) {
 		deps.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
 	}
-
-	// Calculate model switching statistics from session
-	await calculateModelSwitching(deps, sessionFile, analysis);
-
-	// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
-	await trackEnhancedMetrics(deps, sessionFile, analysis);
 
 	return analysis;
 }

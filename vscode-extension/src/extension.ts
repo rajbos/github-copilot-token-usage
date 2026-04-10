@@ -67,6 +67,7 @@ import {
   calculateEstimatedCost as _calculateEstimatedCost,
   createEmptyContextRefs as _createEmptyContextRefs,
   getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
+  reconstructJsonlStateAsync as _reconstructJsonlStateAsync,
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
@@ -1074,8 +1075,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
 				}
 			} else {
-				// Pre-populate the cache even when panel isn't open, so first open is fast
-				await this.calculateUsageAnalysisStats(false);
+				// Skip pre-warming usage analysis when the panel isn't open.
+				// calculateUsageAnalysisStats triggers workspace customization scans
+				// and JSONL reconstruction which can starve the extension host event loop
+				// on startup, amplifying the crash-loop risk.
 			}
 
 			// If the maturity panel is open, update its content.
@@ -2927,16 +2930,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				if (isDeltaBased) {
-					// Delta-based format: reconstruct full state first, then extract details
-					let sessionState: any = {};
-					for (const line of lines) {
-						try {
-							const delta = JSON.parse(line);
-							sessionState = this.applyDelta(sessionState, delta);
-						} catch {
-							// Skip invalid lines
-						}
-					}
+					// Delta-based format: reconstruct full state asynchronously to avoid
+					// blocking the extension host event loop on large files.
+					const { sessionState } = await _reconstructJsonlStateAsync(lines);
 
 					// Extract session metadata from reconstructed state
 					if (sessionState.creationDate) {
@@ -3443,16 +3439,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				if (isDeltaBased) {
-					// Delta-based format: reconstruct full state first, then extract turns
-					let sessionState: any = {};
-					for (const line of lines) {
-						try {
-							const delta = JSON.parse(line);
-							sessionState = this.applyDelta(sessionState, delta);
-						} catch {
-							// Skip invalid lines
-						}
-					}
+					// Delta-based format: reconstruct full state asynchronously to avoid
+					// blocking the extension host event loop on large files.
+					const { sessionState } = await _reconstructJsonlStateAsync(lines);
 
 					// Extract session-level info
 					let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
