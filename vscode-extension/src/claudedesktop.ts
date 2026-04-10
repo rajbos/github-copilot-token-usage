@@ -1,16 +1,57 @@
 /**
  * Claude Desktop Cowork data access layer.
- * Handles reading session data from Claude Desktop's Cowork feature.
+ * Handles reading session data from Claude Desktop's Cowork (local agent mode) feature.
  *
  * Cowork sessions are stored at:
  *   Windows: %LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\local-agent-mode-sessions\
  *
  * Directory structure:
- *   <base>/<app-uuid>/<machine-uuid>/local_<session-id>.json       — session metadata (title, timestamps, model)
- *   <base>/<app-uuid>/<machine-uuid>/local_<session-id>/.claude/projects/<hash>/<uuid>.jsonl — JSONL token data
+ *   <base>/<app-uuid>/<machine-uuid>/local_<session-id>.json        — session metadata (title, timestamps, model)
+ *   <base>/<app-uuid>/<machine-uuid>/local_<session-id>/
+ *     .claude/projects/<hash>/<uuid>.jsonl                          — JSONL conversation + token data
+ *     audit.jsonl                                                   — SKIP: HMAC audit trail, no usage data
+ *     agent/                                                        — SKIP: background ditto sub-sessions
  *
- * The JSONL format is identical to Claude Code sessions.
- * Token data is ACTUAL Anthropic API counts — no estimation needed.
+ * ── JSONL FORMAT ────────────────────────────────────────────────────────────────────────────────
+ *
+ * Each line is a JSON object. Event types:
+ *
+ *   Queue bookends:
+ *     {"type":"queue-operation","operation":"enqueue|dequeue",...}
+ *
+ *   User messages (two kinds — distinguish by content):
+ *     Real human turn:   {"type":"user","isSidechain":false,"parentUuid":null,
+ *                          "message":{"role":"user","content":"<text>"|[{"type":"text","text":"..."}]},
+ *                          "timestamp":"<ISO>","uuid":"<uuid>"}
+ *     Tool result:       {"type":"user","isSidechain":false,"parentUuid":"<assistant-uuid>",
+ *                          "message":{"role":"user","content":[{"type":"tool_result",...}]}}
+ *     Distinction: real turns have parentUuid=null/empty and content without tool_result blocks.
+ *
+ *   Assistant messages (streaming + final share the SAME top-level type):
+ *     Streaming fragment: {"type":"assistant","requestId":"req_...","isSidechain":false,
+ *                           "parentUuid":"<prev-uuid>",
+ *                           "message":{"role":"assistant","model":"claude-*","stop_reason":"",
+ *                                      "usage":{...with output_tokens:0...},"content":[...]}}
+ *     Final event:        {"type":"assistant","requestId":"req_...","isSidechain":false,
+ *                           "parentUuid":"<prev-uuid>",
+ *                           "message":{"role":"assistant","model":"claude-*","stop_reason":"tool_use"|"end_turn",
+ *                                      "usage":{...with real output_tokens...},"content":[...]}}
+ *     CRITICAL: stop_reason is "" (empty string) on fragments, "tool_use"/"end_turn" on final events.
+ *     Use falsy check (!stop_reason) to skip fragments — === null / === undefined will NOT work.
+ *     Both streaming and final share the same requestId → use requestId dedup to count each turn once.
+ *
+ *   Other events (ignore for token/interaction counting):
+ *     {"type":"last-prompt","lastPrompt":"..."}
+ *     {"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":[...]}}
+ *
+ * ── TOKEN USAGE ─────────────────────────────────────────────────────────────────────────────────
+ *   Tokens are in final assistant events: message.usage.{input_tokens, output_tokens,
+ *   cache_creation_input_tokens, cache_read_input_tokens}. These are ACTUAL Anthropic API counts.
+ *   De-duplicate by requestId, taking only the event where !stop_reason is falsy (i.e., has value).
+ *
+ * ── INTERACTION COUNTING ────────────────────────────────────────────────────────────────────────
+ *   Count only real human turns: type==='user' && !isSidechain && content has text but no tool_result.
+ *   Tool-result user events (parentUuid set, content=[{type:'tool_result'}]) are NOT interactions.
  */
 import * as fs from 'fs';
 import * as path from 'path';
