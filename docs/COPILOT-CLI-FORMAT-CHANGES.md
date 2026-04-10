@@ -210,6 +210,71 @@ All tests pass successfully.
 - `src/extension.ts` - Main parsing logic (7 methods updated)
 - `docs/SESSION-LOG-FORMATS.md` - General session log format documentation (if exists)
 
+---
+
+## Current Copilot CLI Session Format (2025+)
+
+The UUID pointer files described above are **session index references**. The actual session data is stored in a **subdirectory-based format** under `~/.copilot/session-state/`.
+
+### Directory Structure
+
+Each Copilot CLI session lives in its own directory:
+
+```
+~/.copilot/session-state/<uuid>/
+├── events.jsonl          ← full conversation event log (JSONL)
+├── workspace.yaml        ← session metadata (cwd, repo, branch, summary — NOT title)
+├── vscode.metadata.json  ← currently always empty ({})
+├── checkpoints/          ← periodic checkpoint snapshots
+├── files/                ← persistent session artifacts
+└── research/             ← research artifacts
+```
+
+Older flat `.jsonl` files also exist at the top level of `session-state/`. These have no session title.
+
+### `events.jsonl` Event Format
+
+Each line is a JSON object with a `type` field. Relevant types:
+
+```jsonl
+{"type":"user.message","timestamp":"...","data":{"content":"..."}}
+{"type":"assistant.message","timestamp":"...","data":{"content":"...", "model":"..."}}
+{"type":"tool.execution_start","timestamp":"...","data":{"toolName":"rename_session","arguments":{"title":"My Session Name"}}}
+{"type":"tool.result","timestamp":"...","data":{"toolName":"rename_session","result":"..."}}
+```
+
+### Session Title Extraction
+
+The session title is **not** stored in `workspace.yaml`. It comes from `tool.execution_start` events where `data.toolName === "rename_session"`:
+
+```jsonl
+{"type":"tool.execution_start","timestamp":"2025-01-15T10:30:00Z","data":{"toolName":"rename_session","arguments":{"title":"Fix login validation"}}}
+```
+
+**Extraction rules:**
+- Scan all events in `events.jsonl` for `type === "tool.execution_start"` AND `data.toolName === "rename_session"`
+- Use `event.data.arguments.title` as the session name
+- Always prefer the **last** such event (the agent may rename mid-session)
+- If no `rename_session` event is found, the session has no title (shown as empty)
+
+This logic is implemented in two places in `extension.ts`:
+- `extractSessionMetadata()` — returns title for session list/summary views
+- `getSessionFileDetails()` — returns full session info including title for the log viewer
+
+### `workspace.yaml` Format
+
+Contains metadata but **not the title**:
+
+```yaml
+id: <uuid>
+cwd: /path/to/working/directory
+repository: owner/repo
+branch: main
+summary: A one-line summary of what the session accomplished
+created_at: 2025-01-15T10:00:00Z
+updated_at: 2025-01-15T11:00:00Z
+```
+
 ## References
 
 - GitHub Copilot CLI documentation (if available)

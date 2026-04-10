@@ -259,6 +259,28 @@ body {
 }
 
 /* Table styles */
+.filter-options {
+	margin: 8px 0 4px;
+}
+
+.empty-sessions-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--vscode-foreground);
+}
+
+.empty-sessions-toggle input[type="checkbox"] {
+	cursor: pointer;
+}
+
+.hidden-count {
+	color: var(--vscode-descriptionForeground);
+	font-size: 11px;
+}
+
 .table-container {
 	overflow: auto;
 	max-height: 500px;
