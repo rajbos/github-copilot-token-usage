@@ -543,6 +543,7 @@ details[open] > summary .collapse-arrow {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
+	min-width: 0;
 }
 
 .mcp-item {
@@ -552,6 +553,11 @@ details[open] > summary .collapse-arrow {
 	border-radius: 4px;
 	font-size: 12px;
 	color: var(--text-primary);
+	/* Allow long tool names to wrap instead of overflowing the card */
+	white-space: normal;
+	word-break: break-word;
+	overflow-wrap: anywhere;
+	max-width: 100%;
 }
 
 .mcp-server {
