@@ -274,6 +274,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private githubSession: vscode.AuthenticationSession | undefined;
 	// Promise that resolves when the startup session restore completes
 	private _sessionRestorePromise: Promise<void> | undefined;
+	/** True when the user explicitly signed out from our extension this VS Code session. Gated by globalState so it survives reloads. */
+	private _githubSignedOutByUser: boolean = false;
 
 	// Cached PR stats result for the repos tab
 	private _lastRepoPrStats?: RepoPrStatsResult;
@@ -1045,6 +1047,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			);
 			if (session) {
 				this.githubSession = session;
+				this._githubSignedOutByUser = false;
+				await this.context.globalState.update('github.signedOutByUser', false);
 				this.log(`✅ Successfully authenticated as ${session.account.label}`);
 				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
@@ -1063,10 +1067,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 		try {
 			this.log('Signing out from GitHub...');
 			this.githubSession = undefined;
+			this._githubSignedOutByUser = true;
 			await this.context.globalState.update('github.authenticated', false);
 			await this.context.globalState.update('github.username', undefined);
+			await this.context.globalState.update('github.signedOutByUser', true);
 			this.log('✅ Successfully signed out from GitHub');
 			vscode.window.showInformationMessage('Signed out from GitHub successfully.');
+
+			// Notify the analysis panel so the Repository PRs tab shows "not authenticated"
+			if (this.analysisPanel) {
+				const since = new Date();
+				since.setDate(since.getDate() - 30);
+				const result: RepoPrStatsResult = { repos: [], authenticated: false, since: since.toISOString() };
+				this._lastRepoPrStats = result;
+				this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+			}
 		} catch (error) {
 			this.error('Failed to sign out from GitHub:', error);
 			vscode.window.showErrorMessage('Failed to sign out from GitHub.');
@@ -1244,6 +1259,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const since = new Date();
 		since.setDate(since.getDate() - 30);
 
+		// If the user explicitly signed out from our extension, don't auto-acquire the VS Code session
+		if (this._githubSignedOutByUser) {
+			const result: RepoPrStatsResult = { repos: [], authenticated: false, since: since.toISOString() };
+			this._lastRepoPrStats = result;
+			this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+			return;
+		}
+
 		// Require GitHub auth — read:user gives 5000 req/hr on public repos
 		const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
 		if (!session) {
@@ -1319,6 +1342,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private async restoreGitHubSession(): Promise<void> {
 		try {
+			// Respect explicit sign-out — don't auto-restore until user clicks Authenticate again
+			this._githubSignedOutByUser = this.context.globalState.get<boolean>('github.signedOutByUser', false);
+			if (this._githubSignedOutByUser) {
+				this.log('GitHub session restore skipped — user signed out explicitly');
+				return;
+			}
+
 			// Always try silently — never prompt. This picks up sessions from Copilot
 			// or other extensions that already authenticated the user with GitHub.
 			const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });

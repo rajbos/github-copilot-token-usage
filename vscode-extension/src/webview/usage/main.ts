@@ -1357,6 +1357,11 @@ window.addEventListener('message', (event) => {
 		}
 		case 'repoPrStatsLoaded': {
 			repoPrStatsData = message.data as RepoPrStatsResult;
+			// Reset the loaded flag when not authenticated so re-authenticating and clicking the tab
+			// again triggers a fresh fetch instead of showing the stale "not authenticated" placeholder.
+			if (!repoPrStatsData.authenticated) {
+				repoPrStatsLoaded = false;
+			}
 			updateReposPrPanel(repoPrStatsData);
 			break;
 		}
