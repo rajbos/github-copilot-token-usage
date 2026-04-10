@@ -1370,7 +1370,13 @@ window.addEventListener('message', (event) => {
 				if (progEl) {
 					progEl.textContent = `Fetching PRs… ${done}/${total} repos (${pct}%)`;
 				} else {
-					// Inject a progress indicator
+					// First progress update — strip the static placeholder (keep only title/subtitle)
+					Array.from(container.children).forEach(child => {
+						const el = child as HTMLElement;
+						if (!el.classList.contains('section-title') && !el.classList.contains('section-subtitle')) {
+							el.remove();
+						}
+					});
 					const div = document.createElement('div');
 					div.className = 'repos-pr-progress';
 					div.style.cssText = 'margin-top:8px; font-size:12px; color:var(--text-secondary);';

@@ -1247,6 +1247,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
+		// Sync our tracked auth state if VS Code already has a session we weren't aware of
+		// (e.g. from GitHub Copilot or another extension that authenticated earlier)
+		if (!this.githubSession) {
+			this.githubSession = session;
+			await this.context.globalState.update('github.authenticated', true);
+			await this.context.globalState.update('github.username', session.account.label);
+			this.log(`✅ GitHub session synced from existing VS Code auth: ${session.account.label}`);
+		}
+
 		const repos = await this.discoverGitHubRepos();
 		this.analysisPanel.webview.postMessage({ command: 'repoPrStatsProgress', total: repos.length, done: 0 });
 
