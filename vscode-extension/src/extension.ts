@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -3572,22 +3572,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 						lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
 					}
 
-					// Handle CLI tool calls
-					if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
+					// Handle CLI tool calls (tool.execution_start is the actual event type in current CLI format)
+					const CLI_SUB_AGENT_TOOLS = new Set(['task', 'read_agent', 'write_agent', 'list_agents']);
+					if ((event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start') && turns.length > 0) {
 						const lastTurn = turns[turns.length - 1];
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
+						const isSubAgent = CLI_SUB_AGENT_TOOLS.has(toolName);
 
 						// Check if this is an MCP tool by name pattern
 						if (this.isMcpTool(toolName)) {
 							const serverName = this.extractMcpServerName(toolName);
 							lastTurn.mcpTools.push({ server: serverName, tool: toolName });
-						} else {
-							// Add to regular tool calls
+						} else if (isSubAgent) {
 							lastTurn.toolCalls.push({
 								toolName,
-								arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
-								result: event.type === 'tool.result' ? event.data?.output : undefined
+								arguments: event.data?.arguments ? JSON.stringify(event.data.arguments) : undefined,
+								result: undefined,
+								isSubAgent: true,
 							});
+						} else {
+							// Add to regular tool calls (skip duplicate execution_start events per toolCallId)
+							const callId: string | undefined = event.data?.toolCallId;
+							const alreadyAdded = callId && lastTurn.toolCalls.some((tc: any) => tc._callId === callId);
+							if (!alreadyAdded) {
+								const tc: any = {
+									toolName,
+									arguments: event.type !== 'tool.result' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+									result: event.type === 'tool.result' ? event.data?.output : undefined
+								};
+								if (callId) { tc._callId = callId; }
+								lastTurn.toolCalls.push(tc);
+							}
 						}
 					}
 
