@@ -100,6 +100,7 @@ let currentSortColumn: "lastInteraction" = "lastInteraction";
 let currentSortDirection: "asc" | "desc" = "desc";
 let currentEditorFilter: string | null = null; // null = show all
 let currentContextRefFilter: keyof ContextReferenceUsage | null = null; // null = show all
+let hideEmptySessions = true; // hide sessions with 0 interactions by default
 
 function escapeHtml(text: string): string {
   return text
@@ -489,6 +490,14 @@ function renderSessionTable(
     });
   }
 
+  // Count zero-interaction sessions (before hiding them) for the toggle label
+  const zeroInteractionCount = filteredFiles.filter(sf => sf.interactions === 0).length;
+
+  // Hide sessions with 0 interactions when filter is active
+  if (hideEmptySessions) {
+    filteredFiles = filteredFiles.filter(sf => sf.interactions > 0);
+  }
+
   // Summary stats for filtered files
   const totalInteractions = filteredFiles.reduce(
     (sum, sf) => sum + Number(sf.interactions || 0),
@@ -584,6 +593,14 @@ function renderSessionTable(
 				<div class="summary-label">📅 Time Range</div>
 				<div class="summary-value">Last 14 days</div>
 			</div>
+		</div>
+
+		<div class="filter-options">
+			<label class="empty-sessions-toggle">
+				<input type="checkbox" id="hide-empty-sessions" ${hideEmptySessions ? 'checked' : ''}>
+				Hide sessions with 0 interactions
+				${zeroInteractionCount > 0 ? `<span class="hidden-count">(${zeroInteractionCount} hidden)</span>` : ''}
+			</label>
 		</div>
 
 		<div class="table-container">
@@ -1490,6 +1507,17 @@ function renderLayout(data: DiagnosticsData): void {
     });
   }
 
+  // Wire up hide-empty-sessions checkbox handler
+  function setupZeroInteractionFilterHandler(): void {
+    const checkbox = document.getElementById("hide-empty-sessions") as HTMLInputElement | null;
+    if (checkbox) {
+      checkbox.addEventListener("change", () => {
+        hideEmptySessions = checkbox.checked;
+        reRenderTable();
+      });
+    }
+  }
+
   // Wire up backend button handlers
   function setupBackendButtonHandlers(): void {
     document
@@ -1520,6 +1548,7 @@ function renderLayout(data: DiagnosticsData): void {
         setupSortHandlers();
         setupEditorFilterHandlers();
         setupContextRefFilterHandlers();
+        setupZeroInteractionFilterHandler();
         setupFileLinks();
       }
     }
@@ -1717,6 +1746,7 @@ function renderLayout(data: DiagnosticsData): void {
   setupSortHandlers();
   setupEditorFilterHandlers();
   setupContextRefFilterHandlers();
+  setupZeroInteractionFilterHandler();
   setupBackendButtonHandlers();
   setupFileLinks();
   setupStorageLinkHandlers();

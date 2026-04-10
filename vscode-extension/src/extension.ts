@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -140,7 +140,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 35; // Fix CLI multi-shutdown accumulation + backfill pre-delete to clear stale Azure entities
+	private static readonly CACHE_VERSION = 36; // Add first-user-message fallback title for untitled Copilot CLI sessions
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -2429,6 +2429,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			if (isJsonlContent) {
 				const lines = fileContent.trim().split('\n');
+				let firstUserMessage: string | undefined;
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
@@ -2438,6 +2439,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.type === 'user.message') {
 							const ts = event.timestamp || event.ts || event.data?.timestamp;
 							if (ts) { timestamps.push(new Date(ts).getTime()); }
+							if (!firstUserMessage && event.data?.content) {
+								firstUserMessage = event.data.content;
+							}
+						}
+
+						// Handle Copilot CLI rename_session tool call - always use the last rename
+						if (event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session') {
+							if (event.data?.arguments?.title) { title = event.data.arguments.title; }
 						}
 
 						// Handle VS Code incremental .jsonl format
@@ -2463,6 +2472,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 					} catch {
 						// Skip malformed lines
 					}
+				}
+
+				// Fall back to first user message if no explicit title was set
+				if (!title && firstUserMessage) {
+					const trimmed = firstUserMessage.trim();
+					title = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
 				}
 			} else {
 				// JSON format - try to parse
@@ -2986,6 +3001,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 
 				// Non-delta JSONL (Copilot CLI format) - process line-by-line
+				let firstUserMessage: string | undefined;
 				for (const line of lines) {
 					if (!line.trim()) { continue; }
 					try {
@@ -3000,11 +3016,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 							if (event.data?.content) {
 								this.analyzeContextReferences(event.data.content, details.contextReferences);
+								if (!firstUserMessage) { firstUserMessage = event.data.content; }
 							}
+						}
+
+						// Handle Copilot CLI rename_session tool call - always use the last rename
+						if (event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session') {
+							if (event.data?.arguments?.title) { details.title = event.data.arguments.title; }
 						}
 					} catch {
 						// Skip malformed lines
 					}
+				}
+
+				// Fall back to first user message if no explicit title was set
+				if (!details.title && firstUserMessage) {
+					const trimmed = firstUserMessage.trim();
+					details.title = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
 				}
 
 				if (timestamps.length > 0) {
