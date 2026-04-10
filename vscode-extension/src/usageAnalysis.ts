@@ -1283,10 +1283,19 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 				// Compute model switching inline from the already-reconstructed state
 				// to avoid re-reading and re-parsing the file in calculateModelSwitching.
 				{
+					// Derive the session-level default model from reconstructed state,
+					// mirroring the selectedModel extraction used in the line-by-line path.
+					const sessionDefaultModel = (
+						sessionState.selectedModel?.identifier ||
+						sessionState.selectedModel?.metadata?.id ||
+						sessionState.inputState?.selectedModel?.metadata?.id ||
+						'gpt-4o'
+					).replace(/^copilot\//, '');
+
 					const models: string[] = [];
 					for (const req of requests) {
 						if (!req || !req.requestId) { continue; }
-						let reqModel = 'gpt-4o';
+						let reqModel = sessionDefaultModel;
 						if (req.modelId) {
 							reqModel = req.modelId.replace(/^copilot\//, '');
 						} else if (req.result?.metadata?.modelId) {
