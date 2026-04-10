@@ -3716,12 +3716,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private extractResponseData(response: any[]): {
 		responseText: string;
 		thinkingText: string;
-		toolCalls: { toolName: string; arguments?: string; result?: string }[];
+		toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
 		mcpTools: { server: string; tool: string }[];
 	} {
 		let responseText = '';
 		let thinkingText = '';
-		const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+		const toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[] = [];
 		const mcpTools: { server: string; tool: string }[] = [];
 
 		for (const item of response) {
@@ -3742,19 +3742,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Extract tool invocations
 			if (item.kind === 'toolInvocationSerialized' || item.kind === 'prepareToolInvocation') {
-				const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
-
-				// Check if this is an MCP tool by name pattern
-				if (this.isMcpTool(toolName)) {
-					const serverName = this.extractMcpServerName(toolName);
-					mcpTools.push({ server: serverName, tool: toolName });
-				} else {
-					// Add to regular tool calls
+				// Detect sub-agent calls first — tag them for the log viewer
+				const subAgentData = _extractSubAgentData(item);
+				if (subAgentData) {
+					const displayName = (item.toolSpecificData?.agentName as string | undefined) || 'Sub-Agent';
 					toolCalls.push({
-						toolName,
-						arguments: item.input ? JSON.stringify(item.input) : undefined,
-						result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+						toolName: displayName,
+						arguments: subAgentData.prompt || undefined,
+						result: undefined,
+						isSubAgent: true,
+						subAgentModel: subAgentData.modelName || undefined,
 					});
+				} else {
+					const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
+					// Check if this is an MCP tool by name pattern
+					if (this.isMcpTool(toolName)) {
+						const serverName = this.extractMcpServerName(toolName);
+						mcpTools.push({ server: serverName, tool: toolName });
+					} else {
+						// Add to regular tool calls
+						toolCalls.push({
+							toolName,
+							arguments: item.input ? JSON.stringify(item.input) : undefined,
+							result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+						});
+					}
 				}
 			}
 
