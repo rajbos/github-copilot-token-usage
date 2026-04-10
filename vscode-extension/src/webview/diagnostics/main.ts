@@ -1379,6 +1379,15 @@ function renderLayout(data: DiagnosticsData): void {
       }
 
       // Diagnostic data loaded successfully - no console needed as this is normal operation
+
+      // Update GitHub Auth tab with the auth status from the loaded data
+      if (message.githubAuth !== undefined) {
+        const githubTabContent = document.getElementById("tab-github");
+        if (githubTabContent) {
+          githubTabContent.innerHTML = renderGitHubAuthPanel(message.githubAuth);
+          setupGitHubAuthHandlers();
+        }
+      }
     } else if (message.command === "githubAuthUpdated") {
       // Update GitHub Auth tab with new authentication status
       const githubTabContent = document.getElementById("tab-github");
