@@ -2648,6 +2648,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 			details.editorName = 'Crush';
 			return;
 		}
+		if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
+			details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
+			details.editorName = 'Claude Desktop Cowork';
+			return;
+		}
+		if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
+			details.editorRoot = this.claudeCode.getClaudeCodeProjectsDir();
+			details.editorName = 'Claude Code';
+			return;
+		}
 		try {
 			const parts = sessionFile.split(/[/\\]/);
 			const userIdx = parts.findIndex(p => p.toLowerCase() === 'user');

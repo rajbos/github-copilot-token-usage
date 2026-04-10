@@ -77,8 +77,13 @@ export class ClaudeDesktopCoworkDataAccess {
 		for (const entry of entries) {
 			const fullPath = path.join(dir, entry.name);
 			if (entry.isDirectory()) {
+				// Skip the internal 'agent' directory — it contains background Cowork agent sessions
+				// that the user didn't create directly and that have no user-visible title.
+				if (entry.name === 'agent') { continue; }
 				this.walkForJsonlFiles(fullPath, results, depth + 1, maxDepth);
-			} else if (entry.name.endsWith('.jsonl')) {
+			} else if (entry.name.endsWith('.jsonl') && entry.name !== 'audit.jsonl') {
+				// Skip audit.jsonl — it's a signed audit trail, not the Claude API session JSONL.
+				// The token data is in the UUID-named JSONL under .claude/projects/.
 				try {
 					const stats = fs.statSync(fullPath);
 					if (stats.size > 0) {
