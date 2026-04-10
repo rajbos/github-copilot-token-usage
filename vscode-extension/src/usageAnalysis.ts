@@ -28,6 +28,7 @@ import {
 	estimateTokensFromText,
 	extractPerRequestUsageFromRawLines,
 	createEmptyContextRefs,
+	extractSubAgentData,
 } from './tokenEstimation';
 import {
 	getModeType,
@@ -1752,6 +1753,19 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 							}
 						}
 					}
+
+					// Sub-agent invocations are additive: not included in parent actual token counts
+					if (request.response && Array.isArray(request.response)) {
+						for (const responseItem of request.response) {
+							const subAgent = extractSubAgentData(responseItem);
+							if (subAgent) {
+								const saModel = subAgent.modelName || requestModel;
+								if (!modelUsage[saModel]) { modelUsage[saModel] = { inputTokens: 0, outputTokens: 0 }; }
+								if (subAgent.prompt) { modelUsage[saModel].inputTokens += estimateTokensFromText(subAgent.prompt, saModel, deps.tokenEstimators); }
+								if (subAgent.result) { modelUsage[saModel].outputTokens += estimateTokensFromText(subAgent.result, saModel, deps.tokenEstimators); }
+							}
+						}
+					}
 				}
 			}
 
@@ -1818,6 +1832,19 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 								const tokens = estimateTokensFromText(responseItem.value, model, deps.tokenEstimators);
 								modelUsage[model].outputTokens += tokens;
 							}
+						}
+					}
+				}
+
+				// Sub-agent invocations are additive: not included in parent actual token counts
+				if (request.response && Array.isArray(request.response)) {
+					for (const responseItem of request.response) {
+						const subAgent = extractSubAgentData(responseItem);
+						if (subAgent) {
+							const saModel = subAgent.modelName || model;
+							if (!modelUsage[saModel]) { modelUsage[saModel] = { inputTokens: 0, outputTokens: 0 }; }
+							if (subAgent.prompt) { modelUsage[saModel].inputTokens += estimateTokensFromText(subAgent.prompt, saModel, deps.tokenEstimators); }
+							if (subAgent.result) { modelUsage[saModel].outputTokens += estimateTokensFromText(subAgent.result, saModel, deps.tokenEstimators); }
 						}
 					}
 				}

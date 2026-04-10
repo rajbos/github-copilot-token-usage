@@ -68,6 +68,7 @@ import {
   createEmptyContextRefs as _createEmptyContextRefs,
   getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
   reconstructJsonlStateAsync as _reconstructJsonlStateAsync,
+  extractSubAgentData as _extractSubAgentData,
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
@@ -3853,6 +3854,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 							// Separate thinking tokens
 							if (responseItem.kind === 'thinking' && responseItem.value) {
 								totalThinkingTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
+								continue;
+							}
+							// Sub-agent invocations: count prompt (input) + result (output)
+							const subAgent = _extractSubAgentData(responseItem);
+							if (subAgent) {
+								const saModel = subAgent.modelName || this.getModelFromRequest(request);
+								if (subAgent.prompt) { totalInputTokens += this.estimateTokensFromText(subAgent.prompt, saModel); }
+								if (subAgent.result) { totalOutputTokens += this.estimateTokensFromText(subAgent.result, saModel); }
 								continue;
 							}
 							if (responseItem.value) {

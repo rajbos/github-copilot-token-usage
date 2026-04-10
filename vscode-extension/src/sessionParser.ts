@@ -2,6 +2,8 @@ export interface ModelUsage {
     [model: string]: { inputTokens: number; outputTokens: number };
 }
 
+import { extractSubAgentData } from './tokenEstimation';
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -292,6 +294,19 @@ export function parseSessionFileContent(
 					if (thinkingText) {
 						totalThinkingTokens += estimateTokensFromText(thinkingText, model);
 					}
+
+					// Also count sub-agent invocations (tracked under the sub-agent's own model)
+					const responseItems = (request as any).response;
+					if (Array.isArray(responseItems)) {
+						for (const responseItem of responseItems) {
+							const subAgent = extractSubAgentData(responseItem);
+							if (subAgent) {
+								const saModel = subAgent.modelName || model;
+								if (subAgent.prompt) { addInput(saModel, subAgent.prompt); }
+								if (subAgent.result) { addOutput(saModel, subAgent.result); }
+							}
+						}
+					}
 				}
 			}
 
@@ -347,6 +362,14 @@ export function parseSessionFileContent(
 			// Separate thinking tokens
 			if (responseItem?.kind === 'thinking' && typeof responseItem?.value === 'string' && responseItem.value) {
 				totalThinkingTokens += estimateTokensFromText(responseItem.value, model);
+				continue;
+			}
+			// Sub-agent invocations: count prompt (input) + result (output) under sub-agent model
+			const subAgent = extractSubAgentData(responseItem);
+			if (subAgent) {
+				const saModel = subAgent.modelName || model;
+				if (subAgent.prompt) { addInput(saModel, subAgent.prompt); }
+				if (subAgent.result) { addOutput(saModel, subAgent.result); }
 				continue;
 			}
 			if (typeof responseItem?.value === 'string' && responseItem.value) {
