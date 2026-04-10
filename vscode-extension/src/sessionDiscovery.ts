@@ -20,6 +20,7 @@ export interface SessionDiscoveryDeps {
 	continue_: ContinueDataAccess;
 	visualStudio: VisualStudioDataAccess;
 	claudeCode: ClaudeCodeDataAccess;
+	sampleDataDirectoryOverride?: () => string | undefined;
 }
 
 export class SessionDiscovery {
@@ -226,7 +227,8 @@ export class SessionDiscovery {
 		}
 
 		// Screenshot/demo mode: if a sample data directory is configured, use it exclusively
-		const sampleDir = vscode.workspace.getConfiguration('copilot-token-tracker').get<string>('sampleDataDirectory');
+		const sampleDir = this.deps.sampleDataDirectoryOverride?.()
+			?? vscode.workspace.getConfiguration('copilot-token-tracker').get<string>('sampleDataDirectory');
 		if (sampleDir && sampleDir.trim().length > 0) {
 			const resolvedSampleDir = sampleDir.trim();
 			try {
@@ -569,4 +571,3 @@ export class SessionDiscovery {
 		return nonSessionFilePatterns.some(pattern => lowerFilename.includes(pattern));
 	}
 }
-

@@ -108,6 +108,33 @@ import {
   normalizeMcpToolName as _normalizeMcpToolName,
   extractMcpServerName as _extractMcpServerName,
 } from './workspaceHelpers';
+import {
+  createViewRegressionProbeScript,
+  evaluateViewRegressionProbe,
+  formatLocalViewRegressionReport,
+  type LocalViewRegressionMetric,
+  type LocalViewRegressionResult,
+  type ViewRegressionExpectation,
+  type ViewRegressionProbeConfig,
+  type ViewRegressionProbeSnapshot,
+} from './viewRegression';
+
+type LocalViewRegressionProbeResult = {
+  pass: boolean;
+  summary: string;
+  timedOut?: boolean;
+  metrics?: ViewRegressionProbeSnapshot;
+};
+
+type LocalViewRegressionCase = {
+  id: string;
+  title: string;
+  timeoutMs: number;
+  expectations: ViewRegressionExpectation;
+  dataPoints: LocalViewRegressionMetric[];
+  reset: () => void;
+  open: () => Promise<void>;
+};
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
@@ -137,6 +164,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 	private readonly context: vscode.ExtensionContext;
+	private localRegressionSampleDataDir?: string;
+	private pendingLocalViewRegressionProbe?: ViewRegressionProbeConfig;
+	private readonly localViewRegressionResolvers = new Map<string, (result: LocalViewRegressionProbeResult) => void>();
 
 
 	/**
@@ -374,6 +404,307 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return true;
 	}
 
+	private consumeLocalViewRegressionProbe(viewId: string): ViewRegressionProbeConfig | undefined {
+		const probe = this.pendingLocalViewRegressionProbe;
+		if (probe?.viewId !== viewId) {
+			return undefined;
+		}
+		this.pendingLocalViewRegressionProbe = undefined;
+		return probe;
+	}
+
+	private getLocalViewRegressionProbeScript(viewId: string, nonce: string): string {
+		return createViewRegressionProbeScript(nonce, this.consumeLocalViewRegressionProbe(viewId));
+	}
+
+	private handleLocalViewRegressionMessage(message: any): boolean {
+		if (message?.command !== 'localViewRegressionReport' || typeof message.runId !== 'string') {
+			return false;
+		}
+
+		const resolve = this.localViewRegressionResolvers.get(message.runId);
+		if (!resolve) {
+			return true;
+		}
+
+		this.localViewRegressionResolvers.delete(message.runId);
+		resolve({
+			pass: Boolean(message.pass),
+			summary: typeof message.summary === 'string' ? message.summary : 'Local view regression probe finished.',
+			timedOut: Boolean(message.timedOut),
+			metrics: typeof message.metrics === 'object' && message.metrics
+				? message.metrics as ViewRegressionProbeSnapshot
+				: undefined,
+		});
+		return true;
+	}
+
+	private getBundledLocalViewRegressionSampleDir(): string {
+		return path.join(this.extensionUri.fsPath, 'test', 'fixtures', 'sample-session-data', 'chatSessions');
+	}
+
+	private async ensureLocalViewRegressionSampleDir(): Promise<string> {
+		const sampleDir = this.getBundledLocalViewRegressionSampleDir();
+		await fs.promises.access(sampleDir);
+		return sampleDir;
+	}
+
+	private async runLocalViewRegressionCase(viewCase: LocalViewRegressionCase): Promise<LocalViewRegressionResult> {
+		viewCase.reset();
+		const runId = `${viewCase.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+		const probePromise = new Promise<LocalViewRegressionProbeResult>((resolve) => {
+			let settled = false;
+			const finish = (result: LocalViewRegressionProbeResult) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				this.localViewRegressionResolvers.delete(runId);
+				resolve(result);
+			};
+
+			this.localViewRegressionResolvers.set(runId, finish);
+			setTimeout(() => {
+				finish({
+					pass: false,
+					summary: `No regression probe response received within ${Math.round(viewCase.timeoutMs / 1000)}s.`,
+					timedOut: true,
+				});
+			}, viewCase.timeoutMs + 750).unref();
+		});
+
+		try {
+			this.pendingLocalViewRegressionProbe = {
+				runId,
+				viewId: viewCase.id,
+				title: viewCase.title,
+				timeoutMs: viewCase.timeoutMs,
+				expectations: viewCase.expectations,
+			};
+			await viewCase.open();
+		} catch (error) {
+			this.pendingLocalViewRegressionProbe = undefined;
+			this.localViewRegressionResolvers.delete(runId);
+			return {
+				id: viewCase.id,
+				title: viewCase.title,
+				status: 'fail',
+				detail: error instanceof Error ? error.message : String(error),
+				dataPoints: viewCase.dataPoints,
+			};
+		}
+
+		const probeResult = await probePromise;
+		const evaluated = probeResult.metrics
+			? evaluateViewRegressionProbe(viewCase.expectations, probeResult.metrics)
+			: { pass: probeResult.pass, summary: probeResult.summary };
+
+		return {
+			id: viewCase.id,
+			title: viewCase.title,
+			status: evaluated.pass ? 'pass' : 'fail',
+			detail: probeResult.summary || evaluated.summary,
+			dataPoints: viewCase.dataPoints,
+			probe: probeResult.metrics,
+		};
+	}
+
+	public async runLocalViewRegression(): Promise<void> {
+		if (this.context.extensionMode !== vscode.ExtensionMode.Development) {
+			await vscode.window.showWarningMessage('Local view regression is only available in the Extension Development Host.');
+			return;
+		}
+
+		this.outputChannel.show(true);
+
+		const previousSampleDir = this.localRegressionSampleDataDir;
+		this.localRegressionSampleDataDir = '';
+		this.sessionDiscovery.clearCache();
+		this.lastDetailedStats = undefined;
+		this.lastDailyStats = undefined;
+		this.lastUsageAnalysisStats = undefined;
+
+		const results: LocalViewRegressionResult[] = [];
+		let dataSourceLabel = 'local session data';
+
+		try {
+			let sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+			if (sessionFiles.length === 0) {
+				let sampleDir: string;
+				try {
+					sampleDir = await this.ensureLocalViewRegressionSampleDir();
+				} catch {
+					await vscode.window.showErrorMessage('Bundled sample session data was not found. Expected test fixtures under vscode-extension\\test\\fixtures\\sample-session-data\\chatSessions.');
+					return;
+				}
+				this.localRegressionSampleDataDir = sampleDir;
+				this.sessionDiscovery.clearCache();
+				sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+				dataSourceLabel = `bundled sample data (${sampleDir})`;
+			}
+
+			this.log(`🧪 Starting local view regression using ${dataSourceLabel}. Found ${sessionFiles.length} session file(s).`);
+
+			const detailedStats = await this.updateTokenStats(true);
+			if (!detailedStats) {
+				throw new Error(`Failed to calculate detailed stats from ${dataSourceLabel}.`);
+			}
+
+			const dailyStats = this.lastDailyStats ?? await this.calculateDailyStats();
+			const usageStats = await this.calculateUsageAnalysisStats(false);
+			const maturityData = await this.calculateMaturityScores(false);
+			const diagnosticReport = await this.generateDiagnosticReport();
+			const fluencyLevelData = this.getFluencyLevelData(true);
+			const totalFluencyLevels = fluencyLevelData.categories.reduce((sum, category) => sum + category.levels.length, 0);
+			const categoriesWithEvidence = maturityData.categories.filter((category) => category.evidence.length > 0).length;
+			const chartTotals = this.buildChartData(dailyStats);
+
+			const cases: LocalViewRegressionCase[] = [
+				{
+					id: 'details',
+					title: 'Details',
+					timeoutMs: 25000,
+					expectations: { minRootChildren: 1, minBodyTextLength: 120, minRootTextLength: 80 },
+					dataPoints: [
+						{ label: 'today tokens', value: detailedStats.today.tokens },
+						{ label: '30d tokens', value: detailedStats.last30Days.tokens },
+						{ label: '30d sessions', value: detailedStats.last30Days.sessions },
+					],
+					reset: () => this.detailsPanel?.dispose(),
+					open: () => this.showDetails(),
+				},
+				{
+					id: 'chart',
+					title: 'Chart',
+					timeoutMs: 25000,
+					expectations: { minRootChildren: 1, minBodyTextLength: 20, minCanvasOrSvg: 1 },
+					dataPoints: [
+						{ label: 'days', value: chartTotals.dailyCount },
+						{ label: 'tokens', value: chartTotals.totalTokens },
+						{ label: 'sessions', value: chartTotals.totalSessions },
+					],
+					reset: () => this.chartPanel?.dispose(),
+					open: () => this.showChart(),
+				},
+				{
+					id: 'usage',
+					title: 'Usage Analysis',
+					timeoutMs: 25000,
+					expectations: { minRootChildren: 1, minBodyTextLength: 140, minRootTextLength: 80 },
+					dataPoints: [
+						{ label: '30d sessions', value: usageStats.last30Days.sessions },
+						{ label: 'repos', value: usageStats.last30Days.repositories.length },
+						{ label: 'tool calls', value: usageStats.last30Days.toolCalls.total },
+					],
+					reset: () => this.analysisPanel?.dispose(),
+					open: () => this.showUsageAnalysis(),
+				},
+				{
+					id: 'maturity',
+					title: 'Fluency Score',
+					timeoutMs: 25000,
+					expectations: { minRootChildren: 1, minBodyTextLength: 120, minRootTextLength: 80 },
+					dataPoints: [
+						{ label: 'overall', value: maturityData.overallLabel },
+						{ label: 'categories', value: maturityData.categories.length },
+						{ label: 'with evidence', value: categoriesWithEvidence },
+					],
+					reset: () => this.maturityPanel?.dispose(),
+					open: () => this.showMaturity(),
+				},
+				{
+					id: 'environmental',
+					title: 'Environmental Impact',
+					timeoutMs: 25000,
+					expectations: { minRootChildren: 1, minBodyTextLength: 100, minRootTextLength: 70 },
+					dataPoints: [
+						{ label: '30d tokens', value: detailedStats.last30Days.tokens },
+						{ label: 'CO2 g', value: detailedStats.last30Days.co2.toFixed(2) },
+						{ label: 'water L', value: detailedStats.last30Days.waterUsage.toFixed(2) },
+					],
+					reset: () => this.environmentalPanel?.dispose(),
+					open: () => this.showEnvironmental(),
+				},
+				{
+					id: 'diagnostics',
+					title: 'Diagnostics',
+					timeoutMs: 30000,
+					expectations: {
+						minRootChildren: 1,
+						minBodyTextLength: 140,
+						minRootTextLength: 80,
+						disallowTextPatterns: ['loading...'],
+					},
+					dataPoints: [
+						{ label: 'session files', value: sessionFiles.length },
+						{ label: 'report lines', value: diagnosticReport.split(/\r?\n/).length },
+					],
+					reset: () => this.diagnosticsPanel?.dispose(),
+					open: () => this.showDiagnosticReport(),
+				},
+				{
+					id: 'fluency-level-viewer',
+					title: 'Fluency Level Viewer',
+					timeoutMs: 25000,
+					expectations: { minRootChildren: 1, minBodyTextLength: 120, minRootTextLength: 80 },
+					dataPoints: [
+						{ label: 'categories', value: fluencyLevelData.categories.length },
+						{ label: 'levels', value: totalFluencyLevels },
+					],
+					reset: () => this.fluencyLevelViewerPanel?.dispose(),
+					open: () => this.showFluencyLevelViewer(),
+				},
+			];
+
+			for (const viewCase of cases) {
+				results.push(await this.runLocalViewRegressionCase(viewCase));
+			}
+
+			results.push({
+				id: 'dashboard',
+				title: 'Team Dashboard',
+				status: 'skip',
+				detail: 'Skipped because this view requires a configured backend.',
+			});
+		} catch (error) {
+			results.push({
+				id: 'regression-runner',
+				title: 'Local regression runner',
+				status: 'fail',
+				detail: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			this.pendingLocalViewRegressionProbe = undefined;
+			this.localRegressionSampleDataDir = previousSampleDir;
+			this.sessionDiscovery.clearCache();
+			this.lastDetailedStats = undefined;
+			this.lastDailyStats = undefined;
+			this.lastUsageAnalysisStats = undefined;
+			this.lastDashboardData = undefined;
+		}
+
+		const report = formatLocalViewRegressionReport(results);
+		this.outputChannel.appendLine('');
+		for (const line of report.split(/\r?\n/)) {
+			this.outputChannel.appendLine(line);
+		}
+		this.outputChannel.appendLine('');
+
+		const failures = results.filter((result) => result.status === 'fail').length;
+		const passed = results.filter((result) => result.status === 'pass').length;
+		const skipped = results.filter((result) => result.status === 'skip').length;
+		const summary = failures === 0
+			? `Local view regression passed: ${passed} view(s), ${skipped} skipped. Data source: ${dataSourceLabel}.`
+			: `Local view regression found ${failures} failing view(s). Data source: ${dataSourceLabel}. See the output channel for details.`;
+		const choice = failures === 0
+			? await vscode.window.showInformationMessage(summary, 'Show Output')
+			: await vscode.window.showWarningMessage(summary, 'Show Output');
+		if (choice === 'Show Output') {
+			this.outputChannel.show(true);
+		}
+	}
+
 	// Cache management methods
 	/**
 	 * Checks if the cache is valid for a file by comparing mtime and size.
@@ -473,7 +804,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.visualStudio = new VisualStudioDataAccess();
 		this.claudeCode = new ClaudeCodeDataAccess();
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
-		this.sessionDiscovery = new SessionDiscovery({ log: (m) => this.log(m), warn: (m) => this.warn(m), error: (m, e) => this.error(m, e), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode });
+		this.sessionDiscovery = new SessionDiscovery({
+			log: (m) => this.log(m),
+			warn: (m) => this.warn(m),
+			error: (m, e) => this.error(m, e),
+			openCode: this.openCode,
+			crush: this.crush,
+			visualStudio: this.visualStudio,
+			continue_: this.continue_,
+			claudeCode: this.claudeCode,
+			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
+		});
 		this.context = context;
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('AI Engineering Fluency');
@@ -3628,11 +3969,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		this.log('✅ Details panel created successfully');
 
-		// Set the HTML content
-		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
-
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
+			if (this.handleLocalViewRegressionMessage(message)) { return; }
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'refresh':
@@ -3645,6 +3984,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 			}
 		});
+
+		// Set the HTML content
+		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 
 		// Handle panel disposal
 		this.detailsPanel.onDidDispose(() => {
@@ -3681,9 +4023,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		);
 
-		this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
-
 		this.environmentalPanel.webview.onDidReceiveMessage(async (message) => {
+			if (this.handleLocalViewRegressionMessage(message)) { return; }
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			if (message.command === 'refresh') {
 				await this.dispatch('refresh:environmental', async () => {
@@ -3694,6 +4035,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				});
 			}
 		});
+
+		this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
 
 		this.environmentalPanel.onDidDispose(() => {
 			this.log('🌿 Environmental Impact view closed');
@@ -3733,6 +4076,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_ENVIRONMENTAL__ = ${initialData};</script>
+			${this.getLocalViewRegressionProbeScript('environmental', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -3768,16 +4112,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		this.log('✅ Chart view created successfully');
 
-		// Set the HTML content
-		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
-
 		// Handle messages from the webview
 		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
+			if (this.handleLocalViewRegressionMessage(message)) { return; }
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			if (message.command === 'refresh') {
 				await this.dispatch('refresh:chart', () => this.refreshChartPanel());
 			}
 		});
+
+		// Set the HTML content
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
 
 		// Handle panel disposal
 		this.chartPanel.onDidDispose(() => {
@@ -3816,11 +4161,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		this.log('✅ Usage Analysis dashboard created successfully');
 
-		// Set the HTML content
-		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
-
 		// Handle messages from the webview
 		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
+			if (this.handleLocalViewRegressionMessage(message)) { return; }
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'refresh':
@@ -3839,6 +4182,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					break;
 			}
 		});
+
+		// Set the HTML content
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
 
 		// Handle panel disposal
 		this.analysisPanel.onDidDispose(() => {
@@ -4486,9 +4832,8 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 
 		const dismissedTips = await this.getDismissedFluencyTips();
 		const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
-		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
-
 		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
+			if (this.handleLocalViewRegressionMessage(message)) { return; }
 			if (await this.dispatchSharedCommand(message.command)) { return; }
 			switch (message.command) {
 				case 'refresh':
@@ -4557,6 +4902,8 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 					break;
 			}
 		});
+
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
 
 	this.maturityPanel.onDidDispose(() => {
 		this.log('🎯 Copilot Fluency Score dashboard closed');
@@ -4977,18 +5324,19 @@ ${hashtag}`;
       },
     );
 
-    this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
-      this.fluencyLevelViewerPanel.webview,
-      fluencyLevelData,
-    );
-
     this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(
       async (message) => {
+        if (this.handleLocalViewRegressionMessage(message)) { return; }
         if (await this.dispatchSharedCommand(message.command)) { return; }
         if (message.command === "refresh") {
           await this.dispatch('refresh:fluencyLevelViewer', () => this.refreshFluencyLevelViewerPanel());
         }
       },
+    );
+
+    this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
+      this.fluencyLevelViewerPanel.webview,
+      fluencyLevelData,
     );
 
     this.fluencyLevelViewerPanel.onDidDispose(() => {
@@ -5072,6 +5420,7 @@ ${hashtag}`;
 	<body>
 		<div id="root"></div>
 		<script nonce="${nonce}">window.__INITIAL_FLUENCY_LEVEL_DATA__ = ${initialData};</script>
+		${this.getLocalViewRegressionProbeScript('fluency-level-viewer', nonce)}
 		<script nonce="${nonce}" src="${scriptUri}"></script>
 	</body>
 	</html>`;
@@ -5139,6 +5488,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_MATURITY__ = ${initialData};</script>
+			${this.getLocalViewRegressionProbeScript('maturity', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -5976,6 +6326,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
+			${this.getLocalViewRegressionProbeScript('details', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -6249,20 +6600,9 @@ ${hashtag}`;
 
     this.log("✅ Diagnostic Report panel created");
 
-    // Set the HTML content immediately with loading state
-    // Note: "Loading..." is the agreed contract between backend and frontend
-    // The webview checks for this value to show a loading indicator
-    this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
-      this.diagnosticsPanel.webview,
-      "Loading...", // Placeholder report
-      [], // Empty session files
-      [], // Empty detailed session files
-      [], // Empty session folders
-      null, // No backend info yet
-    );
-
     // Handle messages from the webview
     this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
+      if (this.handleLocalViewRegressionMessage(message)) { return; }
       if (await this.dispatchSharedCommand(message.command)) { return; }
       switch (message.command) {
         case "copyReport":
@@ -6445,6 +6785,18 @@ ${hashtag}`;
           break;
       }
     });
+
+    // Set the HTML content immediately with loading state
+    // Note: "Loading..." is the agreed contract between backend and frontend
+    // The webview checks for this value to show a loading indicator
+    this.diagnosticsPanel.webview.html = this.getDiagnosticReportHtml(
+      this.diagnosticsPanel.webview,
+      "Loading...", // Placeholder report
+      [], // Empty session files
+      [], // Empty detailed session files
+      [], // Empty session folders
+      null, // No backend info yet
+    );
 
     // Handle panel disposal
     this.diagnosticsPanel.onDidDispose(() => {
@@ -6877,6 +7229,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_DIAGNOSTICS__ = ${initialData};</script>
+			${this.getLocalViewRegressionProbeScript('diagnostics', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -7028,6 +7381,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_CHART__ = ${initialData};</script>
+			${this.getLocalViewRegressionProbeScript('chart', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -7091,6 +7445,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_USAGE__ = ${initialData};</script>
+			${this.getLocalViewRegressionProbeScript('usage', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -7289,6 +7644,14 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  const runLocalViewRegressionCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.runLocalViewRegression",
+    async () => {
+      tokenTracker.log("Run local view regression command called");
+      await tokenTracker.runLocalViewRegression();
+    },
+  );
+
   // Register the generate diagnostic report command
   const generateDiagnosticReportCommand = vscode.commands.registerCommand(
     "copilot-token-tracker.generateDiagnosticReport",
@@ -7315,6 +7678,7 @@ export function activate(context: vscode.ExtensionContext) {
     showUsageAnalysisCommand,
     showMaturityCommand,
     showFluencyLevelViewerCommand,
+    runLocalViewRegressionCommand,
     showDashboardCommand,
     showEnvironmentalCommand,
     generateDiagnosticReportCommand,
