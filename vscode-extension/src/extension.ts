@@ -3504,12 +3504,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 					});
 				};
 
+				const isRealUserMessage = (event: any): boolean => {
+					const content = event.message?.content;
+					if (typeof content === 'string') { return !!content.trim(); }
+					if (!Array.isArray(content)) { return false; }
+					const hasText = content.some((c: any) => c.type === 'text');
+					const hasToolResult = content.some((c: any) => c.type === 'tool_result');
+					return hasText && !hasToolResult;
+				};
+
 				for (const event of events) {
-					if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
+					if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user' && isRealUserMessage(event)) {
 						emitTurn();
 						currentUserEvent = event;
 						pendingAssistantEvents.length = 0;
-					} else if (!event.type && event.message?.role === 'assistant') {
+					} else if (event.type === 'assistant' && event.message?.stop_reason && event.message?.role === 'assistant') {
+						// Only collect final (non-streaming) assistant events — stop_reason is '' on fragments
 						pendingAssistantEvents.push(event);
 					}
 				}

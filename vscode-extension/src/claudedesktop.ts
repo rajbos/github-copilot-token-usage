@@ -130,15 +130,16 @@ export class ClaudeDesktopCoworkDataAccess {
 		const seenRequestIds = new Set<string>();
 
 		for (const event of events) {
-			// Cowork format: assistant messages have message.role === 'assistant', no top-level type
-			if (event.message?.role !== 'assistant') { continue; }
+			// Cowork format: ALL assistant events (streaming and final) have type:'assistant'
+			if (event.type !== 'assistant') { continue; }
 			const usage = event.message?.usage;
 			if (!usage) { continue; }
 
 			const requestId = event.requestId;
 			if (requestId) {
-				if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) {
-					continue; // Streaming fragment — skip
+				// stop_reason is '' on streaming fragments, 'tool_use'/'end_turn' on final events
+				if (!event.message?.stop_reason) {
+					continue; // Streaming fragment — skip (falsy catches null, undefined, and '')
 				}
 				if (seenRequestIds.has(requestId)) { continue; }
 				seenRequestIds.add(requestId);
@@ -187,14 +188,15 @@ export class ClaudeDesktopCoworkDataAccess {
 		const seenRequestIds = new Set<string>();
 
 		for (const event of events) {
-			// Cowork format: assistant messages have message.role === 'assistant', no top-level type
-			if (event.message?.role !== 'assistant') { continue; }
+			// Cowork format: ALL assistant events have type:'assistant' at top level
+			if (event.type !== 'assistant') { continue; }
 			const usage = event.message?.usage;
 			if (!usage) { continue; }
 
 			const requestId = event.requestId;
 			if (requestId) {
-				if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) { continue; }
+				// stop_reason is '' on streaming fragments, 'tool_use'/'end_turn' on final events
+				if (!event.message?.stop_reason) { continue; }
 				if (seenRequestIds.has(requestId)) { continue; }
 				seenRequestIds.add(requestId);
 			}
