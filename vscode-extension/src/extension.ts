@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -2440,6 +2440,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (ts) { timestamps.push(new Date(ts).getTime()); }
 						}
 
+						// Handle Copilot CLI rename_session tool call - always use the last rename
+						if (event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session') {
+							if (event.data?.arguments?.title) { title = event.data.arguments.title; }
+						}
+
 						// Handle VS Code incremental .jsonl format
 						if (event.kind === 0 && event.v) {
 							if (event.v.creationDate) { timestamps.push(event.v.creationDate); }
@@ -3001,6 +3006,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (event.data?.content) {
 								this.analyzeContextReferences(event.data.content, details.contextReferences);
 							}
+						}
+
+						// Handle Copilot CLI rename_session tool call - always use the last rename
+						if (event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session') {
+							if (event.data?.arguments?.title) { details.title = event.data.arguments.title; }
 						}
 					} catch {
 						// Skip malformed lines
