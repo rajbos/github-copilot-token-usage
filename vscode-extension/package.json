@@ -275,6 +275,14 @@
           "type": "string",
           "default": "",
           "description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation."
+        },
+        "copilotTokenTracker.suppressedUnknownTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of tool names to suppress from the 'Unknown Tools Found' section in the Usage Analysis dashboard. Useful for tools you are testing that don't yet have friendly display names."
         }
       }
     }

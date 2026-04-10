@@ -47,6 +47,7 @@ type UsageAnalysisStats = {
 	missedPotential?: MissedPotentialWorkspace[];
 	backendConfigured?: boolean;
 	currentWorkspacePaths?: string[];
+	suppressedUnknownTools?: string[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -159,9 +160,11 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+
+	const suppressed = new Set<string>(stats.suppressedUnknownTools ?? []);
 	
-	// Filter to only unknown tools (where lookupToolName returns the same value)
-	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool).sort();
+	// Filter to only unknown tools (where lookupToolName returns the same value) and not suppressed
+	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool && !suppressed.has(tool)).sort();
 }
 
 function createMcpToolIssueUrl(unknownTools: string[]): string {
@@ -948,7 +951,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 								if (last30Count > todayCount) { countParts.push(`${last30Count} in the last 30d`); }
 								if (monthCount > last30Count) { countParts.push(`${monthCount} this month`); }
 								const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${countParts.join(' | ')})</span>` : '';
-								return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${countHtml}</span>`;
+								const suppressBtn = `<button data-suppress-tool="${escapeHtml(tool)}" title="Suppress this tool from the unknown list" style="background:none; border:none; cursor:pointer; padding:0 2px; color:var(--text-muted); font-size:11px; line-height:1;" aria-label="Suppress ${escapeHtml(tool)}">🔇</button>`;
+								return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:3px; font-family:monospace; font-size:11px;">${escapeHtml(tool)}${countHtml}${suppressBtn}</span>`;
 							}).join(' ');
 							return `
 								<div id="unknown-mcp-tools-section" style="margin-bottom: 12px; padding: 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;">
@@ -1702,6 +1706,15 @@ async function bootstrap(): Promise<void> {
 	console.log('[Usage Analysis] Test format 1234567.89 with received locale:', new Intl.NumberFormat(initialData.locale).format(1234567.89));
 	setFormatLocale(initialData.locale);
 	renderLayout(initialData);
+
+	// Event delegation for suppress-tool buttons (rendered dynamically in the tools section)
+	document.addEventListener('click', (event) => {
+		const target = event.target as HTMLElement;
+		const toolName = target.getAttribute('data-suppress-tool');
+		if (toolName) {
+			vscode.postMessage({ command: 'suppressUnknownTool', toolName });
+		}
+	});
 }
 
 void bootstrap();

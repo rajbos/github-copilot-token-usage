@@ -4169,6 +4169,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 						vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true })
 					);
 					break;
+				case 'suppressUnknownTool': {
+					const toolName = message.toolName as string;
+					if (toolName) {
+						const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+						const current = config.get<string[]>('suppressedUnknownTools', []);
+						if (!current.includes(toolName)) {
+							await config.update('suppressedUnknownTools', [...current, toolName], vscode.ConfigurationTarget.Global);
+							this.log(`🔇 Suppressed unknown tool: ${toolName}`);
+						}
+						await this.dispatch('refresh:analysis', () => this.refreshAnalysisPanel());
+					}
+					break;
+				}
 			}
 		});
 
@@ -7411,6 +7424,10 @@ ${hashtag}`;
       `[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`,
     );
 
+    const suppressedUnknownTools = vscode.workspace
+      .getConfiguration('copilotTokenTracker')
+      .get<string[]>('suppressedUnknownTools', []);
+
     const initialData = JSON.stringify({
       today: stats.today,
       last30Days: stats.last30Days,
@@ -7421,6 +7438,7 @@ ${hashtag}`;
       lastUpdated: stats.lastUpdated.toISOString(),
       backendConfigured: this.isBackendConfigured(),
       currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
+      suppressedUnknownTools,
     }).replace(/</g, "\\u003c");
 
     return `<!DOCTYPE html>
