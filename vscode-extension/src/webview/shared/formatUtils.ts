@@ -36,6 +36,8 @@ export function getEditorIcon(editor: string): string {
 		'Copilot CLI': '🤖',
 		'OpenCode': '🟢',
             'Visual Studio': '🪟',
+		'Claude Code': '🟠',
+		'Claude Desktop Cowork': '🟠',
 		'Unknown': '❓'
 	};
 	return icons[editor] || '📝';

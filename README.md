@@ -14,6 +14,7 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 - OpenCode + GitHub Copilot
 - Crush + GitHub Copilot
 - Claude Code (Anthropic)
+- Claude Desktop Cowork (Anthropic)
 - Visual Studio + GitHub Copilot
 
 ---

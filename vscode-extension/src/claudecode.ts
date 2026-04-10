@@ -56,10 +56,13 @@ export class ClaudeCodeDataAccess {
 
 	/**
 	 * Check if a file path is a Claude Code session file.
+	 * Requires the path to be under the user's ~/.claude/projects/ directory to avoid
+	 * false-positives on Cowork sessions that have a nested .claude/projects/ sub-path.
 	 */
 	isClaudeCodeSessionFile(filePath: string): boolean {
 		const normalized = filePath.toLowerCase().replace(/\\/g, '/');
-		return normalized.includes('/.claude/projects/') && normalized.endsWith('.jsonl');
+		const projectsDir = this.getClaudeCodeProjectsDir().toLowerCase().replace(/\\/g, '/');
+		return normalized.startsWith(projectsDir) && normalized.endsWith('.jsonl');
 	}
 
 	/**
