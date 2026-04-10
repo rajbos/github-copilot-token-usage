@@ -464,7 +464,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 	const cellCenter = `${cell} text-align: center;`;
 
 	const rows = data.repos.map((r) => {
-		const repoLink = `<a href="${escapeHtml(r.repoUrl)}" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
+		const repoLink = `<a href="${escapeHtml(r.repoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
 		if (r.error) {
 			return `<tr>
 				<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}</td>
@@ -475,7 +475,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		let detailsHtml = '';
 		if (r.aiDetails.length > 0) {
 			const items = r.aiDetails.map(d =>
-				`<li><a href="${escapeHtml(d.url)}" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? escapeHtml(String(d.aiType))} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
+				`<li><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? escapeHtml(String(d.aiType))} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
 			).join('');
 			detailsHtml = `
 				<details style="margin-top:4px; font-size:11px;">

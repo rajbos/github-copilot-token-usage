@@ -132,7 +132,7 @@
       },
       {
         "command": "copilot-token-tracker.signOutGitHub",
-        "title": "Sign Out from GitHub",
+        "title": "Disconnect GitHub",
         "category": "AI Engineering Fluency"
       }
     ],

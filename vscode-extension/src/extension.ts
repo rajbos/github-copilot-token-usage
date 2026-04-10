@@ -883,6 +883,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Restore GitHub authentication session if previously authenticated
 		this._sessionRestorePromise = this.restoreGitHubSession();
 
+		// Keep in-memory session in sync if the underlying VS Code auth session changes
+		// (e.g. user signs out of GitHub from the Accounts menu or token expires)
+		context.subscriptions.push(
+			vscode.authentication.onDidChangeSessions(async (e) => {
+				if (e.provider.id !== 'github') { return; }
+				if (this._githubSignedOutByUser) { return; } // user explicitly disconnected; don't auto-reconnect
+				const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+				if (session) {
+					this.githubSession = session;
+					await this.context.globalState.update('github.authenticated', true);
+					await this.context.globalState.update('github.username', session.account.label);
+				} else {
+					this.githubSession = undefined;
+					await this.context.globalState.update('github.authenticated', false);
+					await this.context.globalState.update('github.username', undefined);
+					this.log('GitHub session removed externally — clearing auth state');
+				}
+			})
+		);
+
 		// Check GitHub Copilot extension status
 		this.sessionDiscovery.checkCopilotExtension();
 
@@ -1214,6 +1234,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				},
 			);
 			req.on('error', (e) => resolve({ prs: [], error: e.message }));
+			req.setTimeout(15000, () => {
+				req.destroy(new Error('Request timed out after 15 s'));
+			});
 			req.end();
 		});
 	}
@@ -1233,7 +1256,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const msg = statusCode === 404
 					? 'Repo not found or not accessible with current token'
 					: statusCode === 403
-					? 'Access denied (private repo requires additional permissions)'
+					? (error || 'Access denied (private repo requires additional permissions)')
 					: error;
 				return { prs: allPrs, error: msg };
 			}

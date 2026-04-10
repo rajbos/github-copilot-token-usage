@@ -31,7 +31,7 @@ Search for **"AI Engineering Fluency"** in the VS Code Extensions panel, or inst
 
 - **Opt-in Authentication**: Sign in with your configured GitHub account in VS Code
 - **Built-in VS Code Integration**: Uses VS Code's native authentication provider for GitHub
-- **Secure Storage**: Authentication state is securely stored in VS Code's global state
+- **Stored State**: Authentication state is stored in VS Code global state (no tokens stored)
 - **Future Features**: Foundation for upcoming GitHub-specific features such as:
   - Repository-specific usage tracking
   - Team collaboration features

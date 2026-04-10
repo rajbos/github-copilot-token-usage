@@ -768,8 +768,8 @@ ${authenticated ? `
 <div class="button-group">
   ${authenticated ? `
     <button class="button secondary" id="btn-sign-out-github">
-      <span>🚪</span>
-      <span>Sign Out</span>
+      <span>🔌</span>
+      <span>Disconnect GitHub</span>
     </button>
   ` : `
     <button class="button" id="btn-authenticate-github">
