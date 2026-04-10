@@ -21,6 +21,52 @@ export function estimateTokensFromText(text: string, model: string = 'gpt-4', to
 }
 
 /**
+ * Normalize a display model name (e.g. "Claude Haiku 4.5") to a model ID slug
+ * (e.g. "claude-haiku-4.5") so it can be matched against tokenEstimators keys.
+ */
+export function normalizeDisplayModelName(displayName: string): string {
+	return displayName.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
+ * Extract sub-agent prompt (input) and result (output) text from a
+ * `toolInvocationSerialized` response item where `toolSpecificData.kind === 'subagent'`.
+ *
+ * Returns null if the item is not a completed sub-agent invocation.
+ *
+ * The `result` field may be stored as:
+ *   - a plain string, or
+ *   - a streaming-char object: { "0": "H", "1": "i", ... }
+ */
+export function extractSubAgentData(item: unknown): { prompt: string; result: string; modelName: string } | null {
+	if (!item || typeof item !== 'object') { return null; }
+	const i = item as Record<string, unknown>;
+	if (i['kind'] !== 'toolInvocationSerialized') { return null; }
+	const tsd = i['toolSpecificData'];
+	if (!tsd || typeof tsd !== 'object') { return null; }
+	const t = tsd as Record<string, unknown>;
+	if (t['kind'] !== 'subagent') { return null; }
+
+	const prompt = typeof t['prompt'] === 'string' ? t['prompt'] : '';
+
+	let result = '';
+	const rawResult = t['result'];
+	if (typeof rawResult === 'string') {
+		result = rawResult;
+	} else if (rawResult && typeof rawResult === 'object') {
+		// Streaming char format: {"0":"H","1":"i",...} — sort by numeric key then join
+		const entries = Object.entries(rawResult as Record<string, unknown>);
+		entries.sort(([a], [b]) => Number(a) - Number(b));
+		result = entries.map(([, v]) => (typeof v === 'string' ? v : '')).join('');
+	}
+
+	const rawModel = typeof t['modelName'] === 'string' ? t['modelName'] : '';
+	const modelName = rawModel ? normalizeDisplayModelName(rawModel) : '';
+
+	return (prompt || result) ? { prompt, result, modelName } : null;
+}
+
+/**
  * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
  * Each line is a separate JSON object representing an event in the session
  */
@@ -89,6 +135,9 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						totalThinkingTokens += estimateTokensFromText(responseItem.value);
 						continue;
 					}
+					// Sub-agent items are built up incrementally via delta events; their
+					// result text may be incomplete here. Skip and count from reconstructed state below.
+					if (extractSubAgentData(responseItem)) { continue; }
 					if (responseItem.value) {
 						totalTokens += estimateTokensFromText(responseItem.value);
 					} else if (responseItem.kind === 'markdownContent' && responseItem.content?.value) {
@@ -147,6 +196,23 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 
 	// If CLI session.shutdown provided actual totals, use them; otherwise fall back to per-request delta totals
 	const finalActualTokens = !isDeltaBased && cliActualTokens > 0 ? cliActualTokens : totalActualTokens;
+
+	// For delta-based sessions, extract sub-agent token estimates from the fully reconstructed state.
+	// Sub-agent results are built up char-by-char via delta events and are only complete in sessionState.
+	if (isDeltaBased) {
+		const requests = Array.isArray(sessionState.requests) ? sessionState.requests : [];
+		for (const request of requests) {
+			if (!request?.response || !Array.isArray(request.response)) { continue; }
+			for (const responseItem of request.response) {
+				const subAgent = extractSubAgentData(responseItem);
+				if (subAgent) {
+					if (subAgent.prompt) { totalTokens += estimateTokensFromText(subAgent.prompt); }
+					if (subAgent.result) { totalTokens += estimateTokensFromText(subAgent.result); }
+				}
+			}
+		}
+	}
+
 	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens };
 }
 

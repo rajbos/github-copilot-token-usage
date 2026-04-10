@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -68,6 +68,7 @@ import {
   createEmptyContextRefs as _createEmptyContextRefs,
   getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
   reconstructJsonlStateAsync as _reconstructJsonlStateAsync,
+  extractSubAgentData as _extractSubAgentData,
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
@@ -3571,22 +3572,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 						lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
 					}
 
-					// Handle CLI tool calls
-					if ((event.type === 'tool.call' || event.type === 'tool.result') && turns.length > 0) {
+					// Handle CLI tool calls (tool.execution_start is the actual event type in current CLI format)
+					const CLI_SUB_AGENT_TOOLS = new Set(['task', 'read_agent', 'write_agent', 'list_agents']);
+					if ((event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start') && turns.length > 0) {
 						const lastTurn = turns[turns.length - 1];
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
+						const isSubAgent = CLI_SUB_AGENT_TOOLS.has(toolName);
 
 						// Check if this is an MCP tool by name pattern
 						if (this.isMcpTool(toolName)) {
 							const serverName = this.extractMcpServerName(toolName);
 							lastTurn.mcpTools.push({ server: serverName, tool: toolName });
-						} else {
-							// Add to regular tool calls
+						} else if (isSubAgent) {
 							lastTurn.toolCalls.push({
 								toolName,
-								arguments: event.type === 'tool.call' ? JSON.stringify(event.data?.arguments || {}) : undefined,
-								result: event.type === 'tool.result' ? event.data?.output : undefined
+								arguments: event.data?.arguments ? JSON.stringify(event.data.arguments) : undefined,
+								result: undefined,
+								isSubAgent: true,
 							});
+						} else {
+							// Add to regular tool calls (skip duplicate execution_start events per toolCallId)
+							const callId: string | undefined = event.data?.toolCallId;
+							const alreadyAdded = callId && lastTurn.toolCalls.some((tc: any) => tc._callId === callId);
+							if (!alreadyAdded) {
+								const tc: any = {
+									toolName,
+									arguments: event.type !== 'tool.result' ? JSON.stringify(event.data?.arguments || {}) : undefined,
+									result: event.type === 'tool.result' ? event.data?.output : undefined
+								};
+								if (callId) { tc._callId = callId; }
+								lastTurn.toolCalls.push(tc);
+							}
 						}
 					}
 
@@ -3715,12 +3731,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private extractResponseData(response: any[]): {
 		responseText: string;
 		thinkingText: string;
-		toolCalls: { toolName: string; arguments?: string; result?: string }[];
+		toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
 		mcpTools: { server: string; tool: string }[];
 	} {
 		let responseText = '';
 		let thinkingText = '';
-		const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+		const toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[] = [];
 		const mcpTools: { server: string; tool: string }[] = [];
 
 		for (const item of response) {
@@ -3741,19 +3757,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// Extract tool invocations
 			if (item.kind === 'toolInvocationSerialized' || item.kind === 'prepareToolInvocation') {
-				const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
-
-				// Check if this is an MCP tool by name pattern
-				if (this.isMcpTool(toolName)) {
-					const serverName = this.extractMcpServerName(toolName);
-					mcpTools.push({ server: serverName, tool: toolName });
-				} else {
-					// Add to regular tool calls
+				// Detect sub-agent calls first — tag them for the log viewer
+				const subAgentData = _extractSubAgentData(item);
+				if (subAgentData) {
+					const displayName = (item.toolSpecificData?.agentName as string | undefined) || 'Sub-Agent';
 					toolCalls.push({
-						toolName,
-						arguments: item.input ? JSON.stringify(item.input) : undefined,
-						result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+						toolName: displayName,
+						arguments: subAgentData.prompt || undefined,
+						result: undefined,
+						isSubAgent: true,
+						subAgentModel: subAgentData.modelName || undefined,
 					});
+				} else {
+					const toolName = item.toolId || item.toolName || item.invocationMessage?.toolName || item.toolSpecificData?.kind || 'unknown';
+					// Check if this is an MCP tool by name pattern
+					if (this.isMcpTool(toolName)) {
+						const serverName = this.extractMcpServerName(toolName);
+						mcpTools.push({ server: serverName, tool: toolName });
+					} else {
+						// Add to regular tool calls
+						toolCalls.push({
+							toolName,
+							arguments: item.input ? JSON.stringify(item.input) : undefined,
+							result: item.result ? (typeof item.result === 'string' ? item.result : JSON.stringify(item.result)) : undefined
+						});
+					}
 				}
 			}
 
@@ -3853,6 +3881,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 							// Separate thinking tokens
 							if (responseItem.kind === 'thinking' && responseItem.value) {
 								totalThinkingTokens += this.estimateTokensFromText(responseItem.value, this.getModelFromRequest(request));
+								continue;
+							}
+							// Sub-agent invocations: count prompt (input) + result (output)
+							const subAgent = _extractSubAgentData(responseItem);
+							if (subAgent) {
+								const saModel = subAgent.modelName || this.getModelFromRequest(request);
+								if (subAgent.prompt) { totalInputTokens += this.estimateTokensFromText(subAgent.prompt, saModel); }
+								if (subAgent.result) { totalOutputTokens += this.estimateTokensFromText(subAgent.result, saModel); }
 								continue;
 							}
 							if (responseItem.value) {

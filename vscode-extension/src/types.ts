@@ -330,7 +330,7 @@ export interface ChatTurn {
   userMessage: string;
   assistantResponse: string;
   model: string | null;
-  toolCalls: { toolName: string; arguments?: string; result?: string }[];
+  toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
   contextReferences: ContextReferenceUsage;
   mcpTools: { server: string; tool: string }[];
   inputTokensEstimate: number;

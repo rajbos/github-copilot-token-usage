@@ -458,3 +458,144 @@ test('JSON session: actualTokens is 0 when no result usage fields present', () =
 	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
 	assert.equal(result.actualTokens, 0);
 });
+
+// Sub-agent token tracking tests
+
+test('JSON session: sub-agent with plain string result is counted under sub-agent model', () => {
+	const subAgentItem = {
+		kind: 'toolInvocationSerialized',
+		toolSpecificData: {
+			kind: 'subagent',
+			modelName: 'Claude Haiku 4.5',
+			prompt: 'find files',        // 10 chars
+			result: 'here are files',    // 14 chars
+		}
+	};
+	const content = JSON.stringify({
+		requests: [
+			{
+				model: 'claude-opus-4',
+				message: { text: 'go' },            // 2 input chars under opus
+				response: [
+					{ value: 'ok' },                  // 2 output chars under opus
+					subAgentItem,
+				]
+			}
+		]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	// Sub-agent model name normalized: "claude-haiku-4.5"
+	assert.ok(result.modelUsage['claude-haiku-4.5'], 'sub-agent model should have usage');
+	assert.equal(result.modelUsage['claude-haiku-4.5'].inputTokens, 10, 'sub-agent prompt chars');
+	assert.equal(result.modelUsage['claude-haiku-4.5'].outputTokens, 14, 'sub-agent result chars');
+	// Parent model still has its own tokens
+	assert.equal(result.modelUsage['claude-opus-4'].outputTokens, 2);
+});
+
+test('JSON session: sub-agent with streaming char object result is counted correctly', () => {
+	// Build streaming char result: "Hi" => {"0":"H","1":"i"}
+	const streamingResult: Record<string, string> = {};
+	Array.from('Hi').forEach((c, i) => { streamingResult[String(i)] = c; });
+	const subAgentItem = {
+		kind: 'toolInvocationSerialized',
+		toolSpecificData: {
+			kind: 'subagent',
+			modelName: 'Claude Haiku 4.5',
+			prompt: 'ping',
+			result: streamingResult,
+		}
+	};
+	const content = JSON.stringify({
+		requests: [{ model: 'gpt-4o', message: { text: 'x' }, response: [subAgentItem] }]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.ok(result.modelUsage['claude-haiku-4.5']);
+	assert.equal(result.modelUsage['claude-haiku-4.5'].inputTokens, 4, 'prompt: "ping"');
+	assert.equal(result.modelUsage['claude-haiku-4.5'].outputTokens, 2, 'result: "Hi"');
+});
+
+test('JSON session: sub-agent with missing modelName falls back to parent model', () => {
+	const subAgentItem = {
+		kind: 'toolInvocationSerialized',
+		toolSpecificData: {
+			kind: 'subagent',
+			// no modelName
+			prompt: 'search',
+			result: 'found it',
+		}
+	};
+	const content = JSON.stringify({
+		requests: [{ model: 'gpt-4o', message: { text: 'do' }, response: [subAgentItem] }]
+	});
+	const result = parseSessionFileContent('s.json', content, estimateTokensByLength);
+	assert.ok(result.modelUsage['gpt-4o']);
+	// Falls back to parent model
+	assert.equal(result.modelUsage['gpt-4o'].inputTokens, 2 + 6, 'parent input + sub-agent prompt');
+	assert.equal(result.modelUsage['gpt-4o'].outputTokens, 8, 'sub-agent result under parent');
+});
+
+test('delta-based JSONL: sub-agent tokens are counted from reconstructed state', () => {
+	const subAgentItem = {
+		kind: 'toolInvocationSerialized',
+		toolSpecificData: {
+			kind: 'subagent',
+			modelName: 'Claude Haiku 4.5',
+			prompt: 'list',       // 4 chars
+			result: 'file.ts',   // 7 chars
+		}
+	};
+	const filePath = 'C:/tmp/session.jsonl';
+	const content = [
+		JSON.stringify({ kind: 0, v: { requests: [] } }),
+		JSON.stringify({
+			kind: 2,
+			k: ['requests'],
+			v: [{
+				requestId: 'r1',
+				modelId: 'copilot/claude-opus-4.6',
+				message: { text: 'go' },
+				response: [subAgentItem],
+			}]
+		})
+	].join('\n');
+
+	const result = parseSessionFileContent(filePath, content, estimateTokensByLength);
+	assert.ok(result.modelUsage['claude-haiku-4.5'], 'sub-agent model should appear in delta path');
+	assert.equal(result.modelUsage['claude-haiku-4.5'].inputTokens, 4);
+	assert.equal(result.modelUsage['claude-haiku-4.5'].outputTokens, 7);
+});
+
+test('delta-based JSONL: sub-agent items do not contribute to parent model output', () => {
+	const subAgentItem = {
+		kind: 'toolInvocationSerialized',
+		toolSpecificData: {
+			kind: 'subagent',
+			modelName: 'Claude Haiku 4.5',
+			prompt: 'search query',
+			result: 'search results here',
+		}
+	};
+	const filePath = 'C:/tmp/session.jsonl';
+	const content = [
+		JSON.stringify({ kind: 0, v: { requests: [] } }),
+		JSON.stringify({
+			kind: 2,
+			k: ['requests'],
+			v: [{
+				requestId: 'r1',
+				modelId: 'copilot/claude-opus-4.6',
+				message: { text: 'help' },
+				response: [
+					{ kind: 'markdownContent', content: { value: 'sure' } },
+					subAgentItem,
+				],
+			}]
+		})
+	].join('\n');
+
+	const result = parseSessionFileContent(filePath, content, estimateTokensByLength);
+	// Parent model only has "sure" (4 chars) as output, not the sub-agent text
+	assert.equal(result.modelUsage['claude-opus-4.6'].outputTokens, 4, 'parent output should not include sub-agent result');
+	// Sub-agent is tracked separately
+	assert.ok(result.modelUsage['claude-haiku-4.5']);
+});

@@ -25,7 +25,7 @@ type ChatTurn = {
 	userMessage: string;
 	assistantResponse: string;
 	model: string | null;
-	toolCalls: { toolName: string; arguments?: string; result?: string }[];
+	toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
 	contextReferences: ContextReferenceUsage;
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
@@ -412,8 +412,10 @@ function renderTurnCard(turn: ChatTurn): string {
 	// Build tool call summary
 	let toolCallsHtml = '';
 	if (hasToolCalls) {
+		const regularCalls = turn.toolCalls.filter(tc => !tc.isSubAgent);
+		const subAgentCallsInTurn = turn.toolCalls.filter(tc => tc.isSubAgent);
 		const toolCounts: { [key: string]: number } = {};
-		turn.toolCalls.forEach(tc => {
+		regularCalls.forEach(tc => {
 			const toolName = lookupToolName(tc.toolName);
 			toolCounts[toolName] = (toolCounts[toolName] || 0) + 1;
 		});
@@ -421,6 +423,9 @@ function renderTurnCard(turn: ChatTurn): string {
 		const toolSummary = Object.entries(toolCounts)
 			.map(([name, count]) => `<span class="tool-summary-item">${escapeHtml(name)}: <strong>${count}</strong></span>`)
 			.join('');
+		const subAgentSummary = subAgentCallsInTurn.length > 0
+			? `<span class="sub-agent-summary-item">🤖 Sub-Agents: <strong>${subAgentCallsInTurn.length}</strong></span>`
+			: '';
 		
 		toolCallsHtml = `
 			<div class="turn-tools">
@@ -428,7 +433,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<summary class="tool-calls-summary">
 						<span class="collapse-arrow">▶</span>
 						<span class="tools-header-inline">🔧 TOOL CALLS (${turn.toolCalls.length})</span>
-						<span class="tool-summary-text">${toolSummary}</span>
+						<span class="tool-summary-text">${toolSummary}${subAgentSummary}</span>
 					</summary>
 					<table class="tools-table">
 						<thead>
@@ -439,14 +444,15 @@ function renderTurnCard(turn: ChatTurn): string {
 						</thead>
 						<tbody>
 							${turn.toolCalls.map((tc, idx) => `
-								<tr class="tool-row">
+								<tr class="tool-row${tc.isSubAgent ? ' sub-agent-row' : ''}">
 									<td class="tool-name-cell">
-										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(lookupToolName(tc.toolName))}</span>
-										${tc.arguments ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
-										${tc.result ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
+										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(tc.isSubAgent ? `🤖 ${tc.toolName}` : lookupToolName(tc.toolName))}</span>
+										${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(tc.subAgentModel)}</span>` : ''}
+										${tc.arguments && !tc.isSubAgent ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
+										${tc.result && !tc.isSubAgent ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
 									</td>
 									<td class="tool-action-cell">
-										<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>
+										${!tc.isSubAgent ? `<span class="tool-call-pretty" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="View pretty JSON" style="cursor:pointer;color:#22c55e;">Investigate</span>` : ''}
 									</td>
 								</tr>
 							`).join('')}
@@ -528,7 +534,8 @@ function renderLayout(data: SessionLogData): void {
 	
 	const totalTokens = data.turns.reduce((sum, t) => sum + t.inputTokensEstimate + t.outputTokensEstimate + t.thinkingTokensEstimate, 0);
 	const totalThinkingTokens = data.turns.reduce((sum, t) => sum + t.thinkingTokensEstimate, 0);
-	const totalToolCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.length, 0);
+	const totalToolCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.filter(tc => !tc.isSubAgent).length, 0);
+	const totalSubAgentCalls = data.turns.reduce((sum, t) => sum + t.toolCalls.filter(tc => tc.isSubAgent).length, 0);
 	const totalMcpTools = data.turns.reduce((sum, t) => sum + t.mcpTools.length, 0);
 	const turnsWithThinking = data.turns.filter(t => t.thinkingTokensEstimate > 0).length;
 	const totalRefs = getTotalContextRefs(data.contextReferences);
@@ -621,6 +628,11 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-label">🧠 Thinking Tokens</div>
 					<div class="summary-value">${formatCompact(totalThinkingTokens)}</div>
 					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
+				</div>` : ''}
+				${totalSubAgentCalls > 0 ? `<div class="summary-card">
+					<div class="summary-label">🤖 Sub-Agent Calls</div>
+					<div class="summary-value">${totalSubAgentCalls}</div>
+					<div class="summary-sub">Agent mode sub-agent invocations</div>
 				</div>` : ''}
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
