@@ -2928,6 +2928,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return details;
 			}
 
+			// Handle Claude Desktop Cowork sessions
+			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
+				const meta = this.claudeDesktopCowork.getCoworkSessionMeta(sessionFile);
+				if (meta?.title) { details.title = meta.title; }
+				if (meta?.firstInteraction) { details.firstInteraction = meta.firstInteraction; }
+				if (meta?.lastInteraction) { details.lastInteraction = meta.lastInteraction; }
+				details.interactions = this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
+				details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
+				details.editorName = 'Claude Desktop Cowork';
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format where the file contains just a session ID)
@@ -3416,6 +3429,97 @@ class CopilotTokenTracker implements vscode.Disposable {
 					title: details.title || null,
 					editorSource: details.editorSource,
 					editorName: details.editorName || 'Continue',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					usageAnalysis: undefined
+				};
+			}
+
+			// Handle Claude Desktop Cowork sessions
+			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
+				const events = this.claudeDesktopCowork.readCoworkEvents(sessionFile);
+				let currentUserEvent: any = null;
+				const pendingAssistantEvents: any[] = [];
+
+				const emitTurn = () => {
+					if (!currentUserEvent) { return; }
+					const content = currentUserEvent.message?.content;
+					const userMessage = typeof content === 'string' ? content
+						: Array.isArray(content) ? content.filter((c: any) => c.type === 'text').map((c: any) => c.text || '').join('\n')
+						: '';
+					let assistantText = '';
+					let actualInputTokens = 0;
+					let actualOutputTokens = 0;
+					let model: string | null = null;
+					const toolCalls: { toolName: string; arguments?: string }[] = [];
+					const mcpTools: { server: string; tool: string }[] = [];
+
+					for (const ae of pendingAssistantEvents) {
+						const msg = ae.message;
+						if (!model && msg?.model) { model = msg.model; }
+						const usage = msg?.usage;
+						if (usage) {
+							actualInputTokens += (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+							actualOutputTokens += usage.output_tokens || 0;
+						}
+						const contentArr: any[] = Array.isArray(msg?.content) ? msg.content : [];
+						for (const block of contentArr) {
+							if (block.type === 'text') { assistantText += block.text || ''; }
+							else if (block.type === 'tool_use') {
+								const toolName: string = block.name || 'unknown';
+								if (this.isMcpTool(toolName)) {
+									mcpTools.push({ server: this.extractMcpServerName(toolName), tool: toolName });
+								} else {
+									toolCalls.push({ toolName, arguments: block.input ? JSON.stringify(block.input) : undefined });
+								}
+							}
+						}
+					}
+
+					const usedModel = model || 'claude-sonnet-4-6';
+					const actualUsage: ActualUsage | undefined = (actualInputTokens > 0 || actualOutputTokens > 0) ? {
+						promptTokens: actualInputTokens,
+						completionTokens: actualOutputTokens
+					} : undefined;
+
+					turns.push({
+						turnNumber: turns.length + 1,
+						timestamp: currentUserEvent.timestamp ? new Date(currentUserEvent.timestamp).toISOString() : null,
+						mode: 'agent',
+						userMessage,
+						assistantResponse: assistantText,
+						model: usedModel,
+						toolCalls,
+						contextReferences: _createEmptyContextRefs(),
+						mcpTools,
+						inputTokensEstimate: actualInputTokens || this.estimateTokensFromText(userMessage, usedModel),
+						outputTokensEstimate: actualOutputTokens || this.estimateTokensFromText(assistantText, usedModel),
+						thinkingTokensEstimate: 0,
+						actualUsage
+					});
+				};
+
+				for (const event of events) {
+					if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
+						emitTurn();
+						currentUserEvent = event;
+						pendingAssistantEvents.length = 0;
+					} else if (!event.type && event.message?.role === 'assistant') {
+						pendingAssistantEvents.push(event);
+					}
+				}
+				emitTurn();
+
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: 'Claude Desktop Cowork',
 					size: details.size,
 					modified: details.modified,
 					interactions: details.interactions,

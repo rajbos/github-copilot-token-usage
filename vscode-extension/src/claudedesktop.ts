@@ -98,8 +98,9 @@ export class ClaudeDesktopCoworkDataAccess {
 
 	/**
 	 * Parse all JSONL events from a Cowork session file.
+	 * Public so extension.ts can use it for log viewer turn building.
 	 */
-	private readSessionEvents(sessionFilePath: string): any[] {
+	readCoworkEvents(sessionFilePath: string): any[] {
 		try {
 			const content = fs.readFileSync(sessionFilePath, 'utf8');
 			const lines = content.trim().split('\n');
@@ -123,13 +124,14 @@ export class ClaudeDesktopCoworkDataAccess {
 	 * Uses actual Anthropic API counts; de-duplicates by requestId using only final events.
 	 */
 	getTokensFromCoworkSession(sessionFilePath: string): { tokens: number; thinkingTokens: number } {
-		const events = this.readSessionEvents(sessionFilePath);
+		const events = this.readCoworkEvents(sessionFilePath);
 		let totalInputTokens = 0;
 		let totalOutputTokens = 0;
 		const seenRequestIds = new Set<string>();
 
 		for (const event of events) {
-			if (event.type !== 'assistant') { continue; }
+			// Cowork format: assistant messages have message.role === 'assistant', no top-level type
+			if (event.message?.role !== 'assistant') { continue; }
 			const usage = event.message?.usage;
 			if (!usage) { continue; }
 
@@ -158,7 +160,7 @@ export class ClaudeDesktopCoworkDataAccess {
 	 * Count user interactions in a Cowork session.
 	 */
 	countCoworkInteractions(sessionFilePath: string): number {
-		const events = this.readSessionEvents(sessionFilePath);
+		const events = this.readCoworkEvents(sessionFilePath);
 		let count = 0;
 		for (const event of events) {
 			if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
@@ -180,12 +182,13 @@ export class ClaudeDesktopCoworkDataAccess {
 	 * Get per-model token usage from a Cowork session.
 	 */
 	getCoworkModelUsage(sessionFilePath: string): ModelUsage {
-		const events = this.readSessionEvents(sessionFilePath);
+		const events = this.readCoworkEvents(sessionFilePath);
 		const modelUsage: ModelUsage = {};
 		const seenRequestIds = new Set<string>();
 
 		for (const event of events) {
-			if (event.type !== 'assistant') { continue; }
+			// Cowork format: assistant messages have message.role === 'assistant', no top-level type
+			if (event.message?.role !== 'assistant') { continue; }
 			const usage = event.message?.usage;
 			if (!usage) { continue; }
 
