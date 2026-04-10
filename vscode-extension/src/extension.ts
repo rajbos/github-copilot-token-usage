@@ -166,6 +166,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 	private readonly context: vscode.ExtensionContext;
+	private _devBranch: string | undefined;
 	private localRegressionSampleDataDir?: string;
 	private pendingLocalViewRegressionProbe?: ViewRegressionProbeConfig;
 	private readonly localViewRegressionResolvers = new Map<string, (result: LocalViewRegressionProbeResult) => void>();
@@ -818,6 +819,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
 		});
 		this.context = context;
+		if (context.extensionMode === vscode.ExtensionMode.Development) {
+			try {
+				this._devBranch = childProcess.execSync('git rev-parse --abbrev-ref HEAD', {
+					cwd: context.extensionUri.fsPath,
+					encoding: 'utf8',
+					timeout: 5000,
+					stdio: ['pipe', 'pipe', 'pipe']
+				}).trim();
+			} catch {
+				// Ignore git errors in dev mode branch detection
+			}
+		}
 		// Create output channel for extension logs
 		this.outputChannel = vscode.window.createOutputChannel('AI Engineering Fluency');
 		// CRITICAL: Add output channel to context.subscriptions so VS Code doesn't dispose it
@@ -837,7 +850,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			100
 		);
 		this.statusBarItem.name = "AI Engineering Fluency";
-		this.statusBarItem.text = "$(loading~spin) AI Fluency: Loading...";
+		this.setStatusBarText("$(loading~spin) AI Fluency: Loading...");
 		this.statusBarItem.tooltip = "AI Engineering Fluency — daily and 30-day token usage - Click to open details";
 		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
 		this.statusBarItem.show();
@@ -974,15 +987,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	private setStatusBarText(text: string): void {
+		this.statusBarItem.text = this._devBranch ? `${text} [${this._devBranch}]` : text;
+	}
+
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
 			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
 				const percentage = Math.round((completed / total) * 100);
-				this.statusBarItem.text = `$(loading~spin) Analyzing Logs: ${percentage}%`;
+				this.setStatusBarText(`$(loading~spin) Analyzing Logs: ${percentage}%`);
 			});
 
-			this.statusBarItem.text = `$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`;
+			this.setStatusBarText(`$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`);
 
 			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
@@ -1121,7 +1138,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return detailedStats;
 		} catch (error) {
 			this.error('Error updating token stats:', error);
-			this.statusBarItem.text = '$(error) Token Error';
+			this.setStatusBarText('$(error) Token Error');
 			this.statusBarItem.tooltip = 'Error calculating token usage';
 			return undefined;
 		}
@@ -1522,7 +1539,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const stats = this.lastDetailedStats;
 		if (!stats) { return; }
 		// Refresh status bar text (respects new compact setting)
-		this.statusBarItem.text = `$(symbol-numeric) ${this.formatCompact(stats.today.tokens)} | ${this.formatCompact(stats.last30Days.tokens)}`;
+		this.setStatusBarText(`$(symbol-numeric) ${this.formatCompact(stats.today.tokens)} | ${this.formatCompact(stats.last30Days.tokens)}`);
 		if (this.detailsPanel) {
 			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
 		}
