@@ -272,6 +272,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// GitHub authentication session
 	private githubSession: vscode.AuthenticationSession | undefined;
+	// Promise that resolves when the startup session restore completes
+	private _sessionRestorePromise: Promise<void> | undefined;
 
 	// Cached PR stats result for the repos tab
 	private _lastRepoPrStats?: RepoPrStatsResult;
@@ -877,7 +879,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.cacheManager.loadCacheFromStorage();
 
 		// Restore GitHub authentication session if previously authenticated
-		this.restoreGitHubSession();
+		this._sessionRestorePromise = this.restoreGitHubSession();
 
 		// Check GitHub Copilot extension status
 		this.sessionDiscovery.checkCopilotExtension();
@@ -1075,6 +1077,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Get the current GitHub authentication status.
 	 */
 	public getGitHubAuthStatus(): { authenticated: boolean; username?: string } {
+		// Check in-memory session first — avoids race with globalState writes on startup
+		if (this.githubSession) {
+			return { authenticated: true, username: this.githubSession.account.label };
+		}
 		const authenticated = this.context.globalState.get<boolean>('github.authenticated', false);
 		const username = this.context.globalState.get<string>('github.username');
 		return { authenticated, username };
@@ -7416,6 +7422,11 @@ ${hashtag}`;
   ): Promise<void> {
     try {
       this.log("🔄 Loading diagnostic data in background...");
+
+      // Ensure the startup GitHub session restore has completed before reading auth state
+      if (this._sessionRestorePromise) {
+        await this._sessionRestorePromise;
+      }
 
       // CRITICAL: Ensure stats have been calculated at least once to populate cache
       // If this is the first diagnostic panel open and no stats exist yet,
