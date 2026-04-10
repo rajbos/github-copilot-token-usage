@@ -1325,6 +1325,10 @@ window.addEventListener('message', (event) => {
 				if (sanitized) {
 					renderLayout(sanitized);
 					renderRepositoryHygienePanels();
+					// Restore repos PR tab if we already fetched data (renderLayout resets the DOM)
+					if (repoPrStatsData) {
+						updateReposPrPanel(repoPrStatsData);
+					}
 				}
 			}
 			break;
