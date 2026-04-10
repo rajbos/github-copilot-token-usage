@@ -513,7 +513,7 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		</div>
 		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
 			† Copilot Review Agent requested counts are for open PRs only. GitHub removes reviewer data after a PR is merged or closed.<br/>
-			🤖 Cloud Agent Authored = PR author's GitHub login contains "copilot", "claude", "openai", or "codex".
+			🤖 Cloud Agent Authored = PR author's GitHub login matches a known cloud agent (e.g. <code>copilot-swe-agent</code>, <code>claude-code-action</code>, <code>openai-code-agent</code>).
 		</div>`;
 }
 
