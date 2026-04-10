@@ -7,6 +7,7 @@ Thank you for your interest in contributing to the Copilot Token Tracker extensi
 - [Development Environment Setup](#development-environment-setup)
 - [Using the DevContainer (Recommended)](#using-the-devcontainer-recommended)
 - [Why Use a DevContainer for AI-Assisted Development?](#why-use-a-devcontainer-for-ai-assisted-development)
+- [DevContainer Configuration Notes](#devcontainer-configuration-notes)
 - [Manual Local Setup](#manual-local-setup)
 - [Development Workflow](#development-workflow)
 - [Available Scripts](#available-scripts)
@@ -115,7 +116,7 @@ The devcontainer allows you to confidently let AI assistants:
 - **Zero Configuration:** AI can start working immediately without environment setup
 - **Pre-installed Tools:** All required dependencies are ready to go
 - **Known State:** AI agents can make more accurate suggestions knowing the exact environment
-- **Automatic Setup:** The `postCreateCommand` ensures dependencies are always up-to-date
+- **Automatic Setup:** The `updateContentCommand` ensures dependencies are installed after content updates
 
 ### 💡 Real-World Scenario
 
@@ -133,6 +134,43 @@ Without a devcontainer, you'd need to:
 - Worry about package conflicts with other projects
 - Risk system-level changes
 - Potentially need to uninstall packages or revert changes
+
+### DevContainer Configuration Notes
+
+The repository provides two devcontainer configurations:
+
+1. **`.devcontainer/devcontainer.json`** (default) - Optimized for **GitHub Codespaces** and cloud environments
+2. **`.devcontainer/devcontainer-local.json`** - Optimized for **local Windows development** with host mounts
+
+#### Default Configuration (Codespaces)
+
+The default `devcontainer.json` is designed to work reliably in GitHub Codespaces and other cloud environments:
+
+- Uses `updateContentCommand` instead of `postCreateCommand` for dependency installation (more reliable timing)
+- Minimal features (Git only) for fast container creation
+- No host mounts (not available in cloud environments)
+- Includes memory optimization (`NODE_OPTIONS: --max-old-space-size=4096`)
+- Working directory aware: runs `cd vscode-extension && npm ci` (repo uses monorepo structure)
+
+**Why `updateContentCommand`?** This lifecycle hook runs after workspace content is updated (including initial clone), making it more reliable than `postCreateCommand` which runs once during container creation and can timeout with large dependency trees.
+
+**Why minimal features?** PowerShell feature installation can timeout in Codespaces. The default config only includes Git, which is essential for development.
+
+#### Local Configuration (Windows with Mounts)
+
+The `devcontainer-local.json` configuration adds features for local development:
+
+- **Host Mounts:** Binds your VS Code session data (including Copilot logs) into the container so the extension can track your actual usage
+- **PowerShell Feature:** Includes PowerShell for running build scripts like `build.ps1`
+- **PowerShell Init:** Runs `.devcontainer/init-mounts.ps1` to ensure mount directories exist on Windows
+- **Volume for node_modules:** Uses a Docker volume for faster dependency installation
+
+**To use the local configuration:**
+1. Open the repository in VS Code
+2. Press `F1` and select "Dev Containers: Reopen in Container"
+3. Choose "Copilot Token Tracker Extension (Local with Mounts)"
+
+**Note:** The local configuration with mounts is **Windows-only** due to the use of `%APPDATA%` environment variables and PowerShell. For local development on Linux/macOS, use the default configuration.
 
 ## Manual Local Setup
 
