@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as https from 'https';
 import * as childProcess from 'child_process';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
@@ -139,6 +140,31 @@ type LocalViewRegressionCase = {
   open: () => Promise<void>;
 };
 
+type RepoPrDetail = {
+  number: number;
+  title: string;
+  url: string;
+  aiType: 'copilot' | 'claude' | 'openai' | 'other-ai';
+  role: 'author' | 'reviewer-requested';
+};
+
+type RepoPrInfo = {
+  owner: string;
+  repo: string;
+  repoUrl: string;
+  totalPrs: number;
+  aiAuthoredPrs: number;
+  aiReviewRequestedPrs: number;
+  aiDetails: RepoPrDetail[];
+  error?: string;
+};
+
+type RepoPrStatsResult = {
+  repos: RepoPrInfo[];
+  authenticated: boolean;
+  since: string; // ISO date string
+};
+
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
 	private static readonly CACHE_VERSION = 36; // Add first-user-message fallback title for untitled Copilot CLI sessions
@@ -243,6 +269,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Note: GitHub Copilot uses these models but pricing may differ from direct API usage
 	// These are reference prices for cost estimation purposes only
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
+
+	// GitHub authentication session
+	private githubSession: vscode.AuthenticationSession | undefined;
+	// Promise that resolves when the startup session restore completes
+	private _sessionRestorePromise: Promise<void> | undefined;
+	/** True when the user explicitly signed out from our extension this VS Code session. Gated by globalState so it survives reloads. */
+	private _githubSignedOutByUser: boolean = false;
+
+	// Cached PR stats result for the repos tab
+	private _lastRepoPrStats?: RepoPrStatsResult;
 
 	// Tool name mapping - loaded from toolNames.json for friendly display names
 	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
@@ -844,6 +880,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Load persisted cache from storage
 		this.cacheManager.loadCacheFromStorage();
 
+		// Restore GitHub authentication session if previously authenticated
+		this._sessionRestorePromise = this.restoreGitHubSession();
+
+		// Keep in-memory session in sync if the underlying VS Code auth session changes
+		// (e.g. user signs out of GitHub from the Accounts menu or token expires)
+		context.subscriptions.push(
+			vscode.authentication.onDidChangeSessions(async (e) => {
+				if (e.provider.id !== 'github') { return; }
+				if (this._githubSignedOutByUser) { return; } // user explicitly disconnected; don't auto-reconnect
+				const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+				if (session) {
+					this.githubSession = session;
+					await this.context.globalState.update('github.authenticated', true);
+					await this.context.globalState.update('github.username', session.account.label);
+				} else {
+					this.githubSession = undefined;
+					await this.context.globalState.update('github.authenticated', false);
+					await this.context.globalState.update('github.username', undefined);
+					this.log('GitHub session removed externally — clearing auth state');
+				}
+			})
+		);
+
 		// Check GitHub Copilot extension status
 		this.sessionDiscovery.checkCopilotExtension();
 
@@ -993,6 +1052,348 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private setStatusBarText(text: string): void {
 		this.statusBarItem.text = this._devBranch ? `${text} [${this._devBranch}]` : text;
+	}
+
+	/**
+	 * Authenticate with GitHub using VS Code's authentication API.
+	 */
+	public async authenticateWithGitHub(): Promise<void> {
+		try {
+			this.log('Attempting GitHub authentication...');
+			const session = await vscode.authentication.getSession(
+				'github',
+				['read:user'],
+				{ createIfNone: true }
+			);
+			if (session) {
+				this.githubSession = session;
+				this._githubSignedOutByUser = false;
+				await this.context.globalState.update('github.signedOutByUser', false);
+				this.log(`✅ Successfully authenticated as ${session.account.label}`);
+				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
+				await this.context.globalState.update('github.authenticated', true);
+				await this.context.globalState.update('github.username', session.account.label);
+			}
+		} catch (error) {
+			this.error('GitHub authentication failed:', error);
+			vscode.window.showErrorMessage('Failed to authenticate with GitHub. Please try again.');
+		}
+	}
+
+	/**
+	 * Sign out from GitHub.
+	 */
+	public async signOutFromGitHub(): Promise<void> {
+		try {
+			this.log('Signing out from GitHub...');
+			this.githubSession = undefined;
+			this._githubSignedOutByUser = true;
+			await this.context.globalState.update('github.authenticated', false);
+			await this.context.globalState.update('github.username', undefined);
+			await this.context.globalState.update('github.signedOutByUser', true);
+			this.log('✅ Successfully signed out from GitHub');
+			vscode.window.showInformationMessage('Signed out from GitHub successfully.');
+
+			// Notify the analysis panel so the Repository PRs tab shows "not authenticated"
+			if (this.analysisPanel) {
+				const since = new Date();
+				since.setDate(since.getDate() - 30);
+				const result: RepoPrStatsResult = { repos: [], authenticated: false, since: since.toISOString() };
+				this._lastRepoPrStats = result;
+				this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+			}
+		} catch (error) {
+			this.error('Failed to sign out from GitHub:', error);
+			vscode.window.showErrorMessage('Failed to sign out from GitHub.');
+		}
+	}
+
+	/**
+	 * Get the current GitHub authentication status.
+	 */
+	public getGitHubAuthStatus(): { authenticated: boolean; username?: string } {
+		// Check in-memory session first — avoids race with globalState writes on startup
+		if (this.githubSession) {
+			return { authenticated: true, username: this.githubSession.account.label };
+		}
+		const authenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+		const username = this.context.globalState.get<string>('github.username');
+		return { authenticated, username };
+	}
+
+	/**
+	 * Check if the user is authenticated with GitHub.
+	 */
+	public isGitHubAuthenticated(): boolean {
+		// Primary check: in-memory session
+		if (this.githubSession !== undefined) {
+			return true;
+		}
+		// Fallback: check persisted state (session may not be restored yet)
+		// Note: This may be true even if the session is expired
+		// The restoreGitHubSession method will reconcile this on startup
+		return this.context.globalState.get<boolean>('github.authenticated', false);
+	}
+
+	/**
+	 * Get the current GitHub session (if authenticated).
+	 */
+	public getGitHubSession(): vscode.AuthenticationSession | undefined {
+		return this.githubSession;
+	}
+
+	/** Detect which AI system a GitHub login belongs to, or null if not an AI bot. */
+	private detectAiType(login: string): RepoPrDetail['aiType'] | null {
+		const l = login.toLowerCase();
+		if (l.includes('copilot')) { return 'copilot'; }
+		if (l.includes('claude') || l.includes('anthropic')) { return 'claude'; }
+		if (l.includes('openai') || l.includes('codex')) { return 'openai'; }
+		return null;
+	}
+
+	/**
+	 * Discover GitHub repos from known session workspace folders.
+	 * Deduplicates by owner/repo so each GitHub repo is only fetched once.
+	 */
+	private async discoverGitHubRepos(): Promise<{ owner: string; repo: string }[]> {
+		const workspacePaths: string[] = [];
+
+		const matrix = this._lastCustomizationMatrix;
+		if (matrix && matrix.workspaces.length > 0) {
+			for (const ws of matrix.workspaces) {
+				if (!ws.workspacePath.startsWith('<unresolved:')) {
+					workspacePaths.push(ws.workspacePath);
+				}
+			}
+		}
+		// Also include currently open VS Code workspace folders
+		for (const folder of vscode.workspace.workspaceFolders ?? []) {
+			const p = folder.uri.fsPath;
+			if (!workspacePaths.includes(p)) {
+				workspacePaths.push(p);
+			}
+		}
+
+		const seen = new Set<string>();
+		const repos: { owner: string; repo: string }[] = [];
+		for (const workspacePath of workspacePaths) {
+			try {
+				const remote = childProcess.execSync('git remote get-url origin', {
+					cwd: workspacePath,
+					encoding: 'utf8',
+					timeout: 3000,
+					stdio: ['pipe', 'pipe', 'pipe'],
+				}).trim();
+				// Only process github.com remotes
+				const match = remote.match(/github\.com[:/]([^/]+)\/([^/\s]+?)(?:\.git)?$/i);
+				if (!match) { continue; }
+				const key = `${match[1]}/${match[2]}`.toLowerCase();
+				if (seen.has(key)) { continue; }
+				seen.add(key);
+				repos.push({ owner: match[1], repo: match[2] });
+			} catch {
+				// Not a git repo or no remote — skip
+			}
+		}
+		return repos;
+	}
+
+	/** Fetch a single page of PRs from GitHub REST API. */
+	private fetchRepoPrsPage(
+		owner: string,
+		repo: string,
+		token: string,
+		page: number,
+	): Promise<{ prs: any[]; statusCode?: number; error?: string }> {
+		return new Promise((resolve) => {
+			const req = https.request(
+				{
+					hostname: 'api.github.com',
+					path: `/repos/${owner}/${repo}/pulls?state=all&per_page=100&sort=created&direction=desc&page=${page}`,
+					headers: {
+						Authorization: `Bearer ${token}`,
+						'User-Agent': 'copilot-token-tracker',
+						Accept: 'application/vnd.github.v3+json',
+					},
+				},
+				(res) => {
+					let data = '';
+					res.on('data', (chunk) => (data += chunk));
+					res.on('end', () => {
+						try {
+							const parsed = JSON.parse(data);
+							if (!Array.isArray(parsed)) {
+								resolve({ prs: [], statusCode: res.statusCode, error: parsed.message ?? 'Unexpected API response' });
+							} else {
+								resolve({ prs: parsed, statusCode: res.statusCode });
+							}
+						} catch (e) {
+							resolve({ prs: [], statusCode: res.statusCode, error: String(e) });
+						}
+					});
+				},
+			);
+			req.on('error', (e) => resolve({ prs: [], error: e.message }));
+			req.setTimeout(15000, () => {
+				req.destroy(new Error('Request timed out after 15 s'));
+			});
+			req.end();
+		});
+	}
+
+	/** Fetch all PRs from the last 30 days for a repo, paginating as needed. */
+	private async fetchRepoPrs(
+		owner: string,
+		repo: string,
+		token: string,
+		since: Date,
+	): Promise<{ prs: any[]; error?: string }> {
+		const allPrs: any[] = [];
+		const MAX_PAGES = 5; // Cap at 500 PRs per repo
+		for (let page = 1; page <= MAX_PAGES; page++) {
+			const { prs, statusCode, error } = await this.fetchRepoPrsPage(owner, repo, token, page);
+			if (error) {
+				const msg = statusCode === 404
+					? 'Repo not found or not accessible with current token'
+					: statusCode === 403
+					? (error || 'Access denied (private repo requires additional permissions)')
+					: error;
+				return { prs: allPrs, error: msg };
+			}
+			if (prs.length === 0) { break; }
+			for (const pr of prs) {
+				if (new Date(pr.created_at) >= since) {
+					allPrs.push(pr);
+				}
+			}
+			// Stop paginating when the oldest PR on this page is before our window
+			const oldest = prs[prs.length - 1];
+			if (new Date(oldest.created_at) < since || prs.length < 100) {
+				break;
+			}
+		}
+		return { prs: allPrs };
+	}
+
+	/** Load PR stats for all discovered GitHub repos and send results to the analysis panel. */
+	private async loadRepoPrStats(): Promise<void> {
+		if (!this.analysisPanel) { return; }
+
+		const since = new Date();
+		since.setDate(since.getDate() - 30);
+
+		// If the user explicitly signed out from our extension, don't auto-acquire the VS Code session
+		if (this._githubSignedOutByUser) {
+			const result: RepoPrStatsResult = { repos: [], authenticated: false, since: since.toISOString() };
+			this._lastRepoPrStats = result;
+			this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+			return;
+		}
+
+		// Require GitHub auth — read:user gives 5000 req/hr on public repos
+		const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+		if (!session) {
+			const result: RepoPrStatsResult = { repos: [], authenticated: false, since: since.toISOString() };
+			this._lastRepoPrStats = result;
+			this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+			return;
+		}
+
+		// Sync our tracked auth state if VS Code already has a session we weren't aware of
+		// (e.g. from GitHub Copilot or another extension that authenticated earlier)
+		if (!this.githubSession) {
+			this.githubSession = session;
+			await this.context.globalState.update('github.authenticated', true);
+			await this.context.globalState.update('github.username', session.account.label);
+			this.log(`✅ GitHub session synced from existing VS Code auth: ${session.account.label}`);
+		}
+
+		const repos = await this.discoverGitHubRepos();
+		this.analysisPanel.webview.postMessage({ command: 'repoPrStatsProgress', total: repos.length, done: 0 });
+
+		const results: RepoPrInfo[] = [];
+		for (let i = 0; i < repos.length; i++) {
+			const { owner, repo } = repos[i];
+			const { prs, error } = await this.fetchRepoPrs(owner, repo, session.accessToken, since);
+
+			let totalPrs = 0;
+			let aiAuthoredPrs = 0;
+			let aiReviewRequestedPrs = 0;
+			const aiDetails: RepoPrDetail[] = [];
+
+			if (!error) {
+				totalPrs = prs.length;
+				for (const pr of prs) {
+					const authorAi = this.detectAiType(pr.user?.login ?? '');
+					if (authorAi) {
+						aiAuthoredPrs++;
+						aiDetails.push({ number: pr.number, title: pr.title, url: pr.html_url, aiType: authorAi, role: 'author' });
+					}
+					for (const reviewer of (pr.requested_reviewers ?? [])) {
+						const reviewerAi = this.detectAiType(reviewer.login ?? '');
+						if (reviewerAi) {
+							aiReviewRequestedPrs++;
+							aiDetails.push({ number: pr.number, title: pr.title, url: pr.html_url, aiType: reviewerAi, role: 'reviewer-requested' });
+						}
+					}
+				}
+			}
+
+			results.push({
+				owner,
+				repo,
+				repoUrl: `https://github.com/${owner}/${repo}`,
+				totalPrs,
+				aiAuthoredPrs,
+				aiReviewRequestedPrs,
+				aiDetails,
+				error,
+			});
+
+			this.analysisPanel.webview.postMessage({ command: 'repoPrStatsProgress', total: repos.length, done: i + 1 });
+		}
+
+		const result: RepoPrStatsResult = { repos: results, authenticated: true, since: since.toISOString() };
+		this._lastRepoPrStats = result;
+		this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+	}
+
+	/**
+	 * Restore GitHub authentication session on extension startup.
+	 * Always attempts a silent getSession so that a pre-existing VS Code GitHub
+	 * session (e.g. from GitHub Copilot) is picked up automatically.
+	 */
+	private async restoreGitHubSession(): Promise<void> {
+		try {
+			// Respect explicit sign-out — don't auto-restore until user clicks Authenticate again
+			this._githubSignedOutByUser = this.context.globalState.get<boolean>('github.signedOutByUser', false);
+			if (this._githubSignedOutByUser) {
+				this.log('GitHub session restore skipped — user signed out explicitly');
+				return;
+			}
+
+			// Always try silently — never prompt. This picks up sessions from Copilot
+			// or other extensions that already authenticated the user with GitHub.
+			const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+			if (session) {
+				this.githubSession = session;
+				this.log(`✅ GitHub session found for ${session.account.label}`);
+				await this.context.globalState.update('github.authenticated', true);
+				await this.context.globalState.update('github.username', session.account.label);
+			} else {
+				const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
+				if (wasAuthenticated) {
+					// Session was present before but is gone now — clear stored state
+					this.log('GitHub session not found - clearing authenticated state');
+					await this.context.globalState.update('github.authenticated', false);
+					await this.context.globalState.update('github.username', undefined);
+				}
+			}
+		} catch (error) {
+			this.warn('Failed to restore GitHub session: ' + String(error));
+			await this.context.globalState.update('github.authenticated', false);
+			await this.context.globalState.update('github.username', undefined);
+		}
 	}
 
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
@@ -4413,6 +4814,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					}
 					break;
 				}
+				case 'loadRepoPrStats':
+					await this.dispatch('loadRepoPrStats', () => this.loadRepoPrStats());
+					break;
 			}
 		});
 
@@ -7016,6 +7420,28 @@ ${hashtag}`;
             });
           }
           break;
+        case "authenticateGitHub":
+          await this.dispatch('authenticateGitHub:diagnostics', async () => {
+            await this.authenticateWithGitHub();
+            if (this.diagnosticsPanel) {
+              this.diagnosticsPanel.webview.postMessage({
+                command: 'githubAuthUpdated',
+                githubAuth: this.getGitHubAuthStatus(),
+              });
+            }
+          });
+          break;
+        case "signOutGitHub":
+          await this.dispatch('signOutGitHub:diagnostics', async () => {
+            await this.signOutFromGitHub();
+            if (this.diagnosticsPanel) {
+              this.diagnosticsPanel.webview.postMessage({
+                command: 'githubAuthUpdated',
+                githubAuth: this.getGitHubAuthStatus(),
+              });
+            }
+          });
+          break;
       }
     });
 
@@ -7049,6 +7475,11 @@ ${hashtag}`;
   ): Promise<void> {
     try {
       this.log("🔄 Loading diagnostic data in background...");
+
+      // Ensure the startup GitHub session restore has completed before reading auth state
+      if (this._sessionRestorePromise) {
+        await this._sessionRestorePromise;
+      }
 
       // CRITICAL: Ensure stats have been calculated at least once to populate cache
       // If this is the first diagnostic panel open and no stats exist yet,
@@ -7140,6 +7571,9 @@ ${hashtag}`;
         `Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`,
       );
 
+      // Get GitHub authentication status
+      const githubAuthStatus = this.getGitHubAuthStatus();
+
       // Check if panel is still open before updating
       if (!this.isPanelOpen(panel)) {
         this.log("Diagnostic panel closed during data load, aborting update");
@@ -7157,6 +7591,7 @@ ${hashtag}`;
         sessionFolders,
         candidatePaths,
         backendStorageInfo,
+        githubAuth: githubAuthStatus,
       });
 
       this.log("✅ Diagnostic data loaded and sent to webview");
@@ -7908,6 +8343,24 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  // Register the GitHub authentication command
+  const authenticateGitHubCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.authenticateGitHub",
+    async () => {
+      tokenTracker.log("GitHub authentication command called");
+      await tokenTracker.authenticateWithGitHub();
+    },
+  );
+
+  // Register the GitHub sign out command
+  const signOutGitHubCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.signOutGitHub",
+    async () => {
+      tokenTracker.log("GitHub sign out command called");
+      await tokenTracker.signOutFromGitHub();
+    },
+  );
+
   // Add to subscriptions for proper cleanup
   context.subscriptions.push(
     refreshCommand,
@@ -7921,6 +8374,8 @@ export function activate(context: vscode.ExtensionContext) {
     showEnvironmentalCommand,
     generateDiagnosticReportCommand,
     clearCacheCommand,
+    authenticateGitHubCommand,
+    signOutGitHubCommand,
     tokenTracker,
   );
 

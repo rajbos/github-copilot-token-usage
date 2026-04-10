@@ -117,6 +117,35 @@ let isBatchAnalysisInProgress = false;
 let currentWorkspacePaths: string[] = [];
 let activeTab = 'activity';
 
+// State for the Repository PRs tab
+let repoPrStatsLoaded = false;
+let repoPrStatsData: RepoPrStatsResult | null = null;
+
+type RepoPrDetail = {
+  number: number;
+  title: string;
+  url: string;
+  aiType: 'copilot' | 'claude' | 'openai' | 'other-ai';
+  role: 'author' | 'reviewer-requested';
+};
+
+type RepoPrInfo = {
+  owner: string;
+  repo: string;
+  repoUrl: string;
+  totalPrs: number;
+  aiAuthoredPrs: number;
+  aiReviewRequestedPrs: number;
+  aiDetails: RepoPrDetail[];
+  error?: string;
+};
+
+type RepoPrStatsResult = {
+  repos: RepoPrInfo[];
+  authenticated: boolean;
+  since: string;
+};
+
 function escapeHtml(text: string): string {
 	return text
 		.replace(/&/g, '&amp;')
@@ -398,8 +427,108 @@ function setupTabs(): void {
 			});
 			const activePanel = document.getElementById(`tab-panel-${tab}`);
 			if (activePanel) { activePanel.style.display = 'block'; }
+			// Lazy-load repo PR stats on first visit to the tab
+			if (tab === 'repos' && !repoPrStatsLoaded) {
+				repoPrStatsLoaded = true;
+				vscode.postMessage({ command: 'loadRepoPrStats' });
+			}
 		});
 	});
+}
+
+function renderReposPrContent(data: RepoPrStatsResult): string {
+	const sinceDate = escapeHtml(new Date(data.since).toLocaleDateString());
+	if (!data.authenticated) {
+		return `
+			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
+				<strong>🔒 GitHub authentication required</strong><br/>
+				Sign in with GitHub (via the Diagnostics tab) to see AI PR activity across your repositories.
+			</div>`;
+	}
+	if (data.repos.length === 0) {
+		return `
+			<div style="margin-top:12px; font-size:12px; color:var(--text-secondary);">
+				No GitHub repositories detected in your workspace folders.
+			</div>`;
+	}
+
+	const aiLabel: Record<string, string> = {
+		copilot: '🤖 Copilot',
+		claude: '🧠 Claude',
+		openai: '✨ Codex',
+		'other-ai': '🤖 AI',
+	};
+
+	// Cell style shared across data rows — matches the customization matrix look
+	const cell = 'padding: 6px 8px; border-bottom: 1px solid var(--border-subtle);';
+	const cellCenter = `${cell} text-align: center;`;
+
+	const rows = data.repos.map((r) => {
+		const repoLink = `<a href="${escapeHtml(r.repoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
+		if (r.error) {
+			return `<tr>
+				<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}</td>
+				<td colspan="3" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</td>
+			</tr>`;
+		}
+		// Collapsible detail list
+		let detailsHtml = '';
+		if (r.aiDetails.length > 0) {
+			const items = r.aiDetails.map(d =>
+				`<li><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color);">#${d.number} ${escapeHtml(d.title)}</a> — ${aiLabel[d.aiType] ?? escapeHtml(String(d.aiType))} (${d.role === 'author' ? 'authored' : 'review requested'})</li>`
+			).join('');
+			detailsHtml = `
+				<details style="margin-top:4px; font-size:11px;">
+					<summary style="cursor:pointer; color:var(--text-secondary);">Show ${r.aiDetails.length} detail(s)</summary>
+					<ul style="margin:4px 0 0 16px; padding:0; list-style:disc;">${items}</ul>
+				</details>`;
+		}
+		return `<tr>
+			<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}${detailsHtml}</td>
+			<td style="${cellCenter} font-weight:600;">${r.totalPrs}</td>
+			<td style="${cellCenter}">${r.aiAuthoredPrs > 0 ? `<span style="font-weight:600;">${r.aiAuthoredPrs}</span>` : '0'}</td>
+			<td style="${cellCenter}">${r.aiReviewRequestedPrs > 0 ? `<span style="font-weight:600;">${r.aiReviewRequestedPrs}</span>` : '0'}</td>
+		</tr>`;
+	}).join('');
+
+	return `
+		<div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
+			Showing PRs created since ${sinceDate}.
+			Reviewer requests are only visible for <strong>open</strong> PRs — the GitHub API clears this field after a PR is merged or closed.
+		</div>
+		<div class="customization-matrix-container">
+			<table class="customization-matrix" style="width:100%; border-collapse:collapse;">
+				<thead>
+					<tr>
+						<th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">📂 Repository</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">PRs</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="PRs where the PR author's GitHub login matches a known AI agent (e.g. copilot-swe-agent, claude-code-action, openai-code-agent)">🤖 Cloud Agent Authored</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Open PRs where an AI agent was listed as a requested reviewer">👁 Copilot Review Agent requested†</th>
+					</tr>
+				</thead>
+				<tbody>
+					${rows}
+				</tbody>
+			</table>
+		</div>
+		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
+			† Copilot Review Agent requested counts are for open PRs only. GitHub removes reviewer data after a PR is merged or closed.<br/>
+			🤖 Cloud Agent Authored = PR author's GitHub login matches a known cloud agent (e.g. <code>copilot-swe-agent</code>, <code>claude-code-action</code>, <code>openai-code-agent</code>).
+		</div>`;
+}
+
+function updateReposPrPanel(data: RepoPrStatsResult): void {
+	const container = document.querySelector('#repos-pr-content');
+	if (!container) { return; }
+	container.innerHTML = `
+		<div class="section-title"><span>🤖</span><span>AI Activity in Repository PRs</span></div>
+		<div class="section-subtitle">
+			PRs from the last 30 days across your known repositories, showing how many were <strong>authored by cloud agents</strong>
+			(i.e. opened by a bot account like <code>copilot-swe-agent</code>, <code>claude-code-action</code>, or <code>openai-code-agent</code>)
+			or had an AI agent requested as a reviewer.
+		</div>
+		${renderReposPrContent(data)}
+	`;
 }
 
 function renderLayout(stats: UsageAnalysisStats): void {
@@ -794,6 +923,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<button class="tab-button ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity">📊 My Activity</button>
 				<button class="tab-button ${activeTab === 'tools' ? 'active' : ''}" data-tab="tools">🔧 Tools &amp; Integrations</button>
 				<button class="tab-button ${activeTab === 'health' ? 'active' : ''}" data-tab="health">🏗️ Workspace Health</button>
+				<button class="tab-button ${activeTab === 'repos' ? 'active' : ''}" data-tab="repos">🤖 Repository PRs</button>
 			</div>
 
 			<div id="tab-panel-activity" class="tab-panel"${activeTab !== 'activity' ? ' style="display:none"' : ''}>
@@ -1054,6 +1184,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				</div>
 			</div>
 
+			<div id="tab-panel-repos" class="tab-panel"${activeTab !== 'repos' ? ' style="display:none"' : ''}>
+				<div class="section" id="repos-pr-content">
+					<div class="section-title"><span>🤖</span><span>AI Activity in Repository PRs</span></div>
+					<div class="section-subtitle">PRs from the last 30 days across your known repositories — authored or reviewed by AI agents.</div>
+					<div style="margin-top:12px; color: var(--text-secondary); font-size:12px;">
+						Loading… (sign in with GitHub to see data)
+					</div>
+				</div>
+			</div>
+
 			<div class="footer">
 				Last updated: ${escapeHtml(new Date(stats.lastUpdated).toLocaleString())} · Updates every 5 minutes
 			</div>
@@ -1185,6 +1325,10 @@ window.addEventListener('message', (event) => {
 				if (sanitized) {
 					renderLayout(sanitized);
 					renderRepositoryHygienePanels();
+					// Restore repos PR tab if we already fetched data (renderLayout resets the DOM)
+					if (repoPrStatsData) {
+						updateReposPrPanel(repoPrStatsData);
+					}
 				}
 			}
 			break;
@@ -1208,6 +1352,42 @@ window.addEventListener('message', (event) => {
 				setTimeout(() => {
 					el.style.boxShadow = '';
 				}, 2000);
+			}
+			break;
+		}
+		case 'repoPrStatsLoaded': {
+			repoPrStatsData = message.data as RepoPrStatsResult;
+			// Reset the loaded flag when not authenticated so re-authenticating and clicking the tab
+			// again triggers a fresh fetch instead of showing the stale "not authenticated" placeholder.
+			if (!repoPrStatsData.authenticated) {
+				repoPrStatsLoaded = false;
+			}
+			updateReposPrPanel(repoPrStatsData);
+			break;
+		}
+		case 'repoPrStatsProgress': {
+			const container = document.querySelector('#repos-pr-content');
+			if (container) {
+				const done = message.done as number;
+				const total = message.total as number;
+				const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+				const progEl = container.querySelector('.repos-pr-progress');
+				if (progEl) {
+					progEl.textContent = `Fetching PRs… ${done}/${total} repos (${pct}%)`;
+				} else {
+					// First progress update — strip the static placeholder (keep only title/subtitle)
+					Array.from(container.children).forEach(child => {
+						const el = child as HTMLElement;
+						if (!el.classList.contains('section-title') && !el.classList.contains('section-subtitle')) {
+							el.remove();
+						}
+					});
+					const div = document.createElement('div');
+					div.className = 'repos-pr-progress';
+					div.style.cssText = 'margin-top:8px; font-size:12px; color:var(--text-secondary);';
+					div.textContent = `Fetching PRs… ${done}/${total} repos (${pct}%)`;
+					container.appendChild(div);
+				}
 			}
 			break;
 		}

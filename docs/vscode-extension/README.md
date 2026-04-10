@@ -25,6 +25,19 @@ Search for **"AI Engineering Fluency"** in the VS Code Extensions panel, or inst
 - **Smart Estimation**: Uses character-based analysis with model-specific ratios for token estimation
 - **Intelligent Caching**: Caches processed session files to speed up subsequent updates
 - **Diagnostic Reporting**: Generate comprehensive diagnostic reports to help troubleshoot issues
+- **GitHub Authentication**: Authenticate with your GitHub account to unlock future features
+
+### GitHub Authentication (Opt-in)
+
+- **Opt-in Authentication**: Sign in with your configured GitHub account in VS Code
+- **Built-in VS Code Integration**: Uses VS Code's native authentication provider for GitHub
+- **Stored State**: Authentication state is stored in VS Code global state (no tokens stored)
+- **Future Features**: Foundation for upcoming GitHub-specific features such as:
+  - Repository-specific usage tracking
+  - Team collaboration features
+  - Advanced analytics and insights
+
+To authenticate, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for "AI Engineering Fluency: Authenticate with GitHub", or access it through the Diagnostic Report's **GitHub Auth** tab.
 
 ### Cloud Backend (Opt-in)
 
