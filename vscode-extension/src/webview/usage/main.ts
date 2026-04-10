@@ -436,6 +436,53 @@ function setupTabs(): void {
 	});
 }
 
+function toSafeNumber(value: unknown): number {
+	const n = Number(value);
+	return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function toSafeHttpUrl(value: unknown): string {
+	const raw = typeof value === 'string' ? value.trim() : '';
+	try {
+		const parsed = new URL(raw);
+		if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+			return parsed.toString();
+		}
+	} catch {
+		// Ignore invalid URL and fall back to placeholder.
+	}
+	return '#';
+}
+
+function sanitizeRepoPrStatsData(input: unknown): RepoPrStatsResult {
+	const src = (input && typeof input === 'object') ? (input as Record<string, unknown>) : {};
+	const repos = Array.isArray(src.repos) ? src.repos : [];
+	return {
+		authenticated: Boolean(src.authenticated),
+		since: typeof src.since === 'string' || typeof src.since === 'number' ? src.since : Date.now(),
+		repos: repos.map((repo) => {
+			const r = (repo && typeof repo === 'object') ? (repo as Record<string, unknown>) : {};
+			const aiDetails = Array.isArray(r.aiDetails) ? r.aiDetails : [];
+			return {
+				repoUrl: toSafeHttpUrl(r.repoUrl),
+				owner: escapeHtml(typeof r.owner === 'string' ? r.owner : ''),
+				repo: escapeHtml(typeof r.repo === 'string' ? r.repo : ''),
+				error: typeof r.error === 'string' ? escapeHtml(r.error) : '',
+				totalPrs: toSafeNumber(r.totalPrs),
+				aiAuthoredPrs: toSafeNumber(r.aiAuthoredPrs),
+				aiReviewRequestedPrs: toSafeNumber(r.aiReviewRequestedPrs),
+				aiDetails: aiDetails.map((d) => {
+					const detail = (d && typeof d === 'object') ? (d as Record<string, unknown>) : {};
+					return {
+						label: escapeHtml(typeof detail.label === 'string' ? detail.label : ''),
+						count: toSafeNumber(detail.count),
+					};
+				}),
+			};
+		}),
+	} as RepoPrStatsResult;
+}
+
 function renderReposPrContent(data: RepoPrStatsResult): string {
 	const sinceDate = escapeHtml(new Date(data.since).toLocaleDateString());
 	if (!data.authenticated) {
@@ -1356,7 +1403,7 @@ window.addEventListener('message', (event) => {
 			break;
 		}
 		case 'repoPrStatsLoaded': {
-			repoPrStatsData = message.data as RepoPrStatsResult;
+			repoPrStatsData = sanitizeRepoPrStatsData(message.data);
 			// Reset the loaded flag when not authenticated so re-authenticating and clicking the tab
 			// again triggers a fresh fetch instead of showing the stale "not authenticated" placeholder.
 			if (!repoPrStatsData.authenticated) {
