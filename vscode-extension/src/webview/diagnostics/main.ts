@@ -24,6 +24,7 @@ type SessionFileDetails = {
   size: number;
   modified: string;
   interactions: number;
+  tokens?: number;
   contextReferences: ContextReferenceUsage;
   firstInteraction: string | null;
   lastInteraction: string | null;
@@ -185,6 +186,14 @@ function sanitizeNumber(value: number | undefined | null): string {
   if (!Number.isFinite(n)) {
     return "0";
   }
+  return Math.floor(n).toString();
+}
+
+function formatTokenCount(value: number | undefined | null): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n === 0) { return "0"; }
+  if (n >= 1_000_000) { return `${(n / 1_000_000).toFixed(1)}M`; }
+  if (n >= 1_000) { return `${(n / 1_000).toFixed(1)}K`; }
   return Math.floor(n).toString();
 }
 
@@ -509,6 +518,10 @@ function renderSessionTable(
     (sum, sf) => sum + Number(sf.interactions || 0),
     0,
   );
+  const totalTokens = filteredFiles.reduce(
+    (sum, sf) => sum + Number(sf.tokens || 0),
+    0,
+  );
   const totalContextRefs = filteredFiles.reduce(
     (sum, sf) => sum + getTotalContextRefs(sf.contextReferences),
     0,
@@ -582,6 +595,10 @@ function renderSessionTable(
 				<div class="summary-value">${totalInteractions}</div>
 			</div>
 			<div class="summary-card">
+				<div class="summary-label">🪙 Tokens</div>
+				<div class="summary-value" title="${totalTokens.toLocaleString()} tokens">${formatTokenCount(totalTokens)}</div>
+			</div>
+			<div class="summary-card">
 				<div class="summary-label">🔗 Context References</div>
 				<div class="summary-value">${safeText(totalContextRefs)}</div>
 				<div class="summary-sub">
@@ -618,6 +635,7 @@ function renderSessionTable(
 						<th>Title</th>
 						<th>Repository</th>
 						<th>Size</th>
+						<th>Tokens</th>
 						<th>Interactions</th>
 						<th>Context Refs</th>
 						<th class="sortable" data-sort="lastInteraction">Last Interaction${getSortIndicator("lastInteraction")}</th>
@@ -636,6 +654,7 @@ function renderSessionTable(
 							</td>
 							<td class="repository-cell" title="${sf.repository ? escapeHtml(sf.repository) : "No repository detected"}">${sf.repository ? escapeHtml(getRepoDisplayName(sf.repository)) : '<span style="color: #666;">—</span>'}</td>
 							<td>${formatFileSize(sf.size)}</td>
+							<td title="${Number(sf.tokens || 0).toLocaleString()} tokens">${formatTokenCount(sf.tokens)}</td>
 							<td>${sanitizeNumber(sf.interactions)}</td>
 							<td title="${escapeHtml(getContextRefsSummary(sf.contextReferences))}">${sanitizeNumber(getTotalContextRefs(sf.contextReferences))}</td>
 							<td>${formatDate(sf.lastInteraction)}</td>
