@@ -424,6 +424,22 @@ jobs:
           --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
           --pat "$VSCE_PAT"
 
+    - name: Publish to Open VSX Registry
+      id: publish_open_vsx
+      env:
+        OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+      run: |
+        if [ -z "$OPEN_VSX_TOKEN" ]; then
+          echo "❌ OPEN_VSX_TOKEN secret is not configured."
+          echo "   Create a token at https://open-vsx.org/user-settings/tokens"
+          exit 1
+        fi
+
+        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to Open VSX Registry..."
+        npx --yes ovsx publish \
+          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
+          -p "$OPEN_VSX_TOKEN"
+
     - name: Publish Summary
       if: always()
       run: |
@@ -441,6 +457,18 @@ jobs:
             echo ""
             echo "Ensure the \`VSCE_PAT\` secret is configured with a valid Azure DevOps PAT"
             echo "with the \`Marketplace (Publish)\` scope for all accessible organizations."
+          fi
+          echo ""
+          echo "# 🌐 Open VSX Registry"
+          echo ""
+          if [ "${{ steps.publish_open_vsx.outcome }}" == "success" ]; then
+            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [Open VSX Registry](https://open-vsx.org/extension/RobBos/copilot-token-tracker)"
+          elif [ "${{ steps.publish_open_vsx.outcome }}" == "skipped" ]; then
+            echo "⏭️ Open VSX publish skipped."
+          else
+            echo "❌ Failed to publish v${{ needs.release.outputs.version }} to the Open VSX Registry."
+            echo ""
+            echo "Ensure the \`OPEN_VSX_TOKEN\` secret is configured with a valid Open VSX token."
           fi
         } >> "$GITHUB_STEP_SUMMARY"
 
@@ -657,5 +685,4 @@ jobs:
         } else {
           "## ❌ Build failed — no .vsix produced" >> $env:GITHUB_STEP_SUMMARY
         }
-
 

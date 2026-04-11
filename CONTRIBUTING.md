@@ -415,7 +415,7 @@ The project uses a fully automated release pipeline via GitHub Actions.
 
 The workflow inputs:
 - `create_tag` — Creates a git tag from the `package.json` version (default: true)
-- `publish_marketplace` — Publishes to the VS Code Marketplace (default: true)
+- `publish_marketplace` — Publishes to the VS Code Marketplace and Open VSX (default: true)
 
 The workflow automatically:
 
@@ -425,13 +425,14 @@ The workflow automatically:
 4. Runs the full build pipeline (lint, type-check, compile, test)
 5. Creates a GitHub Release with the VSIX attached
 6. Publishes to the VS Code Marketplace (using the `VSCE_PAT` secret)
-7. Opens a PR to sync `CHANGELOG.md` in the repository
+7. Publishes to the Open VSX Registry (using the `OPEN_VSX_TOKEN` secret)
+8. Opens a PR to sync `CHANGELOG.md` in the repository
 
-> **Security:** Only users with repository write access can trigger the `workflow_dispatch`. The `VSCE_PAT` secret must be configured in repository settings (Settings → Secrets and variables → Actions). Create a PAT at https://dev.azure.com with the "Marketplace (Publish)" scope.
+> **Security:** Only users with repository write access can trigger the `workflow_dispatch`. The `VSCE_PAT` secret must be configured in repository settings (Settings → Secrets and variables → Actions). Create a PAT at https://dev.azure.com with the "Marketplace (Publish)" scope. The `OPEN_VSX_TOKEN` secret must also be configured; create a token at https://open-vsx.org/user-settings/tokens.
 
 ### Tag-Based Release (Build Only)
 
-Pushing a version tag (e.g., `git push origin v0.0.19`) triggers the build and creates a GitHub release, but does **not** publish to the marketplace. Use the workflow dispatch for the full pipeline.
+Pushing a version tag (e.g., `git push origin v0.0.19`) triggers the build and creates a GitHub release, but does **not** publish to the marketplaces. Use the workflow dispatch for the full pipeline.
 
 ### Manual Changelog Sync
 
