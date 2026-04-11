@@ -42,8 +42,6 @@ Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session fi
 
 [![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/RobBos.AIEngineeringFluency.svg)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
 
-> Counts are **estimated** — VS session files do not store raw LLM token counts.
-
 📖 [Full Visual Studio extension documentation](docs/visual-studio/README.md)
 
 ---
