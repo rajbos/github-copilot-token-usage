@@ -6,6 +6,23 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.1.2]
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Changes
+* chore: bump Visual Studio extension version to 1.0.5 by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/590
+* feat: add Product Owner agent with rubber-duck multi-model reviews by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/591
+* Fix Open VSX badge rendering by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/592
+* feat: add token count column to diagnostics session files tab by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/593
+* feat: add Day/Week/Month period toggle to chart view by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/594
+* feat(chart): persist period selection and compact period picker UI by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/595
+* chore: bump versions for release (vscode-extension) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/596
+
+
+**Full Changelog**: https://github.com/rajbos/github-copilot-token-usage/compare/cli/v0.0.8...vscode/v0.1.2
+
 ## [0.1.1] - 2026-04-10
 
 ### Features and Improvements
