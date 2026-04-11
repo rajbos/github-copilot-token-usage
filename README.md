@@ -5,7 +5,6 @@
 Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Studio, and the command line. All data is read from local session logs — nothing leaves your machine unless you opt in to cloud sync.
 
 [![Build](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml)
-[![Visual Studio Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/RobBos.AIEngineeringFluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
 
 ## Supported AI engineering tools
 
@@ -40,6 +39,8 @@ ext install RobBos.copilot-token-tracker
 ### 🏗️ Visual Studio Extension
 
 Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session files directly.
+
+[![Visual Studio Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/RobBos.AIEngineeringFluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
 
 > Counts are **estimated** — VS session files do not store raw LLM token counts.
 
