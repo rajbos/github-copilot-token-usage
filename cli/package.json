@@ -1,6 +1,6 @@
 {
   "name": "@rajbos/ai-engineering-fluency",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "AI Engineering Fluency - CLI tool to analyze GitHub Copilot token usage from local session files",
   "license": "MIT",
   "author": "RobBos",
