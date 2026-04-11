@@ -3138,12 +3138,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction = stat.mtime.toISOString();
 		}
 
-		// Reconstruct SessionFileDetails from cache
+		// Reconstruct SessionFileDetails from cache.
+		// Prefer actualTokens (real API count) when available; fall back to estimated tokens.
 		const details: SessionFileDetails = {
 			file: sessionFile,
 			size: cached.size || stat.size,
 			modified: stat.mtime.toISOString(),
 			interactions: cached.interactions,
+			tokens: cached.actualTokens || cached.tokens || 0,
 			contextReferences: cached.usageAnalysis.contextReferences,
 			firstInteraction: cached.firstInteraction || null,
 			lastInteraction: lastInteraction,
@@ -3169,6 +3171,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	): Promise<void> {
 		// Get existing cache entry if available
 		const existingCache = this.getCachedSessionData(sessionFile);
+
+		// Enrich details with token count from existing cache (populated by main stats calculation).
+		// Prefer actualTokens (real API count) when available; fall back to estimated tokens.
+		details.tokens = existingCache?.actualTokens || existingCache?.tokens || 0;
 
 		// Create or update cache entry
 		const cacheEntry: SessionFileCache = {
@@ -4135,13 +4141,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let cliSessionModel = 'gpt-4o';
 			let cliSessionEffort: string | undefined;
 
-			// Pre-scan for session.start to extract default model and effort
+			// Pre-scan for model and effort:
+			// 1. session.start.data.selectedModel (older CLI format)
+			// 2. First tool.execution_complete.data.model (newer CLI format — session.start has no selectedModel)
+			let cliModelFound = false;
 			for (const line of lines) {
 				try {
 					const ev = JSON.parse(line);
 					if (ev.type === 'session.start' && ev.data) {
-						if (typeof ev.data.selectedModel === 'string') { cliSessionModel = ev.data.selectedModel; }
+						if (typeof ev.data.selectedModel === 'string') {
+							cliSessionModel = ev.data.selectedModel;
+							cliModelFound = true;
+						}
 						if (typeof ev.data.reasoningEffort === 'string') { cliSessionEffort = ev.data.reasoningEffort; }
+						if (cliModelFound) { break; }
+						// No model in session.start — continue scanning for tool.execution_complete
+					}
+					// Newer format: model stored per tool call result
+					if (ev.type === 'tool.execution_complete' && typeof ev.data?.model === 'string') {
+						cliSessionModel = ev.data.model;
 						break;
 					}
 				} catch { /* skip */ }

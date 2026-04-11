@@ -314,6 +314,7 @@ export interface SessionFileDetails {
   size: number;
   modified: string;
   interactions: number;
+  tokens?: number; // estimated token count for the session
   contextReferences: ContextReferenceUsage;
   firstInteraction: string | null;
   lastInteraction: string | null;
