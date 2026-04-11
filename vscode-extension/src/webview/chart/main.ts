@@ -46,6 +46,7 @@ type InitialChartData = {
 	lastUpdated: string;
 	backendConfigured?: boolean;
 	compactNumbers?: boolean;
+	periodsReady?: boolean;
 	periods?: {
 		daily: ChartPeriodData;
 		weekly: ChartPeriodData;
@@ -173,12 +174,21 @@ function renderLayout(data: InitialChartData): void {
 
 	// Period toggle row
 	const periodToggles = el('div', 'chart-controls period-controls');
+	const periodsReady = data.periodsReady !== false;
 	const dayBtn = el('button', `toggle${currentPeriod === 'day' ? ' active' : ''}`, '📅 Day');
 	dayBtn.id = 'period-day';
-	const weekBtn = el('button', `toggle${currentPeriod === 'week' ? ' active' : ''}`, '🗓️ Week');
+	const weekBtn = el('button', `toggle${currentPeriod === 'week' ? ' active' : ''}`, periodsReady ? '🗓️ Week' : '🗓️ Week ⌛');
 	weekBtn.id = 'period-week';
-	const monthBtn = el('button', `toggle${currentPeriod === 'month' ? ' active' : ''}`, '📆 Month');
+	if (!periodsReady) {
+		(weekBtn as HTMLButtonElement).disabled = true;
+		weekBtn.title = 'Loading historical data…';
+	}
+	const monthBtn = el('button', `toggle${currentPeriod === 'month' ? ' active' : ''}`, periodsReady ? '📆 Month' : '📆 Month ⌛');
 	monthBtn.id = 'period-month';
+	if (!periodsReady) {
+		(monthBtn as HTMLButtonElement).disabled = true;
+		monthBtn.title = 'Loading historical data…';
+	}
 	periodToggles.append(dayBtn, weekBtn, monthBtn);
 
 	// Chart view toggle row

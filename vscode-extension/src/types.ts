@@ -112,6 +112,11 @@ export interface ChartDataPayload {
     weekly: ChartPeriodData;
     monthly: ChartPeriodData;
   };
+  /**
+   * Whether the full-year data needed for Week and Month views is ready.
+   * When false, the webview should indicate that those views are loading.
+   */
+  periodsReady?: boolean;
 }
 
 export interface SessionFileCache {

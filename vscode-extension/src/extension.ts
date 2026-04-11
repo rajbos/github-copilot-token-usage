@@ -4739,10 +4739,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Use full-year daily stats for week/month period views; compute if not yet cached
-		const dailyStats = this.lastFullDailyStats ?? await this.calculateDailyStats();
+		// Open the panel IMMEDIATELY with whatever daily stats are already in memory.
+		// Full-year data (needed for Week/Month views) is computed in the background below.
+		const hasFullData = !!this.lastFullDailyStats;
+		const initialStats = this.lastFullDailyStats ?? this.lastDailyStats ?? [];
 
-		// Create webview panel
+		// Create webview panel now so the tab appears without waiting for I/O
 		this.chartPanel = vscode.window.createWebviewPanel(
 			'copilotTokenChart',
 			'Token Usage Over Time',
@@ -4768,14 +4770,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		});
 
-		// Set the HTML content
-		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+		// Render immediately; Week/Month buttons are shown as loading if full-year data isn't ready
+		this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, initialStats, hasFullData);
 
 		// Handle panel disposal
 		this.chartPanel.onDidDispose(() => {
 			this.log('📈 Chart view closed');
 			this.chartPanel = undefined;
 		});
+
+		// If we only have 30-day data, compute the full year in the background and push an update
+		if (!hasFullData) {
+			const fullStats = await this.calculateDailyStats();
+			if (this.chartPanel) {
+				void this.chartPanel.webview.postMessage({
+					command: 'updateChartData',
+					data: { ...this.buildChartData(fullStats), periodsReady: true, compactNumbers: this.getCompactNumbersSetting() }
+				});
+			}
+		}
 	}
 
 	public async showUsageAnalysis(): Promise<void> {
@@ -8132,6 +8145,7 @@ ${hashtag}`;
   private getChartHtml(
     webview: vscode.Webview,
     dailyStats: DailyTokenStats[],
+    periodsReady = true,
   ): string {
     const nonce = this.getNonce();
     const scriptUri = webview.asWebviewUri(
@@ -8146,7 +8160,7 @@ ${hashtag}`;
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
-    const chartData = this.buildChartData(dailyStats);
+    const chartData = { ...this.buildChartData(dailyStats), periodsReady };
 
     const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
 

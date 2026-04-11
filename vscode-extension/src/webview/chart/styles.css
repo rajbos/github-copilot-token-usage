@@ -151,6 +151,15 @@ body {
 	background: var(--button-hover-bg);
 }
 
+.toggle:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.toggle:disabled:hover {
+	background: var(--button-secondary-bg);
+}
+
 .canvas-wrap {
 	position: relative;
 	height: 420px;
