@@ -25,7 +25,7 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 
 Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more.
 
-[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/RobBos.copilot-token-tracker.svg)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)
+[![VS Code installs](https://vsmarketplacebadges.dev/installs-short/RobBos.copilot-token-tracker.svg?label=VS%20Code%20installs)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)
 
 [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/copilot-token-tracker?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
 
