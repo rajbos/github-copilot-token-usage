@@ -168,7 +168,7 @@ type RepoPrStatsResult = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 37; // Add thinking effort (reasoning effort) tracking
+	private static readonly CACHE_VERSION = 38; // Fix repo detection for CLI worktree sessions
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -241,6 +241,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private lastDailyStats: DailyTokenStats[] | undefined;
 	/** Full-year daily stats (up to 365 days) for the chart Week/Month period views. */
 	private lastFullDailyStats: DailyTokenStats[] | undefined;
+	/** Last period selected by the user in the chart view; restored on next open. */
+	private lastChartPeriod: 'day' | 'week' | 'month' = 'day';
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private lastDashboardData: any | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -3473,6 +3475,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session') {
 							if (event.data?.arguments?.title) { details.title = event.data.arguments.title; }
 						}
+
+						// Collect file paths from tool arguments for repository detection
+						if (event.type === 'tool.execution_start' && event.data?.arguments) {
+							const args = event.data.arguments as Record<string, unknown>;
+							for (const val of Object.values(args)) {
+								if (typeof val === 'string' && val.length > 3 && (val.includes('/') || val.includes('\\'))) {
+									allContentReferences.push({ kind: 'reference', reference: { fsPath: val } });
+								}
+							}
+						}
 					} catch {
 						// Skip malformed lines
 					}
@@ -4768,6 +4780,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (message.command === 'refresh') {
 				await this.dispatch('refresh:chart', () => this.refreshChartPanel());
 			}
+			if (message.command === 'setPeriodPreference') {
+				const p = message.period;
+				if (p === 'day' || p === 'week' || p === 'month') {
+					this.lastChartPeriod = p;
+				}
+			}
 		});
 
 		// Render immediately; Week/Month buttons are shown as loading if full-year data isn't ready
@@ -4801,10 +4819,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.analysisPanel = undefined;
 		}
 
-		// Get usage analysis stats (use cached version for fast loading)
-		const analysisStats = await this.calculateUsageAnalysisStats(true);
-
-		// Create webview panel
+		// Create webview panel immediately so the user sees something right away
 		this.analysisPanel = vscode.window.createWebviewPanel(
 			'copilotUsageAnalysis',
 			'AI Usage Analysis',
@@ -4859,8 +4874,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		});
 
-		// Set the HTML content
-		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+		// Set HTML immediately — use cached stats if available, else show loading spinner
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, this.lastUsageAnalysisStats ?? null);
+
+		// If no cached stats, compute in the background and push via updateStats
+		if (!this.lastUsageAnalysisStats) {
+			this.calculateUsageAnalysisStats(true).then(analysisStats => {
+				if (!this.analysisPanel) { return; }
+				void this.analysisPanel.webview.postMessage({
+					command: 'updateStats',
+					data: {
+						today: analysisStats.today,
+						last30Days: analysisStats.last30Days,
+						month: analysisStats.month,
+						locale: analysisStats.locale,
+						customizationMatrix: analysisStats.customizationMatrix || null,
+						missedPotential: analysisStats.missedPotential || [],
+						lastUpdated: analysisStats.lastUpdated.toISOString(),
+						backendConfigured: this.isBackendConfigured(),
+						currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
+					},
+				});
+			}).catch(err => {
+				this.error(`Failed to load usage analysis stats: ${err}`);
+			});
+		}
 
 		// Handle panel disposal
 		this.analysisPanel.onDidDispose(() => {
@@ -7997,7 +8035,21 @@ ${hashtag}`;
 
       const allModels = new Set<string>();
       entries.forEach(e => Object.keys(e.modelUsage).forEach(m => allModels.add(m)));
-      const modelDatasets = Array.from(allModels).map((model, idx) => {
+
+      // Rank models by total tokens across the period; keep top 5, group the rest
+      const modelTotals = new Map<string, number>();
+      for (const model of allModels) {
+        const total = entries.reduce((sum, e) => {
+          const u = e.modelUsage[model];
+          return sum + (u ? u.inputTokens + u.outputTokens : 0);
+        }, 0);
+        modelTotals.set(model, total);
+      }
+      const sortedModels = Array.from(allModels).sort((a, b) => (modelTotals.get(b) || 0) - (modelTotals.get(a) || 0));
+      const topModels = sortedModels.slice(0, 5);
+      const otherModels = sortedModels.slice(5);
+
+      const modelDatasets = topModels.map((model, idx) => {
         const color = modelColors[idx % modelColors.length];
         return {
           label: getModelDisplayName(model),
@@ -8005,6 +8057,18 @@ ${hashtag}`;
           backgroundColor: color.bg, borderColor: color.border, borderWidth: 1,
         };
       });
+      if (otherModels.length > 0) {
+        modelDatasets.push({
+          label: 'Other models',
+          data: entries.map(e => otherModels.reduce((sum, m) => {
+            const u = e.modelUsage[m];
+            return sum + (u ? u.inputTokens + u.outputTokens : 0);
+          }, 0)),
+          backgroundColor: 'rgba(150, 150, 150, 0.5)',
+          borderColor: 'rgba(150, 150, 150, 0.8)',
+          borderWidth: 1,
+        });
+      }
 
       const allEditors = new Set<string>();
       entries.forEach(e => Object.keys(e.editorUsage).forEach(ed => allEditors.add(ed)));
@@ -8018,7 +8082,9 @@ ${hashtag}`;
       });
 
       const allRepos = new Set<string>();
-      entries.forEach(e => Object.keys(e.repositoryUsage).forEach(r => allRepos.add(r)));
+      entries.forEach(e => Object.keys(e.repositoryUsage)
+        .filter(r => r !== 'Unknown')
+        .forEach(r => allRepos.add(r)));
       const repositoryDatasets = Array.from(allRepos).map((repo, idx) => {
         const color = modelColors[idx % modelColors.length];
         return {
@@ -8111,7 +8177,9 @@ ${hashtag}`;
     });
     const repositoryTotalsMap: Record<string, number> = {};
     dailyBuckets.forEach(b => {
-      Object.entries(b.stats.repositoryUsage).forEach(([repo, usage]) => {
+      Object.entries(b.stats.repositoryUsage)
+        .filter(([repo]) => repo !== 'Unknown')
+        .forEach(([repo, usage]) => {
         const displayName = this.getRepoDisplayName(repo);
         repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
       });
@@ -8160,7 +8228,7 @@ ${hashtag}`;
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
-    const chartData = { ...this.buildChartData(dailyStats), periodsReady };
+    const chartData = { ...this.buildChartData(dailyStats), periodsReady, initialPeriod: this.lastChartPeriod };
 
     const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
 
@@ -8183,7 +8251,7 @@ ${hashtag}`;
 
   private getUsageAnalysisHtml(
     webview: vscode.Webview,
-    stats: UsageAnalysisStats,
+    stats: UsageAnalysisStats | null,
   ): string {
     const nonce = this.getNonce();
     const scriptUri = webview.asWebviewUri(
@@ -8210,7 +8278,7 @@ ${hashtag}`;
     );
     this.log(`[Locale Detection] Intl default: ${intlLocale}`);
 
-    const detectedLocale = stats.locale || localeFromEnv || intlLocale;
+    const detectedLocale = (stats?.locale) || localeFromEnv || intlLocale;
     this.log(`[Usage Analysis] Extension detected locale: ${detectedLocale}`);
     this.log(
       `[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`,
@@ -8220,7 +8288,7 @@ ${hashtag}`;
       .getConfiguration('copilotTokenTracker')
       .get<string[]>('suppressedUnknownTools', []);
 
-    const initialData = JSON.stringify({
+    const initialData = stats ? JSON.stringify({
       today: stats.today,
       last30Days: stats.last30Days,
       month: stats.month,
@@ -8231,7 +8299,7 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
       suppressedUnknownTools,
-    }).replace(/</g, "\\u003c");
+    }).replace(/</g, "\\u003c") : 'null';
 
     return `<!DOCTYPE html>
 		<html lang="en">

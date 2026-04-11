@@ -47,6 +47,7 @@ type InitialChartData = {
 	backendConfigured?: boolean;
 	compactNumbers?: boolean;
 	periodsReady?: boolean;
+	initialPeriod?: ChartPeriod;
 	periods?: {
 		day: ChartPeriodData;
 		week: ChartPeriodData;
@@ -168,12 +169,12 @@ function renderLayout(data: InitialChartData): void {
 	}
 
 	const chartSection = el('div', 'section');
-	chartSection.append(el('h3', '', '📊 Charts'));
+	// Chart section header: title left, period toggles right
+	const chartSectionHeader = el('div', 'chart-section-header');
+	chartSectionHeader.append(el('h3', '', '📊 Charts'));
 
-	const chartShell = el('div', 'chart-shell');
-
-	// Period toggle row
-	const periodToggles = el('div', 'chart-controls period-controls');
+	// Period toggles (compact, inline with section heading)
+	const periodToggles = el('div', 'period-controls');
 	const periodsReady = data.periodsReady !== false;
 	const dayBtn = el('button', `toggle${currentPeriod === 'day' ? ' active' : ''}`, '📅 Day');
 	dayBtn.id = 'period-day';
@@ -190,6 +191,10 @@ function renderLayout(data: InitialChartData): void {
 		monthBtn.title = 'Loading historical data…';
 	}
 	periodToggles.append(dayBtn, weekBtn, monthBtn);
+	chartSectionHeader.append(periodToggles);
+	chartSection.append(chartSectionHeader);
+
+	const chartShell = el('div', 'chart-shell');
 
 	// Chart view toggle row
 	const toggles = el('div', 'chart-controls');
@@ -208,7 +213,7 @@ function renderLayout(data: InitialChartData): void {
 	canvas.id = 'token-chart';
 	canvasWrap.append(canvas);
 
-	chartShell.append(periodToggles, toggles, canvasWrap);
+	chartShell.append(toggles, canvasWrap);
 	chartSection.append(chartShell);
 
 	const footer = el('div', 'footer',
@@ -346,6 +351,7 @@ async function switchPeriod(period: ChartPeriod, data: InitialChartData): Promis
 		return;
 	}
 	currentPeriod = period;
+	vscode.postMessage({ command: 'setPeriodPreference', period });
 	setActivePeriod(period);
 	updateSummaryCards(data);
 	if (!chart) {
@@ -550,6 +556,9 @@ async function bootstrap(): Promise<void> {
 			root.textContent = 'No data available.';
 		}
 		return;
+	}
+	if (initialData.initialPeriod) {
+		currentPeriod = initialData.initialPeriod;
 	}
 	renderLayout(initialData);
 }

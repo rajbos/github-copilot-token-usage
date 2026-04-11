@@ -586,6 +586,31 @@ export async function extractRepositoryFromContentReferences(contentReferences: 
 			} catch {
 				// No .git/config at this level, continue up the tree
 			}
+
+			// Also check if .git is a file (git worktree) — contains "gitdir: <path>"
+			const gitFilePath = path.join(potentialRoot, '.git');
+			try {
+				const gitFileContent = await fs.promises.readFile(gitFilePath, 'utf8');
+				const match = gitFileContent.match(/^gitdir:\s*(.+)$/m);
+				if (match) {
+					const gitdirPath = match[1].trim();
+					const basePath = potentialRoot.replace(/\//g, path.sep);
+					const resolvedGitdir = path.isAbsolute(gitdirPath)
+						? gitdirPath
+						: path.resolve(basePath, gitdirPath);
+					// Standard worktree: gitdir = <main>/.git/worktrees/<name>
+					// Main .git dir is 2 levels up; its config holds the remote URL
+					const mainGitDir = path.resolve(resolvedGitdir, '..', '..');
+					const mainConfigPath = path.join(mainGitDir, 'config');
+					const gitConfig = await fs.promises.readFile(mainConfigPath, 'utf8');
+					const remoteUrl = parseGitRemoteUrl(gitConfig);
+					if (remoteUrl) {
+						return remoteUrl;
+					}
+				}
+			} catch {
+				// Not a worktree or can't read gitdir, continue
+			}
 		}
 	}
 

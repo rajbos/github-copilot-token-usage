@@ -60,10 +60,10 @@ export class CacheManager {
 		}
 		this.sessionFileCache.set(filePath, data);
 
-		// Limit cache size to prevent memory issues (keep last 1000 files)
+		// Limit cache size to prevent memory issues (keep last 3000 files)
 		// Only trigger cleanup when size exceeds limit by 100 to avoid frequent operations
-		if (this.sessionFileCache.size > 1100) {
-			// Remove 100 oldest entries to bring size back to 1000
+		if (this.sessionFileCache.size > 3100) {
+			// Remove 100 oldest entries to bring size back to 3000
 			// Maps maintain insertion order, so the first entries are the oldest
 			const keysToDelete: string[] = [];
 			let count = 0;
