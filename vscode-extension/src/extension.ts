@@ -4819,10 +4819,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.analysisPanel = undefined;
 		}
 
-		// Get usage analysis stats (use cached version for fast loading)
-		const analysisStats = await this.calculateUsageAnalysisStats(true);
-
-		// Create webview panel
+		// Create webview panel immediately so the user sees something right away
 		this.analysisPanel = vscode.window.createWebviewPanel(
 			'copilotUsageAnalysis',
 			'AI Usage Analysis',
@@ -4877,8 +4874,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		});
 
-		// Set the HTML content
-		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, analysisStats);
+		// Set HTML immediately — use cached stats if available, else show loading spinner
+		this.analysisPanel.webview.html = this.getUsageAnalysisHtml(this.analysisPanel.webview, this.lastUsageAnalysisStats ?? null);
+
+		// If no cached stats, compute in the background and push via updateStats
+		if (!this.lastUsageAnalysisStats) {
+			this.calculateUsageAnalysisStats(true).then(analysisStats => {
+				if (!this.analysisPanel) { return; }
+				void this.analysisPanel.webview.postMessage({
+					command: 'updateStats',
+					data: {
+						today: analysisStats.today,
+						last30Days: analysisStats.last30Days,
+						month: analysisStats.month,
+						locale: analysisStats.locale,
+						customizationMatrix: analysisStats.customizationMatrix || null,
+						missedPotential: analysisStats.missedPotential || [],
+						lastUpdated: analysisStats.lastUpdated.toISOString(),
+						backendConfigured: this.isBackendConfigured(),
+						currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
+					},
+				});
+			}).catch(err => {
+				this.error(`Failed to load usage analysis stats: ${err}`);
+			});
+		}
 
 		// Handle panel disposal
 		this.analysisPanel.onDidDispose(() => {
@@ -8231,7 +8251,7 @@ ${hashtag}`;
 
   private getUsageAnalysisHtml(
     webview: vscode.Webview,
-    stats: UsageAnalysisStats,
+    stats: UsageAnalysisStats | null,
   ): string {
     const nonce = this.getNonce();
     const scriptUri = webview.asWebviewUri(
@@ -8258,7 +8278,7 @@ ${hashtag}`;
     );
     this.log(`[Locale Detection] Intl default: ${intlLocale}`);
 
-    const detectedLocale = stats.locale || localeFromEnv || intlLocale;
+    const detectedLocale = (stats?.locale) || localeFromEnv || intlLocale;
     this.log(`[Usage Analysis] Extension detected locale: ${detectedLocale}`);
     this.log(
       `[Usage Analysis] Test format 1234567.89: ${new Intl.NumberFormat(detectedLocale).format(1234567.89)}`,
@@ -8268,7 +8288,7 @@ ${hashtag}`;
       .getConfiguration('copilotTokenTracker')
       .get<string[]>('suppressedUnknownTools', []);
 
-    const initialData = JSON.stringify({
+    const initialData = stats ? JSON.stringify({
       today: stats.today,
       last30Days: stats.last30Days,
       month: stats.month,
@@ -8279,7 +8299,7 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
       suppressedUnknownTools,
-    }).replace(/</g, "\\u003c");
+    }).replace(/</g, "\\u003c") : 'null';
 
     return `<!DOCTYPE html>
 		<html lang="en">

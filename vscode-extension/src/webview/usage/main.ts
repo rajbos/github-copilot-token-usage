@@ -1997,8 +1997,9 @@ async function bootstrap(): Promise<void> {
 	if (!initialData) {
 		const root = document.getElementById('root');
 		if (root) {
-			root.textContent = 'No data available.';
+			root.innerHTML = '<div style="padding: 32px; text-align: center; color: var(--vscode-foreground); opacity: 0.7; font-size: 14px;">⏳ Loading usage analysis…</div>';
 		}
+		// Stats will arrive via the updateStats message; the module-level listener will call renderLayout then.
 		return;
 	}
 	console.log('[Usage Analysis] Browser default locale:', Intl.DateTimeFormat().resolvedOptions().locale);
