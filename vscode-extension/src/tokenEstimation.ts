@@ -244,6 +244,85 @@ export async function reconstructJsonlStateAsync(lines: string[], yieldInterval 
 }
 
 /**
+ * Build a map from requestId → reasoning effort level by scanning delta-based JSONL lines.
+ *
+ * The effort level is taken from `configurationSchema.properties.reasoningEffort.default`
+ * on the active selectedModel at the time each request is added to the session.
+ *
+ * Returns: Map<requestId, effort> plus the default effort at session start.
+ */
+export function buildReasoningEffortTimeline(lines: string[]): {
+  effortByRequestId: Map<string, string>;
+  defaultEffort: string | null;
+  switchCount: number;
+} {
+  const effortByRequestId = new Map<string, string>();
+  let currentEffort: string | null = null;
+  let defaultEffort: string | null = null;
+  let switchCount = 0;
+
+  function extractEffortFromModel(model: unknown): string | null {
+    if (!model || typeof model !== 'object') { return null; }
+    const m = model as Record<string, unknown>;
+    const metadata = m['metadata'];
+    if (!metadata || typeof metadata !== 'object') { return null; }
+    const meta = metadata as Record<string, unknown>;
+    const schema = meta['configurationSchema'];
+    if (!schema || typeof schema !== 'object') { return null; }
+    const s = schema as Record<string, unknown>;
+    const props = s['properties'];
+    if (!props || typeof props !== 'object') { return null; }
+    const p = props as Record<string, unknown>;
+    const re = p['reasoningEffort'];
+    if (!re || typeof re !== 'object') { return null; }
+    const r = re as Record<string, unknown>;
+    return typeof r['default'] === 'string' ? r['default'] : null;
+  }
+
+  for (const line of lines) {
+    if (!line.trim()) { continue; }
+    let delta: any;
+    try { delta = JSON.parse(line); } catch { continue; }
+    if (typeof delta.kind !== 'number') { continue; }
+
+    if (delta.kind === 0) {
+      // Initial state: extract model from inputState.selectedModel
+      const model = delta.v?.inputState?.selectedModel;
+      const effort = extractEffortFromModel(model);
+      if (effort !== null) {
+        currentEffort = effort;
+        defaultEffort = effort;
+      }
+    } else if (delta.kind === 1) {
+      const k = delta.k;
+      // Update to inputState.selectedModel — two-element path
+      if (Array.isArray(k) && k[0] === 'inputState' && k[1] === 'selectedModel') {
+        const effort = extractEffortFromModel(delta.v);
+        if (effort !== null && effort !== currentEffort) {
+          if (currentEffort !== null) { switchCount++; }
+          currentEffort = effort;
+        }
+      }
+    } else if (delta.kind === 2) {
+      const k = delta.k;
+      // New request being added: k = ["requests", <index>]
+      if (Array.isArray(k) && k[0] === 'requests' && typeof k[1] === 'number' && currentEffort !== null) {
+        const req = delta.v;
+        if (req && typeof req === 'object') {
+          const r = req as Record<string, unknown>;
+          const requestId = typeof r['requestId'] === 'string' ? r['requestId'] : null;
+          if (requestId) {
+            effortByRequestId.set(requestId, currentEffort);
+          }
+        }
+      }
+    }
+  }
+
+  return { effortByRequestId, defaultEffort, switchCount };
+}
+
+/**
  * Extract per-request actual token usage from raw JSONL lines using regex.
  * Handles cases where lines with result data fail JSON.parse due to bad escape characters.
  * Supports both old format (usage.promptTokens/completionTokens) and new format (promptTokens/outputTokens).

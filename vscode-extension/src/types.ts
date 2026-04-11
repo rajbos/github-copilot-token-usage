@@ -122,6 +122,16 @@ category?: 'copilot' | 'non-copilot';
 }
 
 // New interfaces for usage analysis
+/** Per-level request counts for thinking effort (reasoning effort) tracking. */
+export interface ThinkingEffortUsage {
+  /** Number of requests submitted at each effort level, keyed by level name (e.g. "low", "medium", "high"). */
+  byEffort: { [effort: string]: number };
+  /** Number of times the effort level changed within this session. */
+  switchCount: number;
+  /** The effort level active at the start of the session, or null if not available. */
+  defaultEffort: string | null;
+}
+
 export interface SessionUsageAnalysis {
   toolCalls: ToolCallUsage;
   modeUsage: ModeUsage;
@@ -138,6 +148,7 @@ export interface SessionUsageAnalysis {
     unknownRequests: number;
     totalRequests: number;
   };
+  thinkingEffort?: ThinkingEffortUsage;
   editScope?: EditScopeUsage;
   applyUsage?: ApplyButtonUsage;
   sessionDuration?: SessionDurationData;
@@ -289,6 +300,12 @@ export interface UsageAnalysisPeriod {
   sessionDuration: SessionDurationData;
   conversationPatterns: ConversationPatterns;
   agentTypes: AgentTypeUsage;
+  /** Aggregated thinking effort (reasoning effort) usage across all sessions in this period. */
+  thinkingEffortUsage?: {
+    byEffort: { [effort: string]: number };
+    sessionCount: number; // sessions with effort data
+    switchCount: number;  // total effort switches across all sessions
+  };
 }
 
 // Detailed session file information for diagnostics view
@@ -337,6 +354,8 @@ export interface ChatTurn {
   outputTokensEstimate: number;
   thinkingTokensEstimate: number;
   actualUsage?: ActualUsage;
+  /** Thinking effort level active when this turn was submitted (e.g. "low", "medium", "high"). */
+  thinkingEffort?: string;
 }
 
 // Full session log data for the log viewer
@@ -353,6 +372,8 @@ export interface SessionLogData {
   lastInteraction: string | null;
   turns: ChatTurn[];
   usageAnalysis?: SessionUsageAnalysis;
+  /** Session-level actual token count from LLM API (e.g. session.shutdown in CLI format). 0 when unavailable. */
+  actualTokens?: number;
 }
 
 // Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)

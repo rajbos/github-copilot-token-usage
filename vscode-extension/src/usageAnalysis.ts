@@ -29,6 +29,7 @@ import {
 	extractPerRequestUsageFromRawLines,
 	createEmptyContextRefs,
 	extractSubAgentData,
+	buildReasoningEffortTimeline,
 } from './tokenEstimation';
 import {
 	getModeType,
@@ -238,6 +239,17 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 		period.agentTypes.defaultAgent += analysis.agentTypes.defaultAgent;
 		period.agentTypes.workspaceAgent += analysis.agentTypes.workspaceAgent;
 		period.agentTypes.other += analysis.agentTypes.other;
+	}
+
+	if (analysis.thinkingEffort) {
+		if (!period.thinkingEffortUsage) {
+			period.thinkingEffortUsage = { byEffort: {}, sessionCount: 0, switchCount: 0 };
+		}
+		period.thinkingEffortUsage.sessionCount++;
+		period.thinkingEffortUsage.switchCount += analysis.thinkingEffort.switchCount;
+		for (const [effort, count] of Object.entries(analysis.thinkingEffort.byEffort)) {
+			period.thinkingEffortUsage.byEffort[effort] = (period.thinkingEffortUsage.byEffort[effort] || 0) + count;
+		}
 	}
 }
 
@@ -1362,6 +1374,22 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					applyModelTierClassification(deps, uniqueModels, models, analysis);
 				}
 
+				// Extract thinking effort (reasoning effort) from delta lines
+				{
+					const { effortByRequestId, defaultEffort, switchCount: effortSwitchCount } = buildReasoningEffortTimeline(lines);
+					if (defaultEffort !== null || effortByRequestId.size > 0) {
+						const byEffort: { [effort: string]: number } = {};
+						for (const [, effort] of effortByRequestId) {
+							byEffort[effort] = (byEffort[effort] || 0) + 1;
+						}
+						// If we have a defaultEffort but no per-request data, record it as the session default
+						if (effortByRequestId.size === 0 && defaultEffort !== null) {
+							byEffort[defaultEffort] = requests.length;
+						}
+						analysis.thinkingEffort = { byEffort, switchCount: effortSwitchCount, defaultEffort };
+					}
+				}
+
 				// Derive conversation patterns from mode usage before returning
 				deriveConversationPatterns(analysis);
 
@@ -1370,10 +1398,35 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 
 			// Non-delta JSONL (Copilot CLI format) - process line-by-line
 			let sessionMode = 'ask';
+			let cliDefaultModel = 'gpt-4o';
+			let cliDefaultEffort: string | null = null;
+			let cliRequestCount = 0;
+			const cliEffortByRequest: { [effort: string]: number } = {};
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
 				try {
 					const event = JSON.parse(line);
+
+					// Copilot CLI session.start carries model + reasoningEffort
+					if (event.type === 'session.start' && event.data) {
+						if (typeof event.data.selectedModel === 'string') {
+							cliDefaultModel = event.data.selectedModel;
+						}
+						if (typeof event.data.reasoningEffort === 'string') {
+							cliDefaultEffort = event.data.reasoningEffort;
+						}
+					}
+
+					// Count user.message requests and accumulate effort counts
+					if (event.type === 'user.message') {
+						cliRequestCount++;
+						const effort = typeof event.data?.reasoningEffort === 'string'
+							? event.data.reasoningEffort
+							: cliDefaultEffort;
+						if (effort) {
+							cliEffortByRequest[effort] = (cliEffortByRequest[effort] || 0) + 1;
+						}
+					}
 
 					// Handle VS Code incremental format - detect mode from session header
 					if (event.kind === 0 && event.v?.inputState?.mode) {
@@ -1517,6 +1570,15 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					// Skip malformed lines
 				}
 			}
+
+			// Store CLI thinking effort data if available
+			if (cliDefaultEffort !== null || Object.keys(cliEffortByRequest).length > 0) {
+				const byEffort = Object.keys(cliEffortByRequest).length > 0
+					? cliEffortByRequest
+					: (cliDefaultEffort !== null ? { [cliDefaultEffort]: cliRequestCount } : {});
+				analysis.thinkingEffort = { byEffort, switchCount: 0, defaultEffort: cliDefaultEffort };
+			}
+
 			// Calculate model switching for JSONL files before returning
 			await calculateModelSwitching(deps, sessionFile, analysis, fileContent);
 
@@ -1690,6 +1752,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 					if (typeof event.kind === 'number') {
 						isDeltaBased = true;
 						sessionState = applyDelta(sessionState, event);
+					}
+
+					// Copilot CLI session.start carries the selected model
+					if (event.type === 'session.start' && typeof event.data?.selectedModel === 'string') {
+						defaultModel = event.data.selectedModel;
 					}
 
 					// Handle VS Code incremental format - extract model from session header (kind: 0)

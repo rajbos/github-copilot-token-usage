@@ -1,4 +1,4 @@
-// Log Viewer webview - displays session file details and chat turns
+﻿// Log Viewer webview - displays session file details and chat turns
 import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 // CSS imported as text via esbuild
@@ -32,16 +32,19 @@ type ChatTurn = {
 	outputTokensEstimate: number;
 	thinkingTokensEstimate: number;
 	actualUsage?: ActualUsage;
+	thinkingEffort?: string;
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
+type ThinkingEffortUsage = { byEffort: { [effort: string]: number }; switchCount: number; defaultEffort: string | null };
 type SessionUsageAnalysis = {
 	toolCalls: ToolCallUsage;
 	modeUsage: ModeUsage;
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
+	thinkingEffort?: ThinkingEffortUsage;
 };
 
 type SessionLogData = {
@@ -57,6 +60,8 @@ type SessionLogData = {
 	lastInteraction: string | null;
 	turns: ChatTurn[];
 	usageAnalysis?: SessionUsageAnalysis;
+	/** Session-level actual token count from LLM API (e.g. CLI session.shutdown). 0 when unavailable. */
+	actualTokens?: number;
 	compactNumbers?: boolean;
 };
 
@@ -499,6 +504,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
+					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(turn.thinkingEffort)}</span>` : ''}
 				<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
 				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
 				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${formatCompact(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens)} actual</span>` : ''}
@@ -540,6 +546,7 @@ function renderLayout(data: SessionLogData): void {
 	const turnsWithThinking = data.turns.filter(t => t.thinkingTokensEstimate > 0).length;
 	const totalRefs = getTotalContextRefs(data.contextReferences);
 	const usage = data.usageAnalysis;
+	const sessionEffort = usage?.thinkingEffort;
 	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
 	const usageToolTotal = usage?.toolCalls?.total ?? totalToolCalls;
 	const usageTopTools = usage ? getTopEntries(usage.toolCalls.byTool, 3) : [];
@@ -556,6 +563,10 @@ function renderLayout(data: SessionLogData): void {
 	const actualPromptTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.promptTokens || 0), 0);
 	const actualCompletionTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.completionTokens || 0), 0);
 	const actualTotal = actualPromptTotal + actualCompletionTotal;
+
+	// Session-level actual tokens (from session.shutdown in CLI sessions) when no per-turn data
+	const sessionActualTokens = data.actualTokens || 0;
+	const hasSessionActualOnly = !hasAnyActualUsage && sessionActualTokens > 0;
 	
 	// Aggregate prompt breakdown across all turns
 	const aggregatedBreakdown: { [key: string]: { category: string; label: string; totalTokens: number; totalPct: number; count: number } } = {};
@@ -619,15 +630,26 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				${hasAnyActualUsage ? `
 				<div class="summary-card actual-usage-card">
-					<div class="summary-label">📊 Actual Tokens</div>
+					<div class="summary-label">✅ Actual Tokens</div>
 					<div class="summary-value">${formatCompact(actualTotal)}</div>
 					<div class="summary-sub">↑${formatCompact(actualPromptTotal)} prompt, ↓${formatCompact(actualCompletionTotal)} completion</div>
+				</div>
+				` : hasSessionActualOnly ? `
+				<div class="summary-card actual-usage-card">
+					<div class="summary-label">✅ Actual Tokens</div>
+					<div class="summary-value">${formatCompact(sessionActualTokens)}</div>
+					<div class="summary-sub">Total from session shutdown event</div>
 				</div>
 				` : ''}
 				${totalThinkingTokens > 0 ? `<div class="summary-card">
 					<div class="summary-label">🧠 Thinking Tokens</div>
 					<div class="summary-value">${formatCompact(totalThinkingTokens)}</div>
 					<div class="summary-sub">${turnsWithThinking} of ${data.turns.length} turns used thinking</div>
+				</div>` : ''}
+				${sessionEffort ? `<div class="summary-card">
+					<div class="summary-label">💡 Thinking Effort</div>
+					<div class="summary-value">${sessionEffort.defaultEffort ?? Object.keys(sessionEffort.byEffort)[0] ?? '—'}</div>
+					<div class="summary-sub">${Object.entries(sessionEffort.byEffort).map(([k, v]) => `${k}: ${v}`).join(', ')}${sessionEffort.switchCount > 0 ? ` · ${sessionEffort.switchCount} switch${sessionEffort.switchCount !== 1 ? 'es' : ''}` : ''}</div>
 				</div>` : ''}
 				${totalSubAgentCalls > 0 ? `<div class="summary-card">
 					<div class="summary-label">🤖 Sub-Agent Calls</div>

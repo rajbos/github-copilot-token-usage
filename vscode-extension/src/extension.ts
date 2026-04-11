@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -71,6 +71,7 @@ import {
   getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
   reconstructJsonlStateAsync as _reconstructJsonlStateAsync,
   extractSubAgentData as _extractSubAgentData,
+  buildReasoningEffortTimeline as _buildReasoningEffortTimeline,
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
@@ -167,7 +168,7 @@ type RepoPrStatsResult = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 36; // Add first-user-message fallback title for untitled Copilot CLI sessions
+	private static readonly CACHE_VERSION = 37; // Add thinking effort (reasoning effort) tracking
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -4034,6 +4035,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// blocking the extension host event loop on large files.
 					const { sessionState } = await _reconstructJsonlStateAsync(lines);
 
+					// Build per-request effort map from delta lines
+					const { effortByRequestId } = _buildReasoningEffortTimeline(lines);
+
 					// Extract session-level info
 					let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
 					let currentModel: string | null = null;
@@ -4119,7 +4123,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
 						outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
 						thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, requestModel),
-						actualUsage
+						actualUsage,
+						thinkingEffort: effortByRequestId.get(request.requestId)
 					};
 
 					turns.push(turn);
@@ -4127,6 +4132,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} else {
 			// Non-delta JSONL (Copilot CLI format)
 			let turnNumber = 0;
+			let cliSessionModel = 'gpt-4o';
+			let cliSessionEffort: string | undefined;
+
+			// Pre-scan for session.start to extract default model and effort
+			for (const line of lines) {
+				try {
+					const ev = JSON.parse(line);
+					if (ev.type === 'session.start' && ev.data) {
+						if (typeof ev.data.selectedModel === 'string') { cliSessionModel = ev.data.selectedModel; }
+						if (typeof ev.data.reasoningEffort === 'string') { cliSessionEffort = ev.data.reasoningEffort; }
+						break;
+					}
+				} catch { /* skip */ }
+			}
 
 			for (const line of lines) {
 				try {
@@ -4138,19 +4157,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const contextRefs = this.createEmptyContextRefs();
 						const userMessage = event.data.content;
 						this.analyzeContextReferences(userMessage, contextRefs);
+						const turnModel = event.model || event.data?.model || cliSessionModel;
+						const turnEffort: string | undefined = typeof event.data?.reasoningEffort === 'string'
+							? event.data.reasoningEffort
+							: cliSessionEffort;
 						const turn: ChatTurn = {
 							turnNumber,
 							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
 							mode: 'agent', // CLI is typically agent mode
 							userMessage,
 							assistantResponse: '',
-							model: event.model || 'gpt-4o',
+							model: turnModel,
 							toolCalls: [],
 							contextReferences: contextRefs,
 							mcpTools: [],
-							inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, turnModel),
 							outputTokensEstimate: 0,
-							thinkingTokensEstimate: 0
+							thinkingTokensEstimate: 0,
+							thinkingEffort: turnEffort
 						};
 						turns.push(turn);
 					}
@@ -4295,6 +4319,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn(`Error loading usage analysis for ${sessionFile}: ${usageError}`);
 		}
 
+		const sessionCache = this.getCachedSessionData(sessionFile);
+
 		return {
 			file: details.file,
 			title: details.title || null,
@@ -4307,7 +4333,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			firstInteraction: details.firstInteraction,
 			lastInteraction: details.lastInteraction,
 			turns,
-			usageAnalysis
+			usageAnalysis,
+			actualTokens: sessionCache?.actualTokens || 0
 		};
 	}
 
