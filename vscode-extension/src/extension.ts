@@ -4141,13 +4141,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let cliSessionModel = 'gpt-4o';
 			let cliSessionEffort: string | undefined;
 
-			// Pre-scan for session.start to extract default model and effort
+			// Pre-scan for model and effort:
+			// 1. session.start.data.selectedModel (older CLI format)
+			// 2. First tool.execution_complete.data.model (newer CLI format — session.start has no selectedModel)
+			let cliModelFound = false;
 			for (const line of lines) {
 				try {
 					const ev = JSON.parse(line);
 					if (ev.type === 'session.start' && ev.data) {
-						if (typeof ev.data.selectedModel === 'string') { cliSessionModel = ev.data.selectedModel; }
+						if (typeof ev.data.selectedModel === 'string') {
+							cliSessionModel = ev.data.selectedModel;
+							cliModelFound = true;
+						}
 						if (typeof ev.data.reasoningEffort === 'string') { cliSessionEffort = ev.data.reasoningEffort; }
+						if (cliModelFound) { break; }
+						// No model in session.start — continue scanning for tool.execution_complete
+					}
+					// Newer format: model stored per tool call result
+					if (ev.type === 'tool.execution_complete' && typeof ev.data?.model === 'string') {
+						cliSessionModel = ev.data.model;
 						break;
 					}
 				} catch { /* skip */ }
