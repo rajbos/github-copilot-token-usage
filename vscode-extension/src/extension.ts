@@ -3138,13 +3138,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction = stat.mtime.toISOString();
 		}
 
-		// Reconstruct SessionFileDetails from cache
+		// Reconstruct SessionFileDetails from cache.
+		// Prefer actualTokens (real API count) when available; fall back to estimated tokens.
 		const details: SessionFileDetails = {
 			file: sessionFile,
 			size: cached.size || stat.size,
 			modified: stat.mtime.toISOString(),
 			interactions: cached.interactions,
-			tokens: cached.tokens || 0,
+			tokens: cached.actualTokens || cached.tokens || 0,
 			contextReferences: cached.usageAnalysis.contextReferences,
 			firstInteraction: cached.firstInteraction || null,
 			lastInteraction: lastInteraction,
@@ -3171,8 +3172,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Get existing cache entry if available
 		const existingCache = this.getCachedSessionData(sessionFile);
 
-		// Enrich details with token count from existing cache (populated by main stats calculation)
-		details.tokens = existingCache?.tokens || 0;
+		// Enrich details with token count from existing cache (populated by main stats calculation).
+		// Prefer actualTokens (real API count) when available; fall back to estimated tokens.
+		details.tokens = existingCache?.actualTokens || existingCache?.tokens || 0;
 
 		// Create or update cache entry
 		const cacheEntry: SessionFileCache = {
