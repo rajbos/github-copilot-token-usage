@@ -98,6 +98,14 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+const EFFORT_DISPLAY_NAMES: Record<string, string> = {
+	xhigh: 'Extra High',
+};
+
+function getEffortDisplayName(level: string): string {
+	return EFFORT_DISPLAY_NAMES[level] ?? level;
+}
+
 function formatDate(isoString: string | null): string {
 	if (!isoString) { return 'N/A'; }
 	try {
@@ -504,7 +512,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
-					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(turn.thinkingEffort)}</span>` : ''}
+					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(getEffortDisplayName(turn.thinkingEffort))}</span>` : ''}
 				<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
 				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
 				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${formatCompact(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens)} actual</span>` : ''}
@@ -556,6 +564,11 @@ function renderLayout(data: SessionLogData): void {
 	const usageContextTotal = getTotalContextRefs(usageContextRefs);
 	const usageContextImplicit = getImplicitContextRefs(usageContextRefs);
 	const usageContextExplicit = getExplicitContextRefs(usageContextRefs);
+	const effortDefault = sessionEffort?.defaultEffort ?? (sessionEffort ? Object.keys(sessionEffort.byEffort)[0] : undefined);
+	const effortDefaultLabel = effortDefault ? getEffortDisplayName(effortDefault) : '—';
+	const effortSummary = sessionEffort
+		? Object.entries(sessionEffort.byEffort).map(([k, v]) => `${getEffortDisplayName(k)}: ${v}`).join(', ')
+		: '';
 
 	// Calculate actual usage totals across all turns
 	const turnsWithActual = data.turns.filter(t => t.actualUsage);
@@ -648,8 +661,8 @@ function renderLayout(data: SessionLogData): void {
 				</div>` : ''}
 				${sessionEffort ? `<div class="summary-card">
 					<div class="summary-label">💡 Thinking Effort</div>
-					<div class="summary-value">${sessionEffort.defaultEffort ?? Object.keys(sessionEffort.byEffort)[0] ?? '—'}</div>
-					<div class="summary-sub">${Object.entries(sessionEffort.byEffort).map(([k, v]) => `${k}: ${v}`).join(', ')}${sessionEffort.switchCount > 0 ? ` · ${sessionEffort.switchCount} switch${sessionEffort.switchCount !== 1 ? 'es' : ''}` : ''}</div>
+					<div class="summary-value">${effortDefaultLabel}</div>
+					<div class="summary-sub">${effortSummary}${sessionEffort.switchCount > 0 ? ` · ${sessionEffort.switchCount} switch${sessionEffort.switchCount !== 1 ? 'es' : ''}` : ''}</div>
 				</div>` : ''}
 				${totalSubAgentCalls > 0 ? `<div class="summary-card">
 					<div class="summary-label">🤖 Sub-Agent Calls</div>

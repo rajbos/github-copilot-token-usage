@@ -160,6 +160,14 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+const EFFORT_DISPLAY_NAMES: Record<string, string> = {
+	xhigh: 'Extra High',
+};
+
+function getEffortDisplayName(level: string): string {
+	return EFFORT_DISPLAY_NAMES[level] ?? level;
+}
+
 import toolNames from '../../toolNames.json';
 import automaticToolIds from '../../automaticTools.json';
 
@@ -958,7 +966,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 					const count = teu.byEffort[level] || 0;
 					const pct = total > 0 ? Math.round((count / total) * 100) : 0;
 					return `<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-						<span style="width: 56px; font-size: 12px; font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${escapeHtml(level)}</span>
+						<span style="width: 56px; font-size: 12px; font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${escapeHtml(getEffortDisplayName(level))}</span>
 						<div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 12px; overflow: hidden;">
 							<div style="width: ${pct}%; background: var(--link-color); height: 100%; border-radius: 4px;"></div>
 						</div>
@@ -2010,4 +2018,3 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
-
