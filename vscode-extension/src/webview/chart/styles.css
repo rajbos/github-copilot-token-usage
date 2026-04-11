@@ -103,8 +103,18 @@ body {
 	margin-top: 2px;
 }
 
-.chart-shell {
-	background: var(--bg-tertiary);
+.chart-section-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 10px;
+}
+
+.chart-section-header h3 {
+	margin: 0;
+}
+
+.chart-shell {	background: var(--bg-tertiary);
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
 	padding: 12px;
@@ -121,9 +131,14 @@ body {
 }
 
 .period-controls {
-	margin-bottom: 4px;
-	padding-bottom: 8px;
-	border-bottom: 1px solid var(--border-subtle);
+	display: flex;
+	gap: 4px;
+	align-items: center;
+}
+
+.period-controls .toggle {
+	font-size: 11px;
+	padding: 4px 9px;
 }
 
 .toggle {

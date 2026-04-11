@@ -241,6 +241,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private lastDailyStats: DailyTokenStats[] | undefined;
 	/** Full-year daily stats (up to 365 days) for the chart Week/Month period views. */
 	private lastFullDailyStats: DailyTokenStats[] | undefined;
+	/** Last period selected by the user in the chart view; restored on next open. */
+	private lastChartPeriod: 'day' | 'week' | 'month' = 'day';
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private lastDashboardData: any | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -4768,6 +4770,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (message.command === 'refresh') {
 				await this.dispatch('refresh:chart', () => this.refreshChartPanel());
 			}
+			if (message.command === 'setPeriodPreference') {
+				const p = message.period;
+				if (p === 'day' || p === 'week' || p === 'month') {
+					this.lastChartPeriod = p;
+				}
+			}
 		});
 
 		// Render immediately; Week/Month buttons are shown as loading if full-year data isn't ready
@@ -8160,7 +8168,7 @@ ${hashtag}`;
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
-    const chartData = { ...this.buildChartData(dailyStats), periodsReady };
+    const chartData = { ...this.buildChartData(dailyStats), periodsReady, initialPeriod: this.lastChartPeriod };
 
     const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
 
