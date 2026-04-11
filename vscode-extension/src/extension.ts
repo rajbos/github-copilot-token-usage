@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -4132,6 +4132,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} else {
 			// Non-delta JSONL (Copilot CLI format)
 			let turnNumber = 0;
+			let cliSessionModel = 'gpt-4o';
+			let cliSessionEffort: string | undefined;
+
+			// Pre-scan for session.start to extract default model and effort
+			for (const line of lines) {
+				try {
+					const ev = JSON.parse(line);
+					if (ev.type === 'session.start' && ev.data) {
+						if (typeof ev.data.selectedModel === 'string') { cliSessionModel = ev.data.selectedModel; }
+						if (typeof ev.data.reasoningEffort === 'string') { cliSessionEffort = ev.data.reasoningEffort; }
+						break;
+					}
+				} catch { /* skip */ }
+			}
 
 			for (const line of lines) {
 				try {
@@ -4143,19 +4157,24 @@ class CopilotTokenTracker implements vscode.Disposable {
 						const contextRefs = this.createEmptyContextRefs();
 						const userMessage = event.data.content;
 						this.analyzeContextReferences(userMessage, contextRefs);
+						const turnModel = event.model || event.data?.model || cliSessionModel;
+						const turnEffort: string | undefined = typeof event.data?.reasoningEffort === 'string'
+							? event.data.reasoningEffort
+							: cliSessionEffort;
 						const turn: ChatTurn = {
 							turnNumber,
 							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
 							mode: 'agent', // CLI is typically agent mode
 							userMessage,
 							assistantResponse: '',
-							model: event.model || 'gpt-4o',
+							model: turnModel,
 							toolCalls: [],
 							contextReferences: contextRefs,
 							mcpTools: [],
-							inputTokensEstimate: this.estimateTokensFromText(userMessage, event.model || 'gpt-4o'),
+							inputTokensEstimate: this.estimateTokensFromText(userMessage, turnModel),
 							outputTokensEstimate: 0,
-							thinkingTokensEstimate: 0
+							thinkingTokensEstimate: 0,
+							thinkingEffort: turnEffort
 						};
 						turns.push(turn);
 					}
