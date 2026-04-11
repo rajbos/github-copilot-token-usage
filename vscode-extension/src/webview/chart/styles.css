@@ -120,6 +120,12 @@ body {
 	justify-content: center;
 }
 
+.period-controls {
+	margin-bottom: 4px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--border-subtle);
+}
+
 .toggle {
 	background: var(--button-secondary-bg);
 	border: 1px solid var(--border-subtle);

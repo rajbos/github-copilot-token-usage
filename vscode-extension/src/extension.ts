@@ -239,6 +239,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private outputChannel: vscode.OutputChannel;
 	private lastDetailedStats: DetailedStats | undefined;
 	private lastDailyStats: DailyTokenStats[] | undefined;
+	/** Full-year daily stats (up to 365 days) for the chart Week/Month period views. */
+	private lastFullDailyStats: DailyTokenStats[] | undefined;
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private lastDashboardData: any | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -565,6 +567,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.sessionDiscovery.clearCache();
 		this.lastDetailedStats = undefined;
 		this.lastDailyStats = undefined;
+		this.lastFullDailyStats = undefined;
 		this.lastUsageAnalysisStats = undefined;
 
 		const results: LocalViewRegressionResult[] = [];
@@ -722,6 +725,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.sessionDiscovery.clearCache();
 			this.lastDetailedStats = undefined;
 			this.lastDailyStats = undefined;
+			this.lastFullDailyStats = undefined;
 			this.lastUsageAnalysisStats = undefined;
 			this.lastDashboardData = undefined;
 		}
@@ -822,6 +826,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Clear cached computed stats so details panel doesn't show stale data
 			this.lastDetailedStats = undefined;
 			this.lastDailyStats = undefined;
+			this.lastFullDailyStats = undefined;
 			this.lastUsageAnalysisStats = undefined;
 			this.lastDashboardData = undefined;
 
@@ -1464,14 +1469,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			}
 
-			// If the chart panel is open, update its content (daily stats were computed in calculateDetailedStats)
-			if (this.chartPanel && this.lastDailyStats) {
-				const dailyStats = this.lastDailyStats;
+			// If the chart panel is open, update its content (prefer full-year stats for week/month views)
+			if (this.chartPanel && (this.lastFullDailyStats || this.lastDailyStats)) {
+				const chartStats = this.lastFullDailyStats ?? this.lastDailyStats!;
 				if (silent) {
 					// Background update: send data via postMessage to preserve the active chart view toggle
-					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: { ...this.buildChartData(dailyStats), compactNumbers: this.getCompactNumbersSetting() } });
+					void this.chartPanel.webview.postMessage({ command: 'updateChartData', data: { ...this.buildChartData(chartStats), compactNumbers: this.getCompactNumbersSetting() } });
 				} else {
-					this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, dailyStats);
+					this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, chartStats);
 				}
 			}
 
@@ -1952,48 +1957,55 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.environmentalPanel) {
 			this.environmentalPanel.webview.html = this.getEnvironmentalHtml(this.environmentalPanel.webview, stats);
 		}
-		if (this.chartPanel && this.lastDailyStats) {
-			this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, this.lastDailyStats);
+		if (this.chartPanel && (this.lastFullDailyStats || this.lastDailyStats)) {
+			this.chartPanel.webview.html = this.getChartHtml(this.chartPanel.webview, this.lastFullDailyStats ?? this.lastDailyStats!);
 		}
 	}
 
-	private async calculateDailyStats(): Promise<DailyTokenStats[]> {
+	/** Compute daily token stats for up to `daysBack` days, using the same token preference
+	 *  (actualTokens > estimatedTokens) and date assignment (lastInteraction || mtime) as
+	 *  calculateDetailedStats so all chart period views are consistent. Stores the result in
+	 *  `lastFullDailyStats` and returns it. Zero-fill is handled per-period in buildChartData. */
+	private async calculateDailyStats(daysBack = 365): Promise<DailyTokenStats[]> {
 		const now = new Date();
-		// Use last 30 days instead of current month for better chart visibility
-		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+		const cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack);
 
-		// Map to store daily stats by date string (YYYY-MM-DD)
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
 
 		try {
 			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
-			this.log(`📈 Preparing chart data from ${sessionFiles.length} session file(s)...`);
+			this.log(`📈 Preparing chart data (${daysBack}d) from ${sessionFiles.length} session file(s)...`);
 
 			const dailyResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
 				const fileStats = await this.statSessionFile(sessionFile);
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
-				if (mtime < thirtyDaysAgo.getTime()) { return null; }
+				if (mtime < cutoffDate.getTime()) { return null; }
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-				return { sessionFile, sessionData, mtime };
+				const details = await this.getSessionFileDetails(sessionFile);
+				return { sessionFile, sessionData, mtime, details };
 			});
 
 			for (const r of dailyResults) {
 				if (!r) { continue; }
-				const { sessionFile, sessionData, mtime } = r;
+				const { sessionFile, sessionData, mtime, details } = r;
 				try {
-					const tokens = sessionData.tokens;
+					// Prefer actualTokens when available (same as calculateDetailedStats)
+					const estimatedTokens = sessionData.tokens;
+					const actualTokens = sessionData.actualTokens || 0;
+					const tokens = actualTokens > 0 ? actualTokens : estimatedTokens;
+
 					const interactions = sessionData.interactions;
 					const modelUsage = sessionData.modelUsage;
 					const editorType = this.getEditorTypeFromPath(sessionFile);
-
-					// Get repository from cached session data
 					const repository = sessionData.repository || 'Unknown';
 
-					// Get the date in YYYY-MM-DD format
-					const dateKey = this.formatDateKey(new Date(mtime));
+					// Use lastInteraction for date (same as calculateDetailedStats)
+					const lastActivity = details.lastInteraction
+						? new Date(details.lastInteraction)
+						: new Date(mtime);
+					const dateKey = this.formatDateKey(lastActivity);
 
-					// Initialize or update the daily stats
 					if (!dailyStatsMap.has(dateKey)) {
 						dailyStatsMap.set(dateKey, {
 							date: dateKey,
@@ -2006,32 +2018,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 						});
 					}
 
-					const dailyStats = dailyStatsMap.get(dateKey)!;
-					dailyStats.tokens += tokens;
-					dailyStats.sessions += 1;
-					dailyStats.interactions += interactions;
+					const dailyEntry = dailyStatsMap.get(dateKey)!;
+					dailyEntry.tokens += tokens;
+					dailyEntry.sessions += 1;
+					dailyEntry.interactions += interactions;
 
-					// Merge editor usage
-					if (!dailyStats.editorUsage[editorType]) {
-						dailyStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
+					if (!dailyEntry.editorUsage[editorType]) {
+						dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 };
 					}
-					dailyStats.editorUsage[editorType].tokens += tokens;
-					dailyStats.editorUsage[editorType].sessions += 1;
+					dailyEntry.editorUsage[editorType].tokens += tokens;
+					dailyEntry.editorUsage[editorType].sessions += 1;
 
-					// Merge repository usage
-					if (!dailyStats.repositoryUsage[repository]) {
-						dailyStats.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
+					if (!dailyEntry.repositoryUsage[repository]) {
+						dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
 					}
-					dailyStats.repositoryUsage[repository].tokens += tokens;
-					dailyStats.repositoryUsage[repository].sessions += 1;
+					dailyEntry.repositoryUsage[repository].tokens += tokens;
+					dailyEntry.repositoryUsage[repository].sessions += 1;
 
-					// Merge model usage
 					for (const [model, usage] of Object.entries(modelUsage)) {
-						if (!dailyStats.modelUsage[model]) {
-							dailyStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+						if (!dailyEntry.modelUsage[model]) {
+							dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 						}
-						dailyStats.modelUsage[model].inputTokens += usage.inputTokens;
-						dailyStats.modelUsage[model].outputTokens += usage.outputTokens;
+						dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
+						dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
@@ -2041,44 +2050,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.error('Error calculating daily stats:', error);
 		}
 
-		// Convert map to array and sort by date
-		let dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
-		// Always fill in all 30 days to show complete chart
-		const today = new Date();
-
-		// Create a set of existing dates for quick lookup
-		const existingDates = new Set(dailyStatsArray.map(s => s.date));
-
-		// Generate all dates from 30 days ago to today
-		const allDates: string[] = [];
-		const currentDate = new Date(thirtyDaysAgo);
-
-		while (currentDate <= today) {
-			const dateKey = this.formatDateKey(currentDate);
-			allDates.push(dateKey);
-			currentDate.setDate(currentDate.getDate() + 1);
-		}
-
-		// Add missing dates with zero values
-		for (const dateKey of allDates) {
-			if (!existingDates.has(dateKey)) {
-				dailyStatsMap.set(dateKey, {
-					date: dateKey,
-					tokens: 0,
-					sessions: 0,
-					interactions: 0,
-					modelUsage: {},
-					editorUsage: {},
-					repositoryUsage: {}
-				});
-			}
-		}
-
-		// Re-convert map to array and sort by date
-		dailyStatsArray = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
-		return dailyStatsArray;
+		const result = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		this.lastFullDailyStats = result;
+		return result;
 	}
 
 	private detectMissedPotential(
@@ -4758,8 +4732,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return;
 		}
 
-		// Use daily stats computed by calculateDetailedStats if available, otherwise compute them
-		const dailyStats = this.lastDailyStats ?? await this.calculateDailyStats();
+		// Use full-year daily stats for week/month period views; compute if not yet cached
+		const dailyStats = this.lastFullDailyStats ?? await this.calculateDailyStats();
 
 		// Create webview panel
 		this.chartPanel = vscode.window.createWebviewPanel(
@@ -5451,6 +5425,8 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		}
 
 		this.log('🔄 Refreshing Chart view');
+		// Refresh the full-year daily stats so week/month period views are up to date
+		await this.calculateDailyStats();
 		// Refresh all stats so the status bar and tooltip stay in sync
 		await this.updateTokenStats();
 		this.log('✅ Chart view refreshed');
@@ -7948,17 +7924,8 @@ ${hashtag}`;
 		</html>`;
   }
 
-  private buildChartData(dailyStats: DailyTokenStats[]): ChartDataPayload {
-    // Transform dailyStats into the structure expected by the webview
-    const labels = dailyStats.map((d) => d.date);
-    const tokensData = dailyStats.map((d) => d.tokens);
-    const sessionsData = dailyStats.map((d) => d.sessions);
-
-    // Aggregate model usage across all days
-    const allModels = new Set<string>();
-    dailyStats.forEach((d) =>
-      Object.keys(d.modelUsage).forEach((m) => allModels.add(m)),
-    );
+  private buildChartData(fullDailyStats: DailyTokenStats[]): ChartDataPayload {
+    const now = new Date();
 
     const modelColors = [
       { bg: "rgba(54, 162, 235, 0.6)", border: "rgba(54, 162, 235, 1)" },
@@ -7971,94 +7938,187 @@ ${hashtag}`;
       { bg: "rgba(100, 181, 246, 0.6)", border: "rgba(100, 181, 246, 1)" },
     ];
 
-    const modelDatasets = Array.from(allModels).map((model, idx) => {
-      const color = modelColors[idx % modelColors.length];
-      return {
-        label: getModelDisplayName(model),
-        data: dailyStats.map((d) => {
-          const usage = d.modelUsage[model];
-          return usage ? usage.inputTokens + usage.outputTokens : 0;
-        }),
-        backgroundColor: color.bg,
-        borderColor: color.border,
-        borderWidth: 1,
-      };
+    const fmtKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    const emptyEntry = (date: string): DailyTokenStats => ({
+      date, tokens: 0, sessions: 0, interactions: 0,
+      modelUsage: {}, editorUsage: {}, repositoryUsage: {},
     });
 
-    // Aggregate editor usage across all days
-    const allEditors = new Set<string>();
-    dailyStats.forEach((d) =>
-      Object.keys(d.editorUsage).forEach((e) => allEditors.add(e)),
-    );
+    const mergeInto = (target: DailyTokenStats, src: DailyTokenStats) => {
+      target.tokens += src.tokens;
+      target.sessions += src.sessions;
+      target.interactions += src.interactions;
+      for (const [m, u] of Object.entries(src.modelUsage)) {
+        if (!target.modelUsage[m]) { target.modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
+        target.modelUsage[m].inputTokens += u.inputTokens;
+        target.modelUsage[m].outputTokens += u.outputTokens;
+      }
+      for (const [e, u] of Object.entries(src.editorUsage)) {
+        if (!target.editorUsage[e]) { target.editorUsage[e] = { tokens: 0, sessions: 0 }; }
+        target.editorUsage[e].tokens += u.tokens;
+        target.editorUsage[e].sessions += u.sessions;
+      }
+      for (const [r, u] of Object.entries(src.repositoryUsage)) {
+        if (!target.repositoryUsage[r]) { target.repositoryUsage[r] = { tokens: 0, sessions: 0 }; }
+        target.repositoryUsage[r].tokens += u.tokens;
+        target.repositoryUsage[r].sessions += u.sessions;
+      }
+    };
 
-    const editorDatasets = Array.from(allEditors).map((editor, idx) => {
-      const color = modelColors[idx % modelColors.length];
-      return {
-        label: editor,
-        data: dailyStats.map((d) => d.editorUsage[editor]?.tokens || 0),
-        backgroundColor: color.bg,
-        borderColor: color.border,
-        borderWidth: 1,
-      };
-    });
+    type BucketEntry = { label: string; key: string; stats: DailyTokenStats };
 
-    // Aggregate repository usage across all days
-    const allRepositories = new Set<string>();
-    dailyStats.forEach((d) =>
-      Object.keys(d.repositoryUsage).forEach((r) => allRepositories.add(r)),
-    );
+    const buildPeriodData = (buckets: BucketEntry[]) => {
+      const entries = buckets.map(b => b.stats);
+      const labels = buckets.map(b => b.label);
+      const tokensData = entries.map(e => e.tokens);
+      const sessionsData = entries.map(e => e.sessions);
 
-    const repositoryDatasets = Array.from(allRepositories).map((repo, idx) => {
-      const color = modelColors[idx % modelColors.length];
-      const label = this.getRepoDisplayName(repo);
-      return {
-        label,
-        fullRepo: repo,
-        data: dailyStats.map((d) => d.repositoryUsage[repo]?.tokens || 0),
-        backgroundColor: color.bg,
-        borderColor: color.border,
-        borderWidth: 1,
-      };
-    });
-
-    // Calculate repository totals for summary
-    const repositoryTotalsMap: Record<string, number> = {};
-    dailyStats.forEach((d) => {
-      Object.entries(d.repositoryUsage).forEach(([repo, usage]) => {
-        const displayName = this.getRepoDisplayName(repo);
-        repositoryTotalsMap[displayName] =
-          (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+      const allModels = new Set<string>();
+      entries.forEach(e => Object.keys(e.modelUsage).forEach(m => allModels.add(m)));
+      const modelDatasets = Array.from(allModels).map((model, idx) => {
+        const color = modelColors[idx % modelColors.length];
+        return {
+          label: getModelDisplayName(model),
+          data: entries.map(e => { const u = e.modelUsage[model]; return u ? u.inputTokens + u.outputTokens : 0; }),
+          backgroundColor: color.bg, borderColor: color.border, borderWidth: 1,
+        };
       });
-    });
 
-    // Calculate editor totals for summary cards
+      const allEditors = new Set<string>();
+      entries.forEach(e => Object.keys(e.editorUsage).forEach(ed => allEditors.add(ed)));
+      const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+        const color = modelColors[idx % modelColors.length];
+        return {
+          label: editor,
+          data: entries.map(e => e.editorUsage[editor]?.tokens || 0),
+          backgroundColor: color.bg, borderColor: color.border, borderWidth: 1,
+        };
+      });
+
+      const allRepos = new Set<string>();
+      entries.forEach(e => Object.keys(e.repositoryUsage).forEach(r => allRepos.add(r)));
+      const repositoryDatasets = Array.from(allRepos).map((repo, idx) => {
+        const color = modelColors[idx % modelColors.length];
+        return {
+          label: this.getRepoDisplayName(repo),
+          fullRepo: repo,
+          data: entries.map(e => e.repositoryUsage[repo]?.tokens || 0),
+          backgroundColor: color.bg, borderColor: color.border, borderWidth: 1,
+        };
+      });
+
+      const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+      const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+      const periodCount = buckets.length;
+      return {
+        labels, tokensData, sessionsData, modelDatasets, editorDatasets, repositoryDatasets,
+        periodCount, totalTokens, totalSessions,
+        avgPerPeriod: periodCount > 0 ? Math.round(totalTokens / periodCount) : 0,
+      };
+    };
+
+    // ── Daily period: last 30 days with zero-fill ─────────────────────
+    const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+    const thirtyDaysAgoStr = fmtKey(thirtyDaysAgo);
+    const todayStr = fmtKey(now);
+    const dailyBucketMap = new Map<string, BucketEntry>();
+    for (let cursor = new Date(thirtyDaysAgo); cursor <= now; cursor.setDate(cursor.getDate() + 1)) {
+      const key = fmtKey(new Date(cursor));
+      dailyBucketMap.set(key, { key, label: key, stats: emptyEntry(key) });
+    }
+    for (const day of fullDailyStats) {
+      if (day.date >= thirtyDaysAgoStr && day.date <= todayStr) {
+        const bucket = dailyBucketMap.get(day.date);
+        if (bucket) { mergeInto(bucket.stats, day); }
+      }
+    }
+    const dailyBuckets = Array.from(dailyBucketMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const dailyPeriod = buildPeriodData(dailyBuckets);
+
+    // ── Weekly period: last 6 calendar weeks with zero-fill ──────────
+    const getMondayOfWeek = (d: Date): Date => {
+      const copy = new Date(d); copy.setHours(0, 0, 0, 0);
+      const day = copy.getDay();
+      copy.setDate(copy.getDate() - (day === 0 ? 6 : day - 1));
+      return copy;
+    };
+    const fmtWeekLabel = (monday: Date): string => {
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      if (monday.getMonth() === sunday.getMonth()) {
+        return `${monday.toLocaleDateString("en-US", { month: "short" })} ${monday.getDate()}–${sunday.getDate()}`;
+      }
+      return `${monday.toLocaleDateString("en-US", { month: "short", day: "numeric" })}–${sunday.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+    };
+    const thisMonday = getMondayOfWeek(now);
+    const weekBucketMap = new Map<string, BucketEntry>();
+    for (let w = 5; w >= 0; w--) {
+      const monday = new Date(thisMonday); monday.setDate(thisMonday.getDate() - w * 7);
+      const key = fmtKey(monday);
+      weekBucketMap.set(key, { key, label: fmtWeekLabel(monday), stats: emptyEntry(key) });
+    }
+    for (const day of fullDailyStats) {
+      const monday = getMondayOfWeek(new Date(day.date + "T00:00:00"));
+      const bucket = weekBucketMap.get(fmtKey(monday));
+      if (bucket) { mergeInto(bucket.stats, day); }
+    }
+    const weeklyBuckets = Array.from(weekBucketMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const weeklyPeriod = buildPeriodData(weeklyBuckets);
+
+    // ── Monthly period: last 12 calendar months with zero-fill ───────
+    const monthBucketMap = new Map<string, BucketEntry>();
+    for (let m = 11; m >= 0; m--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - m, 1);
+      const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+      const label = monthDate.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      monthBucketMap.set(key, { key, label, stats: emptyEntry(key) });
+    }
+    for (const day of fullDailyStats) {
+      const monthKey = day.date.slice(0, 7);
+      const bucket = monthBucketMap.get(monthKey);
+      if (bucket) { mergeInto(bucket.stats, day); }
+    }
+    const monthlyBuckets = Array.from(monthBucketMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const monthlyPeriod = buildPeriodData(monthlyBuckets);
+
+    // ── Summary totals from the daily period (last 30 days) ──────────
     const editorTotalsMap: Record<string, number> = {};
-    dailyStats.forEach((d) => {
-      Object.entries(d.editorUsage).forEach(([editor, usage]) => {
+    dailyBuckets.forEach(b => {
+      Object.entries(b.stats.editorUsage).forEach(([editor, usage]) => {
         editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
       });
     });
-
-    const totalTokens = tokensData.reduce((a, b) => a + b, 0);
-    const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+    const repositoryTotalsMap: Record<string, number> = {};
+    dailyBuckets.forEach(b => {
+      Object.entries(b.stats.repositoryUsage).forEach(([repo, usage]) => {
+        const displayName = this.getRepoDisplayName(repo);
+        repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+      });
+    });
 
     return {
-      labels,
-      tokensData,
-      sessionsData,
-      modelDatasets,
-      editorDatasets,
+      // Backward-compat flat fields (daily period)
+      labels: dailyPeriod.labels,
+      tokensData: dailyPeriod.tokensData,
+      sessionsData: dailyPeriod.sessionsData,
+      modelDatasets: dailyPeriod.modelDatasets,
+      editorDatasets: dailyPeriod.editorDatasets,
+      repositoryDatasets: dailyPeriod.repositoryDatasets,
       editorTotalsMap,
-      repositoryDatasets,
       repositoryTotalsMap,
-      dailyCount: dailyStats.length,
-      totalTokens,
-      avgTokensPerDay:
-        dailyStats.length > 0 ? Math.round(totalTokens / dailyStats.length) : 0,
-      totalSessions,
+      dailyCount: dailyPeriod.periodCount,
+      totalTokens: dailyPeriod.totalTokens,
+      avgTokensPerDay: dailyPeriod.avgPerPeriod,
+      totalSessions: dailyPeriod.totalSessions,
       lastUpdated: new Date().toISOString(),
       backendConfigured: this.isBackendConfigured(),
       compactNumbers: this.getCompactNumbersSetting(),
+      periods: {
+        daily: dailyPeriod,
+        weekly: weeklyPeriod,
+        monthly: monthlyPeriod,
+      },
     };
   }
 
