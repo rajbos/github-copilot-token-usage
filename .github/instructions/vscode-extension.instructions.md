@@ -48,7 +48,11 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 - **Watch Mode**: For active development, use `npm run watch` from `vscode-extension/`. This will automatically recompile the extension on file changes.
 - **Testing/Debugging**: Press `F5` in VS Code to open the Extension Development Host. This will launch a new VS Code window with the extension running. `console.log` statements from `vscode-extension/src/extension.ts` will appear in the Developer Tools console of this new window (Help > Toggle Developer Tools).
 
-**Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run `npm run compile` from `vscode-extension/` to validate that the project still builds and lints cleanly before opening a pull request or releasing. You do not need to run the full compile step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
+**Important build guidance:** After making changes to source code or related files (TypeScript, JavaScript, JSON, or other code files used by the extension), always run both `npm ci` and then `npm run compile` from `vscode-extension/` to validate that the project still builds and lints cleanly before opening a pull request or releasing. Also run the unit tests with `npm run test:node` to catch any regressions. You do not need to run the full compile step for documentation-only changes (Markdown files), but you should run it after any edits that touch source, configuration, or JSON data files.
+
+**Always use `npm ci` (not `npm install`) when validating a build** — `npm ci` installs from the lockfile exactly, mirroring what CI does, and will catch any dependency drift. Use `npm install` only when intentionally adding or updating packages.
+
+> ⚠️ **Common mistake**: The `edit` tool's old_str/new_str replacement can accidentally drop comment delimiters (e.g. `/**` opening a JSDoc block) when the match boundary falls exactly at that line. After editing `tokenEstimation.ts` or any file with JSDoc comments, always verify the file compiles before committing.
 
 ## Development Guidelines
 

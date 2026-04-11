@@ -322,7 +322,8 @@ export function buildReasoningEffortTimeline(lines: string[]): {
   return { effortByRequestId, defaultEffort, switchCount };
 }
 
-
+/**
+ * Extract per-request actual token usage from raw JSONL lines using regex.
  * Handles cases where lines with result data fail JSON.parse due to bad escape characters.
  * Supports both old format (usage.promptTokens/completionTokens) and new format (promptTokens/outputTokens).
  */
