@@ -957,15 +957,15 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${sorted.map(level => {
 					const count = teu.byEffort[level] || 0;
 					const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-					return `<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-						<span style="width: 52px; font-size: 11px; font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${escapeHtml(level)}</span>
-						<div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 10px; overflow: hidden;">
+					return `<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+						<span style="width: 56px; font-size: 12px; font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${escapeHtml(level)}</span>
+						<div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 12px; overflow: hidden;">
 							<div style="width: ${pct}%; background: var(--link-color); height: 100%; border-radius: 4px;"></div>
 						</div>
-						<span style="font-size: 10px; color: var(--text-muted); width: 36px; text-align: right;">${count} (${pct}%)</span>
+						<span style="font-size: 12px; font-weight: 600; color: var(--text-primary); min-width: 70px; text-align: right;">${count} <span style="color: var(--text-secondary); font-weight: 400;">(${pct}%)</span></span>
 					</div>`;
 				}).join('')}
-				<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${teu.sessionCount} session${teu.sessionCount !== 1 ? 's' : ''} · ${teu.switchCount} effort switch${teu.switchCount !== 1 ? 'es' : ''}</div>
+				<div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">${teu.sessionCount} session${teu.sessionCount !== 1 ? 's' : ''} · ${teu.switchCount} effort switch${teu.switchCount !== 1 ? 'es' : ''}</div>
 			`;
 		};
 		return `
