@@ -372,6 +372,8 @@ export interface SessionLogData {
   lastInteraction: string | null;
   turns: ChatTurn[];
   usageAnalysis?: SessionUsageAnalysis;
+  /** Session-level actual token count from LLM API (e.g. session.shutdown in CLI format). 0 when unavailable. */
+  actualTokens?: number;
 }
 
 // Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)

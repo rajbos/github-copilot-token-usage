@@ -1,4 +1,4 @@
-// Log Viewer webview - displays session file details and chat turns
+﻿// Log Viewer webview - displays session file details and chat turns
 import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 // CSS imported as text via esbuild
@@ -60,6 +60,8 @@ type SessionLogData = {
 	lastInteraction: string | null;
 	turns: ChatTurn[];
 	usageAnalysis?: SessionUsageAnalysis;
+	/** Session-level actual token count from LLM API (e.g. CLI session.shutdown). 0 when unavailable. */
+	actualTokens?: number;
 	compactNumbers?: boolean;
 };
 
@@ -561,6 +563,10 @@ function renderLayout(data: SessionLogData): void {
 	const actualPromptTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.promptTokens || 0), 0);
 	const actualCompletionTotal = turnsWithActual.reduce((s, t) => s + (t.actualUsage?.completionTokens || 0), 0);
 	const actualTotal = actualPromptTotal + actualCompletionTotal;
+
+	// Session-level actual tokens (from session.shutdown in CLI sessions) when no per-turn data
+	const sessionActualTokens = data.actualTokens || 0;
+	const hasSessionActualOnly = !hasAnyActualUsage && sessionActualTokens > 0;
 	
 	// Aggregate prompt breakdown across all turns
 	const aggregatedBreakdown: { [key: string]: { category: string; label: string; totalTokens: number; totalPct: number; count: number } } = {};
@@ -624,9 +630,15 @@ function renderLayout(data: SessionLogData): void {
 				</div>
 				${hasAnyActualUsage ? `
 				<div class="summary-card actual-usage-card">
-					<div class="summary-label">📊 Actual Tokens</div>
+					<div class="summary-label">✅ Actual Tokens</div>
 					<div class="summary-value">${formatCompact(actualTotal)}</div>
 					<div class="summary-sub">↑${formatCompact(actualPromptTotal)} prompt, ↓${formatCompact(actualCompletionTotal)} completion</div>
+				</div>
+				` : hasSessionActualOnly ? `
+				<div class="summary-card actual-usage-card">
+					<div class="summary-label">✅ Actual Tokens</div>
+					<div class="summary-value">${formatCompact(sessionActualTokens)}</div>
+					<div class="summary-sub">Total from session shutdown event</div>
 				</div>
 				` : ''}
 				${totalThinkingTokens > 0 ? `<div class="summary-card">

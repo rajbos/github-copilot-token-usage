@@ -4319,6 +4319,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn(`Error loading usage analysis for ${sessionFile}: ${usageError}`);
 		}
 
+		const sessionCache = this.getCachedSessionData(sessionFile);
+
 		return {
 			file: details.file,
 			title: details.title || null,
@@ -4331,7 +4333,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			firstInteraction: details.firstInteraction,
 			lastInteraction: details.lastInteraction,
 			turns,
-			usageAnalysis
+			usageAnalysis,
+			actualTokens: sessionCache?.actualTokens || 0
 		};
 	}
 
