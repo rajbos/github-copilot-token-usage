@@ -73,6 +73,22 @@ export interface DailyTokenStats {
   repositoryUsage: RepositoryUsage;
 }
 
+/** Aggregated data for one time window (day/week/month) in the chart. */
+export interface ChartPeriodData {
+  labels: string[];
+  tokensData: number[];
+  sessionsData: number[];
+  modelDatasets: object[];
+  editorDatasets: object[];
+  repositoryDatasets: object[];
+  /** Number of bars / data points in this period. */
+  periodCount: number;
+  totalTokens: number;
+  totalSessions: number;
+  /** Average tokens per bar (per day / per week / per month). */
+  avgPerPeriod: number;
+}
+
 /** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
 export interface ChartDataPayload {
   labels: string[];
@@ -90,6 +106,17 @@ export interface ChartDataPayload {
   lastUpdated: string;
   backendConfigured: boolean;
   compactNumbers?: boolean;
+  /** Pre-computed data for Day / Week / Month period views. */
+  periods: {
+    day: ChartPeriodData;
+    week: ChartPeriodData;
+    month: ChartPeriodData;
+  };
+  /**
+   * Whether the full-year data needed for Week and Month views is ready.
+   * When false, the webview should indicate that those views are loading.
+   */
+  periodsReady?: boolean;
 }
 
 export interface SessionFileCache {

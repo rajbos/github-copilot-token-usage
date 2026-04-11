@@ -120,6 +120,12 @@ body {
 	justify-content: center;
 }
 
+.period-controls {
+	margin-bottom: 4px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--border-subtle);
+}
+
 .toggle {
 	background: var(--button-secondary-bg);
 	border: 1px solid var(--border-subtle);
@@ -143,6 +149,15 @@ body {
 
 .toggle.active:hover {
 	background: var(--button-hover-bg);
+}
+
+.toggle:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.toggle:disabled:hover {
+	background: var(--button-secondary-bg);
 }
 
 .canvas-wrap {
