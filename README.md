@@ -51,6 +51,8 @@ Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session fi
 
 Run anywhere with Node.js — no editor required. Get usage stats, fluency scores, and environmental impact from the terminal.
 
+[![npm downloads](https://img.shields.io/npm/dm/@rajbos/ai-engineering-fluency)](https://www.npmjs.com/package/@rajbos/ai-engineering-fluency)
+
 ```bash
 npx @rajbos/ai-engineering-fluency stats
 ```
