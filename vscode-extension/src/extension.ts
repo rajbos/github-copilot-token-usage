@@ -1546,6 +1546,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.warn(`Failed to save cache: ${err}`);
 			});
 
+			// Pre-warm full-year chart data in background so the chart opens without delay.
+			// Only kick off when not already computed and the chart panel isn't open (showChart handles that case).
+			if (!this.lastFullDailyStats && !this.chartPanel) {
+				void this.calculateDailyStats();
+			}
+
 			return detailedStats;
 		} catch (error) {
 			this.error('Error updating token stats:', error);
@@ -1981,14 +1987,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
 				if (mtime < cutoffDate.getTime()) { return null; }
+				// getSessionFileDataCached already stores lastInteraction in its cache entry;
+				// calling getSessionFileDetails() would be a redundant second stat + cache lookup.
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-				const details = await this.getSessionFileDetails(sessionFile);
-				return { sessionFile, sessionData, mtime, details };
+				return { sessionFile, sessionData, mtime };
 			});
 
 			for (const r of dailyResults) {
 				if (!r) { continue; }
-				const { sessionFile, sessionData, mtime, details } = r;
+				const { sessionFile, sessionData, mtime } = r;
 				try {
 					// Prefer actualTokens when available (same as calculateDetailedStats)
 					const estimatedTokens = sessionData.tokens;
@@ -2000,9 +2007,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const editorType = this.getEditorTypeFromPath(sessionFile);
 					const repository = sessionData.repository || 'Unknown';
 
-					// Use lastInteraction for date (same as calculateDetailedStats)
-					const lastActivity = details.lastInteraction
-						? new Date(details.lastInteraction)
+					// Use lastInteraction for date (same as calculateDetailedStats), falling back to mtime
+					const lastActivity = sessionData.lastInteraction
+						? new Date(sessionData.lastInteraction)
 						: new Date(mtime);
 					const dateKey = this.formatDateKey(lastActivity);
 
