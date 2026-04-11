@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Workspace resolution and utility helper functions.
  * Pure functions extracted from CopilotTokenTracker.
  */
@@ -334,7 +334,7 @@ export function extractCustomAgentName(modeId: string): string | null {
 
 		// Remove .agent.md extension
 		if (filename.endsWith('.agent.md')) {
-			return filename.slice(0, -10); // Remove '.agent.md'
+			return filename.slice(0, -9); // Remove '.agent.md' (9 chars)
 		}
 		if (filename.endsWith('.md.agent.md')) {
 			// Handle case like TestEngineerAgent.md.agent.md
