@@ -168,7 +168,7 @@ type RepoPrStatsResult = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 37; // Add thinking effort (reasoning effort) tracking
+	private static readonly CACHE_VERSION = 38; // Fix repo detection for CLI worktree sessions
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -3474,6 +3474,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Handle Copilot CLI rename_session tool call - always use the last rename
 						if (event.type === 'tool.execution_start' && event.data?.toolName === 'rename_session') {
 							if (event.data?.arguments?.title) { details.title = event.data.arguments.title; }
+						}
+
+						// Collect file paths from tool arguments for repository detection
+						if (event.type === 'tool.execution_start' && event.data?.arguments) {
+							const args = event.data.arguments as Record<string, unknown>;
+							for (const val of Object.values(args)) {
+								if (typeof val === 'string' && val.length > 3 && (val.includes('/') || val.includes('\\'))) {
+									allContentReferences.push({ kind: 'reference', reference: { fsPath: val } });
+								}
+							}
 						}
 					} catch {
 						// Skip malformed lines
