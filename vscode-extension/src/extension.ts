@@ -8005,7 +8005,21 @@ ${hashtag}`;
 
       const allModels = new Set<string>();
       entries.forEach(e => Object.keys(e.modelUsage).forEach(m => allModels.add(m)));
-      const modelDatasets = Array.from(allModels).map((model, idx) => {
+
+      // Rank models by total tokens across the period; keep top 5, group the rest
+      const modelTotals = new Map<string, number>();
+      for (const model of allModels) {
+        const total = entries.reduce((sum, e) => {
+          const u = e.modelUsage[model];
+          return sum + (u ? u.inputTokens + u.outputTokens : 0);
+        }, 0);
+        modelTotals.set(model, total);
+      }
+      const sortedModels = Array.from(allModels).sort((a, b) => (modelTotals.get(b) || 0) - (modelTotals.get(a) || 0));
+      const topModels = sortedModels.slice(0, 5);
+      const otherModels = sortedModels.slice(5);
+
+      const modelDatasets = topModels.map((model, idx) => {
         const color = modelColors[idx % modelColors.length];
         return {
           label: getModelDisplayName(model),
@@ -8013,6 +8027,18 @@ ${hashtag}`;
           backgroundColor: color.bg, borderColor: color.border, borderWidth: 1,
         };
       });
+      if (otherModels.length > 0) {
+        modelDatasets.push({
+          label: 'Other models',
+          data: entries.map(e => otherModels.reduce((sum, m) => {
+            const u = e.modelUsage[m];
+            return sum + (u ? u.inputTokens + u.outputTokens : 0);
+          }, 0)),
+          backgroundColor: 'rgba(150, 150, 150, 0.5)',
+          borderColor: 'rgba(150, 150, 150, 0.8)',
+          borderWidth: 1,
+        });
+      }
 
       const allEditors = new Set<string>();
       entries.forEach(e => Object.keys(e.editorUsage).forEach(ed => allEditors.add(ed)));
@@ -8026,7 +8052,9 @@ ${hashtag}`;
       });
 
       const allRepos = new Set<string>();
-      entries.forEach(e => Object.keys(e.repositoryUsage).forEach(r => allRepos.add(r)));
+      entries.forEach(e => Object.keys(e.repositoryUsage)
+        .filter(r => r !== 'Unknown')
+        .forEach(r => allRepos.add(r)));
       const repositoryDatasets = Array.from(allRepos).map((repo, idx) => {
         const color = modelColors[idx % modelColors.length];
         return {
@@ -8119,7 +8147,9 @@ ${hashtag}`;
     });
     const repositoryTotalsMap: Record<string, number> = {};
     dailyBuckets.forEach(b => {
-      Object.entries(b.stats.repositoryUsage).forEach(([repo, usage]) => {
+      Object.entries(b.stats.repositoryUsage)
+        .filter(([repo]) => repo !== 'Unknown')
+        .forEach(([repo, usage]) => {
         const displayName = this.getRepoDisplayName(repo);
         repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
       });
