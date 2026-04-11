@@ -71,6 +71,7 @@ import {
   getTotalTokensFromModelUsage as _getTotalTokensFromModelUsage,
   reconstructJsonlStateAsync as _reconstructJsonlStateAsync,
   extractSubAgentData as _extractSubAgentData,
+  buildReasoningEffortTimeline as _buildReasoningEffortTimeline,
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
@@ -167,7 +168,7 @@ type RepoPrStatsResult = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 36; // Add first-user-message fallback title for untitled Copilot CLI sessions
+	private static readonly CACHE_VERSION = 37; // Add thinking effort (reasoning effort) tracking
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -4034,6 +4035,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// blocking the extension host event loop on large files.
 					const { sessionState } = await _reconstructJsonlStateAsync(lines);
 
+					// Build per-request effort map from delta lines
+					const { effortByRequestId } = _buildReasoningEffortTimeline(lines);
+
 					// Extract session-level info
 					let sessionMode: 'ask' | 'edit' | 'agent' | 'plan' | 'customAgent' = 'ask';
 					let currentModel: string | null = null;
@@ -4119,7 +4123,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						inputTokensEstimate: this.estimateTokensFromText(userMessage, requestModel),
 						outputTokensEstimate: this.estimateTokensFromText(responseText, requestModel),
 						thinkingTokensEstimate: this.estimateTokensFromText(thinkingText, requestModel),
-						actualUsage
+						actualUsage,
+						thinkingEffort: effortByRequestId.get(request.requestId)
 					};
 
 					turns.push(turn);

@@ -35,6 +35,11 @@ type UsageAnalysisPeriod = {
 	contextReferences: ContextReferenceUsage;
 	mcpTools: McpToolUsage;
 	modelSwitching: ModelSwitchingAnalysis;
+	thinkingEffortUsage?: {
+		byEffort: { [effort: string]: number };
+		sessionCount: number;
+		switchCount: number;
+	};
 };
 
 type UsageAnalysisStats = {
@@ -397,6 +402,7 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 			unknownRequests: 0,
 			totalRequests: 0,
 		},
+		thinkingEffortUsage: period?.thinkingEffortUsage,
 	});
 
 	try {
@@ -937,6 +943,53 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				</div>
 			</div>`;
 
+	// Build thinking effort section if we have data for any period
+	const effortData = stats.last30Days.thinkingEffortUsage || stats.today.thinkingEffortUsage || stats.month.thinkingEffortUsage;
+	const thinkingEffortHtml = effortData ? (() => {
+		const EFFORT_ORDER = ['minimal', 'low', 'medium', 'high', 'max', 'xhigh'];
+		const renderEffortPeriod = (teu: { byEffort: { [effort: string]: number }; sessionCount: number; switchCount: number } | undefined) => {
+			if (!teu || teu.sessionCount === 0) { return '<div style="color: var(--text-muted); font-size: 11px;">No data</div>'; }
+			const total = Object.values(teu.byEffort).reduce((s, v) => s + v, 0);
+			const sorted = EFFORT_ORDER
+				.filter(k => teu.byEffort[k] > 0)
+				.concat(Object.keys(teu.byEffort).filter(k => !EFFORT_ORDER.includes(k) && teu.byEffort[k] > 0));
+			return `
+				${sorted.map(level => {
+					const count = teu.byEffort[level] || 0;
+					const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+					return `<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+						<span style="width: 52px; font-size: 11px; font-weight: 600; color: var(--text-primary); text-transform: capitalize;">${escapeHtml(level)}</span>
+						<div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 10px; overflow: hidden;">
+							<div style="width: ${pct}%; background: var(--link-color); height: 100%; border-radius: 4px;"></div>
+						</div>
+						<span style="font-size: 10px; color: var(--text-muted); width: 36px; text-align: right;">${count} (${pct}%)</span>
+					</div>`;
+				}).join('')}
+				<div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${teu.sessionCount} session${teu.sessionCount !== 1 ? 's' : ''} · ${teu.switchCount} effort switch${teu.switchCount !== 1 ? 'es' : ''}</div>
+			`;
+		};
+		return `
+			<!-- Thinking Effort Section -->
+			<div class="section">
+				<div class="section-title"><span>💡</span><span>Thinking Effort (Reasoning)</span></div>
+				<div class="section-subtitle">How often each reasoning effort level was used (requests per level)</div>
+				<div class="three-column">
+					<div>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
+						${renderEffortPeriod(stats.today.thinkingEffortUsage)}
+					</div>
+					<div>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
+						${renderEffortPeriod(stats.last30Days.thinkingEffortUsage)}
+					</div>
+					<div>
+						<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
+						${renderEffortPeriod(stats.month.thinkingEffortUsage)}
+					</div>
+				</div>
+			</div>`;
+	})() : '';
+
 	const sessionsSummaryHtml = `
 			<!-- Summary Section -->
 			<div class="section">
@@ -1090,6 +1143,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				</div>
 
 				${multiModelHtml}
+				${thinkingEffortHtml}
 			</div>
 
 			<div id="tab-panel-tools" class="tab-panel"${activeTab !== 'tools' ? ' style="display:none"' : ''}>

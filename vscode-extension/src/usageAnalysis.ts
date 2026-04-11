@@ -29,6 +29,7 @@ import {
 	extractPerRequestUsageFromRawLines,
 	createEmptyContextRefs,
 	extractSubAgentData,
+	buildReasoningEffortTimeline,
 } from './tokenEstimation';
 import {
 	getModeType,
@@ -238,6 +239,17 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 		period.agentTypes.defaultAgent += analysis.agentTypes.defaultAgent;
 		period.agentTypes.workspaceAgent += analysis.agentTypes.workspaceAgent;
 		period.agentTypes.other += analysis.agentTypes.other;
+	}
+
+	if (analysis.thinkingEffort) {
+		if (!period.thinkingEffortUsage) {
+			period.thinkingEffortUsage = { byEffort: {}, sessionCount: 0, switchCount: 0 };
+		}
+		period.thinkingEffortUsage.sessionCount++;
+		period.thinkingEffortUsage.switchCount += analysis.thinkingEffort.switchCount;
+		for (const [effort, count] of Object.entries(analysis.thinkingEffort.byEffort)) {
+			period.thinkingEffortUsage.byEffort[effort] = (period.thinkingEffortUsage.byEffort[effort] || 0) + count;
+		}
 	}
 }
 
@@ -1360,6 +1372,22 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					}
 					analysis.modelSwitching.switchCount = switchCount;
 					applyModelTierClassification(deps, uniqueModels, models, analysis);
+				}
+
+				// Extract thinking effort (reasoning effort) from delta lines
+				{
+					const { effortByRequestId, defaultEffort, switchCount: effortSwitchCount } = buildReasoningEffortTimeline(lines);
+					if (defaultEffort !== null || effortByRequestId.size > 0) {
+						const byEffort: { [effort: string]: number } = {};
+						for (const [, effort] of effortByRequestId) {
+							byEffort[effort] = (byEffort[effort] || 0) + 1;
+						}
+						// If we have a defaultEffort but no per-request data, record it as the session default
+						if (effortByRequestId.size === 0 && defaultEffort !== null) {
+							byEffort[defaultEffort] = requests.length;
+						}
+						analysis.thinkingEffort = { byEffort, switchCount: effortSwitchCount, defaultEffort };
+					}
 				}
 
 				// Derive conversation patterns from mode usage before returning
