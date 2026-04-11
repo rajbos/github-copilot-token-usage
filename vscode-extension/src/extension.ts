@@ -8135,9 +8135,9 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       compactNumbers: this.getCompactNumbersSetting(),
       periods: {
-        daily: dailyPeriod,
-        weekly: weeklyPeriod,
-        monthly: monthlyPeriod,
+        day: dailyPeriod,
+        week: weeklyPeriod,
+        month: monthlyPeriod,
       },
     };
   }

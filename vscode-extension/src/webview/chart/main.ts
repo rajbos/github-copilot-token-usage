@@ -48,9 +48,9 @@ type InitialChartData = {
 	compactNumbers?: boolean;
 	periodsReady?: boolean;
 	periods?: {
-		daily: ChartPeriodData;
-		weekly: ChartPeriodData;
-		monthly: ChartPeriodData;
+		day: ChartPeriodData;
+		week: ChartPeriodData;
+		month: ChartPeriodData;
 	};
 };
 

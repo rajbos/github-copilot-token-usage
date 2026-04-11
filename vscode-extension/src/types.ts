@@ -108,9 +108,9 @@ export interface ChartDataPayload {
   compactNumbers?: boolean;
   /** Pre-computed data for Day / Week / Month period views. */
   periods: {
-    daily: ChartPeriodData;
-    weekly: ChartPeriodData;
-    monthly: ChartPeriodData;
+    day: ChartPeriodData;
+    week: ChartPeriodData;
+    month: ChartPeriodData;
   };
   /**
    * Whether the full-year data needed for Week and Month views is ready.
