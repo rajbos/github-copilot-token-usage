@@ -27,7 +27,7 @@ Real-time token usage in the status bar, fluency score dashboard, usage analysis
 
 [![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/RobBos.copilot-token-tracker.svg)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)
 
-[![Open VSX Marketplace](https://open-vsx.org/api/RobBos/copilot-token-tracker/badge)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
+[![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/copilot-token-tracker?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
 
 ```bash
 # Install from the VS Code Marketplace
