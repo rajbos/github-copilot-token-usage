@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/mutation-benchmark.yml'
+      - 'vscode-extension/stryker.config.mjs'
 
 permissions:
   contents: read
