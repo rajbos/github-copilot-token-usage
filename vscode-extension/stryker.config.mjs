@@ -57,15 +57,16 @@ export default {
     ].join(' '),
   },
 
-  // inPlace: true — Stryker mutates the compiled JS files directly in the
-  // working directory instead of copying them to a sandbox. This is required
-  // because the `out/` directory is gitignored and would be excluded from the
-  // default sandbox, causing every test command to fail with MODULE_NOT_FOUND
-  // and produce misleading "timed out" results.
-  //
-  // Tradeoff: if Stryker crashes mid-run, files in out/src/ are left in a
-  // mutated state. Run `npm run compile-tests` to restore them.
-  inPlace: true,
+  // files: explicitly include the compiled output directory, which is gitignored
+  // and would otherwise be excluded from each worker's sandbox. Stryker creates
+  // one sandbox copy per concurrent worker — no shared state, no race conditions.
+  // node_modules is always symlinked into each sandbox automatically.
+  // JSON data files (tokenEstimators.json etc.) are copied into out/src/ by
+  // compile-tests, so out/** covers them.
+  files: [
+    'out/**',
+    'package.json',
+  ],
 
   // Mutate compiled JS produced by `npm run compile-tests`.
   // The compiled tests in out/test/unit/ import from out/src/ via relative paths,
