@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20.x, 22.x, 24.x]
+        node-version: [22.x, 24.x]
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -79,7 +79,7 @@ jobs:
         exit "$status"
 
     - name: Publish test results to step summary
-      if: always() && matrix.node-version == '20.x'
+      if: always() && matrix.node-version == '22.x'
       shell: bash
       run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
       
@@ -92,7 +92,7 @@ jobs:
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-      if: matrix.node-version == '20.x'
+      if: matrix.node-version == '22.x'
       with:
         name: extension-build
         path: |

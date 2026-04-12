@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 20.x]
+        node-version: [18.x, 22.x]
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -62,6 +62,35 @@ jobs:
       working-directory: vscode-extension
       run: npm run compile-tests
       
+    - name: Run Node.js unit tests
+      working-directory: vscode-extension
+      shell: bash
+      run: |
+        set +e
+        NODE_MAJOR=$(node -e "process.stdout.write(String(process.version.match(/v(\d+)/)[1]))")
+        if [ "$NODE_MAJOR" -ge 22 ]; then
+          node --require ./out/test/unit/vscode-shim-register.js \
+            --experimental-test-coverage \
+            --test \
+            --test-force-exit \
+            --test-coverage-include=out/src/backend/**/*.js \
+            --test-coverage-include=out/src/utils/**/*.js \
+            out/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
+        else
+          node --require ./out/test/unit/vscode-shim-register.js \
+            --test \
+            --test-force-exit \
+            out/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
+        fi
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
+
+    - name: Publish test results to step summary
+      if: always()
+      shell: bash
+      run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
+
     - name: Verify build outputs exist
       shell: bash
       run: |
@@ -77,7 +106,7 @@ jobs:
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-      if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20.x'
+      if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
       with:
         name: build-artifacts
         path: |
