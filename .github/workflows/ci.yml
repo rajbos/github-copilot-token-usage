@@ -166,7 +166,8 @@ jobs:
                 else if (m.status === 'NoCoverage') noCoverage++;
               }
             }
-            const score = (r.mutationScore ?? 0).toFixed(1);
+            const denominator = killed + survived + timedOut;
+            const score = denominator > 0 ? ((killed / denominator) * 100).toFixed(1) : '0.0';
             const lines = [
               '## 🧬 Mutation Testing Results',
               '',
