@@ -41,11 +41,14 @@ test('normalizeClaudeModelId: passes through non-Claude model IDs unchanged', ()
 // ----- isClaudeCodeSessionFile -----
 
 test('isClaudeCodeSessionFile: recognises ~/.claude/projects paths', () => {
-	assert.ok(claudeCode.isClaudeCodeSessionFile('/home/user/.claude/projects/home-user-code/abc123.jsonl'));
+	const sessionPath = path.join(os.homedir(), '.claude', 'projects', 'home-user-code', 'abc123.jsonl');
+	assert.ok(claudeCode.isClaudeCodeSessionFile(sessionPath));
 });
 
 test('isClaudeCodeSessionFile: recognises Windows paths', () => {
-	assert.ok(claudeCode.isClaudeCodeSessionFile('C:\\Users\\user\\.claude\\projects\\c--Users-user-code\\abc123.jsonl'));
+	// Test backslash normalisation using the current home directory so the test passes on any OS
+	const sessionPath = `${os.homedir()}\\.claude\\projects\\c--Users-user-code\\abc123.jsonl`;
+	assert.ok(claudeCode.isClaudeCodeSessionFile(sessionPath));
 });
 
 test('isClaudeCodeSessionFile: rejects non-matching paths', () => {
