@@ -98,7 +98,7 @@ jobs:
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-      if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+      if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
       with:
         name: build-artifacts
         path: |
