@@ -21,6 +21,11 @@ on:
         required: false
         default: false
         type: boolean
+      vscode_only:
+        description: 'Build and publish only the VS Code extension (skips the Visual Studio extension build)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -475,8 +480,8 @@ jobs:
   build-visualstudio:
     name: Publish Visual Studio Extension
     needs: release
-    # Only run on tag pushes (to attach vsix to release) or when explicitly building the VS extension
-    if: github.event_name == 'push' || inputs.vs_only == true
+    # Skip only when explicitly building VS Code extension only; run for all tag pushes and normal workflow_dispatch
+    if: inputs.vscode_only != true
     # Windows required: Node.js SEA (bundle-exe.ps1) and MSBuild/VSSDK are Windows-only
     runs-on: windows-latest
     permissions:
