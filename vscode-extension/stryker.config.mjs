@@ -9,6 +9,7 @@ export default {
       'node',
       '--require ./out/test/unit/vscode-shim-register.js',
       '--test',
+      '--test-bail',      // exit as soon as the first test fails (= mutant killed)
       '--test-force-exit',
       // Core parser / estimation
       'out/test/unit/tokenEstimation.test.js',
