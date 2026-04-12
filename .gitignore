@@ -4,6 +4,8 @@ node_modules
 .vscode-test/
 *.vsix
 *.backup
+.stryker-tmp
+reports/mutation/
 .github/scripts/models.txt
 .github/scripts/scraper.log
 .github/scripts/scraped-models.json
