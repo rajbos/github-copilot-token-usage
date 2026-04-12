@@ -64,7 +64,24 @@ jobs:
 
     - name: Run Node.js unit tests
       working-directory: vscode-extension
-      run: node --require ./out/test/unit/vscode-shim-register.js --test out/test/unit/*.test.js
+      shell: bash
+      run: |
+        set +e
+        node --require ./out/test/unit/vscode-shim-register.js \
+          --experimental-test-coverage \
+          --test \
+          --test-force-exit \
+          --test-coverage-include=out/src/backend/**/*.js \
+          --test-coverage-include=out/src/utils/**/*.js \
+          out/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
+
+    - name: Publish test results to step summary
+      if: always() && matrix.node-version == '20.x'
+      shell: bash
+      run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
       
     - name: Run tests
       uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1.0.1
