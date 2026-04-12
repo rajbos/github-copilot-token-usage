@@ -56,7 +56,7 @@ export default {
     break: 0, // Informational — does not fail the build during initial rollout.
   },
 
-  reporters: ['html', 'clear-text', 'progress'],
+  reporters: ['html', 'json', 'clear-text', 'progress'],
   htmlReporter: {
     fileName: 'reports/mutation/report.html',
   },

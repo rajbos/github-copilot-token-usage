@@ -83,14 +83,18 @@ jobs:
       shell: bash
       run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
       
+    - name: Install and start Xvfb
+      run: |
+        sudo apt-get install -y xvfb
+        Xvfb :99 -screen 0 1024x768x24 &
+
     - name: Run tests
-      uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1.0.1
-      env:
-        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      with:
-        run: cd vscode-extension && npm test
-        options: -screen 0 1024x768x24
+      run: cd vscode-extension && npm test
       continue-on-error: true  # VS Code extension tests can be flaky in CI
+      env:
+        DISPLAY: :99
+      # coactions/setup-xvfb was abandoned on Node.js 20 (no node24 support).
+      # Using manual xvfb instead to avoid the Node.js deprecation warning.
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -122,7 +126,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
-        node-version: '20.x'
+        node-version: '24.x'
         cache: 'npm'
         cache-dependency-path: vscode-extension/package-lock.json
 
@@ -143,12 +147,51 @@ jobs:
       # marks the job check as FAILURE, which blocks merge via rulesets.
       continue-on-error: true
 
+    - name: Publish mutation summary
+      if: always()
+      working-directory: vscode-extension
+      shell: bash
+      run: |
+        if [ -f "reports/mutation/mutation.json" ]; then
+          node -e "
+            const fs = require('fs');
+            const r = JSON.parse(fs.readFileSync('reports/mutation/mutation.json', 'utf8'));
+            let killed=0, survived=0, timedOut=0, noCoverage=0, total=0;
+            for (const f of Object.values(r.files || {})) {
+              for (const m of (f.mutants || [])) {
+                total++;
+                if (m.status === 'Killed') killed++;
+                else if (m.status === 'Survived') survived++;
+                else if (m.status === 'Timeout') timedOut++;
+                else if (m.status === 'NoCoverage') noCoverage++;
+              }
+            }
+            const score = (r.mutationScore ?? 0).toFixed(1);
+            const lines = [
+              '## 🧬 Mutation Testing Results',
+              '',
+              '| Metric | Value |',
+              '|--------|-------|',
+              \`| 📊 Score | \${score}% |\`,
+              \`| ✅ Killed | \${killed} |\`,
+              \`| ⚠️ Survived | \${survived} |\`,
+              \`| ⏱️ Timeout | \${timedOut} |\`,
+              \`| 🚫 No coverage | \${noCoverage} |\`,
+              \`| Total | \${total} |\`,
+            ].join('\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines + '\n');
+          "
+        else
+          printf '## 🧬 Mutation Testing\n\n⚠️ Report not generated (Stryker timed out or errored).\n' >> "$GITHUB_STEP_SUMMARY"
+        fi
+
     - name: Upload mutation report
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       if: always()
       with:
         name: mutation-report
         path: vscode-extension/reports/mutation/
+        if-no-files-found: ignore
         retention-days: 14
 
   package:
