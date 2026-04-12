@@ -34,11 +34,13 @@ export default {
   // Mutate compiled JS produced by `npm run compile-tests`.
   // The compiled tests in out/test/unit/ import from out/src/ via relative paths,
   // so mutating out/src/ is picked up by the test runner automatically.
+  //
+  // Scope is intentionally limited to files under ~600 lines. The larger files
+  // (usageAnalysis.js ~1900 lines, maturityScoring.js ~1200 lines) generate
+  // thousands of mutations and exceed the CI time budget.
   mutate: [
     'out/src/tokenEstimation.js',
     'out/src/sessionParser.js',
-    'out/src/maturityScoring.js',
-    'out/src/usageAnalysis.js',
     'out/src/utils/dayKeys.js',
     'out/src/utils/errors.js',
     'out/src/utils/html.js',
@@ -46,7 +48,7 @@ export default {
 
   coverageAnalysis: 'off',
   timeoutMS: 15000,
-  concurrency: 2,
+  concurrency: 4,
 
   thresholds: {
     high: 80,
