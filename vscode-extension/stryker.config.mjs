@@ -9,7 +9,6 @@ export default {
       'node',
       '--require ./out/test/unit/vscode-shim-register.js',
       '--test',
-      '--test-bail',      // exit as soon as the first test fails (= mutant killed)
       '--test-force-exit',
       // Core parser / estimation
       'out/test/unit/tokenEstimation.test.js',
@@ -89,7 +88,12 @@ export default {
     'out/src/backend/**/*.js',
   ],
 
-  coverageAnalysis: 'off',
+  // coverageAnalysis: 'all' — Stryker does an instrumented dry run to find out
+  // which mutants are actually exercised by the test suite. Mutants with zero
+  // coverage are skipped entirely, which significantly reduces the number of
+  // test runs needed (especially for backend files with partial test coverage).
+  // 'perTest' is not supported by the command test runner.
+  coverageAnalysis: 'all',
   timeoutMS: 15000,
   concurrency: 4,
 
