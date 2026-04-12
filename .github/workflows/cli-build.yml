@@ -58,7 +58,7 @@ jobs:
     if: needs.check-changes.outputs.cli-relevant == 'true'
     runs-on: ubuntu-latest
     env:
-        node-version: 22
+        node-version: 24
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1

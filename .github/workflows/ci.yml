@@ -79,12 +79,14 @@ jobs:
         exit "$status"
 
     - name: Publish test results to step summary
-      if: always() && matrix.node-version == '22.x'
+      if: always() && matrix.node-version == '24.x'
       shell: bash
       run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
       
     - name: Run tests
       uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1.0.1
+      env:
+        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       with:
         run: cd vscode-extension && npm test
         options: -screen 0 1024x768x24
@@ -92,7 +94,7 @@ jobs:
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-      if: matrix.node-version == '22.x'
+      if: matrix.node-version == '24.x'
       with:
         name: extension-build
         path: |
@@ -117,7 +119,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
-        node-version: '20.x'
+        node-version: '24.x'
         cache: 'npm'
         cache-dependency-path: vscode-extension/package-lock.json
         
