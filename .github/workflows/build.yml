@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 22.x]
+        node-version: [22.x, 24.x]
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -67,21 +67,13 @@ jobs:
       shell: bash
       run: |
         set +e
-        NODE_MAJOR=$(node -e "process.stdout.write(String(process.version.match(/v(\d+)/)[1]))")
-        if [ "$NODE_MAJOR" -ge 22 ]; then
-          node --require ./out/test/unit/vscode-shim-register.js \
-            --experimental-test-coverage \
-            --test \
-            --test-force-exit \
-            --test-coverage-include=out/src/backend/**/*.js \
-            --test-coverage-include=out/src/utils/**/*.js \
-            out/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
-        else
-          node --require ./out/test/unit/vscode-shim-register.js \
-            --test \
-            --test-force-exit \
-            out/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
-        fi
+        node --require ./out/test/unit/vscode-shim-register.js \
+          --experimental-test-coverage \
+          --test \
+          --test-force-exit \
+          --test-coverage-include=out/src/backend/**/*.js \
+          --test-coverage-include=out/src/utils/**/*.js \
+          out/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
         status=${PIPESTATUS[0]}
         set -e
         exit "$status"
