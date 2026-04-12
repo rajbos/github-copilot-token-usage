@@ -2,6 +2,9 @@ name: Mutation Testing Benchmark
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/mutation-benchmark.yml'
 
 permissions:
   contents: read
