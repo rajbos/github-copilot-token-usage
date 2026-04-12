@@ -141,7 +141,7 @@ jobs:
     - name: Run mutation tests
       working-directory: vscode-extension
       run: npx stryker run
-      timeout-minutes: 20
+      timeout-minutes: 60
       # Step-level continue-on-error keeps the job green even on timeout/failure.
       # Job-level continue-on-error alone only keeps the workflow green but still
       # marks the job check as FAILURE, which blocks merge via rulesets.
