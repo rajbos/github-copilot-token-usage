@@ -360,6 +360,16 @@ export class OpenCodeDataAccess {
 			modelUsage[model].inputTokens += turnInput;
 			modelUsage[model].outputTokens += turnOutput;
 
+			// Track cache tokens if available (tokens.cache.read / tokens.cache.write)
+			const turnCachedRead = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.cache?.read || 0), 0);
+			const turnCacheCreation = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.cache?.write || 0), 0);
+			if (turnCachedRead > 0) {
+				modelUsage[model].cachedReadTokens = (modelUsage[model].cachedReadTokens ?? 0) + turnCachedRead;
+			}
+			if (turnCacheCreation > 0) {
+				modelUsage[model].cacheCreationTokens = (modelUsage[model].cacheCreationTokens ?? 0) + turnCacheCreation;
+			}
+
 			prevTotal = turnCumTotal;
 		}
 

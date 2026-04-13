@@ -525,8 +525,16 @@ export function getModelTier(modelId: string, modelPricing: { [key: string]: Mod
 }
 
 /**
- * Calculate estimated cost in USD based on model usage
- * Assumes 50/50 split between input and output tokens for estimation
+ * Calculate estimated cost in USD based on model usage.
+ * Applies cache-aware pricing when cachedReadTokens / cacheCreationTokens breakdowns
+ * are available (e.g. Claude Desktop / Claude Code / OpenCode sessions).
+ *
+ * Cost formula:
+ *   uncachedInput = inputTokens - (cachedReadTokens ?? 0) - (cacheCreationTokens ?? 0)
+ *   cost = uncachedInput × inputCostPerMillion
+ *        + cachedReadTokens × cachedInputCostPerMillion (fallback: inputCostPerMillion)
+ *        + cacheCreationTokens × cacheCreationCostPerMillion (fallback: inputCostPerMillion)
+ *        + outputTokens × outputCostPerMillion
  * @param modelUsage Object with model names as keys and token counts as values
  * @returns Estimated cost in USD
  */
@@ -534,25 +542,18 @@ export function calculateEstimatedCost(modelUsage: ModelUsage, modelPricing: { [
 	let totalCost = 0;
 
 	for (const [model, usage] of Object.entries(modelUsage)) {
-		const pricing = modelPricing[model];
+		const pricing = modelPricing[model] ?? modelPricing['gpt-4o-mini'];
 
-		if (pricing) {
-			// Use actual input and output token counts
-			const inputCost = (usage.inputTokens / 1_000_000) * pricing.inputCostPerMillion;
-			const outputCost = (usage.outputTokens / 1_000_000) * pricing.outputCostPerMillion;
+		const cachedRead = usage.cachedReadTokens ?? 0;
+		const cacheCreation = usage.cacheCreationTokens ?? 0;
+		const uncachedInput = Math.max(0, usage.inputTokens - cachedRead - cacheCreation);
 
-			totalCost += inputCost + outputCost;
-		} else {
-			// Fallback for models without pricing data - use GPT-4o-mini as default
-			const fallbackPricing = modelPricing['gpt-4o-mini'];
+		const uncachedInputCost = (uncachedInput / 1_000_000) * pricing.inputCostPerMillion;
+		const cachedReadCost = (cachedRead / 1_000_000) * (pricing.cachedInputCostPerMillion ?? pricing.inputCostPerMillion);
+		const cacheCreationCost = (cacheCreation / 1_000_000) * (pricing.cacheCreationCostPerMillion ?? pricing.inputCostPerMillion);
+		const outputCost = (usage.outputTokens / 1_000_000) * pricing.outputCostPerMillion;
 
-			const inputCost = (usage.inputTokens / 1_000_000) * fallbackPricing.inputCostPerMillion;
-			const outputCost = (usage.outputTokens / 1_000_000) * fallbackPricing.outputCostPerMillion;
-
-			totalCost += inputCost + outputCost;
-
-			// log(`No pricing data for model '${model}', using fallback pricing (gpt-4o-mini)`);
-		}
+		totalCost += uncachedInputCost + cachedReadCost + cacheCreationCost + outputCost;
 	}
 
 	return totalCost;

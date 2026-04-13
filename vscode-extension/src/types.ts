@@ -11,14 +11,18 @@ export interface TokenUsageStats {
 
 export interface ModelUsage {
   [modelName: string]: {
-    inputTokens: number;
+    inputTokens: number;    // total input tokens (uncached + cached reads + cache creation)
     outputTokens: number;
+    cachedReadTokens?: number;     // portion of inputTokens that were cache reads (billed at reduced rate)
+    cacheCreationTokens?: number;  // portion of inputTokens used to create cache entries (billed at higher rate)
   };
 }
 
 export interface ModelPricing {
   inputCostPerMillion: number;
   outputCostPerMillion: number;
+  cachedInputCostPerMillion?: number;    // cost per million cache-read tokens (e.g. 0.30 for Claude Sonnet 4)
+  cacheCreationCostPerMillion?: number;  // cost per million cache-creation tokens (e.g. 3.75 for Claude Sonnet 4)
   category?: string;
   tier?: "standard" | "premium" | "unknown";
   multiplier?: number;

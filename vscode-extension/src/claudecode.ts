@@ -221,13 +221,21 @@ export class ClaudeCodeDataAccess {
 				modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 			}
 
+			const cacheCreation = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0;
+			const cachedRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
 			const inputTokens = (typeof usage.input_tokens === 'number' ? usage.input_tokens : 0)
-				+ (typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0)
-				+ (typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0);
+				+ cacheCreation
+				+ cachedRead;
 			const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
 
 			modelUsage[model].inputTokens += inputTokens;
 			modelUsage[model].outputTokens += outputTokens;
+			if (cacheCreation > 0) {
+				modelUsage[model].cacheCreationTokens = (modelUsage[model].cacheCreationTokens ?? 0) + cacheCreation;
+			}
+			if (cachedRead > 0) {
+				modelUsage[model].cachedReadTokens = (modelUsage[model].cachedReadTokens ?? 0) + cachedRead;
+			}
 		}
 
 		return modelUsage;
