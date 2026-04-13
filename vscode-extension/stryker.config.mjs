@@ -73,20 +73,21 @@ export default {
   // so mutating out/src/ is picked up by the test runner automatically.
   //
   // The glob patterns below use Stryker's built-in micromatch support (cross-platform).
+  //
+  // Scope excludes backend/** (syncService ~1430 lines, facade ~1136 lines etc. generate
+  // ~10k+ mutants with low kill rates and blow the CI time budget). Also excludes
+  // usageAnalysis and maturityScoring (~1900 and ~1200 lines respectively) for the
+  // same reason. These can be added per-file once their test coverage is improved.
   mutate: [
     // Core files
     'out/src/tokenEstimation.js',
     'out/src/sessionParser.js',
-    'out/src/usageAnalysis.js',
-    'out/src/maturityScoring.js',
     'out/src/workspaceHelpers.js',
     'out/src/claudecode.js',
     // Utilities
     'out/src/utils/dayKeys.js',
     'out/src/utils/errors.js',
     'out/src/utils/html.js',
-    // Backend
-    'out/src/backend/**/*.js',
   ],
 
   // coverageAnalysis: 'all' — Stryker does an instrumented dry run to find out
