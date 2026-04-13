@@ -42,6 +42,8 @@ Contains pricing information for AI models, including input and output token cos
     "model-name": {
       "inputCostPerMillion": 1.75,
       "outputCostPerMillion": 14.0,
+      "cachedInputCostPerMillion": 0.175,
+      "cacheCreationCostPerMillion": 2.1875,
       "category": "Model category",
       "tier": "standard|premium|unknown",
       "multiplier": 1
@@ -49,6 +51,39 @@ Contains pricing information for AI models, including input and output token cos
   }
 }
 ```
+
+**Cache pricing fields (optional):**
+
+| Field | Description |
+|-------|-------------|
+| `cachedInputCostPerMillion` | Cost per million tokens for cache **reads** — tokens already cached and billed at a reduced rate |
+| `cacheCreationCostPerMillion` | Cost per million tokens for cache **creation** — writing tokens into the cache (billed at a premium) |
+
+When these fields are absent, the full `inputCostPerMillion` rate is applied to all input tokens.
+
+**Anthropic prompt caching rates** (used for all `claude-*` models):
+- Cache reads: **10% of input rate** (e.g. $0.30/M for Claude Sonnet 4 at $3.00/M input)
+- Cache creation: **125% of input rate** (e.g. $3.75/M for Claude Sonnet 4)
+
+**OpenAI prompt caching rates** (automatic prefix matching):
+- Cache reads: **50% of input rate** (e.g. $1.25/M for GPT-4o at $2.50/M input)
+- Note: OpenAI cache creation does not incur an extra fee, so `cacheCreationCostPerMillion` is not set for OpenAI models.
+
+### Which data sources provide cache token breakdowns?
+
+Cache-aware pricing only applies when the session source actually exposes how many tokens were cached vs. uncached:
+
+| Source | Cache tokens available? | Fields used |
+|--------|------------------------|-------------|
+| **Claude Desktop** (`claudedesktop.ts`) | ✅ Yes | `usage.cache_creation_input_tokens`, `usage.cache_read_input_tokens` |
+| **Claude Code** (`claudecode.ts`) | ✅ Yes | same Anthropic API fields |
+| **OpenCode** (`opencode.ts`) | ✅ Yes (DB format) | `msg.tokens.cache.write`, `msg.tokens.cache.read` |
+| VS Code Copilot | ❌ Not exposed | Copilot API returns only aggregate `promptTokens` |
+| Continue.dev | ❌ No | Character-based estimation only |
+| Cursor (Crush) | ❌ No | DB prompt/completion totals only |
+| Visual Studio | ❌ No | Character-based estimation only |
+
+For sources without cache data, the full input rate is used (no change from previous behaviour).
 
 **How to update:**
 1. Check official pricing pages:
@@ -80,7 +115,7 @@ Note: These are the current GitHub Copilot supported Gemini models. Pricing from
 - These files are imported at compile time and bundled into the extension
 - After making changes, run `npm run compile` to rebuild
 - Pricing is for reference only - GitHub Copilot may use different pricing structures
-- Cost estimates assume a 50/50 split between input and output tokens
+- Cost estimates use actual input/output token counts when available. Cache-aware pricing is applied automatically for sources that expose cache token breakdowns (Claude Desktop, Claude Code, OpenCode).
 
 ## customizationPatterns.json
 

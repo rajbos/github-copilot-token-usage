@@ -174,6 +174,7 @@
     "gpt-4o": {
       "inputCostPerMillion": 2.5,
       "outputCostPerMillion": 10.0,
+      "cachedInputCostPerMillion": 1.25,
       "category": "GPT-4 models",
       "tier": "standard",
       "multiplier": 0,
@@ -182,6 +183,7 @@
     "gpt-4o-mini": {
       "inputCostPerMillion": 0.15,
       "outputCostPerMillion": 0.6,
+      "cachedInputCostPerMillion": 0.075,
       "category": "GPT-4 models",
       "tier": "standard",
       "multiplier": 0,
@@ -198,6 +200,8 @@
     "claude-sonnet-3.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
+      "cachedInputCostPerMillion": 0.3,
+      "cacheCreationCostPerMillion": 3.75,
       "category": "Claude models (Anthropic)",
       "tier": "unknown",
       "multiplier": 1,
@@ -206,6 +210,8 @@
     "claude-sonnet-3.7": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
+      "cachedInputCostPerMillion": 0.3,
+      "cacheCreationCostPerMillion": 3.75,
       "category": "Claude models (Anthropic)",
       "tier": "unknown",
       "multiplier": 1,
@@ -214,6 +220,8 @@
     "claude-sonnet-4": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
+      "cachedInputCostPerMillion": 0.3,
+      "cacheCreationCostPerMillion": 3.75,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 1,
@@ -222,6 +230,8 @@
     "claude-sonnet-4.5": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
+      "cachedInputCostPerMillion": 0.3,
+      "cacheCreationCostPerMillion": 3.75,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 1
@@ -229,6 +239,8 @@
     "claude-sonnet-4.6": {
       "inputCostPerMillion": 3.0,
       "outputCostPerMillion": 15.0,
+      "cachedInputCostPerMillion": 0.3,
+      "cacheCreationCostPerMillion": 3.75,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 3,
@@ -237,6 +249,8 @@
     "claude-haiku": {
       "inputCostPerMillion": 0.25,
       "outputCostPerMillion": 1.25,
+      "cachedInputCostPerMillion": 0.025,
+      "cacheCreationCostPerMillion": 0.3125,
       "category": "Claude models (Anthropic)",
       "tier": "standard",
       "multiplier": 0
@@ -244,6 +258,8 @@
     "claude-haiku-4.5": {
       "inputCostPerMillion": 1.0,
       "outputCostPerMillion": 5.0,
+      "cachedInputCostPerMillion": 0.1,
+      "cacheCreationCostPerMillion": 1.25,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 0.33
@@ -251,6 +267,8 @@
     "claude-opus-4.1": {
       "inputCostPerMillion": 15.0,
       "outputCostPerMillion": 75.0,
+      "cachedInputCostPerMillion": 1.5,
+      "cacheCreationCostPerMillion": 18.75,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 10
@@ -258,6 +276,8 @@
     "claude-opus-4.5": {
       "inputCostPerMillion": 5.0,
       "outputCostPerMillion": 25.0,
+      "cachedInputCostPerMillion": 0.5,
+      "cacheCreationCostPerMillion": 6.25,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 3
@@ -265,6 +285,8 @@
     "claude-opus-4.6": {
       "inputCostPerMillion": 5.0,
       "outputCostPerMillion": 25.0,
+      "cachedInputCostPerMillion": 0.5,
+      "cacheCreationCostPerMillion": 6.25,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 3
@@ -272,6 +294,8 @@
     "claude-opus-4.6-(fast-mode)-(preview)": {
       "inputCostPerMillion": 5.0,
       "outputCostPerMillion": 25.0,
+      "cachedInputCostPerMillion": 0.5,
+      "cacheCreationCostPerMillion": 6.25,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 30
@@ -279,6 +303,8 @@
     "claude-opus-4.6-fast": {
       "inputCostPerMillion": 5.0,
       "outputCostPerMillion": 25.0,
+      "cachedInputCostPerMillion": 0.5,
+      "cacheCreationCostPerMillion": 6.25,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
       "multiplier": 30

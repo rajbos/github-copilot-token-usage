@@ -168,7 +168,7 @@ type RepoPrStatsResult = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 38; // Fix repo detection for CLI worktree sessions
+	private static readonly CACHE_VERSION = 39; // Cache-aware cost: track cachedReadTokens/cacheCreationTokens in ModelUsage
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
