@@ -12,14 +12,15 @@ permissions:
 
 jobs:
   benchmark:
-    name: Concurrency ${{ matrix.concurrency }}
-    runs-on: ubuntu-latest
+    name: Concurrency ${{ matrix.concurrency }} / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
     continue-on-error: true
 
     strategy:
       fail-fast: false
       matrix:
         concurrency: [4, 8]
+        runner: [ubuntu-latest, windows-latest]
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -109,7 +110,7 @@ jobs:
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       if: always()
       with:
-        name: mutation-report-concurrency-${{ matrix.concurrency }}
+        name: mutation-report-${{ matrix.runner }}-concurrency-${{ matrix.concurrency }}
         path: vscode-extension/reports/mutation/
         if-no-files-found: ignore
         retention-days: 14
