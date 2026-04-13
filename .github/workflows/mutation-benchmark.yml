@@ -19,8 +19,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        concurrency: [4, 8]
-        runner: [ubuntu-latest, windows-latest]
+        include:
+          - concurrency: 4
+            runner: ubuntu-latest
+          # ubuntu-latest concurrency=8 showed same throughput as concurrency=4 -- no benefit.
+          # - concurrency: 8
+          #   runner: ubuntu-latest
+          # windows-latest runners are significantly slower than ubuntu-latest for this workload.
+          # - concurrency: 4
+          #   runner: windows-latest
+          # - concurrency: 8
+          #   runner: windows-latest
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
