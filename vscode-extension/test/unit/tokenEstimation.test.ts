@@ -248,3 +248,172 @@ test('createEmptyContextRefs: returns object with all zero counts', () => {
         assert.deepEqual(refs.byKind, {});
         assert.deepEqual(refs.byPath, {});
 });
+// ── Round 2: estimateTokensFromText deeper coverage ─────────────────────
+
+test('estimateTokensFromText: model key match strips hyphen for lookup', () => {
+        // e.g. 'gpt4' should match estimator key 'gpt-4' via replace('-','')
+        const estimators = { 'gpt-4': 0.5 };
+        const result = estimateTokensFromText('abcdefgh', 'gpt4', estimators);
+        assert.equal(result, 4); // 8 * 0.5
+});
+
+test('estimateTokensFromText: uses first matching estimator key and breaks', () => {
+        // Ensure the break fires — only first match used
+        const estimators = { 'claude': 0.5, 'claude-sonnet': 0.1 };
+        const r1 = estimateTokensFromText('abcdefgh', 'claude-sonnet', estimators);
+        const r2 = estimateTokensFromText('abcdefgh', 'other', estimators);
+        assert.equal(r1, 4);   // matches 'claude' first (0.5), not 'claude-sonnet' (0.1)
+        assert.equal(r2, 2);   // no match → default 0.25 → ceil(8*0.25)=2
+});
+
+test('normalizeDisplayModelName: trims whitespace before lowercasing', () => {
+        assert.equal(normalizeDisplayModelName('  Claude  '), 'claude');
+});
+
+test('normalizeDisplayModelName: collapses multiple spaces to single hyphen', () => {
+        // /\s+/g replaces runs of whitespace with a single '-'
+        assert.equal(normalizeDisplayModelName('Claude  Sonnet  4.5'), 'claude-sonnet-4.5');
+});
+
+// ── Round 2: extractSubAgentData deeper coverage ─────────────────────────
+
+test('extractSubAgentData: returns null for non-subagent toolInvocationSerialized', () => {
+        const item = { kind: 'toolInvocationSerialized', toolSpecificData: { kind: 'other' } };
+        assert.equal(extractSubAgentData(item), null);
+});
+
+test('extractSubAgentData: returns null when toolSpecificData is missing', () => {
+        const item = { kind: 'toolInvocationSerialized' };
+        assert.equal(extractSubAgentData(item), null);
+});
+
+test('extractSubAgentData: returns null when toolSpecificData is not an object', () => {
+        const item = { kind: 'toolInvocationSerialized', toolSpecificData: 'string' };
+        assert.equal(extractSubAgentData(item), null);
+});
+
+test('extractSubAgentData: returns null when both prompt and result are empty', () => {
+        const item = {
+                kind: 'toolInvocationSerialized',
+                toolSpecificData: { kind: 'subagent', prompt: '', result: '' }
+        };
+        assert.equal(extractSubAgentData(item), null);
+});
+
+test('extractSubAgentData: returns result when only result is non-empty', () => {
+        const item = {
+                kind: 'toolInvocationSerialized',
+                toolSpecificData: { kind: 'subagent', prompt: '', result: 'done' }
+        };
+        const out = extractSubAgentData(item);
+        assert.ok(out !== null);
+        assert.equal(out!.result, 'done');
+        assert.equal(out!.prompt, '');
+});
+
+test('extractSubAgentData: prompt defaults to empty string when non-string', () => {
+        const item = {
+                kind: 'toolInvocationSerialized',
+                toolSpecificData: { kind: 'subagent', prompt: 42, result: 'answer' }
+        };
+        const out = extractSubAgentData(item);
+        assert.ok(out !== null);
+        assert.equal(out!.prompt, '');
+        assert.equal(out!.result, 'answer');
+});
+
+test('extractSubAgentData: streaming result object with non-numeric keys filtered', () => {
+        const item = {
+                kind: 'toolInvocationSerialized',
+                toolSpecificData: {
+                        kind: 'subagent',
+                        prompt: 'q',
+                        result: { 0: 'H', 1: 'i', foo: 123 }
+                }
+        };
+        const out = extractSubAgentData(item);
+        assert.ok(out !== null);
+        assert.equal(out!.result, 'Hi'); // non-string values map to ''
+});
+
+test('extractSubAgentData: result object with non-string values becomes empty strings', () => {
+        const item = {
+                kind: 'toolInvocationSerialized',
+                toolSpecificData: {
+                        kind: 'subagent',
+                        prompt: 'q',
+                        result: { 0: 'A', 1: null, 2: 'B' }
+                }
+        };
+        const out = extractSubAgentData(item);
+        assert.ok(out !== null);
+        assert.equal(out!.result, 'AB'); // null becomes ''
+});
+
+// ── Round 2: estimateTokensFromJsonlSession ──────────────────────────────
+
+import { estimateTokensFromJsonlSession } from '../../src/tokenEstimation';
+
+test('estimateTokensFromJsonlSession: counts user.message tokens', () => {
+        const content = JSON.stringify({ type: 'user.message', data: { content: 'hello there' } });
+        const result = estimateTokensFromJsonlSession(content);
+        assert.ok(result.tokens > 0);
+});
+
+test('estimateTokensFromJsonlSession: counts assistant.message tokens', () => {
+        const content = JSON.stringify({ type: 'assistant.message', data: { content: 'the answer is yes' } });
+        const result = estimateTokensFromJsonlSession(content);
+        assert.ok(result.tokens > 0);
+});
+
+test('estimateTokensFromJsonlSession: counts tool.result tokens', () => {
+        const content = JSON.stringify({ type: 'tool.result', data: { output: 'tool output data' } });
+        const result = estimateTokensFromJsonlSession(content);
+        assert.ok(result.tokens > 0);
+});
+
+test('estimateTokensFromJsonlSession: uses session.shutdown actual tokens', () => {
+        const events = [
+                JSON.stringify({ type: 'user.message', data: { content: 'hi' } }),
+                JSON.stringify({
+                        type: 'session.shutdown',
+                        data: {
+                                modelMetrics: {
+                                        'gpt-4o': { usage: { inputTokens: 100, outputTokens: 200 } }
+                                }
+                        }
+                })
+        ].join('\n');
+        const result = estimateTokensFromJsonlSession(events);
+        // session.shutdown actual tokens should take precedence
+        assert.equal(result.actualTokens, 300);
+});
+
+test('estimateTokensFromJsonlSession: skips blank lines without crashing', () => {
+        const content = '\n\n' + JSON.stringify({ type: 'user.message', data: { content: 'hi' } }) + '\n\n';
+        const result = estimateTokensFromJsonlSession(content);
+        assert.ok(result.tokens > 0);
+});
+
+test('estimateTokensFromJsonlSession: handles empty string', () => {
+        const result = estimateTokensFromJsonlSession('');
+        assert.equal(result.tokens, 0);
+        assert.equal(result.thinkingTokens, 0);
+        assert.equal(result.actualTokens, 0);
+});
+
+test('estimateTokensFromJsonlSession: session.shutdown handles non-numeric usage fields', () => {
+        const events = [
+                JSON.stringify({
+                        type: 'session.shutdown',
+                        data: {
+                                modelMetrics: {
+                                        'gpt-4o': { usage: { inputTokens: 'bad', outputTokens: 50 } }
+                                }
+                        }
+                })
+        ].join('\n');
+        const result = estimateTokensFromJsonlSession(events);
+        // inputTokens is non-numeric → defaults to 0; outputTokens = 50
+        assert.equal(result.actualTokens, 50);
+});

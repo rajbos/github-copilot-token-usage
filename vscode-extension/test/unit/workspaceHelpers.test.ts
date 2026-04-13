@@ -361,3 +361,109 @@ test('detectEditorSource: detects Crush', () => {
 test('detectEditorSource: returns Unknown for unrecognized paths', () => {
         assert.equal(detectEditorSource('/tmp/random/file.json'), 'Unknown');
 });
+// ── Round 2: extractWorkspaceIdFromSessionPath boundary conditions ────────
+
+test('extractWorkspaceIdFromSessionPath: workspaceStorage as last segment returns undefined', () => {
+        // idx+1 >= parts.length case
+        const path = '/home/user/.config/Code/User/workspaceStorage';
+        assert.equal(extractWorkspaceIdFromSessionPath(path), undefined);
+});
+
+test('extractWorkspaceIdFromSessionPath: returns part immediately after workspaceStorage', () => {
+        const path = '/Code/User/workspaceStorage/abc123def/chatSessions/x.json';
+        assert.equal(extractWorkspaceIdFromSessionPath(path), 'abc123def');
+});
+
+test('extractWorkspaceIdFromSessionPath: case-insensitive workspaceStorage match', () => {
+        const path = '/Code/User/WorkspaceStorage/abc123/session.json';
+        assert.equal(extractWorkspaceIdFromSessionPath(path), 'abc123');
+});
+
+// ── Round 2: globToRegExp regex mutation coverage ────────────────────────
+
+test('globToRegExp: /**/ in middle of pattern matches multiple segments', () => {
+        const re = globToRegExp('src/**/test/*.ts');
+        assert.ok(re.test('src/test/foo.ts'));
+        assert.ok(re.test('src/a/b/test/foo.ts'));
+        assert.ok(!re.test('src/test/sub/foo.ts')); // last * shouldn't match /
+});
+
+test('globToRegExp: trailing ** matches any depth', () => {
+        const re = globToRegExp('src/**');
+        assert.ok(re.test('src/file.ts'));
+        assert.ok(re.test('src/a/b/c/file.ts'));
+});
+
+test('globToRegExp: escapes dot in filename', () => {
+        const re = globToRegExp('package.json');
+        assert.ok(re.test('package.json'));
+        assert.ok(!re.test('packageXjson'));  // dot should NOT match any char
+});
+
+test('globToRegExp: case sensitive by default', () => {
+        const re = globToRegExp('*.TS');
+        assert.ok(re.test('file.TS'));
+        assert.ok(!re.test('file.ts'));
+});
+
+test('globToRegExp: non-case-insensitive flag is false by default', () => {
+        const reDefault = globToRegExp('*.ts');
+        const reExplicit = globToRegExp('*.ts', false);
+        assert.equal(reDefault.flags, reExplicit.flags);
+});
+
+// ── Round 2: detectEditorSource ordering and exact string matching ────────
+
+test('detectEditorSource: Cursor is detected before VS Code fallback', () => {
+        // Path contains both "cursor" and "code" — cursor should win
+        const path = '/home/user/.config/Cursor/User/workspaceStorage/abc/session.json';
+        assert.equal(detectEditorSource(path), 'Cursor');
+});
+
+test('detectEditorSource: code-insiders hyphenated variant detected', () => {
+        assert.equal(detectEditorSource('/home/user/.config/Code-Insiders/User/session.json'), 'VS Code Insiders');
+});
+
+test('detectEditorSource: Copilot CLI takes priority over code path', () => {
+        // .copilot/session-state path should return Copilot CLI, not VS Code
+        assert.equal(detectEditorSource('/home/user/.copilot/session-state/session123.json'), 'Copilot CLI');
+});
+
+test('detectEditorSource: Claude Code takes priority over code path', () => {
+        assert.equal(detectEditorSource('/home/user/.claude/projects/abc/session.jsonl'), 'Claude Code');
+});
+
+// ── Round 2: extractCustomAgentName edge cases ────────────────────────────
+
+test('extractCustomAgentName: returns null for non-.agent.md path', () => {
+        const result = extractCustomAgentName('file:///home/user/code/not-an-agent.ts');
+        assert.equal(result, null);
+});
+
+test('extractCustomAgentName: handles path without file:// prefix', () => {
+        const result = extractCustomAgentName('/home/user/.github/agents/my-agent.agent.md');
+        assert.ok(result !== null);
+        assert.equal(result, 'my-agent');
+});
+
+test('extractCustomAgentName: file:/// URI with agent.md returns just the agent name', () => {
+        const result = extractCustomAgentName('file:///home/user/.github/agents/code-review.agent.md');
+        assert.equal(result, 'code-review');
+});
+
+// ── Round 2: getRepoDisplayName edge cases ────────────────────────────────
+
+test('getRepoDisplayName: handles .git suffix in HTTPS URL', () => {
+        const result = getRepoDisplayName('https://github.com/owner/my-repo.git');
+        assert.equal(result, 'owner/my-repo');
+});
+
+test('getRepoDisplayName: handles URL without trailing .git', () => {
+        const result = getRepoDisplayName('https://github.com/owner/repo');
+        assert.equal(result, 'owner/repo');
+});
+
+test('getRepoDisplayName: handles SSH URL with .git', () => {
+        const result = getRepoDisplayName('git@github.com:owner/repo.git');
+        assert.equal(result, 'owner/repo');
+});
