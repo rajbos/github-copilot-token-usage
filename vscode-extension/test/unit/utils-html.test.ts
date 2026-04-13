@@ -68,3 +68,25 @@ test('safeJsonForInlineScript: handles null, numbers, arrays', () => {
 	const arr = safeJsonForInlineScript([1, 2]);
 	assert.equal(arr, '[1,2]');
 });
+
+// ── Mutation-killing tests: verify exact replacement strings ────────────
+
+test('safeJsonForInlineScript: replaces > with \\u003e', () => {
+    const result = safeJsonForInlineScript({ gt: '>' });
+    assert.ok(result.includes('\\u003e'), 'should contain \\u003e escape');
+});
+
+test('safeJsonForInlineScript: replaces & with \\u0026', () => {
+    const result = safeJsonForInlineScript({ amp: '&' });
+    assert.ok(result.includes('\\u0026'), 'should contain \\u0026 escape');
+});
+
+test('safeJsonForInlineScript: replaces U+2028 with \\u2028 escape sequence', () => {
+    const result = safeJsonForInlineScript({ sep: 'a\u2028b' });
+    assert.ok(result.includes('\\u2028'), 'should contain \\u2028 escape');
+});
+
+test('safeJsonForInlineScript: replaces U+2029 with \\u2029 escape sequence', () => {
+    const result = safeJsonForInlineScript({ sep: 'a\u2029b' });
+    assert.ok(result.includes('\\u2029'), 'should contain \\u2029 escape');
+});
