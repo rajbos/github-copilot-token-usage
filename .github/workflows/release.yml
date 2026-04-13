@@ -43,7 +43,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
       with:
         egress-policy: audit
 
@@ -270,7 +270,7 @@ jobs:
 
     - name: Upload VSIX as workflow artifact
       if: inputs.vs_only != true
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: vsix-package
         path: vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}
@@ -351,7 +351,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
       with:
         egress-policy: audit
 
@@ -489,7 +489,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
       with:
         egress-policy: audit
 
@@ -591,7 +591,7 @@ jobs:
         Write-Host "✅ Uploaded to GitHub release"
 
     - name: Upload .vsix as workflow artifact
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: visualstudio-vsix
         path: ${{ steps.vsix.outputs.vsix_path }}
