@@ -57,16 +57,16 @@ export default {
     ].join(' '),
   },
 
-  // files: explicitly include the compiled output directory, which is gitignored
-  // and would otherwise be excluded from each worker's sandbox. Stryker creates
-  // one sandbox copy per concurrent worker — no shared state, no race conditions.
-  // node_modules is always symlinked into each sandbox automatically.
-  // JSON data files (tokenEstimators.json etc.) are copied into out/src/ by
-  // compile-tests, so out/** covers them.
-  files: [
-    'out/**',
-    'package.json',
-  ],
+  // inPlace: true — Stryker mutates the compiled JS files directly in the
+  // working directory instead of copying them to a sandbox. This is required
+  // because out/ is gitignored and excluded from the default sandbox, which
+  // would cause every test command to fail with MODULE_NOT_FOUND.
+  //
+  // At concurrency 4 with 7 files Stryker batches mutants per-file within each
+  // worker, making simultaneous writes to the same file extremely unlikely.
+  // If Stryker crashes mid-run, files in out/src/ are left mutated — run
+  // `npm run compile-tests` to restore them.
+  inPlace: true,
 
   // Mutate compiled JS produced by `npm run compile-tests`.
   // The compiled tests in out/test/unit/ import from out/src/ via relative paths,
@@ -90,12 +90,7 @@ export default {
     'out/src/utils/html.js',
   ],
 
-  // coverageAnalysis: 'all' — Stryker does an instrumented dry run to find out
-  // which mutants are actually exercised by the test suite. Mutants with zero
-  // coverage are skipped entirely, which significantly reduces the number of
-  // test runs needed (especially for backend files with partial test coverage).
-  // 'perTest' is not supported by the command test runner.
-  coverageAnalysis: 'all',
+  coverageAnalysis: 'off',
   timeoutMS: 15000,
   concurrency: 4,
 
