@@ -55,7 +55,7 @@ jobs:
         END=$(date +%s)
         ELAPSED=$((END - START))
         echo "elapsed=${ELAPSED}" >> "$GITHUB_OUTPUT"
-      timeout-minutes: 60
+      timeout-minutes: 120
 
     - name: Publish benchmark summary
       if: always()
