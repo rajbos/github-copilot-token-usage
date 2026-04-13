@@ -326,3 +326,288 @@ test('getTokensFromClaudeCodeSession: skips non-assistant events', () => {
 		cleanup(filePath);
 	}
 });
+
+// ── Mutation-killing tests ──────────────────────────────────────────────
+
+test('getTokensFromClaudeCodeSession: handles non-numeric usage fields gracefully', () => {
+        const events = [
+                {
+                        type: 'assistant',
+                        requestId: 'req_001',
+                        message: {
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn',
+                                usage: {
+                                        input_tokens: 'not a number',
+                                        output_tokens: null,
+                                        cache_creation_input_tokens: undefined,
+                                        cache_read_input_tokens: 10
+                                }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
+                // Only cache_read_input_tokens (10) is numeric, rest default to 0
+                assert.equal(result.tokens, 10);
+                assert.equal(result.thinkingTokens, 0);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getTokensFromClaudeCodeSession: handles missing usage object', () => {
+        const events = [
+                {
+                        type: 'assistant',
+                        requestId: 'req_001',
+                        message: {
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn'
+                                // no usage
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
+                assert.equal(result.tokens, 0);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getTokensFromClaudeCodeSession: skips streaming fragments without stop_reason', () => {
+        const events = [
+                {
+                        type: 'assistant',
+                        requestId: 'req_001',
+                        message: {
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: null,
+                                usage: { input_tokens: 5, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                },
+                {
+                        type: 'assistant',
+                        requestId: 'req_001',
+                        message: {
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: undefined,
+                                usage: { input_tokens: 8, output_tokens: 15, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                },
+                {
+                        type: 'assistant',
+                        requestId: 'req_001',
+                        message: {
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn',
+                                usage: { input_tokens: 20, output_tokens: 100, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
+                // Only the final event with stop_reason='end_turn' should count
+                assert.equal(result.tokens, 120);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('countClaudeCodeInteractions: counts string content messages', () => {
+        const events = [
+                {
+                        type: 'user',
+                        isSidechain: false,
+                        message: { role: 'user', content: 'plain text message' }
+                },
+                {
+                        type: 'user',
+                        isSidechain: false,
+                        message: { role: 'user', content: 'another message' }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const count = claudeCode.countClaudeCodeInteractions(filePath);
+                assert.equal(count, 2);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('countClaudeCodeInteractions: does not count tool_result-only messages', () => {
+        const events = [
+                {
+                        type: 'user',
+                        isSidechain: false,
+                        message: {
+                                role: 'user',
+                                content: [
+                                        { type: 'tool_result', tool_use_id: 'toolu_1', content: [{ type: 'text', text: 'result' }] }
+                                ]
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const count = claudeCode.countClaudeCodeInteractions(filePath);
+                assert.equal(count, 0);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('countClaudeCodeInteractions: does not count messages with text AND tool_result', () => {
+        const events = [
+                {
+                        type: 'user',
+                        isSidechain: false,
+                        message: {
+                                role: 'user',
+                                content: [
+                                        { type: 'text', text: 'check this' },
+                                        { type: 'tool_result', tool_use_id: 'toolu_1', content: [] }
+                                ]
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const count = claudeCode.countClaudeCodeInteractions(filePath);
+                // Has text but also has tool_result → not a user interaction
+                assert.equal(count, 0);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('countClaudeCodeInteractions: returns 0 for empty file', () => {
+        const filePath = createTempSession([]);
+        try {
+                const count = claudeCode.countClaudeCodeInteractions(filePath);
+                assert.equal(count, 0);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getClaudeCodeModelUsage: handles events without requestId', () => {
+        const events = [
+                {
+                        type: 'assistant',
+                        message: {
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn',
+                                usage: { input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const modelUsage = claudeCode.getClaudeCodeModelUsage(filePath);
+                assert.ok(modelUsage['claude-sonnet-4.6']);
+                assert.equal(modelUsage['claude-sonnet-4.6'].inputTokens, 10);
+                assert.equal(modelUsage['claude-sonnet-4.6'].outputTokens, 20);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getClaudeCodeModelUsage: handles non-numeric usage fields', () => {
+        const events = [
+                {
+                        type: 'assistant',
+                        requestId: 'req_001',
+                        message: {
+                                model: 'claude-haiku-4-5',
+                                stop_reason: 'end_turn',
+                                usage: {
+                                        input_tokens: 'invalid',
+                                        output_tokens: 30,
+                                        cache_creation_input_tokens: null,
+                                        cache_read_input_tokens: 5
+                                }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const modelUsage = claudeCode.getClaudeCodeModelUsage(filePath);
+                assert.ok(modelUsage['claude-haiku-4.5']);
+                // input_tokens defaults to 0 (non-numeric), cache_creation defaults to 0, cache_read = 5
+                assert.equal(modelUsage['claude-haiku-4.5'].inputTokens, 5);
+                assert.equal(modelUsage['claude-haiku-4.5'].outputTokens, 30);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getProjectPathFromHash: returns Unix-style path on non-Windows', () => {
+        // The method uses os.platform() internally — test the output format
+        const result = claudeCode.getProjectPathFromHash('home-user-repos-myproject');
+        if (os.platform() !== 'win32') {
+                assert.equal(result, '/home/user/repos/myproject');
+        } else {
+                // On Windows, non-drive-letter hash falls through to Unix path
+                // but since we're on Windows with drive letter pattern expected, just check it returns something
+                assert.ok(result.length > 0);
+        }
+});
+
+test('getProjectPathFromHash: handles simple single-segment hash', () => {
+        const result = claudeCode.getProjectPathFromHash('myproject');
+        if (os.platform() !== 'win32') {
+                assert.equal(result, '/myproject');
+        } else {
+                assert.ok(result.length > 0);
+        }
+});
+
+test('getClaudeCodeSessionMeta: returns null for empty file', () => {
+        const filePath = createTempSession([]);
+        try {
+                const meta = claudeCode.getClaudeCodeSessionMeta(filePath);
+                assert.equal(meta, null);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getClaudeCodeSessionMeta: extracts timestamps without ai-title', () => {
+        const events = [
+                {
+                        type: 'user',
+                        timestamp: '2026-03-27T22:47:31.000Z',
+                        message: { role: 'user', content: [{ type: 'text', text: 'hello' }] }
+                },
+                {
+                        type: 'assistant',
+                        timestamp: '2026-03-27T22:48:00.000Z',
+                        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const meta = claudeCode.getClaudeCodeSessionMeta(filePath);
+                assert.ok(meta);
+                assert.equal(meta!.title, undefined);
+                assert.equal(meta!.firstInteraction, '2026-03-27T22:47:31.000Z');
+                assert.equal(meta!.lastInteraction, '2026-03-27T22:48:00.000Z');
+        } finally {
+                cleanup(filePath);
+        }
+});

@@ -107,3 +107,88 @@ test('redacts secrets from error stack traces', () => {
 	assert.ok(result.includes('[REDACTED]'), 'Stack trace should contain redaction marker');
 	assert.ok(result.includes('Failed to connect'), 'Error message should still be present');
 });
+
+// ── Mutation-killing tests ──────────────────────────────────────────────
+
+test('BackendError sets name property to BackendError', () => {
+        const err = new BackendError('test');
+        assert.equal(err.name, 'BackendError');
+        assert.equal(err.message, 'test');
+});
+
+test('BackendError stores cause', () => {
+        const cause = new Error('root');
+        const err = new BackendError('wrapped', cause);
+        assert.equal(err.cause, cause);
+});
+
+test('safeStringifyError uses message when stack is empty string', () => {
+        const err = new Error('fallback message');
+        err.stack = '';
+        const result = safeStringifyError(err);
+        assert.ok(result.includes('fallback message'));
+});
+
+test('safeStringifyError redacts secrets from non-Error string', () => {
+        const result = safeStringifyError('connection failed at host=secret123', ['secret123']);
+        assert.ok(!result.includes('secret123'), 'Secret should be redacted');
+        assert.ok(result.includes('[REDACTED]'), 'Should contain redaction marker');
+});
+
+test('safeStringifyError redacts secrets from plain object message', () => {
+        const result = safeStringifyError({ message: 'key=mytoken123' } as any, ['mytoken123']);
+        assert.ok(!result.includes('mytoken123'));
+        assert.ok(result.includes('[REDACTED]'));
+});
+
+test('safeStringifyError handles object with error property but no message', () => {
+        const result = safeStringifyError({ error: 'something went wrong' } as any);
+        assert.equal(result, 'something went wrong');
+});
+
+test('isStorageLocalAuthDisallowedByPolicyError returns false for non-object primitives', () => {
+        assert.equal(isStorageLocalAuthDisallowedByPolicyError(undefined), false);
+        assert.equal(isStorageLocalAuthDisallowedByPolicyError(null), false);
+        assert.equal(isStorageLocalAuthDisallowedByPolicyError(42), false);
+        assert.equal(isStorageLocalAuthDisallowedByPolicyError('string'), false);
+});
+
+test('isStorageLocalAuthDisallowedByPolicyError requires both shared key AND policy', () => {
+        // "shared key" alone should NOT match (requires both "shared key" AND "policy")
+        assert.equal(
+                isStorageLocalAuthDisallowedByPolicyError({ message: 'shared key was used for auth' } as any),
+                false
+        );
+        // "policy" alone should NOT match via the shared key+policy branch
+        // but may match via the other branches if it contains the exact phrases
+        assert.equal(
+                isStorageLocalAuthDisallowedByPolicyError({ message: 'policy was applied' } as any),
+                false
+        );
+});
+
+test('isAzurePolicyDisallowedError returns false for undefined and primitive values', () => {
+        assert.equal(isAzurePolicyDisallowedError(undefined), false);
+        assert.equal(isAzurePolicyDisallowedError(42), false);
+        assert.equal(isAzurePolicyDisallowedError('string'), false);
+        assert.equal(isAzurePolicyDisallowedError(true), false);
+});
+
+test('isAzurePolicyDisallowedError returns false when code and message do not match', () => {
+        assert.equal(isAzurePolicyDisallowedError({ code: 'SomethingElse', message: 'unrelated error' } as any), false);
+});
+
+test('redactSecretsInText handles null secretsToRedact gracefully', () => {
+        assert.equal(redactSecretsInText('hello', null as any), 'hello');
+});
+
+test('withErrorHandling preserves the original error as cause', async () => {
+        const original = new Error('original');
+        try {
+                await withErrorHandling(async () => { throw original; }, 'op');
+                assert.fail('Should have thrown');
+        } catch (e: any) {
+                assert.ok(e instanceof BackendError);
+                assert.equal(e.cause, original);
+        }
+});

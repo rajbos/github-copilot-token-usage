@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import {
     getModeType,
@@ -232,4 +232,132 @@ test('getEditorNameFromRoot: .continue path returns Continue', () => {
 
 test('getEditorNameFromRoot: opencode path returns OpenCode', () => {
     assert.equal(getEditorNameFromRoot('/home/user/.local/share/opencode'), 'OpenCode');
+});
+// ── Mutation-killing tests ──────────────────────────────────────────────
+
+import {
+        extractWorkspaceIdFromSessionPath,
+        globToRegExp,
+        getEditorTypeFromPath,
+        detectEditorSource
+} from '../../src/workspaceHelpers';
+
+// ── extractWorkspaceIdFromSessionPath ───────────────────────────────────
+
+test('extractWorkspaceIdFromSessionPath: extracts ID after workspaceStorage', () => {
+        const path = '/home/user/.config/Code/User/workspaceStorage/abc123def/chatSessions/session.json';
+        assert.equal(extractWorkspaceIdFromSessionPath(path), 'abc123def');
+});
+
+test('extractWorkspaceIdFromSessionPath: handles Windows paths', () => {
+        const path = 'C:\\Users\\user\\AppData\\Roaming\\Code\\User\\workspaceStorage\\abc123def\\chatSessions\\session.json';
+        assert.equal(extractWorkspaceIdFromSessionPath(path), 'abc123def');
+});
+
+test('extractWorkspaceIdFromSessionPath: returns undefined for non-workspace path', () => {
+        assert.equal(extractWorkspaceIdFromSessionPath('/home/user/.claude/projects/hash/session.jsonl'), undefined);
+});
+
+test('extractWorkspaceIdFromSessionPath: returns undefined for empty string', () => {
+        assert.equal(extractWorkspaceIdFromSessionPath(''), undefined);
+});
+
+// ── globToRegExp ────────────────────────────────────────────────────────
+
+test('globToRegExp: matches simple wildcard', () => {
+        const re = globToRegExp('*.ts');
+        assert.ok(re.test('file.ts'));
+        assert.ok(!re.test('file.js'));
+        assert.ok(!re.test('dir/file.ts')); // * should not match /
+});
+
+test('globToRegExp: matches globstar **', () => {
+        const re = globToRegExp('**/*.ts');
+        assert.ok(re.test('src/file.ts'));
+        assert.ok(re.test('src/deep/nested/file.ts'));
+        assert.ok(!re.test('file.js'));
+});
+
+test('globToRegExp: escapes special regex characters', () => {
+        const re = globToRegExp('file.test.ts');
+        assert.ok(re.test('file.test.ts'));
+        assert.ok(!re.test('fileXtestXts'));
+});
+
+test('globToRegExp: supports case insensitive mode', () => {
+        const re = globToRegExp('*.TS', true);
+        assert.ok(re.test('file.ts'));
+        assert.ok(re.test('file.TS'));
+});
+
+test('globToRegExp: matches question mark as single char', () => {
+        const re = globToRegExp('file?.ts');
+        assert.ok(re.test('file1.ts'));
+        assert.ok(re.test('fileX.ts'));
+        assert.ok(!re.test('file12.ts'));
+});
+
+// ── getEditorTypeFromPath ───────────────────────────────────────────────
+
+test('getEditorTypeFromPath: detects Copilot CLI', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.copilot/session-state/abc/session.json'), 'Copilot CLI');
+});
+
+test('getEditorTypeFromPath: detects Continue', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.continue/sessions/session.json'), 'Continue');
+});
+
+test('getEditorTypeFromPath: detects Claude Code', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.claude/projects/hash/session.jsonl'), 'Claude Code');
+});
+
+test('getEditorTypeFromPath: detects Cursor', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/Cursor/User/workspaceStorage/abc/chatSessions/session.json'), 'Cursor');
+});
+
+test('getEditorTypeFromPath: detects VS Code Insiders', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/Code - Insiders/User/workspaceStorage/abc/session.json'), 'VS Code Insiders');
+});
+
+test('getEditorTypeFromPath: detects OpenCode via callback', () => {
+        const isOpenCode = (p: string) => p.includes('/opencode/');
+        assert.equal(getEditorTypeFromPath('/home/user/.local/share/opencode/session.db#ses_1', isOpenCode), 'OpenCode');
+});
+
+test('getEditorTypeFromPath: returns Unknown for unrecognized paths', () => {
+        assert.equal(getEditorTypeFromPath('/tmp/random/file.json'), 'Unknown');
+});
+
+// ── detectEditorSource ──────────────────────────────────────────────────
+
+test('detectEditorSource: detects Claude Code from path', () => {
+        assert.equal(detectEditorSource('/home/user/.claude/projects/hash/session.jsonl'), 'Claude Code');
+});
+
+test('detectEditorSource: detects VS Code from Code path', () => {
+        assert.equal(detectEditorSource('/home/user/.config/Code/User/workspaceStorage/abc/session.json'), 'VS Code');
+});
+
+test('detectEditorSource: detects Windsurf', () => {
+        assert.equal(detectEditorSource('/home/user/.config/Windsurf/User/workspaceStorage/abc/session.json'), 'Windsurf');
+});
+
+test('detectEditorSource: detects VSCodium', () => {
+        assert.equal(detectEditorSource('/home/user/.config/VSCodium/User/workspaceStorage/abc/session.json'), 'VSCodium');
+});
+
+test('detectEditorSource: detects Visual Studio', () => {
+        assert.equal(detectEditorSource('/project/.vs/solution.sln/copilot-chat/hash/sessions/uuid'), 'Visual Studio');
+});
+
+test('detectEditorSource: detects Claude Desktop Cowork', () => {
+        assert.equal(detectEditorSource('/home/user/.config/local-agent-mode-sessions/session.json'), 'Claude Desktop Cowork');
+});
+
+test('detectEditorSource: detects Crush', () => {
+        assert.equal(detectEditorSource('/home/user/.crush/crush.db#session'), 'Crush');
+});
+
+test('detectEditorSource: returns Unknown for unrecognized paths', () => {
+        assert.equal(detectEditorSource('/tmp/random/file.json'), 'Unknown');
 });
