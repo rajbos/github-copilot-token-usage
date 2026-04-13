@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        concurrency: [4, 8, 16]
+        concurrency: [4, 8]
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
