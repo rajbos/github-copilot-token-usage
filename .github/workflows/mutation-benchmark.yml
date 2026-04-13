@@ -1,0 +1,125 @@
+name: Mutation Testing Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/mutation-benchmark.yml'
+      - 'vscode-extension/stryker.config.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Concurrency ${{ matrix.concurrency }} / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - concurrency: 4
+            runner: ubuntu-latest
+          # ubuntu-latest concurrency=8 showed same throughput as concurrency=4 -- no benefit.
+          # - concurrency: 8
+          #   runner: ubuntu-latest
+          # windows-latest runners are significantly slower than ubuntu-latest for this workload.
+          # - concurrency: 4
+          #   runner: windows-latest
+          # - concurrency: 8
+          #   runner: windows-latest
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      with:
+        node-version: '24.x'
+        cache: 'npm'
+        cache-dependency-path: vscode-extension/package-lock.json
+
+    - name: Install dependencies
+      working-directory: vscode-extension
+      run: npm ci
+
+    - name: Compile tests
+      working-directory: vscode-extension
+      run: npm run compile-tests
+
+    - name: Run mutation tests (concurrency=${{ matrix.concurrency }})
+      id: mutation
+      working-directory: vscode-extension
+      shell: bash
+      run: |
+        START=$(date +%s)
+        npx stryker run --concurrency ${{ matrix.concurrency }} || true
+        END=$(date +%s)
+        ELAPSED=$((END - START))
+        echo "elapsed=${ELAPSED}" >> "$GITHUB_OUTPUT"
+      timeout-minutes: 120
+
+    - name: Publish benchmark summary
+      if: always()
+      working-directory: vscode-extension
+      shell: bash
+      env:
+        CONCURRENCY: ${{ matrix.concurrency }}
+        ELAPSED: ${{ steps.mutation.outputs.elapsed }}
+      run: |
+        if [ -f "reports/mutation/mutation.json" ]; then
+          node -e "
+            const fs = require('fs');
+            const r = JSON.parse(fs.readFileSync('reports/mutation/mutation.json', 'utf8'));
+            let killed=0, survived=0, timedOut=0, noCoverage=0, total=0;
+            for (const f of Object.values(r.files || {})) {
+              for (const m of (f.mutants || [])) {
+                total++;
+                if (m.status === 'Killed') killed++;
+                else if (m.status === 'Survived') survived++;
+                else if (m.status === 'Timeout') timedOut++;
+                else if (m.status === 'NoCoverage') noCoverage++;
+              }
+            }
+            const concurrency = process.env.CONCURRENCY;
+            const elapsedSec = parseInt(process.env.ELAPSED || '0', 10);
+            const mins = Math.floor(elapsedSec / 60);
+            const secs = elapsedSec % 60;
+            const wallTime = mins > 0 ? \`\${mins}m \${secs}s\` : \`\${secs}s\`;
+            const denominator = killed + survived + timedOut;
+            const score = denominator > 0 ? ((killed / denominator) * 100).toFixed(1) : '0.0';
+            const lines = [
+              \`## 🧬 Mutation Benchmark — Concurrency \${concurrency}\`,
+              '',
+              '| Metric | Value |',
+              '|--------|-------|',
+              \`| ⚙️ Concurrency | \${concurrency} |\`,
+              \`| ⏱️ Wall time | \${wallTime} |\`,
+              \`| 📊 Score | \${score}% |\`,
+              \`| ✅ Killed | \${killed} |\`,
+              \`| ⚠️ Survived | \${survived} |\`,
+              \`| 🕐 Timeout | \${timedOut} |\`,
+              \`| Total | \${total} |\`,
+            ].join('\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines + '\n');
+          "
+        else
+          printf '## 🧬 Mutation Benchmark — Concurrency %s\n\n⚠️ Report not generated (Stryker timed out or errored).\n' "$CONCURRENCY" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload mutation report
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      if: always()
+      with:
+        name: mutation-report-${{ matrix.runner }}-concurrency-${{ matrix.concurrency }}
+        path: vscode-extension/reports/mutation/
+        if-no-files-found: ignore
+        retention-days: 14
