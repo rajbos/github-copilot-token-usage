@@ -117,8 +117,12 @@ results.push(sessionPath);
  * for `.vs/<solution>/copilot-chat/<hash>/sessions/<uuid>` paths.
  * Scans: user home dir, and common named dev roots (C:\repos, C:\code, etc.).
  * Depth-limited and skips known heavy directories to stay fast.
+ *
+ * Visual Studio only runs on Windows — skip entirely on macOS/Linux to avoid
+ * a deep recursive home-directory walk that causes the extension to hang.
  */
 private _discoverFromFilesystem(seen: Set<string>, results: string[]): void {
+if (os.platform() !== 'win32') { return; }
 const home = os.homedir();
 // Drive letter(s): default to C, also try D if it exists
 const drives = ['C', 'D'];
