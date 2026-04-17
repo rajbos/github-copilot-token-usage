@@ -1,7 +1,7 @@
 ---
 description: "Add friendly display names for unknown MCP and VS Code tools detected in session logs. Handles tool name mapping in src/toolNames.json."
 name: "Tool Names - Add Missing Friendly Names"
-tools: ["execute/runInTerminal", "execute/getTerminalOutput", "search/codebase", "read/problems"]
+tools: [execute/getTerminalOutput, execute/runInTerminal, read, search/codebase]
 ---
 
 # Tool Names - Add Missing Friendly Names
@@ -32,7 +32,8 @@ MCP tools follow predictable naming patterns. The raw tool identifier encodes th
 | `mcp.io.github.git.` or `mcp_io_github_git_` | `GitHub MCP (Local):` | [github/github-mcp-server](https://github.com/github/github-mcp-server) |
 | `mcp_github_github_` | `GitHub MCP (Remote):` | [github/github-mcp-server](https://github.com/github/github-mcp-server) |
 | `mcp_github-code-s_` | `GitHub MCP (Code Scanning):` | [github/github-mcp-server](https://github.com/github/github-mcp-server) |
-| `mcp_com_microsoft_` | `GitHub MCP:` | Microsoft internal MCP server |
+| `mcp_com_microsoft_` | `Microsoft MCP:` | Microsoft internal MCP server |
+| `mcp_microsoftdocs_microsoft_` | `Microsoft Docs MCP:` | Microsoft MCP server for official documentation retrieval |
 | `mcp_gitkraken_` | `GitKraken MCP:` | GitKraken (no public MCP server repo; tools come from the GitKraken VS Code extension) |
 | `mcp_oraios_serena_` | `Serena:` | [oraios/serena](https://github.com/oraios/serena) |
 | `mcp_microsoft_pla_` | `Playwright MCP:` | [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) |
