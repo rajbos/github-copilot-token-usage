@@ -317,11 +317,9 @@ export class SyncService {
 			// Handle JSONL format (Copilot CLI)
 			if (sessionFile.endsWith('.jsonl')) {
 				const lines = content.trim().split('\n');
-			const todayKey = this.utility.toUtcDayKey(now);
-			let lineCount = 0;
-			let processedLines = 0;
-			
-			for (const line of lines) {
+				let lineCount = 0;
+				
+				for (const line of lines) {
 				lineCount++;
 				if (!line.trim()) { continue; }
 				try {
@@ -329,17 +327,17 @@ export class SyncService {
 					if (!event || typeof event !== 'object') { continue; }
 					
 					const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
-					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-					if (!eventMs || eventMs < startMs) { continue; }
+					// Only skip if we successfully parsed the timestamp AND it's outside the lookback window
+					// Don't use file mtime for filtering - it's unreliable for old files with recent interactions
+					if (Number.isFinite(normalizedTs) && normalizedTs! < startMs) { continue; }
+					
+					// For day assignment, use parsed timestamp or fall back to file mtime as best guess
+					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs! : fileMtimeMs;
 					
 					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 					const model = (event.model || 'gpt-4o').toString();
-					const isFileFromToday = dayKey === todayKey;
-					if (isFileFromToday && processedLines < 3) {
-					this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} line ${lineCount}: eventMs=${new Date(eventMs).toISOString()}, dayKey=${dayKey}, type=${event.type}`);
-					processedLines++;
-				}
-						// Track interaction for this day+model (count all events, not just user.message)
+					
+					// Track interaction for this day+model (count all events, not just user.message)
 						if (!dayModelInteractions.has(dayKey)) {
 							dayModelInteractions.set(dayKey, new Map());
 						}
@@ -364,15 +362,17 @@ export class SyncService {
 						const normalizedTs = this.utility.normalizeTimestampToMs(
 							typeof req.timestamp !== 'undefined' ? req.timestamp : (sessionObj.lastMessageDate as unknown)
 						);
-						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-						if (!eventMs || eventMs < startMs) { continue; }
-						
-						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-						const model = this.deps.getModelFromRequest(req);
-						
+					// Only skip if we successfully parsed the timestamp AND it's outside the lookback window
+					// Don't use file mtime for filtering - it's unreliable for old files with recent interactions
+					if (Number.isFinite(normalizedTs) && normalizedTs! < startMs) { continue; }
+					
+					// For day assignment, use parsed timestamp or fall back to file mtime as best guess
+					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs! : fileMtimeMs;
+					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+					const model = this.deps.getModelFromRequest(req);
 
-						// Track interaction for this day+model
-						if (!dayModelInteractions.has(dayKey)) {
+					// Track interaction for this day+model
+					if (!dayModelInteractions.has(dayKey)) {
 							dayModelInteractions.set(dayKey, new Map());
 						}
 						const dayMap = dayModelInteractions.get(dayKey)!;
@@ -751,11 +751,13 @@ export class SyncService {
 							continue;
 						}
 						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
-						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-						if (!eventMs || eventMs < startMs) {
-							continue;
-						}
-						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+					// Only skip if we successfully parsed the timestamp AND it's outside the lookback window
+					if (Number.isFinite(normalizedTs) && normalizedTs! < startMs) {
+						continue;
+					}
+					// For day assignment, use parsed timestamp or fall back to file mtime as best guess
+					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs! : fileMtimeMs;
+					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 						const model = (event.model || 'gpt-4o').toString();
 
 						let inputTokens = 0;
@@ -804,13 +806,14 @@ export class SyncService {
 					const normalizedTs = this.utility.normalizeTimestampToMs(
 						typeof req.timestamp !== 'undefined' ? req.timestamp : (sessionObj.lastMessageDate as unknown)
 					);
-					const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-					if (!eventMs || eventMs < startMs) {
-						continue;
-					}
-					const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-					const model = this.deps.getModelFromRequest(req);
-
+				// Only skip if we successfully parsed the timestamp AND it's outside the lookback window
+				if (Number.isFinite(normalizedTs) && normalizedTs! < startMs) {
+					continue;
+				}
+				// For day assignment, use parsed timestamp or fall back to file mtime as best guess
+				const eventMs = Number.isFinite(normalizedTs) ? normalizedTs! : fileMtimeMs;
+				const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
+				const model = this.deps.getModelFromRequest(req);
 					let inputTokens = 0;
 					let outputTokens = 0;
 					if (req.message && req.message.parts) {

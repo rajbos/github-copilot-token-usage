@@ -8382,12 +8382,23 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		let firstDate: string | null = null;
 		let lastDate: string | null = null;
 
+		// Count schema versions for debugging
+		const schemaVersionCounts = new Map<number, number>();
+		let entitiesWithFluencyData = 0;
+
 		for (const entity of allEntities) {
 			const userId = (entity.userId ?? '').toString().replace(/^u:/, ''); // Strip u: prefix
 			const datasetId = (entity.datasetId ?? '').toString().replace(/^ds:/, ''); // Strip ds: prefix
 			const machineId = (entity.machineId ?? '').toString();
 			const workspaceId = (entity.workspaceId ?? '').toString();
 			const model = (entity.model ?? '').toString().replace(/^m:/, ''); // Strip m: prefix
+			
+			// Track schema versions
+			const schemaVer = entity.schemaVersion as number;
+			schemaVersionCounts.set(schemaVer, (schemaVersionCounts.get(schemaVer) || 0) + 1);
+			if (schemaVer >= 4 && (entity.askModeCount || entity.editModeCount || entity.agentModeCount)) {
+				entitiesWithFluencyData++;
+			}
 			const inputTokens = Number.isFinite(Number(entity.inputTokens)) ? Number(entity.inputTokens) : 0;
 			const outputTokens = Number.isFinite(Number(entity.outputTokens)) ? Number(entity.outputTokens) : 0;
 			const interactions = Number.isFinite(Number(entity.interactions)) ? Number(entity.interactions) : 0;
@@ -8462,8 +8473,12 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				
 				// Aggregate fluency metrics from entity (if schema version 4+)
 				if (entity.schemaVersion && entity.schemaVersion >= 4) {
-					// Mode counts
+					// Mode counts (log first occurrence for debugging)
+					const beforeAsk = userData.askModeCount;
 					userData.askModeCount += Number(entity.askModeCount) || 0;
+					if (beforeAsk === 0 && userData.askModeCount > 0) {
+						this.log(`[Dashboard] First fluency metrics found for user "${userId}" from entity: askMode=${entity.askModeCount}`);
+					}
 					userData.editModeCount += Number(entity.editModeCount) || 0;
 					userData.agentModeCount += Number(entity.agentModeCount) || 0;
 					userData.planModeCount += Number(entity.planModeCount) || 0;
@@ -8588,6 +8603,8 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 				const hasFluencyData = data.askModeCount > 0 || data.editModeCount > 0 || data.agentModeCount > 0 ||
 					Object.keys(data.toolCalls.byTool).length > 0 || Object.keys(data.contextRefs).length > 0;
 				
+				this.log(`[Dashboard] User "${userId}" (dataset: ${datasetId}): askMode=${data.askModeCount}, editMode=${data.editModeCount}, agentMode=${data.agentModeCount}, toolCallKeys=${Object.keys(data.toolCalls.byTool).length}, contextRefKeys=${Object.keys(data.contextRefs).length}, hasFluencyData=${hasFluencyData}`);
+				
 				let fluencyStage: number | undefined;
 				let fluencyLabel: string | undefined;
 				
@@ -8595,6 +8612,9 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 					const fluencyScore = this.calculateFluencyScoreForTeamMember(data, sessionCount);
 					fluencyStage = fluencyScore.overallStage;
 					fluencyLabel = fluencyScore.overallLabel;
+					this.log(`[Dashboard] User "${userId}" fluency calculated: stage=${fluencyStage}, label="${fluencyLabel}"`);
+				} else {
+					this.log(`[Dashboard] User "${userId}" has no fluency data - will not show fluency badge`);
 				}
 				
 				return {
@@ -8624,6 +8644,12 @@ private getMaturityHtml(webview: vscode.Webview, data: {
 		const teamTotalInteractions = Array.from(userMap.values()).reduce((sum, u) => sum + u.interactions, 0);
 		const averageTokensPerUser = userMap.size > 0 ? teamTotalTokens / userMap.size : 0;
 
+		// Log schema version distribution
+		const schemaVersionSummary = Array.from(schemaVersionCounts.entries())
+			.map(([ver, count]) => `v${ver}:${count}`)
+			.join(', ');
+		this.log(`[Dashboard] Schema versions: ${schemaVersionSummary}, entitiesWithFluencyFields=${entitiesWithFluencyData}`);
+		
 		this.log(`[Dashboard] Date range: ${firstDate} to ${lastDate} (${teamMembers.length} team members)`);
 		this.log(`[Dashboard] Personal stats: ${personalTotalTokens} tokens, ${personalTotalInteractions} interactions, ${personalDevices.size} devices, ${personalWorkspaces.size} workspaces`);
 		

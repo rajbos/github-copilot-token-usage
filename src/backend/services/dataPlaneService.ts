@@ -224,56 +224,80 @@ export class DataPlaneService {
 				outputTokens: entity.outputTokens,
 				interactions: entity.interactions,
 				workspaceName: entity.workspaceName,
-				machineName: entity.machineName
-			});
+			machineName: entity.machineName,
+			// Include schema version and fluency metrics fields (schema v4+)
+			schemaVersion: entity.schemaVersion,
+			askModeCount: entity.askModeCount,
+			editModeCount: entity.editModeCount,
+			agentModeCount: entity.agentModeCount,
+			planModeCount: entity.planModeCount,
+			customAgentModeCount: entity.customAgentModeCount,
+			toolCallsJson: entity.toolCallsJson,
+			contextRefsJson: entity.contextRefsJson,
+			mcpToolsJson: entity.mcpToolsJson,
+			modelSwitchingJson: entity.modelSwitchingJson,
+			editScopeJson: entity.editScopeJson,
+			agentTypesJson: entity.agentTypesJson,
+			repositoriesJson: entity.repositoriesJson,
+			applyUsageJson: entity.applyUsageJson,
+			sessionDurationJson: entity.sessionDurationJson,
+			repoCustomizationRate: entity.repoCustomizationRate,
+			multiTurnSessions: entity.multiTurnSessions,
+			avgTurnsPerSession: entity.avgTurnsPerSession,
+			multiFileEdits: entity.multiFileEdits,
+			avgFilesPerEdit: entity.avgFilesPerEdit,
+			codeBlockApplyRate: entity.codeBlockApplyRate,
+			sessionCount: entity.sessionCount,
+			// Include user consent fields (schema v3+)
+			userKeyType: entity.userKeyType,
+			shareWithTeam: entity.shareWithTeam,
+			consentAt: entity.consentAt
+		});
+	}
+	
+	this.log(`Found ${entities.length} entities across all datasets`);
+	return entities;
+}
+
+/**
+ * Upsert entities in batches with retry logic for improved reliability.
+ * 
+ * @param tableClient - The table client to use
+ * @param entities - Array of entities to upsert
+ * @returns Object with success count and errors
+ */
+async upsertEntitiesBatch(tableClient: TableClientLike, entities: any[]): Promise<{ successCount: number; errors: Array<{ entity: any; error: Error }> }> {
+	let successCount = 0;
+	const errors: Array<{ entity: any; error: Error }> = [];
+	
+	// Group entities by partition key for potential future batch optimization
+	const byPartition = new Map<string, any[]>();
+	for (const entity of entities) {
+		const pk = entity.partitionKey;
+		if (!byPartition.has(pk)) {
+			byPartition.set(pk, []);
 		}
-		
-		this.log(`Found ${entities.length} entities across all datasets`);
-		return entities;
+		byPartition.get(pk)!.push(entity);
 	}
 
-	/**
-	 * Upsert entities in batches with retry logic for improved reliability.
-	 * 
-	 * @param tableClient - The table client to use
-	 * @param entities - Array of entities to upsert
-	 * @returns Object with success count and errors
-	 */
-	async upsertEntitiesBatch(
-		tableClient: TableClientLike,
-		entities: any[]
-	): Promise<{ successCount: number; errors: Array<{ entity: any; error: Error }> }> {
-		let successCount = 0;
-		const errors: Array<{ entity: any; error: Error }> = [];
-
-		// Group entities by partition key for potential future batch optimization
-		const byPartition = new Map<string, any[]>();
-		for (const entity of entities) {
-			const pk = entity.partitionKey;
-			if (!byPartition.has(pk)) {
-				byPartition.set(pk, []);
-			}
-			byPartition.get(pk)!.push(entity);
-		}
-
-		// Upsert entities with retry logic
-		for (const [partition, partitionEntities] of byPartition) {
-			for (const entity of partitionEntities) {
-				try {
-					await this.upsertEntityWithRetry(tableClient, entity);
-					successCount++;
-				} catch (error) {
-					errors.push({
-						entity,
-						error: error instanceof Error ? error : new Error(String(error))
-					});
-					this.log(`Failed to upsert entity in partition ${partition}: ${error}`);
-				}
+	// Upsert entities with retry logic
+	for (const [partition, partitionEntities] of byPartition) {
+		for (const entity of partitionEntities) {
+			try {
+				await this.upsertEntityWithRetry(tableClient, entity);
+				successCount++;
+			} catch (error) {
+				errors.push({
+					entity,
+					error: error instanceof Error ? error : new Error(String(error))
+				});
+				this.log(`Failed to upsert entity in partition ${partition}: ${error}`);
 			}
 		}
-
-		return { successCount, errors };
 	}
+
+	return { successCount, errors };
+}
 
 	/**
 	 * Upsert a single entity with exponential backoff retry.

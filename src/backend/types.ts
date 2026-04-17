@@ -64,7 +64,7 @@ export interface DailyRollupValue {
 export interface BackendAggDailyEntity {
 	partitionKey: string;
 	rowKey: string;
-	schemaVersion: 1 | 2 | 3;
+	schemaVersion: 1 | 2 | 3 | 4;
 	datasetId: string;
 	day: string;
 	model: string;
