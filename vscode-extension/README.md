@@ -80,6 +80,7 @@ Supported editors shown in the chart:
 - `Cursor` — Cursor editor
 - `OpenCode` — Terminal-based coding agent
 - `Crush` — Terminal-based coding agent
+- `Windsurf` — Windsurf editor; session data is only available when the extension runs **inside Windsurf** (via the Windsurf API). See [Known Issues](#known-issues) for details.
 - `Visual Studio` — Visual Studio IDE (2022+); token counts are **estimated** from prompt and response text length
 
 ---
@@ -262,6 +263,7 @@ The extension uses intelligent caching to improve performance:
 
 ## Known Issues
 
+- **Windsurf sessions when running in VS Code**: Windsurf stores its conversation sessions as encrypted binary protobuf (`.pb`) files in `~/.codeium/windsurf/cascade/`. These files are encrypted and contain no extractable text — no chat messages, no model names, no token counts. Session data (turns, tokens, models) is only accessible through the Windsurf internal API, which is only available when the extension runs *inside* Windsurf itself. When running in VS Code with Windsurf installed, Windsurf sessions cannot be shown.
 - Numbers shown use **actual token counts** from the LLM API when available (e.g. Copilot Chat JSONL sessions and OpenCode sessions). When actual token data is not available, the extension falls back to **estimates** computed from text in the session logs.
 - If you use multiple machines (or multiple VS Code profiles/windows), local-only mode will only reflect what's on the current machine. The cloud backend improves cross-device coverage.
 - Premium Requests are not tracked.

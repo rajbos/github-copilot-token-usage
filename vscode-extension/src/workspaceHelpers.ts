@@ -710,6 +710,9 @@ export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: 
 	if (normalizedPath.includes('/.claude/projects/')) {
 		return 'Claude Code';
 	}
+	if (normalizedPath.startsWith('windsurf://')) {
+		return 'Windsurf';
+	}
 	if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
 		return 'VS Code Insiders';
 	}

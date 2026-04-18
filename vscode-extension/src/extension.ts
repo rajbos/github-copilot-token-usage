@@ -57,6 +57,7 @@ import { VisualStudioDataAccess } from './visualstudio';
 import { ContinueDataAccess } from './continue';
 import { ClaudeCodeDataAccess } from './claudecode';
 import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
+import { WindsurfDataAccess } from './windsurf';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -186,6 +187,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private continue_: ContinueDataAccess;
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
+	public windsurf: WindsurfDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
@@ -341,6 +343,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		if (this.crush.isCrushSessionFile(sessionFile)) {
 			return this.crush.statSessionFile(sessionFile);
+		}
+		if (this.windsurf.isWindsurfSessionFile(sessionFile)) {
+			// For Windsurf sessions, resolve via API (in Windsurf) or .pb file metadata (in VS Code)
+			const session = await this.windsurf.resolveSession(sessionFile);
+			if (session) {
+				// Get stats from the extension's package.json as a base
+				const baseStats = await fs.promises.stat(__filename);
+				// Modify the properties we need
+				Object.defineProperty(baseStats, 'mtime', {
+					value: new Date(session.modified),
+					writable: false
+				});
+				Object.defineProperty(baseStats, 'size', {
+					value: session.size,
+					writable: false
+				});
+				return baseStats;
+			}
+			// Fallback if session not found - use extension file stats
+			return fs.promises.stat(__filename);
 		}
 		return this.openCode.statSessionFile(sessionFile);
 	}
@@ -853,6 +875,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.visualStudio = new VisualStudioDataAccess();
 		this.claudeCode = new ClaudeCodeDataAccess();
 		this.claudeDesktopCowork = new ClaudeDesktopCoworkDataAccess();
+		this.windsurf = new WindsurfDataAccess(extensionUri);
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({
 			log: (m) => this.log(m),
@@ -864,6 +887,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			continue_: this.continue_,
 			claudeCode: this.claudeCode,
 			claudeDesktopCowork: this.claudeDesktopCowork,
+			windsurf: this.windsurf,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
 		});
 		this.context = context;
@@ -2588,6 +2612,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
 			}
 
+			// Handle Windsurf sessions - API-based with interaction count, file-based fallback
+			if (this.windsurf.isWindsurfSessionFile(sessionFile)) {
+				const session = await this.windsurf.resolveSession(sessionFile);
+				return session?.interactions ?? 0;
+			}
+
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -2839,6 +2869,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 			}
 
+			// Handle Windsurf virtual sessions
+			if (this.windsurf.isWindsurfSessionFile(sessionFile)) {
+				const session = await this.windsurf.resolveSession(sessionFile);
+				return {
+					title: session?.title,
+					firstInteraction: session?.firstInteraction ?? null,
+					lastInteraction: session?.lastInteraction ?? null,
+				};
+			}
+
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -2953,7 +2993,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.crush.isCrushSessionFile(sessionFilePath) ||
 			this.continue_.isContinueSessionFile(sessionFilePath) ||
 			this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath) ||
-			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath);
+			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath) ||
+			this.windsurf.isWindsurfSessionFile(sessionFilePath);
 		if (!isSpecialSession) {
 			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 		}
@@ -3074,6 +3115,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
 			details.editorRoot = this.claudeCode.getClaudeCodeProjectsDir();
 			details.editorName = 'Claude Code';
+			return;
+		}
+		if (this.windsurf.isWindsurfSessionFile(sessionFile)) {
+			details.editorName = 'Windsurf';
 			return;
 		}
 		try {
@@ -3361,6 +3406,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 				details.interactions = this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
 				details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
 				details.editorName = 'Claude Desktop Cowork';
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				return details;
+			}
+
+			// Handle Windsurf virtual sessions — resolve via API or .pb file metadata
+			if (this.windsurf.isWindsurfSessionFile(sessionFile)) {
+				const session = await this.windsurf.resolveSession(sessionFile);
+				if (session) {
+					details.title = session.title;
+					details.interactions = session.interactions;
+					details.editorSource = 'windsurf';
+					details.editorName = 'Windsurf';
+					details.firstInteraction = session.firstInteraction ?? stat.mtime.toISOString();
+					details.lastInteraction = session.lastInteraction ?? stat.mtime.toISOString();
+				}
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				return details;
 			}
@@ -4478,6 +4538,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return { ...result, actualTokens: result.tokens };
 			}
 
+			// Handle Windsurf sessions - API-based with actual token counts, file-based fallback
+			if (this.windsurf.isWindsurfSessionFile(sessionFilePath)) {
+				const session = await this.windsurf.resolveSession(sessionFilePath);
+				const tokens = session?.tokens ?? 0;
+				return { tokens, thinkingTokens: 0, actualTokens: tokens };
+			}
+
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFilePath, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -5199,6 +5266,21 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 	}
 
 	public async showLogViewer(sessionFilePath: string): Promise<void> {
+		// Windsurf sessions are binary protobuf files — cannot show as log viewer
+		if (this.windsurf.isWindsurfSessionFile(sessionFilePath)) {
+			const trajectoryId = sessionFilePath.replace('windsurf://trajectory/', '');
+			const pbPath = path.join(os.homedir(), '.codeium', 'windsurf', 'cascade', `${trajectoryId}.pb`);
+			vscode.window.showInformationMessage(
+				`Windsurf sessions are stored as binary protobuf files and cannot be viewed as text. The session file is: ${pbPath}`,
+				'Reveal in Explorer'
+			).then(choice => {
+				if (choice === 'Reveal in Explorer') {
+					vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(pbPath));
+				}
+			});
+			return;
+		}
+
 		// Close existing log viewer panel if open
 		if (this.logViewerPanel) {
 			this.logViewerPanel.dispose();
@@ -5371,6 +5453,21 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 	 * Does not modify the original file.
 	 */
 	public async showFormattedJsonlFile(sessionFilePath: string): Promise<void> {
+		// Windsurf sessions are binary protobuf files — open the real .pb file in the OS
+		if (this.windsurf.isWindsurfSessionFile(sessionFilePath)) {
+			const trajectoryId = sessionFilePath.replace('windsurf://trajectory/', '');
+			const pbPath = path.join(os.homedir(), '.codeium', 'windsurf', 'cascade', `${trajectoryId}.pb`);
+			vscode.window.showInformationMessage(
+				`Windsurf sessions are stored as binary protobuf files and cannot be viewed as text. The session file is: ${pbPath}`,
+				'Reveal in Explorer'
+			).then(choice => {
+				if (choice === 'Reveal in Explorer') {
+					vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(pbPath));
+				}
+			});
+			return;
+		}
+
 		try {
 			// Read the file content
 			const fileContent = await fs.promises.readFile(sessionFilePath, 'utf-8');
@@ -8546,15 +8643,65 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
-  // Register the GitHub sign out command
-  const signOutGitHubCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.signOutGitHub",
+  
+  // Register the Windsurf diagnostics command
+  const windsurfDiagnosticsCommand = vscode.commands.registerCommand(
+    "copilot-token-tracker.windsurfDiagnostics",
     async () => {
-      tokenTracker.log("GitHub sign out command called");
-      await tokenTracker.signOutFromGitHub();
+      tokenTracker.log("Windsurf diagnostics command called");
+      try {
+        const diagnostics = await tokenTracker.windsurf.runDiagnostics();
+        
+        // Create a new document to show the diagnostics
+        const doc = await vscode.workspace.openTextDocument({
+          content: `# Windsurf Diagnostics Report
+
+Generated: ${new Date().toISOString()}
+
+## Environment
+- Running in Windsurf: ${diagnostics.environment.isRunningInWindsurf}
+- App Name: ${diagnostics.environment.appName}
+
+## Extension Status
+- Extension Found: ${diagnostics.extension.found}
+- Extension Active: ${diagnostics.extension.active}
+- Extension Version: ${diagnostics.extension.packageJSON}
+
+## Credentials
+- Available: ${diagnostics.credentials.available}
+- Port: ${diagnostics.credentials.port}
+- CSRF Token Length: ${diagnostics.credentials.csrfLength}
+
+## API Connectivity Test
+- Success: ${diagnostics.apiTest.success}
+- Status Code: ${diagnostics.apiTest.statusCode}
+- Error: ${diagnostics.apiTest.error || 'None'}
+
+## Configuration
+- Windsurf Integration Enabled: ${diagnostics.configuration.enabled}
+
+## Sessions
+- Available: ${diagnostics.sessions.available}
+- Count: ${diagnostics.sessions.count}
+- Error: ${diagnostics.sessions.error || 'None'}
+
+## Recommendations
+
+${!diagnostics.extension.found ? '- Install the Windsurf extension\n' : ''}
+${!diagnostics.extension.active ? '- Activate the Windsurf extension or restart Windsurf\n' : ''}
+${!diagnostics.credentials.available ? '- Check if Windsurf language server is running\n' : ''}
+${!diagnostics.apiTest.success ? `- API connectivity issue: ${diagnostics.apiTest.error}\n` : ''}
+${diagnostics.sessions.count === 0 && diagnostics.apiTest.success ? '- Windsurf is working correctly, but no chat sessions have been created yet. Try starting a chat session in Windsurf and then refresh the token tracker.\n' : ''}
+`,
+          language: 'markdown'
+        });
+        
+        await vscode.window.showTextDocument(doc);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to run Windsurf diagnostics: ${error instanceof Error ? error.message : String(error)}`);
+      }
     },
   );
-
   // Add to subscriptions for proper cleanup
   context.subscriptions.push(
     refreshCommand,
@@ -8569,11 +8716,12 @@ export function activate(context: vscode.ExtensionContext) {
     generateDiagnosticReportCommand,
     clearCacheCommand,
     authenticateGitHubCommand,
-    signOutGitHubCommand,
-    tokenTracker,
+    windsurfDiagnosticsCommand,
+    tokenTracker
   );
-
+  
   tokenTracker.log("Extension activation complete");
+
 }
 
 export function deactivate() {
