@@ -481,7 +481,7 @@ export function normalizeMcpToolName(toolName: string): string {
  */
 export function extractMcpServerName(toolName: string, toolNameMap: { [key: string]: string } = {}): string {
 	// First, try to get the display name from toolNames.json and extract the server part
-	const displayName = toolNameMap[toolName];
+	const displayName = toolNameMap[toolName] ?? toolNameMap[toolName.toLowerCase()];
 	if (displayName && displayName.includes(':')) {
 		// Extract the part before the colon (e.g., "GitHub MCP" from "GitHub MCP: Issue Read")
 		return displayName.split(':')[0].trim();

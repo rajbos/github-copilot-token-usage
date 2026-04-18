@@ -1021,7 +1021,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		Object.keys(stats.today.toolCalls.byTool).forEach(tool => allTools.add(tool));
 		Object.keys(stats.last30Days.toolCalls.byTool).forEach(tool => allTools.add(tool));
 		Object.keys(stats.month.toolCalls.byTool).forEach(tool => allTools.add(tool));
-		return Array.from(allTools).filter(tool => !this.toolNameMap[tool]).sort();
+		return Array.from(allTools).filter(tool => !this.toolNameMap[tool] && !this.toolNameMap[tool.toLowerCase()]).sort();
 	}
 
 	private async showUnknownMcpToolsBanner(): Promise<void> {
