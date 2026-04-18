@@ -2,7 +2,6 @@
   "read_file",
   "copilot_readFile",
   "read",
-  "Read",
   "view",
   "view_image",
   "copilot_viewImage",
@@ -95,7 +94,6 @@
   "copilot_switchAgent",
 
   "bash",
-  "Bash",
 
   "vscode_editFile_internal",
   "vscode_fetchWebPage_internal",

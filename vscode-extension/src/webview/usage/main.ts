@@ -172,13 +172,13 @@ import toolNames from '../../toolNames.json';
 import automaticToolIds from '../../automaticTools.json';
 
 let TOOL_NAME_MAP: { [key: string]: string } | null = toolNames || null;
-const AUTOMATIC_TOOL_SET_WV = new Set<string>(automaticToolIds as string[]);
+const AUTOMATIC_TOOL_SET_WV = new Set<string>((automaticToolIds as string[]).map(id => id.toLowerCase()));
 
 function lookupToolName(id: string): string {
 	if (!TOOL_NAME_MAP) {
 		return id;
 	}
-	return TOOL_NAME_MAP[id] || id;
+	return TOOL_NAME_MAP[id] ?? TOOL_NAME_MAP[id.toLowerCase()] ?? id;
 }
 
 function lookupMcpToolName(id: string): string {
@@ -304,7 +304,7 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 	    const rows = sortedTools.map(([tool, count], idx) => {
 		const friendly = escapeHtml(nameResolver(tool));
 		const idEscaped = escapeHtml(tool);
-		const autoBadge = AUTOMATIC_TOOL_SET_WV.has(tool)
+		const autoBadge = AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase())
 			? `<span class="auto-badge" title="Automatic tool — Copilot uses this internally and it does not count toward fluency scoring">auto</span>`
 			: '';
 		return `

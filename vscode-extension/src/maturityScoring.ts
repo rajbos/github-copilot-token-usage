@@ -12,7 +12,7 @@ import automaticToolIds from './automaticTools.json';
 
 /** Set of tool IDs that Copilot uses autonomously (reading files, searching, etc.).
  *  These are excluded from fluency scoring since the user doesn't configure them. */
-const AUTOMATIC_TOOL_SET = new Set<string>(automaticToolIds);
+const AUTOMATIC_TOOL_SET = new Set<string>((automaticToolIds as string[]).map(id => id.toLowerCase()));
 
 /** Format a number with thousand separators for display. */
 function fmt(n: number): string {
@@ -445,7 +445,7 @@ export function calculateFluencyScoreForTeamMember(fd: {
     const hasModelSwitching = fd.mixedTierSessions > 0 || switchingFrequency > 0;
     const hasAgentMode = fd.agentModeCount > 0;
     const toolCount = Object.keys(fd.toolCallsByTool).length;
-    const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOL_SET.has(t)).length;
+    const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase())).length;
     const avgFilesPerSession = fd.filesPerEditCount > 0 ? fd.filesPerEditSum / fd.filesPerEditCount : 0;
     const avgApplyRate = fd.applyRateCount > 0 ? fd.applyRateSum / fd.applyRateCount : 0;
     const totalContextRefs = fd.ctxFile + fd.ctxSelection + fd.ctxSymbol + fd.ctxCodebase + fd.ctxWorkspace;
@@ -861,7 +861,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Diverse tool usage in agent mode
 	const toolCount = Object.keys(p.toolCalls.byTool).length;
-	const nonAutoToolCount = Object.keys(p.toolCalls.byTool).filter(t => !AUTOMATIC_TOOL_SET.has(t)).length;
+	const nonAutoToolCount = Object.keys(p.toolCalls.byTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase())).length;
 	if (p.modeUsage.agent >= 10 && nonAutoToolCount >= 3) {
 		agStage = 3;
 	}
