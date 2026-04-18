@@ -106,10 +106,37 @@ jobs:
           vscode-extension/out/
         retention-days: 7
         
+  check-code-changes:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    outputs:
+      vscode_src_changed: ${{ steps.detect.outputs.changed }}
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 0
+
+    - name: Detect vscode-extension source changes
+      id: detect
+      run: |
+        changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+          | grep -cE '^vscode-extension/src/.*\.ts$|^vscode-extension/test/.*\.ts$|^vscode-extension/stryker\.config\.mjs$' || true)
+        if [ "$changed" -gt 0 ]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        fi
+
   mutation-testing:
     runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'pull_request'
+    needs: [build, check-code-changes]
+    if: github.event_name == 'pull_request' && needs.check-code-changes.outputs.vscode_src_changed == 'true'
     # Informational — does not block the PR. A failing mutation score
     # is visible in the artifact but does not block merging during rollout.
     continue-on-error: true
