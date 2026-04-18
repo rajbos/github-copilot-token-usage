@@ -21,32 +21,41 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 
 ## Pick your tool
 
-### 🖥️ VS Code Extension
+### 🖥️ VS Code Extension (Chromium)
 
-Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more.
+Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more. Works with all Chromium-based VS Code forks — VS Code, Windsurf, Cursor, VSCodium, Trae, Kiro, Void, and more.
 
 [![Install - VS Code](https://img.shields.io/badge/Install-VS%20Code-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker) [![Install - Windsurf (Open VSX)](https://img.shields.io/badge/Install-Windsurf-00B4D8?logo=open-vsx)](https://open-vsx.org/extension/RobBos/copilot-token-tracker) [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/copilot-token-tracker?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
 
 ```bash
 # Install from the VS Code Marketplace
 ext install RobBos.copilot-token-tracker
-
-# Install from Open VSX (VSCodium)
-codium --install-extension RobBos.copilot-token-tracker
-
-# Install from Open VSX (Code OSS)
-code --install-extension RobBos.copilot-token-tracker
-
-# Install in Windsurf (Open VSX)
-windsurf --install-extension RobBos.copilot-token-tracker
 ```
 
 <details>
-<summary><img src="assets/open-vsx-logo.svg" width="16"> <b>Windsurf (Open VSX)</b></summary>
+<summary>📦 Install in other Chromium-based editors (Open VSX)</summary>
 
 ```bash
-# Install in Windsurf (Open VSX)
+# VSCodium
+codium --install-extension RobBos.copilot-token-tracker
+
+# Code OSS
+code --install-extension RobBos.copilot-token-tracker
+
+# Windsurf
 windsurf --install-extension RobBos.copilot-token-tracker
+
+# Cursor
+cursor --install-extension RobBos.copilot-token-tracker
+
+# Trae (ByteDance)
+trae --install-extension RobBos.copilot-token-tracker
+
+# Kiro (AWS)
+kiro --install-extension RobBos.copilot-token-tracker
+
+# Void
+void --install-extension RobBos.copilot-token-tracker
 ```
 
 </details>
