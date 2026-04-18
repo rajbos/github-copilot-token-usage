@@ -25,9 +25,7 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 
 Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more.
 
-[![VS Code installs](https://vsmarketplacebadges.dev/installs-short/RobBos.copilot-token-tracker.svg?label=VS%20Code%20installs)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)
-
-[![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/copilot-token-tracker?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
+[![Install - VS Code](https://img.shields.io/badge/Install-VS%20Code-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker) [![Install - Windsurf (Open VSX)](https://img.shields.io/badge/Install-Windsurf-00B4D8?logo=open-vsx)](https://open-vsx.org/extension/RobBos/copilot-token-tracker) [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/copilot-token-tracker?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
 
 ```bash
 # Install from the VS Code Marketplace
@@ -38,7 +36,20 @@ codium --install-extension RobBos.copilot-token-tracker
 
 # Install from Open VSX (Code OSS)
 code --install-extension RobBos.copilot-token-tracker
+
+# Install in Windsurf (Open VSX)
+windsurf --install-extension RobBos.copilot-token-tracker
 ```
+
+<details>
+<summary><img src="https://open-vsx.org/static/img/logo.svg" width="16"> <b>Windsurf (Open VSX)</b></summary>
+
+```bash
+# Install in Windsurf (Open VSX)
+windsurf --install-extension RobBos.copilot-token-tracker
+```
+
+</details>
 
 📖 [Full VS Code extension documentation](docs/vscode-extension/README.md)
 
