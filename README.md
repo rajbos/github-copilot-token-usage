@@ -42,7 +42,7 @@ windsurf --install-extension RobBos.copilot-token-tracker
 ```
 
 <details>
-<summary><img src="https://open-vsx.org/static/img/logo.svg" width="16"> <b>Windsurf (Open VSX)</b></summary>
+<summary><img src="assets/open-vsx-logo.svg" width="16"> <b>Windsurf (Open VSX)</b></summary>
 
 ```bash
 # Install in Windsurf (Open VSX)
