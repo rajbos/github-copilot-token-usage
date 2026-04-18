@@ -3,7 +3,7 @@
  */
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { discoverSessionFiles, calculateDetailedStats, fmt, formatTokens, ENVIRONMENTAL } from '../helpers';
+import { discoverSessionFiles, calculateDetailedStats, formatTokens, ENVIRONMENTAL } from '../helpers';
 import type { PeriodStats } from '../../../vscode-extension/src/types';
 
 export const environmentalCommand = new Command('environmental')
@@ -38,7 +38,7 @@ export const environmentalCommand = new Command('environmental')
 		console.log(chalk.dim('Methodology: Estimates based on industry averages for AI inference'));
 		console.log(chalk.dim(`  CO₂: ${ENVIRONMENTAL.CO2_PER_1K_TOKENS} gCO₂e per 1K tokens`));
 		console.log(chalk.dim(`  Water: ${ENVIRONMENTAL.WATER_USAGE_PER_1K_TOKENS} L per 1K tokens`));
-		console.log(chalk.dim(`  Tree absorption: ${fmt(ENVIRONMENTAL.CO2_ABSORPTION_PER_TREE_PER_YEAR)} g CO₂/year\n`));
+		console.log(chalk.dim(`  Tree absorption: ${formatCo2(ENVIRONMENTAL.CO2_ABSORPTION_PER_TREE_PER_YEAR)} CO₂/year\n`));
 
 		for (const period of periods) {
 			printEnvironmentalStats(period.label, period.emoji, period.stats);
@@ -75,6 +75,14 @@ export const environmentalCommand = new Command('environmental')
 		console.log(chalk.dim(`Last updated: ${stats.lastUpdated.toLocaleString()}\n`));
 	});
 
+/** Format CO₂ in grams, switching to kg notation when ≥ 1 000 g */
+function formatCo2(grams: number): string {
+	if (grams >= 1000) {
+		return `${(grams / 1000).toFixed(2)} kgCO₂e`;
+	}
+	return `${grams.toFixed(3)} gCO₂e`;
+}
+
 function printEnvironmentalStats(label: string, emoji: string, stats: PeriodStats): void {
 	console.log(chalk.bold(`${emoji} ${label}`));
 	console.log(chalk.dim('─'.repeat(55)));
@@ -86,7 +94,7 @@ function printEnvironmentalStats(label: string, emoji: string, stats: PeriodStat
 	}
 
 	console.log(`  Tokens used:          ${chalk.bold.yellow(formatTokens(stats.tokens))}`);
-	console.log(`  CO₂ emissions:        ${chalk.bold(stats.co2.toFixed(3))} gCO₂e`);
+	console.log(`  CO₂ emissions:        ${chalk.bold(formatCo2(stats.co2))}`);
 	console.log(`  Water usage:          ${chalk.bold(stats.waterUsage.toFixed(3))} liters`);
 
 	if (stats.treesEquivalent > 0) {

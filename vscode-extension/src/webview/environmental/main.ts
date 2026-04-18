@@ -79,6 +79,14 @@ function smartFixed(value: number): string {
 	return formatFixed(Math.round(value), 0);
 }
 
+/** Format CO₂ in grams, switching to kg notation when ≥ 1 000 g */
+function formatCo2Grams(grams: number): string {
+	if (grams >= 1000) {
+		return `${smartFixed(grams / 1000)} kg`;
+	}
+	return `${smartFixed(grams)} g`;
+}
+
 type AnalogyItem = { icon: string; text: string };
 
 const co2AnalogyItems = (grams: number): AnalogyItem[] => [
@@ -188,10 +196,10 @@ function buildImpactCards(
 		],
 		// CO₂ card
 		[
-			['📅 Today', `${smartFixed(stats.today.co2)} g`, co2AnalogyItems(stats.today.co2)],
-			['📈 Last 30 Days', `${smartFixed(stats.last30Days.co2)} g`, co2AnalogyItems(stats.last30Days.co2)],
-			['📆 Previous Month', `${smartFixed(stats.lastMonth.co2)} g`, co2AnalogyItems(stats.lastMonth.co2)],
-			['🌍 Projected Year', `${smartFixed(projectedCo2)} g`, co2AnalogyItems(projectedCo2)],
+			['📅 Today', formatCo2Grams(stats.today.co2), co2AnalogyItems(stats.today.co2)],
+			['📈 Last 30 Days', formatCo2Grams(stats.last30Days.co2), co2AnalogyItems(stats.last30Days.co2)],
+			['📆 Previous Month', formatCo2Grams(stats.lastMonth.co2), co2AnalogyItems(stats.lastMonth.co2)],
+			['🌍 Projected Year', formatCo2Grams(projectedCo2), co2AnalogyItems(projectedCo2)],
 		],
 		// Water card
 		[
