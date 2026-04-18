@@ -1,5 +1,12 @@
 {
   "unknown": "Unknown"
+  ,"windsurf_cascade": "Windsurf Cascade"
+  ,"windsurf_file_edit": "Windsurf: File Edit"
+  ,"windsurf_file_create": "Windsurf: File Create"
+  ,"windsurf_file_read": "Windsurf: File Read"
+  ,"windsurf_terminal": "Windsurf: Terminal"
+  ,"windsurf_search": "Windsurf: Search"
+  ,"windsurf_browser": "Windsurf: Browser"
   ,"run_in_terminal": "Run In Terminal"
   ,"run_build": "Run Build"
   ,"run_command_in_terminal": "Run Command In Terminal"

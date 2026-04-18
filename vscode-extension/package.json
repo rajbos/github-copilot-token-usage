@@ -134,6 +134,11 @@
         "command": "copilot-token-tracker.signOutGitHub",
         "title": "Disconnect GitHub",
         "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "copilot-token-tracker.checkWindsurfStatus",
+        "title": "Check Windsurf Status",
+        "category": "AI Engineering Fluency"
       }
     ],
     "configuration": {
@@ -293,6 +298,21 @@
           },
           "default": [],
           "description": "List of tool names to suppress from the 'Unknown Tools Found' section in the Usage Analysis dashboard. Useful for tools you are testing that don't yet have friendly display names."
+        },
+        "copilotTokenTracker.windsurf.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Windsurf session tracking when running inside Windsurf editor."
+        },
+        "copilotTokenTracker.windsurf.includeCascadeDetails": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include detailed Cascade trajectory information in Windsurf session analysis."
+        },
+        "copilotTokenTracker.windsurf.cacheCredentials": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cache Windsurf API credentials to reduce authentication overhead. Credentials are automatically invalidated when Windsurf restarts."
         }
       }
     }

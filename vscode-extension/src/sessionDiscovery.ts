@@ -11,6 +11,8 @@ import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from "./visualstudio";
 import type { ClaudeCodeDataAccess } from './claudecode';
 import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
+import type { WindsurfDataAccess } from './windsurf';
+import type { SessionFileDetails } from './types';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -22,6 +24,7 @@ export interface SessionDiscoveryDeps {
 	visualStudio: VisualStudioDataAccess;
 	claudeCode: ClaudeCodeDataAccess;
 	claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
+	windsurf: WindsurfDataAccess;
 	sampleDataDirectoryOverride?: () => string | undefined;
 }
 
@@ -200,6 +203,13 @@ export class SessionDiscovery {
 			try { coworkExists = fs.existsSync(coworkBaseDir); } catch { /* ignore */ }
 			candidates.push({ path: coworkBaseDir, exists: coworkExists, source: 'Claude Desktop (Cowork)' });
 		}
+
+		// Windsurf (file-based when in VS Code, API-based when in Windsurf)
+		const windsurfInstalled = this.deps.windsurf.isWindsurfInstalled();
+		const windsurfPath = windsurfInstalled
+			? this.deps.windsurf.getCascadeDir()
+			: 'Not installed (~/.codeium/windsurf/cascade)';
+		candidates.push({ path: windsurfPath, exists: windsurfInstalled, source: 'Windsurf' });
 
 		return candidates;
 	}
@@ -522,6 +532,52 @@ export class SessionDiscovery {
 				}
 			} catch (coworkError) {
 				this.deps.warn(`Could not read Claude Desktop Cowork session files: ${coworkError}`);
+			}
+
+			// Check for Windsurf sessions (API-based when in Windsurf, file-based otherwise)
+			try {
+				if (this.deps.windsurf.isRunningInWindsurf()) {
+					this.deps.log('Windsurf detected - fetching sessions via API...');
+					let windsurfSessions: SessionFileDetails[] = [];
+					try {
+						windsurfSessions = await (this.deps.windsurf as any).getWindsurfSessionsV2();
+						this.deps.log(`Windsurf API returned ${windsurfSessions.length} sessions`);
+					} catch (sessionError) {
+						this.deps.error(`Exception in getWindsurfSessionsV2(): ${sessionError instanceof Error ? sessionError.message : String(sessionError)}`, sessionError);
+					}
+					if (windsurfSessions.length > 0) {
+						this.deps.log(`Found ${windsurfSessions.length} session(s) in Windsurf`);
+						sessionFiles.push(...windsurfSessions.map(s => s.file));
+					} else {
+						this.deps.log('No Windsurf sessions found via API - running diagnostics...');
+						const diagnostics = await this.deps.windsurf.runDiagnostics();
+						this.deps.log(`Windsurf diagnostics: ${JSON.stringify(diagnostics, null, 2)}`);
+						if (!diagnostics.extension.found) {
+							this.deps.warn('Windsurf extension not found - make sure Windsurf is installed and active');
+						} else if (!diagnostics.extension.active) {
+							this.deps.warn('Windsurf extension found but not active - try restarting Windsurf');
+						} else if (!diagnostics.credentials.available) {
+							this.deps.warn('Windsurf credentials not available - this could indicate a connection issue');
+						} else if (!diagnostics.apiTest.success) {
+							this.deps.warn(`Windsurf API test failed: ${diagnostics.apiTest.error}`);
+						} else if (diagnostics.sessions.count === 0) {
+							this.deps.log('Windsurf is working correctly, but no chat sessions have been created yet');
+						}
+					}
+				} else if (this.deps.windsurf.isWindsurfInstalled()) {
+					this.deps.log('Windsurf installed (not active editor) - discovering sessions from local files...');
+					const fileSessions = await this.deps.windsurf.getWindsurfCascadeSessionFiles();
+					if (fileSessions.length > 0) {
+						this.deps.log(`Found ${fileSessions.length} Windsurf session file(s) in ~/.codeium/windsurf/cascade`);
+						sessionFiles.push(...fileSessions.map(s => s.file));
+					} else {
+						this.deps.log('No Windsurf cascade session files found in ~/.codeium/windsurf/cascade');
+					}
+				} else {
+					this.deps.log('Windsurf not detected - skipping Windsurf session discovery');
+				}
+			} catch (windsurfError) {
+				this.deps.warn(`Could not read Windsurf sessions: ${windsurfError}`);
 			}
 
 			// Log summary

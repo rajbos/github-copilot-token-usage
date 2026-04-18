@@ -1194,6 +1194,11 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Windsurf virtual sessions — no file content to analyze
+		if (sessionFile.startsWith('windsurf://')) {
+			return analysis;
+		}
+
 		// Handle Claude Code sessions
 		if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
 			// Claude Code has actual token counts; usage analysis extracts tool calls and modes
@@ -1716,6 +1721,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 	// Handle Claude Code sessions
 	if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
 		return deps.claudeCode.getClaudeCodeModelUsage(sessionFile);
+	}
+
+	// Handle Windsurf virtual sessions — no file content to analyze
+	if (sessionFile.startsWith('windsurf://')) {
+		return modelUsage;
 	}
 
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;
