@@ -1,9 +1,17 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import {
     mergeUsageAnalysis,
     analyzeContextReferences,
+    analyzeContentReferences,
+    analyzeVariableData,
+    analyzeRequestContext,
+    calculateModelSwitching,
+    trackEnhancedMetrics,
+    analyzeSessionUsage,
+    getModelUsageFromSession,
     deriveConversationPatterns,
+    type UsageAnalysisDeps,
 } from '../../src/usageAnalysis';
 import type {
     UsageAnalysisPeriod,
@@ -60,6 +68,58 @@ function emptyPeriod(): UsageAnalysisPeriod {
         agentTypes: { editsAgent: 0, defaultAgent: 0, workspaceAgent: 0, other: 0 },
     };
 }
+
+// Minimal mock deps factory for file-based async functions
+function makeMockDeps(overrides: Partial<{
+    openCodeIsMatch: boolean;
+    openCodeModelUsage: () => Promise<Record<string, { inputTokens: number; outputTokens: number }>>;
+}> = {}): UsageAnalysisDeps {
+    return {
+        warn: () => {},
+        openCode: {
+            isOpenCodeSessionFile: () => overrides.openCodeIsMatch ?? false,
+            getOpenCodeModelUsage: overrides.openCodeModelUsage ?? (async () => ({})),
+            getOpenCodeMessagesForSession: async () => [],
+            getOpenCodePartsForMessage: async () => [],
+            statSessionFile: async () => ({}) as any,
+        } as any,
+        crush: {
+            isCrushSessionFile: () => false,
+            getCrushModelUsage: async () => ({}),
+            getCrushMessages: async () => [],
+            statSessionFile: async () => ({}) as any,
+        } as any,
+        continue_: {
+            isContinueSessionFile: () => false,
+            getContinueModelUsage: () => ({}),
+        } as any,
+        visualStudio: {
+            isVSSessionFile: () => false,
+            getModelUsage: () => ({}),
+            decodeSessionFile: () => [],
+            getModelId: () => null,
+            statSessionFile: async () => ({}) as any,
+        } as any,
+        claudeCode: {
+            isClaudeCodeSessionFile: () => false,
+            getClaudeCodeModelUsage: () => ({}),
+        } as any,
+        claudeDesktopCowork: {
+            isCoworkSessionFile: () => false,
+            getCoworkModelUsage: () => ({}),
+        } as any,
+        tokenEstimators: { 'gpt-4o': 0.25, 'claude-sonnet-4.5': 0.25 },
+        modelPricing: {
+            'gpt-4o': { inputCostPerMillion: 2.5, outputCostPerMillion: 10, tier: 'standard', category: 'Standard', multiplier: 0 },
+            'claude-sonnet-4.5': { inputCostPerMillion: 3, outputCostPerMillion: 15, tier: 'premium', category: 'Premium', multiplier: 1 },
+        } as any,
+        toolNameMap: {},
+    };
+}
+
+const FAKE_JSON_PATH = '/tmp/test-session.json';
+// Valid UUID v4 format recognised by isUuidPointerFile
+const UUID_POINTER_CONTENT = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
 
 // ---------------------------------------------------------------------------
 // mergeUsageAnalysis
@@ -282,3 +342,480 @@ test('deriveConversationPatterns: 3 requests produces multi-turn session', () =>
     assert.equal(analysis.conversationPatterns!.avgTurnsPerSession, 3);
     assert.equal(analysis.conversationPatterns!.maxTurnsInSession, 3);
 });
+
+// ---------------------------------------------------------------------------
+// analyzeContentReferences
+// ---------------------------------------------------------------------------
+
+test('analyzeContentReferences: non-array input is ignored', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences(null as any, refs);
+    analyzeContentReferences('string' as any, refs);
+    assert.equal(refs.file, 0);
+    assert.equal(refs.symbol, 0);
+});
+
+test('analyzeContentReferences: empty array produces no counts', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([], refs);
+    assert.equal(refs.file, 0);
+    assert.deepEqual(refs.byKind, {});
+});
+
+test('analyzeContentReferences: tracks byKind for each entry', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'reference', reference: { fsPath: '/src/foo.ts' } },
+        { kind: 'reference', reference: { fsPath: '/src/bar.ts' } },
+    ], refs);
+    assert.equal(refs.byKind['reference'], 2);
+});
+
+test('analyzeContentReferences: increments file for regular file reference', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'reference', reference: { fsPath: '/src/foo.ts' } },
+    ], refs);
+    assert.equal(refs.file, 1);
+    assert.equal(refs.byPath['/src/foo.ts'], 1);
+});
+
+test('analyzeContentReferences: increments copilotInstructions for copilot-instructions.md', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'reference', reference: { fsPath: '/repo/.github/copilot-instructions.md' } },
+    ], refs);
+    assert.equal(refs.copilotInstructions, 1);
+    assert.equal(refs.file, 0);
+});
+
+test('analyzeContentReferences: increments copilotInstructions for .instructions.md files', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'reference', reference: { fsPath: '/repo/.github/instructions/github-actions.instructions.md' } },
+    ], refs);
+    assert.equal(refs.copilotInstructions, 1);
+    assert.equal(refs.file, 0);
+});
+
+test('analyzeContentReferences: increments agentsMd for agents.md', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'reference', reference: { fsPath: '/repo/agents.md' } },
+    ], refs);
+    assert.equal(refs.agentsMd, 1);
+    assert.equal(refs.file, 0);
+});
+
+test('analyzeContentReferences: increments symbol for named reference without fsPath', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'reference', reference: { name: 'myFunction' } },
+    ], refs);
+    assert.equal(refs.symbol, 1);
+    assert.equal(refs.byPath['#sym:myFunction'], 1);
+});
+
+test('analyzeContentReferences: handles inlineReference kind with fsPath', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'inlineReference', inlineReference: { fsPath: '/src/component.ts' } },
+    ], refs);
+    assert.equal(refs.file, 1);
+});
+
+// ---------------------------------------------------------------------------
+// analyzeVariableData
+// ---------------------------------------------------------------------------
+
+test('analyzeVariableData: null input is ignored', () => {
+    const refs = emptyRefs();
+    analyzeVariableData(null, refs);
+    assert.equal(refs.symbol, 0);
+    assert.deepEqual(refs.byKind, {});
+});
+
+test('analyzeVariableData: non-array variables is ignored', () => {
+    const refs = emptyRefs();
+    analyzeVariableData({ variables: 'not-an-array' }, refs);
+    assert.equal(refs.symbol, 0);
+});
+
+test('analyzeVariableData: tracks byKind for each variable', () => {
+    const refs = emptyRefs();
+    analyzeVariableData({
+        variables: [
+            { kind: 'file', name: 'foo.ts' },
+            { kind: 'file', name: 'bar.ts' },
+        ]
+    }, refs);
+    assert.equal(refs.byKind['file'], 2);
+});
+
+test('analyzeVariableData: increments symbol for generic sym: variables', () => {
+    const refs = emptyRefs();
+    analyzeVariableData({
+        variables: [
+            { kind: 'generic', name: 'sym:parseSessionFile' },
+        ]
+    }, refs);
+    assert.equal(refs.symbol, 1);
+    assert.equal(refs.byPath['#sym:parseSessionFile'], 1);
+});
+
+test('analyzeVariableData: does not increment symbol for generic without sym: prefix', () => {
+    const refs = emptyRefs();
+    analyzeVariableData({
+        variables: [
+            { kind: 'generic', name: 'someOtherThing' },
+        ]
+    }, refs);
+    assert.equal(refs.symbol, 0);
+});
+
+// ---------------------------------------------------------------------------
+// analyzeRequestContext
+// ---------------------------------------------------------------------------
+
+test('analyzeRequestContext: processes message.text for context refs', () => {
+    const refs = emptyRefs();
+    analyzeRequestContext({ message: { text: 'look at #file please' } }, refs);
+    assert.equal(refs.file, 1);
+});
+
+test('analyzeRequestContext: processes message.parts for context refs', () => {
+    const refs = emptyRefs();
+    analyzeRequestContext({
+        message: { parts: [{ text: 'check #codebase' }, { text: 'and #file' }] }
+    }, refs);
+    assert.equal(refs.codebase, 1);
+    assert.equal(refs.file, 1);
+});
+
+test('analyzeRequestContext: processes contentReferences array', () => {
+    const refs = emptyRefs();
+    analyzeRequestContext({
+        contentReferences: [
+            { kind: 'reference', reference: { fsPath: '/src/utils.ts' } },
+        ]
+    }, refs);
+    assert.equal(refs.file, 1);
+});
+
+test('analyzeRequestContext: processes variableData for symbol refs', () => {
+    const refs = emptyRefs();
+    analyzeRequestContext({
+        variableData: {
+            variables: [{ kind: 'generic', name: 'sym:myClass' }]
+        }
+    }, refs);
+    assert.equal(refs.symbol, 1);
+});
+
+test('analyzeRequestContext: empty request produces no counts', () => {
+    const refs = emptyRefs();
+    analyzeRequestContext({}, refs);
+    assert.equal(refs.file, 0);
+    assert.equal(refs.symbol, 0);
+});
+
+// ---------------------------------------------------------------------------
+// getModelUsageFromSession
+// ---------------------------------------------------------------------------
+
+test('getModelUsageFromSession: returns empty ModelUsage for UUID pointer file', async () => {
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSON_PATH, UUID_POINTER_CONTENT);
+    assert.deepEqual(result, {});
+});
+
+test('getModelUsageFromSession: extracts token counts from result.promptTokens/outputTokens (new format)', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 100, outputTokens: 50 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSON_PATH, content);
+    assert.ok(result['gpt-4o'], 'gpt-4o key should exist');
+    assert.equal(result['gpt-4o'].inputTokens, 100);
+    assert.equal(result['gpt-4o'].outputTokens, 50);
+});
+
+test('getModelUsageFromSession: accumulates tokens across multiple requests for same model', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 100, outputTokens: 50 } },
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 200, outputTokens: 100 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSON_PATH, content);
+    assert.equal(result['gpt-4o'].inputTokens, 300);
+    assert.equal(result['gpt-4o'].outputTokens, 150);
+});
+
+test('getModelUsageFromSession: returns separate entries for different models', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 100, outputTokens: 50 } },
+            { modelId: 'copilot/claude-sonnet-4.5', result: { promptTokens: 200, outputTokens: 100 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSON_PATH, content);
+    assert.ok(result['gpt-4o'], 'gpt-4o key should exist');
+    assert.ok(result['claude-sonnet-4.5'], 'claude-sonnet-4.5 key should exist');
+    assert.equal(result['gpt-4o'].inputTokens, 100);
+    assert.equal(result['claude-sonnet-4.5'].inputTokens, 200);
+});
+
+test('getModelUsageFromSession: extracts token counts from result.usage (old format)', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', result: { usage: { promptTokens: 80, completionTokens: 40 } } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSON_PATH, content);
+    assert.equal(result['gpt-4o'].inputTokens, 80);
+    assert.equal(result['gpt-4o'].outputTokens, 40);
+});
+
+test('getModelUsageFromSession: delegates to openCode for openCode session files', async () => {
+    let called = false;
+    const deps = makeMockDeps({
+        openCodeIsMatch: true,
+        openCodeModelUsage: async () => {
+            called = true;
+            return { 'gpt-4o': { inputTokens: 99, outputTokens: 11 } };
+        },
+    });
+    const result = await getModelUsageFromSession(deps, '/opencode/session.db', '');
+    assert.ok(called, 'getOpenCodeModelUsage should have been called');
+    assert.equal(result['gpt-4o'].inputTokens, 99);
+});
+
+// ---------------------------------------------------------------------------
+// calculateModelSwitching
+// ---------------------------------------------------------------------------
+
+test('calculateModelSwitching: empty requests list leaves analysis unchanged', async () => {
+    const content = JSON.stringify({ requests: [] });
+    const deps = makeMockDeps();
+    const analysis = emptyAnalysis();
+    await calculateModelSwitching(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.modelSwitching.modelCount, 0);
+    assert.equal(analysis.modelSwitching.switchCount, 0);
+});
+
+test('calculateModelSwitching: UUID pointer file leaves analysis unchanged', async () => {
+    const deps = makeMockDeps();
+    const analysis = emptyAnalysis();
+    await calculateModelSwitching(deps, FAKE_JSON_PATH, analysis, UUID_POINTER_CONTENT);
+    assert.equal(analysis.modelSwitching.modelCount, 0);
+});
+
+test('calculateModelSwitching: single model session has no switches', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 10, outputTokens: 5 } },
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 10, outputTokens: 5 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const analysis = emptyAnalysis();
+    await calculateModelSwitching(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.modelSwitching.modelCount, 1);
+    assert.equal(analysis.modelSwitching.switchCount, 0);
+    assert.ok(analysis.modelSwitching.uniqueModels.includes('gpt-4o'));
+});
+
+test('calculateModelSwitching: two models from different tiers sets hasMixedTiers=true', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', result: { promptTokens: 10, outputTokens: 5 } },
+            { modelId: 'copilot/claude-sonnet-4.5', result: { promptTokens: 10, outputTokens: 5 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const analysis = emptyAnalysis();
+    await calculateModelSwitching(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.modelSwitching.modelCount, 2);
+    assert.ok(analysis.modelSwitching.hasMixedTiers, 'should detect mixed tiers');
+    assert.equal(analysis.modelSwitching.switchCount, 1);
+    assert.equal(analysis.modelSwitching.standardRequests, 1);
+    assert.equal(analysis.modelSwitching.premiumRequests, 1);
+});
+
+// ---------------------------------------------------------------------------
+// trackEnhancedMetrics
+// ---------------------------------------------------------------------------
+
+test('trackEnhancedMetrics: UUID pointer file leaves analysis unchanged', async () => {
+    const analysis = emptyAnalysis();
+    const deps = { warn: (_: string) => {} };
+    await trackEnhancedMetrics(deps, FAKE_JSON_PATH, analysis, UUID_POINTER_CONTENT);
+    assert.equal(analysis.editScope?.totalEditedFiles ?? 0, 0);
+    assert.equal(analysis.applyUsage?.totalCodeBlocks ?? 0, 0);
+});
+
+test('trackEnhancedMetrics: textEditGroup responses populate editScope', async () => {
+    const content = JSON.stringify({
+        requests: [{
+            response: [
+                { kind: 'textEditGroup', uri: { path: '/src/foo.ts' } },
+                { kind: 'textEditGroup', uri: { path: '/src/bar.ts' } },
+            ]
+        }]
+    });
+    const analysis = emptyAnalysis();
+    const deps = { warn: (_: string) => {} };
+    await trackEnhancedMetrics(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.editScope!.totalEditedFiles, 2);
+    assert.equal(analysis.editScope!.multiFileEdits, 1);
+    assert.equal(analysis.editScope!.singleFileEdits, 0);
+});
+
+test('trackEnhancedMetrics: codeblockUri with isEdit=true increments totalApplies', async () => {
+    const content = JSON.stringify({
+        requests: [{
+            response: [
+                { kind: 'codeblockUri', isEdit: true },
+                { kind: 'codeblockUri', isEdit: false },
+                { kind: 'codeblockUri', isEdit: true },
+            ]
+        }]
+    });
+    const analysis = emptyAnalysis();
+    const deps = { warn: (_: string) => {} };
+    await trackEnhancedMetrics(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.applyUsage!.totalCodeBlocks, 3);
+    assert.equal(analysis.applyUsage!.totalApplies, 2);
+});
+
+test('trackEnhancedMetrics: timestamps drive session duration calculation', async () => {
+    const t1 = 1700000000000;
+    const t2 = t1 + 60000; // 60 seconds later
+    const content = JSON.stringify({
+        creationDate: t1,
+        lastMessageDate: t2,
+        requests: [],
+    });
+    const analysis = emptyAnalysis();
+    const deps = { warn: (_: string) => {} };
+    await trackEnhancedMetrics(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.sessionDuration!.totalDurationMs, 60000);
+});
+
+test('trackEnhancedMetrics: agent IDs are classified into correct buckets', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { agent: { id: 'copilot.editsAgent' } },
+            { agent: { id: 'copilot.defaultAgent' } },
+            { agent: { id: 'copilot.workspaceAgent' } },
+            { agent: { id: 'some.customPlugin' } },
+        ]
+    });
+    const analysis = emptyAnalysis();
+    const deps = { warn: (_: string) => {} };
+    await trackEnhancedMetrics(deps, FAKE_JSON_PATH, analysis, content);
+    assert.equal(analysis.agentTypes!.editsAgent, 1);
+    assert.equal(analysis.agentTypes!.defaultAgent, 1);
+    assert.equal(analysis.agentTypes!.workspaceAgent, 1);
+    assert.equal(analysis.agentTypes!.other, 1);
+});
+
+// ---------------------------------------------------------------------------
+// analyzeSessionUsage
+// ---------------------------------------------------------------------------
+
+test('analyzeSessionUsage: UUID pointer file returns empty analysis without errors', async () => {
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, UUID_POINTER_CONTENT);
+    assert.equal(result.modeUsage.ask, 0);
+    assert.equal(result.toolCalls.total, 0);
+});
+
+test('analyzeSessionUsage: regular JSON session counts ask mode requests', async () => {
+    const content = JSON.stringify({
+        requests: [
+            { modelId: 'copilot/gpt-4o', message: { text: 'hello' }, result: { promptTokens: 10, outputTokens: 5 } },
+            { modelId: 'copilot/gpt-4o', message: { text: 'hello again' }, result: { promptTokens: 10, outputTokens: 5 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, content);
+    assert.equal(result.modeUsage.ask, 2);
+    assert.equal(result.modeUsage.agent, 0);
+});
+
+test('analyzeSessionUsage: request with editsAgent ID counts as edit mode', async () => {
+    const content = JSON.stringify({
+        requests: [{
+            modelId: 'copilot/gpt-4o',
+            agent: { id: 'copilot.editsAgent' },
+            message: { text: 'refactor this' },
+            result: { promptTokens: 10, outputTokens: 5 },
+        }]
+    });
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, content);
+    assert.equal(result.modeUsage.edit, 1);
+    assert.equal(result.modeUsage.ask, 0);
+});
+
+test('analyzeSessionUsage: session-level agent mode is inherited by requests without a request-specific agent', async () => {
+    const content = JSON.stringify({
+        mode: { id: 'copilot.agentMode' },
+        requests: [
+            { modelId: 'copilot/gpt-4o', message: { text: 'do task' }, result: { promptTokens: 10, outputTokens: 5 } },
+        ]
+    });
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, content);
+    assert.equal(result.modeUsage.agent, 1);
+    assert.equal(result.modeUsage.ask, 0);
+});
+
+test('analyzeSessionUsage: context references in message text are counted', async () => {
+    const content = JSON.stringify({
+        requests: [{
+            modelId: 'copilot/gpt-4o',
+            message: { text: 'look at #file and #codebase' },
+            result: { promptTokens: 10, outputTokens: 5 },
+        }]
+    });
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, content);
+    assert.equal(result.contextReferences.file, 1);
+    assert.equal(result.contextReferences.codebase, 1);
+});
+
+test('analyzeSessionUsage: toolInvocationSerialized response items are counted as tool calls', async () => {
+    const content = JSON.stringify({
+        requests: [{
+            modelId: 'copilot/gpt-4o',
+            message: { text: 'run tests' },
+            result: { promptTokens: 10, outputTokens: 5 },
+            response: [
+                { kind: 'toolInvocationSerialized', toolId: 'run_in_terminal' },
+                { kind: 'toolInvocationSerialized', toolId: 'list_dir' },
+            ]
+        }]
+    });
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, content);
+    assert.equal(result.toolCalls.total, 2);
+    assert.equal(result.toolCalls.byTool['run_in_terminal'], 1);
+    assert.equal(result.toolCalls.byTool['list_dir'], 1);
+});
+
+test('analyzeSessionUsage: empty requests array returns empty analysis', async () => {
+    const content = JSON.stringify({ requests: [] });
+    const deps = makeMockDeps();
+    const result = await analyzeSessionUsage(deps, FAKE_JSON_PATH, content);
+    assert.equal(result.modeUsage.ask, 0);
+    assert.equal(result.toolCalls.total, 0);
+});
+
