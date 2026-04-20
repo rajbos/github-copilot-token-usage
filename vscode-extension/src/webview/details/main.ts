@@ -151,6 +151,12 @@ function renderShell(
 	const footer = el('div', 'footer', `Last updated: ${lastUpdated.toLocaleString()} · Updates every 5 minutes`);
 
 	const sections = el('div', 'sections');
+
+	const isEmptyState = (stats.today.tokens ?? 0) === 0 && (stats.last30Days.tokens ?? 0) === 0 && (stats.lastMonth.tokens ?? 0) === 0;
+	if (isEmptyState) {
+		sections.append(buildEmptyStateSection());
+	}
+
 	sections.append(buildMetricsSection(stats, projections));
 
 	const editorSection = buildEditorUsageSection(stats);
@@ -674,6 +680,44 @@ function buildModelUsageSection(stats: DetailedStats): HTMLElement | null {
 	table.append(thead);
 	rebuildTbody();
 	section.append(table);
+	return section;
+}
+
+function buildEmptyStateSection(): HTMLElement {
+	const section = el('div', 'section');
+	const inner = el('div', 'empty-state');
+
+	const title = el('div', 'empty-state-title', '👋 Welcome to AI Engineering Fluency');
+
+	const desc = el('p', 'empty-state-description',
+		'This extension tracks your GitHub Copilot token usage by reading Copilot Chat session log files stored locally by VS Code. No token data has been found yet.'
+	);
+
+	const stepsLabel = document.createElement('p');
+	stepsLabel.className = 'empty-state-description';
+	const stepsLabelStrong = document.createElement('strong');
+	stepsLabelStrong.textContent = 'To get started:';
+	stepsLabel.append(stepsLabelStrong);
+
+	const steps = document.createElement('ol');
+	steps.className = 'empty-state-steps';
+	const stepTexts = [
+		'Make sure the GitHub Copilot and GitHub Copilot Chat extensions are installed and active in VS Code.',
+		'Open the Copilot Chat panel (Ctrl+Alt+I / Cmd+Alt+I) and have a conversation with Copilot.',
+		'Click the 🔄 Refresh button above to reload the stats after chatting.',
+	];
+	stepTexts.forEach(text => {
+		const li = document.createElement('li');
+		li.textContent = text;
+		steps.append(li);
+	});
+
+	const note = el('div', 'empty-state-note',
+		'💡 If you have been using Copilot but still see no data, open the Diagnostics panel (🔍 Diagnostics button above) to verify that session files are being discovered correctly.'
+	);
+
+	inner.append(title, desc, stepsLabel, steps, note);
+	section.append(inner);
 	return section;
 }
 
