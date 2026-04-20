@@ -2,7 +2,7 @@
   "name": "copilot-token-tracker",
   "displayName": "AI Engineering Fluency",
   "description": "Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and AI fluency insights in VS Code.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "RobBos",
   "icon": "assets/logo.png",
   "engines": {
@@ -369,5 +369,3 @@
     "serialize-javascript": ">=7.0.3"
   }
 }
-
-
