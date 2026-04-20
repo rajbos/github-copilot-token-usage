@@ -690,8 +690,30 @@ function buildEmptyStateSection(): HTMLElement {
 	const title = el('div', 'empty-state-title', '👋 Welcome to AI Engineering Fluency');
 
 	const desc = el('p', 'empty-state-description',
-		'This extension tracks your GitHub Copilot token usage by reading Copilot Chat session log files stored locally by VS Code. No token data has been found yet.'
+		'This extension tracks AI token usage by reading session log files stored locally by supported tools. No token data has been found yet.'
 	);
+
+	const toolsLabel = document.createElement('p');
+	toolsLabel.className = 'empty-state-description';
+	const toolsLabelStrong = document.createElement('strong');
+	toolsLabelStrong.textContent = 'Supported tools & editors:';
+	toolsLabel.append(toolsLabelStrong);
+
+	const toolsList = document.createElement('ul');
+	toolsList.className = 'empty-state-steps';
+	const toolsTexts = [
+		'💙 VS Code / VS Code Insiders / VSCodium — GitHub Copilot Chat extension',
+		'⚡ Cursor, 🌊 Windsurf — built-in AI chat',
+		'🖥️ Visual Studio 2022+ — GitHub Copilot Chat extension',
+		'🟢 OpenCode, 🦀 Crush — terminal-based coding agents',
+		'🤖 Claude Code — Anthropic\'s CLI coding agent',
+		'💻 Copilot CLI — GitHub Copilot in the terminal',
+	];
+	toolsTexts.forEach(text => {
+		const li = document.createElement('li');
+		li.textContent = text;
+		toolsList.append(li);
+	});
 
 	const stepsLabel = document.createElement('p');
 	stepsLabel.className = 'empty-state-description';
@@ -702,9 +724,10 @@ function buildEmptyStateSection(): HTMLElement {
 	const steps = document.createElement('ol');
 	steps.className = 'empty-state-steps';
 	const stepTexts = [
-		'Make sure the GitHub Copilot and GitHub Copilot Chat extensions are installed and active in VS Code.',
-		'Open the Copilot Chat panel (Ctrl+Alt+I / Cmd+Alt+I) and have a conversation with Copilot.',
-		'Click the 🔄 Refresh button above to reload the stats after chatting.',
+		'Use any of the supported tools or editors listed above to interact with an AI model.',
+		'For GitHub Copilot in VS Code: open the Copilot Chat panel (Ctrl+Alt+I / Cmd+Alt+I) and start a conversation.',
+		'For terminal agents (Claude Code, OpenCode, Copilot CLI): run a coding session in your terminal.',
+		'Click the 🔄 Refresh button above to reload the stats after your first session.',
 	];
 	stepTexts.forEach(text => {
 		const li = document.createElement('li');
@@ -713,10 +736,10 @@ function buildEmptyStateSection(): HTMLElement {
 	});
 
 	const note = el('div', 'empty-state-note',
-		'💡 If you have been using Copilot but still see no data, open the Diagnostics panel (🔍 Diagnostics button above) to verify that session files are being discovered correctly.'
+		'💡 If you have been using one of the supported tools but still see no data, open the Diagnostics panel (🔍 Diagnostics button above) to verify that session files are being discovered correctly.'
 	);
 
-	inner.append(title, desc, stepsLabel, steps, note);
+	inner.append(title, desc, toolsLabel, toolsList, stepsLabel, steps, note);
 	section.append(inner);
 	return section;
 }
