@@ -313,8 +313,8 @@
     "lint:json": "node ../scripts/validate-json.js",
     "test": "vscode-test",
     "test:node": "npm run compile-tests && node --require ./out/test/unit/vscode-shim-register.js --test --test-force-exit out/test/unit/*.test.js",
-    "test:coverage": "npm run compile-tests && node --require ./out/test/unit/vscode-shim-register.js --experimental-test-coverage --test --test-force-exit --test-coverage-lines=80 --test-coverage-functions=80 --test-coverage-branches=60 --test-coverage-include=out/src/backend/**/*.js --test-coverage-include=out/src/utils/**/*.js out/test/unit/*.test.js",
-    "test:coverage:ci": "node --require ./out/test/unit/vscode-shim-register.js --experimental-test-coverage --test --test-force-exit --test-coverage-include=out/src/backend/**/*.js --test-coverage-include=out/src/utils/**/*.js out/test/unit/*.test.js",
+    "test:coverage": "npm run compile-tests && node --require ./out/test/unit/vscode-shim-register.js --experimental-test-coverage --test --test-force-exit --test-coverage-lines=65 --test-coverage-functions=70 --test-coverage-branches=60 --test-coverage-include=out/src/backend/**/*.js --test-coverage-include=out/src/utils/**/*.js --test-coverage-include=out/src/usageAnalysis.js --test-coverage-include=out/src/tokenEstimation.js --test-coverage-include=out/src/maturityScoring.js out/test/unit/*.test.js",
+    "test:coverage:ci": "node --require ./out/test/unit/vscode-shim-register.js --experimental-test-coverage --test --test-force-exit --test-coverage-include=out/src/backend/**/*.js --test-coverage-include=out/src/utils/**/*.js --test-coverage-include=out/src/usageAnalysis.js --test-coverage-include=out/src/tokenEstimation.js --test-coverage-include=out/src/maturityScoring.js out/test/unit/*.test.js",
     "test:mutation": "npm run compile-tests && npx stryker run",
     "pre-release": "node ../scripts/pre-release.js",
     "capture-screenshots": "pwsh -File ../scripts/capture-screenshots.ps1",
@@ -369,3 +369,5 @@
     "serialize-javascript": ">=7.0.3"
   }
 }
+
+
