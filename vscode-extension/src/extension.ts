@@ -2,7 +2,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as https from 'https';
 import * as childProcess from 'child_process';
 import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
@@ -14,6 +13,14 @@ import { BackendCommandHandler } from './backend/commands';
 import * as packageJson from '../package.json';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { ConfirmationMessages } from "./backend/ui/messages";
+import {
+	detectAiType,
+	discoverGitHubRepos,
+	fetchRepoPrs,
+	type RepoPrDetail,
+	type RepoPrInfo,
+	type RepoPrStatsResult,
+} from './githubPrService';
 
 import type {
   TokenUsageStats,
@@ -139,31 +146,6 @@ type LocalViewRegressionCase = {
   dataPoints: LocalViewRegressionMetric[];
   reset: () => void;
   open: () => Promise<void>;
-};
-
-type RepoPrDetail = {
-  number: number;
-  title: string;
-  url: string;
-  aiType: 'copilot' | 'claude' | 'openai' | 'other-ai';
-  role: 'author' | 'reviewer-requested';
-};
-
-type RepoPrInfo = {
-  owner: string;
-  repo: string;
-  repoUrl: string;
-  totalPrs: number;
-  aiAuthoredPrs: number;
-  aiReviewRequestedPrs: number;
-  aiDetails: RepoPrDetail[];
-  error?: string;
-};
-
-type RepoPrStatsResult = {
-  repos: RepoPrInfo[];
-  authenticated: boolean;
-  since: string; // ISO date string
 };
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -1150,139 +1132,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return this.githubSession;
 	}
 
-	/** Detect which AI system a GitHub login belongs to, or null if not an AI bot. */
-	private detectAiType(login: string): RepoPrDetail['aiType'] | null {
-		const l = login.toLowerCase();
-		if (l.includes('copilot')) { return 'copilot'; }
-		if (l.includes('claude') || l.includes('anthropic')) { return 'claude'; }
-		if (l.includes('openai') || l.includes('codex')) { return 'openai'; }
-		return null;
-	}
-
-	/**
-	 * Discover GitHub repos from known session workspace folders.
-	 * Deduplicates by owner/repo so each GitHub repo is only fetched once.
-	 */
-	private async discoverGitHubRepos(): Promise<{ owner: string; repo: string }[]> {
-		const workspacePaths: string[] = [];
-
-		const matrix = this._lastCustomizationMatrix;
-		if (matrix && matrix.workspaces.length > 0) {
-			for (const ws of matrix.workspaces) {
-				if (!ws.workspacePath.startsWith('<unresolved:')) {
-					workspacePaths.push(ws.workspacePath);
-				}
-			}
-		}
-		// Also include currently open VS Code workspace folders
-		for (const folder of vscode.workspace.workspaceFolders ?? []) {
-			const p = folder.uri.fsPath;
-			if (!workspacePaths.includes(p)) {
-				workspacePaths.push(p);
-			}
-		}
-
-		const seen = new Set<string>();
-		const repos: { owner: string; repo: string }[] = [];
-		for (const workspacePath of workspacePaths) {
-			try {
-				const remote = childProcess.execSync('git remote get-url origin', {
-					cwd: workspacePath,
-					encoding: 'utf8',
-					timeout: 3000,
-					stdio: ['pipe', 'pipe', 'pipe'],
-				}).trim();
-				// Only process github.com remotes
-				const match = remote.match(/github\.com[:/]([^/]+)\/([^/\s]+?)(?:\.git)?$/i);
-				if (!match) { continue; }
-				const key = `${match[1]}/${match[2]}`.toLowerCase();
-				if (seen.has(key)) { continue; }
-				seen.add(key);
-				repos.push({ owner: match[1], repo: match[2] });
-			} catch {
-				// Not a git repo or no remote — skip
-			}
-		}
-		return repos;
-	}
-
-	/** Fetch a single page of PRs from GitHub REST API. */
-	private fetchRepoPrsPage(
-		owner: string,
-		repo: string,
-		token: string,
-		page: number,
-	): Promise<{ prs: any[]; statusCode?: number; error?: string }> {
-		return new Promise((resolve) => {
-			const req = https.request(
-				{
-					hostname: 'api.github.com',
-					path: `/repos/${owner}/${repo}/pulls?state=all&per_page=100&sort=created&direction=desc&page=${page}`,
-					headers: {
-						Authorization: `Bearer ${token}`,
-						'User-Agent': 'copilot-token-tracker',
-						Accept: 'application/vnd.github.v3+json',
-					},
-				},
-				(res) => {
-					let data = '';
-					res.on('data', (chunk) => (data += chunk));
-					res.on('end', () => {
-						try {
-							const parsed = JSON.parse(data);
-							if (!Array.isArray(parsed)) {
-								resolve({ prs: [], statusCode: res.statusCode, error: parsed.message ?? 'Unexpected API response' });
-							} else {
-								resolve({ prs: parsed, statusCode: res.statusCode });
-							}
-						} catch (e) {
-							resolve({ prs: [], statusCode: res.statusCode, error: String(e) });
-						}
-					});
-				},
-			);
-			req.on('error', (e) => resolve({ prs: [], error: e.message }));
-			req.setTimeout(15000, () => {
-				req.destroy(new Error('Request timed out after 15 s'));
-			});
-			req.end();
-		});
-	}
-
-	/** Fetch all PRs from the last 30 days for a repo, paginating as needed. */
-	private async fetchRepoPrs(
-		owner: string,
-		repo: string,
-		token: string,
-		since: Date,
-	): Promise<{ prs: any[]; error?: string }> {
-		const allPrs: any[] = [];
-		const MAX_PAGES = 5; // Cap at 500 PRs per repo
-		for (let page = 1; page <= MAX_PAGES; page++) {
-			const { prs, statusCode, error } = await this.fetchRepoPrsPage(owner, repo, token, page);
-			if (error) {
-				const msg = statusCode === 404
-					? 'Repo not found or not accessible with current token'
-					: statusCode === 403
-					? (error || 'Access denied (private repo requires additional permissions)')
-					: error;
-				return { prs: allPrs, error: msg };
-			}
-			if (prs.length === 0) { break; }
-			for (const pr of prs) {
-				if (new Date(pr.created_at) >= since) {
-					allPrs.push(pr);
-				}
-			}
-			// Stop paginating when the oldest PR on this page is before our window
-			const oldest = prs[prs.length - 1];
-			if (new Date(oldest.created_at) < since || prs.length < 100) {
-				break;
-			}
-		}
-		return { prs: allPrs };
-	}
-
 	/** Load PR stats for all discovered GitHub repos and send results to the analysis panel. */
 	private async loadRepoPrStats(): Promise<void> {
 		if (!this.analysisPanel) { return; }
@@ -1316,13 +1165,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.log(`✅ GitHub session synced from existing VS Code auth: ${session.account.label}`);
 		}
 
-		const repos = await this.discoverGitHubRepos();
+		const workspacePaths = this._buildWorkspacePaths();
+		const repos = discoverGitHubRepos(workspacePaths);
 		this.analysisPanel.webview.postMessage({ command: 'repoPrStatsProgress', total: repos.length, done: 0 });
 
 		const results: RepoPrInfo[] = [];
 		for (let i = 0; i < repos.length; i++) {
 			const { owner, repo } = repos[i];
-			const { prs, error } = await this.fetchRepoPrs(owner, repo, session.accessToken, since);
+			const { prs, error } = await fetchRepoPrs(owner, repo, session.accessToken, since);
 
 			let totalPrs = 0;
 			let aiAuthoredPrs = 0;
@@ -1332,13 +1182,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (!error) {
 				totalPrs = prs.length;
 				for (const pr of prs) {
-					const authorAi = this.detectAiType(pr.user?.login ?? '');
+					const authorAi = detectAiType(pr.user?.login ?? '');
 					if (authorAi) {
 						aiAuthoredPrs++;
 						aiDetails.push({ number: pr.number, title: pr.title, url: pr.html_url, aiType: authorAi, role: 'author' });
 					}
 					for (const reviewer of (pr.requested_reviewers ?? [])) {
-						const reviewerAi = this.detectAiType(reviewer.login ?? '');
+						const reviewerAi = detectAiType(reviewer.login ?? '');
 						if (reviewerAi) {
 							aiReviewRequestedPrs++;
 							aiDetails.push({ number: pr.number, title: pr.title, url: pr.html_url, aiType: reviewerAi, role: 'reviewer-requested' });
@@ -1364,6 +1214,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const result: RepoPrStatsResult = { repos: results, authenticated: true, since: since.toISOString() };
 		this._lastRepoPrStats = result;
 		this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+	}
+
+	/** Collect workspace paths from the customization matrix and currently open VS Code workspace folders. */
+	private _buildWorkspacePaths(): string[] {
+		const workspacePaths: string[] = [];
+		const matrix = this._lastCustomizationMatrix;
+		if (matrix && matrix.workspaces.length > 0) {
+			for (const ws of matrix.workspaces) {
+				if (!ws.workspacePath.startsWith('<unresolved:')) {
+					workspacePaths.push(ws.workspacePath);
+				}
+			}
+		}
+		for (const folder of vscode.workspace.workspaceFolders ?? []) {
+			const p = folder.uri.fsPath;
+			if (!workspacePaths.includes(p)) {
+				workspacePaths.push(p);
+			}
+		}
+		return workspacePaths;
 	}
 
 	/**
