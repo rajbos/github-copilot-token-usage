@@ -1,6 +1,6 @@
 # AI Engineering Fluency — VS Code Extension
 
-![AI Engineering Fluency](../assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
+![AI Engineering Fluency](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
 
 Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and productivity insights directly inside VS Code. Reads local session logs and displays today's and monthly usage in the status bar, with rich detail views and optional cloud sync.
 
