@@ -1,5 +1,4 @@
 ---
-mode: 'agent'
 description: 'Review and improve the automatic vs intentional tool classification in src/automaticTools.json.'
 tools: ['read_file', 'write_file', 'search_files']
 ---

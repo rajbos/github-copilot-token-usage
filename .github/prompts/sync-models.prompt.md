@@ -1,7 +1,6 @@
 ---
-mode: 'agent'
 description: 'Update src/tokenEstimators.json and src/modelPricing.json with missing models found in GitHub Copilot documentation.'
-tools: ['fetch', 'read_file', 'write_file', 'search_files']
+tools: ['web/fetch', 'read_file', 'write_file', 'search_files']
 ---
 
 # Sync Copilot Model Data
