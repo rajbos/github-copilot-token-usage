@@ -11,6 +11,7 @@ import type { ContinueDataAccess } from './continue';
 import type { VisualStudioDataAccess } from "./visualstudio";
 import type { ClaudeCodeDataAccess } from './claudecode';
 import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
+import type { MistralVibeDataAccess } from './mistralvibe';
 
 export interface SessionDiscoveryDeps {
 	log: (message: string) => void;
@@ -22,6 +23,7 @@ export interface SessionDiscoveryDeps {
 	visualStudio: VisualStudioDataAccess;
 	claudeCode: ClaudeCodeDataAccess;
 	claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
+	mistralVibe: MistralVibeDataAccess;
 	sampleDataDirectoryOverride?: () => string | undefined;
 }
 
@@ -200,6 +202,12 @@ export class SessionDiscovery {
 			try { coworkExists = fs.existsSync(coworkBaseDir); } catch { /* ignore */ }
 			candidates.push({ path: coworkBaseDir, exists: coworkExists, source: 'Claude Desktop (Cowork)' });
 		}
+
+		// Mistral Vibe sessions directory
+		const vibeSessionLogDir = this.deps.mistralVibe.getSessionLogDir();
+		let vibeExists = false;
+		try { vibeExists = fs.existsSync(vibeSessionLogDir); } catch { /* ignore */ }
+		candidates.push({ path: vibeSessionLogDir, exists: vibeExists, source: 'Mistral Vibe' });
 
 		return candidates;
 	}
@@ -522,6 +530,17 @@ export class SessionDiscovery {
 				}
 			} catch (coworkError) {
 				this.deps.warn(`Could not read Claude Desktop Cowork session files: ${coworkError}`);
+			}
+
+			// Check for Mistral Vibe session files (~/.vibe/logs/session/**/meta.json)
+			try {
+				const vibeFiles = this.deps.mistralVibe.discoverSessions();
+				if (vibeFiles.length > 0) {
+					this.deps.log(`📄 Found ${vibeFiles.length} session file(s) in Mistral Vibe (~/.vibe/logs/session)`);
+					sessionFiles.push(...vibeFiles);
+				}
+			} catch (vibeError) {
+				this.deps.warn(`Could not read Mistral Vibe session files: ${vibeError}`);
 			}
 
 			// Log summary
