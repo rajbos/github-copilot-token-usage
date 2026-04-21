@@ -1,0 +1,39 @@
+services:
+  sharing-server:
+    build: .
+    image: ghcr.io/rajbos/copilot-sharing-server:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Required: GitHub OAuth App credentials for the web dashboard login
+      # Create one at https://github.com/settings/developers
+      # Set Homepage URL to your server's base URL and Callback URL to <BASE_URL>/auth/github/callback
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:?Missing GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:?Missing GITHUB_CLIENT_SECRET}
+
+      # Required: random secret for signing session cookies
+      # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      - SESSION_SECRET=${SESSION_SECRET:?Missing SESSION_SECRET}
+
+      # Required: base URL of this server (used in OAuth redirect URI)
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+
+      # Optional: restrict uploads and dashboard access to members of a GitHub org
+      # Leave empty or omit to allow any GitHub user
+      - ALLOWED_GITHUB_ORG=${ALLOWED_GITHUB_ORG:-}
+
+      - NODE_ENV=production
+      - DATA_DIR=/data
+      - PORT=3000
+    volumes:
+      - sharing-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  sharing-data:

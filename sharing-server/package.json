@@ -1,0 +1,31 @@
+{
+  "name": "@rajbos/copilot-sharing-server",
+  "version": "0.1.0",
+  "description": "Self-hosted sharing server for GitHub Copilot Token Tracker — accepts daily usage uploads from VS Code via GitHub OAuth tokens",
+  "license": "MIT",
+  "author": "RobBos",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rajbos/github-copilot-token-usage.git",
+    "directory": "sharing-server"
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "build:production": "node esbuild.js --production",
+    "start": "node dist/server.js",
+    "dev": "node --watch dist/server.js",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

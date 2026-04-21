@@ -8,10 +8,11 @@
     Projects:
       vscode-extension  – VS Code extension (TypeScript / Node.js)
       cli               – Command-line tool  (TypeScript / Node.js)
+      sharing           – Self-hosted sharing server (TypeScript / Node.js)
       visualstudio-extension – Visual Studio extension (C# / .NET)   [future]
 
 .PARAMETER Project
-    Which project(s) to build.  Accepts: all | vscode | cli | visualstudio
+    Which project(s) to build.  Accepts: all | vscode | cli | sharing | visualstudio
     Default: all
 
 .PARAMETER Target
@@ -28,7 +29,7 @@
 #>
 
 param(
-    [ValidateSet('all', 'vscode', 'cli', 'visualstudio')]
+    [ValidateSet('all', 'vscode', 'cli', 'visualstudio', 'sharing')]
     [string] $Project = 'all',
 
     [ValidateSet('build', 'package', 'test', 'clean')]
@@ -195,16 +196,34 @@ function Build-VisualStudio {
 }
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Sharing Server
 # ---------------------------------------------------------------------------
+function Build-Sharing {
+    Write-Step "sharing-server: $Target"
+    Push-Location "$PSScriptRoot/sharing-server"
+    try {
+        switch ($Target) {
+            'build'   { npm ci; npm run build }
+            'package' { npm ci; npm run build:production }
+            'test'    { Write-Host "    (no sharing-server tests yet)" }
+            'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
+        }
+        Write-Ok "sharing-server done."
+    }
+    finally { Pop-Location }
+}
+
+
 switch ($Project) {
     'all' {
         Build-VsCode
         Build-Cli
+        Build-Sharing
         Build-VisualStudio
     }
     'vscode'      { Build-VsCode }
     'cli'         { Build-Cli }
+    'sharing'     { Build-Sharing }
     'visualstudio'{ Build-VisualStudio }
 }
 
