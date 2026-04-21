@@ -45,9 +45,11 @@ import type { ClaudeCodeDataAccess } from './claudecode';
 import { normalizeClaudeModelId } from './claudecode';
 import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 import type { MistralVibeDataAccess } from './mistralvibe';
+import type { IEcosystemAdapter } from './ecosystemAdapter';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
+	ecosystems?: IEcosystemAdapter[];
 	openCode: OpenCodeDataAccess;
 	crush?: CrushDataAccess;
 	continue_: ContinueDataAccess;
@@ -1709,42 +1711,49 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'claudeDesktopCowork' | 'mistralVibe' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'claudeDesktopCowork' | 'mistralVibe' | 'tokenEstimators' | 'modelPricing' | 'ecosystems'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
-	// Handle OpenCode sessions
-	if (deps.openCode.isOpenCodeSessionFile(sessionFile)) {
-		return await deps.openCode.getOpenCodeModelUsage(sessionFile);
-	}
+	// Use adapter registry when available — single dispatch replaces all per-ecosystem if-blocks
+	if (deps.ecosystems) {
+		const eco = deps.ecosystems.find(e => e.handles(sessionFile));
+		if (eco) { return eco.getModelUsage(sessionFile); }
+	} else {
+		// Legacy fallback for callers that haven't been updated to pass ecosystems
+		// Handle OpenCode sessions
+		if (deps.openCode.isOpenCodeSessionFile(sessionFile)) {
+			return await deps.openCode.getOpenCodeModelUsage(sessionFile);
+		}
 
-	// Handle Visual Studio sessions
-	if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
-		return deps.visualStudio.getModelUsage(sessionFile, (text, model) => estimateTokensFromText(text, model ?? undefined, deps.tokenEstimators));
-	}
+		// Handle Visual Studio sessions
+		if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
+			return deps.visualStudio.getModelUsage(sessionFile, (text, model) => estimateTokensFromText(text, model ?? undefined, deps.tokenEstimators));
+		}
 
-	// Handle Crush sessions
-	if (deps.crush?.isCrushSessionFile(sessionFile)) {
-		return await deps.crush.getCrushModelUsage(sessionFile);
-	}
+		// Handle Crush sessions
+		if (deps.crush?.isCrushSessionFile(sessionFile)) {
+			return await deps.crush.getCrushModelUsage(sessionFile);
+		}
 
-	// Handle Continue sessions
-	if (deps.continue_.isContinueSessionFile(sessionFile)) {
-		return deps.continue_.getContinueModelUsage(sessionFile);
-	}
+		// Handle Continue sessions
+		if (deps.continue_.isContinueSessionFile(sessionFile)) {
+			return deps.continue_.getContinueModelUsage(sessionFile);
+		}
 
-	// Handle Claude Desktop Cowork sessions
-	if (deps.claudeDesktopCowork?.isCoworkSessionFile(sessionFile)) {
-		return deps.claudeDesktopCowork.getCoworkModelUsage(sessionFile);
-	}
+		// Handle Claude Desktop Cowork sessions
+		if (deps.claudeDesktopCowork?.isCoworkSessionFile(sessionFile)) {
+			return deps.claudeDesktopCowork.getCoworkModelUsage(sessionFile);
+		}
 
-	// Handle Claude Code sessions
-	if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
-		return deps.claudeCode.getClaudeCodeModelUsage(sessionFile);
-	}
+		// Handle Claude Code sessions
+		if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
+			return deps.claudeCode.getClaudeCodeModelUsage(sessionFile);
+		}
 
-	// Handle Mistral Vibe sessions
-	if (deps.mistralVibe?.isVibeSessionFile(sessionFile)) {
-		return deps.mistralVibe.getModelUsage(sessionFile);
+		// Handle Mistral Vibe sessions
+		if (deps.mistralVibe?.isVibeSessionFile(sessionFile)) {
+			return deps.mistralVibe.getModelUsage(sessionFile);
+		}
 	}
 
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;

@@ -14,6 +14,8 @@ import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio'
 import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
 import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claudedesktop';
 import { MistralVibeDataAccess } from '../../vscode-extension/src/mistralvibe';
+import type { IEcosystemAdapter } from '../../vscode-extension/src/ecosystemAdapter';
+import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter } from '../../vscode-extension/src/adapters';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
@@ -87,6 +89,17 @@ const _claudeCodeInstance = createClaudeCode();
 const _claudeDesktopCoworkInstance = createClaudeDesktopCowork();
 const _mistralVibeInstance = createMistralVibe();
 
+/** Ordered registry of ecosystem adapters — first match wins. */
+const _ecosystems: IEcosystemAdapter[] = [
+	new OpenCodeAdapter(_openCodeInstance),
+	new CrushAdapter(_crushInstance),
+	new VisualStudioAdapter(_visualStudioInstance, (t, m) => estimateTokensFromText(t, m ?? 'gpt-4', tokenEstimators)),
+	new ContinueAdapter(_continueInstance),
+	new ClaudeDesktopAdapter(_claudeDesktopCoworkInstance),
+	new ClaudeCodeAdapter(_claudeCodeInstance),
+	new MistralVibeAdapter(_mistralVibeInstance),
+];
+
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
 	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance, claudeDesktopCowork: _claudeDesktopCoworkInstance, mistralVibe: _mistralVibeInstance });
@@ -119,31 +132,12 @@ function resolveModel(request: any): string {
 }
 
 /**
- * Check if a session file path is an OpenCode DB virtual path.
- */
-function isOpenCodeDbSession(filePath: string): boolean {
-	return filePath.includes('opencode.db#ses_');
-}
-
-/**
- * Check if a session file path is a Crush DB virtual path.
- */
-function isCrushSessionFile(filePath: string): boolean {
-	return _crushInstance.isCrushSessionFile(filePath);
-}
-
-/**
  * Stat a session file, handling DB virtual paths (OpenCode and Crush).
  * Virtual DB paths are resolved to the actual DB file.
  */
 async function statSessionFile(filePath: string): Promise<fs.Stats> {
-	if (isCrushSessionFile(filePath)) {
-		return _crushInstance.statSessionFile(filePath);
-	}
-	if (isOpenCodeDbSession(filePath)) {
-		const dbPath = filePath.split('#')[0];
-		return fs.promises.stat(dbPath);
-	}
+	const eco = _ecosystems.find(e => e.handles(filePath));
+	if (eco) { return eco.stat(filePath); }
 	return fs.promises.stat(filePath);
 }
 
@@ -210,111 +204,25 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			return cached;
 		}
 
-		// Handle Crush DB virtual paths directly via the crush module
-		if (isCrushSessionFile(filePath)) {
-			const result = await _crushInstance.getTokensFromCrushSession(filePath);
-			const interactions = await _crushInstance.countCrushInteractions(filePath);
-			const modelUsage = await _crushInstance.getCrushModelUsage(filePath);
-const crushResult: SessionData = {
-			file: filePath,
-			tokens: result.tokens,
-			thinkingTokens: result.thinkingTokens,
-			interactions,
-			modelUsage,
-			lastModified: stats.mtime,
-			editorSource: getEditorSourceFromPath(filePath),
-		};
-			setCached(filePath, stats.mtimeMs, stats.size, crushResult);
-			return crushResult;
-		}
-
-		// Handle OpenCode DB virtual paths directly via the opencode module
-		if (isOpenCodeDbSession(filePath)) {
-			const result = await _openCodeInstance.getTokensFromOpenCodeSession(filePath);
-			const interactions = await _openCodeInstance.countOpenCodeInteractions(filePath);
-			const modelUsage = await _openCodeInstance.getOpenCodeModelUsage(filePath);
-			const openCodeResult: SessionData = {
+		// Dispatch to ecosystem adapters (OpenCode, Crush, VS, Continue, ClaudeDesktop, ClaudeCode, MistralVibe)
+		const eco = _ecosystems.find(e => e.handles(filePath));
+		if (eco) {
+			const [tokenResult, interactions, modelUsage] = await Promise.all([
+				eco.getTokens(filePath),
+				eco.countInteractions(filePath),
+				eco.getModelUsage(filePath),
+			]);
+			const ecoResult: SessionData = {
 				file: filePath,
-				tokens: result.tokens,
-				thinkingTokens: result.thinkingTokens,
+				tokens: tokenResult.tokens,
+				thinkingTokens: tokenResult.thinkingTokens,
 				interactions,
 				modelUsage,
 				lastModified: stats.mtime,
 				editorSource: getEditorSourceFromPath(filePath),
 			};
-			setCached(filePath, stats.mtimeMs, stats.size, openCodeResult);
-			return openCodeResult;
-		}
-
-                // Handle Visual Studio session files (binary MessagePack)
-                if (_visualStudioInstance.isVSSessionFile(filePath)) {
-                        const result = _visualStudioInstance.getTokenEstimates(filePath, estimateTokens);
-                        const objects = _visualStudioInstance.decodeSessionFile(filePath);
-                        const interactions = _visualStudioInstance.countInteractions(objects);
-                        const modelUsage = _visualStudioInstance.getModelUsage(filePath, estimateTokens);
-                        const vsResult: SessionData = {
-                                file: filePath,
-                                tokens: result.tokens,
-                                thinkingTokens: result.thinkingTokens,
-                                interactions,
-                                modelUsage,
-                                lastModified: stats.mtime,
-                                editorSource: getEditorSourceFromPath(filePath),
-                        };
-                        setCached(filePath, stats.mtimeMs, stats.size, vsResult);
-                        return vsResult;
-                }
-
-		// Handle Claude Desktop Cowork sessions (JSONL with actual Anthropic API token counts)
-		if (_claudeDesktopCoworkInstance.isCoworkSessionFile(filePath)) {
-			const result = _claudeDesktopCoworkInstance.getTokensFromCoworkSession(filePath);
-			const interactions = _claudeDesktopCoworkInstance.countCoworkInteractions(filePath);
-			const modelUsage = _claudeDesktopCoworkInstance.getCoworkModelUsage(filePath);
-			const coworkResult: SessionData = {
-				file: filePath,
-				tokens: result.tokens,
-				thinkingTokens: result.thinkingTokens,
-				interactions,
-				modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-			};
-			setCached(filePath, stats.mtimeMs, stats.size, coworkResult);
-			return coworkResult;
-		}
-
-		// Handle Claude Code sessions (JSONL with actual Anthropic API token counts)
-		if (_claudeCodeInstance.isClaudeCodeSessionFile(filePath)) {
-			const result = _claudeCodeInstance.getTokensFromClaudeCodeSession(filePath);
-			const interactions = _claudeCodeInstance.countClaudeCodeInteractions(filePath);
-			const modelUsage = _claudeCodeInstance.getClaudeCodeModelUsage(filePath);
-			const claudeResult: SessionData = {
-				file: filePath,
-				tokens: result.tokens,
-				thinkingTokens: result.thinkingTokens,
-				interactions,
-				modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-			};
-			setCached(filePath, stats.mtimeMs, stats.size, claudeResult);
-			return claudeResult;
-		}
-
-		// Handle Mistral Vibe sessions (JSON meta.json with actual token counts in stats)
-		if (_mistralVibeInstance.isVibeSessionFile(filePath)) {
-			const sessionData = _mistralVibeInstance.getSessionData(filePath);
-			const vibeResult: SessionData = {
-				file: filePath,
-				tokens: sessionData.tokens,
-				thinkingTokens: 0,
-				interactions: sessionData.interactions,
-				modelUsage: sessionData.modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-			};
-			setCached(filePath, stats.mtimeMs, stats.size, vibeResult);
-			return vibeResult;
+			setCached(filePath, stats.mtimeMs, stats.size, ecoResult);
+			return ecoResult;
 		}
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');
@@ -514,6 +422,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promi
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,
+		ecosystems: _ecosystems,
 	};
 
 	const now = new Date();

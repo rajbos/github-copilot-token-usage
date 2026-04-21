@@ -65,6 +65,16 @@ import { ContinueDataAccess } from './continue';
 import { ClaudeCodeDataAccess } from './claudecode';
 import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 import { MistralVibeDataAccess } from './mistralvibe';
+import type { IEcosystemAdapter } from './ecosystemAdapter';
+import {
+	OpenCodeAdapter,
+	CrushAdapter,
+	ContinueAdapter,
+	ClaudeDesktopAdapter,
+	ClaudeCodeAdapter,
+	VisualStudioAdapter,
+	MistralVibeAdapter,
+} from './adapters';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -170,10 +180,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
 	private mistralVibe: MistralVibeDataAccess;
+	private readonly ecosystems: IEcosystemAdapter[];
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, mistralVibe: this.mistralVibe, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, mistralVibe: this.mistralVibe, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -312,24 +323,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return _getEditorTypeFromPath(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
 	}
 
+	/** Returns the first adapter that claims this session file, or null for Copilot Chat sessions. */
+	private findEcosystem(sessionFile: string): IEcosystemAdapter | null {
+		return this.ecosystems.find(e => e.handles(sessionFile)) ?? null;
+	}
+
 	/**
 	 * Stat a session file, handling virtual paths for both OpenCode and Crush.
 	 * Must be used instead of fs.promises.stat() directly.
 	 */
 	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			return this.visualStudio.statSessionFile(sessionFile);
-		}
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			return this.visualStudio.statSessionFile(sessionFile);
-		}
-		if (this.crush.isCrushSessionFile(sessionFile)) {
-			return this.crush.statSessionFile(sessionFile);
-		}
-		if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
-			return fs.promises.stat(sessionFile);
-		}
-		return this.openCode.statSessionFile(sessionFile);
+		const eco = this.findEcosystem(sessionFile);
+		if (eco) { return eco.stat(sessionFile); }
+		return fs.promises.stat(sessionFile);
 	}
 
 	/**
@@ -841,6 +847,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.claudeCode = new ClaudeCodeDataAccess();
 		this.claudeDesktopCowork = new ClaudeDesktopCoworkDataAccess();
 		this.mistralVibe = new MistralVibeDataAccess();
+		this.ecosystems = [
+			new OpenCodeAdapter(this.openCode),
+			new CrushAdapter(this.crush),
+			new VisualStudioAdapter(this.visualStudio, (t, m) => this.estimateTokensFromText(t, m)),
+			new ContinueAdapter(this.continue_),
+			new ClaudeDesktopAdapter(this.claudeDesktopCowork),
+			new ClaudeCodeAdapter(this.claudeCode),
+			new MistralVibeAdapter(this.mistralVibe),
+		];
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({
 			log: (m) => this.log(m),
@@ -2434,41 +2449,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async countInteractionsInSession(sessionFile: string, preloadedContent?: string): Promise<number> {
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				return await this.openCode.countOpenCodeInteractions(sessionFile);
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				return this.visualStudio.countInteractions(objects);
-			}
-
-			// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				return await this.crush.countCrushInteractions(sessionFile);
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				return this.continue_.countContinueInteractions(sessionFile);
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				return this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
-			}
-
-			// Handle Claude Code sessions
-			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
-				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
-			}
-
-			// Handle Mistral Vibe sessions
-			if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
-				return this.mistralVibe.countInteractions(sessionFile);
-			}
+			const eco = this.findEcosystem(sessionFile);
+			if (eco) { return eco.countInteractions(sessionFile); }
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
@@ -2616,120 +2598,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const timestamps: number[] = [];
 
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				// Read session metadata from DB or JSON file
-				let session: any = null;
-				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
-				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
-					session = await this.openCode.readOpenCodeDbSession(sessionId);
-				} else {
-					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-					session = JSON.parse(fileContent);
-				}
-				if (session) {
-					title = session.title || session.slug;
-					if (session.time?.created) { timestamps.push(session.time.created); }
-					if (session.time?.updated) { timestamps.push(session.time.updated); }
-				}
-				// Also check message timestamps for more precision
-				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
-				for (const msg of messages) {
-					if (msg.time?.created) { timestamps.push(msg.time.created); }
-					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
-				}
-				let firstInteraction: string | null = null;
-				let lastInteraction: string | null = null;
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					firstInteraction = new Date(timestamps[0]).toISOString();
-					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				const vsTitle = this.visualStudio.getSessionTitle(objects);
-				if (vsTitle) { title = vsTitle; }
-				const vsTs = this.visualStudio.getSessionTimestamps(objects);
-				if (vsTs.timeCreated) { timestamps.push(new Date(vsTs.timeCreated).getTime()); }
-				if (vsTs.timeUpdated) { timestamps.push(new Date(vsTs.timeUpdated).getTime()); }
-				const firstInteraction = timestamps.length > 0 ? new Date(Math.min(...timestamps)).toISOString() : null;
-				const lastInteraction = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				const session = await this.crush.readCrushSession(sessionFile);
-				if (session) {
-					title = session.title || undefined;
-					if (session.created_at) { timestamps.push(session.created_at * 1000); } // epoch seconds → ms
-					if (session.updated_at) { timestamps.push(session.updated_at * 1000); }
-				}
-				// Also pull message timestamps for precision
-				const messages = await this.crush.getCrushMessages(sessionFile);
-				for (const msg of messages) {
-					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
-					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
-				}
-				let firstInteraction: string | null = null;
-				let lastInteraction: string | null = null;
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					firstInteraction = new Date(timestamps[0]).toISOString();
-					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				const meta = this.continue_.getContinueSessionMeta(sessionFile);
-				title = meta?.title;
-				const sessionId = this.continue_.getContinueSessionId(sessionFile);
-				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
-				let firstInteraction: string | null = null;
-				let lastInteraction: string | null = null;
-				if (indexEntry?.dateCreated) {
-					firstInteraction = new Date(indexEntry.dateCreated).toISOString();
-					const fileStat = await fs.promises.stat(sessionFile);
-					lastInteraction = fileStat.mtime.toISOString();
-				}
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				const meta = this.claudeDesktopCowork.getCoworkSessionMeta(sessionFile);
-				return {
-					title: meta?.title,
-					firstInteraction: meta?.firstInteraction || null,
-					lastInteraction: meta?.lastInteraction || null,
-				};
-			}
-
-			// Handle Claude Code sessions
-			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
-				const meta = this.claudeCode.getClaudeCodeSessionMeta(sessionFile);
-				return {
-					title: meta?.title,
-					firstInteraction: meta?.firstInteraction || null,
-					lastInteraction: meta?.lastInteraction || null,
-				};
-			}
-
-			// Handle Mistral Vibe sessions
-			if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
-				const meta = this.mistralVibe.getSessionMeta(sessionFile);
-				return {
-					title: meta?.title,
-					firstInteraction: meta?.firstInteraction || null,
-					lastInteraction: meta?.lastInteraction || null,
-				};
-			}
+			const eco = this.findEcosystem(sessionFile);
+			if (eco) { return eco.getMeta(sessionFile); }
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
@@ -2839,13 +2709,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Pre-read file content once for regular Copilot Chat files to avoid 5 redundant reads
 		let preloadedContent: string | undefined;
-		const isSpecialSession =
-			this.openCode.isOpenCodeSessionFile(sessionFilePath) ||
-			this.visualStudio.isVSSessionFile(sessionFilePath) ||
-			this.crush.isCrushSessionFile(sessionFilePath) ||
-			this.continue_.isContinueSessionFile(sessionFilePath) ||
-			this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath) ||
-			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath);
+		const isSpecialSession = this.findEcosystem(sessionFilePath) !== null;
 		if (!isSpecialSession) {
 			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 		}
@@ -2942,35 +2806,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Enriches the details object with editorRoot and editorName properties.
 	 */
 	private enrichDetailsWithEditorInfo(sessionFile: string, details: SessionFileDetails): void {
-		// OpenCode and Crush sessions have their own editorRoot/editorName logic — skip path splitting
-		if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-			details.editorRoot = this.openCode.getOpenCodeDataDir();
-			details.editorName = 'OpenCode';
-			return;
-		}
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			details.editorRoot = path.dirname(sessionFile);
-			details.editorName = 'Visual Studio';
-			return;
-		}
-		if (this.crush.isCrushSessionFile(sessionFile)) {
-			details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
-			details.editorName = 'Crush';
-			return;
-		}
-		if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-			details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
-			details.editorName = 'Claude Desktop Cowork';
-			return;
-		}
-		if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
-			details.editorRoot = this.claudeCode.getClaudeCodeProjectsDir();
-			details.editorName = 'Claude Code';
-			return;
-		}
-		if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
-			details.editorRoot = this.mistralVibe.getSessionLogDir();
-			details.editorName = 'Mistral Vibe';
+		const eco = this.findEcosystem(sessionFile);
+		if (eco) {
+			details.editorRoot = eco.getEditorRoot(sessionFile);
+			details.editorName = eco.displayName;
 			return;
 		}
 		try {
@@ -3144,120 +2983,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.enrichDetailsWithEditorInfo(sessionFile, details);
 
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				// Read session metadata from DB or JSON file
-				let session: any = null;
-				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
-				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
-					session = await this.openCode.readOpenCodeDbSession(sessionId);
-				} else {
-					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-					session = JSON.parse(fileContent);
+			// Handle all non-Copilot-Chat ecosystems via adapter dispatch
+			const eco = this.findEcosystem(sessionFile);
+			if (eco) {
+				const meta = await eco.getMeta(sessionFile);
+				details.title = meta.title;
+				details.firstInteraction = meta.firstInteraction;
+				details.lastInteraction = meta.lastInteraction;
+				details.interactions = await eco.countInteractions(sessionFile);
+				details.editorRoot = eco.getEditorRoot(sessionFile);
+				details.editorName = eco.displayName;
+				if (meta.workspacePath) {
+					details.repository = path.basename(meta.workspacePath);
 				}
-				if (session) {
-					details.title = session.title || session.slug;
-				}
-				details.interactions = await this.openCode.countOpenCodeInteractions(sessionFile);
-				const timestamps: number[] = [];
-				if (session?.time?.created) { timestamps.push(session.time.created); }
-				if (session?.time?.updated) { timestamps.push(session.time.updated); }
-				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
-				for (const msg of messages) {
-					if (msg.time?.created) { timestamps.push(msg.time.created); }
-					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
-				}
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				// Set editor info for OpenCode
-				details.editorRoot = this.openCode.getOpenCodeDataDir();
-				details.editorName = 'OpenCode';
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				details.editorSource = 'Visual Studio';
-				details.editorName = 'Visual Studio';
-				details.title = this.visualStudio.getSessionTitle(objects);
-				details.interactions = this.visualStudio.countInteractions(objects);
-				const vsMeta = this.visualStudio.getSessionTimestamps(objects);
-				if (vsMeta.timeCreated) { details.firstInteraction = new Date(vsMeta.timeCreated).toISOString(); }
-				if (vsMeta.timeUpdated) { details.lastInteraction = new Date(vsMeta.timeUpdated).toISOString(); }
-				this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				const session = await this.crush.readCrushSession(sessionFile);
-				if (session) {
-					details.title = session.title || undefined;
-				}
-				details.interactions = await this.crush.countCrushInteractions(sessionFile);
-				const timestamps: number[] = [];
-				if (session?.created_at) { timestamps.push(session.created_at * 1000); }
-				if (session?.updated_at) { timestamps.push(session.updated_at * 1000); }
-				const messages = await this.crush.getCrushMessages(sessionFile);
-				for (const msg of messages) {
-					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
-					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
-				}
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
-				details.editorName = 'Crush';
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				const meta = this.continue_.getContinueSessionMeta(sessionFile);
-				if (meta) {
-					details.title = meta.title;
-					if (meta.workspaceDirectory) {
-						// workspaceDirectory is a file URI like file:///c%3A/Users/.../repo-name
-						try {
-							const wsPath = decodeURIComponent(meta.workspaceDirectory.replace(/^file:\/\/\//, '').replace(/^file:\/\//, ''));
-							details.repository = require('path').basename(wsPath);
-						} catch { /* ignore */ }
-					}
-				}
-				details.interactions = this.continue_.countContinueInteractions(sessionFile);
-				details.editorRoot = this.continue_.getContinueDataDir();
-				details.editorName = 'Continue';
-				// Use dateCreated from sessions.json index for accurate timestamps
-				const sessionId = this.continue_.getContinueSessionId(sessionFile);
-				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
-				if (indexEntry?.dateCreated) {
-					details.firstInteraction = new Date(indexEntry.dateCreated).toISOString();
-					details.lastInteraction = stat.mtime.toISOString();
-				} else {
-					details.firstInteraction = stat.mtime.toISOString();
-					details.lastInteraction = stat.mtime.toISOString();
-				}
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				const meta = this.claudeDesktopCowork.getCoworkSessionMeta(sessionFile);
-				if (meta?.title) { details.title = meta.title; }
-				if (meta?.firstInteraction) { details.firstInteraction = meta.firstInteraction; }
-				if (meta?.lastInteraction) { details.lastInteraction = meta.lastInteraction; }
-				details.interactions = this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
-				details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
-				details.editorName = 'Claude Desktop Cowork';
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				return details;
 			}
@@ -4411,53 +4149,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
 		try {
-			// Handle OpenCode sessions - they have actual token counts in message files
-			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
-				const result = await this.openCode.getTokensFromOpenCodeSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
-				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
-				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Crush sessions - actual token counts stored in sessions table
-			if (this.crush.isCrushSessionFile(sessionFilePath)) {
-				const result = await this.crush.getTokensFromCrushSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Continue sessions - they have actual token counts in promptLogs
-			if (this.continue_.isContinueSessionFile(sessionFilePath)) {
-				const result = this.continue_.getTokensFromContinueSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens }; // Continue has actual counts
-			}
-
-			// Handle Claude Desktop Cowork sessions — actual Anthropic API token counts
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath)) {
-				const result = this.claudeDesktopCowork.getTokensFromCoworkSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Claude Code sessions - actual Anthropic API token counts
-			if (this.claudeCode.isClaudeCodeSessionFile(sessionFilePath)) {
-				const result = this.claudeCode.getTokensFromClaudeCodeSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Mistral Vibe sessions - actual token counts from meta.json stats
-			if (this.mistralVibe.isVibeSessionFile(sessionFilePath)) {
-				const result = this.mistralVibe.getTokensFromSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
+			const eco = this.findEcosystem(sessionFilePath);
+			if (eco) { return eco.getTokens(sessionFilePath); }
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFilePath, 'utf8');
 
