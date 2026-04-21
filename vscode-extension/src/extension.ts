@@ -8278,6 +8278,7 @@ export function activate(context: vscode.ExtensionContext) {
         (tokenTracker as any).crush.getCrushSessionData(sessionFile),
       isVSSessionFile: (sessionFile: string) =>
         (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
+      getGithubToken: () => (tokenTracker as any).githubSession?.accessToken,
     });
 
     const backendHandler = new BackendCommandHandler({

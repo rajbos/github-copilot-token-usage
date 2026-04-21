@@ -20,6 +20,7 @@ import { createDailyAggEntity } from '../storageTables';
 import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
+import { SharingServerUploadService, type SharingServerEntry } from './sharingServerUploadService';
 import { isJsonlContent } from '../../tokenEstimation';
 
 /**
@@ -90,6 +91,8 @@ export interface SyncServiceDeps {
 	getCrushSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
 	// Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
 	isVSSessionFile?: (sessionFile: string) => boolean;
+	/** Returns the current GitHub OAuth access token, or undefined if not authenticated. */
+	getGithubToken?: () => string | undefined;
 }
 
 /**
@@ -109,7 +112,8 @@ export class SyncService {
 		private readonly credentialService: CredentialService,
 		private readonly dataPlaneService: DataPlaneService,
 		private readonly blobUploadService: BlobUploadServiceLike | undefined,
-		private readonly utility: typeof BackendUtility
+		private readonly utility: typeof BackendUtility,
+		private readonly sharingServerUploadService: SharingServerUploadService | undefined,
 	) {}
 
 	// ── Cross-instance file lock ────────────────────────────────────────
@@ -1133,6 +1137,18 @@ export class SyncService {
 
 			this.backendSyncInProgress = true;
 			try {
+				// Sharing server backend: entirely different sync path — no Azure deps.
+				if (settings.backend === 'sharingServer') {
+					await this.syncToSharingServer(settings, sharingPolicy);
+					try {
+						await this.deps.context?.globalState.update('backend.lastSyncAt', Date.now());
+					} catch (e) {
+						this.deps.warn(`Backend sync: failed to update lastSyncAt: ${e}`);
+					}
+					this.consecutiveFailures = 0;
+					return;
+				}
+
 				this.deps.log('Backend sync: starting rollup sync');
 				const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
 				if (!creds) {
@@ -1314,6 +1330,66 @@ export class SyncService {
 			}
 		});
 		return this.syncQueue;
+	}
+
+	/**
+	 * Sync daily rollups to the self-hosted sharing server using a GitHub Bearer token.
+	 */
+	private async syncToSharingServer(
+		settings: BackendSettings,
+		sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>,
+	): Promise<void> {
+		if (!this.sharingServerUploadService) {
+			this.deps.warn('Sharing server upload: service not available');
+			return;
+		}
+
+		const githubToken = this.deps.getGithubToken?.();
+		if (!githubToken) {
+			this.deps.log('Sharing server upload: skipping (no GitHub token — authenticate with GitHub in VS Code first)');
+			return;
+		}
+
+		const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(
+			settings,
+			sharingPolicy.includeUserDimension,
+		);
+		const { rollups, workspaceNamesById, machineNamesById } =
+			await this.computeDailyRollupsFromLocalSessions({
+				lookbackDays: settings.lookbackDays,
+				userId: resolvedIdentity.userId,
+			});
+
+		if (rollups.size === 0) {
+			this.deps.log('Sharing server upload: no data to upload');
+			return;
+		}
+
+		const includeNames = sharingPolicy.includeNames;
+		const entries: SharingServerEntry[] = [];
+		for (const { key, value } of rollups.values()) {
+			entries.push({
+				day: key.day,
+				model: key.model,
+				workspaceId: key.workspaceId,
+				workspaceName: includeNames ? workspaceNamesById[key.workspaceId] : undefined,
+				machineId: key.machineId,
+				machineName: includeNames ? machineNamesById[key.machineId] : undefined,
+				inputTokens: value.inputTokens,
+				outputTokens: value.outputTokens,
+				interactions: value.interactions,
+				datasetId: settings.datasetId,
+			});
+		}
+
+		this.deps.log(`Sharing server upload: uploading ${entries.length} rollup entries`);
+		await this.sharingServerUploadService.uploadRollups(
+			settings.sharingServerEndpointUrl,
+			githubToken,
+			entries,
+			this.deps.log,
+			this.deps.warn,
+		);
 	}
 
 	/**

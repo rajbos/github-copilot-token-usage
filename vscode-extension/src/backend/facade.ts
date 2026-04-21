@@ -23,6 +23,7 @@ import {
   QueryService,
   type BackendQueryResultLike,
 } from "./services/queryService";
+import { SharingServerUploadService } from "./services/sharingServerUploadService";
 import { SyncService } from "./services/syncService";
 import { BackendUtility } from "./services/utilityService";
 import type { BackendQueryFilters, BackendSettings } from "./settings";
@@ -83,6 +84,8 @@ export interface BackendFacadeDeps {
   }>;
   // Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
   isVSSessionFile?: (sessionFile: string) => boolean;
+  /** Returns the current GitHub OAuth access token, or undefined if not authenticated. */
+  getGithubToken?: () => string | undefined;
 }
 
 export class BackendFacade {
@@ -139,11 +142,13 @@ export class BackendFacade {
         isCrushSession: deps.isCrushSession,
         getCrushSessionData: deps.getCrushSessionData,
         isVSSessionFile: deps.isVSSessionFile,
+        getGithubToken: deps.getGithubToken,
       },
       this.credentialService,
       this.dataPlaneService,
       this.blobUploadService,
       BackendUtility,
+      new SharingServerUploadService(),
     );
     this.azureResourceService = new AzureResourceService(
       {

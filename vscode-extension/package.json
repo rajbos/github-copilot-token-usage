@@ -147,15 +147,20 @@
         "copilotTokenTracker.backend.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables)."
+          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables) or a self-hosted sharing server."
         },
         "copilotTokenTracker.backend.backend": {
           "type": "string",
           "enum": [
-            "storageTables"
+            "storageTables",
+            "sharingServer"
+          ],
+          "enumDescriptions": [
+            "Azure Storage Tables (requires Azure subscription + RBAC setup)",
+            "Self-hosted sharing server (configure endpoint URL; authenticates via your existing GitHub session)"
           ],
           "default": "storageTables",
-          "description": "Backend sync backend. MVP supports Azure Storage Tables."
+          "description": "Backend type for syncing usage data. 'storageTables' uses Azure. 'sharingServer' uses a self-hosted API server — only configure copilotTokenTracker.backend.sharingServer.endpointUrl."
         },
         "copilotTokenTracker.backend.authMode": {
           "type": "string",
@@ -280,6 +285,11 @@
           "type": "boolean",
           "default": true,
           "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
+        },
+        "copilotTokenTracker.backend.sharingServer.endpointUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the self-hosted sharing server (e.g. https://copilot-sharing.example.com). Only used when 'backend' is set to 'sharingServer'. Authentication is handled automatically via your existing GitHub session — no API key needed."
         },
         "copilot-token-tracker.sampleDataDirectory": {
           "type": "string",
