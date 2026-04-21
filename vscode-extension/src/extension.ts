@@ -3899,9 +3899,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						userMsgIndices.push(i);
 					}
 				}
-				const numTurns = userMsgIndices.length;
-				const perTurnInput = numTurns > 0 ? Math.round((tokenData.tokens * 0.7) / numTurns) : 0;
-				const perTurnOutput = numTurns > 0 ? Math.round((tokenData.tokens * 0.3) / numTurns) : 0;
+				// Mistral Vibe only has session-level token counts (not per-turn)
+				// Set per-turn estimates to 0; actual totals go in actualTokens
 
 				for (let t = 0; t < userMsgIndices.length; t++) {
 					const userIdx = userMsgIndices[t];
@@ -3941,8 +3940,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 						toolCalls,
 						contextReferences: _createEmptyContextRefs(),
 						mcpTools: [],
-						inputTokensEstimate: perTurnInput,
-						outputTokensEstimate: perTurnOutput,
+						inputTokensEstimate: 0,
+						outputTokensEstimate: 0,
 						thinkingTokensEstimate: 0
 					});
 				}
@@ -3959,6 +3958,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					firstInteraction: details.firstInteraction,
 					lastInteraction: details.lastInteraction,
 					turns,
+					actualTokens: tokenData.tokens,
 					usageAnalysis: undefined
 				};
 			}

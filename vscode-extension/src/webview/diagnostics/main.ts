@@ -396,7 +396,7 @@ function getEditorIcon(editor: string): string {
     return "🪟";
   }
   if (lower.includes("mistral")) {
-    return "";
+    return "🔥";
   }
   if (lower.includes("crush")) {
     return "🩷";
