@@ -95,6 +95,61 @@ npm run build            # development build
 npm run build:production # minified build
 ```
 
+## Running locally (without Docker)
+
+### 1. Install dependencies
+
+```bash
+cd sharing-server
+npm ci
+```
+
+### 2. Create a `.env` file
+
+Copy the example and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Minimum required in `.env`:
+
+```env
+GITHUB_CLIENT_ID=your_github_oauth_app_client_id
+GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
+SESSION_SECRET=any_long_random_string_at_least_32_chars
+BASE_URL=http://localhost:3000
+PORT=3000
+DB_PATH=./data/sharing.db
+```
+
+> **GitHub OAuth App callback URL** for local dev: `http://localhost:3000/auth/github/callback`
+
+### 3. Build and start
+
+```bash
+npm run build   # compile TypeScript → dist/server.js
+npm start       # start the server (automatically loads .env via Node --env-file)
+```
+
+Or for **watch mode** (auto-restarts `dist/server.js` whenever it changes):
+
+```bash
+npm run dev
+```
+
+> Run `npm run build` in a separate terminal to rebuild after editing `src/`. The `dev`
+> script uses `node --watch` which restarts automatically when `dist/server.js` changes.
+
+### 4. Verify
+
+```bash
+curl http://localhost:3000/health
+# → {"status":"ok","timestamp":"..."}
+```
+
+Open `http://localhost:3000/dashboard` in your browser to test the OAuth login flow.
+
 ## Environment variables
 
 | Variable | Required | Description |

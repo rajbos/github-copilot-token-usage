@@ -12,8 +12,8 @@
   "scripts": {
     "build": "node esbuild.js",
     "build:production": "node esbuild.js --production",
-    "start": "node dist/server.js",
-    "dev": "node --watch dist/server.js",
+    "start": "node --env-file=.env dist/server.js",
+    "dev": "node --env-file=.env --watch dist/server.js",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
