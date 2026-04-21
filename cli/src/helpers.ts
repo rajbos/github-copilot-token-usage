@@ -13,6 +13,7 @@ import { ContinueDataAccess } from '../../vscode-extension/src/continue';
 import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio';
 import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
 import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claudedesktop';
+import { MistralVibeDataAccess } from '../../vscode-extension/src/mistralvibe';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
@@ -72,6 +73,11 @@ function createClaudeDesktopCowork(): ClaudeDesktopCoworkDataAccess {
 	return new ClaudeDesktopCoworkDataAccess();
 }
 
+/** Create Mistral Vibe data access instance for CLI */
+function createMistralVibe(): MistralVibeDataAccess {
+	return new MistralVibeDataAccess();
+}
+
 // Module-level singletons so sql.js WASM is only initialised once across all session files
 const _openCodeInstance = createOpenCode();
 const _crushInstance = createCrush();
@@ -79,10 +85,11 @@ const _continueInstance = createContinue();
 const _visualStudioInstance = createVisualStudio();
 const _claudeCodeInstance = createClaudeCode();
 const _claudeDesktopCoworkInstance = createClaudeDesktopCowork();
+const _mistralVibeInstance = createMistralVibe();
 
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance, claudeDesktopCowork: _claudeDesktopCoworkInstance });
+	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance, claudeDesktopCowork: _claudeDesktopCoworkInstance, mistralVibe: _mistralVibeInstance });
 }
 
 /** Discover all session files on this machine */
@@ -152,6 +159,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/opencode/')) { return 'opencode'; }
 	if (normalized.includes('/local-agent-mode-sessions/')) { return 'claude-desktop-cowork'; }
 	if (normalized.includes('/.claude/projects/')) { return 'claude-code'; }
+	if (normalized.includes('/.vibe/logs/session/')) { return 'mistral-vibe'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
 	if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
 	return 'vscode';
@@ -291,6 +299,22 @@ const crushResult: SessionData = {
 			};
 			setCached(filePath, stats.mtimeMs, stats.size, claudeResult);
 			return claudeResult;
+		}
+
+		// Handle Mistral Vibe sessions (JSON meta.json with actual token counts in stats)
+		if (_mistralVibeInstance.isVibeSessionFile(filePath)) {
+			const sessionData = _mistralVibeInstance.getSessionData(filePath);
+			const vibeResult: SessionData = {
+				file: filePath,
+				tokens: sessionData.tokens,
+				thinkingTokens: 0,
+				interactions: sessionData.interactions,
+				modelUsage: sessionData.modelUsage,
+				lastModified: stats.mtime,
+				editorSource: getEditorSourceFromPath(filePath),
+			};
+			setCached(filePath, stats.mtimeMs, stats.size, vibeResult);
+			return vibeResult;
 		}
 
 		const content = await fs.promises.readFile(filePath, 'utf-8');

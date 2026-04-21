@@ -44,6 +44,7 @@ import type { VisualStudioDataAccess } from './visualstudio';
 import type { ClaudeCodeDataAccess } from './claudecode';
 import { normalizeClaudeModelId } from './claudecode';
 import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
+import type { MistralVibeDataAccess } from './mistralvibe';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
@@ -53,6 +54,7 @@ export interface UsageAnalysisDeps {
 	visualStudio?: VisualStudioDataAccess;
 	claudeCode?: ClaudeCodeDataAccess;
 	claudeDesktopCowork?: ClaudeDesktopCoworkDataAccess;
+	mistralVibe?: MistralVibeDataAccess;
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
 	toolNameMap: { [key: string]: string };
@@ -1239,6 +1241,28 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			return analysis;
 		}
 
+		// Handle Mistral Vibe sessions
+		if (deps.mistralVibe?.isVibeSessionFile(sessionFile)) {
+			const modelUsage = deps.mistralVibe.getModelUsage(sessionFile);
+			const models = Object.keys(modelUsage);
+			analysis.modeUsage.agent += deps.mistralVibe.countInteractions(sessionFile);
+			// Count tool calls from messages.jsonl
+			const messages = deps.mistralVibe.readSessionMessages(sessionFile);
+			for (const msg of messages) {
+				if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+					for (const tc of msg.tool_calls) {
+						const toolName = tc.function?.name || tc.name || 'unknown';
+						analysis.toolCalls.total++;
+						analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+					}
+				}
+			}
+			analysis.modelSwitching.uniqueModels = models;
+			analysis.modelSwitching.modelCount = models.length;
+			applyModelTierClassification(deps, models, models, analysis);
+			return analysis;
+		}
+
 		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 		// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
@@ -1685,7 +1709,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'claudeDesktopCowork' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'claudeDesktopCowork' | 'mistralVibe' | 'tokenEstimators' | 'modelPricing'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Handle OpenCode sessions
@@ -1716,6 +1740,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 	// Handle Claude Code sessions
 	if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
 		return deps.claudeCode.getClaudeCodeModelUsage(sessionFile);
+	}
+
+	// Handle Mistral Vibe sessions
+	if (deps.mistralVibe?.isVibeSessionFile(sessionFile)) {
+		return deps.mistralVibe.getModelUsage(sessionFile);
 	}
 
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;

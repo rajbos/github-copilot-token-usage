@@ -38,6 +38,7 @@ export function getEditorIcon(editor: string): string {
             'Visual Studio': '🪟',
 		'Claude Code': '🟠',
 		'Claude Desktop Cowork': '🟠',
+		'Mistral Vibe': '🔥',
 		'Unknown': '❓'
 	};
 	return icons[editor] || '📝';

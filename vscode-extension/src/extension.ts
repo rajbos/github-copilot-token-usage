@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -64,6 +64,7 @@ import { VisualStudioDataAccess } from './visualstudio';
 import { ContinueDataAccess } from './continue';
 import { ClaudeCodeDataAccess } from './claudecode';
 import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
+import { MistralVibeDataAccess } from './mistralvibe';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -168,10 +169,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private continue_: ContinueDataAccess;
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
+	private mistralVibe: MistralVibeDataAccess;
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, mistralVibe: this.mistralVibe, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -323,6 +325,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 		if (this.crush.isCrushSessionFile(sessionFile)) {
 			return this.crush.statSessionFile(sessionFile);
+		}
+		if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
+			return fs.promises.stat(sessionFile);
 		}
 		return this.openCode.statSessionFile(sessionFile);
 	}
@@ -835,6 +840,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.visualStudio = new VisualStudioDataAccess();
 		this.claudeCode = new ClaudeCodeDataAccess();
 		this.claudeDesktopCowork = new ClaudeDesktopCoworkDataAccess();
+		this.mistralVibe = new MistralVibeDataAccess();
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({
 			log: (m) => this.log(m),
@@ -846,6 +852,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			continue_: this.continue_,
 			claudeCode: this.claudeCode,
 			claudeDesktopCowork: this.claudeDesktopCowork,
+			mistralVibe: this.mistralVibe,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
 		});
 		this.context = context;
@@ -2458,6 +2465,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
 			}
 
+			// Handle Mistral Vibe sessions
+			if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
+				return this.mistralVibe.countInteractions(sessionFile);
+			}
+
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -2709,6 +2721,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 			}
 
+			// Handle Mistral Vibe sessions
+			if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
+				const meta = this.mistralVibe.getSessionMeta(sessionFile);
+				return {
+					title: meta?.title,
+					firstInteraction: meta?.firstInteraction || null,
+					lastInteraction: meta?.lastInteraction || null,
+				};
+			}
+
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -2944,6 +2966,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
 			details.editorRoot = this.claudeCode.getClaudeCodeProjectsDir();
 			details.editorName = 'Claude Code';
+			return;
+		}
+		if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
+			details.editorRoot = this.mistralVibe.getSessionLogDir();
+			details.editorName = 'Mistral Vibe';
 			return;
 		}
 		try {
@@ -3858,6 +3885,84 @@ class CopilotTokenTracker implements vscode.Disposable {
 				};
 			}
 
+			// Handle Mistral Vibe sessions
+			if (this.mistralVibe.isVibeSessionFile(sessionFile)) {
+				const messages = this.mistralVibe.readSessionMessages(sessionFile);
+				const sessionMeta = this.mistralVibe.getSessionMeta(sessionFile);
+				const tokenData = this.mistralVibe.getTokensFromSession(sessionFile);
+				const model: string = sessionMeta.model || 'devstral';
+
+				// Collect non-injected user messages as turn boundaries
+				const userMsgIndices: number[] = [];
+				for (let i = 0; i < messages.length; i++) {
+					if (messages[i].role === 'user' && messages[i].injected !== true) {
+						userMsgIndices.push(i);
+					}
+				}
+				// Mistral Vibe only has session-level token counts (not per-turn)
+				// Set per-turn estimates to 0; actual totals go in actualTokens
+
+				for (let t = 0; t < userMsgIndices.length; t++) {
+					const userIdx = userMsgIndices[t];
+					const nextUserIdx = t + 1 < userMsgIndices.length ? userMsgIndices[t + 1] : messages.length;
+					const userMsg = messages[userIdx];
+					const userText = typeof userMsg.content === 'string' ? userMsg.content : '';
+					let assistantText = '';
+					const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+
+					// Collect all messages between this user message and the next non-injected user message
+					for (let j = userIdx + 1; j < nextUserIdx; j++) {
+						const msg = messages[j];
+						if (msg.role === 'assistant') {
+							if (typeof msg.content === 'string') { assistantText += msg.content; }
+							if (Array.isArray(msg.tool_calls)) {
+								for (const tc of msg.tool_calls) {
+									toolCalls.push({
+										toolName: tc.function?.name || tc.name || 'unknown',
+										arguments: tc.function?.arguments ? JSON.stringify(tc.function.arguments) : undefined
+									});
+								}
+							}
+						} else if (msg.role === 'tool') {
+							// Attach tool result to last tool call
+							const last = toolCalls[toolCalls.length - 1];
+							if (last) { last.result = typeof msg.content === 'string' ? msg.content : undefined; }
+						}
+					}
+
+					turns.push({
+						turnNumber: t + 1,
+						timestamp: sessionMeta.firstInteraction,
+						mode: 'agent',
+						userMessage: userText,
+						assistantResponse: assistantText,
+						model,
+						toolCalls,
+						contextReferences: _createEmptyContextRefs(),
+						mcpTools: [],
+						inputTokensEstimate: 0,
+						outputTokensEstimate: 0,
+						thinkingTokensEstimate: 0
+					});
+				}
+
+				return {
+					file: details.file,
+					title: details.title || null,
+					editorSource: details.editorSource,
+					editorName: 'Mistral Vibe',
+					size: details.size,
+					modified: details.modified,
+					interactions: details.interactions,
+					contextReferences: details.contextReferences,
+					firstInteraction: details.firstInteraction,
+					lastInteraction: details.lastInteraction,
+					turns,
+					actualTokens: tokenData.tokens,
+					usageAnalysis: undefined
+				};
+			}
+
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -4345,6 +4450,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Handle Claude Code sessions - actual Anthropic API token counts
 			if (this.claudeCode.isClaudeCodeSessionFile(sessionFilePath)) {
 				const result = this.claudeCode.getTokensFromClaudeCodeSession(sessionFilePath);
+				return { ...result, actualTokens: result.tokens };
+			}
+
+			// Handle Mistral Vibe sessions - actual token counts from meta.json stats
+			if (this.mistralVibe.isVibeSessionFile(sessionFilePath)) {
+				const result = this.mistralVibe.getTokensFromSession(sessionFilePath);
 				return { ...result, actualTokens: result.tokens };
 			}
 
