@@ -88,6 +88,48 @@ npx @rajbos/ai-engineering-fluency stats
 
 ---
 
+### 🔗 Self-Hosted Sharing Server
+
+Share usage data with your team without an Azure account. Run a lightweight API server
+on your own infrastructure — team members configure a single endpoint URL and upload
+automatically via their existing GitHub session.
+
+- **Zero Azure required** — SQLite + Docker, runs anywhere
+- **Auth via GitHub** — reuses the session already held by VS Code/Copilot, no API keys
+- **Optional org gating** — restrict uploads to GitHub org members
+- **Web dashboard** — see aggregated usage across your team
+
+```yaml
+# docker-compose.yml
+services:
+  sharing-server:
+    image: ghcr.io/rajbos/copilot-sharing-server:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GITHUB_CLIENT_ID=...
+      - GITHUB_CLIENT_SECRET=...
+      - SESSION_SECRET=...
+      - BASE_URL=https://copilot.example.com
+    volumes:
+      - sharing_data:/data
+volumes:
+  sharing_data:
+```
+
+```json
+// VS Code settings — the only thing team members configure
+{
+  "copilotTokenTracker.backend.enabled": true,
+  "copilotTokenTracker.backend.backend": "sharingServer",
+  "copilotTokenTracker.backend.sharingServer.endpointUrl": "https://copilot.example.com"
+}
+```
+
+📖 [Full sharing server documentation](sharing-server/README.md)
+
+---
+
 ## Contributing
 
 Interested in contributing? Check out our [Contributing Guide](CONTRIBUTING.md) for:
