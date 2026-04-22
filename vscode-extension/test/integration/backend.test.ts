@@ -31,7 +31,8 @@ suite('Extension Test Suite', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 				});
 
 				assert.strictEqual(payload.version, 1);
@@ -118,7 +119,8 @@ suite('Extension Test Suite', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 					}),
 					false,
 					'Should return false when subscriptionId is empty'
@@ -147,7 +149,8 @@ suite('Extension Test Suite', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 					}),
 					false,
 					'Should return false when resourceGroup is empty'
@@ -176,7 +179,8 @@ suite('Extension Test Suite', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 					}),
 					false,
 					'Should return false when storageAccount is empty'
@@ -205,7 +209,8 @@ suite('Extension Test Suite', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 					}),
 					false,
 					'Should return false when aggTable is empty'
@@ -234,7 +239,8 @@ suite('Extension Test Suite', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 					}),
 					true,
 					'Should return true when required fields are present'

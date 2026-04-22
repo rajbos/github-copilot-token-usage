@@ -29,7 +29,8 @@ const baseSettings: BackendSettings = {
 	blobUploadEnabled: false,
 	blobContainerName: 'copilot-session-logs',
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEndpointUrl: ''
 };
 
 function makeState(overrides?: Partial<BackendConfigPanelState>): BackendConfigPanelState {

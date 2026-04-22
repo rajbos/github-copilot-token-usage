@@ -31,7 +31,7 @@ function makeService(depsOverrides?: Partial<SyncServiceDeps>): SyncService {
 	const deps = makeDeps(depsOverrides);
 	const credSvc = new CredentialService(undefined as any);
 	const dataSvc = new DataPlaneService(BackendUtility, () => {}, async () => []);
-	return new SyncService(deps, credSvc, dataSvc, undefined, BackendUtility);
+	return new SyncService(deps, credSvc, dataSvc, undefined, BackendUtility, undefined);
 }
 
 /**
@@ -46,7 +46,7 @@ function makeServiceWithServices(
 	const deps = makeDeps(depsOverrides);
 	const credSvc = credSvcOverride ?? new CredentialService(undefined as any);
 	const dataSvc = dataSvcOverride ?? new DataPlaneService(BackendUtility, () => {}, async () => []);
-	return new SyncService(deps, credSvc, dataSvc, blobSvcOverride ?? undefined, BackendUtility);
+	return new SyncService(deps, credSvc, dataSvc, blobSvcOverride ?? undefined, BackendUtility, undefined);
 }
 
 /**
