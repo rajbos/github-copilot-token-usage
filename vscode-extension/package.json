@@ -26,112 +26,112 @@
   "contributes": {
     "commands": [
       {
-        "command": "copilot-token-tracker.refresh",
+        "command": "aiEngineeringFluency.refresh",
         "title": "Refresh Token Usage",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showDetails",
+        "command": "aiEngineeringFluency.showDetails",
         "title": "Show Token Usage Details",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showChart",
+        "command": "aiEngineeringFluency.showChart",
         "title": "Show Token Usage Chart",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showUsageAnalysis",
+        "command": "aiEngineeringFluency.showUsageAnalysis",
         "title": "Show Usage Analysis Dashboard",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.generateDiagnosticReport",
+        "command": "aiEngineeringFluency.generateDiagnosticReport",
         "title": "Generate Diagnostic Report",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showMaturity",
+        "command": "aiEngineeringFluency.showMaturity",
         "title": "Show AI Engineering Fluency Score",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showFluencyLevelViewer",
+        "command": "aiEngineeringFluency.showFluencyLevelViewer",
         "title": "Show Fluency Level Viewer (Debug Only)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.runLocalViewRegression",
+        "command": "aiEngineeringFluency.runLocalViewRegression",
         "title": "Run Local View Regression (Debug Only)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.configureBackend",
+        "command": "aiEngineeringFluency.configureBackend",
         "title": "Configure Backend",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.copyBackendConfig",
+        "command": "aiEngineeringFluency.copyBackendConfig",
         "title": "Copy Backend Config (No Secrets)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.exportCurrentView",
+        "command": "aiEngineeringFluency.exportCurrentView",
         "title": "Export Current View (JSON)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.setBackendSharedKey",
+        "command": "aiEngineeringFluency.setBackendSharedKey",
         "title": "Set Backend Storage Shared Key",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.rotateBackendSharedKey",
+        "command": "aiEngineeringFluency.rotateBackendSharedKey",
         "title": "Rotate Backend Storage Shared Key",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.clearBackendSharedKey",
+        "command": "aiEngineeringFluency.clearBackendSharedKey",
         "title": "Clear Backend Storage Shared Key",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.toggleBackendWorkspaceMachineNameSync",
+        "command": "aiEngineeringFluency.toggleBackendWorkspaceMachineNameSync",
         "title": "Backend: Toggle Workspace/Machine Name Sync",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.setSharingProfile",
+        "command": "aiEngineeringFluency.setSharingProfile",
         "title": "Set Sharing Profile",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.clearAzureSettings",
+        "command": "aiEngineeringFluency.clearAzureSettings",
         "title": "Clear Azure Settings",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.clearCache",
+        "command": "aiEngineeringFluency.clearCache",
         "title": "Clear Cache",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showDashboard",
+        "command": "aiEngineeringFluency.showDashboard",
         "title": "Show Team Dashboard",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showEnvironmental",
+        "command": "aiEngineeringFluency.showEnvironmental",
         "title": "Show Environmental Impact",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.authenticateGitHub",
+        "command": "aiEngineeringFluency.authenticateGitHub",
         "title": "Authenticate with GitHub",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.signOutGitHub",
+        "command": "aiEngineeringFluency.signOutGitHub",
         "title": "Disconnect GitHub",
         "category": "AI Engineering Fluency"
       }
@@ -281,7 +281,7 @@
           "default": true,
           "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
         },
-        "copilot-token-tracker.sampleDataDirectory": {
+        "copilotTokenTracker.sampleDataDirectory": {
           "type": "string",
           "default": "",
           "description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation."

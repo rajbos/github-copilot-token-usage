@@ -246,7 +246,7 @@ export class SessionDiscovery {
 
 		// Screenshot/demo mode: if a sample data directory is configured, use it exclusively
 		const sampleDir = this.deps.sampleDataDirectoryOverride?.()
-			?? vscode.workspace.getConfiguration('copilot-token-tracker').get<string>('sampleDataDirectory');
+			?? vscode.workspace.getConfiguration('copilotTokenTracker').get<string>('sampleDataDirectory');
 		if (sampleDir && sampleDir.trim().length > 0) {
 			const resolvedSampleDir = sampleDir.trim();
 			try {
