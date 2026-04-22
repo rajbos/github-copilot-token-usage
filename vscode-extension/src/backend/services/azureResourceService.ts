@@ -37,7 +37,7 @@ export class AzureResourceService {
 	 * Configure backend wizard (MVP: Storage Tables only).
 	 */
 	async configureBackendWizard(): Promise<void> {
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		const credential = this.credentialService.createAzureCredential();
 
 		// Sanity check that we can get a token (common failure is "not logged in")
@@ -495,7 +495,7 @@ export class AzureResourceService {
 	 * Set sharing profile command.
 	 */
 	async setSharingProfileCommand(): Promise<void> {
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		const currentSettings = this.deps.getSettings();
 		const currentProfile = currentSettings.sharingProfile;
 

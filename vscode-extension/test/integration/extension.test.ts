@@ -27,13 +27,13 @@ suite('Extension Test Suite', () => {
 		const commands = await vscode.commands.getCommands(true);
 		
 		const expectedCommands = [
-			'copilot-token-tracker.refresh',
-			'copilot-token-tracker.showDetails',
-			'copilot-token-tracker.showChart',
-			'copilot-token-tracker.showMaturity',
-			'copilot-token-tracker.showFluencyLevelViewer',
-			'copilot-token-tracker.runLocalViewRegression',
-			'copilot-token-tracker.generateDiagnosticReport'
+			'aiEngineeringFluency.refresh',
+			'aiEngineeringFluency.showDetails',
+			'aiEngineeringFluency.showChart',
+			'aiEngineeringFluency.showMaturity',
+			'aiEngineeringFluency.showFluencyLevelViewer',
+			'aiEngineeringFluency.runLocalViewRegression',
+			'aiEngineeringFluency.generateDiagnosticReport'
 		];
 
 		for (const expectedCommand of expectedCommands) {

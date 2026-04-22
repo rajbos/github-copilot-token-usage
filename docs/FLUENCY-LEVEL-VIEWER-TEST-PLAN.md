@@ -250,7 +250,7 @@
 
 ### Test Steps
 1. Run in console: `await vscode.commands.getCommands(true)`
-2. **Verify**: List includes `copilot-token-tracker.showFluencyLevelViewer`
+2. **Verify**: List includes `aiEngineeringFluency.showFluencyLevelViewer`
 3. Check package.json
 4. **Verify**: Command is listed in contributes.commands
 5. Run automated test: `npm test`

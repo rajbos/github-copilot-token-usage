@@ -905,14 +905,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Create status bar item
 		this.statusBarItem = vscode.window.createStatusBarItem(
-			'copilot-token-tracker',
+			'ai-engineering-fluency',
 			vscode.StatusBarAlignment.Right,
 			100
 		);
 		this.statusBarItem.name = "AI Engineering Fluency";
 		this.setStatusBarText("$(loading~spin) AI Fluency: Loading...");
 		this.statusBarItem.tooltip = "AI Engineering Fluency — daily and 30-day token usage - Click to open details";
-		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
+		this.statusBarItem.command = 'aiEngineeringFluency.showDetails';
 		this.statusBarItem.show();
 
 		this.log('Status bar item created and shown');
@@ -920,7 +920,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Re-render open panels when display settings change
 		context.subscriptions.push(
 			vscode.workspace.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration('copilotTokenTracker.display')) {
+				if (e.affectsConfiguration('aiEngineeringFluency.display')) {
 					this.refreshOpenPanelsForSettingChange();
 				}
 			})
@@ -1828,7 +1828,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private getCompactNumbersSetting(): boolean {
-		return vscode.workspace.getConfiguration('copilotTokenTracker').get<boolean>('display.compactNumbers', true);
+		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.compactNumbers', true);
 	}
 
 	private refreshOpenPanelsForSettingChange(): void {
@@ -4839,7 +4839,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'suppressUnknownTool': {
 					const toolName = message.toolName as string;
 					if (toolName) {
-						const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+						const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 						const current = config.get<string[]>('suppressedUnknownTools', []);
 						if (!current.includes(toolName)) {
 							await config.update('suppressedUnknownTools', [...current, toolName], vscode.ConfigurationTarget.Global);
@@ -7416,7 +7416,7 @@ ${hashtag}`;
             // Execute the configureBackend command if it exists
             try {
               await vscode.commands.executeCommand(
-                "copilot-token-tracker.configureBackend",
+                "aiEngineeringFluency.configureBackend",
               );
             } catch (err) {
               // If command is not registered, show settings
@@ -7429,7 +7429,7 @@ ${hashtag}`;
                   if (choice === "Open Settings") {
                     vscode.commands.executeCommand(
                       "workbench.action.openSettings",
-                      "copilotTokenTracker.backend",
+                      "aiEngineeringFluency.backend",
                     );
                   }
                 });
@@ -7440,7 +7440,7 @@ ${hashtag}`;
           await this.dispatch('openSettings:diagnostics', () =>
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
-              "copilotTokenTracker.backend",
+              "aiEngineeringFluency.backend",
             )
           );
           break;
@@ -7448,7 +7448,7 @@ ${hashtag}`;
           await this.dispatch('openDisplaySettings:diagnostics', () =>
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
-              "copilotTokenTracker.display",
+              "aiEngineeringFluency.display",
             )
           );
           break;
@@ -7775,7 +7775,7 @@ ${hashtag}`;
    * Get backend storage information for diagnostics
    */
   private async getBackendStorageInfo(): Promise<any> {
-    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
     const enabled = config.get<boolean>("backend.enabled", false);
     const storageAccount = config.get<string>("backend.storageAccount", "");
     const subscriptionId = config.get<string>("backend.subscriptionId", "");
@@ -8266,7 +8266,7 @@ ${hashtag}`;
     );
 
     const suppressedUnknownTools = vscode.workspace
-      .getConfiguration('copilotTokenTracker')
+      .getConfiguration('aiEngineeringFluency')
       .get<string[]>('suppressedUnknownTools', []);
 
     const initialData = stats ? JSON.stringify({
@@ -8334,9 +8334,71 @@ ${hashtag}`;
   }
 }
 
-export function activate(context: vscode.ExtensionContext) {
+/**
+ * One-time migration: copies any user-set values from the old `copilotTokenTracker.*` namespace
+ * to the new `aiEngineeringFluency.*` namespace.  The old settings remain in package.json
+ * with `deprecationMessage` so VS Code continues to show them as deprecated; this function
+ * handles users who already had values configured before the rename.
+ *
+ * Leave this migration in place for a couple of extension versions before removing it.
+ */
+async function migrateSettingsIfNeeded(log: (m: string) => void): Promise<void> {
+  const keys = [
+    'display.compactNumbers',
+    'backend.enabled',
+    'backend.backend',
+    'backend.authMode',
+    'backend.datasetId',
+    'backend.sharingProfile',
+    'backend.userId',
+    'backend.shareWithTeam',
+    'backend.shareWorkspaceMachineNames',
+    'backend.shareConsentAt',
+    'backend.userIdentityMode',
+    'backend.userIdMode',
+    'backend.subscriptionId',
+    'backend.resourceGroup',
+    'backend.storageAccount',
+    'backend.aggTable',
+    'backend.eventsTable',
+    'backend.lookbackDays',
+    'backend.includeMachineBreakdown',
+    'backend.blobUploadEnabled',
+    'backend.blobContainerName',
+    'backend.blobUploadFrequencyHours',
+    'backend.blobCompressFiles',
+    'sampleDataDirectory',
+    'suppressedUnknownTools',
+  ];
+
+  const oldCfg = vscode.workspace.getConfiguration('copilotTokenTracker');
+  const newCfg = vscode.workspace.getConfiguration('aiEngineeringFluency');
+
+  let migrated = 0;
+  for (const key of keys) {
+    const insp = oldCfg.inspect(key);
+    if (insp?.globalValue !== undefined) {
+      await newCfg.update(key, insp.globalValue, vscode.ConfigurationTarget.Global);
+      migrated++;
+    }
+    if (insp?.workspaceValue !== undefined) {
+      await newCfg.update(key, insp.workspaceValue, vscode.ConfigurationTarget.Workspace);
+      migrated++;
+    }
+  }
+
+  if (migrated > 0) {
+    log(`Migrated ${migrated} setting(s) from 'copilotTokenTracker' to 'aiEngineeringFluency' namespace.`);
+  }
+}
+
+export async function activate(context: vscode.ExtensionContext) {
   // Create the token tracker
   const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+
+  // Migrate settings from the old copilotTokenTracker namespace to aiEngineeringFluency.
+  // Run before any other settings are read so the new keys are populated first.
+  await migrateSettingsIfNeeded((m) => (tokenTracker as any).log(m));
 
   // Wire up backend facade and commands so the diagnostics webview can launch the
   // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
@@ -8406,7 +8468,7 @@ export function activate(context: vscode.ExtensionContext) {
     // (see startBackendSyncAfterInitialAnalysis method)
 
     const configureBackendCommand = vscode.commands.registerCommand(
-      "copilot-token-tracker.configureBackend",
+      "aiEngineeringFluency.configureBackend",
       async () => {
         await backendHandler.handleConfigureBackend();
       },
@@ -8422,7 +8484,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the refresh command
   const refreshCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.refresh",
+    "aiEngineeringFluency.refresh",
     async () => {
       tokenTracker.log("Refresh command called");
       await tokenTracker.updateTokenStats();
@@ -8432,7 +8494,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show details command
   const showDetailsCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showDetails",
+    "aiEngineeringFluency.showDetails",
     async () => {
       tokenTracker.log("Show details command called");
       await tokenTracker.showDetails();
@@ -8441,7 +8503,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show chart command
   const showChartCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showChart",
+    "aiEngineeringFluency.showChart",
     async () => {
       tokenTracker.log("Show chart command called");
       await tokenTracker.showChart();
@@ -8450,7 +8512,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show usage analysis command
   const showUsageAnalysisCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showUsageAnalysis",
+    "aiEngineeringFluency.showUsageAnalysis",
     async () => {
       tokenTracker.log("Show usage analysis command called");
       await tokenTracker.showUsageAnalysis();
@@ -8459,7 +8521,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show maturity / fluency score command
   const showMaturityCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showMaturity",
+    "aiEngineeringFluency.showMaturity",
     async () => {
       tokenTracker.log("Show maturity command called");
       await tokenTracker.showMaturity();
@@ -8468,7 +8530,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show dashboard command
   const showDashboardCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showDashboard",
+    "aiEngineeringFluency.showDashboard",
     async () => {
       tokenTracker.log("Show dashboard command called");
       await tokenTracker.showDashboard();
@@ -8476,7 +8538,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const showEnvironmentalCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showEnvironmental",
+    "aiEngineeringFluency.showEnvironmental",
     async () => {
       tokenTracker.log("Show environmental impact command called");
       await tokenTracker.showEnvironmental();
@@ -8485,7 +8547,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show fluency level viewer command (debug-only)
   const showFluencyLevelViewerCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showFluencyLevelViewer",
+    "aiEngineeringFluency.showFluencyLevelViewer",
     async () => {
       tokenTracker.log("Show fluency level viewer command called");
       await tokenTracker.showFluencyLevelViewer();
@@ -8493,7 +8555,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const runLocalViewRegressionCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.runLocalViewRegression",
+    "aiEngineeringFluency.runLocalViewRegression",
     async () => {
       tokenTracker.log("Run local view regression command called");
       await tokenTracker.runLocalViewRegression();
@@ -8502,7 +8564,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the generate diagnostic report command
   const generateDiagnosticReportCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.generateDiagnosticReport",
+    "aiEngineeringFluency.generateDiagnosticReport",
     async () => {
       tokenTracker.log("Generate diagnostic report command called");
       await tokenTracker.showDiagnosticReport();
@@ -8511,7 +8573,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the clear cache command
   const clearCacheCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.clearCache",
+    "aiEngineeringFluency.clearCache",
     async () => {
       tokenTracker.log("Clear cache command called");
       await tokenTracker.clearCache();
@@ -8520,7 +8582,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the GitHub authentication command
   const authenticateGitHubCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.authenticateGitHub",
+    "aiEngineeringFluency.authenticateGitHub",
     async () => {
       tokenTracker.log("GitHub authentication command called");
       await tokenTracker.authenticateWithGitHub();
@@ -8529,7 +8591,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the GitHub sign out command
   const signOutGitHubCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.signOutGitHub",
+    "aiEngineeringFluency.signOutGitHub",
     async () => {
       tokenTracker.log("GitHub sign out command called");
       await tokenTracker.signOutFromGitHub();

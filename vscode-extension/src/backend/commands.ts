@@ -259,7 +259,7 @@ export class BackendCommandHandler {
 	 * Handles enabling team sharing (consent gate).
 	 */
 	async handleEnableTeamSharing(): Promise<void> {
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		const conf = ConfirmationMessages.enableTeamSharing();
 		const consent = await vscode.window.showWarningMessage(
 			conf.message,
@@ -296,7 +296,7 @@ export class BackendCommandHandler {
 			return;
 		}
 
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		try {
 			await config.update('backend.sharingProfile', 'teamAnonymized', vscode.ConfigurationTarget.Global);
 			await config.update('backend.shareWithTeam', false, vscode.ConfigurationTarget.Global);

@@ -39,7 +39,7 @@ The entire extension's logic is contained within the `CopilotTokenTracker` class
 
 - **UI Components**:
   1. **Status Bar**: A `vscode.StatusBarItem` (`statusBarItem`) shows a brief summary. Its tooltip provides more detail.
-  2. **Details Panel**: The `copilot-token-tracker.showDetails` command opens a `vscode.WebviewPanel`. The content for this panel is generated dynamically as an HTML string by the `getDetailsHtml` method.
+  2. **Details Panel**: The `aiEngineeringFluency.showDetails` command opens a `vscode.WebviewPanel`. The content for this panel is generated dynamically as an HTML string by the `getDetailsHtml` method.
 
 ## Developer Workflow
 
