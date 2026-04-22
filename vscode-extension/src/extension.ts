@@ -920,7 +920,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Re-render open panels when display settings change
 		context.subscriptions.push(
 			vscode.workspace.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration('copilotTokenTracker.display')) {
+				if (e.affectsConfiguration('aiEngineeringFluency.display')) {
 					this.refreshOpenPanelsForSettingChange();
 				}
 			})
@@ -1828,7 +1828,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private getCompactNumbersSetting(): boolean {
-		return vscode.workspace.getConfiguration('copilotTokenTracker').get<boolean>('display.compactNumbers', true);
+		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.compactNumbers', true);
 	}
 
 	private refreshOpenPanelsForSettingChange(): void {
@@ -4839,7 +4839,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'suppressUnknownTool': {
 					const toolName = message.toolName as string;
 					if (toolName) {
-						const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+						const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 						const current = config.get<string[]>('suppressedUnknownTools', []);
 						if (!current.includes(toolName)) {
 							await config.update('suppressedUnknownTools', [...current, toolName], vscode.ConfigurationTarget.Global);
@@ -7429,7 +7429,7 @@ ${hashtag}`;
                   if (choice === "Open Settings") {
                     vscode.commands.executeCommand(
                       "workbench.action.openSettings",
-                      "copilotTokenTracker.backend",
+                      "aiEngineeringFluency.backend",
                     );
                   }
                 });
@@ -7440,7 +7440,7 @@ ${hashtag}`;
           await this.dispatch('openSettings:diagnostics', () =>
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
-              "copilotTokenTracker.backend",
+              "aiEngineeringFluency.backend",
             )
           );
           break;
@@ -7448,7 +7448,7 @@ ${hashtag}`;
           await this.dispatch('openDisplaySettings:diagnostics', () =>
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
-              "copilotTokenTracker.display",
+              "aiEngineeringFluency.display",
             )
           );
           break;
@@ -7775,7 +7775,7 @@ ${hashtag}`;
    * Get backend storage information for diagnostics
    */
   private async getBackendStorageInfo(): Promise<any> {
-    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
     const enabled = config.get<boolean>("backend.enabled", false);
     const storageAccount = config.get<string>("backend.storageAccount", "");
     const subscriptionId = config.get<string>("backend.subscriptionId", "");
@@ -8266,7 +8266,7 @@ ${hashtag}`;
     );
 
     const suppressedUnknownTools = vscode.workspace
-      .getConfiguration('copilotTokenTracker')
+      .getConfiguration('aiEngineeringFluency')
       .get<string[]>('suppressedUnknownTools', []);
 
     const initialData = stats ? JSON.stringify({
@@ -8334,9 +8334,71 @@ ${hashtag}`;
   }
 }
 
-export function activate(context: vscode.ExtensionContext) {
+/**
+ * One-time migration: copies any user-set values from the old `copilotTokenTracker.*` namespace
+ * to the new `aiEngineeringFluency.*` namespace.  The old settings remain in package.json
+ * with `deprecationMessage` so VS Code continues to show them as deprecated; this function
+ * handles users who already had values configured before the rename.
+ *
+ * Leave this migration in place for a couple of extension versions before removing it.
+ */
+async function migrateSettingsIfNeeded(log: (m: string) => void): Promise<void> {
+  const keys = [
+    'display.compactNumbers',
+    'backend.enabled',
+    'backend.backend',
+    'backend.authMode',
+    'backend.datasetId',
+    'backend.sharingProfile',
+    'backend.userId',
+    'backend.shareWithTeam',
+    'backend.shareWorkspaceMachineNames',
+    'backend.shareConsentAt',
+    'backend.userIdentityMode',
+    'backend.userIdMode',
+    'backend.subscriptionId',
+    'backend.resourceGroup',
+    'backend.storageAccount',
+    'backend.aggTable',
+    'backend.eventsTable',
+    'backend.lookbackDays',
+    'backend.includeMachineBreakdown',
+    'backend.blobUploadEnabled',
+    'backend.blobContainerName',
+    'backend.blobUploadFrequencyHours',
+    'backend.blobCompressFiles',
+    'sampleDataDirectory',
+    'suppressedUnknownTools',
+  ];
+
+  const oldCfg = vscode.workspace.getConfiguration('copilotTokenTracker');
+  const newCfg = vscode.workspace.getConfiguration('aiEngineeringFluency');
+
+  let migrated = 0;
+  for (const key of keys) {
+    const insp = oldCfg.inspect(key);
+    if (insp?.globalValue !== undefined) {
+      await newCfg.update(key, insp.globalValue, vscode.ConfigurationTarget.Global);
+      migrated++;
+    }
+    if (insp?.workspaceValue !== undefined) {
+      await newCfg.update(key, insp.workspaceValue, vscode.ConfigurationTarget.Workspace);
+      migrated++;
+    }
+  }
+
+  if (migrated > 0) {
+    log(`Migrated ${migrated} setting(s) from 'copilotTokenTracker' to 'aiEngineeringFluency' namespace.`);
+  }
+}
+
+export async function activate(context: vscode.ExtensionContext) {
   // Create the token tracker
   const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+
+  // Migrate settings from the old copilotTokenTracker namespace to aiEngineeringFluency.
+  // Run before any other settings are read so the new keys are populated first.
+  await migrateSettingsIfNeeded((m) => (tokenTracker as any).log(m));
 
   // Wire up backend facade and commands so the diagnostics webview can launch the
   // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
