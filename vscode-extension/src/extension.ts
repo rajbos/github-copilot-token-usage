@@ -308,7 +308,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Returns the filename without the .agent.md extension.
 	 */
 	private getEditorTypeFromPath(filePath: string): string {
-		return _getEditorTypeFromPath(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
+		return _getEditorTypeFromPath(filePath, (p) => this.findEcosystem(p)?.id === 'opencode');
 	}
 
 	/** Returns the first adapter that claims this session file, or null for Copilot Chat sessions. */
@@ -850,13 +850,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 			warn: (m) => this.warn(m),
 			error: (m, e) => this.error(m, e),
 			ecosystems: this.ecosystems,
-			openCode: this.openCode,
-			crush: this.crush,
-			visualStudio: this.visualStudio,
-			continue_: this.continue_,
-			claudeCode: this.claudeCode,
-			claudeDesktopCowork: this.claudeDesktopCowork,
-			mistralVibe: this.mistralVibe,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
 		});
 		this.context = context;
@@ -6838,9 +6831,10 @@ ${hashtag}`;
         "session-state",
       );
       for (const file of sessionFiles) {
-        // Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
-        if (this.openCode.isOpenCodeDbSession(file)) {
-          const editorRoot = this.openCode.getOpenCodeDataDir();
+        // Handle virtual/adapter-owned paths (e.g. opencode.db#ses_<id>, crush.db#<uuid>)
+        const eco = this.findEcosystem(file);
+        if (eco) {
+          const editorRoot = eco.getEditorRoot(file);
           dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
           continue;
         }

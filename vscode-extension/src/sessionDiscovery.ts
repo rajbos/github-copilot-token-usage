@@ -5,13 +5,6 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import type { OpenCodeDataAccess } from './opencode';
-import type { CrushDataAccess } from './crush';
-import type { ContinueDataAccess } from './continue';
-import type { VisualStudioDataAccess } from "./visualstudio";
-import type { ClaudeCodeDataAccess } from './claudecode';
-import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
-import type { MistralVibeDataAccess } from './mistralvibe';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
 import { isDiscoverable } from './ecosystemAdapter';
 
@@ -20,13 +13,6 @@ export interface SessionDiscoveryDeps {
 	warn: (message: string) => void;
 	error: (message: string, error?: any) => void;
 	ecosystems: IEcosystemAdapter[];
-	openCode: OpenCodeDataAccess;
-	crush: CrushDataAccess;
-	continue_: ContinueDataAccess;
-	visualStudio: VisualStudioDataAccess;
-	claudeCode: ClaudeCodeDataAccess;
-	claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
-	mistralVibe: MistralVibeDataAccess;
 	sampleDataDirectoryOverride?: () => string | undefined;
 }
 
