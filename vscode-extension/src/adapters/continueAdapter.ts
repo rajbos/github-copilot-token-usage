@@ -1,7 +1,8 @@
 import * as fs from 'fs';
-import type { ModelUsage } from '../types';
+import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
 import { ContinueDataAccess } from '../continue';
+import { createEmptyContextRefs } from '../tokenEstimation';
 
 export class ContinueAdapter implements IEcosystemAdapter {
 	readonly id = 'continue';
@@ -63,5 +64,28 @@ export class ContinueAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.continue_.getContinueDataDir();
+	}
+
+	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {
+		const turns: ChatTurn[] = [];
+		const continueTurns = this.continue_.buildContinueTurns(sessionFile);
+		const emptyContextRefs = createEmptyContextRefs();
+		for (const ct of continueTurns) {
+			turns.push({
+				turnNumber: turns.length + 1,
+				timestamp: null,
+				mode: 'ask',
+				userMessage: ct.userText,
+				assistantResponse: ct.assistantText,
+				model: ct.model,
+				toolCalls: ct.toolCalls,
+				contextReferences: emptyContextRefs,
+				mcpTools: [],
+				inputTokensEstimate: ct.inputTokens,
+				outputTokensEstimate: ct.outputTokens,
+				thinkingTokensEstimate: 0
+			});
+		}
+		return { turns };
 	}
 }

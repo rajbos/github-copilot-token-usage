@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ModelUsage } from '../types';
+import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
 import { VisualStudioDataAccess } from '../visualstudio';
+import { createEmptyContextRefs } from '../tokenEstimation';
 
 export class VisualStudioAdapter implements IEcosystemAdapter {
 	readonly id = 'visualstudio';
@@ -56,5 +57,58 @@ export class VisualStudioAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(sessionFile: string): string {
 		return path.dirname(sessionFile);
+	}
+
+	readonly skipBackendSync = true;
+
+	getRawFileContent(sessionFile: string): string {
+		const objects = this.visualStudio.decodeSessionFile(sessionFile);
+		const readable = objects.map((obj: any, i: number) => i === 0 ? obj : obj?.[1] ?? obj);
+		return JSON.stringify(readable, null, 2);
+	}
+
+	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {
+		const turns: ChatTurn[] = [];
+		const objects = this.visualStudio.decodeSessionFile(sessionFile);
+		let turnNumber = 0;
+		for (let i = 1; i < objects.length; i += 2) {
+			const req = objects[i];
+			const res = objects[i + 1];
+			if (!req) { continue; }
+			const reqData = req[1];
+			const resData = res?.[1];
+			turnNumber++;
+			const userText = this.visualStudio.extractTextFromContent(reqData?.Content || []);
+			const assistantText = res ? this.visualStudio.extractTextFromContent(resData?.Content || []) : '';
+			const model = this.visualStudio.getModelId(resData ?? reqData, !resData);
+			const contextText = this.visualStudio.extractContextText(reqData?.Context);
+			const inputTokens = this.estimateTokens(userText + contextText, model ?? 'gpt-4');
+			const outputTokens = res ? this.estimateTokens(assistantText, model ?? 'gpt-4') : 0;
+			const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+			for (const c of (resData?.Content || [])) {
+				const inner = Array.isArray(c) ? c[1] : null;
+				if (inner?.Function) {
+					toolCalls.push({
+						toolName: String(inner.Function.Description || 'tool'),
+						result: typeof inner.Function.Result === 'string' ? inner.Function.Result : undefined
+					});
+				}
+			}
+			turns.push({
+				turnNumber,
+				timestamp: reqData?.Timestamp ? new Date(reqData.Timestamp).toISOString() : null,
+				mode: 'ask' as const,
+				userMessage: userText,
+				assistantResponse: assistantText,
+				model,
+				toolCalls,
+				contextReferences: createEmptyContextRefs(),
+				mcpTools: [],
+				inputTokensEstimate: inputTokens,
+				outputTokensEstimate: outputTokens,
+				thinkingTokensEstimate: 0
+			});
+		}
+		return { turns };
 	}
 }

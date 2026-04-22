@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ModelUsage } from '../types';
+import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
 import { OpenCodeDataAccess } from '../opencode';
+import { createEmptyContextRefs } from '../tokenEstimation';
 
 export class OpenCodeAdapter implements IEcosystemAdapter {
 	readonly id = 'opencode';
@@ -77,5 +78,69 @@ export class OpenCodeAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.openCode.getOpenCodeDataDir();
+	}
+
+	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {
+		const turns: ChatTurn[] = [];
+		const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
+		if (messages.length > 0) {
+			let turnNumber = 0;
+			let prevCumulativeTotal = 0;
+			for (let i = 0; i < messages.length; i++) {
+				const msg = messages[i];
+				if (msg.role !== 'user') { continue; }
+				turnNumber++;
+				const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
+				const userParts = await this.openCode.getOpenCodePartsForMessage(msg.id);
+				const userText = userParts.filter(p => p.type === 'text').map(p => p.text || '').join('\n');
+				let assistantText = '';
+				const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
+				let model: string | null = null;
+				let thinkingTokens = 0;
+
+				let turnCumulativeTotal = prevCumulativeTotal;
+				for (const assistantMsg of turnAssistantMsgs) {
+					if (!model) { model = assistantMsg.modelID || null; }
+					thinkingTokens += assistantMsg.tokens?.reasoning || 0;
+					if (typeof assistantMsg.tokens?.total === 'number') {
+						turnCumulativeTotal = Math.max(turnCumulativeTotal, assistantMsg.tokens.total);
+					}
+					const assistantParts = await this.openCode.getOpenCodePartsForMessage(assistantMsg.id);
+					for (const part of assistantParts) {
+						if (part.type === 'text' && part.text) {
+							assistantText += part.text;
+						} else if (part.type === 'tool' && part.tool) {
+							toolCalls.push({
+								toolName: part.tool,
+								arguments: part.state?.input ? JSON.stringify(part.state.input) : undefined,
+								result: part.state?.output || undefined
+							});
+						}
+					}
+				}
+
+				const turnTokens = turnCumulativeTotal - prevCumulativeTotal;
+				const turnOutputAndThinking = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.output || 0) + (m.tokens?.reasoning || 0), 0);
+				const turnInputTokens = Math.max(0, turnTokens - turnOutputAndThinking);
+
+				turns.push({
+					turnNumber,
+					timestamp: msg.time?.created ? new Date(msg.time.created).toISOString() : null,
+					mode: (msg.agent === 'build' || msg.agent === 'agent') ? 'agent' : (msg.agent === 'ask' ? 'ask' : 'agent'),
+					userMessage: userText,
+					assistantResponse: assistantText,
+					model,
+					toolCalls,
+					contextReferences: createEmptyContextRefs(),
+					mcpTools: [],
+					inputTokensEstimate: turnInputTokens,
+					outputTokensEstimate: turnOutputAndThinking - thinkingTokens,
+					thinkingTokensEstimate: thinkingTokens
+				});
+
+				prevCumulativeTotal = turnCumulativeTotal;
+			}
+		}
+		return { turns };
 	}
 }

@@ -17,6 +17,11 @@ export interface IEcosystemAdapter {
 	readonly id: string;
 	/** Human-readable display name, e.g. 'OpenCode', 'Crush', 'Continue'. */
 	readonly displayName: string;
+	/**
+	 * When true, backend sync is skipped for sessions handled by this adapter
+	 * (e.g. Visual Studio binary MessagePack sessions cannot be synced).
+	 */
+	readonly skipBackendSync?: boolean;
 
 	/** Returns true if this adapter owns the given session file path. */
 	handles(sessionFile: string): boolean;
@@ -60,8 +65,27 @@ export interface IEcosystemAdapter {
 	getEditorRoot(sessionFile: string): string;
 
 	/**
-	 * Build chat turns for the log viewer (Phase 2 — optional).
-	 * When present, getSessionLogData() can use this instead of its own if-chain.
+	 * Build chat turns for the log viewer.
+	 * Returns turns plus optional actualTokens (only MistralVibe has session-level actual usage).
+	 * When absent, getSessionLogData() falls through to the built-in Copilot Chat parser.
 	 */
-	buildTurns?(sessionFile: string): Promise<ChatTurn[]>;
+	buildTurns?(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }>;
+
+	/**
+	 * Return the raw decoded content of the session file as a string.
+	 * Only needed for binary formats (e.g. Visual Studio MessagePack).
+	 * When absent, the caller reads the file directly.
+	 */
+	getRawFileContent?(sessionFile: string): string | undefined;
+
+	/**
+	 * Return data needed for backend sync.
+	 * Only implemented by ecosystems that support sync (OpenCode, Crush).
+	 */
+	getSyncData?(sessionFile: string): Promise<{
+		tokens: number;
+		interactions: number;
+		modelUsage: ModelUsage;
+		timestamp: number;
+	}>;
 }
