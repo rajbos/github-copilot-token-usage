@@ -1,12 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ModelUsage, ChatTurn } from '../types';
-import type { IEcosystemAdapter } from '../ecosystemAdapter';
-import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
+import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { VisualStudioDataAccess } from '../visualstudio';
 import { createEmptyContextRefs } from '../tokenEstimation';
+import { isMcpTool, normalizeMcpToolName, extractMcpServerName } from '../workspaceHelpers';
+import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
-export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
+export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'visualstudio';
 	readonly displayName = 'Visual Studio';
 
@@ -130,5 +131,49 @@ export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcos
 			});
 		}
 		return { turns };
+	}
+
+	async analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<import('../types').SessionUsageAnalysis> {
+		const analysis = createEmptySessionUsageAnalysis();
+		const objects = this.visualStudio.decodeSessionFile(sessionFile);
+		const models: string[] = [];
+		for (let i = 1; i < objects.length; i++) {
+			const isRequest = i % 2 === 1;
+			const objData = objects[i]?.[1];
+			if (isRequest) {
+				analysis.modeUsage.ask++;
+			} else {
+				const model = this.visualStudio.getModelId(objData, false);
+				if (model) { models.push(model); }
+				for (const c of ((objData?.Content ?? []) as any[])) {
+					const inner: any = Array.isArray(c) ? c[1] : null;
+					if (inner?.Function) {
+						analysis.toolCalls.total++;
+						const toolName = String(inner.Function.Name || inner.Function.Description || 'tool');
+						if (isMcpTool(toolName)) {
+							analysis.mcpTools.total++;
+							const serverName = extractMcpServerName(toolName, ctx.toolNameMap);
+							analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
+							const normalizedTool = normalizeMcpToolName(toolName);
+							analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
+							analysis.toolCalls.total--;
+						} else {
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+					}
+				}
+			}
+		}
+		const uniqueModels = [...new Set(models)];
+		analysis.modelSwitching.uniqueModels = uniqueModels;
+		analysis.modelSwitching.modelCount = uniqueModels.length;
+		analysis.modelSwitching.totalRequests = models.length;
+		let switchCount = 0;
+		for (let i = 1; i < models.length; i++) {
+			if (models[i] !== models[i - 1]) { switchCount++; }
+		}
+		analysis.modelSwitching.switchCount = switchCount;
+		applyModelTierClassification(ctx.modelPricing, uniqueModels, models, analysis);
+		return analysis;
 	}
 }

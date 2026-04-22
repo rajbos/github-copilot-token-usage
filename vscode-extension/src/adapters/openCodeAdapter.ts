@@ -1,12 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ModelUsage, ChatTurn } from '../types';
-import type { IEcosystemAdapter } from '../ecosystemAdapter';
-import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
+import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { OpenCodeDataAccess } from '../opencode';
 import { createEmptyContextRefs } from '../tokenEstimation';
+import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
-export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
+export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'opencode';
 	readonly displayName = 'OpenCode';
 
@@ -211,5 +211,48 @@ export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosyste
 			}
 		}
 		return { turns };
+	}
+
+	async getSyncData(sessionFile: string): Promise<{ tokens: number; interactions: number; modelUsage: ModelUsage; timestamp: number }> {
+		return this.openCode.getOpenCodeSessionData(sessionFile);
+	}
+
+	async analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<import('../types').SessionUsageAnalysis> {
+		const analysis = createEmptySessionUsageAnalysis();
+		const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
+		if (messages.length > 0) {
+			const models: string[] = [];
+			for (const msg of messages) {
+				if (msg.role === 'user') {
+					const mode = msg.agent || 'agent';
+					if (mode === 'build' || mode === 'agent') { analysis.modeUsage.agent++; }
+					else if (mode === 'ask') { analysis.modeUsage.ask++; }
+					else if (mode === 'edit') { analysis.modeUsage.edit++; }
+					else { analysis.modeUsage.agent++; }
+				}
+				if (msg.role === 'assistant') {
+					const model = msg.modelID || 'unknown';
+					models.push(model);
+					const parts = await this.openCode.getOpenCodePartsForMessage(msg.id);
+					for (const part of parts) {
+						if (part.type === 'tool' && part.tool) {
+							analysis.toolCalls.total++;
+							const toolName = part.tool;
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
+					}
+				}
+			}
+			const uniqueModels = [...new Set(models)];
+			analysis.modelSwitching.uniqueModels = uniqueModels;
+			analysis.modelSwitching.modelCount = uniqueModels.length;
+			analysis.modelSwitching.totalRequests = models.length;
+			let switchCount = 0;
+			for (let i = 1; i < models.length; i++) {
+				if (models[i] !== models[i - 1]) { switchCount++; }
+			}
+			analysis.modelSwitching.switchCount = switchCount;
+		}
+		return analysis;
 	}
 }

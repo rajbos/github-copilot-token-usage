@@ -413,12 +413,6 @@ function aggregateIntoPeriod(period: PeriodStats, data: SessionData): void {
 export async function calculateUsageAnalysisStats(sessionFiles: string[]): Promise<UsageAnalysisStats> {
 	const deps = {
 		warn,
-		openCode: _openCodeInstance,
-		crush: _crushInstance,
-		continue_: _continueInstance,
-		visualStudio: _visualStudioInstance,
-		claudeCode: _claudeCodeInstance,
-		claudeDesktopCowork: _claudeDesktopCoworkInstance,
 		tokenEstimators,
 		modelPricing,
 		toolNameMap,

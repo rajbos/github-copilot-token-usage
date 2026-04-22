@@ -37,26 +37,12 @@ import {
 	normalizeMcpToolName,
 	extractMcpServerName,
 } from './workspaceHelpers';
-import type { OpenCodeDataAccess } from './opencode';
-import type { CrushDataAccess } from './crush';
-import type { ContinueDataAccess } from './continue';
-import type { VisualStudioDataAccess } from './visualstudio';
-import type { ClaudeCodeDataAccess } from './claudecode';
-import { normalizeClaudeModelId } from './claudecode';
-import type { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
-import type { MistralVibeDataAccess } from './mistralvibe';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
+import { isAnalyzable } from './ecosystemAdapter';
 
 export interface UsageAnalysisDeps {
 	warn: (msg: string) => void;
-	ecosystems?: IEcosystemAdapter[];
-	openCode: OpenCodeDataAccess;
-	crush?: CrushDataAccess;
-	continue_: ContinueDataAccess;
-	visualStudio?: VisualStudioDataAccess;
-	claudeCode?: ClaudeCodeDataAccess;
-	claudeDesktopCowork?: ClaudeDesktopCoworkDataAccess;
-	mistralVibe?: MistralVibeDataAccess;
+	ecosystems: IEcosystemAdapter[];
 	tokenEstimators: { [key: string]: number };
 	modelPricing: { [key: string]: ModelPricing };
 	toolNameMap: { [key: string]: string };
@@ -527,7 +513,7 @@ export function analyzeRequestContext(request: any, refs: ContextReferenceUsage)
  * Read Claude Code session events from a JSONL file for usage analysis.
  * Lightweight: only used internally by analyzeSessionUsage.
  */
-function readClaudeCodeEventsForAnalysis(sessionFilePath: string): any[] {
+export function readClaudeCodeEventsForAnalysis(sessionFilePath: string): any[] {
 	try {
 		const content = fs.readFileSync(sessionFilePath, 'utf8');
 		const lines = content.trim().split('\n');
@@ -542,8 +528,8 @@ function readClaudeCodeEventsForAnalysis(sessionFilePath: string): any[] {
 	}
 }
 
-function applyModelTierClassification(
-	deps: Pick<UsageAnalysisDeps, 'modelPricing'>,
+export function applyModelTierClassification(
+	modelPricing: { [key: string]: ModelPricing },
 	uniqueModels: string[],
 	allModelRequests: string[],
 	analysis: SessionUsageAnalysis
@@ -552,7 +538,7 @@ function applyModelTierClassification(
 	const premium: string[] = [];
 	const unknown: string[] = [];
 	for (const model of uniqueModels) {
-		const tier = getModelTier(model, deps.modelPricing);
+		const tier = getModelTier(model, modelPricing);
 		if (tier === 'standard') { standard.push(model); }
 		else if (tier === 'premium') { premium.push(model); }
 		else { unknown.push(model); }
@@ -561,7 +547,7 @@ function applyModelTierClassification(
 	analysis.modelSwitching.hasMixedTiers = standard.length > 0 && premium.length > 0;
 	let stdReq = 0, premReq = 0, unkReq = 0;
 	for (const model of allModelRequests) {
-		const tier = getModelTier(model, deps.modelPricing);
+		const tier = getModelTier(model, modelPricing);
 		if (tier === 'standard') { stdReq++; }
 		else if (tier === 'premium') { premReq++; }
 		else { unkReq++; }
@@ -575,7 +561,7 @@ function applyModelTierClassification(
  * Calculate model switching statistics for a session file.
  * This method updates the analysis.modelSwitching field in place.
  */
-export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'openCode' | 'continue_' | 'tokenEstimators'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string): Promise<void> {
+export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'tokenEstimators' | 'ecosystems'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string): Promise<void> {
 	try {
 		// Use non-cached method to avoid circular dependency
 		// (getSessionFileDataCached -> analyzeSessionUsage -> getModelUsageFromSessionCached -> getSessionFileDataCached)
@@ -953,32 +939,13 @@ export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>
 }
 
 /**
- * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
+ * Create an empty SessionUsageAnalysis object, used as the baseline for adapter analyzeUsage() implementations.
  */
-export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: string, preloadedContent?: string): Promise<SessionUsageAnalysis> {
-	const analysis: SessionUsageAnalysis = {
+export function createEmptySessionUsageAnalysis(): SessionUsageAnalysis {
+	return {
 		toolCalls: { total: 0, byTool: {} },
 		modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
-		contextReferences: {
-			file: 0,
-			selection: 0,
-			implicitSelection: 0,
-			symbol: 0,
-			codebase: 0,
-			workspace: 0,
-			terminal: 0,
-			vscode: 0,
-			terminalLastCommand: 0,
-			terminalSelection: 0,
-			clipboard: 0,
-			changes: 0,
-			outputPanel: 0,
-			problemsPanel: 0,
-			byKind: {},
-			copilotInstructions: 0,
-			agentsMd: 0,
-			byPath: {}
-		},
+		contextReferences: createEmptyContextRefs(),
 		mcpTools: { total: 0, byServer: {}, byTool: {} },
 		modelSwitching: {
 			uniqueModels: [],
@@ -989,280 +956,22 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			standardRequests: 0,
 			premiumRequests: 0,
 			unknownRequests: 0,
-			totalRequests: 0
-		}
+			totalRequests: 0,
+		},
 	};
+}
+
+/**
+ * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
+ */
+export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: string, preloadedContent?: string): Promise<SessionUsageAnalysis> {
+	const analysis: SessionUsageAnalysis = createEmptySessionUsageAnalysis();
 
 	try {
-		// Handle OpenCode sessions
-		if (deps.openCode.isOpenCodeSessionFile(sessionFile)) {
-			const messages = await deps.openCode.getOpenCodeMessagesForSession(sessionFile);
-			if (messages.length > 0) {
-				const models: string[] = [];
-				for (const msg of messages) {
-					if (msg.role === 'user') {
-						// OpenCode uses agent/mode field for mode type
-						const mode = msg.agent || 'agent';
-						if (mode === 'build' || mode === 'agent') {
-							analysis.modeUsage.agent++;
-						} else if (mode === 'ask') {
-							analysis.modeUsage.ask++;
-						} else if (mode === 'edit') {
-							analysis.modeUsage.edit++;
-						} else {
-							analysis.modeUsage.agent++;
-						}
-					}
-					if (msg.role === 'assistant') {
-						const model = msg.modelID || 'unknown';
-						models.push(model);
-						// Check parts for tool calls
-						const parts = await deps.openCode.getOpenCodePartsForMessage(msg.id);
-						for (const part of parts) {
-							if (part.type === 'tool' && part.tool) {
-								analysis.toolCalls.total++;
-								const toolName = part.tool;
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-					}
-				}
-				// Model switching analysis
-				const uniqueModels = [...new Set(models)];
-				analysis.modelSwitching.uniqueModels = uniqueModels;
-				analysis.modelSwitching.modelCount = uniqueModels.length;
-				analysis.modelSwitching.totalRequests = models.length;
-				let switchCount = 0;
-				for (let i = 1; i < models.length; i++) {
-					if (models[i] !== models[i - 1]) { switchCount++; }
-				}
-				analysis.modelSwitching.switchCount = switchCount;
-			}
-			return analysis;
-		}
-
-		// Handle Visual Studio sessions
-		if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
-			const objects = deps.visualStudio.decodeSessionFile(sessionFile);
-			const models: string[] = [];
-			for (let i = 1; i < objects.length; i++) {
-				const isRequest = i % 2 === 1;
-				// VS session objects are [version, innerData] tuples; inner data is at index [1]
-				const objData = objects[i]?.[1];
-				if (isRequest) {
-					analysis.modeUsage.ask++;
-				} else {
-					const model = deps.visualStudio.getModelId(objData, false);
-					if (model) { models.push(model); }
-					// Count tool calls from response content (at objData.Content, not objects[i].Content)
-					for (const c of ((objData?.Content ?? []) as any[])) {
-						const inner: any = Array.isArray(c) ? c[1] : null;
-						if (inner?.Function) {
-							analysis.toolCalls.total++;
-							const toolName = String(inner.Function.Name || inner.Function.Description || 'tool');
-							if (isMcpTool(toolName)) {
-								analysis.mcpTools.total++;
-								const serverName = extractMcpServerName(toolName, deps.toolNameMap);
-								analysis.mcpTools.byServer[serverName] = (analysis.mcpTools.byServer[serverName] || 0) + 1;
-								const normalizedTool = normalizeMcpToolName(toolName);
-								analysis.mcpTools.byTool[normalizedTool] = (analysis.mcpTools.byTool[normalizedTool] || 0) + 1;
-								// Don't count as regular tool call
-								analysis.toolCalls.total--;
-							} else {
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-					}
-				}
-			}
-			const uniqueModels = [...new Set(models)];
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-			analysis.modelSwitching.totalRequests = models.length;
-			let switchCount = 0;
-			for (let i = 1; i < models.length; i++) {
-				if (models[i] !== models[i - 1]) { switchCount++; }
-			}
-			analysis.modelSwitching.switchCount = switchCount;
-			applyModelTierClassification(deps, uniqueModels, models, analysis);
-			return analysis;
-		}
-
-		// Handle Crush sessions
-		if (deps.crush?.isCrushSessionFile(sessionFile)) {
-			const messages = await deps.crush.getCrushMessages(sessionFile);
-			const models: string[] = [];
-			for (const msg of messages) {
-				if (msg.role === 'user') {
-					analysis.modeUsage.agent++;
-				}
-				if (msg.role === 'assistant') {
-					const model = msg.model || 'unknown';
-					models.push(model);
-					const parts: any[] = Array.isArray(msg.parts) ? msg.parts : [];
-					for (const part of parts) {
-						if (part?.type === 'tool_call' && part?.data?.name) {
-							analysis.toolCalls.total++;
-							const toolName = part.data.name as string;
-							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-						}
-					}
-				}
-			}
-			// Model switching analysis
-			const uniqueModels = [...new Set(models)];
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-			analysis.modelSwitching.totalRequests = models.length;
-			let switchCount = 0;
-			for (let i = 1; i < models.length; i++) {
-				if (models[i] !== models[i - 1]) { switchCount++; }
-			}
-			analysis.modelSwitching.switchCount = switchCount;
-			applyModelTierClassification(deps, uniqueModels, models, analysis);
-			return analysis;
-		}
-
-		// Handle Continue sessions
-		if (deps.continue_.isContinueSessionFile(sessionFile)) {
-			const turns = deps.continue_.buildContinueTurns(sessionFile);
-			const meta = deps.continue_.getContinueSessionMeta(sessionFile);
-			const models: string[] = [];
-			for (const turn of turns) {
-				analysis.modeUsage.ask++;
-				if (turn.model) { models.push(turn.model); }
-				for (const tc of turn.toolCalls) {
-					analysis.toolCalls.total++;
-					analysis.toolCalls.byTool[tc.toolName] = (analysis.toolCalls.byTool[tc.toolName] || 0) + 1;
-				}
-			}
-			if (meta?.mode === 'agent') {
-				// Recount interactions as agent mode
-				for (let k = 0; k < turns.length; k++) {
-					analysis.modeUsage.ask--;
-					analysis.modeUsage.agent++;
-				}
-			}
-			const uniqueModels = [...new Set(models)];
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-			analysis.modelSwitching.totalRequests = models.length;
-			let switchCount = 0;
-			for (let ki = 1; ki < models.length; ki++) {
-				if (models[ki] !== models[ki - 1]) { switchCount++; }
-			}
-			analysis.modelSwitching.switchCount = switchCount;
-			applyModelTierClassification(deps, uniqueModels, models, analysis);
-			return analysis;
-		}
-
-		// Handle Claude Desktop Cowork sessions — same JSONL format as Claude Code
-		if (deps.claudeDesktopCowork?.isCoworkSessionFile(sessionFile)) {
-			const events = readClaudeCodeEventsForAnalysis(sessionFile);
-			const models: string[] = [];
-			const seenRequestIds = new Set<string>();
-			for (const event of events) {
-				if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
-					analysis.modeUsage.agent++;
-				}
-				if (event.type === 'assistant') {
-					const requestId = event.requestId;
-					if (requestId) {
-						if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) { continue; }
-						if (seenRequestIds.has(requestId)) { continue; }
-						seenRequestIds.add(requestId);
-					}
-					const model = normalizeClaudeModelId(event.message?.model);
-					if (model) { models.push(model); }
-					if (Array.isArray(event.message?.content)) {
-						for (const block of event.message.content) {
-							if (block.type === 'tool_use' && block.name) {
-								analysis.toolCalls.total++;
-								const toolName = block.name;
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-					}
-				}
-			}
-			const uniqueModels = [...new Set(models)];
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-			analysis.modelSwitching.totalRequests = models.length;
-			let switchCountCW = 0;
-			for (let cwi = 1; cwi < models.length; cwi++) {
-				if (models[cwi] !== models[cwi - 1]) { switchCountCW++; }
-			}
-			analysis.modelSwitching.switchCount = switchCountCW;
-			applyModelTierClassification(deps, uniqueModels, models, analysis);
-			return analysis;
-		}
-
-		// Handle Claude Code sessions
-		if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
-			// Claude Code has actual token counts; usage analysis extracts tool calls and modes
-			const events = readClaudeCodeEventsForAnalysis(sessionFile);
-			const models: string[] = [];
-			const seenRequestIds = new Set<string>();
-			for (const event of events) {
-				if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
-					// Claude Code is always in agent mode
-					analysis.modeUsage.agent++;
-				}
-				if (event.type === 'assistant') {
-					const requestId = event.requestId;
-					if (requestId) {
-						if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) { continue; }
-						if (seenRequestIds.has(requestId)) { continue; }
-						seenRequestIds.add(requestId);
-					}
-					const model = normalizeClaudeModelId(event.message?.model);
-					if (model) { models.push(model); }
-					// Extract tool calls from content blocks
-					if (Array.isArray(event.message?.content)) {
-						for (const block of event.message.content) {
-							if (block.type === 'tool_use' && block.name) {
-								analysis.toolCalls.total++;
-								const toolName = block.name;
-								analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-							}
-						}
-					}
-				}
-			}
-			const uniqueModels = [...new Set(models)];
-			analysis.modelSwitching.uniqueModels = uniqueModels;
-			analysis.modelSwitching.modelCount = uniqueModels.length;
-			analysis.modelSwitching.totalRequests = models.length;
-			let switchCountCC = 0;
-			for (let ci = 1; ci < models.length; ci++) {
-				if (models[ci] !== models[ci - 1]) { switchCountCC++; }
-			}
-			analysis.modelSwitching.switchCount = switchCountCC;
-			applyModelTierClassification(deps, uniqueModels, models, analysis);
-			return analysis;
-		}
-
-		// Handle Mistral Vibe sessions
-		if (deps.mistralVibe?.isVibeSessionFile(sessionFile)) {
-			const modelUsage = deps.mistralVibe.getModelUsage(sessionFile);
-			const models = Object.keys(modelUsage);
-			analysis.modeUsage.agent += deps.mistralVibe.countInteractions(sessionFile);
-			// Count tool calls from messages.jsonl
-			const messages = deps.mistralVibe.readSessionMessages(sessionFile);
-			for (const msg of messages) {
-				if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
-					for (const tc of msg.tool_calls) {
-						const toolName = tc.function?.name || tc.name || 'unknown';
-						analysis.toolCalls.total++;
-						analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
-					}
-				}
-			}
-			analysis.modelSwitching.uniqueModels = models;
-			analysis.modelSwitching.modelCount = models.length;
-			applyModelTierClassification(deps, models, models, analysis);
-			return analysis;
+		// Dispatch to ecosystem adapter when available
+		const eco = deps.ecosystems.find(e => e.handles(sessionFile));
+		if (eco && isAnalyzable(eco)) {
+			return eco.analyzeUsage(sessionFile, { modelPricing: deps.modelPricing, toolNameMap: deps.toolNameMap });
 		}
 
 		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
@@ -1397,7 +1106,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 						if (models[mi] !== models[mi - 1]) { switchCount++; }
 					}
 					analysis.modelSwitching.switchCount = switchCount;
-					applyModelTierClassification(deps, uniqueModels, models, analysis);
+					applyModelTierClassification(deps.modelPricing, uniqueModels, models, analysis);
 				}
 
 				// Extract thinking effort (reasoning effort) from delta lines
@@ -1711,49 +1420,13 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'openCode' | 'crush' | 'continue_' | 'visualStudio' | 'claudeCode' | 'claudeDesktopCowork' | 'mistralVibe' | 'tokenEstimators' | 'modelPricing' | 'ecosystems'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'tokenEstimators' | 'modelPricing' | 'ecosystems'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
-	// Use adapter registry when available — single dispatch replaces all per-ecosystem if-blocks
+	// Dispatch to ecosystem adapter when available
 	if (deps.ecosystems) {
 		const eco = deps.ecosystems.find(e => e.handles(sessionFile));
 		if (eco) { return eco.getModelUsage(sessionFile); }
-	} else {
-		// Legacy fallback for callers that haven't been updated to pass ecosystems
-		// Handle OpenCode sessions
-		if (deps.openCode.isOpenCodeSessionFile(sessionFile)) {
-			return await deps.openCode.getOpenCodeModelUsage(sessionFile);
-		}
-
-		// Handle Visual Studio sessions
-		if (deps.visualStudio?.isVSSessionFile(sessionFile)) {
-			return deps.visualStudio.getModelUsage(sessionFile, (text, model) => estimateTokensFromText(text, model ?? undefined, deps.tokenEstimators));
-		}
-
-		// Handle Crush sessions
-		if (deps.crush?.isCrushSessionFile(sessionFile)) {
-			return await deps.crush.getCrushModelUsage(sessionFile);
-		}
-
-		// Handle Continue sessions
-		if (deps.continue_.isContinueSessionFile(sessionFile)) {
-			return deps.continue_.getContinueModelUsage(sessionFile);
-		}
-
-		// Handle Claude Desktop Cowork sessions
-		if (deps.claudeDesktopCowork?.isCoworkSessionFile(sessionFile)) {
-			return deps.claudeDesktopCowork.getCoworkModelUsage(sessionFile);
-		}
-
-		// Handle Claude Code sessions
-		if (deps.claudeCode?.isClaudeCodeSessionFile(sessionFile)) {
-			return deps.claudeCode.getClaudeCodeModelUsage(sessionFile);
-		}
-
-		// Handle Mistral Vibe sessions
-		if (deps.mistralVibe?.isVibeSessionFile(sessionFile)) {
-			return deps.mistralVibe.getModelUsage(sessionFile);
-		}
 	}
 
 	const fileName = sessionFile.split(/[/\\]/).pop() || sessionFile;

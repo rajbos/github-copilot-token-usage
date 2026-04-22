@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import type { ModelUsage, ChatTurn } from '../types';
-import type { IEcosystemAdapter } from '../ecosystemAdapter';
-import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
+import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { ContinueDataAccess } from '../continue';
 import { createEmptyContextRefs } from '../tokenEstimation';
+import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
-export class ContinueAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
+export class ContinueAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'continue';
 	readonly displayName = 'Continue';
 
@@ -107,5 +107,37 @@ export class ContinueAdapter implements IEcosystemAdapter, IDiscoverableEcosyste
 			});
 		}
 		return { turns };
+	}
+
+	async analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<import('../types').SessionUsageAnalysis> {
+		const analysis = createEmptySessionUsageAnalysis();
+		const turns = this.continue_.buildContinueTurns(sessionFile);
+		const meta = this.continue_.getContinueSessionMeta(sessionFile);
+		const models: string[] = [];
+		for (const turn of turns) {
+			analysis.modeUsage.ask++;
+			if (turn.model) { models.push(turn.model); }
+			for (const tc of turn.toolCalls) {
+				analysis.toolCalls.total++;
+				analysis.toolCalls.byTool[tc.toolName] = (analysis.toolCalls.byTool[tc.toolName] || 0) + 1;
+			}
+		}
+		if (meta?.mode === 'agent') {
+			for (let k = 0; k < turns.length; k++) {
+				analysis.modeUsage.ask--;
+				analysis.modeUsage.agent++;
+			}
+		}
+		const uniqueModels = [...new Set(models)];
+		analysis.modelSwitching.uniqueModels = uniqueModels;
+		analysis.modelSwitching.modelCount = uniqueModels.length;
+		analysis.modelSwitching.totalRequests = models.length;
+		let switchCount = 0;
+		for (let ki = 1; ki < models.length; ki++) {
+			if (models[ki] !== models[ki - 1]) { switchCount++; }
+		}
+		analysis.modelSwitching.switchCount = switchCount;
+		applyModelTierClassification(ctx.modelPricing, uniqueModels, models, analysis);
+		return analysis;
 	}
 }

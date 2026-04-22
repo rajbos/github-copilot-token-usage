@@ -10,7 +10,7 @@
  *   2. Adding an instance to the registry in extension.ts (and cli/src/helpers.ts)
  */
 import type * as fsModule from 'fs';
-import type { ModelUsage, ChatTurn } from './types';
+import type { ModelUsage, ChatTurn, SessionUsageAnalysis, ModelPricing } from './types';
 
 export interface IEcosystemAdapter {
 	/** Stable lowercase identifier, e.g. 'opencode', 'crush', 'continue'. */
@@ -135,4 +135,28 @@ export interface IDiscoverableEcosystem {
 /** Type guard: check whether an adapter also implements IDiscoverableEcosystem. */
 export function isDiscoverable(adapter: IEcosystemAdapter): adapter is IEcosystemAdapter & IDiscoverableEcosystem {
 	return typeof (adapter as any).discover === 'function';
+}
+
+// ---------------------------------------------------------------------------
+// Usage analysis capability
+// ---------------------------------------------------------------------------
+
+/** Context passed to analyzeUsage() on each adapter. */
+export interface UsageAnalysisAdapterContext {
+	modelPricing: { [key: string]: ModelPricing };
+	toolNameMap: { [key: string]: string };
+}
+
+/**
+ * Adapters that can produce a SessionUsageAnalysis implement this interface.
+ * Kept separate from IEcosystemAdapter so it is an explicit opt-in, and to
+ * avoid a circular import between ecosystemAdapter.ts and usageAnalysis.ts.
+ */
+export interface IAnalyzableEcosystem {
+	analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<SessionUsageAnalysis>;
+}
+
+/** Type guard: check whether an adapter also implements IAnalyzableEcosystem. */
+export function isAnalyzable(adapter: IEcosystemAdapter): adapter is IEcosystemAdapter & IAnalyzableEcosystem {
+	return typeof (adapter as any).analyzeUsage === 'function';
 }

@@ -184,7 +184,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, mistralVibe: this.mistralVibe, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
+		return { warn: (m: string) => this.warn(m), tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;

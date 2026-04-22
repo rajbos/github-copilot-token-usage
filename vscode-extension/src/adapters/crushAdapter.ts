@@ -1,12 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ModelUsage, ChatTurn } from '../types';
-import type { IEcosystemAdapter } from '../ecosystemAdapter';
-import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
+import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { CrushDataAccess } from '../crush';
 import { createEmptyContextRefs } from '../tokenEstimation';
+import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
-export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
+export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'crush';
 	readonly displayName = 'Crush';
 
@@ -167,5 +167,41 @@ export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 			});
 		}
 		return { turns };
+	}
+
+	async getSyncData(sessionFile: string): Promise<{ tokens: number; interactions: number; modelUsage: ModelUsage; timestamp: number }> {
+		return this.crush.getCrushSessionData(sessionFile);
+	}
+
+	async analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<import('../types').SessionUsageAnalysis> {
+		const analysis = createEmptySessionUsageAnalysis();
+		const messages = await this.crush.getCrushMessages(sessionFile);
+		const models: string[] = [];
+		for (const msg of messages) {
+			if (msg.role === 'user') { analysis.modeUsage.agent++; }
+			if (msg.role === 'assistant') {
+				const model = msg.model || 'unknown';
+				models.push(model);
+				const parts: any[] = Array.isArray(msg.parts) ? msg.parts : [];
+				for (const part of parts) {
+					if (part?.type === 'tool_call' && part?.data?.name) {
+						analysis.toolCalls.total++;
+						const toolName = part.data.name as string;
+						analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+					}
+				}
+			}
+		}
+		const uniqueModels = [...new Set(models)];
+		analysis.modelSwitching.uniqueModels = uniqueModels;
+		analysis.modelSwitching.modelCount = uniqueModels.length;
+		analysis.modelSwitching.totalRequests = models.length;
+		let switchCount = 0;
+		for (let i = 1; i < models.length; i++) {
+			if (models[i] !== models[i - 1]) { switchCount++; }
+		}
+		analysis.modelSwitching.switchCount = switchCount;
+		applyModelTierClassification(ctx.modelPricing, uniqueModels, models, analysis);
+		return analysis;
 	}
 }

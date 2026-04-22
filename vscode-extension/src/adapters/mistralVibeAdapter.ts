@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import type { ModelUsage, ChatTurn } from '../types';
-import type { IEcosystemAdapter } from '../ecosystemAdapter';
-import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
+import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { MistralVibeDataAccess } from '../mistralvibe';
 import { createEmptyContextRefs } from '../tokenEstimation';
+import { createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
-export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
+export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'mistralvibe';
 	readonly displayName = 'Mistral Vibe';
 
@@ -125,5 +125,34 @@ export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 		}
 
 		return { turns, actualTokens: tokenData.tokens };
+	}
+
+	async analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<import('../types').SessionUsageAnalysis> {
+		const analysis = createEmptySessionUsageAnalysis();
+		const messages = this.mistralVibe.readSessionMessages(sessionFile);
+		const meta = this.mistralVibe.getSessionMeta(sessionFile);
+		const model = meta.model || 'devstral';
+		const models: string[] = [];
+		for (const msg of messages) {
+			if (msg.role === 'user' && msg.injected !== true) {
+				analysis.modeUsage.agent++;
+			} else if (msg.role === 'assistant') {
+				models.push(model);
+				if (Array.isArray(msg.tool_calls)) {
+					for (const tc of msg.tool_calls) {
+						analysis.toolCalls.total++;
+						const toolName = String(tc.function?.name || tc.name || 'tool');
+						analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+					}
+				}
+			}
+		}
+		const uniqueModels = [...new Set(models)];
+		analysis.modelSwitching.uniqueModels = uniqueModels;
+		analysis.modelSwitching.modelCount = uniqueModels.length;
+		analysis.modelSwitching.totalRequests = models.length;
+		analysis.modelSwitching.switchCount = 0;
+		applyModelTierClassification(ctx.modelPricing, uniqueModels, models, analysis);
+		return analysis;
 	}
 }

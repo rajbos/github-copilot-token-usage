@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import type { ModelUsage } from '../types';
-import type { IEcosystemAdapter } from '../ecosystemAdapter';
-import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
-import { ClaudeCodeDataAccess } from '../claudecode';
+import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
+import { ClaudeCodeDataAccess, normalizeClaudeModelId } from '../claudecode';
+import { readClaudeCodeEventsForAnalysis, createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 
-export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
+export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'claudecode';
 	readonly displayName = 'Claude Code';
 
@@ -66,5 +66,38 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 
 	getCandidatePaths(): CandidatePath[] {
 		return [{ path: this.claudeCode.getClaudeCodeProjectsDir(), source: 'Claude Code' }];
+	}
+
+	async analyzeUsage(sessionFile: string, ctx: UsageAnalysisAdapterContext): Promise<import('../types').SessionUsageAnalysis> {
+		const analysis = createEmptySessionUsageAnalysis();
+		const events = await readClaudeCodeEventsForAnalysis(sessionFile);
+		const models: string[] = [];
+		for (const event of events) {
+			if (event.type === 'user' && event.message?.role === 'user' && !event.isSidechain) {
+				analysis.modeUsage.ask++;
+			} else if (event.type === 'assistant') {
+				const model = normalizeClaudeModelId(event.message?.model || 'unknown');
+				models.push(model);
+				const content: any[] = Array.isArray(event.message?.content) ? event.message.content : [];
+				for (const c of content) {
+					if (c?.type === 'tool_use') {
+						analysis.toolCalls.total++;
+						const toolName = String(c.name || 'tool');
+						analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+					}
+				}
+			}
+		}
+		const uniqueModels = [...new Set(models)];
+		analysis.modelSwitching.uniqueModels = uniqueModels;
+		analysis.modelSwitching.modelCount = uniqueModels.length;
+		analysis.modelSwitching.totalRequests = models.length;
+		let switchCount = 0;
+		for (let i = 1; i < models.length; i++) {
+			if (models[i] !== models[i - 1]) { switchCount++; }
+		}
+		analysis.modelSwitching.switchCount = switchCount;
+		applyModelTierClassification(ctx.modelPricing, uniqueModels, models, analysis);
+		return analysis;
 	}
 }
