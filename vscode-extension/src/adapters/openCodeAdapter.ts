@@ -2,10 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { OpenCodeDataAccess } from '../opencode';
 import { createEmptyContextRefs } from '../tokenEstimation';
 
-export class OpenCodeAdapter implements IEcosystemAdapter {
+export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'opencode';
 	readonly displayName = 'OpenCode';
 
@@ -78,6 +79,74 @@ export class OpenCodeAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.openCode.getOpenCodeDataDir();
+	}
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+		const dataDir = this.openCode.getOpenCodeDataDir();
+		const sessionDir = path.join(dataDir, 'storage', 'session');
+		const dbPath = path.join(dataDir, 'opencode.db');
+
+		// Scan JSON session files
+		log(`📁 Checking OpenCode JSON path: ${sessionDir}`);
+		log(`📁 Checking OpenCode DB path: ${dbPath}`);
+		try {
+			await fs.promises.access(sessionDir);
+			const scanDir = async (dir: string) => {
+				try {
+					const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+					for (const entry of entries) {
+						if (entry.isDirectory()) {
+							await scanDir(path.join(dir, entry.name));
+						} else if (entry.name.startsWith('ses_') && entry.name.endsWith('.json')) {
+							const fullPath = path.join(dir, entry.name);
+							try {
+								const stats = await fs.promises.stat(fullPath);
+								if (stats.size > 0) { sessionFiles.push(fullPath); }
+							} catch { /* ignore */ }
+						}
+					}
+				} catch { /* ignore */ }
+			};
+			await scanDir(sessionDir);
+			const jsonCount = sessionFiles.length;
+			if (jsonCount > 0) {
+				log(`📄 Found ${jsonCount} session files in OpenCode storage`);
+			}
+		} catch { /* sessionDir doesn't exist — skip */ }
+
+		// Scan SQLite database for additional sessions (deduplicating against JSON)
+		try {
+			await fs.promises.access(dbPath);
+			const existingIds = new Set(
+				sessionFiles
+					.filter(f => this.openCode.isOpenCodeSessionFile(f))
+					.map(f => this.openCode.getOpenCodeSessionId(f))
+					.filter(Boolean)
+			);
+			const dbSessionIds = await this.openCode.discoverOpenCodeDbSessions();
+			let dbNewCount = 0;
+			for (const sessionId of dbSessionIds) {
+				if (!existingIds.has(sessionId)) {
+					sessionFiles.push(path.join(dataDir, `opencode.db#${sessionId}`));
+					dbNewCount++;
+				}
+			}
+			if (dbNewCount > 0) {
+				log(`📄 Found ${dbNewCount} additional session(s) in OpenCode database`);
+			}
+		} catch { /* DB doesn't exist — skip */ }
+
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		const dataDir = this.openCode.getOpenCodeDataDir();
+		return [
+			{ path: path.join(dataDir, 'storage', 'session'), source: 'OpenCode (JSON)' },
+			{ path: path.join(dataDir, 'opencode.db'), source: 'OpenCode (DB)' },
+		];
 	}
 
 	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {

@@ -849,6 +849,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			log: (m) => this.log(m),
 			warn: (m) => this.warn(m),
 			error: (m, e) => this.error(m, e),
+			ecosystems: this.ecosystems,
 			openCode: this.openCode,
 			crush: this.crush,
 			visualStudio: this.visualStudio,

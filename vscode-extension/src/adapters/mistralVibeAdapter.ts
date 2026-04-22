@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { MistralVibeDataAccess } from '../mistralvibe';
 import { createEmptyContextRefs } from '../tokenEstimation';
 
-export class MistralVibeAdapter implements IEcosystemAdapter {
+export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'mistralvibe';
 	readonly displayName = 'Mistral Vibe';
 
@@ -46,6 +47,25 @@ export class MistralVibeAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.mistralVibe.getSessionLogDir();
+	}
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+		try {
+			const files = this.mistralVibe.discoverSessions();
+			if (files.length > 0) {
+				log(`📄 Found ${files.length} session file(s) in Mistral Vibe (~/.vibe/logs/session)`);
+				sessionFiles.push(...files);
+			}
+		} catch (e) {
+			log(`Could not read Mistral Vibe session files: ${e}`);
+		}
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		return [{ path: this.mistralVibe.getSessionLogDir(), source: 'Mistral Vibe' }];
 	}
 
 	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {

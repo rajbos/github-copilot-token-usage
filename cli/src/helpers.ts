@@ -102,7 +102,7 @@ const _ecosystems: IEcosystemAdapter[] = [
 
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
-	return new SessionDiscovery({ log, warn, error, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance, claudeDesktopCowork: _claudeDesktopCoworkInstance, mistralVibe: _mistralVibeInstance });
+	return new SessionDiscovery({ log, warn, error, ecosystems: _ecosystems, openCode: _openCodeInstance, crush: _crushInstance, continue_: _continueInstance, visualStudio: _visualStudioInstance, claudeCode: _claudeCodeInstance, claudeDesktopCowork: _claudeDesktopCoworkInstance, mistralVibe: _mistralVibeInstance });
 }
 
 /** Discover all session files on this machine */

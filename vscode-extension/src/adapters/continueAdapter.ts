@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { ContinueDataAccess } from '../continue';
 import { createEmptyContextRefs } from '../tokenEstimation';
 
-export class ContinueAdapter implements IEcosystemAdapter {
+export class ContinueAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'continue';
 	readonly displayName = 'Continue';
 
@@ -64,6 +65,25 @@ export class ContinueAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.continue_.getContinueDataDir();
+	}
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+		try {
+			const files = this.continue_.getContinueSessionFiles();
+			if (files.length > 0) {
+				log(`📄 Found ${files.length} session file(s) in Continue (~/.continue/sessions)`);
+				sessionFiles.push(...files);
+			}
+		} catch (e) {
+			log(`Could not read Continue session files: ${e}`);
+		}
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		return [{ path: this.continue_.getContinueSessionsDir(), source: 'Continue' }];
 	}
 
 	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {

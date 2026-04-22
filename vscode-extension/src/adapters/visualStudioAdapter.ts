@@ -2,10 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { VisualStudioDataAccess } from '../visualstudio';
 import { createEmptyContextRefs } from '../tokenEstimation';
 
-export class VisualStudioAdapter implements IEcosystemAdapter {
+export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'visualstudio';
 	readonly displayName = 'Visual Studio';
 
@@ -60,6 +61,25 @@ export class VisualStudioAdapter implements IEcosystemAdapter {
 	}
 
 	readonly skipBackendSync = true;
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+		try {
+			const sessions = this.visualStudio.discoverSessions();
+			if (sessions.length > 0) {
+				log(`📄 Found ${sessions.length} session file(s) in Visual Studio Copilot`);
+				sessionFiles.push(...sessions);
+			}
+		} catch (e) {
+			log(`Could not read Visual Studio session files: ${e}`);
+		}
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		return [{ path: this.visualStudio.getLogDir(), source: 'Visual Studio (log dir)' }];
+	}
 
 	getRawFileContent(sessionFile: string): string {
 		const objects = this.visualStudio.decodeSessionFile(sessionFile);

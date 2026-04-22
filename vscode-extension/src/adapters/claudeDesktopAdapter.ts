@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import type { ModelUsage, ChatTurn, ActualUsage } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { ClaudeDesktopCoworkDataAccess } from '../claudedesktop';
 import { createEmptyContextRefs } from '../tokenEstimation';
 
-export class ClaudeDesktopAdapter implements IEcosystemAdapter {
+export class ClaudeDesktopAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'claudedesktop';
 	readonly displayName = 'Claude Desktop Cowork';
 
@@ -52,6 +53,26 @@ export class ClaudeDesktopAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.claudeDesktopCowork.getCoworkBaseDir();
+	}
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+		try {
+			const files = this.claudeDesktopCowork.getCoworkSessionFiles();
+			if (files.length > 0) {
+				log(`📄 Found ${files.length} session file(s) in Claude Desktop Cowork`);
+				sessionFiles.push(...files);
+			}
+		} catch (e) {
+			log(`Could not read Claude Desktop Cowork session files: ${e}`);
+		}
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		const baseDir = this.claudeDesktopCowork.getCoworkBaseDir();
+		return baseDir ? [{ path: baseDir, source: 'Claude Desktop (Cowork)' }] : [];
 	}
 
 	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {

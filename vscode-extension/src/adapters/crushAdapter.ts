@@ -2,10 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { CrushDataAccess } from '../crush';
 import { createEmptyContextRefs } from '../tokenEstimation';
 
-export class CrushAdapter implements IEcosystemAdapter {
+export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'crush';
 	readonly displayName = 'Crush';
 
@@ -60,6 +61,54 @@ export class CrushAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(sessionFile: string): string {
 		return path.dirname(this.crush.getCrushDbPath(sessionFile));
+	}
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+
+		try {
+			const projects = this.crush.readCrushProjects();
+			log(`📁 Crush: found ${projects.length} project(s) in projects.json`);
+
+			const sessionArrays = await Promise.all(
+				projects.map(async (project) => {
+					const dbPath = path.join(project.data_dir, 'crush.db');
+					log(`📁 Checking Crush DB path: ${dbPath}`);
+					try {
+						await fs.promises.access(dbPath);
+						const sessionIds = await this.crush.discoverSessionsInDb(dbPath);
+						return sessionIds.map(id => path.join(project.data_dir, `crush.db#${id}`));
+					} catch (e) {
+						log(`Could not read Crush database for ${project.path}: ${e}`);
+					}
+					return [] as string[];
+				})
+			);
+			const total = sessionArrays.reduce((sum, arr) => sum + arr.length, 0);
+			if (total > 0) {
+				log(`📄 Found ${total} session(s) in Crush database(s)`);
+			}
+			sessionFiles.push(...sessionArrays.flat());
+		} catch (e) {
+			log(`Could not read Crush projects: ${e}`);
+		}
+
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		const configDir = this.crush.getCrushConfigDir();
+		const candidates: CandidatePath[] = [
+			{ path: path.join(configDir, 'projects.json'), source: 'Crush (projects.json)' },
+		];
+		try {
+			const projects = this.crush.readCrushProjects();
+			for (const project of projects) {
+				candidates.push({ path: path.join(project.data_dir, 'crush.db'), source: `Crush (${path.basename(project.path)})` });
+			}
+		} catch { /* ignore */ }
+		return candidates;
 	}
 
 	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {

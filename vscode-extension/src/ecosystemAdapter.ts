@@ -89,3 +89,50 @@ export interface IEcosystemAdapter {
 		timestamp: number;
 	}>;
 }
+
+// ---------------------------------------------------------------------------
+// Session discovery capability
+// ---------------------------------------------------------------------------
+
+/** A candidate filesystem path that SessionDiscovery checks for existence. */
+export interface CandidatePath {
+	/** The filesystem path to check. */
+	path: string;
+	/** Human-readable label for diagnostics display, e.g. 'OpenCode (DB)', 'Crush (myproject)'. */
+	source: string;
+}
+
+/** Result returned by an adapter's discover() method. */
+export interface DiscoveryResult {
+	/** All session file paths (including virtual DB paths) discovered by this adapter. */
+	sessionFiles: string[];
+	/** Candidate paths for diagnostics display (existence checked centrally by SessionDiscovery). */
+	candidatePaths: CandidatePath[];
+}
+
+/**
+ * Adapters that can discover their own session files implement this interface.
+ * Kept separate from IEcosystemAdapter so that the core per-session contract
+ * (handles, getTokens, countInteractions, etc.) is always required, while
+ * discovery is an explicit opt-in capability.
+ */
+export interface IDiscoverableEcosystem {
+	/**
+	 * Discover all session files for this ecosystem and return candidate paths
+	 * for diagnostics. SessionDiscovery calls this once during scan and handles
+	 * fs.existsSync checks on candidatePaths centrally.
+	 */
+	discover(log: (msg: string) => void): Promise<DiscoveryResult>;
+
+	/**
+	 * Return candidate filesystem paths for diagnostics display (synchronous).
+	 * These are the same paths reported in discover().candidatePaths but available
+	 * without an async call. SessionDiscovery checks existence centrally.
+	 */
+	getCandidatePaths(): CandidatePath[];
+}
+
+/** Type guard: check whether an adapter also implements IDiscoverableEcosystem. */
+export function isDiscoverable(adapter: IEcosystemAdapter): adapter is IEcosystemAdapter & IDiscoverableEcosystem {
+	return typeof (adapter as any).discover === 'function';
+}

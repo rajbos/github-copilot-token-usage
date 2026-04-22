@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import type { ModelUsage } from '../types';
 import type { IEcosystemAdapter } from '../ecosystemAdapter';
+import type { IDiscoverableEcosystem, DiscoveryResult, CandidatePath } from '../ecosystemAdapter';
 import { ClaudeCodeDataAccess } from '../claudecode';
 
-export class ClaudeCodeAdapter implements IEcosystemAdapter {
+export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem {
 	readonly id = 'claudecode';
 	readonly displayName = 'Claude Code';
 
@@ -46,5 +47,24 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter {
 
 	getEditorRoot(_sessionFile: string): string {
 		return this.claudeCode.getClaudeCodeProjectsDir();
+	}
+
+	async discover(log: (msg: string) => void): Promise<DiscoveryResult> {
+		const candidatePaths = this.getCandidatePaths();
+		const sessionFiles: string[] = [];
+		try {
+			const files = this.claudeCode.getClaudeCodeSessionFiles();
+			if (files.length > 0) {
+				log(`📄 Found ${files.length} session file(s) in Claude Code (~/.claude/projects)`);
+				sessionFiles.push(...files);
+			}
+		} catch (e) {
+			log(`Could not read Claude Code session files: ${e}`);
+		}
+		return { sessionFiles, candidatePaths };
+	}
+
+	getCandidatePaths(): CandidatePath[] {
+		return [{ path: this.claudeCode.getClaudeCodeProjectsDir(), source: 'Claude Code' }];
 	}
 }
