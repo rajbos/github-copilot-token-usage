@@ -511,9 +511,15 @@ export class SyncService {
 			// combination gets a share of the total proportional to how many interactions it had.
 			// For the input/output split we use the output fraction from modelUsage (output tokens are
 			// not inflated by context the same way input tokens are).
-			const displayTokens: number = (typeof (cachedData as any).tokens === 'number' && (cachedData as any).tokens > 0)
-				? (cachedData as any).tokens as number
-				: 0;
+			// Mirror the extension's own token preference: prefer actual API-reported tokens when
+			// available (same logic as calculateDetailedStats: actualTokens > 0 ? actualTokens : estimatedTokens).
+			// Text-estimated tokens (~20M) are far smaller than API-actual numbers (~1.2B) because
+			// the estimators only measure visible conversation text, not the full context window.
+			const estimatedTokens: number = typeof (cachedData as any).tokens === 'number'
+				? (cachedData as any).tokens as number : 0;
+			const cachedActualTokens: number = typeof (cachedData as any).actualTokens === 'number'
+				? (cachedData as any).actualTokens as number : 0;
+			const displayTokens: number = cachedActualTokens > 0 ? cachedActualTokens : estimatedTokens;
 			const totalAllInteractions = Array.from(dayModelInteractions.values())
 				.reduce((sum, m) => { m.forEach(c => { sum += c; }); return sum; }, 0);
 
