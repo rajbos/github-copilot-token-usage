@@ -512,16 +512,29 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 	const interactiveJs = `
 (function () {
   // ── Period tabs ─────────────────────────────────────────────────────────
+  function activatePeriod(period) {
+    document.querySelectorAll('#period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+    var btn = document.querySelector('#period-tabs .tab[data-period="' + period + '"]');
+    if (btn) btn.classList.add('active');
+    document.querySelectorAll('.stats-panel').forEach(function(el) {
+      el.classList.toggle('hidden', el.id !== period);
+    });
+  }
+
   document.querySelectorAll('#period-tabs .tab').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      document.querySelectorAll('#period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
-      btn.classList.add('active');
       var target = btn.getAttribute('data-period');
-      document.querySelectorAll('.stats-panel').forEach(function(el) {
-        el.classList.toggle('hidden', el.id !== target);
-      });
+      location.hash = target;
+      activatePeriod(target);
     });
   });
+
+  // Restore period from URL hash on load (e.g. after refresh)
+  var hash = location.hash.replace('#', '');
+  var validPeriods = ['stats-today', 'stats-week', 'stats-month'];
+  if (validPeriods.indexOf(hash) !== -1) {
+    activatePeriod(hash);
+  }
 
   // ── Chart ────────────────────────────────────────────────────────────────
   var canvas = document.getElementById('trend-chart');
