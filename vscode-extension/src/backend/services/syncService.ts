@@ -22,6 +22,7 @@ import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
 import { SharingServerUploadService, type SharingServerEntry } from './sharingServerUploadService';
 import { isJsonlContent } from '../../tokenEstimation';
+import { getEditorTypeFromPath } from '../../workspaceHelpers';
 
 /**
  * Interface for blob upload service to avoid circular dependency.
@@ -298,7 +299,8 @@ export class SyncService {
 		userId: string | undefined,
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>,
 		startMs: number,
-		now: Date
+		now: Date,
+		editor?: string
 	): Promise<boolean> {
 		try {
 			const cachedData = await this.deps.getSessionFileDataCached!(sessionFile, fileMtimeMs, fileSize);
@@ -516,7 +518,7 @@ export class SyncService {
 						continue;
 					}
 					
-					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor };
 					
 					// For simplicity, if a file spans multiple days, distribute tokens proportionally
 					// In practice, most session files are from a single day, so this is accurate
@@ -722,13 +724,14 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; includeEditorDimension?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
 	}> {
 		const lookbackDays = args.lookbackDays;
 		const skipMtimeFilter = args.skipMtimeFilter === true;
+		const includeEditorDimension = args.includeEditorDimension === true;
 		const onProgress = args.onProgress;
 		const userId = (args.userId ?? '').trim() || undefined;
 		const now = new Date();
@@ -786,6 +789,11 @@ export class SyncService {
 				continue;
 			}
 
+			// Determine the editor for this session file (only used when includeEditorDimension is set)
+			const editorForFile = includeEditorDimension
+				? getEditorTypeFromPath(sessionFile, this.deps.isOpenCodeSession)
+				: undefined;
+
 			// Skip Visual Studio session files — they are binary MessagePack, not JSON
 			if (this.deps.isVSSessionFile && this.deps.isVSSessionFile(sessionFile)) {
 				filesSkipped++;
@@ -814,7 +822,7 @@ export class SyncService {
 
 					// Process each model's usage with per-model interaction counts
 					for (const [model, usage] of Object.entries(data.modelUsage)) {
-						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 						upsertDailyRollup(rollups as any, key, {
 							inputTokens: (usage as any).inputTokens || 0,
 							outputTokens: (usage as any).outputTokens || 0,
@@ -850,7 +858,7 @@ export class SyncService {
 					await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
 
 					for (const [model, usage] of Object.entries(data.modelUsage)) {
-						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 						upsertDailyRollup(rollups as any, key, {
 							inputTokens: (usage as any).inputTokens || 0,
 							outputTokens: (usage as any).outputTokens || 0,
@@ -881,7 +889,8 @@ export class SyncService {
 					userId,
 					rollups,
 					startMs,
-					now
+					now,
+					editorForFile
 				);
 				
 				if (cacheSuccess) {
@@ -971,7 +980,7 @@ export class SyncService {
 										}
 									}
 									if (inputTokens === 0 && outputTokens === 0) { continue; }
-									const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+									const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 									upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions: 1 });
 								}
 							}
@@ -1001,7 +1010,7 @@ export class SyncService {
 							continue;
 						}
 
-						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 						upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions });
 					} catch {
 						// skip malformed line
@@ -1076,7 +1085,7 @@ export class SyncService {
 						continue;
 					}
 
-					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 					upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions: 1 });
 				} catch (e) {
 					this.deps.warn(`Backend sync: failed to process request in ${sessionFile}: ${e}`);
@@ -1371,6 +1380,7 @@ export class SyncService {
 			await this.computeDailyRollupsFromLocalSessions({
 				lookbackDays: settings.lookbackDays,
 				userId: resolvedIdentity.userId,
+				includeEditorDimension: true,
 			});
 
 		if (rollups.size === 0) {
@@ -1392,7 +1402,7 @@ export class SyncService {
 				outputTokens: value.outputTokens,
 				interactions: value.interactions,
 				datasetId: settings.datasetId,
-				editor: this.normalizeEditorName(vscode.env.appName),
+				editor: key.editor ?? this.normalizeEditorName(vscode.env.appName),
 			});
 		}
 
