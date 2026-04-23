@@ -47,6 +47,7 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
 		const enabled: boolean = config.get<boolean>('backend.sharingServer.enabled', false);
 		const endpointUrl: string = config.get<string>('backend.sharingServer.endpointUrl', '');
+		const sharingProfile: string = config.get<string>('backend.sharingProfile', 'off');
 
 		this.panel = vscode.window.createWebviewPanel(
 			'copilotTeamServerConfig',
@@ -55,7 +56,7 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 			{ enableScripts: true, retainContextWhenHidden: false }
 		);
 
-		this.panel.webview.html = this.renderHtml(this.panel.webview, enabled, endpointUrl);
+		this.panel.webview.html = this.renderHtml(this.panel.webview, enabled, endpointUrl, sharingProfile);
 
 		this.disposables.push(
 			this.panel.onDidDispose(() => this.dispose()),
@@ -69,6 +70,7 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 		}
 		const enabled: boolean = Boolean(message.enabled);
 		const endpointUrl: string = String(message.endpointUrl ?? '').trim();
+		const sharingProfile: string = String(message.sharingProfile ?? 'off');
 
 		if (enabled && !endpointUrl) {
 			this.panel?.webview.postMessage({ command: 'validationError', field: 'endpointUrl', text: 'Endpoint URL is required when Team Server is enabled.' });
@@ -84,20 +86,31 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 			}
 		}
 
+		const validProfiles = ['off', 'soloFull', 'teamAnonymized', 'teamPseudonymous', 'teamIdentified'];
+		const safeProfile = validProfiles.includes(sharingProfile) ? sharingProfile : 'off';
+
 		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
 		await config.update('backend.sharingServer.enabled', enabled, vscode.ConfigurationTarget.Global);
 		await config.update('backend.sharingServer.endpointUrl', endpointUrl, vscode.ConfigurationTarget.Global);
+		await config.update('backend.sharingProfile', safeProfile, vscode.ConfigurationTarget.Global);
 
 		vscode.window.showInformationMessage('Team Server configuration saved.');
 		this.panel?.dispose();
 	}
 
-	private renderHtml(webview: vscode.Webview, enabled: boolean, endpointUrl: string): string {
+	private renderHtml(webview: vscode.Webview, enabled: boolean, endpointUrl: string, sharingProfile: string): string {
 		const nonce = getNonce();
 		const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
 
 		const enabledChecked = enabled ? 'checked' : '';
 		const safeEndpoint = endpointUrl.replace(/"/g, '&quot;');
+		const profileOptions = [
+			{ value: 'off', label: 'Off — no user-level data synced' },
+			{ value: 'soloFull', label: 'Solo Full — personal, full fidelity' },
+			{ value: 'teamAnonymized', label: 'Team Anonymized — team data, no per-user key' },
+			{ value: 'teamPseudonymous', label: 'Team Pseudonymous — stable anonymous per-user key' },
+			{ value: 'teamIdentified', label: 'Team Identified — explicit user identity' },
+		].map(o => `<option value="${o.value}"${sharingProfile === o.value ? ' selected' : ''}>${o.label}</option>`).join('\n				');
 
 		return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -201,6 +214,21 @@ export class TeamServerConfigPanel implements vscode.Disposable {
     button.secondary:hover {
       background: var(--vscode-button-secondaryHoverBackground);
     }
+    .field select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, #ccc);
+      border-radius: 2px;
+      font-size: inherit;
+      font-family: inherit;
+    }
+    .field select:focus {
+      outline: 1px solid var(--vscode-focusBorder);
+      border-color: var(--vscode-focusBorder);
+    }
   </style>
 </head>
 <body>
@@ -221,6 +249,14 @@ export class TeamServerConfigPanel implements vscode.Disposable {
     <p class="field-hint">The base URL of your team sharing server (no trailing slash required).</p>
   </div>
 
+  <div class="field">
+    <label for="sel-profile">Sharing profile</label>
+    <select id="sel-profile">
+				${profileOptions}
+    </select>
+    <p class="field-hint">Controls what user-level data is included in each sync. <strong>Off</strong> sends only aggregate counts — no user identifiers. Team profiles add per-user keys at increasing fidelity.</p>
+  </div>
+
   <div class="actions">
     <button class="primary" id="btn-save">Save</button>
     <button class="secondary" id="btn-cancel">Cancel</button>
@@ -232,8 +268,9 @@ export class TeamServerConfigPanel implements vscode.Disposable {
     document.getElementById('btn-save').addEventListener('click', () => {
       const enabled = document.getElementById('chk-enabled').checked;
       const endpointUrl = document.getElementById('txt-endpoint').value.trim();
+      const sharingProfile = document.getElementById('sel-profile').value;
       clearErrors();
-      vscode.postMessage({ command: 'save', enabled, endpointUrl });
+      vscode.postMessage({ command: 'save', enabled, endpointUrl, sharingProfile });
     });
 
     document.getElementById('btn-cancel').addEventListener('click', () => {
