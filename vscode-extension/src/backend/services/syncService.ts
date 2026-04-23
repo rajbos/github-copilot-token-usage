@@ -502,7 +502,21 @@ export class SyncService {
 			}
 
 			// Now distribute cached token counts proportionally across day+model combinations
-			// based on the actual interaction distribution we just calculated
+			// based on the actual interaction distribution we just calculated.
+			//
+			// IMPORTANT: cachedData.tokens is the text-estimated total shown in the extension
+			// status bar (estimateTokensFromSession: input_est + output_est + thinking_est).
+			// cachedData.modelUsage values may use API-reported actual counts, which can differ
+			// from text estimates due to tokenization differences (e.g. Claude uses ~6-8 chars/token
+			// vs our 4 chars/token ratio). We scale the per-model values so the upload total
+			// matches what the extension displays.
+			const totalModelTokens = Object.values(cachedData.modelUsage)
+				.reduce((sum: number, u: any) => sum + (u.inputTokens || 0) + (u.outputTokens || 0), 0);
+			const displayTokens = (typeof (cachedData as any).tokens === 'number' && (cachedData as any).tokens > 0)
+				? (cachedData as any).tokens as number
+				: totalModelTokens;
+			const tokenScaleFactor = totalModelTokens > 0 ? displayTokens / totalModelTokens : 1;
+
 			for (const [dayKey, modelMap] of dayModelInteractions) {
 				for (const [model, interactions] of modelMap) {
 					const cachedUsage = cachedData.modelUsage[model];
@@ -531,8 +545,8 @@ export class SyncService {
 					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, tokenRatio);
 					
 					upsertDailyRollup(rollups, key, {
-						inputTokens: Math.round(cachedUsage.inputTokens * tokenRatio),
-						outputTokens: Math.round(cachedUsage.outputTokens * tokenRatio),
+						inputTokens: Math.round(cachedUsage.inputTokens * tokenRatio * tokenScaleFactor),
+						outputTokens: Math.round(cachedUsage.outputTokens * tokenRatio * tokenScaleFactor),
 						interactions: interactions,
 						fluencyMetrics
 					});
