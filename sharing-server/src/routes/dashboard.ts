@@ -272,11 +272,13 @@ function layout(title: string, body: string): string {
   .chart-wrap { position: relative; height: 290px; margin-top: 4px; }
 
   /* ── Table ── */
-  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 12px; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 12px; min-width: 700px; }
   th { background: #0d1117; color: #8b949e; padding: 8px 10px; text-align: left; border-bottom: 1px solid #30363d; white-space: nowrap; }
-  td { padding: 7px 10px; border-bottom: 1px solid #161b22; }
+  td { padding: 7px 10px; border-bottom: 1px solid #161b22; white-space: nowrap; }
+  td.truncate { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
   tr:hover td { background: #21262d33; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; background: #1f6feb33; color: #58a6ff; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; background: #1f6feb33; color: #58a6ff; white-space: nowrap; }
 
   /* ── Alerts ── */
   .alert { padding: 12px 16px; border-radius: 6px; margin: 4px 0; }
@@ -453,13 +455,14 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 </div>` : `
 <div class="alert alert-warn">
   No data yet. Configure the VS Code extension with this server's endpoint URL
-  (<code>copilotTokenTracker.sharingServer.endpointUrl</code>) and wait for the
+  (<code>aiEngineeringFluency.backend.sharingServer.endpointUrl</code>) and wait for the
   next sync (or trigger one from the status bar).
 </div>`;
 
 	const tableHtml = uploads.length > 0 ? `
 <details class="card">
   <summary>Detailed Breakdown (${uploads.length} rows, last 30 days)</summary>
+  <div class="table-scroll">
   <table>
     <thead>
       <tr>
@@ -473,19 +476,21 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
         <td>${h(r.day)}</td>
         <td><span class="pill">${h(r.model)}</span></td>
         <td>${h(normalizeEditorName(r.editor))}</td>
-        <td>${h(r.workspace_name ?? r.workspace_id)}</td>
-        <td>${h(r.machine_name ?? r.machine_id)}</td>
+        <td class="truncate" title="${h(r.workspace_name ?? r.workspace_id)}">${h(r.workspace_name ?? r.workspace_id)}</td>
+        <td class="truncate" title="${h(r.machine_name ?? r.machine_id)}">${h(r.machine_name ?? r.machine_id)}</td>
         <td>${r.input_tokens.toLocaleString()}</td>
         <td>${r.output_tokens.toLocaleString()}</td>
         <td>${r.interactions.toLocaleString()}</td>
       </tr>`).join('')}
     </tbody>
   </table>
+  </div>
 </details>` : '';
 
 	const adminHtml = isAdmin && allUsers ? `
 <details class="card">
   <summary>👑 Admin: All Users (${allUsers.length})</summary>
+  <div class="table-scroll">
   <table>
     <thead><tr><th></th><th>GitHub Login</th><th>Name</th><th>Joined</th><th>Last Seen</th><th>Admin</th></tr></thead>
     <tbody>
@@ -500,6 +505,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
       </tr>`).join('')}
     </tbody>
   </table>
+  </div>
 </details>` : '';
 
 	// ── Interactive JS ────────────────────────────────────────────────────────
