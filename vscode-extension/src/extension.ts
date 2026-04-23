@@ -10,6 +10,7 @@ import customizationPatternsData from './customizationPatterns.json';
 import { REPO_HYGIENE_SKILL } from './backend/repoHygieneSkill';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
+import { TeamServerConfigPanel } from './backend/teamServerConfigPanel';
 import * as packageJson from '../package.json';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { ConfirmationMessages } from "./backend/ui/messages";
@@ -924,10 +925,33 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.log('Status bar item created and shown');
 
 		// Re-render open panels when display settings change
+		// Also restart backend sync timer when backend settings change
 		context.subscriptions.push(
 			vscode.workspace.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration('aiEngineeringFluency.display')) {
 					this.refreshOpenPanelsForSettingChange();
+				}
+				if (e.affectsConfiguration('aiEngineeringFluency.backend')) {
+					this.startBackendSyncAfterInitialAnalysis();
+					// Force an immediate sync so the "Last Sync" timestamp updates right away
+					// instead of waiting for the next timer tick.
+					const backend = (this as any).backend;
+					if (backend && typeof backend.syncToBackendStore === 'function') {
+						backend.syncToBackendStore(true).then(() => {
+							// Refresh diagnostics again after sync completes so "Last Sync" shows the new time
+							if (this.diagnosticsPanel) {
+								this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+							}
+						}).catch((err: unknown) => {
+							this.warn('Backend sync after settings change failed: ' + err);
+						});
+					}
+					// If the diagnostic report is open, refresh it so the Backend Storage
+					// section reflects the new settings immediately (e.g. after saving the
+					// Team Server config panel).
+					if (this.diagnosticsPanel) {
+						this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+					}
 				}
 			})
 		);
@@ -6701,6 +6725,29 @@ ${hashtag}`;
             }
           });
           break;
+        case "configureTeamServer":
+          await this.dispatch('configureTeamServer:diagnostics', async () => {
+            try {
+              await vscode.commands.executeCommand(
+                "aiEngineeringFluency.configureTeamServer",
+              );
+            } catch (err) {
+              vscode.window
+                .showInformationMessage(
+                  'Team Server configuration is available in settings. Search for "AI Engineering Fluency: Backend" in settings.',
+                  "Open Settings",
+                )
+                .then((choice) => {
+                  if (choice === "Open Settings") {
+                    vscode.commands.executeCommand(
+                      "workbench.action.openSettings",
+                      "aiEngineeringFluency.backend.sharingServer",
+                    );
+                  }
+                });
+            }
+          });
+          break;
         case "openSettings":
           await this.dispatch('openSettings:diagnostics', () =>
             vscode.commands.executeCommand(
@@ -7042,31 +7089,33 @@ ${hashtag}`;
    */
   private async getBackendStorageInfo(): Promise<any> {
     const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
-    const enabled = config.get<boolean>("backend.enabled", false);
-    const storageAccount = config.get<string>("backend.storageAccount", "");
-    const subscriptionId = config.get<string>("backend.subscriptionId", "");
-    const resourceGroup = config.get<string>("backend.resourceGroup", "");
-    const aggTable = config.get<string>("backend.aggTable", "usageAggDaily");
-    const eventsTable = config.get<string>(
-      "backend.eventsTable",
-      "usageEvents",
-    );
-    const authMode = config.get<string>("backend.authMode", "entraId");
+    // Use the authoritative settings object so isConfigured uses the same logic as the sync engine
+    const settings = this.backend?.getSettings();
+
+    // Azure Storage settings
+    const azureEnabled = settings?.enabled ?? false;
+    const storageAccount = settings?.storageAccount ?? "";
+    const subscriptionId = settings?.subscriptionId ?? "";
+    const resourceGroup = settings?.resourceGroup ?? "";
+    const aggTable = settings?.aggTable ?? "usageAggDaily";
+    const eventsTable = settings?.eventsTable ?? "usageEvents";
+    const authMode = settings?.authMode ?? "entraId";
     const sharingProfile = config.get<string>("backend.sharingProfile", "off");
+    // Team Server settings
+    const sharingServerEnabled = settings?.sharingServerEnabled ?? false;
+    const sharingServerEndpointUrl = settings?.sharingServerEndpointUrl ?? "";
+
+    // Use the same isConfigured logic as the sync engine
+    const azureIsConfigured = settings ? this.backend!.isConfigured(settings) : false;
+    const teamServerIsConfigured = sharingServerEnabled && !!sharingServerEndpointUrl;
 
     // Get last sync time from global state
-    const lastSyncAt =
-      this.context.globalState.get<number>("backend.lastSyncAt");
+    const lastSyncAt = this.context.globalState.get<number>("backend.lastSyncAt");
     const lastSyncTime = lastSyncAt ? new Date(lastSyncAt).toISOString() : null;
-
-    // Check if backend is configured (has required settings)
-    const isConfigured =
-      enabled && storageAccount && subscriptionId && resourceGroup;
 
     // Get unique device count from session files (estimate based on unique workspace roots)
     const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
     const workspaceIds = new Set<string>();
-    const pathModule = require("path");
 
     for (const file of sessionFiles) {
       const parts = file.split(/[\\\/]/);
@@ -7082,21 +7131,29 @@ ${hashtag}`;
     }
 
     return {
-      enabled,
-      isConfigured,
-      storageAccount,
-      subscriptionId: subscriptionId
-        ? subscriptionId.substring(0, 8) + "..."
-        : "",
-      resourceGroup,
-      aggTable,
-      eventsTable,
-      authMode,
-      sharingProfile,
-      lastSyncTime,
-      deviceCount: workspaceIds.size,
-      sessionCount: sessionFiles.length,
-      recordCount: null, // Will be populated from Azure if configured
+      azure: {
+        enabled: azureEnabled,
+        isConfigured: azureIsConfigured,
+        storageAccount,
+        subscriptionId: subscriptionId ? subscriptionId.substring(0, 8) + "..." : "",
+        resourceGroup,
+        aggTable,
+        eventsTable,
+        authMode,
+        sharingProfile,
+        lastSyncTime: azureEnabled ? lastSyncTime : null,
+        deviceCount: workspaceIds.size,
+        sessionCount: sessionFiles.length,
+        recordCount: null,
+      },
+      teamServer: {
+        enabled: sharingServerEnabled,
+        isConfigured: teamServerIsConfigured,
+        endpointUrl: sharingServerEndpointUrl,
+        sharingProfile,
+        lastSyncTime: sharingServerEnabled ? lastSyncTime : null,
+        sessionCount: sessionFiles.length,
+      },
     };
   }
 
@@ -7717,6 +7774,7 @@ export async function activate(context: vscode.ExtensionContext) {
         (tokenTracker as any).crush.getCrushSessionData(sessionFile),
       isVSSessionFile: (sessionFile: string) =>
         (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
+      getGithubToken: () => (tokenTracker as any).githubSession?.accessToken,
     });
 
     const backendHandler = new BackendCommandHandler({
@@ -7741,6 +7799,15 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(configureBackendCommand);
+
+    const configureTeamServerCommand = vscode.commands.registerCommand(
+      "aiEngineeringFluency.configureTeamServer",
+      async () => {
+        TeamServerConfigPanel.show(context);
+      },
+    );
+
+    context.subscriptions.push(configureTeamServerCommand);
   } catch (err) {
     // If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
     (tokenTracker as any).warn(

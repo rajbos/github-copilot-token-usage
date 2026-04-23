@@ -28,7 +28,9 @@ test('config export fully redacts machineId', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const payload = buildBackendConfigClipboardPayload(settings);
@@ -61,7 +63,9 @@ test('config export includes sharingProfile', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const payload = buildBackendConfigClipboardPayload(settings);
@@ -94,7 +98,9 @@ test('config export JSON string does not contain full machineId or sessionId', (
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const payload = buildBackendConfigClipboardPayload(settings);
@@ -137,7 +143,9 @@ test('config export note mentions no secrets or PII', () => {
 	blobUploadEnabled: false,
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
-	blobCompressFiles: true
+	blobCompressFiles: true,
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const payload = buildBackendConfigClipboardPayload(settings);

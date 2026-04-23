@@ -14,6 +14,7 @@ export interface DailyRollupKey {
 	workspaceId: string;
 	machineId: string;
 	userId?: string;
+	editor?: string;       // Friendly editor name (e.g. 'VS Code', 'Copilot CLI'). Optional — omit for Azure Storage path.
 }
 
 /**
@@ -66,13 +67,19 @@ export interface DailyRollupValueLike {
  */
 export function dailyRollupMapKey(key: DailyRollupKey): string {
 	const userId = (key.userId ?? '').trim();
-	return JSON.stringify({
+	const entry: Record<string, unknown> = {
 		day: key.day,
 		model: key.model,
 		workspaceId: key.workspaceId,
 		machineId: key.machineId,
-		userId: userId || undefined
-	});
+		userId: userId || undefined,
+	};
+	// Only include editor in the map key when it is explicitly set.
+	// This keeps Azure Storage rollups (which omit editor) unchanged.
+	if (key.editor) {
+		entry.editor = key.editor;
+	}
+	return JSON.stringify(entry);
 }
 
 /**

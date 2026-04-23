@@ -23,6 +23,7 @@ import {
   QueryService,
   type BackendQueryResultLike,
 } from "./services/queryService";
+import { SharingServerUploadService } from "./services/sharingServerUploadService";
 import { SyncService } from "./services/syncService";
 import { BackendUtility } from "./services/utilityService";
 import type { BackendQueryFilters, BackendSettings } from "./settings";
@@ -83,6 +84,8 @@ export interface BackendFacadeDeps {
   }>;
   // Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
   isVSSessionFile?: (sessionFile: string) => boolean;
+  /** Returns the current GitHub OAuth access token, or undefined if not authenticated. */
+  getGithubToken?: () => string | undefined;
 }
 
 export class BackendFacade {
@@ -139,11 +142,13 @@ export class BackendFacade {
         isCrushSession: deps.isCrushSession,
         getCrushSessionData: deps.getCrushSessionData,
         isVSSessionFile: deps.isVSSessionFile,
+        getGithubToken: deps.getGithubToken,
       },
       this.credentialService,
       this.dataPlaneService,
       this.blobUploadService,
       BackendUtility,
+      new SharingServerUploadService(),
     );
     this.azureResourceService = new AzureResourceService(
       {
@@ -621,6 +626,7 @@ export class BackendFacade {
           ? "Auth: Shared Key stored on this machine"
           : "Auth: Shared Key missing on this machine"
         : "Auth: Entra ID (RBAC)";
+    const lastSyncAt = this.deps.context?.globalState?.get<number>('backend.lastSyncAt');
     return {
       draft,
       sharedKeySet,
@@ -628,6 +634,7 @@ export class BackendFacade {
       isConfigured: this.isConfigured(settings),
       authStatus,
       shareConsentAt: settings.shareConsentAt,
+      lastSyncAt,
     };
   }
 
@@ -744,6 +751,21 @@ export class BackendFacade {
         next.blobCompressFiles,
         vscode.ConfigurationTarget.Global,
       ),
+      config.update(
+        "backend.backend",
+        next.backend,
+        vscode.ConfigurationTarget.Global,
+      ),
+      config.update(
+        "backend.sharingServer.enabled",
+        next.sharingServerEnabled,
+        vscode.ConfigurationTarget.Global,
+      ),
+      config.update(
+        "backend.sharingServer.endpointUrl",
+        next.sharingServerEndpointUrl,
+        vscode.ConfigurationTarget.Global,
+      ),
     ]);
   }
 
@@ -838,6 +860,7 @@ export class BackendFacade {
     // Create a draft with empty Azure settings
     const draft: BackendConfigDraft = {
       enabled: false,
+      backend: "storageTables",
       authMode: "entraId",
       sharingProfile: "off",
       shareWorkspaceMachineNames: false,
@@ -851,6 +874,8 @@ export class BackendFacade {
       eventsTable: "usageEvents",
       userIdentityMode: "pseudonymous",
       userId: "",
+      sharingServerEnabled: false,
+      sharingServerEndpointUrl: "",
       blobUploadEnabled: false,
       blobContainerName: "copilot-session-logs",
       blobUploadFrequencyHours: 24,

@@ -25,7 +25,10 @@ function createPanelHtml(): string {
 			blobUploadEnabled: false,
 			blobContainerName: 'copilot-session-logs',
 			blobUploadFrequencyHours: 24,
-			blobCompressFiles: true
+			blobCompressFiles: true,
+			backend: 'storageTables' as const,
+			sharingServerEnabled: false,
+			sharingServerEndpointUrl: ''
 		},
 		sharedKeySet: false,
 		privacyBadge: 'Solo',
@@ -60,11 +63,11 @@ describe('Backend Config Panel Webview (node:test)', { concurrency: false }, () 
 	describe('HTML Structure', () => {
 		beforeEach(() => { setupDom(); });
 
-		test('has all 5 navigation buttons with correct targets', () => {
+		test('has all 6 navigation buttons with correct targets', () => {
 			const navButtons = document.querySelectorAll('.nav-btn');
-			assert.equal(navButtons.length, 5);
+			assert.equal(navButtons.length, 6);
 			const targets = Array.from(navButtons).map(btn => btn.getAttribute('data-target'));
-			assert.deepEqual(targets, ['overview', 'azure', 'sharing', 'advanced', 'review']);
+			assert.deepEqual(targets, ['overview', 'azure', 'teamserver', 'sharing', 'advanced', 'review']);
 			teardownDom();
 		});
 

@@ -112,6 +112,45 @@ body {
 	display: block;
 }
 
+/* Sub-tabs (used inside tabs, e.g. Backend Storage sub-tabs) */
+.subtab-bar {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 20px;
+	border-bottom: 1px solid var(--border-color);
+}
+
+.subtab {
+	padding: 8px 16px;
+	cursor: pointer;
+	border: none;
+	background: transparent;
+	color: var(--text-secondary);
+	font-size: 12px;
+	font-weight: 500;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	transition: all 0.2s;
+}
+
+.subtab:hover {
+	color: var(--text-primary);
+	background: var(--list-hover-bg);
+}
+
+.subtab.active {
+	color: var(--link-color);
+	border-bottom-color: var(--link-color);
+}
+
+.subtab-content {
+	display: none;
+}
+
+.subtab-content.active {
+	display: block;
+}
+
 /* Editor filter panels */
 .editor-filter-panels {
 	display: flex;

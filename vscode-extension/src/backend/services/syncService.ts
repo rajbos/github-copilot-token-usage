@@ -20,7 +20,9 @@ import { createDailyAggEntity } from '../storageTables';
 import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 import { BackendUtility } from './utilityService';
+import { SharingServerUploadService, type SharingServerEntry } from './sharingServerUploadService';
 import { isJsonlContent } from '../../tokenEstimation';
+import { getEditorTypeFromPath } from '../../workspaceHelpers';
 
 /**
  * Interface for blob upload service to avoid circular dependency.
@@ -90,6 +92,8 @@ export interface SyncServiceDeps {
 	getCrushSessionData?: (sessionFile: string) => Promise<{ tokens: number; interactions: number; modelUsage: any; timestamp: number }>;
 	// Visual Studio session detection (binary MessagePack — cannot be parsed as JSON)
 	isVSSessionFile?: (sessionFile: string) => boolean;
+	/** Returns the current GitHub OAuth access token, or undefined if not authenticated. */
+	getGithubToken?: () => string | undefined;
 }
 
 /**
@@ -109,7 +113,8 @@ export class SyncService {
 		private readonly credentialService: CredentialService,
 		private readonly dataPlaneService: DataPlaneService,
 		private readonly blobUploadService: BlobUploadServiceLike | undefined,
-		private readonly utility: typeof BackendUtility
+		private readonly utility: typeof BackendUtility,
+		private readonly sharingServerUploadService: SharingServerUploadService | undefined,
 	) {}
 
 	// ── Cross-instance file lock ────────────────────────────────────────
@@ -294,7 +299,8 @@ export class SyncService {
 		userId: string | undefined,
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>,
 		startMs: number,
-		now: Date
+		now: Date,
+		editor?: string
 	): Promise<boolean> {
 		try {
 			const cachedData = await this.deps.getSessionFileDataCached!(sessionFile, fileMtimeMs, fileSize);
@@ -495,38 +501,48 @@ export class SyncService {
 				}
 			}
 
-			// Now distribute cached token counts proportionally across day+model combinations
-			// based on the actual interaction distribution we just calculated
+			// Total interactions per model (across all days) — used to compute each day's fraction
+			// for multi-day sessions.
+			const totalInteractionsPerModel = new Map<string, number>();
+			for (const modelMap of dayModelInteractions.values()) {
+				for (const [m, c] of modelMap) {
+					totalInteractionsPerModel.set(m, (totalInteractionsPerModel.get(m) || 0) + c);
+				}
+			}
+
 			for (const [dayKey, modelMap] of dayModelInteractions) {
 				for (const [model, interactions] of modelMap) {
-					const cachedUsage = cachedData.modelUsage[model];
+					const cachedUsage = cachedData.modelUsage[model] as any;
 					if (!cachedUsage) { continue; }
-					
-					// Validate usage object structure
-					if (!Number.isFinite(cachedUsage.inputTokens) || cachedUsage.inputTokens < 0) {
-						this.deps.warn(`Backend sync: invalid inputTokens for model ${model}`);
+
+					// Validate individual model token values — reject negative or non-finite values.
+					const cachedInput = typeof cachedUsage.inputTokens === 'number' ? cachedUsage.inputTokens : NaN;
+					const cachedOutput = typeof cachedUsage.outputTokens === 'number' ? cachedUsage.outputTokens : NaN;
+					if (!Number.isFinite(cachedInput) || cachedInput < 0 ||
+						!Number.isFinite(cachedOutput) || cachedOutput < 0) {
+						this.deps.warn(`Backend sync: invalid inputTokens or outputTokens in model usage for ${sessionFile}`);
 						continue;
 					}
-					if (!Number.isFinite(cachedUsage.outputTokens) || cachedUsage.outputTokens < 0) {
-						this.deps.warn(`Backend sync: invalid outputTokens for model ${model}`);
-						continue;
-					}
-					
-					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
-					
-					// For simplicity, if a file spans multiple days, distribute tokens proportionally
-					// In practice, most session files are from a single day, so this is accurate
-					const totalInteractionsForModel = Array.from(dayModelInteractions.values())
-						.reduce((sum, m) => sum + (m.get(model) || 0), 0);
-					
-					const tokenRatio = totalInteractionsForModel > 0 ? interactions / totalInteractionsForModel : 1;
-					
-					// Extract fluency metrics from cached usage analysis (if available)
-					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, tokenRatio);
-					
+
+					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor };
+
+					// Fraction of this model's interactions that fall on this day (for multi-day sessions).
+					// For single-day sessions dayFraction = 1.0 and the full cached model usage is used.
+					const totalModelInteractions = totalInteractionsPerModel.get(model) || 1;
+					const dayFraction = totalModelInteractions > 0 ? interactions / totalModelInteractions : 1;
+
+					// Apply dayFraction directly to the cached per-model tokens.
+					// For API-actual data, cachedUsage already holds the exact per-model totals from the
+					// session, so no additional scaling is needed. For text-estimate sessions, both
+					// cachedData.tokens and cachedUsage are from the same estimation and are consistent.
+					const inputTokens = Math.round(cachedInput * dayFraction);
+					const outputTokens = Math.round(cachedOutput * dayFraction);
+
+					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, dayFraction);
+
 					upsertDailyRollup(rollups, key, {
-						inputTokens: Math.round(cachedUsage.inputTokens * tokenRatio),
-						outputTokens: Math.round(cachedUsage.outputTokens * tokenRatio),
+						inputTokens,
+						outputTokens,
 						interactions: interactions,
 						fluencyMetrics
 					});
@@ -718,13 +734,14 @@ export class SyncService {
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; includeEditorDimension?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
 	}> {
 		const lookbackDays = args.lookbackDays;
 		const skipMtimeFilter = args.skipMtimeFilter === true;
+		const includeEditorDimension = args.includeEditorDimension === true;
 		const onProgress = args.onProgress;
 		const userId = (args.userId ?? '').trim() || undefined;
 		const now = new Date();
@@ -782,6 +799,11 @@ export class SyncService {
 				continue;
 			}
 
+			// Determine the editor for this session file (only used when includeEditorDimension is set)
+			const editorForFile = includeEditorDimension
+				? getEditorTypeFromPath(sessionFile, this.deps.isOpenCodeSession)
+				: undefined;
+
 			// Skip Visual Studio session files — they are binary MessagePack, not JSON
 			if (this.deps.isVSSessionFile && this.deps.isVSSessionFile(sessionFile)) {
 				filesSkipped++;
@@ -810,7 +832,7 @@ export class SyncService {
 
 					// Process each model's usage with per-model interaction counts
 					for (const [model, usage] of Object.entries(data.modelUsage)) {
-						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 						upsertDailyRollup(rollups as any, key, {
 							inputTokens: (usage as any).inputTokens || 0,
 							outputTokens: (usage as any).outputTokens || 0,
@@ -846,7 +868,7 @@ export class SyncService {
 					await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, workspaceNamesById);
 
 					for (const [model, usage] of Object.entries(data.modelUsage)) {
-						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 						upsertDailyRollup(rollups as any, key, {
 							inputTokens: (usage as any).inputTokens || 0,
 							outputTokens: (usage as any).outputTokens || 0,
@@ -877,7 +899,8 @@ export class SyncService {
 					userId,
 					rollups,
 					startMs,
-					now
+					now,
+					editorForFile
 				);
 				
 				if (cacheSuccess) {
@@ -967,7 +990,7 @@ export class SyncService {
 										}
 									}
 									if (inputTokens === 0 && outputTokens === 0) { continue; }
-									const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+									const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 									upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions: 1 });
 								}
 							}
@@ -997,7 +1020,7 @@ export class SyncService {
 							continue;
 						}
 
-						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 						upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions });
 					} catch {
 						// skip malformed line
@@ -1072,7 +1095,7 @@ export class SyncService {
 						continue;
 					}
 
-					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId };
+					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
 					upsertDailyRollup(rollups as any, key, { inputTokens, outputTokens, interactions: 1 });
 				} catch (e) {
 					this.deps.warn(`Backend sync: failed to process request in ${sessionFile}: ${e}`);
@@ -1133,6 +1156,18 @@ export class SyncService {
 
 			this.backendSyncInProgress = true;
 			try {
+				// Sharing server backend: entirely different sync path — no Azure deps.
+				if (settings.backend === 'sharingServer') {
+					await this.syncToSharingServer(settings, sharingPolicy);
+					try {
+						await this.deps.context?.globalState.update('backend.lastSyncAt', Date.now());
+					} catch (e) {
+						this.deps.warn(`Backend sync: failed to update lastSyncAt: ${e}`);
+					}
+					this.consecutiveFailures = 0;
+					return;
+				}
+
 				this.deps.log('Backend sync: starting rollup sync');
 				const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
 				if (!creds) {
@@ -1314,6 +1349,83 @@ export class SyncService {
 			}
 		});
 		return this.syncQueue;
+	}
+
+	/**
+	 * Normalize vscode.env.appName to the friendly editor names used throughout the extension.
+	 * "Visual Studio Code" → "VS Code", "Visual Studio Code - Insiders" → "VS Code Insiders", etc.
+	 */
+	private normalizeEditorName(appName: string): string {
+		const name = appName.trim();
+		if (name === 'Visual Studio Code') { return 'VS Code'; }
+		if (name === 'Visual Studio Code - Insiders') { return 'VS Code Insiders'; }
+		if (name === 'Visual Studio Code - Exploration') { return 'VS Code Exploration'; }
+		// Other editors (Cursor, VSCodium, Windsurf, etc.) already use clean names
+		return name || 'VS Code';
+	}
+
+	/**
+	 * Sync daily rollups to the self-hosted sharing server using a GitHub Bearer token.
+	 */
+	private async syncToSharingServer(
+		settings: BackendSettings,
+		sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>,
+	): Promise<void> {
+		if (!this.sharingServerUploadService) {
+			this.deps.warn('Sharing server upload: service not available');
+			return;
+		}
+
+		const githubToken = this.deps.getGithubToken?.();
+		if (!githubToken) {
+			this.deps.log('Sharing server upload: skipping (no GitHub token — authenticate with GitHub in VS Code first)');
+			return;
+		}
+
+		const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(
+			settings,
+			sharingPolicy.includeUserDimension,
+		);
+		const { rollups, workspaceNamesById, machineNamesById } =
+			await this.computeDailyRollupsFromLocalSessions({
+				lookbackDays: settings.lookbackDays,
+				userId: resolvedIdentity.userId,
+				includeEditorDimension: true,
+			});
+
+		if (rollups.size === 0) {
+			this.deps.log('Sharing server upload: no data to upload');
+			return;
+		}
+
+		const includeNames = sharingPolicy.includeNames;
+		const entries: SharingServerEntry[] = [];
+		for (const { key, value } of rollups.values()) {
+			entries.push({
+				day: key.day,
+				model: key.model,
+				workspaceId: key.workspaceId,
+				workspaceName: includeNames ? workspaceNamesById[key.workspaceId] : undefined,
+				machineId: key.machineId,
+				machineName: includeNames ? machineNamesById[key.machineId] : undefined,
+				inputTokens: value.inputTokens,
+				outputTokens: value.outputTokens,
+				interactions: value.interactions,
+				datasetId: settings.datasetId,
+				editor: key.editor ?? this.normalizeEditorName(vscode.env.appName),
+			});
+		}
+
+		const totalInputTokens = entries.reduce((s, e) => s + e.inputTokens, 0);
+		const totalOutputTokens = entries.reduce((s, e) => s + e.outputTokens, 0);
+		this.deps.log(`Sharing server upload: uploading ${entries.length} rollup entries (${(totalInputTokens + totalOutputTokens).toLocaleString()} tokens total)`);
+		await this.sharingServerUploadService.uploadRollups(
+			settings.sharingServerEndpointUrl,
+			githubToken,
+			entries,
+			this.deps.log,
+			this.deps.warn,
+		);
 	}
 
 	/**

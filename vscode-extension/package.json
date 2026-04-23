@@ -71,6 +71,11 @@
         "category": "AI Engineering Fluency"
       },
       {
+        "command": "aiEngineeringFluency.configureTeamServer",
+        "title": "Configure Team Server Backend",
+        "category": "AI Engineering Fluency"
+      },
+      {
         "command": "aiEngineeringFluency.copyBackendConfig",
         "title": "Copy Backend Config (No Secrets)",
         "category": "AI Engineering Fluency"
@@ -154,10 +159,15 @@
         "copilotTokenTracker.backend.backend": {
           "type": "string",
           "enum": [
-            "storageTables"
+            "storageTables",
+            "sharingServer"
+          ],
+          "enumDescriptions": [
+            "Azure Storage Tables (requires Azure subscription + RBAC setup)",
+            "Self-hosted sharing server (configure endpoint URL; authenticates via your existing GitHub session)"
           ],
           "default": "storageTables",
-          "description": "Backend sync backend. MVP supports Azure Storage Tables.",
+          "description": "Backend sync backend. Supports Azure Storage Tables and self-hosted sharing server.",
           "deprecationMessage": "Renamed to aiEngineeringFluency.backend.backend. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.authMode": {
@@ -332,10 +342,15 @@
         "aiEngineeringFluency.backend.backend": {
           "type": "string",
           "enum": [
-            "storageTables"
+            "storageTables",
+            "sharingServer"
+          ],
+          "enumDescriptions": [
+            "Azure Storage Tables (requires Azure subscription + RBAC setup)",
+            "Self-hosted sharing server (configure endpoint URL; authenticates via your existing GitHub session)"
           ],
           "default": "storageTables",
-          "description": "Backend sync backend. MVP supports Azure Storage Tables."
+          "description": "Backend sync backend. Supports Azure Storage Tables and self-hosted sharing server."
         },
         "aiEngineeringFluency.backend.authMode": {
           "type": "string",
@@ -460,6 +475,16 @@
           "type": "boolean",
           "default": true,
           "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
+        },
+        "aiEngineeringFluency.backend.sharingServer.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable syncing to the self-hosted Team Server backend. Can run simultaneously with Azure Storage (backend.enabled). Requires backend.sharingServer.endpointUrl to be configured."
+        },
+        "aiEngineeringFluency.backend.sharingServer.endpointUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the self-hosted sharing server (e.g. https://copilot-sharing.example.com). Authentication is handled automatically via your existing GitHub session — no API key needed."
         },
         "aiEngineeringFluency.sampleDataDirectory": {
           "type": "string",
