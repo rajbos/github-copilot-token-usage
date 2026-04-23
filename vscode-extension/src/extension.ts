@@ -74,7 +74,10 @@ import {
 	ClaudeCodeAdapter,
 	VisualStudioAdapter,
 	MistralVibeAdapter,
+	CopilotChatAdapter,
+	CopilotCliAdapter,
 } from './adapters';
+import { getVSCodeUserPaths } from './adapters/copilotChatAdapter';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -843,6 +846,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 			new ClaudeDesktopAdapter(this.claudeDesktopCowork, (t) => this.isMcpTool(t), (t) => this.extractMcpServerName(t), (t, m) => this.estimateTokensFromText(t, m)),
 			new ClaudeCodeAdapter(this.claudeCode),
 			new MistralVibeAdapter(this.mistralVibe),
+			// Copilot Chat / CLI adapters: discovery-only. Their handles() returns
+			// false so the existing fallback parsing in this file continues to
+			// own per-session parsing for VS Code Copilot Chat and CLI files.
+			// See issue #654.
+			new CopilotChatAdapter(),
+			new CopilotCliAdapter(),
 		];
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({
@@ -7147,7 +7156,7 @@ ${hashtag}`;
     let storageFilePath: string | null = null;
     try {
       const extensionId = "RobBos.copilot-token-tracker";
-      const userPaths = this.sessionDiscovery.getVSCodeUserPaths();
+      const userPaths = getVSCodeUserPaths();
       for (const userPath of userPaths) {
         try {
           const candidate = path.join(userPath, "globalStorage", extensionId);

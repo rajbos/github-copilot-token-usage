@@ -31,6 +31,8 @@ Or from the repo root:
 
 When adding support for a new editor or data source, wire it into **both** `vscode-extension/src/` (see `.github/instructions/vscode-extension.instructions.md`) **and** this CLI.
 
+> **Adapter architecture (issue #654)**: The CLI shares the adapter classes from `vscode-extension/src/adapters/` and registers them in `_ecosystems` inside `cli/src/helpers.ts`. Currently 9 adapters are registered: OpenCode, Crush, Continue, ClaudeCode, ClaudeDesktop, VisualStudio, MistralVibe, **CopilotChat**, **CopilotCli**. The Copilot adapters own discovery but their `handles()` returns `false`, so `processSessionFile()` falls through to the existing per-format helpers (JSONL/JSON parsing) for those files. Order matters — register Copilot adapters **last**.
+
 ### CLI Files to Update
 
 | File | What to add |

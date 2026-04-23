@@ -151,3 +151,17 @@ To maintain a consistent, VS Code-native look across all webview panels (Details
 ## Adding a New Editor / Data Source
 
 When adding support for a new editor or data source, you must wire it into **both** this extension (`vscode-extension/src/`) **and** the CLI (`cli/src/`). See `.github/instructions/cli.instructions.md` for the CLI integration checklist.
+
+### Adapter architecture (issue #654)
+
+All editor integrations live as adapters under `vscode-extension/src/adapters/` implementing `IEcosystemAdapter` (and `IDiscoverableEcosystem` when discovery is needed). `sessionDiscovery.ts` is intentionally a thin generic loop: it iterates the adapters registered in `extension.ts` (`this.ecosystems`) and dedupes the resulting paths. There are **no hardcoded editor paths in `sessionDiscovery.ts`**.
+
+Current adapter set (9):
+- `OpenCodeAdapter`, `CrushAdapter`, `ContinueAdapter`, `ClaudeCodeAdapter`, `ClaudeDesktopAdapter`, `VisualStudioAdapter`, `MistralVibeAdapter`
+- `CopilotChatAdapter` — VS Code Copilot Chat (workspaceStorage chatSessions in 3 layouts, globalStorage emptyWindowChatSessions, globalStorage `{GitHub,github}.copilot-chat` recursive scan, WSL Windows-side paths)
+- `CopilotCliAdapter` — `~/.copilot/session-state/` flat `.json`/`.jsonl` plus UUID subdirs with `events.jsonl`
+
+**Adapter ordering matters**: register more-specific adapters first. `CopilotChatAdapter` and `CopilotCliAdapter` are registered **last** in `this.ecosystems`.
+
+**`handles()` for CopilotChat/Cli currently returns `false`**: discovery is owned by the adapters, but per-session parsing is still routed through the existing fallback path in `extension.ts` (`countInteractionsInSession`, `estimateTokensFromSession`, `getSessionFileDataCached`). A future PR can flip `handles()` to use the exported `isCopilotChatSessionPath` / `isCopilotCliSessionPath` predicates once the JSON parser helpers are extracted from `extension.ts`. When you flip `handles()`, also fix `_detectEditorSource(filePath, (p) => !!this.findEcosystem(p))` at extension.ts:~3224 — the predicate must check `?.id === 'opencode'` (or use `getEditorTypeFromPath` convention) so that VS Code paths are still labeled "VS Code", not "OpenCode".
+

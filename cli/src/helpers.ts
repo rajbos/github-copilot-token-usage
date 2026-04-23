@@ -15,7 +15,7 @@ import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
 import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claudedesktop';
 import { MistralVibeDataAccess } from '../../vscode-extension/src/mistralvibe';
 import type { IEcosystemAdapter } from '../../vscode-extension/src/ecosystemAdapter';
-import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter } from '../../vscode-extension/src/adapters';
+import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter, CopilotChatAdapter, CopilotCliAdapter } from '../../vscode-extension/src/adapters';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
@@ -98,6 +98,11 @@ const _ecosystems: IEcosystemAdapter[] = [
 	new ClaudeDesktopAdapter(_claudeDesktopCoworkInstance),
 	new ClaudeCodeAdapter(_claudeCodeInstance),
 	new MistralVibeAdapter(_mistralVibeInstance),
+	// Copilot Chat / CLI adapters: discovery-only. Their handles() returns
+	// false so processSessionFile() falls through to the shared parser path
+	// for VS Code Copilot Chat and CLI files. See issue #654.
+	new CopilotChatAdapter(),
+	new CopilotCliAdapter(),
 ];
 
 /** Create session discovery instance for CLI */
