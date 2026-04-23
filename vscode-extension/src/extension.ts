@@ -6399,6 +6399,13 @@ ${hashtag}`;
         report.push("  - No Copilot Chat conversations have been initiated");
         report.push("  - Sessions stored in unsupported location");
         report.push("  - Authentication required with GitHub Copilot");
+        if (vscode.env.remoteName === "wsl") {
+          report.push("");
+          report.push("WSL note: the extension host runs inside WSL and scans both the");
+          report.push("  Linux-side ~/.vscode-server paths and the Windows-side");
+          report.push("  /mnt/c/Users/<you>/AppData/Roaming/Code paths.");
+          report.push("  If /mnt/c is not mounted, Windows-side sessions cannot be read.");
+        }
       }
       report.push("");
     } catch (error) {
@@ -6478,6 +6485,13 @@ ${hashtag}`;
           report.push("  - No Copilot Chat conversations have been initiated");
           report.push("  - Sessions stored in unsupported location");
           report.push("  - Authentication required with GitHub Copilot");
+          if (vscode.env.remoteName === "wsl") {
+            report.push("");
+            report.push("WSL note: the extension host runs inside WSL and scans both the");
+            report.push("  Linux-side ~/.vscode-server paths and the Windows-side");
+            report.push("  /mnt/c/Users/<you>/AppData/Roaming/Code paths.");
+            report.push("  If /mnt/c is not mounted, Windows-side sessions cannot be read.");
+          }
         }
         report.push("");
       } catch (error) {
