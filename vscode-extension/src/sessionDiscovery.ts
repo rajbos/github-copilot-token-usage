@@ -117,6 +117,82 @@ export class SessionDiscovery {
 		return paths;
 	}
 
+	/** Returns true when the extension host is running inside WSL. */
+	isWSL(): boolean {
+		return os.platform() === 'linux' && (
+			typeof process.env.WSL_DISTRO_NAME === 'string' ||
+			typeof process.env.WSL_INTEROP === 'string'
+		);
+	}
+
+	/**
+	 * When running inside WSL, probes the Windows-side VS Code user paths
+	 * (mounted at /mnt/c/...) so sessions created in a native Windows VS Code
+	 * window are also discovered.
+	 *
+	 * This is intentionally async and non-blocking: all path existence checks
+	 * use async fs.promises.access; errors at any level are silently ignored so
+	 * a missing or inaccessible /mnt/c mount never throws.
+	 */
+	async getWSLWindowsPaths(): Promise<string[]> {
+		if (!this.isWSL()) {
+			return [];
+		}
+
+		const wslPaths: string[] = [];
+
+		const vscodeVariants = [
+			'Code',
+			'Code - Insiders',
+			'Code - Exploration',
+			'VSCodium',
+			'Cursor'
+		];
+
+		// Derive candidate Windows usernames (safe, multiple fallbacks).
+		const windowsUsernames: string[] = [];
+
+		// USERPROFILE in WSL is sometimes set to the Windows path e.g. /mnt/c/Users/alice
+		const userprofile = process.env.USERPROFILE;
+		if (userprofile) {
+			const match = userprofile.match(/^\/mnt\/[a-z]\/Users\/([^/]+)/);
+			if (match) {
+				windowsUsernames.push(match[1]);
+			}
+		}
+
+		// Enumerate /mnt/c/Users/ if accessible — gives us every Windows profile
+		// without guessing. We read only the top-level directory names.
+		const windowsUsersDir = '/mnt/c/Users';
+		try {
+			const entries = await fs.promises.readdir(windowsUsersDir, { withFileTypes: true });
+			for (const entry of entries) {
+				// Skip system pseudo-folders
+				if (!entry.isDirectory()) { continue; }
+				const name = entry.name;
+				if (name === 'Public' || name === 'Default' || name === 'Default User' ||
+					name === 'All Users' || name.startsWith('.')) {
+					continue;
+				}
+				if (!windowsUsernames.includes(name)) {
+					windowsUsernames.push(name);
+				}
+			}
+		} catch {
+			// /mnt/c/Users is not accessible — WSL drive not mounted or no Windows partition
+			return [];
+		}
+
+		for (const winUser of windowsUsernames) {
+			const appData = path.join(windowsUsersDir, winUser, 'AppData', 'Roaming');
+			for (const variant of vscodeVariants) {
+				wslPaths.push(path.join(appData, variant, 'User'));
+			}
+		}
+
+		return wslPaths;
+	}
+
 	/**
 	 * Returns all candidate paths the extension considers when scanning for session files,
 	 * along with whether each path exists on disk. Used for diagnostics display.
@@ -130,6 +206,26 @@ export class SessionDiscovery {
 			let exists = false;
 			try { exists = fs.existsSync(p); } catch { /* ignore */ }
 			candidates.push({ path: p, exists, source: 'VS Code' });
+		}
+
+		// When in WSL, synchronously check the top-level Windows users dir and add
+		// candidate paths so they appear in the diagnostics panel.
+		if (this.isWSL()) {
+			const vscodeVariants = ['Code', 'Code - Insiders', 'Code - Exploration', 'VSCodium', 'Cursor'];
+			const windowsUsersDir = '/mnt/c/Users';
+			try {
+				const entries = fs.readdirSync(windowsUsersDir, { withFileTypes: true });
+				const systemNames = new Set(['Public', 'Default', 'Default User', 'All Users']);
+				for (const entry of entries) {
+					if (!entry.isDirectory() || entry.name.startsWith('.') || systemNames.has(entry.name)) { continue; }
+					for (const variant of vscodeVariants) {
+						const p = path.join(windowsUsersDir, entry.name, 'AppData', 'Roaming', variant, 'User');
+						let exists = false;
+						try { exists = fs.existsSync(p); } catch { /* ignore */ }
+						candidates.push({ path: p, exists, source: 'VS Code (Windows via WSL)' });
+					}
+				}
+			} catch { /* /mnt/c not accessible — skip */ }
 		}
 
 		// Copilot CLI
@@ -218,6 +314,20 @@ export class SessionDiscovery {
 
 		// Get all possible VS Code user paths (stable, insiders, remote, etc.)
 		const allVSCodePaths = this.getVSCodeUserPaths();
+
+		// When running inside WSL also probe the Windows-side paths so sessions
+		// created in a native Windows VS Code window are not missed.
+		if (this.isWSL()) {
+			this.deps.log(`🪟 WSL environment detected — probing Windows-side VS Code paths`);
+			const wslWinPaths = await this.getWSLWindowsPaths();
+			if (wslWinPaths.length > 0) {
+				this.deps.log(`🪟 Adding ${wslWinPaths.length} Windows-side candidate paths from WSL`);
+				allVSCodePaths.push(...wslWinPaths);
+			} else {
+				this.deps.log(`🪟 No Windows-side paths found (Windows drive may not be mounted)`);
+			}
+		}
+
 		this.deps.log(`📂 Considering ${allVSCodePaths.length} candidate VS Code paths:`);
 		for (const candidatePath of allVSCodePaths) {
 			this.deps.log(`   📁 ${candidatePath}`);
