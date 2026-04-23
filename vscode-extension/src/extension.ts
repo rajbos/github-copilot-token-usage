@@ -924,6 +924,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 				if (e.affectsConfiguration('aiEngineeringFluency.backend')) {
 					this.startBackendSyncAfterInitialAnalysis();
+					// Force an immediate sync so the "Last Sync" timestamp updates right away
+					// instead of waiting for the next timer tick.
+					const backend = (this as any).backend;
+					if (backend && typeof backend.syncToBackendStore === 'function') {
+						backend.syncToBackendStore(true).then(() => {
+							// Refresh diagnostics again after sync completes so "Last Sync" shows the new time
+							if (this.diagnosticsPanel) {
+								this.loadDiagnosticDataInBackground(this.diagnosticsPanel);
+							}
+						}).catch((err: unknown) => {
+							this.warn('Backend sync after settings change failed: ' + err);
+						});
+					}
 					// If the diagnostic report is open, refresh it so the Backend Storage
 					// section reflects the new settings immediately (e.g. after saving the
 					// Team Server config panel).
