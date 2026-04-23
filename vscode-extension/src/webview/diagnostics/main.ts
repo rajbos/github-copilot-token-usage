@@ -99,6 +99,7 @@ type DiagnosticsData = {
 
 type DiagnosticsViewState = {
   activeTab?: string;
+  activeSubtab?: string;
 };
 
 declare function acquireVsCodeApi<TState = DiagnosticsViewState>(): {
@@ -1290,12 +1291,24 @@ function renderLayout(data: DiagnosticsData): void {
       if (message.backendStorageInfo) {
         const backendTabContent = document.getElementById("tab-backend");
         if (backendTabContent) {
+          // Capture active subtab before re-rendering so we can restore it
+          const activeSubtabEl = backendTabContent.querySelector(".subtab.active") as HTMLElement | null;
+          const previousSubtab = activeSubtabEl?.getAttribute("data-subtab")
+            ?? vscode.getState()?.activeSubtab;
+
           backendTabContent.innerHTML = renderBackendStoragePanel(
             message.backendStorageInfo,
           );
           // Re-attach event listeners for backend buttons
           setupBackendButtonHandlers();
           setupSubtabHandlers();
+
+          // Restore previously-active subtab (or default to first)
+          if (previousSubtab) {
+            activateSubtab(previousSubtab);
+            const currentState = vscode.getState() ?? {};
+            vscode.setState({ ...currentState, activeSubtab: previousSubtab });
+          }
         }
       } else {
         console.warn("diagnosticDataLoaded received but backendStorageInfo is missing or undefined");
@@ -1600,6 +1613,23 @@ function renderLayout(data: DiagnosticsData): void {
     });
   }
 
+  // Helper function to activate a subtab by its ID (without the "subtab-" prefix)
+  function activateSubtab(subtabId: string): boolean {
+    const subtabEl = document.querySelector(`.subtab[data-subtab="${subtabId}"]`);
+    const contentEl = document.getElementById(`subtab-${subtabId}`);
+    if (subtabEl && contentEl) {
+      const subtabBar = subtabEl.closest(".subtab-bar");
+      if (subtabBar) {
+        subtabBar.querySelectorAll(".subtab").forEach((s) => s.classList.remove("active"));
+      }
+      document.querySelectorAll(".subtab-content").forEach((c) => c.classList.remove("active"));
+      subtabEl.classList.add("active");
+      contentEl.classList.add("active");
+      return true;
+    }
+    return false;
+  }
+
   // Helper function to activate a tab by its ID
   function activateTab(tabId: string): boolean {
     const tabButton = document.querySelector(`.tab[data-tab="${tabId}"]`);
@@ -1714,6 +1744,10 @@ function renderLayout(data: DiagnosticsData): void {
     document
       .getElementById("btn-configure-backend-team")
       ?.addEventListener("click", () => {
+        // Pre-save the teamserver subtab so the diagnostics panel restores to it
+        // after the settings change triggers a panel refresh
+        const currentState = vscode.getState() ?? {};
+        vscode.setState({ ...currentState, activeTab: "backend", activeSubtab: "backend-teamserver" });
         vscode.postMessage({ command: "configureTeamServer" });
       });
 
@@ -1745,6 +1779,9 @@ function renderLayout(data: DiagnosticsData): void {
         document.querySelectorAll(".subtab-content").forEach((c) => c.classList.remove("active"));
         subtab.classList.add("active");
         document.getElementById(`subtab-${subtabId}`)?.classList.add("active");
+        // Persist active subtab so it can be restored after a data refresh
+        const currentState = vscode.getState() ?? {};
+        vscode.setState({ ...currentState, activeSubtab: subtabId });
       });
     });
   }
@@ -1968,6 +2005,11 @@ function renderLayout(data: DiagnosticsData): void {
   if (savedState?.activeTab && !activateTab(savedState.activeTab)) {
     // If saved tab doesn't exist (e.g., structure changed), activate default "report" tab
     activateTab("report");
+  }
+
+  // Restore active subtab from saved state
+  if (savedState?.activeSubtab) {
+    activateSubtab(savedState.activeSubtab);
   }
 }
 
