@@ -18,6 +18,8 @@ import { ClaudeCodeAdapter } from '../../src/adapters/claudeCodeAdapter';
 import { ClaudeDesktopAdapter } from '../../src/adapters/claudeDesktopAdapter';
 import { VisualStudioAdapter } from '../../src/adapters/visualStudioAdapter';
 import { MistralVibeAdapter } from '../../src/adapters/mistralVibeAdapter';
+import { CopilotChatAdapter } from '../../src/adapters/copilotChatAdapter';
+import { CopilotCliAdapter } from '../../src/adapters/copilotCliAdapter';
 
 import { OpenCodeDataAccess } from '../../src/opencode';
 import { CrushDataAccess } from '../../src/crush';
@@ -48,20 +50,24 @@ const claudeCodeAdapter = new ClaudeCodeAdapter(claudeCodeDA);
 const claudeDesktopAdapter = new ClaudeDesktopAdapter(claudeDesktopDA, noopIsMcpTool, noopExtractMcpServerName, noopEstimateTokens);
 const visualStudioAdapter = new VisualStudioAdapter(visualStudioDA, noopEstimateTokens);
 const mistralVibeAdapter = new MistralVibeAdapter(mistralVibeDA);
+const copilotChatAdapter = new CopilotChatAdapter();
+const copilotCliAdapter = new CopilotCliAdapter();
 
 const allAdapters: IEcosystemAdapter[] = [
     openCodeAdapter, crushAdapter, continueAdapter,
     claudeCodeAdapter, claudeDesktopAdapter, visualStudioAdapter, mistralVibeAdapter,
+    copilotChatAdapter, copilotCliAdapter,
 ];
 
 // ---------------------------------------------------------------------------
 // isDiscoverable type guard
 // ---------------------------------------------------------------------------
 
-test('isDiscoverable: returns true for all 7 adapters', () => {
+test('isDiscoverable: returns true for all 9 adapters', () => {
     for (const adapter of allAdapters) {
         assert.ok(isDiscoverable(adapter), `Expected ${adapter.id} to be discoverable`);
     }
+    assert.equal(allAdapters.length, 9);
 });
 
 test('isDiscoverable: returns false for plain IEcosystemAdapter without discover()', () => {
@@ -88,6 +94,8 @@ test('adapter IDs are stable lowercase identifiers', () => {
     assert.equal(claudeDesktopAdapter.id, 'claudedesktop');
     assert.equal(visualStudioAdapter.id, 'visualstudio');
     assert.equal(mistralVibeAdapter.id, 'mistralvibe');
+    assert.equal(copilotChatAdapter.id, 'copilotchat');
+    assert.equal(copilotCliAdapter.id, 'copilotcli');
 });
 
 // ---------------------------------------------------------------------------

@@ -5,3 +5,5 @@ export { ClaudeDesktopAdapter } from './claudeDesktopAdapter';
 export { ClaudeCodeAdapter } from './claudeCodeAdapter';
 export { VisualStudioAdapter } from './visualStudioAdapter';
 export { MistralVibeAdapter } from './mistralVibeAdapter';
+export { CopilotChatAdapter } from './copilotChatAdapter';
+export { CopilotCliAdapter } from './copilotCliAdapter';
