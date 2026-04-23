@@ -122,7 +122,8 @@ test('isBackendConfigured checks required fields', () => {
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 		}),
 		true
 	);
@@ -151,7 +152,8 @@ test('isBackendConfigured checks required fields', () => {
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 		}),
 		false
 	);

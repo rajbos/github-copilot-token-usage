@@ -35,7 +35,8 @@ test('backend sync: soloFull profile uploads raw workspace/machine IDs and names
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -75,7 +76,8 @@ test('backend sync: teamAnonymized profile hashes IDs, no user dimension, no nam
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -115,7 +117,8 @@ test('backend sync: teamPseudonymous profile includes user dimension with consen
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -156,7 +159,8 @@ test('backend sync: teamIdentified profile includes user dimension with explicit
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -198,7 +202,8 @@ test('regression: shareWithTeam=false with profile=off never uploads anything', 
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -236,7 +241,8 @@ test('regression: profile=off overrides shareWithTeam=true (safety gate)', () =>
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	const policy = computeBackendSharingPolicy({
@@ -274,7 +280,8 @@ test('consent timestamp: teamPseudonymous requires shareConsentAt', () => {
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	assert.ok(settingsWithConsent.shareConsentAt, 'teamPseudonymous should have shareConsentAt');
@@ -305,7 +312,8 @@ test('consent timestamp: teamIdentified requires shareConsentAt', () => {
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 
 	assert.ok(settingsWithConsent.shareConsentAt, 'teamIdentified should have shareConsentAt');

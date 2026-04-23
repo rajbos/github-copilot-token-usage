@@ -55,7 +55,13 @@ volumes:
   sharing_data:
 ```
 
-> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32`
+> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32` in bash, or in PowerShell:
+``` powershell
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+($bytes | ForEach-Object { $_.ToString("x2") }) -join '' | Set-Content -Path .session_secret.txt
+Get-Content .session_secret.txt
+```
 
 ### 3. Start and verify
 

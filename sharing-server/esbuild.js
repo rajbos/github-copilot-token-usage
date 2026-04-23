@@ -25,6 +25,16 @@ async function main() {
     logLevel: 'info',
   });
 
+  // Copy Chart.js UMD bundle so the dashboard can inline it without a CDN dependency
+  const chartSrc = path.join(__dirname, 'node_modules', 'chart.js', 'dist', 'chart.umd.min.js');
+  const chartDst = path.join(distDir, 'chart.min.js');
+  if (fs.existsSync(chartSrc)) {
+    fs.copyFileSync(chartSrc, chartDst);
+    console.log('Copied chart.js to dist/chart.min.js');
+  } else {
+    console.warn('WARNING: chart.js not found — charts will not render in the dashboard');
+  }
+
   console.log(`Sharing server built (${production ? 'production' : 'development'})`);
 }
 

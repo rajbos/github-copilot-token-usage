@@ -1379,6 +1379,7 @@ export class SyncService {
 				outputTokens: value.outputTokens,
 				interactions: value.interactions,
 				datasetId: settings.datasetId,
+				editor: vscode.env.appName,
 			});
 		}
 

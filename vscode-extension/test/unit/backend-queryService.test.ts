@@ -56,6 +56,7 @@ function makeSettings(overrides?: Partial<BackendSettings>): BackendSettings {
 		blobContainerName: 'copilot-session-logs',
 		blobUploadFrequencyHours: 24,
 		blobCompressFiles: true,
+		sharingServerEnabled: false,
 		sharingServerEndpointUrl: '',
 		...overrides
 	};

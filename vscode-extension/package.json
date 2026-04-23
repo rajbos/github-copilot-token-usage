@@ -71,6 +71,11 @@
         "category": "AI Engineering Fluency"
       },
       {
+        "command": "copilot-token-tracker.configureTeamServer",
+        "title": "Configure Team Server Backend",
+        "category": "AI Engineering Fluency"
+      },
+      {
         "command": "copilot-token-tracker.copyBackendConfig",
         "title": "Copy Backend Config (No Secrets)",
         "category": "AI Engineering Fluency"
@@ -286,10 +291,15 @@
           "default": true,
           "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
         },
+        "copilotTokenTracker.backend.sharingServer.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable syncing to the self-hosted Team Server backend. Can run simultaneously with Azure Storage (backend.enabled). Requires backend.sharingServer.endpointUrl to be configured."
+        },
         "copilotTokenTracker.backend.sharingServer.endpointUrl": {
           "type": "string",
           "default": "",
-          "description": "Base URL of the self-hosted sharing server (e.g. https://copilot-sharing.example.com). Only used when 'backend' is set to 'sharingServer'. Authentication is handled automatically via your existing GitHub session — no API key needed."
+          "description": "Base URL of the self-hosted sharing server (e.g. https://copilot-sharing.example.com). Authentication is handled automatically via your existing GitHub session — no API key needed."
         },
         "copilot-token-tracker.sampleDataDirectory": {
           "type": "string",

@@ -25,7 +25,10 @@ function createPanelHtml(): string {
 			blobUploadEnabled: false,
 			blobContainerName: 'copilot-session-logs',
 			blobUploadFrequencyHours: 24,
-			blobCompressFiles: true
+			blobCompressFiles: true,
+			backend: 'storageTables' as const,
+			sharingServerEnabled: false,
+			sharingServerEndpointUrl: ''
 		},
 		sharedKeySet: false,
 		privacyBadge: 'Solo',

@@ -11,6 +11,7 @@ export interface BackendConfigPanelState {
 	isConfigured: boolean;
 	authStatus: string;
 	shareConsentAt?: string;
+	lastSyncAt?: number;
 }
 
 export interface BackendConfigPanelCallbacks {
@@ -233,7 +234,8 @@ export class BackendConfigPanel implements vscode.Disposable {
 	<div class="layout">
 		<aside class="nav">
 			<vscode-button appearance="secondary" class="nav-btn selected" data-target="overview" aria-label="Navigate to Overview section">Overview</vscode-button>
-			<vscode-button appearance="secondary" class="nav-btn" data-target="azure" aria-label="Navigate to Azure section">Azure</vscode-button>
+			<vscode-button appearance="secondary" class="nav-btn" data-target="azure" aria-label="Navigate to Azure Storage section">Azure Storage</vscode-button>
+			<vscode-button appearance="secondary" class="nav-btn" data-target="teamserver" aria-label="Navigate to Team Server section">Team Server</vscode-button>
 			<vscode-button appearance="secondary" class="nav-btn" data-target="sharing" aria-label="Navigate to Sharing section">Sharing</vscode-button>
 			<vscode-button appearance="secondary" class="nav-btn" data-target="advanced" aria-label="Navigate to Advanced section">Advanced</vscode-button>
 			<vscode-button appearance="secondary" class="nav-btn" data-target="review" aria-label="Navigate to Review and Apply section">Review & Apply</vscode-button>
@@ -255,6 +257,14 @@ export class BackendConfigPanel implements vscode.Disposable {
 					<vscode-badge id="privacyBadge"></vscode-badge>
 					<vscode-badge id="authBadge"></vscode-badge>
 				</div>
+				<div class="field" style="margin-top: 12px;">
+					<label for="backendType">Storage backend</label>
+					<vscode-dropdown id="backendType" aria-describedby="backendType-help">
+						<vscode-option value="storageTables">Azure Storage (Table Storage)</vscode-option>
+						<vscode-option value="sharingServer">Team Server (self-hosted)</vscode-option>
+					</vscode-dropdown>
+					<div id="backendType-help" class="helper">Choose where to sync your usage data. Configure each backend under its own tab.</div>
+				</div>
 				<div id="overviewDetails" style="margin-top: 12px; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; font-size: 12px;">
 					<span style="color: #999;">Profile:</span>
 					<span id="overviewProfile" style="color: #e5e5e5;"></span>
@@ -265,11 +275,40 @@ export class BackendConfigPanel implements vscode.Disposable {
 			</div>
 			<div class="card">
 				<h3>How it works</h3>
-				<p class="helper"><strong>1. Azure Storage setup:</strong> Your usage data syncs to Azure Table Storage. Daily aggregates (tokens, interactions, model) are stored per workspace/machine/day. You own the data, you control access.</p>
-				<p class="helper"><strong>2. Authentication:</strong> Use Entra ID (role-based, recommended) or Storage Shared Key. Your credentials stay local and secure.</p>
-				<p class="helper"><strong>3. Automatic sync:</strong> Every 5 minutes, the extension calculates token usage from session files and pushes aggregates to Azure. Configurable lookback window (7-90 days).</p>
-				<p class="helper"><strong>4. Query & analyze:</strong> Use Azure Storage Explorer, Power BI, or custom tools to query your Table Storage data.</p>
-				<p class="helper">Need help? <vscode-link id="launchWizardLink" href="#">Launch the guided Azure setup walkthrough</vscode-link> to configure subscription, resource group, storage account, and auth mode step-by-step.</p>
+				<p class="helper"><strong>1. Storage backend:</strong> Choose between <strong>Azure Storage</strong> (Table Storage — you own the Azure resources) or a <strong>Team Server</strong> (self-hosted Node.js server your team runs, with GitHub OAuth login and a shared dashboard).</p>
+				<p class="helper"><strong>2. Authentication:</strong> Azure Storage uses Entra ID (role-based, recommended) or Storage Shared Key. Team Server uses a bearer token set in the extension settings.</p>
+				<p class="helper"><strong>3. Automatic sync:</strong> Every 5 minutes, the extension calculates token usage from session files and pushes aggregates to the configured backend. Configurable lookback window (7-90 days).</p>
+				<p class="helper"><strong>4. Query & analyze:</strong> Azure Storage: use Storage Explorer, Power BI, or custom tools. Team Server: view the shared dashboard in your browser.</p>
+				<p class="helper">Need help with Azure? <vscode-link id="launchWizardLink" href="#">Launch the guided Azure setup walkthrough</vscode-link> to configure subscription, resource group, storage account, and auth mode step-by-step.</p>
+			</div>
+		</section>
+		<section id="teamserver" class="section">
+			<div class="card">
+				<h3>Team Server</h3>
+				<p class="helper">A self-hosted sharing server lets your team run their own backend. Usage data is uploaded securely using a bearer token and stored in the server's SQLite database. Team members can view a shared dashboard after logging in with GitHub OAuth.</p>
+				<div class="field inline" style="margin-top: 8px;">
+					<vscode-checkbox id="enabledToggleTeam" aria-describedby="enabledToggleTeam-help">Enable backend sync to Team Server</vscode-checkbox>
+				</div>
+				<div id="enabledToggleTeam-help" class="helper">Independent of Azure Storage — both backends can sync simultaneously.</div>
+				<div class="status-line" id="lastSyncLine" style="margin-top: 12px;" role="status"></div>
+			</div>
+			<div class="card">
+				<h3>Connection</h3>
+				<p class="helper">Configure the URL of your self-hosted sharing server. The extension will POST daily usage rollups to <code>&lt;Server URL&gt;/api/upload</code> using the bearer token from the VS Code setting <code>copilotTokenTracker.backend.sharingServer.bearerToken</code> (stored in Settings, not here for security).</p>
+				<div class="field">
+					<label for="sharingServerEndpointUrl">Server URL</label>
+					<vscode-text-field id="sharingServerEndpointUrl" placeholder="http://localhost:3000" aria-describedby="sharingServerEndpointUrl-help sharingServerEndpointUrl-error"></vscode-text-field>
+					<div id="sharingServerEndpointUrl-error" class="error" role="alert" data-error-for="sharingServerEndpointUrl"></div>
+					<div id="sharingServerEndpointUrl-help" class="helper">Base URL of the sharing server (no trailing slash). Example: <code>https://copilot-tracker.mycompany.com</code></div>
+				</div>
+			</div>
+			<div class="card">
+				<h3>How to set up</h3>
+				<p class="helper"><strong>1. Run the server:</strong> Clone the <code>sharing-server/</code> folder, install dependencies (<code>npm install</code>), build (<code>npm run build</code>), and start with <code>npm start</code>. Requires Node.js 20+.</p>
+				<p class="helper"><strong>2. Configure GitHub OAuth:</strong> Create a GitHub OAuth App at <vscode-link href="https://github.com/settings/developers">github.com/settings/developers</vscode-link>. Set the callback URL to <code>&lt;Server URL&gt;/auth/github/callback</code>. Copy the Client ID and Secret into the server's <code>.env</code> file.</p>
+				<p class="helper"><strong>3. Set a bearer token:</strong> Add <code>BEARER_TOKEN=your-secret-token</code> to the server's <code>.env</code>. Then add the same token as <code>copilotTokenTracker.backend.sharingServer.bearerToken</code> in your VS Code settings.</p>
+				<p class="helper"><strong>4. Enter the Server URL above</strong> and select <em>Team Server</em> as the storage backend on the Overview tab.</p>
+				<p class="helper"><strong>5. Open the dashboard:</strong> Navigate to <code>&lt;Server URL&gt;/dashboard</code> in your browser, log in with GitHub, and you'll see shared usage statistics for everyone who has uploaded data.</p>
 			</div>
 		</section>
 		<section id="sharing" class="section">
@@ -479,6 +518,8 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 		function setFieldValues(state) {
 			byId('enabledToggle').checked = !!state.draft.enabled;
+			byId('enabledToggleTeam').checked = !!state.draft.sharingServerEnabled;
+			byId('backendType').value = state.draft.backend || 'storageTables';
 			byId('sharingProfile').value = state.draft.sharingProfile;
 			byId('authMode').value = state.draft.authMode;
 			byId('subscriptionId').value = state.draft.subscriptionId || '';
@@ -490,6 +531,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('lookbackDays').value = state.draft.lookbackDays ?? '';
 			byId('userIdentityMode').value = state.draft.userIdentityMode;
 			byId('userId').value = state.draft.userId || '';
+			byId('sharingServerEndpointUrl').value = state.draft.sharingServerEndpointUrl || '';
 			updateUserIdPlaceholder();
 			byId('blobUploadEnabled').checked = !!state.draft.blobUploadEnabled;
 			byId('blobContainerName').value = state.draft.blobContainerName || '';
@@ -497,18 +539,19 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('blobCompressFiles').checked = state.draft.blobCompressFiles !== false;
 			byId('privacyBadge').innerText = 'Privacy: ' + state.privacyBadge;
 			byId('authBadge').innerText = state.authStatus;
-			byId('backendStateBadge').innerText = state.draft.enabled ? 'Backend: Enabled' : 'Backend: Disabled';
+			byId('backendStateBadge').innerText = (state.draft.enabled || state.draft.sharingServerEnabled) ? 'Backend: Enabled' : 'Backend: Disabled';
+			updateLastSyncLine(state.lastSyncAt);
 			
 			// Update overview details
 			const detailsDiv = byId('overviewDetails');
-			if (state.draft.enabled) {
+			if (state.draft.enabled || state.draft.sharingServerEnabled) {
 				detailsDiv.style.display = 'grid';
 				byId('overviewProfile').textContent = state.draft.sharingProfile;
 				byId('overviewDataset').textContent = state.draft.datasetId || 'not set';
 				byId('statusMessage').textContent = state.message || '';
 			} else {
 				detailsDiv.style.display = 'none';
-				byId('statusMessage').textContent = state.message || 'Backend is off. All data stays local; no Azure writes.';
+				byId('statusMessage').textContent = state.message || 'Backend is off. All data stays local; no cloud writes.';
 			}
 			byId('sharedKeyStatus').textContent = state.draft.authMode === 'sharedKey'
 				? (hasSharedKey() ? 'Shared key stored securely for this storage account.' : 'Shared key not stored yet. Add it to enable connection testing.')
@@ -540,12 +583,42 @@ export class BackendConfigPanel implements vscode.Disposable {
 			});
 		}
 
+		function updateLastSyncLine(lastSyncAt) {
+			const el = byId('lastSyncLine');
+			if (!el) return;
+			if (!lastSyncAt) {
+				el.className = 'status-line muted';
+				el.textContent = 'Last sync: Never';
+				return;
+			}
+			const diffMs = Date.now() - lastSyncAt;
+			const diffMin = Math.floor(diffMs / 60000);
+			const diffSec = Math.floor(diffMs / 1000);
+			let when;
+			if (diffSec < 60) {
+				when = diffSec + ' seconds ago';
+			} else if (diffMin < 60) {
+				when = diffMin + ' minutes ago';
+			} else {
+				const diffH = Math.floor(diffMin / 60);
+				when = diffH + ' hour' + (diffH === 1 ? '' : 's') + ' ago';
+			}
+			el.className = 'status-line ok';
+			el.textContent = 'Last sync: ' + when + ' (' + new Date(lastSyncAt).toLocaleTimeString() + ')';
+		}
+
 		function readDraft() {
 			const profile = byId('sharingProfile').value;
+			const backendType = byId('backendType').value;
+			// Each backend has its own independent enabled toggle
+			const enabledChecked = byId('enabledToggle').checked;
+			const sharingServerEnabledChecked = byId('enabledToggleTeam').checked;
 			// Derive shareWorkspaceMachineNames from profile
 			const shareWorkspaceMachineNames = profile === 'soloFull' || profile === 'teamPseudonymous' || profile === 'teamIdentified';
 			return {
-				enabled: byId('enabledToggle').checked,
+				enabled: enabledChecked,
+				sharingServerEnabled: sharingServerEnabledChecked,
+				backend: backendType,
 				authMode: byId('authMode').value,
 				sharingProfile: profile,
 				shareWorkspaceMachineNames,
@@ -559,6 +632,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 				eventsTable: byId('eventsTable').value,
 				userIdentityMode: byId('userIdentityMode').value,
 				userId: byId('userId').value,
+				sharingServerEndpointUrl: byId('sharingServerEndpointUrl').value,
 				blobUploadEnabled: byId('blobUploadEnabled').checked,
 				blobContainerName: byId('blobContainerName').value,
 				blobUploadFrequencyHours: Number(byId('blobUploadFrequencyHours').value),
@@ -574,6 +648,13 @@ export class BackendConfigPanel implements vscode.Disposable {
 				['subscriptionId','resourceGroup','storageAccount','aggTable'].forEach(f => {
 					if (!draft[f] || !draft[f].trim()) errors[f] = 'Required';
 				});
+			}
+			if (draft.sharingServerEnabled) {
+				if (!draft.sharingServerEndpointUrl || !draft.sharingServerEndpointUrl.trim()) {
+					errors.sharingServerEndpointUrl = 'Required';
+				} else {
+					try { new URL(draft.sharingServerEndpointUrl); } catch { errors.sharingServerEndpointUrl = 'Enter a valid URL'; }
+				}
 			}
 			['aggTable','eventsTable'].forEach(f => {
 				if (draft[f] && !aliasRegex.test(draft[f].trim())) errors[f] = 'Use letters, numbers, dashes, underscores';
@@ -628,12 +709,17 @@ export class BackendConfigPanel implements vscode.Disposable {
 		}
 
 		function updateEnabledState() {
-			const enabled = byId('enabledToggle').checked;
+			const draft = readDraft();
+			const enabled = draft.enabled;
+			const sharingServerEnabled = draft.sharingServerEnabled;
 			const azureSection = document.getElementById('azure');
 			const sharingSection = document.getElementById('sharing');
 			const advancedSection = document.getElementById('advanced');
+			const teamSection = document.getElementById('teamserver');
 			
-			// Disable Azure settings and Auth card if backend is disabled
+			// Each toggle is independent — do not sync them
+			
+			// Disable Azure settings cards if Azure backend is disabled
 			const azureCards = azureSection.querySelectorAll('.card');
 			azureCards.forEach((card, index) => {
 				if (index > 0) { // Skip the first card (Enable backend toggle)
@@ -645,8 +731,21 @@ export class BackendConfigPanel implements vscode.Disposable {
 				}
 			});
 			
-			// Disable Sharing and Advanced sections if backend is disabled
-			if (enabled) {
+			// Disable Team Server connection card if Team Server is disabled
+			const teamCards = teamSection.querySelectorAll('.card');
+			teamCards.forEach((card, index) => {
+				if (index > 0) { // Skip the first card (header/toggle)
+					if (sharingServerEnabled) {
+						card.classList.remove('disabled-section');
+					} else {
+						card.classList.add('disabled-section');
+					}
+				}
+			});
+			
+			// Disable Sharing and Advanced sections if both backends are disabled
+			const anyEnabled = enabled || sharingServerEnabled;
+			if (anyEnabled) {
 				sharingSection.querySelectorAll('.card').forEach(c => c.classList.remove('disabled-section'));
 				advancedSection.querySelectorAll('.card').forEach(c => c.classList.remove('disabled-section'));
 			} else {
@@ -674,19 +773,27 @@ export class BackendConfigPanel implements vscode.Disposable {
 			
 			let html = '';
 			
-			if (!draft.enabled) {
-				html = '<div class="change-item danger"><div class="change-label">⚠️ Backend Disabled</div><div class="change-value">All token usage data will stay local-only. No sync to Azure.</div></div>';
+			const eitherEnabled = draft.enabled || draft.sharingServerEnabled;
+			if (!eitherEnabled) {
+				html = '<div class="change-item danger"><div class="change-label">⚠️ All Backends Disabled</div><div class="change-value">All token usage data will stay local-only. No sync to any backend.</div></div>';
 			} else {
-				html += '<div class="change-item"><div class="change-label">✓ Backend Enabled</div><div class="change-value">Token usage will sync to Azure Storage</div></div>';
-				
-				if (draft.subscriptionId && draft.resourceGroup && draft.storageAccount) {
-					html += '<div class="change-item"><div class="change-label">Azure Resources</div><div class="change-value">Subscription: ' + draft.subscriptionId + '<br>Resource Group: ' + draft.resourceGroup + '<br>Storage Account: ' + draft.storageAccount + '</div></div>';
-				} else {
-					html += '<div class="change-item warning"><div class="change-label">⚠️ Azure Resources</div><div class="change-value">Not fully configured - some fields are missing</div></div>';
+				if (draft.enabled) {
+					if (draft.subscriptionId && draft.resourceGroup && draft.storageAccount) {
+						html += '<div class="change-item"><div class="change-label">✓ Azure Storage Enabled</div><div class="change-value">Subscription: ' + draft.subscriptionId + '<br>Resource Group: ' + draft.resourceGroup + '<br>Storage Account: ' + draft.storageAccount + '</div></div>';
+					} else {
+						html += '<div class="change-item warning"><div class="change-label">⚠️ Azure Storage Enabled (incomplete)</div><div class="change-value">Not fully configured — some Azure fields are missing</div></div>';
+					}
+					const authLabel = draft.authMode === 'sharedKey' ? 'Storage Shared Key' : 'Entra ID (RBAC)';
+					html += '<div class="change-item"><div class="change-label">Azure Auth</div><div class="change-value">' + authLabel + '</div></div>';
 				}
 				
-				const authLabel = draft.authMode === 'sharedKey' ? 'Storage Shared Key' : 'Entra ID (RBAC)';
-				html += '<div class="change-item"><div class="change-label">Authentication</div><div class="change-value">' + authLabel + '</div></div>';
+				if (draft.sharingServerEnabled) {
+					if (draft.sharingServerEndpointUrl) {
+						html += '<div class="change-item"><div class="change-label">✓ Team Server Enabled</div><div class="change-value">URL: ' + draft.sharingServerEndpointUrl + '</div></div>';
+					} else {
+						html += '<div class="change-item warning"><div class="change-label">⚠️ Team Server Enabled (incomplete)</div><div class="change-value">Server URL not configured</div></div>';
+					}
+				}
 				
 				const profileLabels = {
 					'off': 'Off (Local-only)',
@@ -764,7 +871,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 
 		function bindActions() {
 			const markDirty = () => vscodeApi.postMessage({ command: 'markDirty' });
-			const trackIds = ['sharingProfile','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','userIdentityMode','userId','blobUploadEnabled','blobContainerName','blobUploadFrequencyHours','blobCompressFiles'];
+			const trackIds = ['sharingProfile','authMode','subscriptionId','resourceGroup','storageAccount','aggTable','eventsTable','datasetId','lookbackDays','enabledToggle','enabledToggleTeam','backendType','userIdentityMode','userId','sharingServerEndpointUrl','blobUploadEnabled','blobContainerName','blobUploadFrequencyHours','blobCompressFiles'];
 			trackIds.forEach(id => {
 				const el = byId(id);
 				if (!el) return;

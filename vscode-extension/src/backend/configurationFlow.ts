@@ -1,5 +1,5 @@
 import { MIN_LOOKBACK_DAYS, MAX_LOOKBACK_DAYS } from './constants';
-import type { BackendSettings, BackendAuthMode } from './settings';
+import type { BackendSettings, BackendAuthMode, BackendType } from './settings';
 import type { BackendSharingProfile } from './sharingProfile';
 import type { BackendUserIdentityMode } from './identity';
 import { validateTeamAlias } from './identity';
@@ -7,6 +7,7 @@ import { ValidationMessages } from './ui/messages';
 
 export interface BackendConfigDraft {
 	enabled: boolean;
+	backend: BackendType;
 	authMode: BackendAuthMode;
 	sharingProfile: BackendSharingProfile;
 	shareWorkspaceMachineNames: boolean;
@@ -20,6 +21,8 @@ export interface BackendConfigDraft {
 	eventsTable: string;
 	userIdentityMode: BackendUserIdentityMode;
 	userId: string;
+	sharingServerEnabled: boolean;
+	sharingServerEndpointUrl: string;
 	// Blob upload settings
 	blobUploadEnabled: boolean;
 	blobContainerName: string;
@@ -37,6 +40,7 @@ export const ALIAS_REGEX = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 export function toDraft(settings: BackendSettings): BackendConfigDraft {
 	return {
 		enabled: settings.enabled,
+		backend: settings.backend,
 		authMode: settings.authMode,
 		sharingProfile: settings.sharingProfile,
 		shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames,
@@ -50,6 +54,8 @@ export function toDraft(settings: BackendSettings): BackendConfigDraft {
 		eventsTable: settings.eventsTable,
 		userIdentityMode: settings.userIdentityMode,
 		userId: settings.userId,
+		sharingServerEnabled: settings.sharingServerEnabled,
+		sharingServerEndpointUrl: settings.sharingServerEndpointUrl,
 		blobUploadEnabled: settings.blobUploadEnabled,
 		blobContainerName: settings.blobContainerName,
 		blobUploadFrequencyHours: settings.blobUploadFrequencyHours,
@@ -195,6 +201,9 @@ export function applyDraftToSettings(
 		aggTable: draft.aggTable.trim(),
 		eventsTable: draft.eventsTable.trim(),
 		lookbackDays: clampLookback(draft.lookbackDays),
+		backend: draft.backend ?? 'storageTables',
+		sharingServerEnabled: !!draft.sharingServerEnabled,
+		sharingServerEndpointUrl: (draft.sharingServerEndpointUrl || '').trim(),
 		includeMachineBreakdown: !!draft.includeMachineBreakdown,
 		blobUploadEnabled: !!draft.blobUploadEnabled,
 		blobContainerName: (draft.blobContainerName || '').trim() || 'copilot-session-logs',

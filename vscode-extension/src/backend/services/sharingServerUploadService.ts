@@ -10,6 +10,7 @@ export interface SharingServerEntry {
 	workspaceName?: string;
 	machineId: string;
 	machineName?: string;
+	editor?: string;
 	inputTokens: number;
 	outputTokens: number;
 	interactions: number;

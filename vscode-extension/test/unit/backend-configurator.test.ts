@@ -41,7 +41,8 @@ const baseSettings: BackendSettings = {
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 };
 
 test('validateDraft enforces lookback bounds, alias rules, and dataset/table format', () => {

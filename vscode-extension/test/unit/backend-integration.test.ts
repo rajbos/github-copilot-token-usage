@@ -142,7 +142,8 @@ test('BackendIntegration proxies facade calls and fallbacks', async () => {
 	blobContainerName: "copilot-session-logs",
 	blobUploadFrequencyHours: 24,
 	blobCompressFiles: true,
-	sharingServerEndpointUrl: ''
+	sharingServerEnabled: false,
+		sharingServerEndpointUrl: ''
 	};
 	const facade = {
 		getSettings: () => {

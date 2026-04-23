@@ -9,6 +9,7 @@ const MAX_STRING_LENGTHS = {
 	machineId: 256,
 	machineName: 256,
 	datasetId: 128,
+	editor: 100,
 };
 const MAX_TOKEN_VALUE = 100_000_000; // 100M tokens per entry is already absurd
 const MAX_ENTRIES_PER_UPLOAD = 500;
@@ -141,6 +142,12 @@ function validateEntry(entry: unknown): string | null {
 		if (typeof e.datasetId !== 'string') return '"datasetId" must be a string';
 		if (e.datasetId.length > MAX_STRING_LENGTHS.datasetId) {
 			return `"datasetId" too long (max ${MAX_STRING_LENGTHS.datasetId})`;
+		}
+	}
+	if (e.editor !== undefined && e.editor !== null) {
+		if (typeof e.editor !== 'string') return '"editor" must be a string';
+		if (e.editor.length > MAX_STRING_LENGTHS.editor) {
+			return `"editor" too long (max ${MAX_STRING_LENGTHS.editor})`;
 		}
 	}
 

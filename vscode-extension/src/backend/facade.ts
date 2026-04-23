@@ -626,6 +626,7 @@ export class BackendFacade {
           ? "Auth: Shared Key stored on this machine"
           : "Auth: Shared Key missing on this machine"
         : "Auth: Entra ID (RBAC)";
+    const lastSyncAt = this.deps.context?.globalState.get<number>('backend.lastSyncAt');
     return {
       draft,
       sharedKeySet,
@@ -633,6 +634,7 @@ export class BackendFacade {
       isConfigured: this.isConfigured(settings),
       authStatus,
       shareConsentAt: settings.shareConsentAt,
+      lastSyncAt,
     };
   }
 
@@ -749,6 +751,21 @@ export class BackendFacade {
         next.blobCompressFiles,
         vscode.ConfigurationTarget.Global,
       ),
+      config.update(
+        "backend.backend",
+        next.backend,
+        vscode.ConfigurationTarget.Global,
+      ),
+      config.update(
+        "backend.sharingServer.enabled",
+        next.sharingServerEnabled,
+        vscode.ConfigurationTarget.Global,
+      ),
+      config.update(
+        "backend.sharingServer.endpointUrl",
+        next.sharingServerEndpointUrl,
+        vscode.ConfigurationTarget.Global,
+      ),
     ]);
   }
 
@@ -843,6 +860,7 @@ export class BackendFacade {
     // Create a draft with empty Azure settings
     const draft: BackendConfigDraft = {
       enabled: false,
+      backend: "storageTables",
       authMode: "entraId",
       sharingProfile: "off",
       shareWorkspaceMachineNames: false,
@@ -856,6 +874,8 @@ export class BackendFacade {
       eventsTable: "usageEvents",
       userIdentityMode: "pseudonymous",
       userId: "",
+      sharingServerEnabled: false,
+      sharingServerEndpointUrl: "",
       blobUploadEnabled: false,
       blobContainerName: "copilot-session-logs",
       blobUploadFrequencyHours: 24,

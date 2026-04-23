@@ -44,6 +44,7 @@ export interface BackendSettings {
 	blobUploadFrequencyHours: number;
 	blobCompressFiles: boolean;
 	// Sharing server settings
+	sharingServerEnabled: boolean;
 	sharingServerEndpointUrl: string;
 }
 
@@ -108,6 +109,7 @@ export function getBackendSettings(): BackendSettings {
 		blobUploadFrequencyHours: Math.max(1, config.get<number>('backend.blobUploadFrequencyHours', 24)),
 		blobCompressFiles: config.get<boolean>('backend.blobCompressFiles', true),
 		// Sharing server settings
+		sharingServerEnabled: config.get<boolean>('backend.sharingServer.enabled', false),
 		sharingServerEndpointUrl: config.get<string>('backend.sharingServer.endpointUrl', '').trim(),
 	};
 }
