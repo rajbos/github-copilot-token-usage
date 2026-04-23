@@ -14,6 +14,7 @@
     "build:production": "node esbuild.js --production",
     "start": "node --env-file=.env dist/server.js",
     "dev": "node --env-file=.env --watch dist/server.js",
+    "update": "npm ci && node esbuild.js",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
