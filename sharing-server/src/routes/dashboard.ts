@@ -263,7 +263,7 @@ function layout(title: string, body: string): string {
 
   /* ── Editor bars ── */
   .editor-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .editor-label { min-width: 110px; text-align: right; font-size: 0.85rem; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .editor-label { width: 160px; flex-shrink: 0; text-align: right; font-size: 0.85rem; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .editor-track { flex: 1; background: #21262d; border-radius: 4px; height: 8px; overflow: hidden; }
   .editor-fill { height: 100%; border-radius: 4px; }
   .editor-pct { min-width: 44px; text-align: right; font-size: 0.78rem; color: #8b949e; }
