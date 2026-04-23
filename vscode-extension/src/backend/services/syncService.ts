@@ -1427,7 +1427,9 @@ export class SyncService {
 			});
 		}
 
-		this.deps.log(`Sharing server upload: uploading ${entries.length} rollup entries`);
+		const totalInputTokens = entries.reduce((s, e) => s + e.inputTokens, 0);
+		const totalOutputTokens = entries.reduce((s, e) => s + e.outputTokens, 0);
+		this.deps.log(`Sharing server upload: uploading ${entries.length} rollup entries (${(totalInputTokens + totalOutputTokens).toLocaleString()} tokens total)`);
 		await this.sharingServerUploadService.uploadRollups(
 			settings.sharingServerEndpointUrl,
 			githubToken,
