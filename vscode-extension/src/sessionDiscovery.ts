@@ -355,19 +355,28 @@ export class SessionDiscovery {
 					if (await this.pathExists(workspaceStoragePath)) {
 						const workspaceDirs = await fs.promises.readdir(workspaceStoragePath);
 						await this.runWithConcurrency(workspaceDirs, async (workspaceDir) => {
-							const chatSessionsPath = path.join(workspaceStoragePath, workspaceDir, 'chatSessions');
-							try {
-								if (await this.pathExists(chatSessionsPath)) {
-									const sessionFiles2 = (await fs.promises.readdir(chatSessionsPath))
-										.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
-										.map(file => path.join(chatSessionsPath, file));
-									if (sessionFiles2.length > 0) {
-										this.deps.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
-										sessionFiles.push(...sessionFiles2);
+							// Older Copilot Chat versions stored sessions at <hash>/chatSessions/
+							// Newer versions (v0.45+) nest under <hash>/GitHub.copilot-chat/chatSessions/
+							// On Linux the filesystem is case-sensitive so check both casings.
+							const chatSessionsCandidates = [
+								path.join(workspaceStoragePath, workspaceDir, 'chatSessions'),
+								path.join(workspaceStoragePath, workspaceDir, 'GitHub.copilot-chat', 'chatSessions'),
+								path.join(workspaceStoragePath, workspaceDir, 'github.copilot-chat', 'chatSessions'),
+							];
+							for (const chatSessionsPath of chatSessionsCandidates) {
+								try {
+									if (await this.pathExists(chatSessionsPath)) {
+										const sessionFiles2 = (await fs.promises.readdir(chatSessionsPath))
+											.filter(file => file.endsWith('.json') || file.endsWith('.jsonl'))
+											.map(file => path.join(chatSessionsPath, file));
+										if (sessionFiles2.length > 0) {
+											this.deps.log(`📄 Found ${sessionFiles2.length} session files in ${pathName}/workspaceStorage/${workspaceDir}`);
+											sessionFiles.push(...sessionFiles2);
+										}
 									}
+								} catch {
+									// Ignore individual workspace dir errors
 								}
-							} catch {
-								// Ignore individual workspace dir errors
 							}
 						}, 6);
 					}
@@ -391,15 +400,20 @@ export class SessionDiscovery {
 					this.deps.warn(`Could not check global storage path ${globalStoragePath}: ${checkError}`);
 				}
 
-				// GitHub Copilot Chat extension global storage
-				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', 'github.copilot-chat');
-				try {
-					if (await this.pathExists(copilotChatGlobalPath)) {
-						this.deps.log(`📄 Scanning ${pathName}/globalStorage/github.copilot-chat`);
-						await this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+				// GitHub Copilot Chat extension global storage.
+				// VS Code creates the folder using the extension's publisher+name ID as-is.
+				// On case-sensitive Linux filesystems 'GitHub.copilot-chat' and
+				// 'github.copilot-chat' are distinct — check both to be safe.
+				for (const extFolderName of ['GitHub.copilot-chat', 'github.copilot-chat']) {
+					const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', extFolderName);
+					try {
+						if (await this.pathExists(copilotChatGlobalPath)) {
+							this.deps.log(`📄 Scanning ${pathName}/globalStorage/${extFolderName}`);
+							await this.scanDirectoryForSessionFiles(copilotChatGlobalPath, sessionFiles);
+						}
+					} catch (checkError) {
+						this.deps.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
 					}
-				} catch (checkError) {
-					this.deps.warn(`Could not check Copilot Chat global storage path ${copilotChatGlobalPath}: ${checkError}`);
 				}
 			}, 4);
 
