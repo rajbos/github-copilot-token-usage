@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -161,7 +161,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 39; // Cache-aware cost: track cachedReadTokens/cacheCreationTokens in ModelUsage
+	private static readonly CACHE_VERSION = 40; // Fix lastInteraction: use content timestamps only, not max(timestamp, mtime)
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -2161,7 +2161,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 							continue;
 						}
 
+						// Derive lastActivity from session content timestamp (not mtime) to avoid
+						// date mis-classification when VS Code writes the file after midnight.
+						const lastActivity = sessionData.lastInteraction
+							? new Date(sessionData.lastInteraction)
+							: new Date(mtime);
+
 						// Add to last 30 days stats
+						if (lastActivity < last30DaysStart) {
+							processed++;
+							continue;
+						}
 						last30DaysStats.sessions++;
 						this.mergeUsageAnalysis(last30DaysStats, analysis);
 
@@ -2196,14 +2206,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 						}
 
-						// Add to month stats if modified this calendar month
-						if (mtime >= monthStart.getTime()) {
+						// Add to month stats if activity falls in this calendar month
+						if (lastActivity >= monthStart) {
 							monthStats.sessions++;
 							this.mergeUsageAnalysis(monthStats, analysis);
 						}
 
-						// Add to today stats if modified today
-						if (mtime >= todayStart.getTime()) {
+						// Add to today stats if activity falls today
+						if (lastActivity >= todayStart) {
 							todayStats.sessions++;
 							this.mergeUsageAnalysis(todayStats, analysis);
 						}
@@ -2826,18 +2836,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return undefined;
 		}
 
-		// Determine lastInteraction: use the more recent of cached timestamp or file mtime
-		// This handles cases where file was modified but content timestamps are older
-		let lastInteraction: string | null = cached.lastInteraction || null;
-		if (lastInteraction) {
-			const cachedLastInteraction = new Date(lastInteraction);
-			if (stat.mtime > cachedLastInteraction) {
-				lastInteraction = stat.mtime.toISOString();
-			}
-		} else {
-			// No cached lastInteraction, use file mtime
-			lastInteraction = stat.mtime.toISOString();
-		}
+		// Use the cached lastInteraction from session content directly.
+		// Do NOT fall back to file mtime here: mtime is updated whenever VS Code writes the
+		// session file (e.g. finalising a session just after midnight), which would shift
+		// yesterday's sessions into "today". Only use mtime when no content timestamp exists.
+		const lastInteraction: string | null = cached.lastInteraction || stat.mtime.toISOString();
 
 		// Reconstruct SessionFileDetails from cache.
 		// Prefer actualTokens (real API count) when available; fall back to estimated tokens.
@@ -3049,10 +3052,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 					if (timestamps.length > 0) {
 						timestamps.sort((a, b) => a - b);
 						details.firstInteraction = new Date(timestamps[0]).toISOString();
-						const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
-						details.lastInteraction = lastTimestamp > stat.mtime
-							? lastTimestamp.toISOString()
-							: stat.mtime.toISOString();
+						// Use the last content timestamp directly. Do NOT mix in stat.mtime: mtime is set
+						// when VS Code writes the file (e.g. after midnight), which would shift yesterday's
+						// session into 'today', breaking the 30-day/today cutoff boundaries.
+						details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 					} else {
 						details.lastInteraction = stat.mtime.toISOString();
 					}
@@ -3116,12 +3119,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (timestamps.length > 0) {
 					timestamps.sort((a, b) => a - b);
 					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					// Use the more recent of: extracted last timestamp OR file modification time
-					// This handles cases where new requests are added without timestamp fields
-					const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
-					details.lastInteraction = lastTimestamp > stat.mtime
-						? lastTimestamp.toISOString()
-						: stat.mtime.toISOString();
+					// Use the last content timestamp directly. Do NOT mix in stat.mtime: mtime is set
+					// when VS Code writes the file (e.g. after midnight), which would shift yesterday's
+					// session into 'today', breaking the 30-day/today cutoff boundaries.
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 				} else {
 					// Fallback to file modification time if no timestamps in content
 					details.lastInteraction = stat.mtime.toISOString();
@@ -3191,12 +3192,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (timestamps.length > 0) {
 					timestamps.sort((a, b) => a - b);
 					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					// Use the more recent of: extracted last timestamp OR file modification time
-					// This handles cases where new requests are added without timestamp fields
-					const lastTimestamp = new Date(timestamps[timestamps.length - 1]);
-					details.lastInteraction = lastTimestamp > stat.mtime
-						? lastTimestamp.toISOString()
-						: stat.mtime.toISOString();
+					// Use the last content timestamp directly. Do NOT mix in stat.mtime: mtime is set
+					// when VS Code writes the file (e.g. after midnight), which would shift yesterday's
+					// session into 'today', breaking the 30-day/today cutoff boundaries.
+					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 				} else {
 					// Fallback to file modification time if no timestamps in content
 					details.lastInteraction = stat.mtime.toISOString();
