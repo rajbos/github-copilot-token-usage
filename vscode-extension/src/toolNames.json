@@ -61,6 +61,7 @@
   ,"mcp_azure_aks": "Azure MCP: AKS"
   ,"mcp_azure_mcp_azureterraformbestpractices": "Azure MCP: Azure Terraform Best Practices"
   ,"mcp_azure_mcp_documentation": "Azure MCP: Documentation"
+  ,"mcp_azure_mcp_get_bestpractices": "Azure MCP: Get Best Practices"
   ,"mcp_bicep_format_bicep_file": "Bicep MCP: Format Bicep File"
   ,"mcp_bicep_get_az_resource_type_schema": "Bicep MCP: Get Az Resource Type Schema"
   ,"mcp_bicep_get_bicep_best_practices": "Bicep MCP: Get Bicep Best Practices"
