@@ -11,7 +11,7 @@ const MAX_STRING_LENGTHS = {
 	datasetId: 128,
 	editor: 100,
 };
-const MAX_TOKEN_VALUE = 100_000_000; // 100M tokens per entry is already absurd
+const MAX_TOKEN_VALUE = 2_000_000_000; // 2B tokens — large agent sessions can exceed 100M in one day
 const MAX_ENTRIES_PER_UPLOAD = 500;
 
 export const api = new Hono<{ Variables: AuthVariables }>();
