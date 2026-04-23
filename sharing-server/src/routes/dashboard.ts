@@ -181,6 +181,16 @@ function h(text: unknown): string {
 		.replace(/"/g, '&quot;');
 }
 
+/** Normalize raw vscode.env.appName values to the friendly names used by the extension. */
+function normalizeEditorName(raw: string | null | undefined): string {
+	const name = (raw ?? '').trim();
+	if (!name || name === 'VS Code') { return 'VS Code'; }
+	if (name === 'Visual Studio Code') { return 'VS Code'; }
+	if (name === 'Visual Studio Code - Insiders') { return 'VS Code Insiders'; }
+	if (name === 'Visual Studio Code - Exploration') { return 'VS Code Exploration'; }
+	return name;
+}
+
 /** Safely embed arbitrary data as a JS literal inside a <script> block. */
 function safeJson(data: unknown): string {
 	return JSON.stringify(data)
@@ -339,7 +349,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 	// ── Editor breakdown (last 30 days) ───────────────────────────────────────
 	const editorTotals = new Map<string, number>();
 	for (const r of uploads) {
-		const editor = r.editor || 'VS Code';
+		const editor = normalizeEditorName(r.editor);
 		editorTotals.set(editor, (editorTotals.get(editor) ?? 0) + r.input_tokens + r.output_tokens);
 	}
 	const grandTotal = [...editorTotals.values()].reduce((s, v) => s + v, 0);
@@ -355,7 +365,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 	const chartData = uploads.map(r => ({
 		day: r.day,
 		model: r.model,
-		editor: r.editor || 'VS Code',
+		editor: normalizeEditorName(r.editor),
 		inputTokens: r.input_tokens,
 		outputTokens: r.output_tokens,
 		interactions: r.interactions,
@@ -462,7 +472,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
       <tr>
         <td>${h(r.day)}</td>
         <td><span class="pill">${h(r.model)}</span></td>
-        <td>${h(r.editor || 'VS Code')}</td>
+        <td>${h(normalizeEditorName(r.editor))}</td>
         <td>${h(r.workspace_name ?? r.workspace_id)}</td>
         <td>${h(r.machine_name ?? r.machine_id)}</td>
         <td>${r.input_tokens.toLocaleString()}</td>

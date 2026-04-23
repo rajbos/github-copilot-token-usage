@@ -1333,6 +1333,19 @@ export class SyncService {
 	}
 
 	/**
+	 * Normalize vscode.env.appName to the friendly editor names used throughout the extension.
+	 * "Visual Studio Code" → "VS Code", "Visual Studio Code - Insiders" → "VS Code Insiders", etc.
+	 */
+	private normalizeEditorName(appName: string): string {
+		const name = appName.trim();
+		if (name === 'Visual Studio Code') { return 'VS Code'; }
+		if (name === 'Visual Studio Code - Insiders') { return 'VS Code Insiders'; }
+		if (name === 'Visual Studio Code - Exploration') { return 'VS Code Exploration'; }
+		// Other editors (Cursor, VSCodium, Windsurf, etc.) already use clean names
+		return name || 'VS Code';
+	}
+
+	/**
 	 * Sync daily rollups to the self-hosted sharing server using a GitHub Bearer token.
 	 */
 	private async syncToSharingServer(
@@ -1379,7 +1392,7 @@ export class SyncService {
 				outputTokens: value.outputTokens,
 				interactions: value.interactions,
 				datasetId: settings.datasetId,
-				editor: vscode.env.appName,
+				editor: this.normalizeEditorName(vscode.env.appName),
 			});
 		}
 
