@@ -206,6 +206,21 @@ export function upsertUpload(userId: number, entry: UploadEntry): void {
 	);
 }
 
+/**
+ * Delete all rows for a user+dataset for specific days before a full re-upload.
+ * This prevents stale rows (e.g. old editor="VS Code" rows for what are now
+ * correctly-attributed CLI/Claude sessions) from accumulating when the upload
+ * schema changes.
+ */
+export function deleteUploadsForDays(userId: number, datasetId: string, days: string[]): void {
+	if (days.length === 0) return;
+	const placeholders = days.map(() => '?').join(', ');
+	getDb().prepare(`
+		DELETE FROM usage_uploads
+		WHERE user_id = ? AND dataset_id = ? AND day IN (${placeholders})
+	`).run(userId, datasetId, ...days);
+}
+
 export function getUploadsForUser(userId: number, days = 30): UploadRow[] {
 	return getDb().prepare(`
 		SELECT * FROM usage_uploads

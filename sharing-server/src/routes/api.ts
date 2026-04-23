@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { requireBearerAuth, checkUploadRateLimit, type AuthVariables } from '../auth.js';
-import { upsertUpload, getUploadsForUser, type UploadEntry } from '../db.js';
+import { upsertUpload, deleteUploadsForDays, getUploadsForUser, getDb, type UploadEntry } from '../db.js';
 
 const MAX_STRING_LENGTHS = {
 	model: 128,
@@ -48,17 +48,42 @@ api.post('/upload', requireBearerAuth, async (c) => {
 	let uploaded = 0;
 	const errors: string[] = [];
 
+	// Validate all entries first before touching the DB
+	const validEntries: UploadEntry[] = [];
 	for (let i = 0; i < body.length; i++) {
 		const validationError = validateEntry(body[i]);
 		if (validationError) {
 			errors.push(`Entry ${i}: ${validationError}`);
-			continue;
+		} else {
+			validEntries.push(body[i] as UploadEntry);
 		}
-		try {
-			upsertUpload(user.id, body[i] as UploadEntry);
-			uploaded++;
-		} catch (err) {
-			errors.push(`Entry ${i}: ${String(err)}`);
+	}
+
+	if (validEntries.length > 0) {
+		// Group by dataset_id so we can delete-then-insert per dataset atomically
+		const byDataset = new Map<string, UploadEntry[]>();
+		for (const entry of validEntries) {
+			const dsId = entry.datasetId ?? 'default';
+			if (!byDataset.has(dsId)) byDataset.set(dsId, []);
+			byDataset.get(dsId)!.push(entry);
+		}
+
+		for (const [datasetId, entries] of byDataset) {
+			// Collect the unique days being uploaded for this dataset
+			const days = [...new Set(entries.map(e => e.day))];
+			try {
+				// Run delete + insert in a single transaction so there's never a gap
+				getDb().exec('BEGIN');
+				deleteUploadsForDays(user.id, datasetId, days);
+				for (const entry of entries) {
+					upsertUpload(user.id, entry);
+					uploaded++;
+				}
+				getDb().exec('COMMIT');
+			} catch (err) {
+				getDb().exec('ROLLBACK');
+				errors.push(`Dataset "${datasetId}": ${String(err)}`);
+			}
 		}
 	}
 
