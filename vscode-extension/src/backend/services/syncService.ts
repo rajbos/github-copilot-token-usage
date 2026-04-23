@@ -501,56 +501,45 @@ export class SyncService {
 				}
 			}
 
-			// Now distribute cachedData.tokens (text-estimated total matching extension display)
-			// proportionally across day+model combinations based on interaction count.
-			//
-			// We do NOT use cachedData.modelUsage sums as a denominator because modelUsage.inputTokens
-			// accumulates the full context window per request (each chat turn re-sends all prior history),
-			// making totalModelTokens >> cachedData.tokens and producing a scale factor far below 1.
-			// Instead, distribute cachedData.tokens proportionally by interaction count: each [day,model]
-			// combination gets a share of the total proportional to how many interactions it had.
-			// For the input/output split we use the output fraction from modelUsage (output tokens are
-			// not inflated by context the same way input tokens are).
-			// Mirror the extension's own token preference: prefer actual API-reported tokens when
-			// available (same logic as calculateDetailedStats: actualTokens > 0 ? actualTokens : estimatedTokens).
-			// Text-estimated tokens (~20M) are far smaller than API-actual numbers (~1.2B) because
-			// the estimators only measure visible conversation text, not the full context window.
-			const estimatedTokens: number = typeof (cachedData as any).tokens === 'number'
-				? (cachedData as any).tokens as number : 0;
-			const cachedActualTokens: number = typeof (cachedData as any).actualTokens === 'number'
-				? (cachedData as any).actualTokens as number : 0;
-			const displayTokens: number = cachedActualTokens > 0 ? cachedActualTokens : estimatedTokens;
-			const totalAllInteractions = Array.from(dayModelInteractions.values())
-				.reduce((sum, m) => { m.forEach(c => { sum += c; }); return sum; }, 0);
+			// Total interactions per model (across all days) — used to compute each day's fraction
+			// for multi-day sessions.
+			const totalInteractionsPerModel = new Map<string, number>();
+			for (const modelMap of dayModelInteractions.values()) {
+				for (const [m, c] of modelMap) {
+					totalInteractionsPerModel.set(m, (totalInteractionsPerModel.get(m) || 0) + c);
+				}
+			}
 
 			for (const [dayKey, modelMap] of dayModelInteractions) {
 				for (const [model, interactions] of modelMap) {
-					const cachedUsage = cachedData.modelUsage[model];
+					const cachedUsage = cachedData.modelUsage[model] as any;
 					if (!cachedUsage) { continue; }
-					
+
+					// Validate individual model token values — reject negative or non-finite values.
+					const cachedInput = typeof cachedUsage.inputTokens === 'number' ? cachedUsage.inputTokens : NaN;
+					const cachedOutput = typeof cachedUsage.outputTokens === 'number' ? cachedUsage.outputTokens : NaN;
+					if (!Number.isFinite(cachedInput) || cachedInput < 0 ||
+						!Number.isFinite(cachedOutput) || cachedOutput < 0) {
+						this.deps.warn(`Backend sync: invalid inputTokens or outputTokens in model usage for ${sessionFile}`);
+						continue;
+					}
+
 					const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor };
-					
-					// Interaction ratio for this [day, model] relative to all interactions in this file
-					const interactionFraction = totalAllInteractions > 0 ? interactions / totalAllInteractions : 0;
-					const modelDayTokens = Math.round(displayTokens * interactionFraction);
-					
-					// For the tokenRatio used by fluencyMetrics: fraction of this model's interactions on this day
-					const totalInteractionsForModel = Array.from(dayModelInteractions.values())
-						.reduce((sum, m) => sum + (m.get(model) || 0), 0);
-					const tokenRatio = totalInteractionsForModel > 0 ? interactions / totalInteractionsForModel : 1;
-					
-					// Use output fraction from modelUsage for the input/output split.
-					// Output tokens are not inflated by context (each response is independent).
-					const totalModelUsageTokens = (cachedUsage.inputTokens || 0) + (cachedUsage.outputTokens || 0);
-					const outputFraction = totalModelUsageTokens > 0
-						? Math.min(0.5, (cachedUsage.outputTokens || 0) / totalModelUsageTokens)
-						: 0.2;
-					const outputTokens = Math.round(modelDayTokens * outputFraction);
-					const inputTokens = modelDayTokens - outputTokens;
-					
-					// Extract fluency metrics from cached usage analysis (if available)
-					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, tokenRatio);
-					
+
+					// Fraction of this model's interactions that fall on this day (for multi-day sessions).
+					// For single-day sessions dayFraction = 1.0 and the full cached model usage is used.
+					const totalModelInteractions = totalInteractionsPerModel.get(model) || 1;
+					const dayFraction = totalModelInteractions > 0 ? interactions / totalModelInteractions : 1;
+
+					// Apply dayFraction directly to the cached per-model tokens.
+					// For API-actual data, cachedUsage already holds the exact per-model totals from the
+					// session, so no additional scaling is needed. For text-estimate sessions, both
+					// cachedData.tokens and cachedUsage are from the same estimation and are consistent.
+					const inputTokens = Math.round(cachedInput * dayFraction);
+					const outputTokens = Math.round(cachedOutput * dayFraction);
+
+					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, dayFraction);
+
 					upsertDailyRollup(rollups, key, {
 						inputTokens,
 						outputTokens,
