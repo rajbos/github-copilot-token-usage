@@ -626,7 +626,7 @@ export class BackendFacade {
           ? "Auth: Shared Key stored on this machine"
           : "Auth: Shared Key missing on this machine"
         : "Auth: Entra ID (RBAC)";
-    const lastSyncAt = this.deps.context?.globalState.get<number>('backend.lastSyncAt');
+    const lastSyncAt = this.deps.context?.globalState?.get<number>('backend.lastSyncAt');
     return {
       draft,
       sharedKeySet,
