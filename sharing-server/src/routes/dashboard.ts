@@ -440,6 +440,11 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   <div class="card-header">
     <h3>Token Usage Trend</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="tabs" id="chart-period-tabs">
+        <button class="tab" data-chart-period="7">Last 7 days</button>
+        <button class="tab active" data-chart-period="30">Last 30 days</button>
+        <button class="tab" data-chart-period="0">All</button>
+      </div>
       <div class="tabs" id="group-tabs">
         <button class="tab active" data-group="model">By Model</button>
         <button class="tab" data-group="editor">By Editor</button>
@@ -448,6 +453,10 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
         <button class="tab active" data-view="day">Day</button>
         <button class="tab" data-view="week">Week</button>
         <button class="tab" data-view="month">Month</button>
+      </div>
+      <div class="tabs" id="scale-tabs">
+        <button class="tab active" data-scale="linear">Linear</button>
+        <button class="tab" data-scale="log">Log</button>
       </div>
     </div>
   </div>
@@ -601,7 +610,37 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
       .filter(function(ds) { return ds.data.some(function(v) { return v > 0; }); });
   }
 
-  var currentGroup = 'model', currentView = 'day';
+  var currentGroup = 'model', currentView = 'day', currentChartDays = 30, currentScale = 'linear';
+
+  function getChartData() {
+    if (currentChartDays === 0) { return CHART_DATA; }
+    var cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - (currentChartDays - 1));
+    var cutoffStr = cutoff.toISOString().slice(0, 10);
+    return CHART_DATA.filter(function(r) { return r.day >= cutoffStr; });
+  }
+
+  function makeYAxisConfig() {
+    var isLog = currentScale === 'log';
+    return {
+      stacked: !isLog,
+      type: isLog ? 'logarithmic' : 'linear',
+      grid: { color: '#21262d' },
+      ticks: {
+        color: '#8b949e', font: { size: 11 },
+        callback: function(v) {
+          // Show only "round" log-scale ticks
+          if (isLog) {
+            var log = Math.log10(v);
+            if (Math.abs(log - Math.round(log)) > 0.01) { return null; }
+          }
+          return v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K';
+        },
+      },
+      title: { display: true, text: 'Tokens (K)', color: '#8b949e', font: { size: 11 } },
+    };
+  }
+
   var grouped = aggregate(function(d) { return d; }, currentGroup);
   var labels  = [...new Set(CHART_DATA.map(function(r) { return r.day; }))].sort();
 
@@ -614,11 +653,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
       interaction: { mode: 'index', intersect: false },
       scales: {
         x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: 16, font: { size: 11 } } },
-        y: { stacked: true, grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', font: { size: 11 },
-            callback: function(v) { return v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K'; } },
-          title: { display: true, text: 'Tokens (K)', color: '#8b949e', font: { size: 11 } },
-        },
+        y: makeYAxisConfig(),
       },
       plugins: {
         legend: { position: 'bottom', labels: { color: '#c9d1d9', boxWidth: 11, padding: 14, font: { size: 11 } } },
@@ -640,15 +675,44 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   });
 
   function rebuildChart() {
+    var filteredData = getChartData();
     var keyFn = currentView === 'week' ? toWeekStart : currentView === 'month' ? toMonth : function(d) { return d; };
-    grouped = aggregate(keyFn, currentGroup);
-    labels  = [...new Set(CHART_DATA.map(function(r) { return keyFn(r.day); }))].sort();
+    // Re-aggregate using filtered data
+    var filteredMap = {};
+    filteredData.forEach(function(r) {
+      var label = keyFn(r.day);
+      var dim   = currentGroup === 'editor' ? r.editor : r.model;
+      if (!filteredMap[label]) filteredMap[label] = {};
+      filteredMap[label][dim] = (filteredMap[label][dim] || 0) + r.inputTokens + r.outputTokens;
+    });
+    grouped = filteredMap;
+    labels  = [...new Set(filteredData.map(function(r) { return keyFn(r.day); }))].sort();
     var dims     = currentGroup === 'editor' ? allEditors : allModels;
     var colorFn  = currentGroup === 'editor' ? getEditorColor : getModelColor;
     chart.data.labels   = labels;
     chart.data.datasets = buildDatasets(grouped, labels, dims, colorFn);
+    chart.options.scales.x.stacked = currentScale !== 'log';
+    chart.options.scales.y = makeYAxisConfig();
     chart.update();
   }
+
+  document.querySelectorAll('#chart-period-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#chart-period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentChartDays = parseInt(btn.getAttribute('data-chart-period'), 10);
+      rebuildChart();
+    });
+  });
+
+  document.querySelectorAll('#scale-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#scale-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentScale = btn.getAttribute('data-scale');
+      rebuildChart();
+    });
+  });
 
   document.querySelectorAll('#group-tabs .tab').forEach(function(btn) {
     btn.addEventListener('click', function() {
