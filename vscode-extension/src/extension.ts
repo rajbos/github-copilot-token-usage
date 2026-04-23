@@ -65,6 +65,17 @@ import { VisualStudioDataAccess } from './visualstudio';
 import { ContinueDataAccess } from './continue';
 import { ClaudeCodeDataAccess } from './claudecode';
 import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
+import { MistralVibeDataAccess } from './mistralvibe';
+import type { IEcosystemAdapter } from './ecosystemAdapter';
+import {
+	OpenCodeAdapter,
+	CrushAdapter,
+	ContinueAdapter,
+	ClaudeDesktopAdapter,
+	ClaudeCodeAdapter,
+	VisualStudioAdapter,
+	MistralVibeAdapter,
+} from './adapters';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -169,10 +180,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private continue_: ContinueDataAccess;
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
+	private mistralVibe: MistralVibeDataAccess;
+	private readonly ecosystems: IEcosystemAdapter[];
 	private cacheManager: CacheManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
-		return { warn: (m: string) => this.warn(m), openCode: this.openCode, crush: this.crush, visualStudio: this.visualStudio, continue_: this.continue_, claudeCode: this.claudeCode, claudeDesktopCowork: this.claudeDesktopCowork, tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap };
+		return { warn: (m: string) => this.warn(m), tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
 	}
 	private sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
@@ -295,20 +308,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Extract custom agent name from a file:// URI pointing to a .agent.md file.
 	 * Returns the filename without the .agent.md extension.
 	 */
-
-
-
-
-
-
-
-
-
-
-
-
 	private getEditorTypeFromPath(filePath: string): string {
-		return _getEditorTypeFromPath(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
+		return _getEditorTypeFromPath(filePath, (p) => this.findEcosystem(p)?.id === 'opencode');
+	}
+
+	/** Returns the first adapter that claims this session file, or null for Copilot Chat sessions. */
+	private findEcosystem(sessionFile: string): IEcosystemAdapter | null {
+		return this.ecosystems.find(e => e.handles(sessionFile)) ?? null;
 	}
 
 	/**
@@ -316,16 +322,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Must be used instead of fs.promises.stat() directly.
 	 */
 	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			return this.visualStudio.statSessionFile(sessionFile);
-		}
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			return this.visualStudio.statSessionFile(sessionFile);
-		}
-		if (this.crush.isCrushSessionFile(sessionFile)) {
-			return this.crush.statSessionFile(sessionFile);
-		}
-		return this.openCode.statSessionFile(sessionFile);
+		const eco = this.findEcosystem(sessionFile);
+		if (eco) { return eco.stat(sessionFile); }
+		return fs.promises.stat(sessionFile);
 	}
 
 	/**
@@ -836,17 +835,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.visualStudio = new VisualStudioDataAccess();
 		this.claudeCode = new ClaudeCodeDataAccess();
 		this.claudeDesktopCowork = new ClaudeDesktopCoworkDataAccess();
+		this.mistralVibe = new MistralVibeDataAccess();
+		this.ecosystems = [
+			new OpenCodeAdapter(this.openCode),
+			new CrushAdapter(this.crush),
+			new VisualStudioAdapter(this.visualStudio, (t, m) => this.estimateTokensFromText(t, m)),
+			new ContinueAdapter(this.continue_),
+			new ClaudeDesktopAdapter(this.claudeDesktopCowork, (t) => this.isMcpTool(t), (t) => this.extractMcpServerName(t), (t, m) => this.estimateTokensFromText(t, m)),
+			new ClaudeCodeAdapter(this.claudeCode),
+			new MistralVibeAdapter(this.mistralVibe),
+		];
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({
 			log: (m) => this.log(m),
 			warn: (m) => this.warn(m),
 			error: (m, e) => this.error(m, e),
-			openCode: this.openCode,
-			crush: this.crush,
-			visualStudio: this.visualStudio,
-			continue_: this.continue_,
-			claudeCode: this.claudeCode,
-			claudeDesktopCowork: this.claudeDesktopCowork,
+			ecosystems: this.ecosystems,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
 		});
 		this.context = context;
@@ -899,14 +903,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Create status bar item
 		this.statusBarItem = vscode.window.createStatusBarItem(
-			'copilot-token-tracker',
+			'ai-engineering-fluency',
 			vscode.StatusBarAlignment.Right,
 			100
 		);
 		this.statusBarItem.name = "AI Engineering Fluency";
 		this.setStatusBarText("$(loading~spin) AI Fluency: Loading...");
 		this.statusBarItem.tooltip = "AI Engineering Fluency — daily and 30-day token usage - Click to open details";
-		this.statusBarItem.command = 'copilot-token-tracker.showDetails';
+		this.statusBarItem.command = 'aiEngineeringFluency.showDetails';
 		this.statusBarItem.show();
 
 		this.log('Status bar item created and shown');
@@ -915,10 +919,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Also restart backend sync timer when backend settings change
 		context.subscriptions.push(
 			vscode.workspace.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration('copilotTokenTracker.display')) {
+				if (e.affectsConfiguration('aiEngineeringFluency.display')) {
 					this.refreshOpenPanelsForSettingChange();
 				}
-				if (e.affectsConfiguration('copilotTokenTracker.backend')) {
+				if (e.affectsConfiguration('aiEngineeringFluency.backend')) {
 					this.startBackendSyncAfterInitialAnalysis();
 					// If the diagnostic report is open, refresh it so the Backend Storage
 					// section reflects the new settings immediately (e.g. after saving the
@@ -1832,7 +1836,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private getCompactNumbersSetting(): boolean {
-		return vscode.workspace.getConfiguration('copilotTokenTracker').get<boolean>('display.compactNumbers', true);
+		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.compactNumbers', true);
 	}
 
 	private refreshOpenPanelsForSettingChange(): void {
@@ -2438,36 +2442,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async countInteractionsInSession(sessionFile: string, preloadedContent?: string): Promise<number> {
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				return await this.openCode.countOpenCodeInteractions(sessionFile);
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				return this.visualStudio.countInteractions(objects);
-			}
-
-			// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				return await this.crush.countCrushInteractions(sessionFile);
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				return this.continue_.countContinueInteractions(sessionFile);
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				return this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
-			}
-
-			// Handle Claude Code sessions
-			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
-				return this.claudeCode.countClaudeCodeInteractions(sessionFile);
-			}
+			const eco = this.findEcosystem(sessionFile);
+			if (eco) { return eco.countInteractions(sessionFile); }
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
@@ -2615,110 +2591,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const timestamps: number[] = [];
 
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				// Read session metadata from DB or JSON file
-				let session: any = null;
-				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
-				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
-					session = await this.openCode.readOpenCodeDbSession(sessionId);
-				} else {
-					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-					session = JSON.parse(fileContent);
-				}
-				if (session) {
-					title = session.title || session.slug;
-					if (session.time?.created) { timestamps.push(session.time.created); }
-					if (session.time?.updated) { timestamps.push(session.time.updated); }
-				}
-				// Also check message timestamps for more precision
-				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
-				for (const msg of messages) {
-					if (msg.time?.created) { timestamps.push(msg.time.created); }
-					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
-				}
-				let firstInteraction: string | null = null;
-				let lastInteraction: string | null = null;
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					firstInteraction = new Date(timestamps[0]).toISOString();
-					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				const vsTitle = this.visualStudio.getSessionTitle(objects);
-				if (vsTitle) { title = vsTitle; }
-				const vsTs = this.visualStudio.getSessionTimestamps(objects);
-				if (vsTs.timeCreated) { timestamps.push(new Date(vsTs.timeCreated).getTime()); }
-				if (vsTs.timeUpdated) { timestamps.push(new Date(vsTs.timeUpdated).getTime()); }
-				const firstInteraction = timestamps.length > 0 ? new Date(Math.min(...timestamps)).toISOString() : null;
-				const lastInteraction = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				const session = await this.crush.readCrushSession(sessionFile);
-				if (session) {
-					title = session.title || undefined;
-					if (session.created_at) { timestamps.push(session.created_at * 1000); } // epoch seconds → ms
-					if (session.updated_at) { timestamps.push(session.updated_at * 1000); }
-				}
-				// Also pull message timestamps for precision
-				const messages = await this.crush.getCrushMessages(sessionFile);
-				for (const msg of messages) {
-					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
-					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
-				}
-				let firstInteraction: string | null = null;
-				let lastInteraction: string | null = null;
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					firstInteraction = new Date(timestamps[0]).toISOString();
-					lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				const meta = this.continue_.getContinueSessionMeta(sessionFile);
-				title = meta?.title;
-				const sessionId = this.continue_.getContinueSessionId(sessionFile);
-				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
-				let firstInteraction: string | null = null;
-				let lastInteraction: string | null = null;
-				if (indexEntry?.dateCreated) {
-					firstInteraction = new Date(indexEntry.dateCreated).toISOString();
-					const fileStat = await fs.promises.stat(sessionFile);
-					lastInteraction = fileStat.mtime.toISOString();
-				}
-				return { title, firstInteraction, lastInteraction };
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				const meta = this.claudeDesktopCowork.getCoworkSessionMeta(sessionFile);
-				return {
-					title: meta?.title,
-					firstInteraction: meta?.firstInteraction || null,
-					lastInteraction: meta?.lastInteraction || null,
-				};
-			}
-
-			// Handle Claude Code sessions
-			if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
-				const meta = this.claudeCode.getClaudeCodeSessionMeta(sessionFile);
-				return {
-					title: meta?.title,
-					firstInteraction: meta?.firstInteraction || null,
-					lastInteraction: meta?.lastInteraction || null,
-				};
-			}
+			const eco = this.findEcosystem(sessionFile);
+			if (eco) { return eco.getMeta(sessionFile); }
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
@@ -2828,13 +2702,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Pre-read file content once for regular Copilot Chat files to avoid 5 redundant reads
 		let preloadedContent: string | undefined;
-		const isSpecialSession =
-			this.openCode.isOpenCodeSessionFile(sessionFilePath) ||
-			this.visualStudio.isVSSessionFile(sessionFilePath) ||
-			this.crush.isCrushSessionFile(sessionFilePath) ||
-			this.continue_.isContinueSessionFile(sessionFilePath) ||
-			this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath) ||
-			this.claudeCode.isClaudeCodeSessionFile(sessionFilePath);
+		const isSpecialSession = this.findEcosystem(sessionFilePath) !== null;
 		if (!isSpecialSession) {
 			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 		}
@@ -2931,30 +2799,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Enriches the details object with editorRoot and editorName properties.
 	 */
 	private enrichDetailsWithEditorInfo(sessionFile: string, details: SessionFileDetails): void {
-		// OpenCode and Crush sessions have their own editorRoot/editorName logic — skip path splitting
-		if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-			details.editorRoot = this.openCode.getOpenCodeDataDir();
-			details.editorName = 'OpenCode';
-			return;
-		}
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			details.editorRoot = path.dirname(sessionFile);
-			details.editorName = 'Visual Studio';
-			return;
-		}
-		if (this.crush.isCrushSessionFile(sessionFile)) {
-			details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
-			details.editorName = 'Crush';
-			return;
-		}
-		if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-			details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
-			details.editorName = 'Claude Desktop Cowork';
-			return;
-		}
-		if (this.claudeCode.isClaudeCodeSessionFile(sessionFile)) {
-			details.editorRoot = this.claudeCode.getClaudeCodeProjectsDir();
-			details.editorName = 'Claude Code';
+		const eco = this.findEcosystem(sessionFile);
+		if (eco) {
+			details.editorRoot = eco.getEditorRoot(sessionFile);
+			details.editorName = eco.displayName;
 			return;
 		}
 		try {
@@ -3128,120 +2976,19 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.enrichDetailsWithEditorInfo(sessionFile, details);
 
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				// Read session metadata from DB or JSON file
-				let session: any = null;
-				const sessionId = this.openCode.getOpenCodeSessionId(sessionFile);
-				if (this.openCode.isOpenCodeDbSession(sessionFile) && sessionId) {
-					session = await this.openCode.readOpenCodeDbSession(sessionId);
-				} else {
-					const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
-					session = JSON.parse(fileContent);
+			// Handle all non-Copilot-Chat ecosystems via adapter dispatch
+			const eco = this.findEcosystem(sessionFile);
+			if (eco) {
+				const meta = await eco.getMeta(sessionFile);
+				details.title = meta.title;
+				details.firstInteraction = meta.firstInteraction;
+				details.lastInteraction = meta.lastInteraction;
+				details.interactions = await eco.countInteractions(sessionFile);
+				details.editorRoot = eco.getEditorRoot(sessionFile);
+				details.editorName = eco.displayName;
+				if (meta.workspacePath) {
+					details.repository = path.basename(meta.workspacePath);
 				}
-				if (session) {
-					details.title = session.title || session.slug;
-				}
-				details.interactions = await this.openCode.countOpenCodeInteractions(sessionFile);
-				const timestamps: number[] = [];
-				if (session?.time?.created) { timestamps.push(session.time.created); }
-				if (session?.time?.updated) { timestamps.push(session.time.updated); }
-				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
-				for (const msg of messages) {
-					if (msg.time?.created) { timestamps.push(msg.time.created); }
-					if (msg.time?.completed) { timestamps.push(msg.time.completed); }
-				}
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				// Set editor info for OpenCode
-				details.editorRoot = this.openCode.getOpenCodeDataDir();
-				details.editorName = 'OpenCode';
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFile)) {
-				const objects = this.visualStudio.decodeSessionFile(sessionFile);
-				details.editorSource = 'Visual Studio';
-				details.editorName = 'Visual Studio';
-				details.title = this.visualStudio.getSessionTitle(objects);
-				details.interactions = this.visualStudio.countInteractions(objects);
-				const vsMeta = this.visualStudio.getSessionTimestamps(objects);
-				if (vsMeta.timeCreated) { details.firstInteraction = new Date(vsMeta.timeCreated).toISOString(); }
-				if (vsMeta.timeUpdated) { details.lastInteraction = new Date(vsMeta.timeUpdated).toISOString(); }
-				this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				const session = await this.crush.readCrushSession(sessionFile);
-				if (session) {
-					details.title = session.title || undefined;
-				}
-				details.interactions = await this.crush.countCrushInteractions(sessionFile);
-				const timestamps: number[] = [];
-				if (session?.created_at) { timestamps.push(session.created_at * 1000); }
-				if (session?.updated_at) { timestamps.push(session.updated_at * 1000); }
-				const messages = await this.crush.getCrushMessages(sessionFile);
-				for (const msg of messages) {
-					if (msg.created_at) { timestamps.push(msg.created_at * 1000); }
-					if (msg.finished_at) { timestamps.push(msg.finished_at * 1000); }
-				}
-				if (timestamps.length > 0) {
-					timestamps.sort((a, b) => a - b);
-					details.firstInteraction = new Date(timestamps[0]).toISOString();
-					details.lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
-				}
-				details.editorRoot = path.dirname(this.crush.getCrushDbPath(sessionFile));
-				details.editorName = 'Crush';
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				const meta = this.continue_.getContinueSessionMeta(sessionFile);
-				if (meta) {
-					details.title = meta.title;
-					if (meta.workspaceDirectory) {
-						// workspaceDirectory is a file URI like file:///c%3A/Users/.../repo-name
-						try {
-							const wsPath = decodeURIComponent(meta.workspaceDirectory.replace(/^file:\/\/\//, '').replace(/^file:\/\//, ''));
-							details.repository = require('path').basename(wsPath);
-						} catch { /* ignore */ }
-					}
-				}
-				details.interactions = this.continue_.countContinueInteractions(sessionFile);
-				details.editorRoot = this.continue_.getContinueDataDir();
-				details.editorName = 'Continue';
-				// Use dateCreated from sessions.json index for accurate timestamps
-				const sessionId = this.continue_.getContinueSessionId(sessionFile);
-				const indexEntry = this.continue_.readSessionsIndex().get(sessionId);
-				if (indexEntry?.dateCreated) {
-					details.firstInteraction = new Date(indexEntry.dateCreated).toISOString();
-					details.lastInteraction = stat.mtime.toISOString();
-				} else {
-					details.firstInteraction = stat.mtime.toISOString();
-					details.lastInteraction = stat.mtime.toISOString();
-				}
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
-				return details;
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				const meta = this.claudeDesktopCowork.getCoworkSessionMeta(sessionFile);
-				if (meta?.title) { details.title = meta.title; }
-				if (meta?.firstInteraction) { details.firstInteraction = meta.firstInteraction; }
-				if (meta?.lastInteraction) { details.lastInteraction = meta.lastInteraction; }
-				details.interactions = this.claudeDesktopCowork.countCoworkInteractions(sessionFile);
-				details.editorRoot = this.claudeDesktopCowork.getCoworkBaseDir();
-				details.editorName = 'Claude Desktop Cowork';
 				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
 				return details;
 			}
@@ -3485,7 +3232,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Detect which editor the session file belongs to based on its path.
 	 */
 	private detectEditorSource(filePath: string): string {
-		return _detectEditorSource(filePath, (p) => this.openCode.isOpenCodeSessionFile(p));
+		return _detectEditorSource(filePath, (p) => !!this.findEcosystem(p));
 	}
 
 	/**
@@ -3496,379 +3243,27 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const turns: ChatTurn[] = [];
 
 		try {
-			// Handle OpenCode sessions
-			if (this.openCode.isOpenCodeSessionFile(sessionFile)) {
-				const messages = await this.openCode.getOpenCodeMessagesForSession(sessionFile);
-				if (messages.length > 0) {
-					let turnNumber = 0;
-					let prevCumulativeTotal = 0; // track cumulative total to compute per-turn deltas
-					for (let i = 0; i < messages.length; i++) {
-						const msg = messages[i];
-						if (msg.role !== 'user') { continue; }
-						turnNumber++;
-						// Collect ALL assistant messages for this turn (agentic tool-use loops produce multiple)
-						const turnAssistantMsgs = messages.filter((m, idx) => idx > i && m.role === 'assistant' && m.parentID === msg.id);
-						const userParts = await this.openCode.getOpenCodePartsForMessage(msg.id);
-						const userText = userParts.filter(p => p.type === 'text').map(p => p.text || '').join('\n');
-						let assistantText = '';
-						let thinkingText = '';
-						const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
-						let model: string | null = null;
-						let thinkingTokens = 0;
-
-						// Process all assistant messages in this turn to collect text, tool calls, and token totals
-						let turnCumulativeTotal = prevCumulativeTotal;
-						for (const assistantMsg of turnAssistantMsgs) {
-							if (!model) {
-								model = assistantMsg.modelID || null;
-							}
-							thinkingTokens += assistantMsg.tokens?.reasoning || 0;
-							// Track the cumulative total — the last assistant message has the highest value
-							if (typeof assistantMsg.tokens?.total === 'number') {
-								turnCumulativeTotal = Math.max(turnCumulativeTotal, assistantMsg.tokens.total);
-							}
-							const assistantParts = await this.openCode.getOpenCodePartsForMessage(assistantMsg.id);
-							for (const part of assistantParts) {
-								if (part.type === 'text' && part.text) {
-									assistantText += part.text;
-								} else if (part.type === 'reasoning' && part.text) {
-									thinkingText += part.text;
-								} else if (part.type === 'tool' && part.tool) {
-									toolCalls.push({
-										toolName: part.tool,
-										arguments: part.state?.input ? JSON.stringify(part.state.input) : undefined,
-										result: part.state?.output || undefined
-									});
-								}
-							}
-						}
-
-						// Per-turn tokens = delta of cumulative total between this turn and previous
-						const turnTokens = turnCumulativeTotal - prevCumulativeTotal;
-						// Split proportionally: output+thinking are known, remainder is input
-						const turnOutputAndThinking = turnAssistantMsgs.reduce((sum, m) => sum + (m.tokens?.output || 0) + (m.tokens?.reasoning || 0), 0);
-						const turnInputTokens = Math.max(0, turnTokens - turnOutputAndThinking);
-
-						turns.push({
-							turnNumber,
-							timestamp: msg.time?.created ? new Date(msg.time.created).toISOString() : null,
-							mode: (msg.agent === 'build' || msg.agent === 'agent') ? 'agent' : (msg.agent === 'ask' ? 'ask' : 'agent'),
-							userMessage: userText,
-							assistantResponse: assistantText,
-							model,
-							toolCalls,
-							contextReferences: {
-								file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
-								workspace: 0, terminal: 0, vscode: 0,
-								terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
-								outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
-							},
-							mcpTools: [],
-							inputTokensEstimate: turnInputTokens,
-							outputTokensEstimate: turnOutputAndThinking - thinkingTokens,
-							thinkingTokensEstimate: thinkingTokens
-						});
-
-						prevCumulativeTotal = turnCumulativeTotal;
-					}
-				}
-				return {
-					file: details.file,
-					title: details.title || null,
-					editorSource: details.editorSource,
-					editorName: details.editorName || 'OpenCode',
-					size: details.size,
-					modified: details.modified,
-					interactions: details.interactions,
-					contextReferences: details.contextReferences,
-					firstInteraction: details.firstInteraction,
-					lastInteraction: details.lastInteraction,
-					turns,
-					usageAnalysis: undefined
-				};
-			}
-
-		// Handle Visual Studio sessions
-		if (this.visualStudio.isVSSessionFile(sessionFile)) {
-			const objects = this.visualStudio.decodeSessionFile(sessionFile);
-			let turnNumber = 0;
-			for (let i = 1; i < objects.length; i += 2) {
-				const req = objects[i];
-				const res = objects[i + 1];
-				if (!req) { continue; }
-				const reqData = req[1];
-				const resData = res?.[1];
-				turnNumber++;
-				const userText = this.visualStudio.extractTextFromContent(reqData?.Content || []);
-				const assistantText = res ? this.visualStudio.extractTextFromContent(resData?.Content || []) : '';
-				const model = this.visualStudio.getModelId(resData ?? reqData, !resData);
-				const contextText = this.visualStudio.extractContextText(reqData?.Context);
-								const inputTokens = this.estimateTokensFromText(userText + contextText, model ?? 'gpt-4');
-				const outputTokens = res ? this.estimateTokensFromText(assistantText, model ?? 'gpt-4') : 0;
-				const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
-				for (const c of (resData?.Content || [])) {
-					const inner = Array.isArray(c) ? c[1] : null;
-					if (inner?.Function) {
-						toolCalls.push({
-							toolName: String(inner.Function.Description || 'tool'),
-							result: typeof inner.Function.Result === 'string' ? inner.Function.Result : undefined
-						});
-					}
-				}
-				turns.push({
-					turnNumber,
-					timestamp: reqData?.Timestamp ? new Date(reqData.Timestamp).toISOString() : null,
-					mode: 'ask' as const,
-					userMessage: userText,
-					assistantResponse: assistantText,
-					model,
-					toolCalls,
-					contextReferences: {
-						file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
-						workspace: 0, terminal: 0, vscode: 0,
-						terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
-						outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
-					},
-					mcpTools: [],
-					inputTokensEstimate: inputTokens,
-					outputTokensEstimate: outputTokens,
-					thinkingTokensEstimate: 0
-				});
-			}
-			return {
-				file: details.file,
-				title: details.title || null,
-				editorSource: details.editorSource,
-				editorName: 'Visual Studio',
-				size: details.size,
-				modified: details.modified,
-				interactions: details.interactions,
-				contextReferences: details.contextReferences,
-				firstInteraction: details.firstInteraction,
-				lastInteraction: details.lastInteraction,
-				turns,
-				usageAnalysis: undefined
-			};
-		}
-
-// Handle Crush sessions
-			if (this.crush.isCrushSessionFile(sessionFile)) {
-				const messages = await this.crush.getCrushMessages(sessionFile);
-				const session = await this.crush.readCrushSession(sessionFile);
-				const totalTokens = (session?.prompt_tokens ?? 0) + (session?.completion_tokens ?? 0);
-				const userMessages = messages.filter(m => m.role === 'user');
-				const numTurns = userMessages.length;
-				let turnNumber = 0;
-				for (let i = 0; i < messages.length; i++) {
-					const msg = messages[i];
-					if (msg.role !== 'user') { continue; }
-					turnNumber++;
-					// Collect assistant messages until the next user message
-					const turnAssistantMsgs: any[] = [];
-					for (let j = i + 1; j < messages.length; j++) {
-						if (messages[j].role === 'user') { break; }
-						if (messages[j].role === 'assistant') { turnAssistantMsgs.push(messages[j]); }
-					}
-					// Extract user text from parts
-					const userParts: any[] = Array.isArray(msg.parts) ? msg.parts : [];
-					const userText = userParts
-						.filter(p => p?.type === 'text' && p?.text)
-						.map(p => p.text as string)
-						.join('\n');
-					let assistantText = '';
-					const toolCalls: { toolName: string; arguments?: string; result?: string }[] = [];
-					let model: string | null = null;
-					for (const assistantMsg of turnAssistantMsgs) {
-						if (!model) { model = assistantMsg.model || null; }
-						const parts: any[] = Array.isArray(assistantMsg.parts) ? assistantMsg.parts : [];
-						for (const part of parts) {
-							if (part?.type === 'text' && part?.text) {
-								assistantText += part.text;
-							} else if (part?.type === 'tool_call' && part?.data?.name) {
-								toolCalls.push({
-									toolName: part.data.name,
-									arguments: part.data.arguments ? JSON.stringify(part.data.arguments) : undefined
-								});
-							}
-						}
-					}
-					// Distribute session token totals evenly across turns
-					const perTurnTokens = numTurns > 0 ? Math.round(totalTokens / numTurns) : 0;
-					const perTurnInput = session?.prompt_tokens && numTurns > 0 ? Math.round(session.prompt_tokens / numTurns) : 0;
-					const perTurnOutput = session?.completion_tokens && numTurns > 0 ? Math.round(session.completion_tokens / numTurns) : 0;
-					turns.push({
-						turnNumber,
-						timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : null,
-						mode: 'agent',
-						userMessage: userText,
-						assistantResponse: assistantText,
-						model,
-						toolCalls,
-						contextReferences: {
-							file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
-							workspace: 0, terminal: 0, vscode: 0,
-							terminalLastCommand: 0, terminalSelection: 0, clipboard: 0, changes: 0,
-							outputPanel: 0, problemsPanel: 0, byKind: {}, copilotInstructions: 0, agentsMd: 0, byPath: {}
-						},
-						mcpTools: [],
-						inputTokensEstimate: perTurnInput,
-						outputTokensEstimate: perTurnOutput,
-						thinkingTokensEstimate: 0
-					});
-				}
-				return {
-					file: details.file,
-					title: details.title || null,
-					editorSource: details.editorSource,
-					editorName: 'Crush',
-					size: details.size,
-					modified: details.modified,
-					interactions: details.interactions,
-					contextReferences: details.contextReferences,
-					firstInteraction: details.firstInteraction,
-					lastInteraction: details.lastInteraction,
-					turns,
-					usageAnalysis: undefined
-				};
-			}
-
-			// Handle Continue sessions
-			if (this.continue_.isContinueSessionFile(sessionFile)) {
-				const continueTurns = this.continue_.buildContinueTurns(sessionFile);
-				const emptyContextRefs = _createEmptyContextRefs();
-				for (const ct of continueTurns) {
-					turns.push({
-						turnNumber: turns.length + 1,
-						timestamp: null,
-						mode: 'ask',
-						userMessage: ct.userText,
-						assistantResponse: ct.assistantText,
-						model: ct.model,
-						toolCalls: ct.toolCalls,
-						contextReferences: emptyContextRefs,
-						mcpTools: [],
-						inputTokensEstimate: ct.inputTokens,
-						outputTokensEstimate: ct.outputTokens,
-						thinkingTokensEstimate: 0
-					});
-				}
-				return {
-					file: details.file,
-					title: details.title || null,
-					editorSource: details.editorSource,
-					editorName: details.editorName || 'Continue',
-					size: details.size,
-					modified: details.modified,
-					interactions: details.interactions,
-					contextReferences: details.contextReferences,
-					firstInteraction: details.firstInteraction,
-					lastInteraction: details.lastInteraction,
-					turns,
-					usageAnalysis: undefined
-				};
-			}
-
-			// Handle Claude Desktop Cowork sessions
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFile)) {
-				const events = this.claudeDesktopCowork.readCoworkEvents(sessionFile);
-				let currentUserEvent: any = null;
-				const pendingAssistantEvents: any[] = [];
-
-				const emitTurn = () => {
-					if (!currentUserEvent) { return; }
-					const content = currentUserEvent.message?.content;
-					const userMessage = typeof content === 'string' ? content
-						: Array.isArray(content) ? content.filter((c: any) => c.type === 'text').map((c: any) => c.text || '').join('\n')
-						: '';
-					let assistantText = '';
-					let actualInputTokens = 0;
-					let actualOutputTokens = 0;
-					let model: string | null = null;
-					const toolCalls: { toolName: string; arguments?: string }[] = [];
-					const mcpTools: { server: string; tool: string }[] = [];
-
-					for (const ae of pendingAssistantEvents) {
-						const msg = ae.message;
-						if (!model && msg?.model) { model = msg.model; }
-						const usage = msg?.usage;
-						if (usage) {
-							actualInputTokens += (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
-							actualOutputTokens += usage.output_tokens || 0;
-						}
-						const contentArr: any[] = Array.isArray(msg?.content) ? msg.content : [];
-						for (const block of contentArr) {
-							if (block.type === 'text') { assistantText += block.text || ''; }
-							else if (block.type === 'tool_use') {
-								const toolName: string = block.name || 'unknown';
-								if (this.isMcpTool(toolName)) {
-									mcpTools.push({ server: this.extractMcpServerName(toolName), tool: toolName });
-								} else {
-									toolCalls.push({ toolName, arguments: block.input ? JSON.stringify(block.input) : undefined });
-								}
-							}
-						}
-					}
-
-					const usedModel = model || 'claude-sonnet-4-6';
-					const actualUsage: ActualUsage | undefined = (actualInputTokens > 0 || actualOutputTokens > 0) ? {
-						promptTokens: actualInputTokens,
-						completionTokens: actualOutputTokens
-					} : undefined;
-
-					turns.push({
-						turnNumber: turns.length + 1,
-						timestamp: currentUserEvent.timestamp ? new Date(currentUserEvent.timestamp).toISOString() : null,
-						mode: 'agent',
-						userMessage,
-						assistantResponse: assistantText,
-						model: usedModel,
-						toolCalls,
-						contextReferences: _createEmptyContextRefs(),
-						mcpTools,
-						inputTokensEstimate: actualInputTokens || this.estimateTokensFromText(userMessage, usedModel),
-						outputTokensEstimate: actualOutputTokens || this.estimateTokensFromText(assistantText, usedModel),
-						thinkingTokensEstimate: 0,
-						actualUsage
-					});
-				};
-
-				const isRealUserMessage = (event: any): boolean => {
-					const content = event.message?.content;
-					if (typeof content === 'string') { return !!content.trim(); }
-					if (!Array.isArray(content)) { return false; }
-					const hasText = content.some((c: any) => c.type === 'text');
-					const hasToolResult = content.some((c: any) => c.type === 'tool_result');
-					return hasText && !hasToolResult;
-				};
-
-				for (const event of events) {
-					if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user' && isRealUserMessage(event)) {
-						emitTurn();
-						currentUserEvent = event;
-						pendingAssistantEvents.length = 0;
-					} else if (event.type === 'assistant' && event.message?.stop_reason && event.message?.role === 'assistant') {
-						// Only collect final (non-streaming) assistant events — stop_reason is '' on fragments
-						pendingAssistantEvents.push(event);
-					}
-				}
-				emitTurn();
-
-				return {
-					file: details.file,
-					title: details.title || null,
-					editorSource: details.editorSource,
-					editorName: 'Claude Desktop Cowork',
-					size: details.size,
-					modified: details.modified,
-					interactions: details.interactions,
-					contextReferences: details.contextReferences,
-					firstInteraction: details.firstInteraction,
-					lastInteraction: details.lastInteraction,
-					turns,
-					usageAnalysis: undefined
-				};
-			}
-
+// Delegate to ecosystem adapter if available
+const eco = this.findEcosystem(sessionFile);
+if (eco?.buildTurns) {
+const result = await eco.buildTurns(sessionFile);
+turns.push(...result.turns);
+return {
+file: details.file,
+title: details.title || null,
+editorSource: details.editorSource,
+editorName: details.editorName || eco.displayName,
+size: details.size,
+modified: details.modified,
+interactions: details.interactions,
+contextReferences: details.contextReferences,
+firstInteraction: details.firstInteraction,
+lastInteraction: details.lastInteraction,
+turns,
+...(result.actualTokens !== undefined ? { actualTokens: result.actualTokens } : {}),
+usageAnalysis: undefined
+};
+}
 			const fileContent = await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
@@ -4317,47 +3712,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
 		try {
-			// Handle OpenCode sessions - they have actual token counts in message files
-			if (this.openCode.isOpenCodeSessionFile(sessionFilePath)) {
-				const result = await this.openCode.getTokensFromOpenCodeSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens }; // OpenCode has actual counts
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
-				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Visual Studio sessions
-			if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
-				const result = this.visualStudio.getTokenEstimates(sessionFilePath, (t, m) => this.estimateTokensFromText(t, m));
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Crush sessions - actual token counts stored in sessions table
-			if (this.crush.isCrushSessionFile(sessionFilePath)) {
-				const result = await this.crush.getTokensFromCrushSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Continue sessions - they have actual token counts in promptLogs
-			if (this.continue_.isContinueSessionFile(sessionFilePath)) {
-				const result = this.continue_.getTokensFromContinueSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens }; // Continue has actual counts
-			}
-
-			// Handle Claude Desktop Cowork sessions — actual Anthropic API token counts
-			if (this.claudeDesktopCowork.isCoworkSessionFile(sessionFilePath)) {
-				const result = this.claudeDesktopCowork.getTokensFromCoworkSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
-
-			// Handle Claude Code sessions - actual Anthropic API token counts
-			if (this.claudeCode.isClaudeCodeSessionFile(sessionFilePath)) {
-				const result = this.claudeCode.getTokensFromClaudeCodeSession(sessionFilePath);
-				return { ...result, actualTokens: result.tokens };
-			}
+			const eco = this.findEcosystem(sessionFilePath);
+			if (eco) { return eco.getTokens(sessionFilePath); }
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFilePath, 'utf8');
 
@@ -4739,7 +4095,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				case 'suppressUnknownTool': {
 					const toolName = message.toolName as string;
 					if (toolName) {
-						const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+						const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 						const current = config.get<string[]>('suppressedUnknownTools', []);
 						if (!current.includes(toolName)) {
 							await config.update('suppressedUnknownTools', [...current, toolName], vscode.ConfigurationTarget.Global);
@@ -5114,12 +4470,10 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 					case 'openRawFile':
 						await this.dispatch('openRawFile:logviewer', async () => {
 							try {
-								if (this.visualStudio.isVSSessionFile(sessionFilePath)) {
-									// VS session files are binary MessagePack — show decoded JSON instead
-									const objects = this.visualStudio.decodeSessionFile(sessionFilePath);
-									const readable = objects.map((obj: any, i: number) => i === 0 ? obj : obj?.[1] ?? obj);
-									const jsonText = JSON.stringify(readable, null, 2);
-									const doc = await vscode.workspace.openTextDocument({ content: jsonText, language: 'json' });
+								const rawEco = this.findEcosystem(sessionFilePath);
+								const rawContent = rawEco?.getRawFileContent?.(sessionFilePath);
+								if (rawContent !== undefined) {
+									const doc = await vscode.workspace.openTextDocument({ content: rawContent, language: 'json' });
 									await vscode.window.showTextDocument(doc);
 								} else {
 									await vscode.window.showTextDocument(vscode.Uri.file(sessionFilePath));
@@ -7316,7 +6670,7 @@ ${hashtag}`;
             // Execute the configureBackend command if it exists
             try {
               await vscode.commands.executeCommand(
-                "copilot-token-tracker.configureBackend",
+                "aiEngineeringFluency.configureBackend",
               );
             } catch (err) {
               // If command is not registered, show settings
@@ -7329,7 +6683,7 @@ ${hashtag}`;
                   if (choice === "Open Settings") {
                     vscode.commands.executeCommand(
                       "workbench.action.openSettings",
-                      "copilotTokenTracker.backend",
+                      "aiEngineeringFluency.backend",
                     );
                   }
                 });
@@ -7340,7 +6694,7 @@ ${hashtag}`;
           await this.dispatch('configureTeamServer:diagnostics', async () => {
             try {
               await vscode.commands.executeCommand(
-                "copilot-token-tracker.configureTeamServer",
+                "aiEngineeringFluency.configureTeamServer",
               );
             } catch (err) {
               vscode.window
@@ -7352,7 +6706,7 @@ ${hashtag}`;
                   if (choice === "Open Settings") {
                     vscode.commands.executeCommand(
                       "workbench.action.openSettings",
-                      "copilotTokenTracker.backend.sharingServer",
+                      "aiEngineeringFluency.backend.sharingServer",
                     );
                   }
                 });
@@ -7363,7 +6717,7 @@ ${hashtag}`;
           await this.dispatch('openSettings:diagnostics', () =>
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
-              "copilotTokenTracker.backend",
+              "aiEngineeringFluency.backend",
             )
           );
           break;
@@ -7371,7 +6725,7 @@ ${hashtag}`;
           await this.dispatch('openDisplaySettings:diagnostics', () =>
             vscode.commands.executeCommand(
               "workbench.action.openSettings",
-              "copilotTokenTracker.display",
+              "aiEngineeringFluency.display",
             )
           );
           break;
@@ -7511,9 +6865,10 @@ ${hashtag}`;
         "session-state",
       );
       for (const file of sessionFiles) {
-        // Handle OpenCode DB virtual paths (opencode.db#ses_<id>)
-        if (this.openCode.isOpenCodeDbSession(file)) {
-          const editorRoot = this.openCode.getOpenCodeDataDir();
+        // Handle virtual/adapter-owned paths (e.g. opencode.db#ses_<id>, crush.db#<uuid>)
+        const eco = this.findEcosystem(file);
+        if (eco) {
+          const editorRoot = eco.getEditorRoot(file);
           dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
           continue;
         }
@@ -7698,7 +7053,7 @@ ${hashtag}`;
    * Get backend storage information for diagnostics
    */
   private async getBackendStorageInfo(): Promise<any> {
-    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
     // Use the authoritative settings object so isConfigured uses the same logic as the sync engine
     const settings = this.backend?.getSettings();
 
@@ -8199,7 +7554,7 @@ ${hashtag}`;
     );
 
     const suppressedUnknownTools = vscode.workspace
-      .getConfiguration('copilotTokenTracker')
+      .getConfiguration('aiEngineeringFluency')
       .get<string[]>('suppressedUnknownTools', []);
 
     const initialData = stats ? JSON.stringify({
@@ -8267,9 +7622,71 @@ ${hashtag}`;
   }
 }
 
-export function activate(context: vscode.ExtensionContext) {
+/**
+ * One-time migration: copies any user-set values from the old `copilotTokenTracker.*` namespace
+ * to the new `aiEngineeringFluency.*` namespace.  The old settings remain in package.json
+ * with `deprecationMessage` so VS Code continues to show them as deprecated; this function
+ * handles users who already had values configured before the rename.
+ *
+ * Leave this migration in place for a couple of extension versions before removing it.
+ */
+async function migrateSettingsIfNeeded(log: (m: string) => void): Promise<void> {
+  const keys = [
+    'display.compactNumbers',
+    'backend.enabled',
+    'backend.backend',
+    'backend.authMode',
+    'backend.datasetId',
+    'backend.sharingProfile',
+    'backend.userId',
+    'backend.shareWithTeam',
+    'backend.shareWorkspaceMachineNames',
+    'backend.shareConsentAt',
+    'backend.userIdentityMode',
+    'backend.userIdMode',
+    'backend.subscriptionId',
+    'backend.resourceGroup',
+    'backend.storageAccount',
+    'backend.aggTable',
+    'backend.eventsTable',
+    'backend.lookbackDays',
+    'backend.includeMachineBreakdown',
+    'backend.blobUploadEnabled',
+    'backend.blobContainerName',
+    'backend.blobUploadFrequencyHours',
+    'backend.blobCompressFiles',
+    'sampleDataDirectory',
+    'suppressedUnknownTools',
+  ];
+
+  const oldCfg = vscode.workspace.getConfiguration('copilotTokenTracker');
+  const newCfg = vscode.workspace.getConfiguration('aiEngineeringFluency');
+
+  let migrated = 0;
+  for (const key of keys) {
+    const insp = oldCfg.inspect(key);
+    if (insp?.globalValue !== undefined) {
+      await newCfg.update(key, insp.globalValue, vscode.ConfigurationTarget.Global);
+      migrated++;
+    }
+    if (insp?.workspaceValue !== undefined) {
+      await newCfg.update(key, insp.workspaceValue, vscode.ConfigurationTarget.Workspace);
+      migrated++;
+    }
+  }
+
+  if (migrated > 0) {
+    log(`Migrated ${migrated} setting(s) from 'copilotTokenTracker' to 'aiEngineeringFluency' namespace.`);
+  }
+}
+
+export async function activate(context: vscode.ExtensionContext) {
   // Create the token tracker
   const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
+
+  // Migrate settings from the old copilotTokenTracker namespace to aiEngineeringFluency.
+  // Run before any other settings are read so the new keys are populated first.
+  await migrateSettingsIfNeeded((m) => (tokenTracker as any).log(m));
 
   // Wire up backend facade and commands so the diagnostics webview can launch the
   // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
@@ -8340,7 +7757,7 @@ export function activate(context: vscode.ExtensionContext) {
     // (see startBackendSyncAfterInitialAnalysis method)
 
     const configureBackendCommand = vscode.commands.registerCommand(
-      "copilot-token-tracker.configureBackend",
+      "aiEngineeringFluency.configureBackend",
       async () => {
         await backendHandler.handleConfigureBackend();
       },
@@ -8349,7 +7766,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(configureBackendCommand);
 
     const configureTeamServerCommand = vscode.commands.registerCommand(
-      "copilot-token-tracker.configureTeamServer",
+      "aiEngineeringFluency.configureTeamServer",
       async () => {
         TeamServerConfigPanel.show(context);
       },
@@ -8365,7 +7782,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the refresh command
   const refreshCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.refresh",
+    "aiEngineeringFluency.refresh",
     async () => {
       tokenTracker.log("Refresh command called");
       await tokenTracker.updateTokenStats();
@@ -8375,7 +7792,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show details command
   const showDetailsCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showDetails",
+    "aiEngineeringFluency.showDetails",
     async () => {
       tokenTracker.log("Show details command called");
       await tokenTracker.showDetails();
@@ -8384,7 +7801,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show chart command
   const showChartCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showChart",
+    "aiEngineeringFluency.showChart",
     async () => {
       tokenTracker.log("Show chart command called");
       await tokenTracker.showChart();
@@ -8393,7 +7810,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show usage analysis command
   const showUsageAnalysisCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showUsageAnalysis",
+    "aiEngineeringFluency.showUsageAnalysis",
     async () => {
       tokenTracker.log("Show usage analysis command called");
       await tokenTracker.showUsageAnalysis();
@@ -8402,7 +7819,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show maturity / fluency score command
   const showMaturityCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showMaturity",
+    "aiEngineeringFluency.showMaturity",
     async () => {
       tokenTracker.log("Show maturity command called");
       await tokenTracker.showMaturity();
@@ -8411,7 +7828,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show dashboard command
   const showDashboardCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showDashboard",
+    "aiEngineeringFluency.showDashboard",
     async () => {
       tokenTracker.log("Show dashboard command called");
       await tokenTracker.showDashboard();
@@ -8419,7 +7836,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const showEnvironmentalCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showEnvironmental",
+    "aiEngineeringFluency.showEnvironmental",
     async () => {
       tokenTracker.log("Show environmental impact command called");
       await tokenTracker.showEnvironmental();
@@ -8428,7 +7845,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the show fluency level viewer command (debug-only)
   const showFluencyLevelViewerCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.showFluencyLevelViewer",
+    "aiEngineeringFluency.showFluencyLevelViewer",
     async () => {
       tokenTracker.log("Show fluency level viewer command called");
       await tokenTracker.showFluencyLevelViewer();
@@ -8436,7 +7853,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const runLocalViewRegressionCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.runLocalViewRegression",
+    "aiEngineeringFluency.runLocalViewRegression",
     async () => {
       tokenTracker.log("Run local view regression command called");
       await tokenTracker.runLocalViewRegression();
@@ -8445,7 +7862,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the generate diagnostic report command
   const generateDiagnosticReportCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.generateDiagnosticReport",
+    "aiEngineeringFluency.generateDiagnosticReport",
     async () => {
       tokenTracker.log("Generate diagnostic report command called");
       await tokenTracker.showDiagnosticReport();
@@ -8454,7 +7871,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the clear cache command
   const clearCacheCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.clearCache",
+    "aiEngineeringFluency.clearCache",
     async () => {
       tokenTracker.log("Clear cache command called");
       await tokenTracker.clearCache();
@@ -8463,7 +7880,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the GitHub authentication command
   const authenticateGitHubCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.authenticateGitHub",
+    "aiEngineeringFluency.authenticateGitHub",
     async () => {
       tokenTracker.log("GitHub authentication command called");
       await tokenTracker.authenticateWithGitHub();
@@ -8472,7 +7889,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the GitHub sign out command
   const signOutGitHubCommand = vscode.commands.registerCommand(
-    "copilot-token-tracker.signOutGitHub",
+    "aiEngineeringFluency.signOutGitHub",
     async () => {
       tokenTracker.log("GitHub sign out command called");
       await tokenTracker.signOutFromGitHub();

@@ -44,7 +44,7 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 	}
 
 	private open(): void {
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		const enabled: boolean = config.get<boolean>('backend.sharingServer.enabled', false);
 		const endpointUrl: string = config.get<string>('backend.sharingServer.endpointUrl', '');
 		const sharingProfile: string = config.get<string>('backend.sharingProfile', 'off');
@@ -89,7 +89,7 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 		const validProfiles = ['off', 'soloFull', 'teamAnonymized', 'teamPseudonymous', 'teamIdentified'];
 		const safeProfile = validProfiles.includes(sharingProfile) ? sharingProfile : 'off';
 
-		const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		await config.update('backend.sharingServer.enabled', enabled, vscode.ConfigurationTarget.Global);
 		await config.update('backend.sharingServer.endpointUrl', endpointUrl, vscode.ConfigurationTarget.Global);
 		await config.update('backend.sharingProfile', safeProfile, vscode.ConfigurationTarget.Global);

@@ -392,6 +392,9 @@ function getEditorBadgeClass(editor: string): string {
   if (lower.includes("visual studio")) {
     return "editor-badge editor-badge-vs";
   }
+  if (lower.includes("mistral")) {
+    return "editor-badge editor-badge-mistral-vibe";
+  }
   if (lower.includes("crush")) {
     return "editor-badge editor-badge-crush";
   }
@@ -405,6 +408,9 @@ function getEditorIcon(editor: string): string {
   }
   if (lower.includes("visual studio")) {
     return "🪟";
+  }
+  if (lower.includes("mistral")) {
+    return "🔥";
   }
   if (lower.includes("crush")) {
     return "🩷";

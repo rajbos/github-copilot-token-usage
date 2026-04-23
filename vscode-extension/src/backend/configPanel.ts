@@ -294,7 +294,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 			</div>
 			<div class="card">
 				<h3>Connection</h3>
-				<p class="helper">Configure the URL of your self-hosted sharing server. The extension will POST daily usage rollups to <code>&lt;Server URL&gt;/api/upload</code> using the bearer token from the VS Code setting <code>copilotTokenTracker.backend.sharingServer.bearerToken</code> (stored in Settings, not here for security).</p>
+				<p class="helper">Configure the URL of your self-hosted sharing server. The extension will POST daily usage rollups to <code>&lt;Server URL&gt;/api/upload</code> using the bearer token from the VS Code setting <code>aiEngineeringFluency.backend.sharingServer.bearerToken</code> (stored in Settings, not here for security).</p>
 				<div class="field">
 					<label for="sharingServerEndpointUrl">Server URL</label>
 					<vscode-text-field id="sharingServerEndpointUrl" placeholder="http://localhost:3000" aria-describedby="sharingServerEndpointUrl-help sharingServerEndpointUrl-error"></vscode-text-field>
@@ -306,7 +306,7 @@ export class BackendConfigPanel implements vscode.Disposable {
 				<h3>How to set up</h3>
 				<p class="helper"><strong>1. Run the server:</strong> Clone the <code>sharing-server/</code> folder, install dependencies (<code>npm install</code>), build (<code>npm run build</code>), and start with <code>npm start</code>. Requires Node.js 20+.</p>
 				<p class="helper"><strong>2. Configure GitHub OAuth:</strong> Create a GitHub OAuth App at <vscode-link href="https://github.com/settings/developers">github.com/settings/developers</vscode-link>. Set the callback URL to <code>&lt;Server URL&gt;/auth/github/callback</code>. Copy the Client ID and Secret into the server's <code>.env</code> file.</p>
-				<p class="helper"><strong>3. Set a bearer token:</strong> Add <code>BEARER_TOKEN=your-secret-token</code> to the server's <code>.env</code>. Then add the same token as <code>copilotTokenTracker.backend.sharingServer.bearerToken</code> in your VS Code settings.</p>
+				<p class="helper"><strong>3. Set a bearer token:</strong> Add <code>BEARER_TOKEN=your-secret-token</code> to the server's <code>.env</code>. Then add the same token as <code>aiEngineeringFluency.backend.sharingServer.bearerToken</code> in your VS Code settings.</p>
 				<p class="helper"><strong>4. Enter the Server URL above</strong> and select <em>Team Server</em> as the storage backend on the Overview tab.</p>
 				<p class="helper"><strong>5. Open the dashboard:</strong> Navigate to <code>&lt;Server URL&gt;/dashboard</code> in your browser, log in with GitHub, and you'll see shared usage statistics for everyone who has uploaded data.</p>
 			</div>

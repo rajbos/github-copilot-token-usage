@@ -26,117 +26,117 @@
   "contributes": {
     "commands": [
       {
-        "command": "copilot-token-tracker.refresh",
+        "command": "aiEngineeringFluency.refresh",
         "title": "Refresh Token Usage",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showDetails",
+        "command": "aiEngineeringFluency.showDetails",
         "title": "Show Token Usage Details",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showChart",
+        "command": "aiEngineeringFluency.showChart",
         "title": "Show Token Usage Chart",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showUsageAnalysis",
+        "command": "aiEngineeringFluency.showUsageAnalysis",
         "title": "Show Usage Analysis Dashboard",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.generateDiagnosticReport",
+        "command": "aiEngineeringFluency.generateDiagnosticReport",
         "title": "Generate Diagnostic Report",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showMaturity",
+        "command": "aiEngineeringFluency.showMaturity",
         "title": "Show AI Engineering Fluency Score",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showFluencyLevelViewer",
+        "command": "aiEngineeringFluency.showFluencyLevelViewer",
         "title": "Show Fluency Level Viewer (Debug Only)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.runLocalViewRegression",
+        "command": "aiEngineeringFluency.runLocalViewRegression",
         "title": "Run Local View Regression (Debug Only)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.configureBackend",
+        "command": "aiEngineeringFluency.configureBackend",
         "title": "Configure Backend",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.configureTeamServer",
+        "command": "aiEngineeringFluency.configureTeamServer",
         "title": "Configure Team Server Backend",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.copyBackendConfig",
+        "command": "aiEngineeringFluency.copyBackendConfig",
         "title": "Copy Backend Config (No Secrets)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.exportCurrentView",
+        "command": "aiEngineeringFluency.exportCurrentView",
         "title": "Export Current View (JSON)",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.setBackendSharedKey",
+        "command": "aiEngineeringFluency.setBackendSharedKey",
         "title": "Set Backend Storage Shared Key",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.rotateBackendSharedKey",
+        "command": "aiEngineeringFluency.rotateBackendSharedKey",
         "title": "Rotate Backend Storage Shared Key",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.clearBackendSharedKey",
+        "command": "aiEngineeringFluency.clearBackendSharedKey",
         "title": "Clear Backend Storage Shared Key",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.toggleBackendWorkspaceMachineNameSync",
+        "command": "aiEngineeringFluency.toggleBackendWorkspaceMachineNameSync",
         "title": "Backend: Toggle Workspace/Machine Name Sync",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.setSharingProfile",
+        "command": "aiEngineeringFluency.setSharingProfile",
         "title": "Set Sharing Profile",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.clearAzureSettings",
+        "command": "aiEngineeringFluency.clearAzureSettings",
         "title": "Clear Azure Settings",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.clearCache",
+        "command": "aiEngineeringFluency.clearCache",
         "title": "Clear Cache",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showDashboard",
+        "command": "aiEngineeringFluency.showDashboard",
         "title": "Show Team Dashboard",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.showEnvironmental",
+        "command": "aiEngineeringFluency.showEnvironmental",
         "title": "Show Environmental Impact",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.authenticateGitHub",
+        "command": "aiEngineeringFluency.authenticateGitHub",
         "title": "Authenticate with GitHub",
         "category": "AI Engineering Fluency"
       },
       {
-        "command": "copilot-token-tracker.signOutGitHub",
+        "command": "aiEngineeringFluency.signOutGitHub",
         "title": "Disconnect GitHub",
         "category": "AI Engineering Fluency"
       }
@@ -147,12 +147,14 @@
         "copilotTokenTracker.display.compactNumbers": {
           "type": "boolean",
           "default": true,
-          "description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000)."
+          "description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.display.compactNumbers. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables) or a self-hosted sharing server."
+          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.enabled. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.backend": {
           "type": "string",
@@ -165,7 +167,8 @@
             "Self-hosted sharing server (configure endpoint URL; authenticates via your existing GitHub session)"
           ],
           "default": "storageTables",
-          "description": "Backend type for syncing usage data. 'storageTables' uses Azure. 'sharingServer' uses a self-hosted API server — only configure copilotTokenTracker.backend.sharingServer.endpointUrl."
+          "description": "Backend sync backend. Supports Azure Storage Tables and self-hosted sharing server.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.backend. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.authMode": {
           "type": "string",
@@ -174,12 +177,14 @@
             "sharedKey"
           ],
           "default": "entraId",
-          "description": "Authentication mode for backend sync data-plane access. Default is Entra ID RBAC (DefaultAzureCredential). Shared Key uses VS Code SecretStorage and does not sync across devices."
+          "description": "Authentication mode for backend sync data-plane access. Default is Entra ID RBAC (DefaultAzureCredential). Shared Key uses VS Code SecretStorage and does not sync across devices.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.authMode. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.datasetId": {
           "type": "string",
           "default": "default",
-          "description": "Logical dataset identifier to avoid accidental mixing when sharing a backend."
+          "description": "Logical dataset identifier to avoid accidental mixing when sharing a backend.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.datasetId. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.sharingProfile": {
           "type": "string",
@@ -191,27 +196,32 @@
             "teamIdentified"
           ],
           "default": "off",
-          "description": "Sharing Profile (single source of truth): off (no cloud sync), soloFull (personal full fidelity), teamAnonymized (no per-user key), teamPseudonymous (stable per-user key), teamIdentified (explicit identity)."
+          "description": "Sharing Profile (single source of truth): off (no cloud sync), soloFull (personal full fidelity), teamAnonymized (no per-user key), teamPseudonymous (stable per-user key), teamIdentified (explicit identity).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.sharingProfile. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.userId": {
           "type": "string",
           "default": "",
-          "description": "Optional user identifier to enable team-wide reporting with per-user filtering. Empty disables the user dimension."
+          "description": "Optional user identifier to enable team-wide reporting with per-user filtering. Empty disables the user dimension.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.userId. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.shareWithTeam": {
           "type": "boolean",
           "default": false,
-          "description": "Explicit consent flag. When false, no per-user identifier is written to the backend store."
+          "description": "Explicit consent flag. When false, no per-user identifier is written to the backend store.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.shareWithTeam. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.shareWorkspaceMachineNames": {
           "type": "boolean",
           "default": false,
-          "description": "When team sharing is enabled, also write workspace and machine display names to the backend store (may contain sensitive information)."
+          "description": "When team sharing is enabled, also write workspace and machine display names to the backend store (may contain sensitive information).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.shareWorkspaceMachineNames. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.shareConsentAt": {
           "type": "string",
           "default": "",
-          "description": "ISO timestamp when team sharing was enabled (consent recorded)."
+          "description": "ISO timestamp when team sharing was enabled (consent recorded).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.shareConsentAt. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.userIdentityMode": {
           "type": "string",
@@ -221,7 +231,8 @@
             "entraObjectId"
           ],
           "default": "pseudonymous",
-          "description": "How the per-user dimension is derived when team sharing is enabled. pseudonymous hashes Entra claims scoped to datasetId; teamAlias uses backend.userId (validated); entraObjectId stores a GUID (advanced)."
+          "description": "How the per-user dimension is derived when team sharing is enabled. pseudonymous hashes Entra claims scoped to datasetId; teamAlias uses backend.userId (validated); entraObjectId stores a GUID (advanced).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.userIdentityMode. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.userIdMode": {
           "type": "string",
@@ -230,83 +241,257 @@
             "custom"
           ],
           "default": "alias",
-          "description": "How the user identifier is intended to be used. 'alias' is recommended; 'custom' may contain personal data (PII)."
+          "description": "How the user identifier is intended to be used. 'alias' is recommended; 'custom' may contain personal data (PII).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.userIdMode. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.subscriptionId": {
           "type": "string",
           "default": "",
-          "description": "Azure subscription ID used for provisioning (wizard-managed)."
+          "description": "Azure subscription ID used for provisioning (wizard-managed).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.subscriptionId. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.resourceGroup": {
           "type": "string",
           "default": "",
-          "description": "Azure resource group name for the Storage account (wizard-managed)."
+          "description": "Azure resource group name for the Storage account (wizard-managed).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.resourceGroup. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.storageAccount": {
           "type": "string",
           "default": "",
-          "description": "Azure Storage account name for backend sync (wizard-managed)."
+          "description": "Azure Storage account name for backend sync (wizard-managed).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.storageAccount. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.aggTable": {
           "type": "string",
           "default": "usageAggDaily",
-          "description": "Azure Table name for daily rollups."
+          "description": "Azure Table name for daily rollups.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.aggTable. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.eventsTable": {
           "type": "string",
           "default": "usageEvents",
-          "description": "Azure Table name for optional raw events (not required for MVP reporting)."
+          "description": "Azure Table name for optional raw events (not required for MVP reporting).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.eventsTable. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.lookbackDays": {
           "type": "number",
           "default": 30,
           "minimum": 1,
           "maximum": 90,
-          "description": "Default backfill/lookback window (days) for syncing local usage to the backend store."
+          "description": "Default backfill/lookback window (days) for syncing local usage to the backend store.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.lookbackDays. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.includeMachineBreakdown": {
           "type": "boolean",
           "default": false,
-          "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence."
+          "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.includeMachineBreakdown. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.blobUploadEnabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable uploading session log files to Azure Blob Storage. Files are uploaded with configurable frequency and can be used by GitHub Copilot Coding Agent."
+          "description": "Enable uploading session log files to Azure Blob Storage. Files are uploaded with configurable frequency and can be used by GitHub Copilot Coding Agent.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.blobUploadEnabled. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.blobContainerName": {
           "type": "string",
           "default": "copilot-session-logs",
-          "description": "Name of the Azure Blob Storage container for session log files."
+          "description": "Name of the Azure Blob Storage container for session log files.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.blobContainerName. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.blobUploadFrequencyHours": {
           "type": "number",
           "default": 24,
           "minimum": 1,
           "maximum": 168,
-          "description": "How often to upload session log files to blob storage (in hours). Default is once per day (24 hours)."
+          "description": "How often to upload session log files to blob storage (in hours). Default is once per day (24 hours).",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.blobUploadFrequencyHours. Will be removed in a future release."
         },
         "copilotTokenTracker.backend.blobCompressFiles": {
           "type": "boolean",
           "default": true,
+          "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.backend.blobCompressFiles. Will be removed in a future release."
+        },
+        "copilotTokenTracker.sampleDataDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.sampleDataDirectory. Will be removed in a future release."
+        },
+        "copilotTokenTracker.suppressedUnknownTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of tool names to suppress from the 'Unknown Tools Found' section in the Usage Analysis dashboard. Useful for tools you are testing that don't yet have friendly display names.",
+          "deprecationMessage": "Renamed to aiEngineeringFluency.suppressedUnknownTools. Will be removed in a future release."
+        },
+        "aiEngineeringFluency.display.compactNumbers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000)."
+        },
+        "aiEngineeringFluency.backend.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable backend sync to an Azure-backed store (default: Azure Storage Tables)."
+        },
+        "aiEngineeringFluency.backend.backend": {
+          "type": "string",
+          "enum": [
+            "storageTables",
+            "sharingServer"
+          ],
+          "enumDescriptions": [
+            "Azure Storage Tables (requires Azure subscription + RBAC setup)",
+            "Self-hosted sharing server (configure endpoint URL; authenticates via your existing GitHub session)"
+          ],
+          "default": "storageTables",
+          "description": "Backend sync backend. Supports Azure Storage Tables and self-hosted sharing server."
+        },
+        "aiEngineeringFluency.backend.authMode": {
+          "type": "string",
+          "enum": [
+            "entraId",
+            "sharedKey"
+          ],
+          "default": "entraId",
+          "description": "Authentication mode for backend sync data-plane access. Default is Entra ID RBAC (DefaultAzureCredential). Shared Key uses VS Code SecretStorage and does not sync across devices."
+        },
+        "aiEngineeringFluency.backend.datasetId": {
+          "type": "string",
+          "default": "default",
+          "description": "Logical dataset identifier to avoid accidental mixing when sharing a backend."
+        },
+        "aiEngineeringFluency.backend.sharingProfile": {
+          "type": "string",
+          "enum": [
+            "off",
+            "soloFull",
+            "teamAnonymized",
+            "teamPseudonymous",
+            "teamIdentified"
+          ],
+          "default": "off",
+          "description": "Sharing Profile (single source of truth): off (no cloud sync), soloFull (personal full fidelity), teamAnonymized (no per-user key), teamPseudonymous (stable per-user key), teamIdentified (explicit identity)."
+        },
+        "aiEngineeringFluency.backend.userId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional user identifier to enable team-wide reporting with per-user filtering. Empty disables the user dimension."
+        },
+        "aiEngineeringFluency.backend.shareWithTeam": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicit consent flag. When false, no per-user identifier is written to the backend store."
+        },
+        "aiEngineeringFluency.backend.shareWorkspaceMachineNames": {
+          "type": "boolean",
+          "default": false,
+          "description": "When team sharing is enabled, also write workspace and machine display names to the backend store (may contain sensitive information)."
+        },
+        "aiEngineeringFluency.backend.shareConsentAt": {
+          "type": "string",
+          "default": "",
+          "description": "ISO timestamp when team sharing was enabled (consent recorded)."
+        },
+        "aiEngineeringFluency.backend.userIdentityMode": {
+          "type": "string",
+          "enum": [
+            "pseudonymous",
+            "teamAlias",
+            "entraObjectId"
+          ],
+          "default": "pseudonymous",
+          "description": "How the per-user dimension is derived when team sharing is enabled. pseudonymous hashes Entra claims scoped to datasetId; teamAlias uses backend.userId (validated); entraObjectId stores a GUID (advanced)."
+        },
+        "aiEngineeringFluency.backend.userIdMode": {
+          "type": "string",
+          "enum": [
+            "alias",
+            "custom"
+          ],
+          "default": "alias",
+          "description": "How the user identifier is intended to be used. 'alias' is recommended; 'custom' may contain personal data (PII)."
+        },
+        "aiEngineeringFluency.backend.subscriptionId": {
+          "type": "string",
+          "default": "",
+          "description": "Azure subscription ID used for provisioning (wizard-managed)."
+        },
+        "aiEngineeringFluency.backend.resourceGroup": {
+          "type": "string",
+          "default": "",
+          "description": "Azure resource group name for the Storage account (wizard-managed)."
+        },
+        "aiEngineeringFluency.backend.storageAccount": {
+          "type": "string",
+          "default": "",
+          "description": "Azure Storage account name for backend sync (wizard-managed)."
+        },
+        "aiEngineeringFluency.backend.aggTable": {
+          "type": "string",
+          "default": "usageAggDaily",
+          "description": "Azure Table name for daily rollups."
+        },
+        "aiEngineeringFluency.backend.eventsTable": {
+          "type": "string",
+          "default": "usageEvents",
+          "description": "Azure Table name for optional raw events (not required for MVP reporting)."
+        },
+        "aiEngineeringFluency.backend.lookbackDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 90,
+          "description": "Default backfill/lookback window (days) for syncing local usage to the backend store."
+        },
+        "aiEngineeringFluency.backend.includeMachineBreakdown": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include machine dimension in backend rollups. Recommended for correct cross-device convergence."
+        },
+        "aiEngineeringFluency.backend.blobUploadEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable uploading session log files to Azure Blob Storage. Files are uploaded with configurable frequency and can be used by GitHub Copilot Coding Agent."
+        },
+        "aiEngineeringFluency.backend.blobContainerName": {
+          "type": "string",
+          "default": "copilot-session-logs",
+          "description": "Name of the Azure Blob Storage container for session log files."
+        },
+        "aiEngineeringFluency.backend.blobUploadFrequencyHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 168,
+          "description": "How often to upload session log files to blob storage (in hours). Default is once per day (24 hours)."
+        },
+        "aiEngineeringFluency.backend.blobCompressFiles": {
+          "type": "boolean",
+          "default": true,
           "description": "Compress session log files with gzip before uploading to blob storage to reduce storage costs and bandwidth."
         },
-        "copilotTokenTracker.backend.sharingServer.enabled": {
+        "aiEngineeringFluency.backend.sharingServer.enabled": {
           "type": "boolean",
           "default": false,
           "description": "Enable syncing to the self-hosted Team Server backend. Can run simultaneously with Azure Storage (backend.enabled). Requires backend.sharingServer.endpointUrl to be configured."
         },
-        "copilotTokenTracker.backend.sharingServer.endpointUrl": {
+        "aiEngineeringFluency.backend.sharingServer.endpointUrl": {
           "type": "string",
           "default": "",
           "description": "Base URL of the self-hosted sharing server (e.g. https://copilot-sharing.example.com). Authentication is handled automatically via your existing GitHub session — no API key needed."
         },
-        "copilot-token-tracker.sampleDataDirectory": {
+        "aiEngineeringFluency.sampleDataDirectory": {
           "type": "string",
           "default": "",
           "description": "Screenshot/demo mode: when set to a folder path, overrides all session file scanning and returns only .json/.jsonl files from this directory. Leave empty for normal operation."
         },
-        "copilotTokenTracker.suppressedUnknownTools": {
+        "aiEngineeringFluency.suppressedUnknownTools": {
           "type": "array",
           "items": {
             "type": "string"

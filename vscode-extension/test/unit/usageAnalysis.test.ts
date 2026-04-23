@@ -74,40 +74,26 @@ function makeMockDeps(overrides: Partial<{
     openCodeIsMatch: boolean;
     openCodeModelUsage: () => Promise<Record<string, { inputTokens: number; outputTokens: number }>>;
 }> = {}): UsageAnalysisDeps {
+    // Build a minimal ecosystem adapter for openCode if needed
+    const ecosystems: any[] = [];
+    if (overrides.openCodeIsMatch || overrides.openCodeModelUsage) {
+        ecosystems.push({
+            id: 'opencode',
+            handles: () => overrides.openCodeIsMatch ?? false,
+            getModelUsage: overrides.openCodeModelUsage ?? (async () => ({})),
+            // Implement IAnalyzableEcosystem so analyzeUsage is available
+            analyzeUsage: async () => ({
+                modeUsage: { ask: 0, agent: 0, edit: 0, inline: 0, unknown: 0 },
+                toolCalls: { total: 0, byTool: {} },
+                mcpTools: { total: 0, byServer: {}, byTool: {} },
+                contextReferences: { total: 0, byType: {}, byRepository: {} },
+                modelSwitching: { uniqueModels: [], modelCount: 0, switchCount: 0, totalRequests: 0, hasMixedTiers: false, tiers: { standard: [], premium: [], unknown: [] }, standardRequests: 0, premiumRequests: 0, unknownRequests: 0 },
+            }),
+        });
+    }
     return {
         warn: () => {},
-        openCode: {
-            isOpenCodeSessionFile: () => overrides.openCodeIsMatch ?? false,
-            getOpenCodeModelUsage: overrides.openCodeModelUsage ?? (async () => ({})),
-            getOpenCodeMessagesForSession: async () => [],
-            getOpenCodePartsForMessage: async () => [],
-            statSessionFile: async () => ({}) as any,
-        } as any,
-        crush: {
-            isCrushSessionFile: () => false,
-            getCrushModelUsage: async () => ({}),
-            getCrushMessages: async () => [],
-            statSessionFile: async () => ({}) as any,
-        } as any,
-        continue_: {
-            isContinueSessionFile: () => false,
-            getContinueModelUsage: () => ({}),
-        } as any,
-        visualStudio: {
-            isVSSessionFile: () => false,
-            getModelUsage: () => ({}),
-            decodeSessionFile: () => [],
-            getModelId: () => null,
-            statSessionFile: async () => ({}) as any,
-        } as any,
-        claudeCode: {
-            isClaudeCodeSessionFile: () => false,
-            getClaudeCodeModelUsage: () => ({}),
-        } as any,
-        claudeDesktopCowork: {
-            isCoworkSessionFile: () => false,
-            getCoworkModelUsage: () => ({}),
-        } as any,
+        ecosystems,
         tokenEstimators: { 'gpt-4o': 0.25, 'claude-sonnet-4.5': 0.25 },
         modelPricing: {
             'gpt-4o': { inputCostPerMillion: 2.5, outputCostPerMillion: 10, tier: 'standard', category: 'Standard', multiplier: 0 },
@@ -582,7 +568,7 @@ test('getModelUsageFromSession: extracts token counts from result.usage (old for
     assert.equal(result['gpt-4o'].outputTokens, 40);
 });
 
-test('getModelUsageFromSession: delegates to openCode for openCode session files', async () => {
+test('getModelUsageFromSession: delegates to openCode adapter for openCode session files', async () => {
     let called = false;
     const deps = makeMockDeps({
         openCodeIsMatch: true,
@@ -592,7 +578,7 @@ test('getModelUsageFromSession: delegates to openCode for openCode session files
         },
     });
     const result = await getModelUsageFromSession(deps, '/opencode/session.db', '');
-    assert.ok(called, 'getOpenCodeModelUsage should have been called');
+    assert.ok(called, 'getModelUsage should have been called on the openCode adapter');
     assert.equal(result['gpt-4o'].inputTokens, 99);
 });
 

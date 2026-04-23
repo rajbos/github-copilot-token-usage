@@ -1,5 +1,4 @@
 ---
-mode: 'agent'
 description: 'Scan microsoft/vscode-copilot-chat for model-facing tool identifiers and update src/toolNames.json with any missing entries.'
 tools: ['read_file', 'write_file', 'search_files', 'run_in_terminal']
 ---

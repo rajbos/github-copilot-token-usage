@@ -139,6 +139,7 @@ function getEditorDisplayName(source: string): string {
 		'opencode': 'OpenCode',
 		'claude-code': 'Claude Code',
 		'claude-desktop-cowork': 'Claude Desktop (Cowork)',
+		'mistral-vibe': 'Mistral Vibe',
 	};
 	return names[source] || source;
 }

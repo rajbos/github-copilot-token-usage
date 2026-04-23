@@ -585,7 +585,7 @@ export class BackendFacade {
   }
 
   public async toggleBackendWorkspaceMachineNameSync(): Promise<void> {
-    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
     const current = config.get<boolean>(
       "backend.shareWorkspaceMachineNames",
       false,
@@ -644,7 +644,7 @@ export class BackendFacade {
         "Extension context is unavailable; cannot update configuration.",
       );
     }
-    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
     await Promise.all([
       config.update(
         "backend.enabled",
@@ -1055,7 +1055,7 @@ export class BackendFacade {
       }
     }
 
-    const config = vscode.workspace.getConfiguration("copilotTokenTracker");
+    const config = vscode.workspace.getConfiguration("aiEngineeringFluency");
     await Promise.all([
       config.update(
         "backend.enabled",

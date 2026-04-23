@@ -239,7 +239,7 @@ export class SyncService {
 							'Configure Backend'
 						).then(choice => {
 							if (choice === 'Configure Backend') {
-								vscode.commands.executeCommand('copilotTokenTracker.configureBackend');
+								vscode.commands.executeCommand('aiEngineeringFluency.configureBackend');
 							}
 						});
 						this.stopTimer();

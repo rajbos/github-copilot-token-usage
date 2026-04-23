@@ -57,7 +57,7 @@ export interface BackendQueryFilters {
 }
 
 export function getBackendSettings(): BackendSettings {
-	const config = vscode.workspace.getConfiguration('copilotTokenTracker');
+	const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 	const sharingProfileInspect = typeof (config as any).inspect === 'function'
 		? config.inspect<string>('backend.sharingProfile')
 		: undefined;

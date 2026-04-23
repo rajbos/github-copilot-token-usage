@@ -513,7 +513,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
 					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(getEffortDisplayName(turn.thinkingEffort))}</span>` : ''}
-				<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>
+				${totalTokens > 0 ? `<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>` : ''}
 				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
 				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${formatCompact(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens)} actual</span>` : ''}
 					${contextHeaderHtml}
@@ -651,7 +651,7 @@ function renderLayout(data: SessionLogData): void {
 				<div class="summary-card actual-usage-card">
 					<div class="summary-label">✅ Actual Tokens</div>
 					<div class="summary-value">${formatCompact(sessionActualTokens)}</div>
-					<div class="summary-sub">Total from session shutdown event</div>
+							<div class="summary-sub">${data.editorName === 'Mistral Vibe' ? 'From session data' : 'Total from session shutdown event'}</div>
 				</div>
 				` : ''}
 				${totalThinkingTokens > 0 ? `<div class="summary-card">

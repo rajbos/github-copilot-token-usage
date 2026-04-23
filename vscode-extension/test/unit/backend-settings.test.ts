@@ -18,23 +18,23 @@ test('shouldPromptToSetSharedKey gates on authMode/storageAccount/sharedKey pres
 test('getBackendSettings reads config defaults and clamps lookbackDays', () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setConfig({
-		'copilotTokenTracker.backend.enabled': true,
-		'copilotTokenTracker.backend.backend': 'storageTables',
-		'copilotTokenTracker.backend.authMode': 'entraId',
-		'copilotTokenTracker.backend.datasetId': '  myds  ',
-		'copilotTokenTracker.backend.shareWithTeam': false,
-		'copilotTokenTracker.backend.shareWorkspaceMachineNames': false,
-		'copilotTokenTracker.backend.shareConsentAt': '',
-		'copilotTokenTracker.backend.userIdentityMode': 'pseudonymous',
-		'copilotTokenTracker.backend.userId': '  ',
-		'copilotTokenTracker.backend.userIdMode': 'alias',
-		'copilotTokenTracker.backend.subscriptionId': 'sub',
-		'copilotTokenTracker.backend.resourceGroup': 'rg',
-		'copilotTokenTracker.backend.storageAccount': 'sa',
-		'copilotTokenTracker.backend.aggTable': 'agg',
-		'copilotTokenTracker.backend.eventsTable': 'events',
-		'copilotTokenTracker.backend.lookbackDays': 999,
-		'copilotTokenTracker.backend.includeMachineBreakdown': true
+		'aiEngineeringFluency.backend.enabled': true,
+		'aiEngineeringFluency.backend.backend': 'storageTables',
+		'aiEngineeringFluency.backend.authMode': 'entraId',
+		'aiEngineeringFluency.backend.datasetId': '  myds  ',
+		'aiEngineeringFluency.backend.shareWithTeam': false,
+		'aiEngineeringFluency.backend.shareWorkspaceMachineNames': false,
+		'aiEngineeringFluency.backend.shareConsentAt': '',
+		'aiEngineeringFluency.backend.userIdentityMode': 'pseudonymous',
+		'aiEngineeringFluency.backend.userId': '  ',
+		'aiEngineeringFluency.backend.userIdMode': 'alias',
+		'aiEngineeringFluency.backend.subscriptionId': 'sub',
+		'aiEngineeringFluency.backend.resourceGroup': 'rg',
+		'aiEngineeringFluency.backend.storageAccount': 'sa',
+		'aiEngineeringFluency.backend.aggTable': 'agg',
+		'aiEngineeringFluency.backend.eventsTable': 'events',
+		'aiEngineeringFluency.backend.lookbackDays': 999,
+		'aiEngineeringFluency.backend.includeMachineBreakdown': true
 	});
 
 	const s = getBackendSettings();
@@ -49,9 +49,9 @@ test('getBackendSettings reads config defaults and clamps lookbackDays', () => {
 test('getBackendSettings sharingProfile is off when backend disabled', () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setConfig({
-		'copilotTokenTracker.backend.enabled': false,
-		'copilotTokenTracker.backend.shareWithTeam': true,
-		'copilotTokenTracker.backend.userIdentityMode': 'alias',
+		'aiEngineeringFluency.backend.enabled': false,
+		'aiEngineeringFluency.backend.shareWithTeam': true,
+		'aiEngineeringFluency.backend.userIdentityMode': 'alias',
 	});
 	const s = getBackendSettings();
 	assert.equal(s.sharingProfile, 'off');
@@ -60,9 +60,9 @@ test('getBackendSettings sharingProfile is off when backend disabled', () => {
 test('getBackendSettings sharingProfile is teamIdentified when shareWithTeam and non-pseudonymous', () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setConfig({
-		'copilotTokenTracker.backend.enabled': true,
-		'copilotTokenTracker.backend.shareWithTeam': true,
-		'copilotTokenTracker.backend.userIdentityMode': 'alias',
+		'aiEngineeringFluency.backend.enabled': true,
+		'aiEngineeringFluency.backend.shareWithTeam': true,
+		'aiEngineeringFluency.backend.userIdentityMode': 'alias',
 	});
 	const s = getBackendSettings();
 	assert.equal(s.sharingProfile, 'teamIdentified');
@@ -71,9 +71,9 @@ test('getBackendSettings sharingProfile is teamIdentified when shareWithTeam and
 test('getBackendSettings sharingProfile is teamPseudonymous when shareWithTeam and pseudonymous', () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setConfig({
-		'copilotTokenTracker.backend.enabled': true,
-		'copilotTokenTracker.backend.shareWithTeam': true,
-		'copilotTokenTracker.backend.userIdentityMode': 'pseudonymous',
+		'aiEngineeringFluency.backend.enabled': true,
+		'aiEngineeringFluency.backend.shareWithTeam': true,
+		'aiEngineeringFluency.backend.userIdentityMode': 'pseudonymous',
 	});
 	const s = getBackendSettings();
 	assert.equal(s.sharingProfile, 'teamPseudonymous');
@@ -82,7 +82,7 @@ test('getBackendSettings sharingProfile is teamPseudonymous when shareWithTeam a
 test('getBackendSettings clamps lookbackDays to minimum', () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setConfig({
-		'copilotTokenTracker.backend.lookbackDays': 0,
+		'aiEngineeringFluency.backend.lookbackDays': 0,
 	});
 	const s = getBackendSettings();
 	assert.ok(s.lookbackDays >= 1);
@@ -91,7 +91,7 @@ test('getBackendSettings clamps lookbackDays to minimum', () => {
 test('getBackendSettings defaults empty datasetId to "default"', () => {
 	(vscode as any).__mock.reset();
 	(vscode as any).__mock.setConfig({
-		'copilotTokenTracker.backend.datasetId': '   ',
+		'aiEngineeringFluency.backend.datasetId': '   ',
 	});
 	const s = getBackendSettings();
 	assert.equal(s.datasetId, 'default');

@@ -416,18 +416,18 @@ All settings in VS Code user settings (global scope, Settings Sync compatible):
 ### Commands
 
 #### Core Commands
-- `copilot-token-tracker.configureBackend` - Guided setup wizard
-- `copilot-token-tracker.copyBackendConfig` - Copy config (secrets redacted)
-- `copilot-token-tracker.exportCurrentView` - Export filtered view as JSON
-- `copilot-token-tracker.setSharingProfile` - Change sharing profile
+- `` - Guided setup wizard
+- `` - Copy config (secrets redacted)
+- `` - Export filtered view as JSON
+- `` - Change sharing profile
 
 #### Shared Key Management (advanced)
-- `copilot-token-tracker.setBackendSharedKey` - Set/update key
-- `copilot-token-tracker.rotateBackendSharedKey` - Rotate key
-- `copilot-token-tracker.clearBackendSharedKey` - Clear key
+- `` - Set/update key
+- `` - Rotate key
+- `` - Clear key
 
 #### Data Management
-- `copilot-token-tracker.deleteMyData` - Delete all user data from dataset (GDPR right to erasure)
+- `aiEngineeringFluency.deleteMyData` - Delete all user data from dataset (GDPR right to erasure)
 
 ---
 
