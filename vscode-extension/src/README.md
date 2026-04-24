@@ -65,8 +65,8 @@ When these fields are absent, the full `inputCostPerMillion` rate is applied to 
 - Cache reads: **10% of input rate** (e.g. $0.30/M for Claude Sonnet 4 at $3.00/M input)
 - Cache creation: **125% of input rate** (e.g. $3.75/M for Claude Sonnet 4)
 
-**OpenAI prompt caching rates** (automatic prefix matching):
-- Cache reads: **50% of input rate** (e.g. $1.25/M for GPT-4o at $2.50/M input)
+**OpenAI prompt caching rates** (automatic prefix matching) vary by model family:
+- Cache reads use the explicit per-model `cachedInputCostPerMillion` values in `modelPricing.json` (for example: GPT-4o = 50% of input, GPT-4.1 = 25%, GPT-5.4 = 10%)
 - Note: OpenAI cache creation does not incur an extra fee, so `cacheCreationCostPerMillion` is not set for OpenAI models.
 
 ### Which data sources provide cache token breakdowns?
