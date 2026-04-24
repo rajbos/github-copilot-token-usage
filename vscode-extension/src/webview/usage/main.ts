@@ -121,6 +121,34 @@ let isSwitchingRepository = false;
 let isBatchAnalysisInProgress = false;
 let currentWorkspacePaths: string[] = [];
 let activeTab = 'activity';
+let loadingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+function clearLoadingTimeout(): void {
+	if (loadingTimeoutId !== null) {
+		clearTimeout(loadingTimeoutId);
+		loadingTimeoutId = null;
+	}
+}
+
+function showLoadError(message: string): void {
+	const root = document.getElementById('root');
+	if (!root) { return; }
+	const container = document.createElement('div');
+	container.style.cssText = 'padding: 32px; text-align: center; font-size: 14px;';
+	const icon = document.createElement('div');
+	icon.style.cssText = 'font-size: 24px; margin-bottom: 12px;';
+	icon.textContent = '❌';
+	const msg = document.createElement('div');
+	msg.style.cssText = 'color: var(--vscode-errorForeground, #f48771); margin-bottom: 16px;';
+	msg.textContent = message;
+	const btn = document.createElement('button');
+	btn.textContent = '🔄 Refresh';
+	btn.style.cssText = 'padding: 6px 16px; cursor: pointer; border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border-radius: 2px; font-size: 13px;';
+	btn.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+	container.append(icon, msg, btn);
+	root.textContent = '';
+	root.append(container);
+}
 
 // State for the Repository PRs tab
 let repoPrStatsLoaded = false;
@@ -421,7 +449,27 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 			month: sanitizePeriod(raw.month),
 			lastUpdated: typeof raw.lastUpdated === 'string' ? raw.lastUpdated : '',
 			backendConfigured: !!raw.backendConfigured,
+			locale: typeof raw.locale === 'string' ? raw.locale : undefined,
+			currentWorkspacePaths: Array.isArray(raw.currentWorkspacePaths)
+				? raw.currentWorkspacePaths.filter((p: unknown) => typeof p === 'string') as string[]
+				: undefined,
+			suppressedUnknownTools: Array.isArray(raw.suppressedUnknownTools)
+				? raw.suppressedUnknownTools.filter((t: unknown) => typeof t === 'string') as string[]
+				: undefined,
 		};
+
+		// Validated pass-through for customizationMatrix (nested shape check)
+		if (raw.customizationMatrix && typeof raw.customizationMatrix === 'object'
+			&& Array.isArray(raw.customizationMatrix.workspaces)) {
+			sanitized.customizationMatrix = raw.customizationMatrix as WorkspaceCustomizationMatrix;
+		}
+
+		// Validated pass-through for missedPotential (array of objects)
+		if (Array.isArray(raw.missedPotential)) {
+			sanitized.missedPotential = raw.missedPotential.filter(
+				(w: any) => w && typeof w === 'object' && typeof w.workspacePath === 'string'
+			) as MissedPotentialWorkspace[];
+		}
 
 		return sanitized;
 	} catch {
@@ -1446,6 +1494,7 @@ window.addEventListener('message', (event) => {
 			break;
 		case 'updateStats':
 			// Re-render the layout with fresh stats, then restore repo analysis results
+			clearLoadingTimeout();
 			if (message.data?.locale) {
 				setFormatLocale(message.data.locale);
 			}
@@ -1458,8 +1507,14 @@ window.addEventListener('message', (event) => {
 					if (repoPrStatsData) {
 						updateReposPrPanel(repoPrStatsData);
 					}
+				} else {
+					showLoadError('Received invalid data from the extension. Try refreshing.');
 				}
 			}
+			break;
+		case 'updateStatsError':
+			clearLoadingTimeout();
+			showLoadError('Failed to calculate usage analysis. Check the Output panel for details.');
 			break;
 		case 'highlightUnknownTools': {
 			// Switch to tools tab
@@ -2008,6 +2063,24 @@ async function bootstrap(): Promise<void> {
 		if (root) {
 			root.innerHTML = '<div style="padding: 32px; text-align: center; color: var(--vscode-foreground); opacity: 0.7; font-size: 14px;">⏳ Loading usage analysis…</div>';
 		}
+		// If data doesn't arrive within 30s, show a helpful hint (non-fatal)
+		loadingTimeoutId = setTimeout(() => {
+			const r = document.getElementById('root');
+			if (r && r.innerHTML.includes('Loading usage analysis')) {
+				const hint = document.createElement('div');
+				hint.style.cssText = 'padding: 32px; text-align: center; font-size: 14px;';
+				const msg = document.createElement('div');
+				msg.style.cssText = 'color: var(--vscode-foreground); opacity: 0.7; margin-bottom: 12px;';
+				msg.textContent = '⏳ Taking longer than expected… Session files may be large or the scan is still in progress.';
+				const btn = document.createElement('button');
+				btn.textContent = '🔄 Refresh';
+				btn.style.cssText = 'padding: 6px 16px; cursor: pointer; border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border-radius: 2px; font-size: 13px;';
+				btn.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+				hint.append(msg, btn);
+				r.textContent = '';
+				r.append(hint);
+			}
+		}, 30_000);
 		// Stats will arrive via the updateStats message; the module-level listener will call renderLayout then.
 		return;
 	}
@@ -2027,4 +2100,21 @@ async function bootstrap(): Promise<void> {
 	});
 }
 
-void bootstrap();
+void bootstrap().catch(err => {
+	console.error('[Usage Analysis] Bootstrap failed:', err);
+	const root = document.getElementById('root');
+	if (root) {
+		const container = document.createElement('div');
+		container.style.cssText = 'padding: 32px; text-align: center; font-size: 14px;';
+		const msg = document.createElement('div');
+		msg.style.cssText = 'color: var(--vscode-errorForeground, #f48771); margin-bottom: 16px;';
+		msg.textContent = 'Failed to initialize usage analysis. Please try refreshing.';
+		const btn = document.createElement('button');
+		btn.textContent = '🔄 Refresh';
+		btn.style.cssText = 'padding: 6px 16px; cursor: pointer; border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border-radius: 2px; font-size: 13px;';
+		btn.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+		container.append(msg, btn);
+		root.textContent = '';
+		root.append(container);
+	}
+});
