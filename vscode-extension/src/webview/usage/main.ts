@@ -304,7 +304,7 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
                                     <div style="display: flex; flex-direction: column; gap: 4px;">
                                         ${ws.nonCopilotFiles.map(f => `
                                             <div style="font-size: 11px; display: flex; align-items: center; gap: 6px;">
-                                                <span>${f.icon || '📄'}</span>
+                                                <span>${escapeHtml(f.icon || '📄')}</span>
                                                 <span style="font-weight: 500;">${escapeHtml(f.label || '')}:</span>
                                                 <span style="font-family: monospace; color: var(--text-muted);">${escapeHtml(f.relativePath)}</span>
                                             </div>
@@ -723,9 +723,9 @@ function renderLayout(stats: UsageAnalysisStats): void {
 														? 'Missing'
 														: 'Status unknown';
 										return `
-										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; font-size: 16px;" title="${statusLabel}" aria-label="${statusLabel}">
+										<td style="position: relative; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: center; font-size: 16px;" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}">
 											<span aria-hidden="true">${escapeHtml(status)}</span>
-											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${statusLabel}</span>
+											<span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">${escapeHtml(statusLabel)}</span>
 										</td>
 										`;
 									}).join('')}
@@ -1266,7 +1266,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 									<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
 										${toolListHtml}
 									</div>
-									<a href="${issueUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--button-bg); color: var(--button-fg); border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 500;">
+									<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--button-bg); color: var(--button-fg); border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: 500;">
 										<span>📝</span>
 										<span>Report Unknown Tools</span>
 									</a>
