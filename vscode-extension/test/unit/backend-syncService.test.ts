@@ -157,7 +157,7 @@ test('extractFluencyMetricsFromCache extracts mode usage with ratio=1', () => {
 	const svc = makeService();
 	const cached = {
 		usageAnalysis: {
-			modeUsage: { ask: 10, edit: 5, agent: 3, plan: 2, customAgent: 1 }
+			modeUsage: { ask: 10, edit: 5, agent: 3, plan: 2, customAgent: 1, cli: 0 }
 		}
 	};
 	const result = (svc as any).extractFluencyMetricsFromCache(cached, 1);
@@ -279,7 +279,7 @@ test('extractFluencyMetricsFromCache handles all metrics combined', () => {
 	const svc = makeService();
 	const cached = {
 		usageAnalysis: {
-			modeUsage: { ask: 1, edit: 2, agent: 3, plan: 0, customAgent: 0 },
+			modeUsage: { ask: 1, edit: 2, agent: 3, plan: 0, customAgent: 0, cli: 0 },
 			toolCalls: { search: 1 },
 			contextReferences: { file: 1 },
 			mcpTools: { t: 1 },

@@ -177,7 +177,7 @@ export const fluencyCommand = new Command('fluency')
 		console.log(chalk.dim('─'.repeat(55)));
 		console.log(`  Sessions analyzed:       ${chalk.bold(fmt(p.sessions))}`);
 
-		const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent;
+		const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent + p.modeUsage.cli;
 		console.log(`  Total interactions:      ${chalk.bold(fmt(totalInteractions))}`);
 
 		if (p.modeUsage.ask > 0) {
@@ -188,6 +188,9 @@ export const fluencyCommand = new Command('fluency')
 		}
 		if (p.modeUsage.agent > 0) {
 			console.log(`    Agent mode:            ${fmt(p.modeUsage.agent)}`);
+		}
+		if (p.modeUsage.cli > 0) {
+			console.log(`    CLI:                   ${fmt(p.modeUsage.cli)}`);
 		}
 		if (p.toolCalls.total > 0) {
 			console.log(`  Tool calls:              ${fmt(p.toolCalls.total)}`);

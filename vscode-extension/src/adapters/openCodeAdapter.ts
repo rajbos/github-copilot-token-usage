@@ -195,7 +195,7 @@ export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosyste
 				turns.push({
 					turnNumber,
 					timestamp: msg.time?.created ? new Date(msg.time.created).toISOString() : null,
-					mode: (msg.agent === 'build' || msg.agent === 'agent') ? 'agent' : (msg.agent === 'ask' ? 'ask' : 'agent'),
+					mode: 'cli',
 					userMessage: userText,
 					assistantResponse: assistantText,
 					model,
@@ -224,11 +224,7 @@ export class OpenCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosyste
 			const models: string[] = [];
 			for (const msg of messages) {
 				if (msg.role === 'user') {
-					const mode = msg.agent || 'agent';
-					if (mode === 'build' || mode === 'agent') { analysis.modeUsage.agent++; }
-					else if (mode === 'ask') { analysis.modeUsage.ask++; }
-					else if (mode === 'edit') { analysis.modeUsage.edit++; }
-					else { analysis.modeUsage.agent++; }
+					analysis.modeUsage.cli++;
 				}
 				if (msg.role === 'assistant') {
 					const model = msg.modelID || 'unknown';

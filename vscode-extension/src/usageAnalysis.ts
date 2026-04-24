@@ -65,6 +65,7 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 	period.modeUsage.agent += analysis.modeUsage.agent;
 	period.modeUsage.plan += analysis.modeUsage.plan;
 	period.modeUsage.customAgent += analysis.modeUsage.customAgent;
+	period.modeUsage.cli += analysis.modeUsage.cli;
 
 	// Merge context references
 	period.contextReferences.file += analysis.contextReferences.file;
@@ -464,7 +465,7 @@ export function analyzeVariableData(variableData: any, refs: ContextReferenceUsa
  * Called before every return in analyzeSessionUsage to ensure all file formats get patterns.
  */
 export function deriveConversationPatterns(analysis: SessionUsageAnalysis): void {
-	const totalRequests = analysis.modeUsage.ask + analysis.modeUsage.edit + analysis.modeUsage.agent;
+	const totalRequests = analysis.modeUsage.ask + analysis.modeUsage.edit + analysis.modeUsage.agent + analysis.modeUsage.cli;
 	analysis.conversationPatterns = {
 		multiTurnSessions: totalRequests > 1 ? 1 : 0,
 		singleTurnSessions: totalRequests === 1 ? 1 : 0,
@@ -944,7 +945,7 @@ export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>
 export function createEmptySessionUsageAnalysis(): SessionUsageAnalysis {
 	return {
 		toolCalls: { total: 0, byTool: {} },
-		modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+		modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
 		contextReferences: createEmptyContextRefs(),
 		mcpTools: { total: 0, byServer: {}, byTool: {} },
 		modelSwitching: {
@@ -1259,18 +1260,9 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					}
 
 					// Handle Copilot CLI format
-					// Detect mode from event type - CLI can be chat or agent mode
+					// CLI sessions are always classified as 'cli' mode
 					if (event.type === 'user.message') {
-						analysis.modeUsage.ask++;
-					}
-
-					// If we see tool calls, upgrade to agent mode for this session
-					if (event.type === 'tool.call' || event.type === 'tool.result') {
-						// Tool usage indicates agent mode - adjust if we counted this as ask
-						if (analysis.modeUsage.ask > 0) {
-							analysis.modeUsage.ask--;
-							analysis.modeUsage.agent++;
-						}
+						analysis.modeUsage.cli++;
 					}
 
 					// Detect tool calls from Copilot CLI

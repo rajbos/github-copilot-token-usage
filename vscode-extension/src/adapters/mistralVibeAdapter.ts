@@ -111,7 +111,7 @@ export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 			turns.push({
 				turnNumber: t + 1,
 				timestamp: sessionMeta.firstInteraction,
-				mode: 'agent',
+				mode: 'cli',
 				userMessage: userText,
 				assistantResponse: assistantText,
 				model,
@@ -135,7 +135,7 @@ export class MistralVibeAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 		const models: string[] = [];
 		for (const msg of messages) {
 			if (msg.role === 'user' && msg.injected !== true) {
-				analysis.modeUsage.agent++;
+				analysis.modeUsage.cli++;
 			} else if (msg.role === 'assistant') {
 				models.push(model);
 				if (Array.isArray(msg.tool_calls)) {

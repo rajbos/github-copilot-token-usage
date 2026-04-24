@@ -165,7 +165,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 40; // Fix lastInteraction: use content timestamps only, not max(timestamp, mtime)
+	private static readonly CACHE_VERSION = 41; // Add 'cli' mode to ModeUsage for CLI-based tools
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -2027,7 +2027,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const emptyPeriod = (): UsageAnalysisPeriod => ({
 			sessions: 0,
 			toolCalls: { total: 0, byTool: {} },
-			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
 			contextReferences: {
 				file: 0,
 				selection: 0,
@@ -2149,7 +2149,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					const interactions = sessionData.interactions;
 					const analysis = sessionData.usageAnalysis || {
 						toolCalls: { total: 0, byTool: {} },
-						modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+						modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
 						contextReferences: {
 							file: 0,
 							selection: 0,
@@ -2773,7 +2773,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 		const analysis = sessionData.usageAnalysis || {
 			toolCalls: { total: 0, byTool: {} },
-			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+			modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
 			contextReferences: {
 				file: 0,
 				selection: 0,
@@ -2924,7 +2924,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			thinkingTokens: existingCache?.thinkingTokens,
 			usageAnalysis: existingCache?.usageAnalysis || {
 				toolCalls: { total: 0, byTool: {} },
-				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
 				contextReferences: {
 					file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
 					workspace: 0, terminal: 0, vscode: 0,
@@ -3472,7 +3472,7 @@ usageAnalysis: undefined
 						const turn: ChatTurn = {
 							turnNumber,
 							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
-							mode: 'agent', // CLI is typically agent mode
+							mode: 'cli', // CLI tool sessions use the dedicated cli mode
 							userMessage,
 							assistantResponse: '',
 							model: turnModel,
@@ -5809,7 +5809,7 @@ ${hashtag}`;
     // Aggregate fluency data per user (schema version 4+ entities only)
     const userFluencyMap = new Map<string, {
       askModeCount: number; editModeCount: number; agentModeCount: number;
-      planModeCount: number; customAgentModeCount: number;
+      planModeCount: number; customAgentModeCount: number; cliModeCount: number;
       toolCallsTotal: number; toolCallsByTool: Record<string, number>;
       ctxFile: number; ctxSelection: number; ctxSymbol: number;
       ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
@@ -5918,7 +5918,7 @@ ${hashtag}`;
           if (!userFluencyMap.has(userKey)) {
             userFluencyMap.set(userKey, {
               askModeCount: 0, editModeCount: 0, agentModeCount: 0,
-              planModeCount: 0, customAgentModeCount: 0,
+              planModeCount: 0, customAgentModeCount: 0, cliModeCount: 0,
               toolCallsTotal: 0, toolCallsByTool: {},
               ctxFile: 0, ctxSelection: 0, ctxSymbol: 0,
               ctxCodebase: 0, ctxWorkspace: 0, ctxTerminal: 0,
@@ -5943,6 +5943,7 @@ ${hashtag}`;
           fd.agentModeCount += typeof entity.agentModeCount === "number" ? entity.agentModeCount : 0;
           fd.planModeCount += typeof entity.planModeCount === "number" ? entity.planModeCount : 0;
           fd.customAgentModeCount += typeof entity.customAgentModeCount === "number" ? entity.customAgentModeCount : 0;
+          fd.cliModeCount += typeof entity.cliModeCount === "number" ? entity.cliModeCount : 0;
           if (entity.toolCallsJson) {
             try {
               const tc = JSON.parse(entity.toolCallsJson);
