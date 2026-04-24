@@ -72,6 +72,7 @@
   "tool_search",
 
   "get_task_output",
+  "get_output_window_logs",
   "job_output",
   "get_terminal_output",
   "await_terminal",
