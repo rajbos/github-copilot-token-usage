@@ -458,10 +458,34 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 				: undefined,
 		};
 
-		// Validated pass-through for customizationMatrix (nested shape check)
+		// Sanitize customizationMatrix (avoid pass-through of untrusted nested fields)
 		if (raw.customizationMatrix && typeof raw.customizationMatrix === 'object'
 			&& Array.isArray(raw.customizationMatrix.workspaces)) {
-			sanitized.customizationMatrix = raw.customizationMatrix as WorkspaceCustomizationMatrix;
+			const rawMatrix = raw.customizationMatrix as any;
+			const safeWorkspaces = rawMatrix.workspaces
+				.filter((w: any) => w && typeof w === 'object')
+				.map((w: any) => ({
+					workspacePath: typeof w.workspacePath === 'string' ? w.workspacePath : '',
+					repoName: typeof w.repoName === 'string' ? w.repoName : '',
+					hasCopilotInstructionsMd: !!w.hasCopilotInstructionsMd,
+					hasAgentsMd: !!w.hasAgentsMd,
+					hasCopilotSetupStepsMd: !!w.hasCopilotSetupStepsMd,
+					hasCustomChatmodes: !!w.hasCustomChatmodes,
+					hasCustomPrompts: !!w.hasCustomPrompts,
+					totalFiles: coerceNumber(w.totalFiles),
+					missingTypes: Array.isArray(w.missingTypes)
+						? w.missingTypes.filter((t: unknown) => typeof t === 'string')
+						: [],
+					extraTypes: Array.isArray(w.extraTypes)
+						? w.extraTypes.filter((t: unknown) => typeof t === 'string')
+						: [],
+				}));
+
+			sanitized.customizationMatrix = {
+				workspaces: safeWorkspaces,
+				totalWorkspaces: coerceNumber(rawMatrix.totalWorkspaces),
+				workspacesWithIssues: coerceNumber(rawMatrix.workspacesWithIssues),
+			} as WorkspaceCustomizationMatrix;
 		}
 
 		// Validated pass-through for missedPotential (array of objects)
