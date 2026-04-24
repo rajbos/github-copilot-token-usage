@@ -9,8 +9,11 @@
  *   - workspaceStorage/<hash>/chatSessions/                            (legacy layout)
  *   - workspaceStorage/<hash>/GitHub.copilot-chat/chatSessions/        (newer layout)
  *   - workspaceStorage/<hash>/github.copilot-chat/chatSessions/        (Linux case-sensitive variant)
+ *   - workspaceStorage/<hash>/GitHub.copilot/chatSessions/             (unified extension, VS Code 1.117+)
+ *   - workspaceStorage/<hash>/github.copilot/chatSessions/             (Linux case-sensitive variant)
  *   - globalStorage/emptyWindowChatSessions/                           (legacy)
  *   - globalStorage/{GitHub,github}.copilot-chat/**                    (both casings, recursive)
+ *   - globalStorage/{GitHub,github}.copilot/**                         (unified extension, both casings)
  *
  * NOTE on `handles()`: this adapter currently returns `false` so that the
  * existing fallback parsing code in `extension.ts` continues to own the
@@ -247,7 +250,7 @@ export function isCopilotChatSessionPath(filePath: string): boolean {
 	if (!/\.jsonl?$/.test(norm)) { return false; }
 
 	// workspaceStorage/<hash>/chatSessions/<file>
-	if (/\/workspaceStorage\/[^/]+\/(?:GitHub\.copilot-chat|github\.copilot-chat)\/chatSessions\/[^/]+$/.test(norm)) {
+	if (/\/workspaceStorage\/[^/]+\/(?:GitHub\.copilot-chat|github\.copilot-chat|GitHub\.copilot|github\.copilot)\/chatSessions\/[^/]+$/.test(norm)) {
 		return true;
 	}
 	if (/\/workspaceStorage\/[^/]+\/chatSessions\/[^/]+$/.test(norm)) {
@@ -255,8 +258,8 @@ export function isCopilotChatSessionPath(filePath: string): boolean {
 	}
 	// globalStorage/emptyWindowChatSessions/<file>
 	if (/\/globalStorage\/emptyWindowChatSessions\/[^/]+$/.test(norm)) { return true; }
-	// globalStorage/{GitHub,github}.copilot-chat/**
-	if (/\/globalStorage\/(?:GitHub|github)\.copilot-chat\/.+$/.test(norm)) {
+	// globalStorage/{GitHub,github}.copilot-chat/** and {GitHub,github}.copilot/**
+	if (/\/globalStorage\/(?:GitHub|github)\.copilot(?:-chat)?\/.+$/.test(norm)) {
 		return !isNonSessionFile(path.basename(norm));
 	}
 	return false;
@@ -373,7 +376,7 @@ export class CopilotChatAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 		await runWithConcurrency(foundPaths, async (codeUserPath) => {
 			const pathName = path.basename(path.dirname(codeUserPath));
 
-			// workspaceStorage/<hash>/{,GitHub.copilot-chat/,github.copilot-chat/}chatSessions/
+			// workspaceStorage/<hash>/{,GitHub.copilot-chat/,github.copilot-chat/,GitHub.copilot/,github.copilot/}chatSessions/
 			const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 			try {
 				if (await pathExists(workspaceStoragePath)) {
@@ -383,6 +386,8 @@ export class CopilotChatAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 							path.join(workspaceStoragePath, workspaceDir, 'chatSessions'),
 							path.join(workspaceStoragePath, workspaceDir, 'GitHub.copilot-chat', 'chatSessions'),
 							path.join(workspaceStoragePath, workspaceDir, 'github.copilot-chat', 'chatSessions'),
+							path.join(workspaceStoragePath, workspaceDir, 'GitHub.copilot', 'chatSessions'),
+							path.join(workspaceStoragePath, workspaceDir, 'github.copilot', 'chatSessions'),
 						];
 						for (const chatSessionsPath of candidates) {
 							try {
@@ -418,8 +423,8 @@ export class CopilotChatAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 				log(`Could not check global storage path ${globalStoragePath}: ${e}`);
 			}
 
-			// globalStorage/{GitHub,github}.copilot-chat/** (recursive)
-			for (const extFolderName of ['GitHub.copilot-chat', 'github.copilot-chat']) {
+			// globalStorage/{GitHub,github}.copilot-chat/** and {GitHub,github}.copilot/** (recursive)
+			for (const extFolderName of ['GitHub.copilot-chat', 'github.copilot-chat', 'GitHub.copilot', 'github.copilot']) {
 				const copilotChatGlobalPath = path.join(codeUserPath, 'globalStorage', extFolderName);
 				try {
 					if (await pathExists(copilotChatGlobalPath)) {
