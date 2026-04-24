@@ -198,6 +198,7 @@ export interface ModeUsage {
   agent: number; // Agent mode interactions (standard agent mode)
   plan: number; // Plan mode interactions (built-in plan agent)
   customAgent: number; // Custom agent mode interactions (.agent.md files)
+  cli: number; // CLI tool interactions (Copilot CLI, Claude Code, OpenCode, Crush, Mistral Vibe)
 }
 
 export interface ContextReferenceUsage {
@@ -375,7 +376,7 @@ export interface ActualUsage {
 export interface ChatTurn {
   turnNumber: number;
   timestamp: string | null;
-  mode: "ask" | "edit" | "agent" | "plan" | "customAgent";
+  mode: "ask" | "edit" | "agent" | "plan" | "customAgent" | "cli";
   userMessage: string;
   assistantResponse: string;
   model: string | null;

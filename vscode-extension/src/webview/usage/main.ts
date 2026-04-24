@@ -7,7 +7,7 @@ import { formatFixed, formatNumber, formatPercent, setFormatLocale } from '../sh
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
-type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
+type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number; cli: number };
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 
@@ -358,6 +358,7 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 		agent: coerceNumber(mode?.agent),
 		plan: coerceNumber(mode?.plan),
 		customAgent: coerceNumber(mode?.customAgent),
+		cli: coerceNumber(mode?.cli),
 	});
 
 	const sanitizeContextRefs = (refs: any): ContextReferenceUsage => ({
@@ -732,8 +733,8 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
 	const last30DaysTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
-	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent + stats.today.modeUsage.plan + stats.today.modeUsage.customAgent;
-	const last30DaysTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent + stats.last30Days.modeUsage.plan + stats.last30Days.modeUsage.customAgent;
+	const todayTotalModes = stats.today.modeUsage.ask + stats.today.modeUsage.edit + stats.today.modeUsage.agent + stats.today.modeUsage.plan + stats.today.modeUsage.customAgent + stats.today.modeUsage.cli;
+	const last30DaysTotalModes = stats.last30Days.modeUsage.ask + stats.last30Days.modeUsage.edit + stats.last30Days.modeUsage.agent + stats.last30Days.modeUsage.plan + stats.last30Days.modeUsage.customAgent + stats.last30Days.modeUsage.cli;
 
 	const multiModelHtml = `
 			<!-- Multi-Model Usage Section -->
@@ -1073,6 +1074,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div class="bar-item">
 								<div class="bar-label"><span>⚡ Custom Agent</span><span><strong>${formatNumber(stats.today.modeUsage.customAgent)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.customAgent / todayTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.customAgent / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div>
+							</div>
+							<div class="bar-item">
+								<div class="bar-label"><span>🖥️ CLI</span><span><strong>${formatNumber(stats.today.modeUsage.cli)}</strong> (${formatPercent(todayTotalModes > 0 ? ((stats.today.modeUsage.cli / todayTotalModes) * 100) : 0, 0)})</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${todayTotalModes > 0 ? ((stats.today.modeUsage.cli / todayTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #06b6d4, #22d3ee);"></div></div>
 							</div>						</div>
 						</div>
 						<div>
@@ -1096,6 +1101,10 @@ function renderLayout(stats: UsageAnalysisStats): void {
 							<div class="bar-item">
 								<div class="bar-label"><span>⚡ Custom Agent</span><span><strong>${formatNumber(stats.last30Days.modeUsage.customAgent)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.customAgent / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
 								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.customAgent / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #ec4899, #f472b6);"></div></div>
+							</div>
+							<div class="bar-item">
+								<div class="bar-label"><span>🖥️ CLI</span><span><strong>${formatNumber(stats.last30Days.modeUsage.cli)}</strong> (${formatPercent(last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.cli / last30DaysTotalModes) * 100) : 0, 0)})</span></div>
+								<div class="bar-track"><div class="bar-fill" style="width: ${last30DaysTotalModes > 0 ? ((stats.last30Days.modeUsage.cli / last30DaysTotalModes) * 100).toFixed(1) : 0}%; background: linear-gradient(90deg, #06b6d4, #22d3ee);"></div></div>
 							</div>						</div>
 						</div>
 					</div>

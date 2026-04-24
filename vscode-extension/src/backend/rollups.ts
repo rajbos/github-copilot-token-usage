@@ -39,6 +39,7 @@ export interface DailyRollupValueLike {
 		agentModeCount?: number;
 		planModeCount?: number;
 		customAgentModeCount?: number;
+		cliModeCount?: number;
 		toolCallsJson?: string;
 		contextRefsJson?: string;
 		mcpToolsJson?: string;
@@ -127,6 +128,9 @@ export function upsertDailyRollup(
 			}
 			if (val.customAgentModeCount !== undefined) {
 				ex.customAgentModeCount = (ex.customAgentModeCount || 0) + val.customAgentModeCount;
+			}
+			if (val.cliModeCount !== undefined) {
+				ex.cliModeCount = (ex.cliModeCount || 0) + val.cliModeCount;
 			}
 			if (val.multiTurnSessions !== undefined) {
 				ex.multiTurnSessions = (ex.multiTurnSessions || 0) + val.multiTurnSessions;

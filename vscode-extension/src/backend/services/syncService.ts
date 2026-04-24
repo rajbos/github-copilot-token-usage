@@ -591,6 +591,7 @@ export class SyncService {
 			fluencyMetrics.agentModeCount = Math.round((analysis.modeUsage.agent || 0) * ratio);
 			fluencyMetrics.planModeCount = Math.round((analysis.modeUsage.plan || 0) * ratio);
 			fluencyMetrics.customAgentModeCount = Math.round((analysis.modeUsage.customAgent || 0) * ratio);
+			fluencyMetrics.cliModeCount = Math.round((analysis.modeUsage.cli || 0) * ratio);
 		}
 
 		// Serialize complex objects as JSON

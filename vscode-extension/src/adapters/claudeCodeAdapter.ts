@@ -74,7 +74,7 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 		const models: string[] = [];
 		for (const event of events) {
 			if (event.type === 'user' && event.message?.role === 'user' && !event.isSidechain) {
-				analysis.modeUsage.ask++;
+				analysis.modeUsage.cli++;
 			} else if (event.type === 'assistant') {
 				const model = normalizeClaudeModelId(event.message?.model || 'unknown');
 				models.push(model);

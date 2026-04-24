@@ -38,6 +38,7 @@ export interface DailyRollupValue {
 		agentModeCount?: number;
 		planModeCount?: number;
 		customAgentModeCount?: number;
+		cliModeCount?: number;
 		toolCallsJson?: string;
 		contextRefsJson?: string;
 		mcpToolsJson?: string;

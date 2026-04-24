@@ -35,7 +35,7 @@ function emptyRefs(): ContextReferenceUsage {
 function emptyAnalysis(): SessionUsageAnalysis {
     return {
         toolCalls: { total: 0, byTool: {} },
-        modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+        modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
         contextReferences: emptyRefs(),
         mcpTools: { total: 0, byServer: {}, byTool: {} },
         modelSwitching: {
@@ -51,7 +51,7 @@ function emptyPeriod(): UsageAnalysisPeriod {
     return {
         sessions: 0,
         toolCalls: { total: 0, byTool: {} },
-        modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+        modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
         contextReferences: emptyRefs(),
         mcpTools: { total: 0, byServer: {}, byTool: {} },
         modelSwitching: {
@@ -133,7 +133,7 @@ test('mergeUsageAnalysis: accumulates tool call counts across sessions', () => {
 test('mergeUsageAnalysis: accumulates mode usage counts', () => {
     const period = emptyPeriod();
     const a = emptyAnalysis();
-    a.modeUsage = { ask: 5, edit: 2, agent: 3, plan: 1, customAgent: 0 };
+    a.modeUsage = { ask: 5, edit: 2, agent: 3, plan: 1, customAgent: 0, cli: 0 };
     mergeUsageAnalysis(period, a);
     mergeUsageAnalysis(period, a); // merge twice
 

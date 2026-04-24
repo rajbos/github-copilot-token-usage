@@ -36,7 +36,7 @@ type ChatTurn = {
 };
 
 type ToolCallUsage = { total: number; byTool: { [key: string]: number } };
-type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number };
+type ModeUsage = { ask: number; edit: number; agent: number; plan: number; customAgent: number; cli: number };
 type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
 type ThinkingEffortUsage = { byEffort: { [effort: string]: number }; switchCount: number; defaultEffort: string | null };
 type SessionUsageAnalysis = {
@@ -246,6 +246,7 @@ function getModeIcon(mode: string): string {
 		case 'agent': return '🤖';
 		case 'plan': return '📋';
 		case 'customAgent': return '⚡';
+		case 'cli': return '🖥️';
 		default: return '❓';
 	}
 }
@@ -257,6 +258,7 @@ function getModeColor(mode: string): string {
 		case 'agent': return '#7c3aed';
 		case 'plan': return '#f59e0b';
 		case 'customAgent': return '#ec4899';
+		case 'cli': return '#06b6d4';
 		default: return '#888';
 	}
 }
@@ -555,7 +557,7 @@ function renderLayout(data: SessionLogData): void {
 	const totalRefs = getTotalContextRefs(data.contextReferences);
 	const usage = data.usageAnalysis;
 	const sessionEffort = usage?.thinkingEffort;
-	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
+	const usageMode = usage?.modeUsage || { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 };
 	const usageToolTotal = usage?.toolCalls?.total ?? totalToolCalls;
 	const usageTopTools = usage ? getTopEntries(usage.toolCalls.byTool, 3) : [];
 	const usageMcpTotal = usage?.mcpTools?.total ?? totalMcpTools;
@@ -615,7 +617,7 @@ function renderLayout(data: SessionLogData): void {
 	};
 	
 	// Mode usage summary
-	const modeUsage = { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 };
+	const modeUsage = { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 };
 	const modelUsage: { [model: string]: number } = {};
 	for (const turn of data.turns) {
 		modeUsage[turn.mode]++;

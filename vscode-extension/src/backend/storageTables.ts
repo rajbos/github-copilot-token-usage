@@ -47,6 +47,7 @@ export interface BackendAggDailyEntityLike {
 	agentModeCount?: number;
 	planModeCount?: number;
 	customAgentModeCount?: number;
+	cliModeCount?: number;
 	toolCallsJson?: string; // Serialized ToolCallUsage: { total, byTool: {...} }
 	contextRefsJson?: string; // Serialized ContextReferenceUsage
 	mcpToolsJson?: string; // Serialized McpToolUsage: { total, byServer, byTool }

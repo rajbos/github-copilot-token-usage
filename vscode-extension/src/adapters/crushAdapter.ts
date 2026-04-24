@@ -154,7 +154,7 @@ export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, 
 			turns.push({
 				turnNumber,
 				timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : null,
-				mode: 'agent',
+				mode: 'cli',
 				userMessage: userText,
 				assistantResponse: assistantText,
 				model,
@@ -178,7 +178,7 @@ export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, 
 		const messages = await this.crush.getCrushMessages(sessionFile);
 		const models: string[] = [];
 		for (const msg of messages) {
-			if (msg.role === 'user') { analysis.modeUsage.agent++; }
+			if (msg.role === 'user') { analysis.modeUsage.cli++; }
 			if (msg.role === 'assistant') {
 				const model = msg.model || 'unknown';
 				models.push(model);

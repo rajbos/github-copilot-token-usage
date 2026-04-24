@@ -13,7 +13,7 @@ import type { UsageAnalysisStats, UsageAnalysisPeriod } from '../../src/types';
 function emptyFd() {
     return {
         askModeCount: 0, editModeCount: 0, agentModeCount: 0,
-        planModeCount: 0, customAgentModeCount: 0,
+        planModeCount: 0, customAgentModeCount: 0, cliModeCount: 0,
         toolCallsTotal: 0, toolCallsByTool: {} as Record<string, number>,
         ctxFile: 0, ctxSelection: 0, ctxSymbol: 0,
         ctxCodebase: 0, ctxWorkspace: 0, ctxTerminal: 0,
@@ -37,7 +37,7 @@ function emptyPeriod(): UsageAnalysisPeriod {
     return {
         sessions: 0,
         toolCalls: { total: 0, byTool: {} },
-        modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+        modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
         contextReferences: {
             file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
             workspace: 0, terminal: 0, vscode: 0, terminalLastCommand: 0,

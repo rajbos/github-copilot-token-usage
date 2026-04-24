@@ -473,7 +473,7 @@ function createEmptyUsageAnalysisPeriod(): UsageAnalysisPeriod {
 	return {
 		sessions: 0,
 		toolCalls: { total: 0, byTool: {} },
-		modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0 },
+		modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
 		contextReferences: createEmptyContextRefs(),
 		mcpTools: { total: 0, byServer: {}, byTool: {} },
 		modelSwitching: {

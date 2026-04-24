@@ -414,7 +414,7 @@ export function getFluencyLevelData(isDebugMode: boolean): {
    */
 export function calculateFluencyScoreForTeamMember(fd: {
     askModeCount: number; editModeCount: number; agentModeCount: number;
-    planModeCount: number; customAgentModeCount: number;
+    planModeCount: number; customAgentModeCount: number; cliModeCount: number;
     toolCallsTotal: number; toolCallsByTool: Record<string, number>;
     ctxFile: number; ctxSelection: number; ctxSymbol: number;
     ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
@@ -439,11 +439,11 @@ export function calculateFluencyScoreForTeamMember(fd: {
       4: "Stage 4: AI Strategist",
     };
 
-    const totalInteractions = fd.askModeCount + fd.editModeCount + fd.agentModeCount;
+    const totalInteractions = fd.askModeCount + fd.editModeCount + fd.agentModeCount + fd.cliModeCount;
     const avgTurnsPerSession = fd.turnsPerSessionCount > 0 ? fd.turnsPerSessionSum / fd.turnsPerSessionCount : 0;
     const switchingFrequency = fd.switchingFreqCount > 0 ? fd.switchingFreqSum / fd.switchingFreqCount : 0;
     const hasModelSwitching = fd.mixedTierSessions > 0 || switchingFrequency > 0;
-    const hasAgentMode = fd.agentModeCount > 0;
+    const hasAgentMode = (fd.agentModeCount + fd.cliModeCount) > 0;
     const toolCount = Object.keys(fd.toolCallsByTool).length;
     const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase())).length;
     const avgFilesPerSession = fd.filesPerEditCount > 0 ? fd.filesPerEditSum / fd.filesPerEditCount : 0;
@@ -659,7 +659,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	const peTips: string[] = [];
 	let peStage = 1;
 
-	const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent;
+	const totalInteractions = p.modeUsage.ask + p.modeUsage.edit + p.modeUsage.agent + p.modeUsage.cli;
 	if (totalInteractions > 0) {
 		peEvidence.push(`${fmt(totalInteractions)} total interactions`);
 	}
@@ -668,6 +668,9 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	}
 	if (p.modeUsage.agent > 0) {
 		peEvidence.push(`${fmt(p.modeUsage.agent)} agent-mode interactions`);
+	}
+	if (p.modeUsage.cli > 0) {
+		peEvidence.push(`${fmt(p.modeUsage.cli)} CLI interactions`);
 	}
 
 	// Conversation patterns (multi-turn shows iterative refinement)
@@ -699,7 +702,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	}
 
 	const hasModelSwitching = p.modelSwitching.mixedTierSessions > 0 || p.modelSwitching.switchingFrequency > 0;
-	const hasAgentMode = p.modeUsage.agent > 0;
+	const hasAgentMode = p.modeUsage.agent > 0 || p.modeUsage.cli > 0;
 
 	if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) {
 		peStage = 3; // Regular, purposeful use
@@ -831,6 +834,10 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 		agEvidence.push(`${fmt(p.modeUsage.agent)} agent-mode interactions`);
 		agStage = 2;
 	}
+	if (p.modeUsage.cli > 0) {
+		agEvidence.push(`${fmt(p.modeUsage.cli)} CLI interactions`);
+		agStage = Math.max(agStage, 2) as 1 | 2 | 3 | 4;
+	}
 	if (p.toolCalls.total > 0) {
 		agEvidence.push(`${fmt(p.toolCalls.total)} tool calls executed`);
 	}
@@ -862,12 +869,12 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	// Diverse tool usage in agent mode
 	const toolCount = Object.keys(p.toolCalls.byTool).length;
 	const nonAutoToolCount = Object.keys(p.toolCalls.byTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase())).length;
-	if (p.modeUsage.agent >= 10 && nonAutoToolCount >= 3) {
+	if ((p.modeUsage.agent + p.modeUsage.cli) >= 10 && nonAutoToolCount >= 3) {
 		agStage = 3;
 	}
 
 	// Heavy agentic use with many tool types or high multi-file edit rate
-	if (p.modeUsage.agent >= 50 && nonAutoToolCount >= 5) {
+	if ((p.modeUsage.agent + p.modeUsage.cli) >= 50 && nonAutoToolCount >= 5) {
 		agStage = 4;
 	}
 	if (p.editScope && p.editScope.multiFileEdits >= 20 && p.editScope.avgFilesPerSession >= 3) {
@@ -1069,10 +1076,10 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 		wiEvidence.push(`Avg ${avgMinutes}min session duration`);
 	}
 
-	// Multi-mode usage (ask + agent) - key indicator of integration
-	const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.agent > 0].filter(Boolean).length;
+	// Multi-mode usage (ask + agent + cli) - key indicator of integration
+	const modesUsed = [p.modeUsage.ask > 0, p.modeUsage.agent > 0, p.modeUsage.cli > 0].filter(Boolean).length;
 	if (modesUsed >= 2) {
-		wiEvidence.push(`Uses ${modesUsed} modes (ask/agent)`);
+		wiEvidence.push(`Uses ${modesUsed} modes (ask/agent/cli)`);
 		wiStage = Math.max(wiStage, 3) as 1 | 2 | 3 | 4;
 	}
 
