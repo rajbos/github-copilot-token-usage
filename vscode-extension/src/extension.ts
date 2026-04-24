@@ -4137,8 +4137,11 @@ usageAnalysis: undefined
 
 		// If no cached stats, compute in the background and push via updateStats
 		if (!this.lastUsageAnalysisStats) {
+			// Capture panel reference to guard against stale async results
+			// (user could close and reopen the panel while calculation is in flight)
+			const panel = this.analysisPanel;
 			this.calculateUsageAnalysisStats(true).then(analysisStats => {
-				if (!this.analysisPanel) { return; }
+				if (!this.analysisPanel || this.analysisPanel !== panel) { return; }
 				void this.analysisPanel.webview.postMessage({
 					command: 'updateStats',
 					data: {
@@ -4155,6 +4158,12 @@ usageAnalysis: undefined
 				});
 			}).catch(err => {
 				this.error(`Failed to load usage analysis stats: ${err}`);
+				if (this.analysisPanel && this.analysisPanel === panel) {
+					void this.analysisPanel.webview.postMessage({
+						command: 'updateStatsError',
+						error: String(err),
+					});
+				}
 			});
 		}
 
