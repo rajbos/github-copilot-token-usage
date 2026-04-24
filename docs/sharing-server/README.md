@@ -29,7 +29,7 @@ needing an Azure account.
 
 ## Dashboard preview
 
-![Sharing server dashboard](dashboard-screenshot.png)
+![Sharing server dashboard](../../sharing-server/images/Sharing-server-overview.png)
 
 The web dashboard shows per-user usage summaries with time-range filters (Today /
 Last 7 Days / Last 30 Days), an editor breakdown chart, and a token usage trend graph
