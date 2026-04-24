@@ -120,13 +120,12 @@ volumes:
 ```json
 // VS Code settings — the only thing team members configure
 {
-  "copilotTokenTracker.backend.enabled": true,
-  "copilotTokenTracker.backend.backend": "sharingServer",
-  "copilotTokenTracker.backend.sharingServer.endpointUrl": "https://copilot.example.com"
+  "aiEngineeringFluency.backend.sharingServer.enabled": true,
+  "aiEngineeringFluency.backend.sharingServer.endpointUrl": "https://copilot.example.com"
 }
 ```
 
-📖 [Full sharing server documentation](sharing-server/README.md)
+📖 [Setup & configuration guide](docs/sharing-server/README.md) · [Server developer docs](sharing-server/README.md)
 
 ---
 
