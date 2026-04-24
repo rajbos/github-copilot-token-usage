@@ -2,12 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens for input and output",
   "metadata": {
-    "lastUpdated": "2026-03-30",
+    "lastUpdated": "2026-04-24",
     "sources": [
       {
         "name": "OpenAI API Pricing",
-        "url": "https://openai.com/api/pricing/",
-        "retrievedDate": "2026-03-30"
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "retrievedDate": "2026-04-24"
       },
       {
         "name": "Anthropic Claude Pricing",
@@ -127,6 +127,7 @@
     },
     "gpt-5.4": {
       "inputCostPerMillion": 2.50,
+      "cachedInputCostPerMillion": 0.25,
       "outputCostPerMillion": 15.0,
       "category": "GPT-5 models",
       "tier": "premium",
@@ -134,8 +135,9 @@
       "displayNames": ["GPT-5.4"]
     },
     "gpt-5.4-mini": {
-      "inputCostPerMillion": 0.25,
-      "outputCostPerMillion": 2.0,
+      "inputCostPerMillion": 0.75,
+      "cachedInputCostPerMillion": 0.075,
+      "outputCostPerMillion": 4.5,
       "category": "GPT-5 models",
       "tier": "standard",
       "multiplier": 0,
@@ -150,23 +152,26 @@
       "displayNames": ["GPT-4"]
     },
     "gpt-4.1": {
-      "inputCostPerMillion": 3.0,
-      "outputCostPerMillion": 12.0,
+      "inputCostPerMillion": 2.0,
+      "cachedInputCostPerMillion": 0.5,
+      "outputCostPerMillion": 8.0,
       "category": "GPT-4 models",
       "tier": "standard",
       "multiplier": 0,
       "displayNames": ["GPT-4.1"]
     },
     "gpt-4.1-mini": {
-      "inputCostPerMillion": 0.8,
-      "outputCostPerMillion": 3.2,
+      "inputCostPerMillion": 0.4,
+      "cachedInputCostPerMillion": 0.1,
+      "outputCostPerMillion": 1.6,
       "category": "GPT-4 models",
       "tier": "standard",
       "multiplier": 0
     },
     "gpt-4.1-nano": {
-      "inputCostPerMillion": 0.2,
-      "outputCostPerMillion": 0.8,
+      "inputCostPerMillion": 0.1,
+      "cachedInputCostPerMillion": 0.025,
+      "outputCostPerMillion": 0.4,
       "category": "GPT-4 models",
       "tier": "standard",
       "multiplier": 0
