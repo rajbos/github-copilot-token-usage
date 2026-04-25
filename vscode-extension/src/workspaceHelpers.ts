@@ -453,9 +453,10 @@ export function parseGitRemoteUrl(gitConfigContent: string): string | undefined 
 /**
  * Check if a tool name indicates it's an MCP (Model Context Protocol) tool.
  * MCP tools are identified by names starting with "mcp." or "mcp_"
+ * Claude Code uses double-underscore format: "mcp__server__tool"
  */
 export function isMcpTool(toolName: string): boolean {
-	return toolName.startsWith('mcp.') || toolName.startsWith('mcp_');
+	return toolName.startsWith('mcp.') || toolName.startsWith('mcp_') || toolName.startsWith('mcp__');
 }
 
 /**
@@ -476,6 +477,7 @@ export function normalizeMcpToolName(toolName: string): string {
 /**
  * Extract server name from an MCP tool name.
  * MCP tool names follow the format: mcp.server.tool or mcp_server_tool
+ * Claude Code uses double-underscore format: mcp__server__tool
  * For example: "mcp.io.github.git.assign_copilot_to_issue" → "GitHub MCP"
  * Uses the display name from toolNames.json (the part before the colon).
  * Falls back to extracting the second segment if no mapping exists.
@@ -496,7 +498,16 @@ export function extractMcpServerName(toolName: string, toolNameMap: { [key: stri
 		return 'GitHub MCP (Remote)';
 	}
 
-	// Generic fallback: extract from tool name structure
+	// Claude Code double-underscore format: mcp__server__tool
+	// e.g. "mcp__github__create_issue" → "github"
+	if (toolName.startsWith('mcp__')) {
+		const withoutPrefix = toolName.slice('mcp__'.length);
+		const serverEnd = withoutPrefix.indexOf('__');
+		const serverName = serverEnd >= 0 ? withoutPrefix.slice(0, serverEnd) : withoutPrefix;
+		return serverName || 'unknown';
+	}
+
+	// Generic fallback: extract from tool name structure (mcp_ or mcp.)
 	const withoutPrefix = toolName.replace(/^mcp[._]/, '');
 	const parts = withoutPrefix.split(/[._]/);
 	return parts[0] || 'unknown';

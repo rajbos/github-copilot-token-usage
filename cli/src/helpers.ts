@@ -16,9 +16,10 @@ import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claude
 import { MistralVibeDataAccess } from '../../vscode-extension/src/mistralvibe';
 import type { IEcosystemAdapter } from '../../vscode-extension/src/ecosystemAdapter';
 import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter, CopilotChatAdapter, CopilotCliAdapter } from '../../vscode-extension/src/adapters';
+import { isMcpTool, extractMcpServerName } from '../../vscode-extension/src/workspaceHelpers';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
-import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod } from '../../vscode-extension/src/types';
+import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod, WorkspaceCustomizationMatrix } from '../../vscode-extension/src/types';
 import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../vscode-extension/src/usageAnalysis';
 import { createEmptyContextRefs } from '../../vscode-extension/src/tokenEstimation';
 import * as vscodeStub from './vscode-stub';
@@ -95,7 +96,12 @@ const _ecosystems: IEcosystemAdapter[] = [
 	new CrushAdapter(_crushInstance),
 	new VisualStudioAdapter(_visualStudioInstance, (t, m) => estimateTokensFromText(t, m ?? 'gpt-4', tokenEstimators)),
 	new ContinueAdapter(_continueInstance),
-	new ClaudeDesktopAdapter(_claudeDesktopCoworkInstance),
+	new ClaudeDesktopAdapter(
+		_claudeDesktopCoworkInstance,
+		isMcpTool,
+		extractMcpServerName,
+		(t, m) => estimateTokensFromText(t, m ?? 'gpt-4', tokenEstimators)
+	),
 	new ClaudeCodeAdapter(_claudeCodeInstance),
 	new MistralVibeAdapter(_mistralVibeInstance),
 	// Copilot Chat / CLI adapters: discovery-only. Their handles() returns
@@ -114,6 +120,79 @@ function createSessionDiscovery(): SessionDiscovery {
 export async function discoverSessionFiles(): Promise<string[]> {
 	const discovery = createSessionDiscovery();
 	return discovery.getCopilotSessionFiles();
+}
+
+/**
+ * Builds a WorkspaceCustomizationMatrix from session file paths.
+ *
+ * - For VS Code sessions: derives workspace folder from workspaceStorage/<hash>/workspace.json,
+ *   then checks for .github/copilot-instructions.md, agents.md, or CLAUDE.md.
+ * - For Claude Code sessions (~/.claude/projects/<hash>/): reads the JSONL to extract the
+ *   `cwd` workspace path, then checks for CLAUDE.md there.
+ */
+export async function buildCustomizationMatrix(sessionFiles: string[]): Promise<WorkspaceCustomizationMatrix | undefined> {
+	const workspacePaths = new Set<string>();
+	const claudeBasePath = path.join(os.homedir(), '.claude', 'projects');
+
+	for (const sessionFile of sessionFiles) {
+		// Claude Code session: ~/.claude/projects/<hash>/<uuid>.jsonl
+		if (sessionFile.startsWith(claudeBasePath + path.sep) || sessionFile.startsWith(claudeBasePath + '/')) {
+			try {
+				const content = await fs.promises.readFile(sessionFile, 'utf-8');
+				const lines = content.split('\n').slice(0, 30);
+				for (const line of lines) {
+					if (!line.trim()) { continue; }
+					try {
+						const event = JSON.parse(line);
+						if (event.cwd && typeof event.cwd === 'string') {
+							workspacePaths.add(event.cwd);
+							break;
+						}
+					} catch { /* skip malformed lines */ }
+				}
+			} catch { /* skip unreadable files */ }
+			continue;
+		}
+
+		// VS Code session: .../workspaceStorage/<hash>/chatSessions/<file>
+		const chatSessionsDir = path.dirname(sessionFile);
+		if (path.basename(chatSessionsDir) !== 'chatSessions') { continue; }
+		const hashDir = path.dirname(chatSessionsDir);
+		const workspaceJsonPath = path.join(hashDir, 'workspace.json');
+
+		try {
+			if (!fs.existsSync(workspaceJsonPath)) { continue; }
+			const content = JSON.parse(await fs.promises.readFile(workspaceJsonPath, 'utf-8'));
+			const folderUri: string | undefined = content.folder;
+			if (!folderUri || !folderUri.startsWith('file://')) { continue; }
+
+			let folderPath = decodeURIComponent(folderUri.replace(/^file:\/\//, ''));
+			// On Windows, file:///C:/... becomes /C:/... — strip the leading slash
+			if (/^\/[A-Za-z]:/.test(folderPath)) { folderPath = folderPath.slice(1); }
+			workspacePaths.add(folderPath);
+		} catch { /* skip unreadable workspace.json files */ }
+	}
+
+	if (workspacePaths.size === 0) { return undefined; }
+
+	let workspacesWithIssues = 0;
+	for (const wsPath of workspacePaths) {
+		try {
+			const hasInstructions = fs.existsSync(path.join(wsPath, '.github', 'copilot-instructions.md'));
+			const hasAgentsMd    = fs.existsSync(path.join(wsPath, 'agents.md'));
+			const hasClaudeMd    = fs.existsSync(path.join(wsPath, 'CLAUDE.md'));
+			if (!hasInstructions && !hasAgentsMd && !hasClaudeMd) { workspacesWithIssues++; }
+		} catch {
+			workspacesWithIssues++;
+		}
+	}
+
+	return {
+		customizationTypes: [],
+		workspaces: [],
+		totalWorkspaces: workspacePaths.size,
+		workspacesWithIssues,
+	};
 }
 
 /** Get diagnostic candidate paths info */

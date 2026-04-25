@@ -467,3 +467,24 @@ test('getRepoDisplayName: handles SSH URL with .git', () => {
         const result = getRepoDisplayName('git@github.com:owner/repo.git');
         assert.equal(result, 'owner/repo');
 });
+
+// ── Claude Code MCP double-underscore format ──────────────────────────────
+
+test('isMcpTool: mcp__ double-underscore prefix (Claude Code format) returns true', () => {
+        assert.equal(isMcpTool('mcp__github__create_issue'), true);
+        assert.equal(isMcpTool('mcp__filesystem__read_file'), true);
+});
+
+test('isMcpTool: regular tool without mcp__ prefix returns false', () => {
+        assert.equal(isMcpTool('github__create_issue'), false);
+        assert.equal(isMcpTool('__slash__review'), false);
+});
+
+test('extractMcpServerName: mcp__server__tool format extracts server name', () => {
+        assert.equal(extractMcpServerName('mcp__github__create_issue'), 'github');
+        assert.equal(extractMcpServerName('mcp__filesystem__read_file'), 'filesystem');
+});
+
+test('extractMcpServerName: mcp__server__multi__part__tool extracts only first server segment', () => {
+        assert.equal(extractMcpServerName('mcp__my_server__tool__with__parts'), 'my_server');
+});
