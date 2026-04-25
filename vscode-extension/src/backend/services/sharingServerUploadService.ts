@@ -15,6 +15,7 @@ export interface SharingServerEntry {
 	outputTokens: number;
 	interactions: number;
 	datasetId?: string;
+	fluencyMetrics?: Record<string, unknown>;
 }
 
 /** Maximum number of entries per HTTP request (matches server-side limit). */

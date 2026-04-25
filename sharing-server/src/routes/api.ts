@@ -175,6 +175,11 @@ function validateEntry(entry: unknown): string | null {
 			return `"editor" too long (max ${MAX_STRING_LENGTHS.editor})`;
 		}
 	}
+	if (e.fluencyMetrics !== undefined && e.fluencyMetrics !== null) {
+		if (typeof e.fluencyMetrics !== 'object' || Array.isArray(e.fluencyMetrics)) {
+			return '"fluencyMetrics" must be an object';
+		}
+	}
 
 	return null;
 }

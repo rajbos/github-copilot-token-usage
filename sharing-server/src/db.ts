@@ -29,6 +29,7 @@ export interface UploadRow {
 	interactions: number;
 	schema_version: number;
 	uploaded_at: string;
+	fluency_json: string | null;
 }
 
 export interface UploadEntry {
@@ -43,6 +44,7 @@ export interface UploadEntry {
 	inputTokens: number;
 	outputTokens: number;
 	interactions: number;
+	fluencyMetrics?: Record<string, unknown>;
 }
 
 let _db: DatabaseSync | undefined;
@@ -79,6 +81,7 @@ const UPLOADS_TABLE_DDL = `
 		interactions   INTEGER NOT NULL DEFAULT 0,
 		schema_version INTEGER NOT NULL DEFAULT 3,
 		uploaded_at    TEXT DEFAULT (datetime('now')),
+		fluency_json   TEXT,
 		UNIQUE(user_id, dataset_id, day, model, workspace_id, machine_id, editor)
 	)`;
 
@@ -147,6 +150,14 @@ function initSchema(db: DatabaseSync): void {
 		CREATE INDEX IF NOT EXISTS idx_uploads_user_day ON usage_uploads(user_id, day);
 		CREATE INDEX IF NOT EXISTS idx_uploads_dataset   ON usage_uploads(dataset_id, day);
 	`);
+
+	// Add fluency_json column if it doesn't exist (migration for existing DBs)
+	const cols = db
+		.prepare("PRAGMA table_info(usage_uploads)")
+		.all() as unknown as Array<{ name: string }>;
+	if (!cols.some(c => c.name === 'fluency_json')) {
+		db.exec('ALTER TABLE usage_uploads ADD COLUMN fluency_json TEXT');
+	}
 }
 
 export function upsertUser(
@@ -178,17 +189,19 @@ export function getUserByGithubId(githubId: number): UserRow | undefined {
 
 export function upsertUpload(userId: number, entry: UploadEntry): void {
 	const editor = ((entry.editor ?? '').trim() || 'VS Code').slice(0, 100);
+	const fluencyJson = entry.fluencyMetrics ? JSON.stringify(entry.fluencyMetrics) : null;
 	getDb().prepare(`
 		INSERT INTO usage_uploads
 			(user_id, dataset_id, day, model, workspace_id, workspace_name, machine_id, machine_name,
-			 editor, input_tokens, output_tokens, interactions)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 editor, input_tokens, output_tokens, interactions, fluency_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id, dataset_id, day, model, workspace_id, machine_id, editor) DO UPDATE SET
 			workspace_name = excluded.workspace_name,
 			machine_name   = excluded.machine_name,
 			input_tokens   = excluded.input_tokens,
 			output_tokens  = excluded.output_tokens,
 			interactions   = excluded.interactions,
+			fluency_json   = excluded.fluency_json,
 			uploaded_at    = datetime('now')
 	`).run(
 		userId,
@@ -203,6 +216,7 @@ export function upsertUpload(userId: number, entry: UploadEntry): void {
 		entry.inputTokens,
 		entry.outputTokens,
 		entry.interactions,
+		fluencyJson,
 	);
 }
 

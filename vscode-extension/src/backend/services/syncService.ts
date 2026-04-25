@@ -1414,6 +1414,7 @@ export class SyncService {
 				interactions: value.interactions,
 				datasetId: settings.datasetId,
 				editor: key.editor ?? this.normalizeEditorName(vscode.env.appName),
+				fluencyMetrics: value.fluencyMetrics as Record<string, unknown> | undefined,
 			});
 		}
 
