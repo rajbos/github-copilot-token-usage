@@ -123,6 +123,15 @@ export interface ChartDataPayload {
   periodsReady?: boolean;
 }
 
+/** Per-UTC-day token/interaction breakdown for a single session. Used for accurate daily stats. */
+export interface DailyRollupEntry {
+  tokens: number;
+  actualTokens: number;
+  thinkingTokens: number;
+  interactions: number;
+  modelUsage: ModelUsage;
+}
+
 export interface SessionFileCache {
   tokens: number;
   interactions: number;
@@ -137,6 +146,8 @@ export interface SessionFileCache {
   workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
   thinkingTokens?: number; // Estimated thinking/reasoning tokens
   actualTokens?: number; // Actual token count from LLM API usage data (when available)
+  /** Per-UTC-day token/interaction breakdown (keyed by YYYY-MM-DD UTC). Used for consistent daily stats. */
+  dailyRollups?: { [utcDayKey: string]: DailyRollupEntry };
 }
 
 // Local copy of customization file entry type (mirrors webview/shared/contextRefUtils.ts)

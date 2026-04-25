@@ -120,22 +120,15 @@ export class SyncService {
 	// ── Cross-instance file lock ────────────────────────────────────────
 
 	/**
-	 * Path for the sync lock file.  Uses globalStorageUri which is already
-	 * scoped per VS Code edition (stable vs insiders).
-	 */
-	private getSyncLockPath(): string | undefined {
-		const ctx = this.deps.context;
-		if (!ctx) { return undefined; }
-		return path.join(ctx.globalStorageUri.fsPath, 'backend_sync.lock');
-	}
-
-	/**
 	 * Try to acquire an exclusive file lock so only one VS Code window
 	 * can run a backend sync at a time.
 	 */
-	private async acquireSyncLock(): Promise<boolean> {
-		const lockPath = this.getSyncLockPath();
-		if (!lockPath) { return true; } // No context → allow (tests)
+	private async acquireSyncLock(backend?: string): Promise<boolean> {
+		const ctx = this.deps.context;
+		if (!ctx) { return true; } // No context → allow (tests)
+		// Use a backend-specific lock so Azure and sharingServer syncs don't block each other.
+		const suffix = backend === 'sharingServer' ? '_sharingserver' : '';
+		const lockPath = path.join(ctx.globalStorageUri.fsPath, `backend_sync${suffix}.lock`);
 		try {
 			await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
 			const fd = await fs.promises.open(lockPath, 'wx');
@@ -179,9 +172,11 @@ export class SyncService {
 	/**
 	 * Release the sync lock, but only if we own it.
 	 */
-	private async releaseSyncLock(): Promise<void> {
-		const lockPath = this.getSyncLockPath();
-		if (!lockPath) { return; }
+	private async releaseSyncLock(backend?: string): Promise<void> {
+		const ctx = this.deps.context;
+		if (!ctx) { return; }
+		const suffix = backend === 'sharingServer' ? '_sharingserver' : '';
+		const lockPath = path.join(ctx.globalStorageUri.fsPath, `backend_sync${suffix}.lock`);
 		try {
 			const content = await fs.promises.readFile(lockPath, 'utf-8');
 			const lock = JSON.parse(content);
@@ -318,9 +313,57 @@ export class SyncService {
 				this.deps.warn(`Backend sync: invalid interactions count in cached data for ${sessionFile}`);
 				return false;
 			}
-			
-			// Parse the session file to get actual request timestamps and create per-day rollups
-			// This ensures accurate day assignment while using cached token counts
+
+			// Fast path: use pre-computed dailyRollups (same data as extension stats — avoids re-parsing the file).
+			// When present, token attribution is already distributed per-UTC-day and per-model, so results
+			// will exactly match what the extension shows locally.
+			if (cachedData.dailyRollups && Object.keys(cachedData.dailyRollups).length > 0) {
+				const totalSessionInteractions = cachedData.interactions || 1;
+				const dayKeys = Object.keys(cachedData.dailyRollups).sort();
+
+				for (const dayKey of dayKeys) {
+					const dayEntry = cachedData.dailyRollups[dayKey];
+					const dayStartMs = new Date(dayKey + 'T00:00:00Z').getTime();
+					if (dayStartMs < startMs) { continue; }
+
+					const modelEntries = Object.entries(dayEntry.modelUsage).filter(([, mu]) =>
+						mu && ((mu.inputTokens || 0) > 0 || (mu.outputTokens || 0) > 0)
+					);
+					if (modelEntries.length === 0) { continue; }
+
+					// Distribute this day's interactions across models proportionally by output token share.
+					const totalDayOutput = modelEntries.reduce((s, [, mu]) => s + (mu.outputTokens || 0), 0);
+					const dayFraction = totalSessionInteractions > 0 ? dayEntry.interactions / totalSessionInteractions : 1;
+					const fluencyMetrics = this.extractFluencyMetricsFromCache(cachedData, dayFraction);
+
+					let remainingInteractions = dayEntry.interactions;
+					for (let i = 0; i < modelEntries.length; i++) {
+						const [model, mu] = modelEntries[i];
+						const isLast = i === modelEntries.length - 1;
+						const share = (!isLast && totalDayOutput > 0) ? (mu.outputTokens || 0) / totalDayOutput : 1;
+						const modelInteractions = isLast
+							? remainingInteractions
+							: Math.min(Math.round(dayEntry.interactions * share), remainingInteractions);
+						remainingInteractions -= modelInteractions;
+
+						const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor };
+						upsertDailyRollup(rollups, key, {
+							inputTokens: mu.inputTokens || 0,
+							outputTokens: mu.outputTokens || 0,
+							interactions: Math.max(0, modelInteractions),
+							fluencyMetrics,
+						});
+					}
+				}
+
+				if (dayKeys.length > 1) {
+					this.deps.log(`Backend sync: file ${sessionFile.split(/[/\\]/).pop()} spans ${dayKeys.length} days (dailyRollups fast path): ${dayKeys.join(', ')}`);
+				}
+				return true;
+			}
+
+			// Slow path: parse the session file to get actual request timestamps and create per-day rollups.
+			// Used when dailyRollups is absent (old cache entries before CACHE_VERSION bump, ecosystem sessions).
 			const content = await fs.promises.readFile(sessionFile, 'utf8');
 			
 			// Map to track per-day per-model interactions for proper distribution
@@ -1149,7 +1192,7 @@ export class SyncService {
 			}
 
 			// Acquire cross-instance file lock to prevent concurrent syncs from multiple VS Code windows
-			const lockAcquired = await this.acquireSyncLock();
+			const lockAcquired = await this.acquireSyncLock(settings.backend);
 			if (!lockAcquired) {
 				this.deps.log('Backend sync: skipping (another VS Code window is currently syncing)');
 				return;
@@ -1346,7 +1389,7 @@ export class SyncService {
 				this.deps.warn(`Backend sync: ${safeStringifyError(e, secretsToRedact)}`);
 			} finally {
 				this.backendSyncInProgress = false;
-				await this.releaseSyncLock();
+				await this.releaseSyncLock(settings.backend);
 			}
 		});
 		return this.syncQueue;

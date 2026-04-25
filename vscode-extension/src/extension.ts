@@ -34,6 +34,7 @@ import type {
   DailyTokenStats,
   ChartDataPayload,
   SessionFileCache,
+  DailyRollupEntry,
   CustomizationFileEntry,
   SessionUsageAnalysis,
   ToolCallUsage,
@@ -165,7 +166,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 41; // Add 'cli' mode to ModeUsage for CLI-based tools
+	private static readonly CACHE_VERSION = 42; // Use UTC-based daily rollups for consistent token attribution
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1508,13 +1509,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<DetailedStats> {
 		const now = new Date();
-		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-		// Calculate Previous Month boundaries
-		const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); // Last day of previous month
-		const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
-		// Calculate last 30 days boundary (midnight, so numbers don't shift during a refresh)
-		const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+		// UTC-based date keys for consistent daily attribution (matching server-side)
+		const todayUtcKey = now.toISOString().slice(0, 10);
+		const monthUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+		const lastMonthLastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+		const lastMonthUtcEndKey = lastMonthLastDay.toISOString().slice(0, 10);
+		const lastMonthUtcStartKey = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).toISOString().slice(0, 10);
+		const last30DaysUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30));
+		const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
+		const last30DaysStartMs = last30DaysUtcStart.getTime();
 
 		const todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
@@ -1523,6 +1526,21 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Also compute daily stats for the chart as a byproduct (avoids a second full file scan)
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
+
+		// Helper to merge model usage into a target map
+		const addModelUsage = (target: ModelUsage, source: ModelUsage) => {
+			for (const [model, usage] of Object.entries(source)) {
+				if (!target[model]) { target[model] = { inputTokens: 0, outputTokens: 0 }; }
+				target[model].inputTokens += usage.inputTokens;
+				target[model].outputTokens += usage.outputTokens;
+			}
+		};
+		// Helper to add editor usage to a period stat
+		const addEditorUsage = (target: EditorUsage, editorType: string, tokens: number) => {
+			if (!target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
+			target[editorType].tokens += tokens;
+			target[editorType].sessions += 1;
+		};
 
 		try {
 			// Clean expired cache entries
@@ -1546,7 +1564,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const fileStats = await this.statSessionFile(sessionFile);
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
-				if (mtime < last30DaysStart.getTime()) { return null; }
+				if (mtime < last30DaysStartMs) { return null; }
 				const cachedData = this.getCachedSessionData(sessionFile);
 				const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
@@ -1560,165 +1578,157 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const { sessionFile, sessionData, details, mtime, wasCached } = r;
 
 				try {
-					// Extract remaining data from the cached session
-					const interactions = sessionData.interactions;
-					const estimatedTokens = sessionData.tokens; // Text-based estimate (user content only)
-					const actualTokens = sessionData.actualTokens || 0; // Actual LLM API tokens (when available)
-					const tokens = actualTokens > 0 ? actualTokens : estimatedTokens; // Best available
-					const modelUsage = sessionData.modelUsage;
 					const editorType = this.getEditorTypeFromPath(sessionFile);
-
-					// For date filtering, get lastInteraction from session details
-					const lastActivity = details.lastInteraction
-						? new Date(details.lastInteraction)
-						: new Date(details.modified);
+					const repository = sessionData.repository || 'Unknown';
 
 					// Update cache statistics (do this once per file)
-					if (wasCached) {
-						cacheHits++;
-					} else {
-						cacheMisses++;
-					}
+					if (wasCached) { cacheHits++; } else { cacheMisses++; }
 
-					// Check if activity is within last 30 days
-					if (lastActivity >= last30DaysStart) {
+					if (sessionData.dailyRollups && Object.keys(sessionData.dailyRollups).length > 0) {
+						// Per-UTC-day rollup path: distribute tokens accurately across days
+						let addedToLast30Days = false;
+						let addedToMonth = false;
+						let addedToLastMonth = false;
+						let addedToToday = false;
+
+						for (const [dayKey, dayRollup] of Object.entries(sessionData.dailyRollups)) {
+							if (dayKey < last30DaysUtcStartKey) { continue; }
+
+							const dayTokens = dayRollup.actualTokens > 0 ? dayRollup.actualTokens : dayRollup.tokens;
+							const dayInteractions = dayRollup.interactions;
+
+							// Accumulate daily stats for the chart view
+							if (!dailyStatsMap.has(dayKey)) {
+								dailyStatsMap.set(dayKey, { date: dayKey, tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
+							}
+							const dailyEntry = dailyStatsMap.get(dayKey)!;
+							dailyEntry.tokens += dayTokens;
+							dailyEntry.sessions += 1;
+							dailyEntry.interactions += dayInteractions;
+							if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+							dailyEntry.editorUsage[editorType].tokens += dayTokens;
+							dailyEntry.editorUsage[editorType].sessions += 1;
+							if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+							dailyEntry.repositoryUsage[repository].tokens += dayTokens;
+							dailyEntry.repositoryUsage[repository].sessions += 1;
+							addModelUsage(dailyEntry.modelUsage, dayRollup.modelUsage);
+
+							// last30Days accumulation
+							last30DaysStats.tokens += dayTokens;
+							last30DaysStats.estimatedTokens += dayRollup.tokens;
+							last30DaysStats.actualTokens += dayRollup.actualTokens;
+							last30DaysStats.thinkingTokens += dayRollup.thinkingTokens;
+							last30DaysStats.interactions += dayInteractions;
+							if (!addedToLast30Days) { last30DaysStats.sessions += 1; addedToLast30Days = true; }
+							addEditorUsage(last30DaysStats.editorUsage, editorType, dayTokens);
+							addModelUsage(last30DaysStats.modelUsage, dayRollup.modelUsage);
+
+							if (dayKey >= monthUtcStartKey) {
+								// This month
+								monthStats.tokens += dayTokens;
+								monthStats.estimatedTokens += dayRollup.tokens;
+								monthStats.actualTokens += dayRollup.actualTokens;
+								monthStats.thinkingTokens += dayRollup.thinkingTokens;
+								monthStats.interactions += dayInteractions;
+								if (!addedToMonth) { monthStats.sessions += 1; addedToMonth = true; }
+								addEditorUsage(monthStats.editorUsage, editorType, dayTokens);
+								addModelUsage(monthStats.modelUsage, dayRollup.modelUsage);
+
+								if (dayKey === todayUtcKey) {
+									todayStats.tokens += dayTokens;
+									todayStats.estimatedTokens += dayRollup.tokens;
+									todayStats.actualTokens += dayRollup.actualTokens;
+									todayStats.thinkingTokens += dayRollup.thinkingTokens;
+									todayStats.interactions += dayInteractions;
+									if (!addedToToday) { todayStats.sessions += 1; addedToToday = true; }
+									addEditorUsage(todayStats.editorUsage, editorType, dayTokens);
+									addModelUsage(todayStats.modelUsage, dayRollup.modelUsage);
+								}
+							} else if (dayKey >= lastMonthUtcStartKey && dayKey <= lastMonthUtcEndKey) {
+								// Previous calendar month
+								lastMonthStats.tokens += dayTokens;
+								lastMonthStats.estimatedTokens += dayRollup.tokens;
+								lastMonthStats.actualTokens += dayRollup.actualTokens;
+								lastMonthStats.thinkingTokens += dayRollup.thinkingTokens;
+								lastMonthStats.interactions += dayInteractions;
+								if (!addedToLastMonth) { lastMonthStats.sessions += 1; addedToLastMonth = true; }
+								addEditorUsage(lastMonthStats.editorUsage, editorType, dayTokens);
+								addModelUsage(lastMonthStats.modelUsage, dayRollup.modelUsage);
+							}
+						}
+
+						if (!addedToLast30Days) { skippedFiles++; }
+					} else {
+						// Fallback: session-level attribution using UTC boundaries
+						const interactions = sessionData.interactions;
+						const estimatedTokens = sessionData.tokens;
+						const actualTokens = sessionData.actualTokens || 0;
+						const tokens = actualTokens > 0 ? actualTokens : estimatedTokens;
+						const modelUsage = sessionData.modelUsage;
+
+						const lastInteractionStr = sessionData.lastInteraction || details.lastInteraction;
+						const lastActivity = lastInteractionStr ? new Date(lastInteractionStr) : new Date(mtime);
+						const lastActivityUtcKey = lastActivity.toISOString().slice(0, 10);
+
+						if (lastActivityUtcKey < last30DaysUtcStartKey) { skippedFiles++; continue; }
+
+						// Accumulate daily stats
+						const repository2 = sessionData.repository || 'Unknown';
+						if (!dailyStatsMap.has(lastActivityUtcKey)) {
+							dailyStatsMap.set(lastActivityUtcKey, { date: lastActivityUtcKey, tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
+						}
+						const dailyEntry = dailyStatsMap.get(lastActivityUtcKey)!;
+						dailyEntry.tokens += tokens;
+						dailyEntry.sessions += 1;
+						dailyEntry.interactions += interactions;
+						if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+						dailyEntry.editorUsage[editorType].tokens += tokens;
+						dailyEntry.editorUsage[editorType].sessions += 1;
+						if (!dailyEntry.repositoryUsage[repository2]) { dailyEntry.repositoryUsage[repository2] = { tokens: 0, sessions: 0 }; }
+						dailyEntry.repositoryUsage[repository2].tokens += tokens;
+						dailyEntry.repositoryUsage[repository2].sessions += 1;
+						addModelUsage(dailyEntry.modelUsage, modelUsage);
+
+						// last30Days
 						last30DaysStats.tokens += tokens;
 						last30DaysStats.estimatedTokens += estimatedTokens;
 						last30DaysStats.actualTokens += actualTokens;
 						last30DaysStats.thinkingTokens += (sessionData.thinkingTokens || 0);
 						last30DaysStats.sessions += 1;
 						last30DaysStats.interactions += interactions;
+						addEditorUsage(last30DaysStats.editorUsage, editorType, tokens);
+						addModelUsage(last30DaysStats.modelUsage, modelUsage);
 
-						// Add editor usage to last 30 days stats
-						if (!last30DaysStats.editorUsage[editorType]) {
-							last30DaysStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-						}
-						last30DaysStats.editorUsage[editorType].tokens += tokens;
-						last30DaysStats.editorUsage[editorType].sessions += 1;
+						if (lastActivityUtcKey >= monthUtcStartKey) {
+							monthStats.tokens += tokens;
+							monthStats.estimatedTokens += estimatedTokens;
+							monthStats.actualTokens += actualTokens;
+							monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+							monthStats.sessions += 1;
+							monthStats.interactions += interactions;
+							addEditorUsage(monthStats.editorUsage, editorType, tokens);
+							addModelUsage(monthStats.modelUsage, modelUsage);
 
-						// Add model usage to last 30 days stats
-						for (const [model, usage] of Object.entries(modelUsage)) {
-							if (!last30DaysStats.modelUsage[model]) {
-								last30DaysStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							if (lastActivityUtcKey === todayUtcKey) {
+								todayStats.tokens += tokens;
+								todayStats.estimatedTokens += estimatedTokens;
+								todayStats.actualTokens += actualTokens;
+								todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+								todayStats.sessions += 1;
+								todayStats.interactions += interactions;
+								addEditorUsage(todayStats.editorUsage, editorType, tokens);
+								addModelUsage(todayStats.modelUsage, modelUsage);
 							}
-							last30DaysStats.modelUsage[model].inputTokens += usage.inputTokens;
-							last30DaysStats.modelUsage[model].outputTokens += usage.outputTokens;
+						} else if (lastActivityUtcKey >= lastMonthUtcStartKey && lastActivityUtcKey <= lastMonthUtcEndKey) {
+							lastMonthStats.tokens += tokens;
+							lastMonthStats.estimatedTokens += estimatedTokens;
+							lastMonthStats.actualTokens += actualTokens;
+							lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+							lastMonthStats.sessions += 1;
+							lastMonthStats.interactions += interactions;
+							addEditorUsage(lastMonthStats.editorUsage, editorType, tokens);
+							addModelUsage(lastMonthStats.modelUsage, modelUsage);
 						}
-
-						// Accumulate daily stats for the chart view
-						const dateKey = this.formatDateKey(lastActivity);
-						const repository = sessionData.repository || 'Unknown';
-						if (!dailyStatsMap.has(dateKey)) {
-							dailyStatsMap.set(dateKey, {
-								date: dateKey,
-								tokens: 0,
-								sessions: 0,
-								interactions: 0,
-								modelUsage: {},
-								editorUsage: {},
-								repositoryUsage: {}
-							});
-						}
-						const dailyEntry = dailyStatsMap.get(dateKey)!;
-						dailyEntry.tokens += tokens;
-						dailyEntry.sessions += 1;
-						dailyEntry.interactions += interactions;
-						if (!dailyEntry.editorUsage[editorType]) {
-							dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-						}
-						dailyEntry.editorUsage[editorType].tokens += tokens;
-						dailyEntry.editorUsage[editorType].sessions += 1;
-						if (!dailyEntry.repositoryUsage[repository]) {
-							dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
-						}
-						dailyEntry.repositoryUsage[repository].tokens += tokens;
-						dailyEntry.repositoryUsage[repository].sessions += 1;
-						for (const [model, usage] of Object.entries(modelUsage)) {
-							if (!dailyEntry.modelUsage[model]) {
-								dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-							}
-							dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
-							dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
-						}
-					}
-
-					if (lastActivity >= monthStart) {
-						monthStats.tokens += tokens;
-						monthStats.estimatedTokens += estimatedTokens;
-						monthStats.actualTokens += actualTokens;
-						monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-						monthStats.sessions += 1;
-						monthStats.interactions += interactions;
-
-						// Add editor usage to month stats
-						if (!monthStats.editorUsage[editorType]) {
-							monthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-						}
-						monthStats.editorUsage[editorType].tokens += tokens;
-						monthStats.editorUsage[editorType].sessions += 1;
-
-						// Add model usage to month stats
-						for (const [model, usage] of Object.entries(modelUsage)) {
-							if (!monthStats.modelUsage[model]) {
-								monthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-							}
-							monthStats.modelUsage[model].inputTokens += usage.inputTokens;
-							monthStats.modelUsage[model].outputTokens += usage.outputTokens;
-						}
-
-						if (lastActivity >= todayStart) {
-							todayStats.tokens += tokens;
-							todayStats.estimatedTokens += estimatedTokens;
-							todayStats.actualTokens += actualTokens;
-							todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-							todayStats.sessions += 1;
-							todayStats.interactions += interactions;
-
-							// Add editor usage to today stats
-							if (!todayStats.editorUsage[editorType]) {
-								todayStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-							}
-							todayStats.editorUsage[editorType].tokens += tokens;
-							todayStats.editorUsage[editorType].sessions += 1;
-
-							// Add model usage to today stats
-							for (const [model, usage] of Object.entries(modelUsage)) {
-								if (!todayStats.modelUsage[model]) {
-									todayStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-								}
-								todayStats.modelUsage[model].inputTokens += usage.inputTokens;
-								todayStats.modelUsage[model].outputTokens += usage.outputTokens;
-							}
-						}
-					}
-					else if (lastActivity >= lastMonthStart && lastActivity <= lastMonthEnd) {
-						// Session is from Previous Month - only track lastMonth stats
-						lastMonthStats.tokens += tokens;
-						lastMonthStats.estimatedTokens += estimatedTokens;
-						lastMonthStats.actualTokens += actualTokens;
-						lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-						lastMonthStats.sessions += 1;
-						lastMonthStats.interactions += interactions;
-
-						// Add editor usage to Previous Month stats
-						if (!lastMonthStats.editorUsage[editorType]) {
-							lastMonthStats.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-						}
-						lastMonthStats.editorUsage[editorType].tokens += tokens;
-						lastMonthStats.editorUsage[editorType].sessions += 1;
-
-						// Add model usage to Previous Month stats
-						for (const [model, usage] of Object.entries(modelUsage)) {
-							if (!lastMonthStats.modelUsage[model]) {
-								lastMonthStats.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-							}
-							lastMonthStats.modelUsage[model].inputTokens += usage.inputTokens;
-							lastMonthStats.modelUsage[model].outputTokens += usage.outputTokens;
-						}
-					}
-					else {
-						// Session is too old (no activity in last 30 days), skip it
-						skippedFiles++;
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
@@ -1736,12 +1746,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		// Finalize daily stats: fill in missing days with zero values
-		const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const thirtyDaysAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30));
+		const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 		const existingDates = new Set(dailyStatsMap.keys());
 		const fillDate = new Date(thirtyDaysAgo);
-		while (fillDate <= today) {
-			const dateKey = this.formatDateKey(fillDate);
+		while (fillDate <= todayDate) {
+			const dateKey = fillDate.toISOString().slice(0, 10);
 			if (!existingDates.has(dateKey)) {
 				dailyStatsMap.set(dateKey, {
 					date: dateKey,
@@ -1753,7 +1763,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					repositoryUsage: {}
 				});
 			}
-			fillDate.setDate(fillDate.getDate() + 1);
+			fillDate.setUTCDate(fillDate.getUTCDate() + 1);
 		}
 		this.lastDailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -1840,7 +1850,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private formatDateKey(date: Date): string {
-		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+		return date.toISOString().slice(0, 10); // UTC-based YYYY-MM-DD key
 	}
 
 	/**
@@ -1878,12 +1888,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/** Compute daily token stats for up to `daysBack` days, using the same token preference
-	 *  (actualTokens > estimatedTokens) and date assignment (lastInteraction || mtime) as
-	 *  calculateDetailedStats so all chart period views are consistent. Stores the result in
+	 *  (actualTokens > estimatedTokens) and UTC date assignment as calculateDetailedStats
+	 *  so all chart period views are consistent. Stores the result in
 	 *  `lastFullDailyStats` and returns it. Zero-fill is handled per-period in buildChartData. */
 	private async calculateDailyStats(daysBack = 365): Promise<DailyTokenStats[]> {
 		const now = new Date();
-		const cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack);
+		const cutoffUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysBack));
+		const cutoffUtcStartKey = cutoffUtcStart.toISOString().slice(0, 10);
+		const cutoffMs = cutoffUtcStart.getTime();
 
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
 
@@ -1895,9 +1907,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const fileStats = await this.statSessionFile(sessionFile);
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
-				if (mtime < cutoffDate.getTime()) { return null; }
-				// getSessionFileDataCached already stores lastInteraction in its cache entry;
-				// calling getSessionFileDetails() would be a redundant second stat + cache lookup.
+				if (mtime < cutoffMs) { return null; }
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 				return { sessionFile, sessionData, mtime };
 			});
@@ -1906,57 +1916,66 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (!r) { continue; }
 				const { sessionFile, sessionData, mtime } = r;
 				try {
-					// Prefer actualTokens when available (same as calculateDetailedStats)
-					const estimatedTokens = sessionData.tokens;
-					const actualTokens = sessionData.actualTokens || 0;
-					const tokens = actualTokens > 0 ? actualTokens : estimatedTokens;
-
-					const interactions = sessionData.interactions;
-					const modelUsage = sessionData.modelUsage;
 					const editorType = this.getEditorTypeFromPath(sessionFile);
 					const repository = sessionData.repository || 'Unknown';
 
-					// Use lastInteraction for date (same as calculateDetailedStats), falling back to mtime
-					const lastActivity = sessionData.lastInteraction
-						? new Date(sessionData.lastInteraction)
-						: new Date(mtime);
-					const dateKey = this.formatDateKey(lastActivity);
+					if (sessionData.dailyRollups && Object.keys(sessionData.dailyRollups).length > 0) {
+						// Per-UTC-day rollup path
+						for (const [dayKey, dayRollup] of Object.entries(sessionData.dailyRollups)) {
+							if (dayKey < cutoffUtcStartKey) { continue; }
+							const dayTokens = dayRollup.actualTokens > 0 ? dayRollup.actualTokens : dayRollup.tokens;
 
-					if (!dailyStatsMap.has(dateKey)) {
-						dailyStatsMap.set(dateKey, {
-							date: dateKey,
-							tokens: 0,
-							sessions: 0,
-							interactions: 0,
-							modelUsage: {},
-							editorUsage: {},
-							repositoryUsage: {}
-						});
-					}
-
-					const dailyEntry = dailyStatsMap.get(dateKey)!;
-					dailyEntry.tokens += tokens;
-					dailyEntry.sessions += 1;
-					dailyEntry.interactions += interactions;
-
-					if (!dailyEntry.editorUsage[editorType]) {
-						dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 };
-					}
-					dailyEntry.editorUsage[editorType].tokens += tokens;
-					dailyEntry.editorUsage[editorType].sessions += 1;
-
-					if (!dailyEntry.repositoryUsage[repository]) {
-						dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 };
-					}
-					dailyEntry.repositoryUsage[repository].tokens += tokens;
-					dailyEntry.repositoryUsage[repository].sessions += 1;
-
-					for (const [model, usage] of Object.entries(modelUsage)) {
-						if (!dailyEntry.modelUsage[model]) {
-							dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+							if (!dailyStatsMap.has(dayKey)) {
+								dailyStatsMap.set(dayKey, { date: dayKey, tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
+							}
+							const dailyEntry = dailyStatsMap.get(dayKey)!;
+							dailyEntry.tokens += dayTokens;
+							dailyEntry.sessions += 1;
+							dailyEntry.interactions += dayRollup.interactions;
+							if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+							dailyEntry.editorUsage[editorType].tokens += dayTokens;
+							dailyEntry.editorUsage[editorType].sessions += 1;
+							if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+							dailyEntry.repositoryUsage[repository].tokens += dayTokens;
+							dailyEntry.repositoryUsage[repository].sessions += 1;
+							for (const [model, usage] of Object.entries(dayRollup.modelUsage)) {
+								if (!dailyEntry.modelUsage[model]) { dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
+								dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
+								dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
+							}
 						}
-						dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
-						dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
+					} else {
+						// Fallback: session-level attribution
+						const estimatedTokens = sessionData.tokens;
+						const actualTokens = sessionData.actualTokens || 0;
+						const tokens = actualTokens > 0 ? actualTokens : estimatedTokens;
+						const interactions = sessionData.interactions;
+						const modelUsage = sessionData.modelUsage;
+
+						const lastActivity = sessionData.lastInteraction
+							? new Date(sessionData.lastInteraction)
+							: new Date(mtime);
+						const dateKey = lastActivity.toISOString().slice(0, 10);
+						if (dateKey < cutoffUtcStartKey) { continue; }
+
+						if (!dailyStatsMap.has(dateKey)) {
+							dailyStatsMap.set(dateKey, { date: dateKey, tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
+						}
+						const dailyEntry = dailyStatsMap.get(dateKey)!;
+						dailyEntry.tokens += tokens;
+						dailyEntry.sessions += 1;
+						dailyEntry.interactions += interactions;
+						if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+						dailyEntry.editorUsage[editorType].tokens += tokens;
+						dailyEntry.editorUsage[editorType].sessions += 1;
+						if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+						dailyEntry.repositoryUsage[repository].tokens += tokens;
+						dailyEntry.repositoryUsage[repository].sessions += 1;
+						for (const [model, usage] of Object.entries(modelUsage)) {
+							if (!dailyEntry.modelUsage[model]) { dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
+							dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
+							dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
+						}
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
@@ -2016,9 +2035,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 
 		const now = new Date();
-		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		// UTC-based day keys for consistent period boundaries (matching server-side)
+		const todayUtcKey = now.toISOString().slice(0, 10);
+		const last30DaysUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30)).toISOString().slice(0, 10);
+		const monthUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+		const last30DaysStartMs = new Date(last30DaysUtcStartKey).getTime();
 
 		this.log('🔍 [Usage Analysis] Starting calculation...');
 		this._cacheHits = 0; // Reset cache hit counter
@@ -2130,7 +2151,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const fileStats = await this.statSessionFile(sessionFile);
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
-				if (mtime < last30DaysStart.getTime()) { return null; }
+				if (mtime < last30DaysStartMs) { return null; }
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 				return { sessionFile, sessionData, mtime };
 			});
@@ -2194,14 +2215,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 							continue;
 						}
 
-						// Derive lastActivity from session content timestamp (not mtime) to avoid
-						// date mis-classification when VS Code writes the file after midnight.
-						const lastActivity = sessionData.lastInteraction
-							? new Date(sessionData.lastInteraction)
-							: new Date(mtime);
+						// Derive lastActivityUtcKey using dailyRollups if available, else lastInteraction
+						let lastActivityUtcKey: string;
+						if (sessionData.dailyRollups && Object.keys(sessionData.dailyRollups).length > 0) {
+							// Use the most recent day in the rollups
+							lastActivityUtcKey = Object.keys(sessionData.dailyRollups).sort().pop()!;
+						} else {
+							const lastActivity = sessionData.lastInteraction
+								? new Date(sessionData.lastInteraction)
+								: new Date(mtime);
+							lastActivityUtcKey = lastActivity.toISOString().slice(0, 10);
+						}
 
 						// Add to last 30 days stats
-						if (lastActivity < last30DaysStart) {
+						if (lastActivityUtcKey < last30DaysUtcStartKey) {
 							processed++;
 							continue;
 						}
@@ -2240,13 +2267,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 						}
 
 						// Add to month stats if activity falls in this calendar month
-						if (lastActivity >= monthStart) {
+						if (lastActivityUtcKey >= monthUtcStartKey) {
 							monthStats.sessions++;
 							this.mergeUsageAnalysis(monthStats, analysis);
 						}
 
 						// Add to today stats if activity falls today
-						if (lastActivity >= todayStart) {
+						if (lastActivityUtcKey === todayUtcKey) {
 							todayStats.sessions++;
 							this.mergeUsageAnalysis(todayStats, analysis);
 						}
@@ -2618,19 +2645,25 @@ class CopilotTokenTracker implements vscode.Disposable {
 		title: string | undefined;
 		firstInteraction: string | null;
 		lastInteraction: string | null;
+		dailyInteractions: { [utcDayKey: string]: number };
 	}> {
 		let title: string | undefined;
 		const timestamps: number[] = [];
+		// Request-level timestamps (excludes session creationDate) for per-day interaction counts
+		const requestTimestamps: number[] = [];
 
 		try {
 			const eco = this.findEcosystem(sessionFile);
-			if (eco) { return eco.getMeta(sessionFile); }
+			if (eco) {
+				const meta = await eco.getMeta(sessionFile);
+				return { ...meta, dailyInteractions: {} };
+			}
 
 			const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
 			// Check if this is a UUID-only file (new Copilot CLI format)
 			if (_isUuidPointerFile(fileContent)) {
-				return { title, firstInteraction: null, lastInteraction: null };
+				return { title, firstInteraction: null, lastInteraction: null, dailyInteractions: {} };
 			}
 
 			const isJsonlContent = sessionFile.endsWith('.jsonl') || _isJsonlContent(fileContent);
@@ -2646,7 +2679,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 						// Handle Copilot CLI format
 						if (event.type === 'user.message') {
 							const ts = event.timestamp || event.ts || event.data?.timestamp;
-							if (ts) { timestamps.push(new Date(ts).getTime()); }
+							if (ts) {
+								const ms = new Date(ts).getTime();
+								timestamps.push(ms);
+								requestTimestamps.push(ms);
+							}
 							if (!firstUserMessage && event.data?.content) {
 								firstUserMessage = event.data.content;
 							}
@@ -2659,6 +2696,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 						// Handle VS Code incremental .jsonl format
 						if (event.kind === 0 && event.v) {
+							// creationDate is session creation, not a request — only add to timestamps (not requestTimestamps)
 							if (event.v.creationDate) { timestamps.push(event.v.creationDate); }
 							// Always update title - we want the LAST title in the file (matches VS Code UI)
 							if (event.v.customTitle) { title = event.v.customTitle; }
@@ -2669,6 +2707,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							for (const request of event.v) {
 								if (request.timestamp) {
 									timestamps.push(request.timestamp);
+									requestTimestamps.push(request.timestamp);
 								}
 							}
 						}
@@ -2692,13 +2731,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				try {
 					const parsed = JSON.parse(fileContent);
 					if (parsed.customTitle) { title = parsed.customTitle; }
+					// creationDate is session creation, not a request — only add to timestamps
 					if (parsed.creationDate) { timestamps.push(parsed.creationDate); }
 					// Extract timestamps from requests array (like getSessionFileDetails does)
 					if (parsed.requests && Array.isArray(parsed.requests)) {
 						for (const request of parsed.requests) {
 							if (request.timestamp || request.ts || request.result?.timestamp) {
 								const ts = request.timestamp || request.ts || request.result?.timestamp;
-								timestamps.push(new Date(ts).getTime());
+								const ms = new Date(ts).getTime();
+								timestamps.push(ms);
+								requestTimestamps.push(ms);
 							}
 						}
 					}
@@ -2718,7 +2760,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction = new Date(timestamps[timestamps.length - 1]).toISOString();
 		}
 
-		return { title, firstInteraction, lastInteraction };
+		// Build per-UTC-day interaction counts from request timestamps
+		const dailyInteractions: { [utcDayKey: string]: number } = {};
+		for (const ts of requestTimestamps) {
+			const dayKey = new Date(ts).toISOString().slice(0, 10);
+			dailyInteractions[dayKey] = (dailyInteractions[dayKey] || 0) + 1;
+		}
+
+		return { title, firstInteraction, lastInteraction, dailyInteractions };
 	}
 
 	// Cached versions of session file reading methods
@@ -2748,6 +2797,31 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Extract title and timestamps from the session file
 		const sessionMeta = await this.extractSessionMetadata(sessionFilePath, preloadedContent);
 
+		// Compute per-UTC-day rollups by distributing cached totals proportionally across days
+		// (same approach as syncService.processCachedSessionFile)
+		const dailyRollups: { [utcDayKey: string]: DailyRollupEntry } = {};
+		const dailyInteractionMap = sessionMeta.dailyInteractions;
+		const totalInteractions = Object.values(dailyInteractionMap).reduce((a, b) => a + b, 0);
+		if (totalInteractions > 0) {
+			for (const [dayKey, dayInteractionCount] of Object.entries(dailyInteractionMap)) {
+				const fraction = dayInteractionCount / totalInteractions;
+				const dayModelUsage: ModelUsage = {};
+				for (const [model, usage] of Object.entries(modelUsage)) {
+					dayModelUsage[model] = {
+						inputTokens: Math.round(usage.inputTokens * fraction),
+						outputTokens: Math.round(usage.outputTokens * fraction),
+					};
+				}
+				dailyRollups[dayKey] = {
+					tokens: Math.round(tokenResult.tokens * fraction),
+					actualTokens: Math.round((tokenResult.actualTokens || 0) * fraction),
+					thinkingTokens: Math.round((tokenResult.thinkingTokens || 0) * fraction),
+					interactions: dayInteractionCount,
+					modelUsage: dayModelUsage,
+				};
+			}
+		}
+
 		const sessionData: SessionFileCache = {
 			tokens: tokenResult.tokens,
 			interactions,
@@ -2759,7 +2833,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			firstInteraction: sessionMeta.firstInteraction,
 			lastInteraction: sessionMeta.lastInteraction,
 			thinkingTokens: tokenResult.thinkingTokens,
-			actualTokens: tokenResult.actualTokens
+			actualTokens: tokenResult.actualTokens,
+			dailyRollups: Object.keys(dailyRollups).length > 0 ? dailyRollups : undefined,
 		};
 
 		this.setCachedSessionData(sessionFilePath, sessionData, fileSize);
@@ -6951,7 +7026,7 @@ ${hashtag}`;
       // Get backend storage info
       const backendStorageInfo = await this.getBackendStorageInfo();
       this.log(
-        `Backend storage info retrieved: enabled=${backendStorageInfo.enabled}, configured=${backendStorageInfo.isConfigured}`,
+        `Backend storage info retrieved: azure.enabled=${backendStorageInfo.azure?.enabled}, azure.configured=${backendStorageInfo.azure?.isConfigured}, teamServer.enabled=${backendStorageInfo.teamServer?.enabled}, teamServer.configured=${backendStorageInfo.teamServer?.isConfigured}`,
       );
 
       // Get GitHub authentication status

@@ -627,12 +627,14 @@ export class BackendFacade {
           : "Auth: Shared Key missing on this machine"
         : "Auth: Entra ID (RBAC)";
     const lastSyncAt = this.deps.context?.globalState?.get<number>('backend.lastSyncAt');
+    const githubTokenAvailable = !!(this.deps.getGithubToken?.());
     return {
       draft,
       sharedKeySet,
       privacyBadge,
       isConfigured: this.isConfigured(settings),
       authStatus,
+      githubTokenAvailable,
       shareConsentAt: settings.shareConsentAt,
       lastSyncAt,
     };

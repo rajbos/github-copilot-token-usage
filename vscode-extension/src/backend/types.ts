@@ -2,27 +2,10 @@
  * TypeScript type definitions for the backend module.
  */
 
-/**
- * Session file cache entry (pre-computed session data).
- * This data is validated at runtime before use to prevent injection attacks.
- * Validation checks: structure, modelUsage object, numeric bounds on all fields.
- */
-export interface SessionFileCache {
-	tokens: number;
-	interactions: number;
-	modelUsage: ModelUsage;
-	mtime: number;
-}
-
-/**
- * Model usage statistics (tokens per model).
- */
-export interface ModelUsage {
-	[model: string]: {
-		inputTokens: number;
-		outputTokens: number;
-	};
-}
+// Import shared cache/model types from the root types module so all consumers
+// stay in sync with a single source of truth.
+import type { ModelUsage } from '../types';
+export type { SessionFileCache, DailyRollupEntry, ModelUsage } from '../types';
 
 /**
  * Daily rollup value (aggregated stats for a day).

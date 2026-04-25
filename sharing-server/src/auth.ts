@@ -30,6 +30,14 @@ const ipRateMap = new Map<string, { count: number; resetAt: number }>();
 const IP_RATE_MAX = 200;
 const IP_RATE_WINDOW_MS = 60 * 1000; // 1 minute per IP
 
+/**
+ * Validates a GitHub Bearer token supplied by the client (e.g. the VS Code extension).
+ * Resolves the token to a local user row, or returns null if the token is invalid,
+ * the GitHub API is unreachable, or the user is not a member of ALLOWED_GITHUB_ORG.
+ *
+ * Results are cached for 10 minutes (positive) or 1 minute (negative) to reduce
+ * outbound GitHub API calls.
+ */
 export async function validateGitHubToken(token: string): Promise<UserRow | null> {
 	const cacheKey = createHash('sha256').update(token).digest('hex');
 
@@ -83,11 +91,25 @@ export async function validateGitHubToken(token: string): Promise<UserRow | null
 	return user;
 }
 
-async function checkOrgMembership(token: string, username: string, org: string): Promise<boolean> {
+/**
+ * Checks whether `username` is an active public member of `org`.
+ *
+ * Uses GITHUB_ORG_CHECK_TOKEN (a server-configured PAT) when set, so that the
+ * check works even when the org enforces SAML SSO — the server operator's PAT
+ * is pre-authorized for the org, meaning the end user's token never needs
+ * read:org scope or SSO authorization.
+ *
+ * Falls back to the user's own token if no server PAT is configured (works for
+ * orgs with public membership and no SAML enforcement).
+ */
+async function checkOrgMembership(userToken: string, username: string, org: string): Promise<boolean> {
+	// Prefer a server-side PAT (already SSO-authorized) so the user's OAuth token
+	// doesn't need read:org or SAML SSO authorization.
+	const checkToken = process.env.GITHUB_ORG_CHECK_TOKEN || userToken;
 	try {
 		const res = await fetch(`https://api.github.com/orgs/${org}/members/${username}`, {
 			headers: {
-				Authorization: `Bearer ${token}`,
+				Authorization: `Bearer ${checkToken}`,
 				'User-Agent': 'copilot-sharing-server/1.0',
 				Accept: 'application/vnd.github+json',
 			},
@@ -99,6 +121,7 @@ async function checkOrgMembership(token: string, username: string, org: string):
 	}
 }
 
+/** Returns true if the IP address is within the pre-auth rate limit window, false if it should be blocked. */
 export function checkIpRateLimit(ip: string): boolean {
 	const now = Date.now();
 	const entry = ipRateMap.get(ip);
@@ -111,6 +134,7 @@ export function checkIpRateLimit(ip: string): boolean {
 	return true;
 }
 
+/** Returns true if the user is within the upload rate limit window, false if they should be blocked. */
 export function checkUploadRateLimit(userId: number): boolean {
 	const now = Date.now();
 	const entry = uploadRateMap.get(userId);
@@ -125,6 +149,11 @@ export function checkUploadRateLimit(userId: number): boolean {
 
 export type AuthVariables = { user: UserRow };
 
+/**
+ * Hono middleware that enforces Bearer token authentication on API routes.
+ * Applies IP-level rate limiting before token validation, then resolves the
+ * token to a user and stores it in the Hono context for downstream handlers.
+ */
 export async function requireBearerAuth(c: Context, next: Next): Promise<Response | void> {
 	const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? 'unknown';
 

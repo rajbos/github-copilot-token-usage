@@ -10,6 +10,7 @@ export interface BackendConfigPanelState {
 	privacyBadge: string;
 	isConfigured: boolean;
 	authStatus: string;
+	githubTokenAvailable: boolean;
 	shareConsentAt?: string;
 	lastSyncAt?: number;
 }
@@ -291,6 +292,9 @@ export class BackendConfigPanel implements vscode.Disposable {
 				</div>
 				<div id="enabledToggleTeam-help" class="helper">Independent of Azure Storage — both backends can sync simultaneously.</div>
 				<div class="status-line" id="lastSyncLine" style="margin-top: 12px;" role="status"></div>
+			<div id="githubAuthWarning" style="display:none; margin-top: 12px; padding: 10px 12px; background: #4d2c00; border-left: 3px solid #f0883e; border-radius: 4px; font-size: 12px; color: #e5c07b;">
+				⚠️ <strong>GitHub sign-in required.</strong> The extension uses your VS Code GitHub session as the upload token. Open the <strong>Accounts</strong> menu (bottom-left) and grant access to <em>AI Engineering Fluency</em>, then wait for the next sync.
+			</div>
 			</div>
 			<div class="card">
 				<h3>Connection</h3>
@@ -540,6 +544,8 @@ export class BackendConfigPanel implements vscode.Disposable {
 			byId('privacyBadge').innerText = 'Privacy: ' + state.privacyBadge;
 			byId('authBadge').innerText = state.authStatus;
 			byId('backendStateBadge').innerText = (state.draft.enabled || state.draft.sharingServerEnabled) ? 'Backend: Enabled' : 'Backend: Disabled';
+			const showGithubWarning = state.draft.sharingServerEnabled && !state.githubTokenAvailable;
+			byId('githubAuthWarning').style.display = showGithubWarning ? 'block' : 'none';
 			updateLastSyncLine(state.lastSyncAt);
 			
 			// Update overview details
