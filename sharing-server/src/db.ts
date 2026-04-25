@@ -11,6 +11,7 @@ export interface UserRow {
 	created_at: string;
 	last_seen_at: string | null;
 	is_admin: number;
+	fluency_score_json: string | null;
 }
 
 export interface UploadRow {
@@ -158,6 +159,14 @@ function initSchema(db: DatabaseSync): void {
 	if (!cols.some(c => c.name === 'fluency_json')) {
 		db.exec('ALTER TABLE usage_uploads ADD COLUMN fluency_json TEXT');
 	}
+
+	// Add fluency_score_json column to users if it doesn't exist (migration for existing DBs)
+	const userCols = db
+		.prepare("PRAGMA table_info(users)")
+		.all() as unknown as Array<{ name: string }>;
+	if (!userCols.some(c => c.name === 'fluency_score_json')) {
+		db.exec('ALTER TABLE users ADD COLUMN fluency_score_json TEXT');
+	}
 }
 
 export function upsertUser(
@@ -246,4 +255,15 @@ export function getUploadsForUser(userId: number, days = 30): UploadRow[] {
 
 export function getAllUsers(): UserRow[] {
 	return getDb().prepare('SELECT * FROM users ORDER BY created_at DESC').all() as unknown as UserRow[];
+}
+
+export function upsertUserFluencyScore(userId: number, scoreJson: string): void {
+	getDb().prepare(`
+		UPDATE users SET fluency_score_json = ? WHERE id = ?
+	`).run(scoreJson, userId);
+}
+
+export function getUserFluencyScore(userId: number): string | null {
+	const row = getDb().prepare('SELECT fluency_score_json FROM users WHERE id = ?').get(userId) as unknown as { fluency_score_json: string | null } | undefined;
+	return row?.fluency_score_json ?? null;
 }

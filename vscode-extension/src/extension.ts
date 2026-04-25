@@ -1422,9 +1422,38 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the maturity panel is open, update its content.
 			// During background (silent) updates, skip to preserve demo panel state and user overrides.
-			if (this.maturityPanel && !silent) {
-				const maturityData = await this.calculateMaturityScores(false); // Force recalculation on refresh
-				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, maturityData);
+			// Always compute a fresh score so it can be reused for the sharing server upload below.
+			const freshMaturityData = (!silent || this.maturityPanel)
+				? await this.calculateMaturityScores(false)
+				: undefined;
+			if (this.maturityPanel && !silent && freshMaturityData) {
+				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, freshMaturityData);
+			}
+
+			// Upload the fluency score to the sharing server so its dashboard shows the same result
+			// as the extension's local AI Fluency Score panel (avoids independent re-computation).
+			// Run fire-and-forget to not block the UI update.
+			if (this.backend) {
+				const settings = this.backend.getSettings();
+				if (settings.sharingServerEnabled && settings.sharingServerEndpointUrl) {
+					// Use the already-computed fresh score when available; otherwise compute now.
+					Promise.resolve(freshMaturityData ?? this.calculateMaturityScores(false)).then((maturityData) => {
+						const scorePayload: Record<string, unknown> = {
+							overallStage: maturityData.overallStage,
+							overallLabel: maturityData.overallLabel,
+							categories: maturityData.categories.map((c: any) => ({
+								category: c.category,
+								icon: c.icon,
+								stage: c.stage,
+								tips: c.tips,
+							})),
+							computedAt: new Date().toISOString(),
+						};
+						return this.backend!.uploadFluencyScoreToSharingServer(settings, scorePayload);
+					}).catch((err: unknown) => {
+						this.warn(`Failed to upload fluency score to sharing server: ${err}`);
+					});
+				}
 			}
 
 			// If the environmental panel is open, update its content

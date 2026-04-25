@@ -258,6 +258,21 @@ function h(text: unknown): string {
 		.replace(/"/g, '&quot;');
 }
 
+/** Render a tip string: converts [text](url) markdown links to <a> tags, escapes everything else. */
+function renderTip(tip: string): string {
+	const mdLink = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+	const parts: string[] = [];
+	let last = 0;
+	let m: RegExpExecArray | null;
+	while ((m = mdLink.exec(tip)) !== null) {
+		parts.push(h(tip.slice(last, m.index)));
+		parts.push(`<a href="${h(m[2])}" target="_blank" rel="noopener noreferrer">${h(m[1])}</a>`);
+		last = m.index + m[0].length;
+	}
+	parts.push(h(tip.slice(last)));
+	return parts.join('');
+}
+
 /** Normalize raw vscode.env.appName values to the friendly names used by the extension. */
 function normalizeEditorName(raw: string | null | undefined): string {
 	const name = (raw ?? '').trim();
@@ -282,326 +297,13 @@ function fmt(n: number): string {
 	return String(n);
 }
 
-// ── Fluency Scoring ───────────────────────────────────────────────────────────
-
-/** Tools operated automatically by Copilot (excluded from user-driven tool scoring). */
-const AUTOMATIC_TOOLS = new Set([
-	'get_errors', 'read_file', 'list_dir', 'list_files', 'grep_search',
-	'file_search', 'codebase_search', 'semantic_search', 'find_references',
-	'codesearch', 'run_tests', 'check_errors', 'view_line_range', 'get_file_contents',
-	'read_resource', 'list_resources', 'list_tools', 'list_servers', 'get_resource',
-]);
-
-interface AggregatedFluency {
-	askModeCount: number;
-	editModeCount: number;
-	agentModeCount: number;
-	cliModeCount: number;
-	toolCallsByTool: Record<string, number>;
-	toolCallsTotal: number;
-	ctxFile: number; ctxSelection: number; ctxSymbol: number;
-	ctxCodebase: number; ctxWorkspace: number; ctxTerminal: number;
-	ctxVscode: number; ctxClipboard: number; ctxChanges: number;
-	ctxProblemsPanel: number; ctxOutputPanel: number;
-	ctxTerminalLastCommand: number; ctxTerminalSelection: number;
-	ctxByKind: Record<string, number>;
-	mcpTotal: number;
-	mcpByServer: Record<string, number>;
-	mixedTierSessions: number;
-	switchingFreqSum: number; switchingFreqCount: number;
-	standardModels: Set<string>; premiumModels: Set<string>;
-	multiFileEdits: number;
-	filesPerEditSum: number; filesPerEditCount: number;
-	editsAgentCount: number; workspaceAgentCount: number;
-	repositories: Set<string>; repositoriesWithCustomization: Set<string>;
-	applyRateSum: number; applyRateCount: number;
-	multiTurnSessions: number;
-	turnsPerSessionSum: number; turnsPerSessionCount: number;
-	sessionCount: number;
-	hasData: boolean;
-}
-
-function aggregateFluencyMetrics(uploads: UploadRow[]): AggregatedFluency {
-	const agg: AggregatedFluency = {
-		askModeCount: 0, editModeCount: 0, agentModeCount: 0, cliModeCount: 0,
-		toolCallsByTool: {}, toolCallsTotal: 0,
-		ctxFile: 0, ctxSelection: 0, ctxSymbol: 0, ctxCodebase: 0, ctxWorkspace: 0,
-		ctxTerminal: 0, ctxVscode: 0, ctxClipboard: 0, ctxChanges: 0,
-		ctxProblemsPanel: 0, ctxOutputPanel: 0, ctxTerminalLastCommand: 0, ctxTerminalSelection: 0,
-		ctxByKind: {},
-		mcpTotal: 0, mcpByServer: {},
-		mixedTierSessions: 0, switchingFreqSum: 0, switchingFreqCount: 0,
-		standardModels: new Set(), premiumModels: new Set(),
-		multiFileEdits: 0, filesPerEditSum: 0, filesPerEditCount: 0,
-		editsAgentCount: 0, workspaceAgentCount: 0,
-		repositories: new Set(), repositoriesWithCustomization: new Set(),
-		applyRateSum: 0, applyRateCount: 0,
-		multiTurnSessions: 0, turnsPerSessionSum: 0, turnsPerSessionCount: 0,
-		sessionCount: 0, hasData: false,
-	};
-
-	for (const upload of uploads) {
-		if (!upload.fluency_json) continue;
-		try {
-			const fm = JSON.parse(upload.fluency_json) as Record<string, unknown>;
-			agg.hasData = true;
-
-			agg.askModeCount += (fm.askModeCount as number) || 0;
-			agg.editModeCount += (fm.editModeCount as number) || 0;
-			agg.agentModeCount += (fm.agentModeCount as number) || 0;
-			agg.cliModeCount += (fm.cliModeCount as number) || 0;
-			agg.multiFileEdits += (fm.multiFileEdits as number) || 0;
-			agg.multiTurnSessions += (fm.multiTurnSessions as number) || 0;
-			agg.sessionCount += (fm.sessionCount as number) || 1;
-
-			if (fm.avgTurnsPerSession !== undefined) {
-				agg.turnsPerSessionSum += (fm.avgTurnsPerSession as number) || 0;
-				agg.turnsPerSessionCount++;
-			}
-
-			if (fm.toolCallsJson) {
-				try {
-					const tc = JSON.parse(fm.toolCallsJson as string) as Record<string, unknown>;
-					agg.toolCallsTotal += (tc.total as number) || 0;
-					for (const [k, v] of Object.entries((tc.byTool as Record<string, number>) || {})) {
-						agg.toolCallsByTool[k] = (agg.toolCallsByTool[k] || 0) + (v || 0);
-					}
-				} catch { /* skip */ }
-			}
-
-			if (fm.contextRefsJson) {
-				try {
-					const cr = JSON.parse(fm.contextRefsJson as string) as Record<string, unknown>;
-					agg.ctxFile += (cr.file as number) || 0;
-					agg.ctxSelection += (cr.selection as number) || 0;
-					agg.ctxSymbol += (cr.symbol as number) || 0;
-					agg.ctxCodebase += (cr.codebase as number) || 0;
-					agg.ctxWorkspace += (cr.workspace as number) || 0;
-					agg.ctxTerminal += (cr.terminal as number) || 0;
-					agg.ctxVscode += (cr.vscode as number) || 0;
-					agg.ctxClipboard += (cr.clipboard as number) || 0;
-					agg.ctxChanges += (cr.changes as number) || 0;
-					agg.ctxProblemsPanel += (cr.problemsPanel as number) || 0;
-					agg.ctxOutputPanel += (cr.outputPanel as number) || 0;
-					agg.ctxTerminalLastCommand += (cr.terminalLastCommand as number) || 0;
-					agg.ctxTerminalSelection += (cr.terminalSelection as number) || 0;
-					for (const [k, v] of Object.entries((cr.byKind as Record<string, number>) || {})) {
-						agg.ctxByKind[k] = (agg.ctxByKind[k] || 0) + (v || 0);
-					}
-				} catch { /* skip */ }
-			}
-
-			if (fm.mcpToolsJson) {
-				try {
-					const mcp = JSON.parse(fm.mcpToolsJson as string) as Record<string, unknown>;
-					agg.mcpTotal += (mcp.total as number) || 0;
-					for (const [k, v] of Object.entries((mcp.byServer as Record<string, number>) || {})) {
-						agg.mcpByServer[k] = (agg.mcpByServer[k] || 0) + (v || 0);
-					}
-				} catch { /* skip */ }
-			}
-
-			if (fm.modelSwitchingJson) {
-				try {
-					const ms = JSON.parse(fm.modelSwitchingJson as string) as Record<string, unknown>;
-					agg.mixedTierSessions += (ms.mixedTierSessions as number) || 0;
-					if (ms.switchingFrequency !== undefined) {
-						agg.switchingFreqSum += (ms.switchingFrequency as number) || 0;
-						agg.switchingFreqCount++;
-					}
-					for (const m of (ms.standardModels as string[]) || []) { agg.standardModels.add(m); }
-					for (const m of (ms.premiumModels as string[]) || []) { agg.premiumModels.add(m); }
-				} catch { /* skip */ }
-			}
-
-			if (fm.editScopeJson) {
-				try {
-					const es = JSON.parse(fm.editScopeJson as string) as Record<string, unknown>;
-					const editSessions = ((es.singleFileEdits as number) || 0) + ((es.multiFileEdits as number) || 0);
-					if (editSessions > 0) {
-						agg.filesPerEditSum += (es.totalEditedFiles as number) || 0;
-						agg.filesPerEditCount += editSessions;
-					}
-				} catch { /* skip */ }
-			}
-
-			if (fm.agentTypesJson) {
-				try {
-					const at = JSON.parse(fm.agentTypesJson as string) as Record<string, number>;
-					agg.editsAgentCount += at.editsAgent || 0;
-					agg.workspaceAgentCount += at.workspaceAgent || 0;
-				} catch { /* skip */ }
-			}
-
-			if (fm.repositoriesJson) {
-				try {
-					const rj = JSON.parse(fm.repositoriesJson as string) as { repositories?: string[]; repositoriesWithCustomization?: string[] };
-					for (const r of rj.repositories || []) { agg.repositories.add(r); }
-					for (const r of rj.repositoriesWithCustomization || []) { agg.repositoriesWithCustomization.add(r); }
-				} catch { /* skip */ }
-			}
-
-			if (fm.applyUsageJson) {
-				try {
-					const au = JSON.parse(fm.applyUsageJson as string) as Record<string, number>;
-					if (au.applyRate !== undefined) {
-						agg.applyRateSum += au.applyRate || 0;
-						agg.applyRateCount++;
-					}
-				} catch { /* skip */ }
-			}
-		} catch { /* skip malformed rows */ }
-	}
-
-	return agg;
-}
+// ── Fluency Score types (score is computed by the extension and uploaded directly) ──────────
 
 interface CategoryScore { category: string; icon: string; stage: number; tips: string[] }
 interface FluencyScore {
 	overallStage: number;
 	overallLabel: string;
 	categories: CategoryScore[];
-}
-
-function computeFluencyScore(fd: AggregatedFluency, dashboardSessions: number): FluencyScore {
-	const stageLabels: Record<number, string> = {
-		1: 'Stage 1: AI Skeptic',
-		2: 'Stage 2: AI Explorer',
-		3: 'Stage 3: AI Collaborator',
-		4: 'Stage 4: AI Strategist',
-	};
-
-	const totalInteractions = fd.askModeCount + fd.editModeCount + fd.agentModeCount + fd.cliModeCount;
-	const avgTurnsPerSession = fd.turnsPerSessionCount > 0 ? fd.turnsPerSessionSum / fd.turnsPerSessionCount : 0;
-	const switchingFrequency = fd.switchingFreqCount > 0 ? fd.switchingFreqSum / fd.switchingFreqCount : 0;
-	const hasModelSwitching = fd.mixedTierSessions > 0 || switchingFrequency > 0;
-	const hasAgentMode = (fd.agentModeCount + fd.cliModeCount) > 0;
-	const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOLS.has(t.toLowerCase())).length;
-	const avgFilesPerSession = fd.filesPerEditCount > 0 ? fd.filesPerEditSum / fd.filesPerEditCount : 0;
-	const avgApplyRate = fd.applyRateCount > 0 ? fd.applyRateSum / fd.applyRateCount : 0;
-	const totalContextRefs = fd.ctxFile + fd.ctxSelection + fd.ctxSymbol + fd.ctxCodebase + fd.ctxWorkspace;
-
-	// 1. Prompt Engineering
-	let peStage = 1;
-	const slashCmds = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'search', 'fixTestFailure', 'setupTests'];
-	const usedSlashCommands = slashCmds.filter(cmd => (fd.toolCallsByTool[cmd] ?? 0) > 0);
-	if (avgTurnsPerSession >= 3 || totalInteractions >= 5) peStage = Math.max(peStage, 2);
-	if (avgTurnsPerSession >= 5) peStage = Math.max(peStage, 3);
-	if (totalInteractions >= 30 && (usedSlashCommands.length >= 2 || hasAgentMode)) peStage = Math.max(peStage, 3);
-	if (totalInteractions >= 100 && hasAgentMode && (hasModelSwitching || usedSlashCommands.length >= 3)) peStage = 4;
-	if (hasModelSwitching && fd.mixedTierSessions > 0) peStage = Math.max(peStage, 3);
-	const peTips: string[] = [];
-	if (peStage < 2) peTips.push('Try asking Copilot a question using the Chat panel');
-	if (peStage < 3) {
-		if (!hasAgentMode) peTips.push('Try agent mode for multi-file changes');
-		if (usedSlashCommands.length < 2) peTips.push('Use slash commands like /explain, /fix, or /tests for structured prompts');
-	}
-	if (peStage < 4) {
-		if (!hasAgentMode) peTips.push('Try agent mode for autonomous, multi-step coding tasks');
-		if (!hasModelSwitching) peTips.push('Experiment with different models — fast ones for simple queries, reasoning models for complex problems');
-	}
-
-	// 2. Context Engineering
-	const usedRefTypeCount = [
-		fd.ctxFile, fd.ctxSelection, fd.ctxSymbol, fd.ctxCodebase, fd.ctxWorkspace,
-		fd.ctxTerminal, fd.ctxVscode, fd.ctxClipboard, fd.ctxChanges,
-		fd.ctxProblemsPanel, fd.ctxOutputPanel, fd.ctxTerminalLastCommand, fd.ctxTerminalSelection,
-	].filter(v => v > 0).length;
-	let ceStage = 1;
-	if (totalContextRefs >= 1) ceStage = 2;
-	if (usedRefTypeCount >= 3 && totalContextRefs >= 10) ceStage = 3;
-	if (usedRefTypeCount >= 5 && totalContextRefs >= 30) ceStage = 4;
-	if ((fd.ctxByKind['copilot.image'] ?? 0) > 0) ceStage = Math.max(ceStage, 3);
-	const ceTips: string[] = [];
-	if (ceStage < 2) ceTips.push('Add #file or #selection references to give Copilot more context');
-	if (ceStage < 3) ceTips.push('Explore @workspace, #codebase, and @terminal for broader context');
-	if (ceStage < 4) ceTips.push('Try #changes, #problemsPanel, #outputPanel, and image attachments for advanced context');
-
-	// 3. Agentic
-	let agStage = 1;
-	if (hasAgentMode || fd.multiFileEdits > 0 || fd.editsAgentCount > 0) agStage = 2;
-	if (avgFilesPerSession >= 3) agStage = Math.max(agStage, 3);
-	if (fd.agentModeCount >= 10 && nonAutoToolCount >= 3) agStage = Math.max(agStage, 3);
-	if (fd.agentModeCount >= 50 && nonAutoToolCount >= 5) agStage = 4;
-	if (fd.multiFileEdits >= 20 && avgFilesPerSession >= 3) agStage = Math.max(agStage, 4);
-	const agTips: string[] = [];
-	if (agStage < 2) agTips.push('Try agent mode — it can run terminal commands, edit files, and explore your codebase');
-	if (agStage < 3) agTips.push('Use agent mode for multi-step tasks; let it chain tools like file search, terminal, and code edits');
-	if (agStage < 4) agTips.push('Tackle complex refactoring or debugging tasks in agent mode for deeper autonomous workflows');
-
-	// 4. Tool Usage
-	let tuStage = 1;
-	if (nonAutoToolCount > 0) tuStage = 2;
-	if (fd.workspaceAgentCount > 0) tuStage = Math.max(tuStage, 3);
-	const advancedTools = ['github_pull_request', 'github_repo', 'run_in_terminal', 'editFiles', 'listFiles'];
-	if (advancedTools.filter(t => (fd.toolCallsByTool[t] ?? 0) > 0).length >= 2) tuStage = Math.max(tuStage, 3);
-	if (fd.mcpTotal > 0) tuStage = Math.max(tuStage, 3);
-	if (Object.keys(fd.mcpByServer).length >= 2) tuStage = 4;
-	const tuTips: string[] = [];
-	if (tuStage < 2) tuTips.push('Try agent mode to let Copilot use built-in tools for file operations and terminal commands');
-	if (tuStage < 3) {
-		if (fd.mcpTotal === 0) tuTips.push('Set up MCP servers to connect Copilot to external tools (databases, APIs, cloud services)');
-		else tuTips.push('Explore GitHub integrations and advanced tools like editFiles and run_in_terminal');
-	}
-	if (tuStage < 4) {
-		if (Object.keys(fd.mcpByServer).length === 1) tuTips.push('Add more MCP servers to expand Copilot\'s capabilities');
-		else if (fd.mcpTotal === 0) tuTips.push('Explore MCP servers for tools that integrate with your workflow');
-	}
-
-	// 5. Customization
-	const totalRepos = fd.repositories.size;
-	const reposWithCustomization = fd.repositoriesWithCustomization.size;
-	const customizationRate = totalRepos > 0 ? reposWithCustomization / totalRepos : 0;
-	let cuStage = 1;
-	if (reposWithCustomization > 0) cuStage = 2;
-	if (customizationRate >= 0.3 && reposWithCustomization >= 2) cuStage = 3;
-	if (customizationRate >= 0.7 && reposWithCustomization >= 3) cuStage = 4;
-	const uniqueModels = new Set([...fd.standardModels, ...fd.premiumModels]);
-	if (uniqueModels.size >= 3) cuStage = Math.max(cuStage, 3);
-	if (uniqueModels.size >= 5 && reposWithCustomization >= 3) cuStage = 4;
-	const cuTips: string[] = [];
-	if (cuStage < 2) cuTips.push('Create a .github/copilot-instructions.md file with project-specific guidelines');
-	if (cuStage < 3) cuTips.push('Add custom instructions to more repositories to standardize your Copilot experience');
-	if (cuStage < 4) {
-		const uncustomized = totalRepos - reposWithCustomization;
-		if (uncustomized > 0) cuTips.push(`${reposWithCustomization} of ${totalRepos} repos customized — add instructions to the remaining ${uncustomized}`);
-		else cuTips.push('Aim for consistent customization across all projects');
-	}
-
-	// 6. Workflow Integration
-	const effectiveSessions = Math.max(dashboardSessions, fd.sessionCount);
-	const modesUsed = [fd.askModeCount > 0, fd.agentModeCount > 0].filter(Boolean).length;
-	let wiStage = 1;
-	if (effectiveSessions >= 3 || avgApplyRate >= 50) wiStage = 2;
-	if (modesUsed >= 2 || totalContextRefs >= 20) wiStage = Math.max(wiStage, 3);
-	if (effectiveSessions >= 15 && modesUsed >= 2 && totalContextRefs >= 20) wiStage = 4;
-	const wiTips: string[] = [];
-	if (wiStage < 2) wiTips.push('Use Copilot more regularly — even for quick questions');
-	if (wiStage < 3) {
-		if (modesUsed < 2) wiTips.push('Combine ask mode with agent mode in your daily workflow');
-		if (totalContextRefs < 10) wiTips.push('Use explicit context references like #file, @workspace, and #selection');
-	}
-	if (wiStage < 4) wiTips.push('Make Copilot part of every coding task: planning, coding, testing, and reviewing');
-
-	// Overall: median of 6 category stages
-	const scores = [peStage, ceStage, agStage, tuStage, cuStage, wiStage].sort((a, b) => a - b);
-	const mid = Math.floor(scores.length / 2);
-	const overallStage = scores.length % 2 === 0
-		? Math.round((scores[mid - 1] + scores[mid]) / 2)
-		: scores[mid];
-
-	return {
-		overallStage,
-		overallLabel: stageLabels[overallStage] ?? 'Stage 1: AI Skeptic',
-		categories: [
-			{ category: 'Prompt Engineering', icon: '💬', stage: peStage, tips: peTips },
-			{ category: 'Context Engineering', icon: '📎', stage: ceStage, tips: ceTips },
-			{ category: 'Agentic', icon: '🤖', stage: agStage, tips: agTips },
-			{ category: 'Tool Usage', icon: '🔧', stage: tuStage, tips: tuTips },
-			{ category: 'Customization', icon: '⚙️', stage: cuStage, tips: cuTips },
-			{ category: 'Workflow Integration', icon: '🔄', stage: wiStage, tips: wiTips },
-		],
-	};
 }
 
 function layout(title: string, body: string): string {
@@ -715,19 +417,23 @@ function layout(title: string, body: string): string {
   /* ── Category Cards ── */
   .fluency-categories { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
   .fluency-cat-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px;
-    padding: 14px 16px; }
-  .fluency-cat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .fluency-cat-icon { font-size: 1.1rem; }
-  .fluency-cat-name { font-size: 0.85rem; font-weight: 600; color: #c9d1d9; }
+    padding: 14px 16px; overflow: hidden; }
+  .fluency-cat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .fluency-cat-icon { font-size: 1.1rem; flex-shrink: 0; }
+  .fluency-cat-name { font-size: 0.85rem; font-weight: 600; color: #c9d1d9; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .fluency-stage-pill { display: inline-block; padding: 2px 8px; border-radius: 10px;
-    font-size: 0.72rem; font-weight: 600; margin-left: auto; white-space: nowrap; }
-  .stage-1 { background: #6e768166; color: #8b949e; }
-  .stage-2 { background: #1f6feb33; color: #58a6ff; }
-  .stage-3 { background: #238636aa; color: #3fb950; }
-  .stage-4 { background: #b08800aa; color: #e3b341; }
+    font-size: 0.72rem; font-weight: 600; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+  .stage-1 { background: rgba(147,197,253,0.15); color: #93c5fd; border: 1px solid rgba(147,197,253,0.4); }
+  .stage-2 { background: rgba(110,231,183,0.15); color: #6ee7b7; border: 1px solid rgba(110,231,183,0.4); }
+  .stage-3 { background: rgba(59,130,246,0.15);  color: #3b82f6; border: 1px solid rgba(59,130,246,0.4); }
+  .stage-4 { background: rgba(16,185,129,0.15);  color: #10b981; border: 1px solid rgba(16,185,129,0.4); }
   .fluency-tips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-  .fluency-tips li { font-size: 0.8rem; color: #8b949e; padding-left: 14px; position: relative; }
+  .fluency-tips li { font-size: 0.8rem; color: #8b949e; padding-left: 14px; position: relative;
+    overflow-wrap: break-word; word-break: break-word; }
   .fluency-tips li::before { content: "→"; position: absolute; left: 0; color: #58a6ff66; }
+  .fluency-tips a { color: #58a6ff; text-decoration: none; }
+  .fluency-tips a:hover { text-decoration: underline; }
   .fluency-no-data { color: #8b949e; font-size: 0.85rem; font-style: italic; }
 
   /* ── Collapsible ── */
@@ -823,9 +529,13 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 	};
 
 	// ── Fluency score ─────────────────────────────────────────────────────────
-	const fluencyAgg = aggregateFluencyMetrics(uploads);
-	const dashSessions = new Set(uploads.map(r => r.day)).size; // use active days as proxy
-	const fluencyScore = fluencyAgg.hasData ? computeFluencyScore(fluencyAgg, dashSessions) : null;
+	// Use the score uploaded directly by the extension (exact same computation as local UI).
+	let fluencyScore: FluencyScore | null = null;
+	if (user.fluency_score_json) {
+		try {
+			fluencyScore = JSON.parse(user.fluency_score_json) as FluencyScore;
+		} catch { /* ignore malformed stored score */ }
+	}
 
 	// ── Editor breakdown (last 30 days) ───────────────────────────────────────
 	const editorTotals = new Map<string, number>();
@@ -1216,8 +926,8 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 	const stageStars = fluencyScore
 		? ['', '⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐'][fluencyScore.overallStage] ?? ''
 		: '';
-	const stageColors: Record<number, string> = { 1: '#6e7681', 2: '#58a6ff', 3: '#3fb950', 4: '#e3b341' };
-	const stageColor = fluencyScore ? (stageColors[fluencyScore.overallStage] ?? '#8b949e') : '#8b949e';
+	const stageColorMap: Record<number, string> = { 1: '#93c5fd', 2: '#6ee7b7', 3: '#3b82f6', 4: '#10b981' };
+	const stageColor = fluencyScore ? (stageColorMap[fluencyScore.overallStage] ?? '#93c5fd') : '#93c5fd';
 
 	const fluencyBadgeHtml = fluencyScore ? `
 <button class="fluency-badge" id="fluency-badge-btn" title="View your AI Fluency Score details">
@@ -1240,7 +950,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
       <span class="fluency-stage-pill stage-${cat.stage}">Stage ${cat.stage}</span>
     </div>
     ${cat.tips.length > 0
-		? `<ul class="fluency-tips">${cat.tips.map(t => `<li>${h(t)}</li>`).join('')}</ul>`
+		? `<ul class="fluency-tips">${cat.tips.map(t => `<li>${renderTip(t)}</li>`).join('')}</ul>`
 		: `<p class="fluency-no-data">🏆 You're at the highest level!</p>`}
   </div>`).join('');
 
@@ -1295,11 +1005,9 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
     var FLUENCY_DATA = ${safeJson(fluencyScore.categories.map(c => ({ category: c.category, icon: c.icon, stage: c.stage })))};
     var labels   = FLUENCY_DATA.map(function(c) { return c.icon + ' ' + c.category; });
     var values   = FLUENCY_DATA.map(function(c) { return c.stage; });
-    var stageColors = { 1: '#6e768166', 2: '#1f6feb88', 3: '#23863688', 4: '#b0880088' };
-    var borderColors = { 1: '#6e7681', 2: '#58a6ff', 3: '#3fb950', 4: '#e3b341' };
     var overallStage = ${fluencyScore.overallStage};
-    var fillColor   = stageColors[overallStage] || '#58a6ff44';
-    var borderColor = borderColors[overallStage] || '#58a6ff';
+    var fillColor   = 'rgba(88,166,255,0.25)';
+    var borderColor = '#58a6ff';
 
     radarChart = new Chart(radarCanvas, {
       type: 'radar',

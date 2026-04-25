@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { requireBearerAuth, checkUploadRateLimit, type AuthVariables } from '../auth.js';
-import { upsertUpload, deleteUploadsForDays, getUploadsForUser, getDb, type UploadEntry } from '../db.js';
+import { upsertUpload, deleteUploadsForDays, getUploadsForUser, getDb, upsertUserFluencyScore, type UploadEntry } from '../db.js';
 
 const MAX_STRING_LENGTHS = {
 	model: 128,
@@ -109,6 +109,35 @@ api.get('/data', requireBearerAuth, (c) => {
 	const days = clampDays(daysRaw);
 	const data = getUploadsForUser(user.id, days);
 	return c.json(data);
+});
+
+/**
+ * POST /api/fluency-score — Store the extension's locally-computed fluency score.
+ * Body: { overallStage, overallLabel, categories, computedAt }
+ * This is the authoritative score: the server dashboard uses it directly instead of
+ * re-computing from aggregated upload blobs.
+ */
+api.post('/fluency-score', requireBearerAuth, async (c) => {
+	const user = c.get('user');
+
+	let body: unknown;
+	try {
+		body = await c.req.json();
+	} catch {
+		return c.json({ error: 'Invalid JSON body.' }, 400);
+	}
+
+	if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+		return c.json({ error: 'Body must be a JSON object.' }, 400);
+	}
+
+	const b = body as Record<string, unknown>;
+	if (typeof b.overallStage !== 'number' || !Array.isArray(b.categories)) {
+		return c.json({ error: '"overallStage" (number) and "categories" (array) are required.' }, 400);
+	}
+
+	upsertUserFluencyScore(user.id, JSON.stringify(body));
+	return c.json({ ok: true });
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

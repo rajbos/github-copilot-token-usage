@@ -1474,6 +1474,30 @@ export class SyncService {
 	}
 
 	/**
+	 * Upload the extension's locally-computed fluency score to the sharing server.
+	 * Call this after calculateMaturityScores() to keep the server dashboard in sync
+	 * with the extension's AI Fluency Score panel.
+	 */
+	async uploadFluencyScoreToSharingServer(
+		settings: BackendSettings,
+		score: Record<string, unknown>,
+	): Promise<void> {
+		if (!this.sharingServerUploadService) { return; }
+		if (!settings.sharingServerEnabled || !settings.sharingServerEndpointUrl) { return; }
+
+		const githubToken = this.deps.getGithubToken?.();
+		if (!githubToken) { return; }
+
+		await this.sharingServerUploadService.uploadFluencyScore(
+			settings.sharingServerEndpointUrl,
+			githubToken,
+			score,
+			this.deps.log,
+			this.deps.warn,
+		);
+	}
+
+	/**
 	 * Backfill historical data to Azure Table Storage.
 	 * Scans ALL local session files (ignoring file mtime) and upserts daily rollups for every
 	 * day that has local data within the given lookback window. This is safe to run at any time

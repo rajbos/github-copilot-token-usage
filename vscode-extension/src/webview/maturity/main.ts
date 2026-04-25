@@ -100,12 +100,16 @@ const STAGE_DESCRIPTIONS: Record<number, string> = {
 
 // ── Radar chart SVG ────────────────────────────────────────────────────
 
-function renderRadarChart(categories: CategoryScore[]): string {
+function renderRadarChart(categories: CategoryScore[], overallStage: number): string {
 	const cx = 325, cy = 325, maxR = 150;
 	const n = categories.length;
 	const angleStep = (2 * Math.PI) / n;
 	// Start from top (- PI/2)
 	const startAngle = -Math.PI / 2;
+
+	// Overall-stage fill/stroke colors — fixed blue palette
+	const polyFill = 'rgba(88,166,255,0.25)';
+	const polyStroke = '#58a6ff';
 
 	// Grid rings (1–4)
 	const rings = [1, 2, 3, 4].map(level => {
@@ -146,26 +150,26 @@ function renderRadarChart(categories: CategoryScore[]): string {
 			class="radar-label" font-size="14" font-weight="600">${cat.icon} ${cat.category}</text>`;
 	}).join('');
 
-	// Stage dots
+	// Stage dots — use overall-stage color for consistency with polygon
 	const dots = categories.map((cat, i) => {
 		const r = (cat.stage / 4) * maxR;
 		const angle = startAngle + i * angleStep;
 		const x = cx + r * Math.cos(angle);
 		const y = cy + r * Math.sin(angle);
-		const color = stageColor(cat.stage);
-		return `<circle cx="${x}" cy="${y}" r="5" fill="${color}" class="radar-dot" stroke-width="1.5" />`;
+		return `<circle cx="${x}" cy="${y}" r="5" fill="${polyStroke}" class="radar-dot" stroke-width="1.5" />`;
 	}).join('');
 
-	// Ring labels
+	// Ring labels — stage names matching server
+	const ringLabelNames = ['', 'AI Skeptic', 'Explorer', 'Collaborator', 'Strategist'];
 	const ringLabels = [1, 2, 3, 4].map(level => {
 		const r = (level / 4) * maxR;
-		return `<text x="${cx + 4}" y="${cy - r + 3}" class="radar-ring-label" font-size="9">${level}</text>`;
+		return `<text x="${cx + 4}" y="${cy - r + 3}" class="radar-ring-label" font-size="9">${ringLabelNames[level]}</text>`;
 	}).join('');
 
 	return `<svg viewBox="0 0 650 650" class="radar-svg" xmlns="http://www.w3.org/2000/svg">
 		${rings}
 		${axes}
-		<polygon points="${dataPoints}" fill="rgba(59,130,246,0.15)" stroke="#3b82f6" stroke-width="2" />
+		<polygon points="${dataPoints}" fill="${polyFill}" stroke="${polyStroke}" stroke-width="2" />
 		${dots}
 		${labels}
 		${ringLabels}
@@ -429,7 +433,7 @@ function renderLayout(data: MaturityData): void {
 		<!-- Radar chart with legend -->
 		<div class="radar-wrapper">
 			<div class="radar-container">
-				${renderRadarChart(demoModeActive ? data.categories.map((c, i) => ({ ...c, stage: demoStageOverrides[i] ?? c.stage })) : data.categories)}
+				${renderRadarChart(demoModeActive ? data.categories.map((c, i) => ({ ...c, stage: demoStageOverrides[i] ?? c.stage })) : data.categories, demoModeActive ? Math.round(demoStageOverrides.reduce((s, v) => s + v, 0) / demoStageOverrides.length) : data.overallStage)}
 			</div>
 			<div class="legend-panel">
 				<div class="legend-title">Stage Reference</div>

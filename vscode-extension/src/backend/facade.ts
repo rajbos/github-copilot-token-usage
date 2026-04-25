@@ -281,6 +281,13 @@ export class BackendFacade {
     return this.syncService.getSyncQueue();
   }
 
+  public async uploadFluencyScoreToSharingServer(
+    settings: BackendSettings,
+    score: Record<string, unknown>,
+  ): Promise<void> {
+    return this.syncService.uploadFluencyScoreToSharingServer(settings, score);
+  }
+
   // Cache state exposed for testing via QueryService accessors
   public get backendLastQueryResult(): BackendQueryResultLike | undefined {
     return this.queryService.getLastQueryResult();
