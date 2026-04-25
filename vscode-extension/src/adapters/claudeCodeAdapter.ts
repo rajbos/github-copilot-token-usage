@@ -3,6 +3,39 @@ import type { ModelUsage } from '../types';
 import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { ClaudeCodeDataAccess, normalizeClaudeModelId } from '../claudecode';
 import { readClaudeCodeEventsForAnalysis, createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
+import { isMcpTool, extractMcpServerName } from '../workspaceHelpers';
+
+/**
+ * Claude Code slash commands that map to Prompt Engineering fluency.
+ * These are stored in toolCalls.byTool with a __slash__ prefix so they
+ * are tracked without inflating tool call counts or agentic metrics.
+ */
+const CLAUDE_SLASH_ALLOWLIST = new Set(['review', 'bug', 'think', 'compact', 'pr_comments']);
+
+/**
+ * Extract a Claude slash command from the first non-empty text line of a user message.
+ * Returns the command name (without leading '/') if found and in the allowlist, else null.
+ * Only matches at the very start of the message to avoid false-positives from pasted code.
+ * Exported for reuse by other Claude-family adapters.
+ */
+export function extractClaudeSlashCommand(content: unknown): string | null {
+	let text = '';
+	if (typeof content === 'string') {
+		text = content;
+	} else if (Array.isArray(content)) {
+		for (const block of content) {
+			if (block?.type === 'text' && typeof block.text === 'string') {
+				text = block.text;
+				break;
+			}
+		}
+	}
+	const firstLine = text.trimStart().split('\n')[0].trim();
+	const m = firstLine.match(/^\/([a-z_]+)(?:\s|$)/i);
+	if (!m) { return null; }
+	const cmd = m[1].toLowerCase();
+	return CLAUDE_SLASH_ALLOWLIST.has(cmd) ? cmd : null;
+}
 
 export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'claudecode';
@@ -75,15 +108,30 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 		for (const event of events) {
 			if (event.type === 'user' && event.message?.role === 'user' && !event.isSidechain) {
 				analysis.modeUsage.cli++;
+				// Detect Claude Code slash commands from the first line of user messages
+				const cmd = extractClaudeSlashCommand(event.message?.content);
+				if (cmd) {
+					const key = `__slash__${cmd}`;
+					analysis.toolCalls.byTool[key] = (analysis.toolCalls.byTool[key] || 0) + 1;
+					// Note: do NOT increment analysis.toolCalls.total — slash commands are not tool calls
+				}
 			} else if (event.type === 'assistant') {
 				const model = normalizeClaudeModelId(event.message?.model || 'unknown');
 				models.push(model);
 				const content: any[] = Array.isArray(event.message?.content) ? event.message.content : [];
 				for (const c of content) {
 					if (c?.type === 'tool_use') {
-						analysis.toolCalls.total++;
 						const toolName = String(c.name || 'tool');
-						analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						if (isMcpTool(toolName)) {
+							// Route MCP tools to mcpTools tracking
+							const server = extractMcpServerName(toolName, ctx.toolNameMap);
+							analysis.mcpTools.total++;
+							analysis.mcpTools.byServer[server] = (analysis.mcpTools.byServer[server] || 0) + 1;
+							analysis.mcpTools.byTool[toolName] = (analysis.mcpTools.byTool[toolName] || 0) + 1;
+						} else {
+							analysis.toolCalls.total++;
+							analysis.toolCalls.byTool[toolName] = (analysis.toolCalls.byTool[toolName] || 0) + 1;
+						}
 					}
 				}
 			}
