@@ -58,7 +58,10 @@ export function getDb(): DatabaseSync {
 		}
 		const dbPath = join(dataDir, 'sharing.db');
 		_db = new DatabaseSync(dbPath);
-		_db.exec('PRAGMA journal_mode = WAL');
+		// DELETE mode is used instead of WAL because Azure Files (SMB) does not
+		// reliably support WAL's shared-memory locking. At our write frequency
+		// (small batch upserts every ~5 min) the performance difference is negligible.
+		_db.exec('PRAGMA journal_mode = DELETE');
 		_db.exec('PRAGMA foreign_keys = ON');
 		initSchema(_db);
 	}

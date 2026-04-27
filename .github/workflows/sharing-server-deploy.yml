@@ -1,0 +1,207 @@
+name: Deploy Sharing Server
+
+# Triggers on any push that touches the sharing server or this workflow file.
+# main  → production environment  (sharing-server-prod)
+# branch → testing environment    (sharing-test-<slug><hash>)
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "sharing-server/**"
+      - ".github/workflows/sharing-server-deploy.yml"
+  workflow_dispatch:
+
+# Minimal baseline; jobs declare only what they need.
+permissions:
+  contents: read
+
+jobs:
+  # ── Compute environment metadata ─────────────────────────────────────────────
+  setup:
+    name: Compute deployment environment
+    runs-on: ubuntu-latest
+    outputs:
+      app_name:    ${{ steps.env.outputs.app_name }}
+      state_key:   ${{ steps.env.outputs.state_key }}
+      environment: ${{ steps.env.outputs.environment }}
+      is_prod:     ${{ steps.env.outputs.is_prod }}
+      min_replicas: ${{ steps.env.outputs.min_replicas }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Compute deployment parameters
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "app_name=sharing-server-prod"  >> "$GITHUB_OUTPUT"
+            echo "state_key=sharing-server/prod.tfstate" >> "$GITHUB_OUTPUT"
+            echo "environment=production"         >> "$GITHUB_OUTPUT"
+            echo "is_prod=true"                   >> "$GITHUB_OUTPUT"
+            echo "min_replicas=1"                 >> "$GITHUB_OUTPUT"
+          else
+            BRANCH="${{ github.ref_name }}"
+            # Slugify: lowercase, replace non-alphanumeric with hyphens, dedupe hyphens, strip leading/trailing hyphens
+            SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
+            # Truncate slug to 13 chars and strip any trailing hyphen that truncation may leave
+            SLUG_TRUNC=$(echo "$SLUG" | cut -c1-13 | sed 's/-$//')
+            # 6-char hash of full branch name to prevent collisions on identical prefixes
+            HASH=$(echo -n "$BRANCH" | sha256sum | cut -c1-6)
+            APP_NAME="sharing-test-${SLUG_TRUNC}${HASH}"
+            echo "app_name=${APP_NAME}"                                             >> "$GITHUB_OUTPUT"
+            echo "state_key=sharing-server/test-${SLUG_TRUNC}${HASH}.tfstate"      >> "$GITHUB_OUTPUT"
+            echo "environment=testing"                                              >> "$GITHUB_OUTPUT"
+            echo "is_prod=false"                                                    >> "$GITHUB_OUTPUT"
+            echo "min_replicas=0"                                                   >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Build & push container image to GHCR ─────────────────────────────────────
+  build:
+    name: Build & push container image
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image-ref.outputs.image }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/copilot-sharing-server
+          tags: |
+            type=sha,prefix=sha-,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: sharing-server
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set image output (digest-pinned reference)
+        id: image-ref
+        run: |
+          echo "image=ghcr.io/${{ github.repository_owner }}/copilot-sharing-server@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  # ── Terraform deploy ──────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Azure (${{ needs.setup.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: [setup, build]
+    # GitHub Environment gates this job and provides environment-scoped secrets.
+    # Required environments:
+    #   production — federated credential subject: repo:<owner>/<repo>:environment:production
+    #   testing    — federated credential subject: repo:<owner>/<repo>:environment:testing
+    environment: ${{ needs.setup.outputs.environment }}
+    permissions:
+      contents: read
+      id-token: write # required for OIDC authentication to Azure
+    # ARM_* env vars are read by both the AzureRM Terraform backend and provider.
+    env:
+      ARM_USE_OIDC:       "true"
+      ARM_CLIENT_ID:      ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - name: Terraform init
+        working-directory: sharing-server/infra
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${{ vars.TF_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ needs.setup.outputs.state_key }}"
+
+      - name: Terraform plan
+        working-directory: sharing-server/infra
+        env:
+          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:            ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:            ${{ needs.setup.outputs.app_name }}
+          TF_VAR_container_image:     ${{ needs.build.outputs.image }}
+          TF_VAR_github_client_id:    ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
+          TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply
+        working-directory: sharing-server/infra
+        env:
+          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:            ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:            ${{ needs.setup.outputs.app_name }}
+          TF_VAR_container_image:     ${{ needs.build.outputs.image }}
+          TF_VAR_github_client_id:    ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
+          TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Output deployment summary
+        working-directory: sharing-server/infra
+        run: |
+          APP_URL=$(terraform output -raw app_url)
+          OAUTH_URL=$(terraform output -raw oauth_callback_url)
+          DASH_URL=$(terraform output -raw dashboard_url)
+          HEALTH_URL=$(terraform output -raw health_url)
+
+          {
+            echo "## 🚀 Sharing Server Deployed"
+            echo ""
+            echo "| | URL |"
+            echo "|---|---|"
+            echo "| App | ${APP_URL} |"
+            echo "| Dashboard | ${DASH_URL} |"
+            echo "| Health | ${HEALTH_URL} |"
+            echo "| OAuth callback | ${OAUTH_URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ needs.setup.outputs.is_prod }}" == "false" ]]; then
+            {
+              echo ""
+              echo "> ⚠️ **Test deployment** — the dashboard OAuth login requires the callback URL above"
+              echo "> to be registered in your GitHub OAuth App before the login flow will work."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
