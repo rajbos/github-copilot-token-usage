@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, existsSync, copyFileSync } from 'fs';
+import { join, dirname } from 'path';
 
 export interface UserRow {
 	id: number;
@@ -50,33 +50,72 @@ export interface UploadEntry {
 
 let _db: DatabaseSync | undefined;
 
+// SQLite runs on the container's LOCAL ephemeral disk (LOCAL_DATA_DIR / /tmp/db).
+// Azure Files (/data) is used ONLY for backup/restore via plain file copy — never
+// as a live SQLite database. Azure Files SMB does not support the POSIX advisory
+// byte-range locks that SQLite requires, causing persistent "database is locked"
+// errors when using Azure Files as the live database path.
+function resolveLocalDbPath(): string {
+	const dir = process.env.LOCAL_DATA_DIR
+		?? process.env.DATA_DIR
+		?? (process.env.NODE_ENV === 'production' ? '/tmp/db' : './data');
+	return join(dir, 'sharing.db');
+}
+
+function resolveBackupPath(): string | null {
+	// Backup is only meaningful when LOCAL_DATA_DIR is set (SQLite not on DATA_DIR).
+	if (!process.env.LOCAL_DATA_DIR) return null;
+	const backupDir = process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : null);
+	return backupDir ? join(backupDir, 'sharing.db') : null;
+}
+
+/** Restore the database from Azure Files backup (if one exists) onto local disk. */
+export function restoreFromBackup(): void {
+	const backupPath = resolveBackupPath();
+	if (!backupPath || !existsSync(backupPath)) return;
+	const localPath = resolveLocalDbPath();
+	try {
+		mkdirSync(dirname(localPath), { recursive: true });
+		copyFileSync(backupPath, localPath);
+		console.log('[db] Restored database from Azure Files backup');
+	} catch (err) {
+		console.error('[db] Failed to restore from backup (will start fresh):', err);
+	}
+}
+
+/** Copy the local database to Azure Files for persistence across container restarts. */
+export function backupToAzureFiles(): void {
+	const backupPath = resolveBackupPath();
+	if (!backupPath) return;
+	const localPath = resolveLocalDbPath();
+	if (!existsSync(localPath)) return;
+	try {
+		mkdirSync(dirname(backupPath), { recursive: true });
+		copyFileSync(localPath, backupPath);
+		console.log('[db] Backed up database to Azure Files');
+	} catch (err) {
+		console.error('[db] Failed to backup to Azure Files:', err);
+	}
+}
+
 export function getDb(): DatabaseSync {
 	if (!_db) {
-		const dataDir = process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data');
+		const dbPath = resolveLocalDbPath();
+		const dataDir = dirname(dbPath);
 		if (!existsSync(dataDir)) {
 			mkdirSync(dataDir, { recursive: true });
 		}
-		const dbPath = join(dataDir, 'sharing.db');
 		// Open first, then configure — only assign _db once fully initialized so
-		// that a failed startup (e.g. transient Azure Files SMB lock) causes the
-		// next request to retry the full initialization rather than using a
-		// half-initialized connection.
+		// that a failed startup causes the next request to retry initialization.
 		const db = new DatabaseSync(dbPath);
 		try {
-			// Wait up to 5 s per attempt for any transient SMB oplock from a previous
-			// container revision to release. Keep this short so the event loop isn't
-			// blocked for long — server.ts retries getDb() asynchronously if it fails.
 			db.exec('PRAGMA busy_timeout = 5000');
-			// DELETE mode is used instead of WAL because Azure Files (SMB) does not
-			// reliably support WAL's shared-memory locking. At our write frequency
-			// (small batch upserts every ~5 min) the performance difference is negligible.
-			db.exec('PRAGMA journal_mode = DELETE');
+			// WAL mode is safe on local disk and gives better concurrency than DELETE.
+			db.exec('PRAGMA journal_mode = WAL');
 			db.exec('PRAGMA foreign_keys = ON');
 			initSchema(db);
 			_db = db;
 		} catch (err) {
-			// Close the connection so the file lock is released and the next
-			// request can retry cleanly.
 			try { db.close(); } catch { /* ignore */ }
 			throw err;
 		}

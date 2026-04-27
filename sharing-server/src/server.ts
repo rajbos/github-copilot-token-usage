@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { api } from './routes/api.js';
 import { dashboard } from './routes/dashboard.js';
-import { getDb, closeDb } from './db.js';
+import { getDb, closeDb, restoreFromBackup, backupToAzureFiles } from './db.js';
 
 const app = new Hono();
 
@@ -24,11 +24,11 @@ app.onError((err, c) => {
 	return c.text('Internal Server Error', 500);
 });
 
-// Cleanly close the DB on shutdown so Azure Files SMB oplocks are released
-// before the new container revision starts. This minimises lock contention
-// during rolling deploys.
+// Backup DB to Azure Files then close cleanly on shutdown.
+// Azure Files is the persistence layer; SQLite runs on local container disk.
 function shutdown(signal: string): void {
-	console.log(`Received ${signal}, closing database and exiting...`);
+	console.log(`Received ${signal}, backing up database and exiting...`);
+	backupToAzureFiles();
 	closeDb();
 	process.exit(0);
 }
@@ -37,10 +37,6 @@ process.on('SIGINT',  () => shutdown('SIGINT'));
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
-// Attempt database initialisation with exponential backoff.
-// Each getDb() call blocks for at most busy_timeout (5 s) so the event loop
-// is only briefly blocked per attempt while the server continues serving
-// health checks between retries.
 async function initDbWithRetry(maxAttempts = 20): Promise<void> {
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
@@ -49,8 +45,6 @@ async function initDbWithRetry(maxAttempts = 20): Promise<void> {
 			return;
 		} catch (err) {
 			if (attempt < maxAttempts) {
-				// Back off between 5 s and 30 s, giving the previous revision's
-				// SMB oplock time to release (ACA rolling deploy window).
 				const delay = Math.min(attempt * 5_000, 30_000);
 				console.warn(`[db] Init attempt ${attempt}/${maxAttempts} failed: ${err}. Retrying in ${delay}ms…`);
 				await new Promise(r => setTimeout(r, delay));
@@ -69,8 +63,11 @@ serve({ fetch: app.fetch, port: PORT }, (info) => {
 	} else {
 		console.log('  Access: open to any GitHub user (set ALLOWED_GITHUB_ORG to restrict)');
 	}
-	// Initialise the database asynchronously so the server starts accepting
-	// requests (including health checks) immediately. Individual requests
-	// calling getDb() will block briefly per-attempt until the lock clears.
+	// Restore database from Azure Files backup before opening SQLite.
+	// SQLite runs on local container disk (/tmp/db) to avoid Azure Files SMB
+	// locking issues. Azure Files is used only as a backup/restore store.
+	restoreFromBackup();
 	initDbWithRetry();
+	// Periodic backup every 5 minutes in case of unexpected SIGKILL.
+	setInterval(() => backupToAzureFiles(), 5 * 60 * 1000).unref();
 });

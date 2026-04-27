@@ -96,8 +96,8 @@ resource "azurerm_container_app" "this" {
   }
 
   template {
-    min_replicas = var.min_replicas  # Must be 1: scale-to-zero leaves stale Azure Files SMB oplocks
-    max_replicas = 1 # SQLite file locking requires single-instance
+    min_replicas = var.min_replicas  # Keep at 1 to avoid cold-start restore latency
+    max_replicas = 1 # SQLite single-writer; only one instance at a time
 
     volume {
       name         = "data"
@@ -131,6 +131,16 @@ resource "azurerm_container_app" "this" {
       env {
         name  = "BASE_URL"
         value = "https://${local.app_fqdn}"
+      }
+      env {
+        name  = "DATA_DIR"
+        value = "/data"
+      }
+      env {
+        # SQLite runs on local container disk to avoid Azure Files SMB locking.
+        # DATA_DIR (/data, Azure Files) is used only for backup/restore via file copy.
+        name  = "LOCAL_DATA_DIR"
+        value = "/tmp/db"
       }
       env {
         name  = "NODE_ENV"
