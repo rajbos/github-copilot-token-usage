@@ -7844,7 +7844,7 @@ export async function activate(context: vscode.ExtensionContext) {
       context,
       log: (m: string) => tokenTracker.log(m),
       warn: (m: string) => tokenTracker.warn(m),
-      updateTokenStats: () => tokenTracker.updateTokenStats(),
+      updateTokenStats: () => void tokenTracker.updateTokenStats(),
       calculateEstimatedCost: (modelUsage: ModelUsage) => tokenTracker.calculateEstimatedCost(modelUsage),
 
 
