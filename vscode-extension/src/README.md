@@ -22,17 +22,18 @@ Contains GitHub Copilot plan definitions — the `plans` object keys match the `
 ```
 
 - `monthlyPremiumRequests` — included allotment per user per month; extra requests are $0.04 each
+- `monthlyAiCreditsUsd` — dollar value of AI credits included with the plan (1 AI credit = $0.01); `0` = none included
 - `codeCompletionsPerMonth` — tab completions limit; `null` = unlimited (paid plans)
 
 **Current plans:**
 
-| ID | Name | $/user/mo | Premium requests/mo |
-|----|------|-----------|---------------------|
-| `free` | Copilot Free | $0 | 50 |
-| `individual` / `pro` | Copilot Pro | $10 | 300 |
-| `pro_plus` | Copilot Pro+ | $39 | 1,500 |
-| `business` | Copilot Business | $19 | 300 |
-| `enterprise` | Copilot Enterprise | $39 | 1,000 |
+| ID | Name | $/user/mo | AI credits/mo | Premium requests/mo |
+|----|------|-----------|---------------|---------------------|
+| `free` | Copilot Free | $0 | none | 50 |
+| `individual` / `pro` | Copilot Pro | $10 | $10 | 300 |
+| `pro_plus` | Copilot Pro+ | $39 | $39 | 1,500 |
+| `business` | Copilot Business | $19 | $19 | 300 |
+| `enterprise` | Copilot Enterprise | $39 | $39 | 1,000 |
 
 **How to update:** Edit the `plans` object when GitHub changes pricing or adds plans. Update `metadata.lastUpdated` and reference the [official plans page](https://docs.github.com/en/copilot/get-started/plans).
 

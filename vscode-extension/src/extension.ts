@@ -1331,13 +1331,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return;
 			}
 			const planId = planInfo.copilot_plan as string | undefined;
-			const plans = copilotPlansData.plans as Record<string, { name: string; monthlyPremiumRequests: number | null; monthlyPricePerUser: number }>;
+			const plans = copilotPlansData.plans as Record<string, { name: string; monthlyPremiumRequests: number | null; monthlyPricePerUser: number; monthlyAiCreditsUsd: number }>;
 			const knownPlan = planId ? plans[planId] : undefined;
 			const planLabel = knownPlan ? `${knownPlan.name} (${planId})` : (planId ?? 'unknown');
 			this.log(`Copilot plan: ${planLabel}`);
 			if (knownPlan) {
 				const credits = knownPlan.monthlyPremiumRequests !== null ? `${knownPlan.monthlyPremiumRequests.toLocaleString()}/month` : 'unlimited';
 				this.log(`  Monthly premium requests: ${credits}`);
+				const aiCredits = knownPlan.monthlyAiCreditsUsd > 0 ? `$${knownPlan.monthlyAiCreditsUsd}/month included` : 'none';
+				this.log(`  Monthly AI credits: ${aiCredits}`);
 			}
 			if (planInfo.ide_chat !== undefined)          { this.log(`  IDE chat: ${planInfo.ide_chat}`); }
 			if (planInfo.copilot_ide_agent !== undefined) { this.log(`  Agent mode: ${planInfo.copilot_ide_agent}`); }
