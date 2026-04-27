@@ -118,17 +118,16 @@ jobs:
     needs: [setup, build]
     # GitHub Environment gates this job and provides environment-scoped secrets.
     # Required environments:
-    #   production — federated credential subject: repo:<owner>/<repo>:environment:production
-    #   testing    — federated credential subject: repo:<owner>/<repo>:environment:testing
+    #   production — service principal with Contributor on the resource group
+    #   testing    — service principal with Contributor on the resource group
     environment: ${{ needs.setup.outputs.environment }}
     permissions:
       contents: read
-      id-token: write # required for OIDC authentication to Azure
     # ARM_* env vars are read by both the AzureRM Terraform backend and provider.
     env:
-      ARM_USE_OIDC:       "true"
-      ARM_CLIENT_ID:      ${{ secrets.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     steps:
       - name: Harden the runner (Audit all outbound calls)

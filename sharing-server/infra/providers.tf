@@ -19,7 +19,7 @@ terraform {
 
 provider "azurerm" {
   features {}
-  # Authentication is via OIDC using ARM_* environment variables set by the
-  # workflow (ARM_USE_OIDC, ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID).
-  use_oidc = true
+  # Authentication is via service principal client secret using ARM_* environment
+  # variables set by the workflow (ARM_CLIENT_ID, ARM_CLIENT_SECRET,
+  # ARM_TENANT_ID, ARM_SUBSCRIPTION_ID).
 }
