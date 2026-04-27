@@ -233,8 +233,8 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 
 	const suppressed = new Set<string>(stats.suppressedUnknownTools ?? []);
 	
-	// Filter to only unknown tools (where lookupToolName returns the same value) and not suppressed
-	return Array.from(allTools).filter(tool => lookupToolName(tool) === tool && !suppressed.has(tool)).sort();
+	// Filter to only unknown tools (not a key in the map, case-insensitively) and not suppressed
+	return Array.from(allTools).filter(tool => !TOOL_NAME_MAP?.[tool] && !TOOL_NAME_MAP?.[tool.toLowerCase()] && !suppressed.has(tool)).sort();
 }
 
 function createMcpToolIssueUrl(unknownTools: string[]): string {
