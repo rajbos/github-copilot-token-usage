@@ -170,17 +170,23 @@ jobs:
         if: steps.prereqs.outputs.configured == 'true' && vars.SHARING_CUSTOM_DOMAIN != ''
         working-directory: sharing-server/infra
         env:
-          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
-          TF_VAR_app_name:            ${{ needs.setup.outputs.app_name }}
-          TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
+          TF_VAR_resource_group_name:    ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:               ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:               ${{ needs.setup.outputs.app_name }}
+          TF_VAR_container_image:        ${{ needs.build.outputs.image }}
+          TF_VAR_github_client_id:       ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret:   ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:         ${{ secrets.SHARING_SESSION_SECRET }}
+          TF_VAR_allowed_github_org:     ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_min_replicas:           ${{ needs.setup.outputs.min_replicas }}
+          TF_VAR_custom_domain:          ${{ vars.SHARING_CUSTOM_DOMAIN }}
         run: |
-          # Authenticate az CLI with the same service principal used by Terraform.
           az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" --output none
           az account set --subscription "$ARM_SUBSCRIPTION_ID"
 
           ENV_NAME="${TF_VAR_app_name}-env"
 
-          # Import managed certificate if it already exists in Azure but not in state.
           if ! terraform state show 'azurerm_container_app_environment_managed_certificate.this[0]' > /dev/null 2>&1; then
             CERT_ID=$(az containerapp env certificate list \
               --name "$ENV_NAME" \
@@ -189,16 +195,15 @@ jobs:
               -o tsv 2>/dev/null || true)
             if [[ -n "$CERT_ID" && "$CERT_ID" != "None" ]]; then
               echo "Importing managed certificate: $CERT_ID"
-              terraform import 'azurerm_container_app_environment_managed_certificate.this[0]' "$CERT_ID"
+              terraform import -input=false 'azurerm_container_app_environment_managed_certificate.this[0]' "$CERT_ID"
             fi
           fi
 
-          # Import custom domain binding if it already exists in Azure but not in state.
           if ! terraform state show 'azurerm_container_app_custom_domain.this[0]' > /dev/null 2>&1; then
             DOMAIN_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.App/containerApps/$TF_VAR_app_name/customDomainName/$TF_VAR_custom_domain"
             if az rest --method get --url "https://management.azure.com${DOMAIN_ID}?api-version=2024-03-01" > /dev/null 2>&1; then
               echo "Importing custom domain: $DOMAIN_ID"
-              terraform import 'azurerm_container_app_custom_domain.this[0]' "$DOMAIN_ID"
+              terraform import -input=false 'azurerm_container_app_custom_domain.this[0]' "$DOMAIN_ID"
             fi
           fi
 
