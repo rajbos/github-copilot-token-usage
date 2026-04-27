@@ -36,11 +36,13 @@ jobs:
         id: env
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "app_name=sharing-server-prod"  >> "$GITHUB_OUTPUT"
-            echo "state_key=sharing-server/prod.tfstate" >> "$GITHUB_OUTPUT"
-            echo "environment=production"         >> "$GITHUB_OUTPUT"
-            echo "is_prod=true"                   >> "$GITHUB_OUTPUT"
-            echo "min_replicas=1"                 >> "$GITHUB_OUTPUT"
+            {
+              echo "app_name=sharing-server-prod"
+              echo "state_key=sharing-server/prod.tfstate"
+              echo "environment=production"
+              echo "is_prod=true"
+              echo "min_replicas=1"
+            } >> "$GITHUB_OUTPUT"
           else
             BRANCH="${{ github.ref_name }}"
             # Slugify: lowercase, replace non-alphanumeric with hyphens, dedupe hyphens, strip leading/trailing hyphens
@@ -50,11 +52,13 @@ jobs:
             # 6-char hash of full branch name to prevent collisions on identical prefixes
             HASH=$(echo -n "$BRANCH" | sha256sum | cut -c1-6)
             APP_NAME="sharing-test-${SLUG_TRUNC}${HASH}"
-            echo "app_name=${APP_NAME}"                                             >> "$GITHUB_OUTPUT"
-            echo "state_key=sharing-server/test-${SLUG_TRUNC}${HASH}.tfstate"      >> "$GITHUB_OUTPUT"
-            echo "environment=testing"                                              >> "$GITHUB_OUTPUT"
-            echo "is_prod=false"                                                    >> "$GITHUB_OUTPUT"
-            echo "min_replicas=0"                                                   >> "$GITHUB_OUTPUT"
+            {
+              echo "app_name=${APP_NAME}"
+              echo "state_key=sharing-server/test-${SLUG_TRUNC}${HASH}.tfstate"
+              echo "environment=testing"
+              echo "is_prod=false"
+              echo "min_replicas=0"
+            } >> "$GITHUB_OUTPUT"
           fi
 
   # ── Build & push container image to GHCR ─────────────────────────────────────
@@ -138,10 +142,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Check Azure credentials
+        id: prereqs
+        run: |
+          if [[ -z "$ARM_CLIENT_ID" ]]; then
+            echo "⚠️ Azure credentials not configured for '${{ needs.setup.outputs.environment }}' environment — skipping deployment." >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Terraform
+        if: steps.prereqs.outputs.configured == 'true'
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
 
       - name: Terraform init
+        if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
         run: |
           terraform init -reconfigure \
@@ -151,6 +167,7 @@ jobs:
             -backend-config="key=${{ needs.setup.outputs.state_key }}"
 
       - name: Terraform plan
+        if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
         env:
           TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -165,6 +182,7 @@ jobs:
         run: terraform plan -out=tfplan
 
       - name: Terraform apply
+        if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
         env:
           TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -179,6 +197,7 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
       - name: Output deployment summary
+        if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
         run: |
           APP_URL=$(terraform output -raw app_url)
