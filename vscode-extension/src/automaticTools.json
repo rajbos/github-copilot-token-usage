@@ -2,6 +2,7 @@
   "read_file",
   "copilot_readFile",
   "read",
+  "Read",
   "view",
   "view_image",
   "copilot_viewImage",
@@ -21,7 +22,9 @@
 
   "grep_search",
   "grep",
+  "Grep",
   "glob",
+  "Glob",
 
   "semantic_search",
   "copilot_searchCodebase",
@@ -66,10 +69,12 @@
   "memory",
   "copilot_memory",
   "detect_memories",
+  "todo",
 
   "tool_replay",
   "copilot_toolReplay",
   "tool_search",
+  "ToolSearch",
 
   "get_task_output",
   "get_output_window_logs",
