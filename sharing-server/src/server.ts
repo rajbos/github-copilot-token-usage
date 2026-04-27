@@ -37,15 +37,28 @@ process.on('SIGINT',  () => shutdown('SIGINT'));
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
-// Eagerly initialise the database before accepting requests.
-// If Azure Files has a stale SMB oplock from a previous revision, this blocks
-// here (up to busy_timeout = 60 s) rather than failing on the first user request.
-try {
-	getDb();
-	console.log('Database initialised');
-} catch (err) {
-	console.error('Database initialisation failed at startup:', err);
-	// Continue — individual requests will retry and surface the error cleanly.
+// Attempt database initialisation with exponential backoff.
+// Each getDb() call blocks for at most busy_timeout (5 s) so the event loop
+// is only briefly blocked per attempt while the server continues serving
+// health checks between retries.
+async function initDbWithRetry(maxAttempts = 20): Promise<void> {
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			getDb();
+			console.log(`[db] Initialised successfully (attempt ${attempt})`);
+			return;
+		} catch (err) {
+			if (attempt < maxAttempts) {
+				// Back off between 5 s and 30 s, giving the previous revision's
+				// SMB oplock time to release (ACA rolling deploy window).
+				const delay = Math.min(attempt * 5_000, 30_000);
+				console.warn(`[db] Init attempt ${attempt}/${maxAttempts} failed: ${err}. Retrying in ${delay}ms…`);
+				await new Promise(r => setTimeout(r, delay));
+			} else {
+				console.error('[db] All init attempts exhausted:', err);
+			}
+		}
+	}
 }
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
@@ -56,4 +69,8 @@ serve({ fetch: app.fetch, port: PORT }, (info) => {
 	} else {
 		console.log('  Access: open to any GitHub user (set ALLOWED_GITHUB_ORG to restrict)');
 	}
+	// Initialise the database asynchronously so the server starts accepting
+	// requests (including health checks) immediately. Individual requests
+	// calling getDb() will block briefly per-attempt until the lock clears.
+	initDbWithRetry();
 });

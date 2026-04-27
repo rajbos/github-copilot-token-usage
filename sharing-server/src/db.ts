@@ -63,10 +63,10 @@ export function getDb(): DatabaseSync {
 		// half-initialized connection.
 		const db = new DatabaseSync(dbPath);
 		try {
-			// Wait up to 60 s for any transient SMB oplock from a previous container
-			// revision to release before giving up with SQLITE_BUSY.
-			// Azure Files SMB oplocks can take 30-60 s to release after a process dies.
-			db.exec('PRAGMA busy_timeout = 60000');
+			// Wait up to 5 s per attempt for any transient SMB oplock from a previous
+			// container revision to release. Keep this short so the event loop isn't
+			// blocked for long — server.ts retries getDb() asynchronously if it fails.
+			db.exec('PRAGMA busy_timeout = 5000');
 			// DELETE mode is used instead of WAL because Azure Files (SMB) does not
 			// reliably support WAL's shared-memory locking. At our write frequency
 			// (small batch upserts every ~5 min) the performance difference is negligible.
