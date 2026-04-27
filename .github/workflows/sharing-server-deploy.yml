@@ -236,6 +236,24 @@ jobs:
           TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
         run: terraform apply -auto-approve tfplan
 
+      - name: Health check
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        run: |
+          HEALTH_URL=$(terraform output -raw health_url)
+          echo "Waiting for ${HEALTH_URL} to respond..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${HEALTH_URL}" || echo "000")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ Health check passed (attempt ${i})"
+              exit 0
+            fi
+            echo "  attempt ${i}/12 — HTTP ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ Health check failed after 2 minutes"
+          exit 1
+
       - name: Output deployment summary
         if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
