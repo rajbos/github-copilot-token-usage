@@ -18,6 +18,8 @@ import {
 	detectAiType,
 	discoverGitHubRepos,
 	fetchRepoPrs,
+	fetchCopilotPlanInfo,
+	type CopilotPlanInfo,
 	type RepoPrDetail,
 	type RepoPrInfo,
 	type RepoPrStatsResult,
@@ -899,6 +901,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.githubSession = session;
 					await this.context.globalState.update('github.authenticated', true);
 					await this.context.globalState.update('github.username', session.account.label);
+					void this.loadAndLogCopilotPlanInfo();
 				} else {
 					this.githubSession = undefined;
 					await this.context.globalState.update('github.authenticated', false);
@@ -1101,6 +1104,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
 				await this.context.globalState.update('github.username', session.account.label);
+				void this.loadAndLogCopilotPlanInfo();
 			}
 		} catch (error) {
 			this.error('GitHub authentication failed:', error);
@@ -1296,6 +1300,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log(`✅ GitHub session found for ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
 				await this.context.globalState.update('github.username', session.account.label);
+				void this.loadAndLogCopilotPlanInfo();
 			} else {
 				const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
 				if (wasAuthenticated) {
@@ -1309,6 +1314,28 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn('Failed to restore GitHub session: ' + String(error));
 			await this.context.globalState.update('github.authenticated', false);
 			await this.context.globalState.update('github.username', undefined);
+		}
+	}
+
+	/**
+	 * Fetch and log Copilot plan information for the authenticated user.
+	 * Best-effort: silently skips if not authenticated or if the endpoint is unavailable.
+	 */
+	private async loadAndLogCopilotPlanInfo(): Promise<void> {
+		if (!this.githubSession) { return; }
+		try {
+			const { planInfo, statusCode, error } = await fetchCopilotPlanInfo(this.githubSession.accessToken);
+			if (error || !planInfo) {
+				this.warn(`Copilot plan info unavailable (HTTP ${statusCode ?? 'n/a'}): ${error ?? 'no data'}`);
+				return;
+			}
+			this.log(`Copilot plan: ${planInfo.copilot_plan ?? 'unknown'}`);
+			if (planInfo.ide_chat !== undefined)          { this.log(`  IDE chat: ${planInfo.ide_chat}`); }
+			if (planInfo.copilot_ide_agent !== undefined) { this.log(`  Agent mode: ${planInfo.copilot_ide_agent}`); }
+			if (planInfo.public_code_suggestions !== undefined) { this.log(`  Public code suggestions: ${planInfo.public_code_suggestions}`); }
+			if (planInfo.unlimited_pr_summaries !== undefined)  { this.log(`  Unlimited PR summaries: ${planInfo.unlimited_pr_summaries}`); }
+		} catch (err) {
+			this.warn('Failed to load Copilot plan info: ' + String(err));
 		}
 	}
 

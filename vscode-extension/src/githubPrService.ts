@@ -26,6 +26,78 @@ export type RepoPrStatsResult = {
 	since: string; // ISO date string
 };
 
+// ---------------------------------------------------------------------------
+// Copilot plan info
+// ---------------------------------------------------------------------------
+
+export type CopilotPlanInfo = {
+	copilot_plan?: string;             // e.g. "copilot_individual" | "copilot_business" | "copilot_enterprise" | "copilot_free"
+	public_code_suggestions?: string;  // "block" | "allow"
+	ide_chat?: string;                 // "enabled" | "disabled"
+	copilot_ide_agent?: string;        // "enabled" | "disabled"
+	unlimited_pr_summaries?: boolean;
+	assignee?: { login?: string; id?: number };
+	[key: string]: unknown;
+};
+
+export type CopilotPlanResult = { planInfo?: CopilotPlanInfo; statusCode?: number; error?: string };
+
+/** Internal low-level fetcher for the copilot_internal/user endpoint. */
+function fetchCopilotPlanInfoPage(token: string): Promise<CopilotPlanResult> {
+	return new Promise((resolve) => {
+		const req = https.request(
+			{
+				hostname: 'api.github.com',
+				path: '/copilot_internal/user',
+				headers: {
+					Authorization: `Bearer ${token}`,
+					'User-Agent': 'copilot-token-tracker',
+					Accept: 'application/json',
+				},
+			},
+			(res) => {
+				let data = '';
+				res.on('data', (chunk) => (data += chunk));
+				res.on('end', () => {
+					const statusCode = res.statusCode ?? 0;
+					if (statusCode < 200 || statusCode >= 300) {
+						resolve({ statusCode, error: `HTTP ${statusCode}` });
+						return;
+					}
+					try {
+						const parsed = JSON.parse(data);
+						if (typeof parsed !== 'object' || parsed === null) {
+							resolve({ statusCode, error: 'Unexpected response format' });
+							return;
+						}
+						resolve({ planInfo: parsed as CopilotPlanInfo, statusCode });
+					} catch (e) {
+						resolve({ statusCode, error: String(e) });
+					}
+				});
+			},
+		);
+		req.on('error', (e) => resolve({ error: e.message }));
+		req.setTimeout(15000, () => {
+			req.destroy(new Error('Request timed out after 15 s'));
+		});
+		req.end();
+	});
+}
+
+/**
+ * Fetch GitHub Copilot plan information for the authenticated user.
+ * Uses the VS Code-only internal endpoint `https://api.github.com/copilot_internal/user`.
+ * Treat as best-effort — this endpoint may not be available for all accounts.
+ * @param fetcher Injectable fetcher for testing; defaults to the real HTTPS implementation.
+ */
+export function fetchCopilotPlanInfo(
+	token: string,
+	fetcher: (token: string) => Promise<CopilotPlanResult> = fetchCopilotPlanInfoPage,
+): Promise<CopilotPlanResult> {
+	return fetcher(token);
+}
+
 /** Detect which AI system a GitHub login belongs to, or null if not an AI bot. */
 export function detectAiType(login: string): RepoPrDetail['aiType'] | null {
 	const l = login.toLowerCase();
