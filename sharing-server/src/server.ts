@@ -17,6 +17,12 @@ app.route('/', dashboard);
 // 404 fallback
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
+// Log unhandled errors so they appear in container logs (ACA / Docker)
+app.onError((err, c) => {
+	console.error(`[${new Date().toISOString()}] Unhandled error on ${c.req.method} ${c.req.path}:`, err);
+	return c.text('Internal Server Error', 500);
+});
+
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
