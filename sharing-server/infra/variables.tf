@@ -43,6 +43,13 @@ variable "allowed_github_org" {
   default     = ""
 }
 
+variable "github_org_check_token" {
+  description = "Optional: server-side PAT with read:org scope and SSO authorization, used to verify org membership. Falls back to the user's own token if not set."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "min_replicas" {
   description = "Minimum container replicas. Use 0 for scale-to-zero (cheapest), 1 for always-on (faster cold start)."
   type        = number

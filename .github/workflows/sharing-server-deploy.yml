@@ -178,6 +178,7 @@ jobs:
           TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
           TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
           TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
         run: terraform plan -out=tfplan
 
@@ -193,6 +194,7 @@ jobs:
           TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
           TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
           TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
         run: terraform apply -auto-approve tfplan
 

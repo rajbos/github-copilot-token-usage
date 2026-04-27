@@ -74,6 +74,11 @@ resource "azurerm_container_app" "this" {
     value = var.session_secret
   }
 
+  secret {
+    name  = "org-check-token"
+    value = var.github_org_check_token
+  }
+
   ingress {
     external_enabled = true
     target_port      = 3000
@@ -129,6 +134,10 @@ resource "azurerm_container_app" "this" {
       env {
         name  = "ALLOWED_GITHUB_ORG"
         value = var.allowed_github_org
+      }
+      env {
+        name        = "GITHUB_ORG_CHECK_TOKEN"
+        secret_name = "org-check-token"
       }
 
       liveness_probe {
