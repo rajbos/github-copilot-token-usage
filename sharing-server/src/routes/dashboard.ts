@@ -146,80 +146,6 @@ dashboard.get('/auth/logout', (c) => {
 	return c.redirect('/dashboard');
 });
 
-/** POST /auth/pat — Sign in with a GitHub Personal Access Token. */
-dashboard.post('/auth/pat', async (c) => {
-	const body = await c.req.parseBody();
-	const token = (body['pat'] as string ?? '').trim();
-
-	if (!token) {
-		return c.html(errorPage('No token provided.'), 400);
-	}
-
-	// Fetch the authenticated user
-	let userData: { id: number; login: string; name: string | null; avatar_url: string };
-	try {
-		const userRes = await fetch('https://api.github.com/user', {
-			headers: {
-				Authorization: `Bearer ${token}`,
-				'User-Agent': 'copilot-sharing-server/1.0',
-				Accept: 'application/vnd.github+json',
-			},
-			signal: AbortSignal.timeout(10_000),
-		});
-		if (!userRes.ok) {
-			return c.html(errorPage('Invalid token or unable to verify GitHub identity.'), 401);
-		}
-		userData = await userRes.json() as typeof userData;
-	} catch (err) {
-		return c.html(errorPage(`Failed to reach GitHub: ${String(err)}`), 502);
-	}
-
-	// Optional org membership check
-	const allowedOrg = process.env.ALLOWED_GITHUB_ORG;
-	if (allowedOrg) {
-		try {
-			const memberRes = await fetch(`https://api.github.com/user/memberships/orgs/${allowedOrg}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'User-Agent': 'copilot-sharing-server/1.0',
-					Accept: 'application/vnd.github+json',
-				},
-				signal: AbortSignal.timeout(10_000),
-			});
-			if (memberRes.status === 403) {
-				return c.html(errorPage(
-					`Access denied: your token is not authorized for the "${allowedOrg}" organization. ` +
-					`If this org uses SAML SSO, go to github.com → Settings → Personal access tokens, ` +
-					`click your token, and grant SSO access to the "${allowedOrg}" org.`
-				), 403);
-			}
-			if (memberRes.status !== 200) {
-				return c.html(errorPage(`Access denied: you are not a member of the "${allowedOrg}" organization.`), 403);
-			}
-			const membership = await memberRes.json() as { state: string };
-			if (membership.state !== 'active') {
-				return c.html(errorPage(`Access denied: your membership in the "${allowedOrg}" organization is not active.`), 403);
-			}
-		} catch {
-			return c.html(errorPage('Unable to verify organization membership. Please try again.'), 502);
-		}
-	}
-
-	const user = upsertUser(userData.id, userData.login, userData.name, userData.avatar_url);
-	const claims = makeClaims(user.id);
-	const sessionValue = encodeSession(claims);
-
-	setCookie(c, COOKIE_NAME, sessionValue, {
-		httpOnly: true,
-		secure: process.env.NODE_ENV === 'production',
-		sameSite: 'Lax',
-		maxAge: SESSION_MAX_AGE,
-		path: '/',
-	});
-
-	return c.redirect('/dashboard');
-});
-
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 /** Redirect root to dashboard. */
@@ -467,8 +393,7 @@ function loginPage(): string {
   </a>
   <p style="color:#8b949e; margin-top:8px; font-size:0.85rem">
     Note: requires org admin approval for SSO organizations.
-  </p>
-  <div style="color:#8b949e; margin: 24px 0; font-size:0.9rem">— or —</div>` : '';
+  </p>` : '';
 
 	return layout('Sign In', `
 <div class="header"><h1>🤖 Copilot Token Tracker Sharing</h1></div>
@@ -476,26 +401,6 @@ function loginPage(): string {
   <h2 style="color:#e6edf3">Sign in to view your usage dashboard</h2>
   <p style="color:#8b949e">Your data is linked to your GitHub account. No account creation needed.</p>
   ${oauthSection}
-  <form method="POST" action="/auth/pat" style="max-width:420px; margin:0 auto; text-align:left">
-    <label style="color:#8b949e; font-size:0.9rem; display:block; margin-bottom:6px">
-      Sign in with a GitHub Personal Access Token (PAT)
-    </label>
-    <input
-      type="password"
-      name="pat"
-      placeholder="ghp_..."
-      required
-      autocomplete="off"
-      style="width:100%; padding:10px 12px; border-radius:6px; border:1px solid #30363d;
-             background:#161b22; color:#e6edf3; font-size:0.95rem; box-sizing:border-box"
-    />
-    <p style="color:#8b949e; font-size:0.8rem; margin:6px 0 12px">
-      Needs <code>read:user</code> scope (and <code>read:org</code> + SSO authorization if your org enforces SAML SSO).
-    </p>
-    <button type="submit" class="btn btn-primary" style="width:100%; font-size:1rem; padding:10px">
-      Sign in with PAT
-    </button>
-  </form>
   <p style="color:#8b949e; margin-top:32px; font-size:0.85rem">
     The VS Code extension uploads data automatically using your existing GitHub session —
     no separate sign-in required.
