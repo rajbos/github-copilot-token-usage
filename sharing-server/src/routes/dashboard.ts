@@ -722,7 +722,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   document.querySelectorAll('#period-tabs .tab').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var target = btn.getAttribute('data-period');
-      location.hash = target;
+      history.replaceState(null, '', '#' + target);
       activatePeriod(target);
     });
   });
