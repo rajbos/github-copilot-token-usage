@@ -1332,8 +1332,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📅 Today  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.today.estimatedCostCopilot ?? 0).toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.today.estimatedCost.toFixed(2)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.today.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
@@ -1346,8 +1346,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📊 Last 30 Days  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.last30Days.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.last30Days.estimatedCost.toFixed(4)} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.last30Days.estimatedCostCopilot ?? 0).toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.last30Days.estimatedCost.toFixed(2)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.last30Days.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.last30Days.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.last30Days.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.last30Days.sessions} |\n`);
