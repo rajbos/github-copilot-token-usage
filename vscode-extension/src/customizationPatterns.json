@@ -2,7 +2,17 @@
   "description": "Defines Copilot customization file patterns to scan in workspaces",
   "lastUpdated": "2026-02-11",
   "stalenessThresholdDays": 90,
-  "excludeDirs": ["node_modules", ".git", "dist", "build", "out", "__pycache__", ".venv", ".next", "coverage"],
+  "excludeDirs": [
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "out",
+    "__pycache__",
+    ".venv",
+    ".next",
+    "coverage"
+  ],
   "patterns": [
     {
       "id": "copilot-instructions",
@@ -83,11 +93,11 @@
     },
     {
       "id": "claude-code",
-      "type": "non-copilot-instructions",
+      "type": "non-copilot-config",
       "category": "non-copilot",
       "icon": "🎭",
-      "label": "Claude Code",
-      "path": "CLAUDE.md",
+      "label": "Claude Code Settings",
+      "path": ".claude/settings.json",
       "scanMode": "exact",
       "caseInsensitive": true
     },
@@ -216,6 +226,81 @@
       "path": ".aiassistant/rules/*.md",
       "scanMode": "recursive",
       "maxDepth": 2
+    },
+    {
+      "id": "cursor-dotrules",
+      "path": ".cursorrules",
+      "scanMode": "exact",
+      "type": "non-copilot-instructions",
+      "icon": "🔷",
+      "label": "Cursor Rules (.cursorrules)",
+      "category": "non-copilot"
+    },
+    {
+      "id": "windsurf-dotrules",
+      "path": ".windsurfrules",
+      "scanMode": "exact",
+      "type": "non-copilot-instructions",
+      "icon": "🌊",
+      "label": "Windsurf Rules (.windsurfrules)",
+      "category": "non-copilot"
+    },
+    {
+      "id": "windsurf-skills",
+      "path": ".windsurf/skills/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2,
+      "type": "non-copilot-instructions",
+      "icon": "🌊",
+      "label": "Windsurf Skills",
+      "category": "non-copilot"
+    },
+    {
+      "id": "roo-code",
+      "path": ".roo/rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2,
+      "type": "non-copilot-instructions",
+      "icon": "🦘",
+      "label": "Roo Code Rules",
+      "category": "non-copilot"
+    },
+    {
+      "id": "opencode-config",
+      "path": "opencode.json",
+      "scanMode": "exact",
+      "type": "non-copilot-config",
+      "icon": "🔓",
+      "label": "OpenCode Config",
+      "category": "non-copilot"
+    },
+    {
+      "id": "trae-rules",
+      "path": ".trae/rules/*.md",
+      "scanMode": "recursive",
+      "maxDepth": 2,
+      "type": "non-copilot-instructions",
+      "icon": "🔧",
+      "label": "Trae Rules",
+      "category": "non-copilot"
+    },
+    {
+      "id": "junie-guidelines",
+      "path": ".junie/guidelines.md",
+      "scanMode": "exact",
+      "type": "non-copilot-instructions",
+      "icon": "🧠",
+      "label": "JetBrains Junie Guidelines",
+      "category": "non-copilot"
+    },
+    {
+      "id": "codex-md",
+      "path": "CODEX.md",
+      "scanMode": "exact",
+      "type": "non-copilot-instructions",
+      "icon": "🤖",
+      "label": "OpenAI Codex Instructions",
+      "category": "non-copilot"
     }
   ]
 }
