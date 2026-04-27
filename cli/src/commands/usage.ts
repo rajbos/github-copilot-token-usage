@@ -107,9 +107,9 @@ function printPeriodStats(
 	console.log(`  Avg tokens/session:    ${chalk.bold(formatTokens(stats.avgTokensPerSession))}`);
 
 	if (options.cost && stats.estimatedCost > 0) {
-		console.log(`  Estimated cost (API):  ${chalk.green('$' + stats.estimatedCost.toFixed(4))}`);
+		console.log(`  Estimated cost (est.): ${chalk.green('$' + stats.estimatedCost.toFixed(4))}  ${chalk.dim('(provider API rates)')}`);
 		if ((stats.estimatedCostCopilot ?? 0) > 0) {
-			console.log(`  Estimated cost (Copilot): ${chalk.green('$' + (stats.estimatedCostCopilot ?? 0).toFixed(4))}`);
+			console.log(`  Estimated cost (TBB):  ${chalk.green('$' + (stats.estimatedCostCopilot ?? 0).toFixed(4))}  ${chalk.dim('(Copilot AI Credits)')}`);
 		}
 	}
 
