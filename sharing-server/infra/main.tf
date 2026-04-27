@@ -53,7 +53,10 @@ resource "azurerm_container_app_environment_storage" "data" {
 # The ACA environment default_domain is known after environment creation,
 # so this local can be used for BASE_URL before the container app is created.
 locals {
-  app_fqdn = "${var.app_name}.${azurerm_container_app_environment.this.default_domain}"
+  # Native ACA FQDN — always available; used as CNAME target for custom DNS setup.
+  aca_fqdn = "${var.app_name}.${azurerm_container_app_environment.this.default_domain}"
+  # Effective public hostname — custom domain when provided, ACA FQDN otherwise.
+  app_fqdn = var.custom_domain != "" ? var.custom_domain : local.aca_fqdn
 }
 
 resource "azurerm_container_app" "this" {
@@ -176,4 +179,28 @@ resource "azurerm_container_app" "this" {
       }
     }
   }
+}
+
+# ── Custom domain + managed TLS certificate ───────────────────────────────────
+# Only created when var.custom_domain is set.
+# DNS prerequisites (must exist before applying):
+#   CNAME  <subdomain>        → local.aca_fqdn
+#   TXT    asuid.<subdomain>  → azurerm_container_app_environment.this.custom_domain_verification_id
+
+resource "azurerm_container_app_environment_managed_certificate" "this" {
+  count                        = var.custom_domain != "" ? 1 : 0
+  name                         = "sharing-cert"
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  dns_suffix                   = var.custom_domain
+  domain_control_validation    = "CNAME"
+}
+
+resource "azurerm_container_app_custom_domain" "this" {
+  count                                    = var.custom_domain != "" ? 1 : 0
+  name                                     = var.custom_domain
+  container_app_id                         = azurerm_container_app.this.id
+  container_app_environment_certificate_id = azurerm_container_app_environment_managed_certificate.this[0].id
+  certificate_binding_type                 = "SniEnabled"
+
+  depends_on = [azurerm_container_app_environment_managed_certificate.this]
 }

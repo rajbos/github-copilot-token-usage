@@ -1,3 +1,8 @@
+output "aca_fqdn" {
+  description = "Native ACA FQDN — use as CNAME target when setting up a custom domain"
+  value       = local.aca_fqdn
+}
+
 output "app_url" {
   description = "Public HTTPS URL of the deployed sharing server"
   value       = "https://${local.app_fqdn}"

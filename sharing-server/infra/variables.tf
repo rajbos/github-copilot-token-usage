@@ -50,6 +50,12 @@ variable "github_org_check_token" {
   default     = ""
 }
 
+variable "custom_domain" {
+  description = "Optional: custom domain to bind to the container app (e.g. sharing.example.com). Leave empty to use the ACA-generated FQDN."
+  type        = string
+  default     = ""
+}
+
 variable "min_replicas" {
   description = "Minimum container replicas. Must be 1 for SQLite on Azure Files — scale-to-zero causes stale SMB oplocks that block DB startup. Scale-to-zero (0) is only safe if you accept occasional lock errors on cold start."
   type        = number
