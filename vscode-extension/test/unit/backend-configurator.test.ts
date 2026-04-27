@@ -286,7 +286,8 @@ test('BackendConfigPanel routes webview messages to callbacks', async () => {
 		sharedKeySet: false,
 		privacyBadge: 'Team Anonymized',
 		isConfigured: true,
-		authStatus: 'Auth: Entra ID (RBAC)'
+		authStatus: 'Auth: Entra ID (RBAC)',
+		githubTokenAvailable: false
 	});
 
 	const panel = new BackendConfigPanel((vscode as any).Uri.parse('file:///ext'), {
@@ -314,7 +315,8 @@ test('config panel HTML marks offline state and disables test button when offlin
 		sharedKeySet: false,
 		privacyBadge: 'Team Anonymized',
 		isConfigured: false,
-		authStatus: 'Auth: Entra ID (RBAC)'
+		authStatus: 'Auth: Entra ID (RBAC)',
+		githubTokenAvailable: false
 	});
 
 	const panel: any = new BackendConfigPanel((vscode as any).Uri.parse('file:///ext'), {
@@ -361,7 +363,8 @@ test('config panel HTML disables test button when backend is disabled', async ()
 		sharedKeySet: false,
 		privacyBadge: 'Team Anonymized',
 		isConfigured: false,
-		authStatus: 'Auth: Entra ID (RBAC)'
+		authStatus: 'Auth: Entra ID (RBAC)',
+		githubTokenAvailable: false
 	});
 
 	const panel: any = new BackendConfigPanel((vscode as any).Uri.parse('file:///ext'), {
@@ -406,7 +409,8 @@ test('config panel HTML toggles shared-key controls, keeps enable-first layout, 
 		sharedKeySet: false,
 		privacyBadge: 'Team Anonymized',
 		isConfigured: false,
-		authStatus: 'Auth: Entra ID (RBAC)'
+		authStatus: 'Auth: Entra ID (RBAC)',
+		githubTokenAvailable: false
 	};
 
 	const panel: any = new BackendConfigPanel((vscode as any).Uri.parse('file:///ext'), {

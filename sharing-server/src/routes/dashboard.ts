@@ -7,7 +7,6 @@ import {
 	COOKIE_NAME, OAUTH_STATE_COOKIE, SESSION_MAX_AGE,
 } from '../session.js';
 import { getUserById, getUserByGithubId, getUploadsForUser, getAllUsers, upsertUser, type UploadRow, type UserRow } from '../db.js';
-
 export const dashboard = new Hono();
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID ?? '';
@@ -106,11 +105,15 @@ dashboard.get('/auth/github/callback', async (c) => {
 	// Optional org membership check
 	const allowedOrg = process.env.ALLOWED_GITHUB_ORG;
 	if (allowedOrg) {
+		// Prefer a server-side PAT (already SSO-authorized) so the user's OAuth token
+		// doesn't need read:org or SAML SSO authorization.
+		const checkToken = process.env.GITHUB_ORG_CHECK_TOKEN || accessToken;
 		try {
 			const memberRes = await fetch(`https://api.github.com/orgs/${allowedOrg}/members/${userData.login}`, {
 				headers: {
-					Authorization: `Bearer ${accessToken}`,
+					Authorization: `Bearer ${checkToken}`,
 					'User-Agent': 'copilot-sharing-server/1.0',
+					Accept: 'application/vnd.github+json',
 				},
 				signal: AbortSignal.timeout(10_000),
 			});
@@ -140,6 +143,80 @@ dashboard.get('/auth/github/callback', async (c) => {
 /** GET /auth/logout — Clear session cookie and redirect to dashboard. */
 dashboard.get('/auth/logout', (c) => {
 	deleteCookie(c, COOKIE_NAME, { path: '/' });
+	return c.redirect('/dashboard');
+});
+
+/** POST /auth/pat — Sign in with a GitHub Personal Access Token. */
+dashboard.post('/auth/pat', async (c) => {
+	const body = await c.req.parseBody();
+	const token = (body['pat'] as string ?? '').trim();
+
+	if (!token) {
+		return c.html(errorPage('No token provided.'), 400);
+	}
+
+	// Fetch the authenticated user
+	let userData: { id: number; login: string; name: string | null; avatar_url: string };
+	try {
+		const userRes = await fetch('https://api.github.com/user', {
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'User-Agent': 'copilot-sharing-server/1.0',
+				Accept: 'application/vnd.github+json',
+			},
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (!userRes.ok) {
+			return c.html(errorPage('Invalid token or unable to verify GitHub identity.'), 401);
+		}
+		userData = await userRes.json() as typeof userData;
+	} catch (err) {
+		return c.html(errorPage(`Failed to reach GitHub: ${String(err)}`), 502);
+	}
+
+	// Optional org membership check
+	const allowedOrg = process.env.ALLOWED_GITHUB_ORG;
+	if (allowedOrg) {
+		try {
+			const memberRes = await fetch(`https://api.github.com/user/memberships/orgs/${allowedOrg}`, {
+				headers: {
+					Authorization: `Bearer ${token}`,
+					'User-Agent': 'copilot-sharing-server/1.0',
+					Accept: 'application/vnd.github+json',
+				},
+				signal: AbortSignal.timeout(10_000),
+			});
+			if (memberRes.status === 403) {
+				return c.html(errorPage(
+					`Access denied: your token is not authorized for the "${allowedOrg}" organization. ` +
+					`If this org uses SAML SSO, go to github.com → Settings → Personal access tokens, ` +
+					`click your token, and grant SSO access to the "${allowedOrg}" org.`
+				), 403);
+			}
+			if (memberRes.status !== 200) {
+				return c.html(errorPage(`Access denied: you are not a member of the "${allowedOrg}" organization.`), 403);
+			}
+			const membership = await memberRes.json() as { state: string };
+			if (membership.state !== 'active') {
+				return c.html(errorPage(`Access denied: your membership in the "${allowedOrg}" organization is not active.`), 403);
+			}
+		} catch {
+			return c.html(errorPage('Unable to verify organization membership. Please try again.'), 502);
+		}
+	}
+
+	const user = upsertUser(userData.id, userData.login, userData.name, userData.avatar_url);
+	const claims = makeClaims(user.id);
+	const sessionValue = encodeSession(claims);
+
+	setCookie(c, COOKIE_NAME, sessionValue, {
+		httpOnly: true,
+		secure: process.env.NODE_ENV === 'production',
+		sameSite: 'Lax',
+		maxAge: SESSION_MAX_AGE,
+		path: '/',
+	});
+
 	return c.redirect('/dashboard');
 });
 
@@ -181,6 +258,21 @@ function h(text: unknown): string {
 		.replace(/"/g, '&quot;');
 }
 
+/** Render a tip string: converts [text](url) markdown links to <a> tags, escapes everything else. */
+function renderTip(tip: string): string {
+	const mdLink = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+	const parts: string[] = [];
+	let last = 0;
+	let m: RegExpExecArray | null;
+	while ((m = mdLink.exec(tip)) !== null) {
+		parts.push(h(tip.slice(last, m.index)));
+		parts.push(`<a href="${h(m[2])}" target="_blank" rel="noopener noreferrer">${h(m[1])}</a>`);
+		last = m.index + m[0].length;
+	}
+	parts.push(h(tip.slice(last)));
+	return parts.join('');
+}
+
 /** Normalize raw vscode.env.appName values to the friendly names used by the extension. */
 function normalizeEditorName(raw: string | null | undefined): string {
 	const name = (raw ?? '').trim();
@@ -203,6 +295,15 @@ function fmt(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
 	return String(n);
+}
+
+// ── Fluency Score types (score is computed by the extension and uploaded directly) ──────────
+
+interface CategoryScore { category: string; icon: string; stage: number; tips: string[] }
+interface FluencyScore {
+	overallStage: number;
+	overallLabel: string;
+	categories: CategoryScore[];
 }
 
 function layout(title: string, body: string): string {
@@ -284,6 +385,57 @@ function layout(title: string, body: string): string {
   .alert { padding: 12px 16px; border-radius: 6px; margin: 4px 0; }
   .alert-warn { background: #3d2b0030; border: 1px solid #bb8009; color: #e3b341; }
 
+  /* ── Fluency Score Badge ── */
+  .fluency-badge { display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: #1c2433; border: 1px solid #30363d; border-radius: 8px;
+    cursor: pointer; transition: all 0.15s; text-decoration: none; user-select: none; }
+  .fluency-badge:hover { background: #21262d; border-color: #58a6ff44; }
+  .fluency-badge .fb-label { font-size: 0.75rem; color: #8b949e; }
+  .fluency-badge .fb-stage { font-size: 0.9rem; font-weight: 700; color: #e6edf3; }
+  .fluency-badge .fb-stars { font-size: 0.8rem; letter-spacing: 1px; }
+  .fluency-badge .fb-icon { font-size: 1.1rem; }
+
+  /* ── Fluency Modal Overlay ── */
+  .fluency-modal-overlay { display: none; position: fixed; inset: 0; background: #0d111799;
+    z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  .fluency-modal-overlay.open { display: flex; }
+  .fluency-modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    width: 100%; max-width: 860px; max-height: 90vh; overflow-y: auto;
+    display: flex; flex-direction: column; }
+  .fluency-modal-header { padding: 20px 24px 0; display: flex; align-items: flex-start;
+    justify-content: space-between; gap: 16px; }
+  .fluency-modal-title { font-size: 1.2rem; font-weight: 700; color: #e6edf3; margin: 0; }
+  .fluency-modal-subtitle { color: #8b949e; font-size: 0.85rem; margin-top: 4px; }
+  .fluency-modal-close { background: none; border: none; color: #8b949e; font-size: 1.4rem;
+    cursor: pointer; padding: 0 4px; line-height: 1; flex-shrink: 0; }
+  .fluency-modal-close:hover { color: #e6edf3; }
+  .fluency-modal-body { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+  /* ── Radar Chart ── */
+  .fluency-chart-wrap { position: relative; height: 320px; display: flex; align-items: center; justify-content: center; }
+
+  /* ── Category Cards ── */
+  .fluency-categories { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .fluency-cat-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px;
+    padding: 14px 16px; overflow: hidden; }
+  .fluency-cat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .fluency-cat-icon { font-size: 1.1rem; flex-shrink: 0; }
+  .fluency-cat-name { font-size: 0.85rem; font-weight: 600; color: #c9d1d9; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .fluency-stage-pill { display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 0.72rem; font-weight: 600; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+  .stage-1 { background: rgba(147,197,253,0.15); color: #93c5fd; border: 1px solid rgba(147,197,253,0.4); }
+  .stage-2 { background: rgba(110,231,183,0.15); color: #6ee7b7; border: 1px solid rgba(110,231,183,0.4); }
+  .stage-3 { background: rgba(59,130,246,0.15);  color: #3b82f6; border: 1px solid rgba(59,130,246,0.4); }
+  .stage-4 { background: rgba(16,185,129,0.15);  color: #10b981; border: 1px solid rgba(16,185,129,0.4); }
+  .fluency-tips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .fluency-tips li { font-size: 0.8rem; color: #8b949e; padding-left: 14px; position: relative;
+    overflow-wrap: break-word; word-break: break-word; }
+  .fluency-tips li::before { content: "→"; position: absolute; left: 0; color: #58a6ff66; }
+  .fluency-tips a { color: #58a6ff; text-decoration: none; }
+  .fluency-tips a:hover { text-decoration: underline; }
+  .fluency-no-data { color: #8b949e; font-size: 0.85rem; font-style: italic; }
+
   /* ── Collapsible ── */
   details.card > summary { cursor: pointer; color: #8b949e; font-size: 0.9rem; padding: 0;
     user-select: none; list-style: none; display: flex; align-items: center; gap: 6px; }
@@ -308,14 +460,42 @@ ${body}
 }
 
 function loginPage(): string {
+	const oauthAvailable = !!process.env.GITHUB_CLIENT_ID;
+	const oauthSection = oauthAvailable ? `
+  <a href="/auth/github" class="btn btn-primary" style="font-size:1rem; padding:12px 28px">
+    Sign in with GitHub (OAuth)
+  </a>
+  <p style="color:#8b949e; margin-top:8px; font-size:0.85rem">
+    Note: requires org admin approval for SSO organizations.
+  </p>
+  <div style="color:#8b949e; margin: 24px 0; font-size:0.9rem">— or —</div>` : '';
+
 	return layout('Sign In', `
 <div class="header"><h1>🤖 Copilot Token Tracker Sharing</h1></div>
 <div class="content" style="text-align:center; margin-top: 80px; align-items:center">
   <h2 style="color:#e6edf3">Sign in to view your usage dashboard</h2>
   <p style="color:#8b949e">Your data is linked to your GitHub account. No account creation needed.</p>
-  <a href="/auth/github" class="btn btn-primary" style="font-size:1rem; padding:12px 28px">
-    Sign in with GitHub
-  </a>
+  ${oauthSection}
+  <form method="POST" action="/auth/pat" style="max-width:420px; margin:0 auto; text-align:left">
+    <label style="color:#8b949e; font-size:0.9rem; display:block; margin-bottom:6px">
+      Sign in with a GitHub Personal Access Token (PAT)
+    </label>
+    <input
+      type="password"
+      name="pat"
+      placeholder="ghp_..."
+      required
+      autocomplete="off"
+      style="width:100%; padding:10px 12px; border-radius:6px; border:1px solid #30363d;
+             background:#161b22; color:#e6edf3; font-size:0.95rem; box-sizing:border-box"
+    />
+    <p style="color:#8b949e; font-size:0.8rem; margin:6px 0 12px">
+      Needs <code>read:user</code> scope (and <code>read:org</code> + SSO authorization if your org enforces SAML SSO).
+    </p>
+    <button type="submit" class="btn btn-primary" style="width:100%; font-size:1rem; padding:10px">
+      Sign in with PAT
+    </button>
+  </form>
   <p style="color:#8b949e; margin-top:32px; font-size:0.85rem">
     The VS Code extension uploads data automatically using your existing GitHub session —
     no separate sign-in required.
@@ -347,6 +527,15 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 		week: computeStats(uploads7d),
 		month: computeStats(uploads),
 	};
+
+	// ── Fluency score ─────────────────────────────────────────────────────────
+	// Use the score uploaded directly by the extension (exact same computation as local UI).
+	let fluencyScore: FluencyScore | null = null;
+	if (user.fluency_score_json) {
+		try {
+			fluencyScore = JSON.parse(user.fluency_score_json) as FluencyScore;
+		} catch { /* ignore malformed stored score */ }
+	}
 
 	// ── Editor breakdown (last 30 days) ───────────────────────────────────────
 	const editorTotals = new Map<string, number>();
@@ -533,7 +722,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   document.querySelectorAll('#period-tabs .tab').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var target = btn.getAttribute('data-period');
-      location.hash = target;
+      history.replaceState(null, '', '#' + target);
       activatePeriod(target);
     });
   });
@@ -733,11 +922,149 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   });
 })();`;
 
+	// ── Fluency badge (header) ────────────────────────────────────────────────
+	const stageStars = fluencyScore
+		? ['', '⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐'][fluencyScore.overallStage] ?? ''
+		: '';
+	const stageColorMap: Record<number, string> = { 1: '#93c5fd', 2: '#6ee7b7', 3: '#3b82f6', 4: '#10b981' };
+	const stageColor = fluencyScore ? (stageColorMap[fluencyScore.overallStage] ?? '#93c5fd') : '#93c5fd';
+
+	const fluencyBadgeHtml = fluencyScore ? `
+<button class="fluency-badge" id="fluency-badge-btn" title="View your AI Fluency Score details">
+  <span class="fb-icon">🎯</span>
+  <div>
+    <div class="fb-label">AI Fluency</div>
+    <div class="fb-stage" style="color:${stageColor}">${h(fluencyScore.overallLabel)}</div>
+  </div>
+  <span class="fb-stars">${stageStars}</span>
+</button>` : '';
+
+	// ── Fluency modal ─────────────────────────────────────────────────────────
+	const fluencyModalHtml = fluencyScore ? (() => {
+		const cats = fluencyScore.categories;
+		const catCards = cats.map(cat => `
+  <div class="fluency-cat-card">
+    <div class="fluency-cat-header">
+      <span class="fluency-cat-icon">${cat.icon}</span>
+      <span class="fluency-cat-name">${h(cat.category)}</span>
+      <span class="fluency-stage-pill stage-${cat.stage}">Stage ${cat.stage}</span>
+    </div>
+    ${cat.tips.length > 0
+		? `<ul class="fluency-tips">${cat.tips.map(t => `<li>${renderTip(t)}</li>`).join('')}</ul>`
+		: `<p class="fluency-no-data">🏆 You're at the highest level!</p>`}
+  </div>`).join('');
+
+		return `
+<div class="fluency-modal-overlay" id="fluency-modal-overlay">
+  <div class="fluency-modal">
+    <div class="fluency-modal-header">
+      <div>
+        <p class="fluency-modal-title">🎯 AI Fluency Score</p>
+        <p class="fluency-modal-subtitle">
+          Overall: <strong style="color:${stageColor}">${h(fluencyScore.overallLabel)}</strong>
+          &nbsp;${stageStars}&nbsp;·&nbsp;Based on your last 30 days of activity
+        </p>
+      </div>
+      <button class="fluency-modal-close" id="fluency-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="fluency-modal-body">
+      <div class="fluency-chart-wrap">
+        <canvas id="fluency-radar-chart" style="max-height:300px"></canvas>
+      </div>
+      <div class="fluency-categories">${catCards}</div>
+    </div>
+  </div>
+</div>`;
+	})() : '';
+
+	// ── Fluency JS ────────────────────────────────────────────────────────────
+	const fluencyJs = fluencyScore ? `
+(function() {
+  var overlay = document.getElementById('fluency-modal-overlay');
+  var badge   = document.getElementById('fluency-badge-btn');
+  var closeBtn = document.getElementById('fluency-modal-close');
+  var radarCanvas = document.getElementById('fluency-radar-chart');
+  var radarChart = null;
+
+  function openModal() {
+    overlay.classList.add('open');
+    if (!radarChart && radarCanvas) { buildRadar(); }
+  }
+  function closeModal() { overlay.classList.remove('open'); }
+
+  if (badge)    badge.addEventListener('click', openModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (overlay)  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) { closeModal(); }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { closeModal(); }
+  });
+
+  function buildRadar() {
+    var FLUENCY_DATA = ${safeJson(fluencyScore.categories.map(c => ({ category: c.category, icon: c.icon, stage: c.stage })))};
+    var labels   = FLUENCY_DATA.map(function(c) { return c.icon + ' ' + c.category; });
+    var values   = FLUENCY_DATA.map(function(c) { return c.stage; });
+    var overallStage = ${fluencyScore.overallStage};
+    var fillColor   = 'rgba(88,166,255,0.25)';
+    var borderColor = '#58a6ff';
+
+    radarChart = new Chart(radarCanvas, {
+      type: 'radar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Your Score',
+          data: values,
+          backgroundColor: fillColor,
+          borderColor: borderColor,
+          borderWidth: 2,
+          pointBackgroundColor: borderColor,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+          r: {
+            min: 0, max: 4,
+            ticks: {
+              stepSize: 1, color: '#8b949e', backdropColor: 'transparent', font: { size: 10 },
+              callback: function(v) {
+                return v === 0 ? '' : ['','AI Skeptic','Explorer','Collaborator','Strategist'][v] || v;
+              },
+            },
+            grid: { color: '#30363d' },
+            pointLabels: { color: '#c9d1d9', font: { size: 11 } },
+            angleLines: { color: '#30363d' },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
+            callbacks: {
+              label: function(ctx) {
+                var s = ctx.parsed.r;
+                var labels = ['','AI Skeptic','AI Explorer','AI Collaborator','AI Strategist'];
+                return ' Stage ' + s + ': ' + (labels[s] || '');
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+})();` : '';
+
 	return layout(`${user.github_login}'s Dashboard`, `
 <div class="header">
   <h1>🤖 Copilot Token Tracker</h1>
   <span class="spacer"></span>
-  ${avatarUrl ? `<img src="${avatarUrl}" class="avatar-sm" alt="${login}">` : ''}
+  ${fluencyBadgeHtml}
+  ${avatarUrl ? `<img src="${avatarUrl}" class="avatar-sm" alt="${login}" style="margin-left:8px">` : ''}
   <span style="color:#c9d1d9;font-size:0.875rem">${displayName}</span>
   <a href="/auth/logout" style="margin-left:8px">Sign out</a>
 </div>
@@ -749,12 +1076,38 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   ${tableHtml}
   ${adminHtml}
 </div>
+${fluencyModalHtml}
 
 <script>
 var CHART_DATA = ${safeJson(chartData)};
 </script>
 <script>${_chartJsCode}</script>
-<script>${interactiveJs}</script>`);
+<script>${interactiveJs}</script>
+<script>
+// Re-compute "Today" stats using browser's local timezone (server pre-renders in UTC)
+(function() {
+  function fmtLocal(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+  var todayLocal = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD in local timezone
+  var todayData = CHART_DATA.filter(function(r) { return r.day === todayLocal; });
+  var inputTokens = todayData.reduce(function(s, r) { return s + r.inputTokens; }, 0);
+  var outputTokens = todayData.reduce(function(s, r) { return s + r.outputTokens; }, 0);
+  var interactions = todayData.reduce(function(s, r) { return s + r.interactions; }, 0);
+  var daysActive = todayData.length > 0 ? 1 : 0;
+  var panel = document.getElementById('stats-today');
+  if (panel) {
+    var values = panel.querySelectorAll('.stat-card .value');
+    if (values[0]) values[0].textContent = fmtLocal(inputTokens);
+    if (values[1]) values[1].textContent = fmtLocal(outputTokens);
+    if (values[2]) values[2].textContent = fmtLocal(interactions);
+    if (values[3]) values[3].textContent = String(daysActive);
+  }
+})();
+</script>
+<script>${fluencyJs}</script>`);
 }
 
 function errorPage(message: string): string {

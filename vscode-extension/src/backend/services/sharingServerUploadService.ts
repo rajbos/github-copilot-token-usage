@@ -15,6 +15,7 @@ export interface SharingServerEntry {
 	outputTokens: number;
 	interactions: number;
 	datasetId?: string;
+	fluencyMetrics?: Record<string, unknown>;
 }
 
 /** Maximum number of entries per HTTP request (matches server-side limit). */
@@ -70,6 +71,39 @@ export class SharingServerUploadService {
 			const message = `Upload failed: ${e?.message ?? e}`;
 			warn(`Sharing server upload: ${message}`);
 			return { success: false, entriesUploaded: 0, message };
+		}
+	}
+
+	/**
+	 * Upload the extension's locally-computed fluency score so the server dashboard
+	 * shows the exact same result as the extension's AI Fluency Score panel.
+	 */
+	async uploadFluencyScore(
+		endpointUrl: string,
+		githubToken: string,
+		score: Record<string, unknown>,
+		log: (msg: string) => void,
+		warn: (msg: string) => void,
+	): Promise<void> {
+		const baseUrl = endpointUrl.replace(/\/$/, '');
+		const url = `${baseUrl}/api/fluency-score`;
+		try {
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${githubToken}`,
+				},
+				body: JSON.stringify(score),
+			});
+			if (!response.ok) {
+				const errorText = await response.text().catch(() => '');
+				warn(`Sharing server fluency-score upload: HTTP ${response.status}: ${errorText}`);
+				return;
+			}
+			log('Sharing server fluency-score upload: ok');
+		} catch (e: any) {
+			warn(`Sharing server fluency-score upload failed: ${e?.message ?? e}`);
 		}
 	}
 }

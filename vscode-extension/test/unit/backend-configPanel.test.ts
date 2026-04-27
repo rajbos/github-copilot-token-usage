@@ -41,6 +41,7 @@ function makeState(overrides?: Partial<BackendConfigPanelState>): BackendConfigP
 		privacyBadge: 'Solo',
 		isConfigured: true,
 		authStatus: 'Entra ID',
+		githubTokenAvailable: false,
 		...overrides
 	};
 }
