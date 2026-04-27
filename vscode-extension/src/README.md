@@ -46,11 +46,44 @@ Contains pricing information for AI models, including input and output token cos
       "cacheCreationCostPerMillion": 2.1875,
       "category": "Model category",
       "tier": "standard|premium|unknown",
-      "multiplier": 1
+      "multiplier": 1,
+      "copilotPricing": {
+        "inputCostPerMillion": 1.75,
+        "cachedInputCostPerMillion": 0.175,
+        "cacheCreationCostPerMillion": 2.1875,
+        "outputCostPerMillion": 14.0,
+        "releaseStatus": "GA",
+        "category": "Versatile"
+      }
     }
   }
 }
 ```
+
+**Provider vs. GitHub Copilot pricing**
+
+The top-level `inputCostPerMillion` / `outputCostPerMillion` / cache fields
+represent the **direct provider/API price** (OpenAI, Anthropic, Google, xAI, …).
+The optional `copilotPricing` block represents **GitHub Copilot's published
+per-token AI Credit rates**
+(<https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing>,
+1 AI credit = $0.01). Both are computed in parallel by `calculateEstimatedCost`:
+
+```ts
+calculateEstimatedCost(usage, pricing);             // provider/API cost (default)
+calculateEstimatedCost(usage, pricing, 'copilot');  // GitHub Copilot AI-Credit cost
+```
+
+When a model has no `copilotPricing` block the `'copilot'` source falls back to
+the provider rates as a proxy — this means the Copilot cost is never
+*under-reported* due to a missing entry, it just won't reflect the (often
+identical) GitHub-published rate explicitly.
+
+> ℹ️ **Caching note.** Copilot Chat session logs do not (yet) expose a
+> cached-read / cache-creation token breakdown, so the Copilot cost falls back
+> to the full input rate for those sources. Adapters that *do* surface cache
+> tokens (Claude Desktop, Claude Code, OpenCode) automatically benefit from the
+> reduced cached-input rates in `copilotPricing`.
 
 **Cache pricing fields (optional):**
 

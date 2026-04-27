@@ -437,6 +437,7 @@ export async function calculateDetailedStats(
 		period.treesEquivalent = period.co2 / CO2_ABSORPTION_PER_TREE_PER_YEAR;
 		period.waterUsage = (period.tokens / 1000) * WATER_USAGE_PER_1K_TOKENS;
 		period.estimatedCost = calculateEstimatedCost(period.modelUsage, modelPricing);
+		period.estimatedCostCopilot = calculateEstimatedCost(period.modelUsage, modelPricing, 'copilot');
 	}
 
 	return {

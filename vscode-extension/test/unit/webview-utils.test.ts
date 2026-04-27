@@ -82,16 +82,16 @@ test('formatNumber: adds thousand separators', () => {
 
 // ── formatCost ──────────────────────────────────────────────────────────
 
-test('formatCost: formats as USD with 4 decimal places', () => {
+test('formatCost: formats as USD with 2 decimal places', () => {
 	setFormatLocale('en-US');
 	const result = formatCost(1.23456789);
 	assert.ok(result.includes('$'), 'should contain dollar sign');
-	assert.ok(result.includes('1.2346'), 'should round to 4 decimal places');
+	assert.ok(result.includes('1.23'), 'should round to 2 decimal places');
 });
 
 test('formatCost: zero cost', () => {
 	setFormatLocale('en-US');
 	const result = formatCost(0);
 	assert.ok(result.includes('$'), 'should contain dollar sign');
-	assert.ok(result.includes('0.0000'), 'should show four decimal zeros');
+	assert.ok(result.includes('0.00'), 'should show two decimal zeros');
 });
