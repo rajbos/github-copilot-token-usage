@@ -74,9 +74,14 @@ resource "azurerm_container_app" "this" {
     value = var.session_secret
   }
 
-  secret {
-    name  = "org-check-token"
-    value = var.github_org_check_token
+  # Only create the org-check-token secret when a value is provided.
+  # ACA rejects secrets with empty values.
+  dynamic "secret" {
+    for_each = var.github_org_check_token != "" ? [1] : []
+    content {
+      name  = "org-check-token"
+      value = var.github_org_check_token
+    }
   }
 
   ingress {
@@ -135,9 +140,13 @@ resource "azurerm_container_app" "this" {
         name  = "ALLOWED_GITHUB_ORG"
         value = var.allowed_github_org
       }
-      env {
-        name        = "GITHUB_ORG_CHECK_TOKEN"
-        secret_name = "org-check-token"
+      # Only wire GITHUB_ORG_CHECK_TOKEN when the secret exists.
+      dynamic "env" {
+        for_each = var.github_org_check_token != "" ? [1] : []
+        content {
+          name        = "GITHUB_ORG_CHECK_TOKEN"
+          secret_name = "org-check-token"
+        }
       }
 
       liveness_probe {
