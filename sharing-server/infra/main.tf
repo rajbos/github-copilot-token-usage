@@ -191,7 +191,7 @@ resource "azurerm_container_app_environment_managed_certificate" "this" {
   count                        = var.custom_domain != "" ? 1 : 0
   name                         = "sharing-cert"
   container_app_environment_id = azurerm_container_app_environment.this.id
-  dns_suffix                   = var.custom_domain
+  subject_name                 = var.custom_domain
   domain_control_validation    = "CNAME"
 }
 
