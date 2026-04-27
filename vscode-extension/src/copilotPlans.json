@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "GitHub Copilot plan definitions. Keys match the value of the 'copilot_plan' field returned by the copilot_internal/user API endpoint.",
+  "metadata": {
+    "lastUpdated": "2026-04-27",
+    "source": "https://docs.github.com/en/copilot/get-started/plans",
+    "notes": "monthlyPremiumRequests is the included allotment per user per month. null means unlimited. Extra premium requests beyond the allotment are billed at $0.04 each. Code completions (tab completions) do not consume premium requests on paid plans."
+  },
+  "plans": {
+    "free": {
+      "name": "Copilot Free",
+      "monthlyPricePerUser": 0,
+      "monthlyPremiumRequests": 50,
+      "codeCompletionsPerMonth": 2000,
+      "description": "Limited plan for light use and evaluation"
+    },
+    "individual": {
+      "name": "Copilot Pro",
+      "monthlyPricePerUser": 10,
+      "monthlyPremiumRequests": 300,
+      "codeCompletionsPerMonth": null,
+      "description": "For individual developers (legacy plan ID, same as 'pro')"
+    },
+    "pro": {
+      "name": "Copilot Pro",
+      "monthlyPricePerUser": 10,
+      "monthlyPremiumRequests": 300,
+      "codeCompletionsPerMonth": null,
+      "description": "For individual developers"
+    },
+    "pro_plus": {
+      "name": "Copilot Pro+",
+      "monthlyPricePerUser": 39,
+      "monthlyPremiumRequests": 1500,
+      "codeCompletionsPerMonth": null,
+      "description": "For power users needing more premium requests and the broadest model selection"
+    },
+    "business": {
+      "name": "Copilot Business",
+      "monthlyPricePerUser": 19,
+      "monthlyPremiumRequests": 300,
+      "codeCompletionsPerMonth": null,
+      "description": "For organizations; includes policy controls and audit logs"
+    },
+    "enterprise": {
+      "name": "Copilot Enterprise",
+      "monthlyPricePerUser": 39,
+      "monthlyPremiumRequests": 1000,
+      "codeCompletionsPerMonth": null,
+      "description": "For large organizations on GitHub Enterprise Cloud; includes custom models and expanded controls"
+    }
+  }
+}

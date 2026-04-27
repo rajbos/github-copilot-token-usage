@@ -7,6 +7,7 @@ import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
 import customizationPatternsData from './customizationPatterns.json';
+import copilotPlansData from './copilotPlans.json';
 import { REPO_HYGIENE_SKILL } from './backend/repoHygieneSkill';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
@@ -1329,7 +1330,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.warn(`Copilot plan info unavailable (HTTP ${statusCode ?? 'n/a'}): ${error ?? 'no data'}`);
 				return;
 			}
-			this.log(`Copilot plan: ${planInfo.copilot_plan ?? 'unknown'}`);
+			const planId = planInfo.copilot_plan as string | undefined;
+			const plans = copilotPlansData.plans as Record<string, { name: string; monthlyPremiumRequests: number | null; monthlyPricePerUser: number }>;
+			const knownPlan = planId ? plans[planId] : undefined;
+			const planLabel = knownPlan ? `${knownPlan.name} (${planId})` : (planId ?? 'unknown');
+			this.log(`Copilot plan: ${planLabel}`);
+			if (knownPlan) {
+				const credits = knownPlan.monthlyPremiumRequests !== null ? `${knownPlan.monthlyPremiumRequests.toLocaleString()}/month` : 'unlimited';
+				this.log(`  Monthly premium requests: ${credits}`);
+			}
 			if (planInfo.ide_chat !== undefined)          { this.log(`  IDE chat: ${planInfo.ide_chat}`); }
 			if (planInfo.copilot_ide_agent !== undefined) { this.log(`  Agent mode: ${planInfo.copilot_ide_agent}`); }
 			if (planInfo.public_code_suggestions !== undefined) { this.log(`  Public code suggestions: ${planInfo.public_code_suggestions}`); }

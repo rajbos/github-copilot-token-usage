@@ -2,6 +2,40 @@
 
 This directory contains JSON configuration files for the GitHub Copilot Token Tracker extension.
 
+## copilotPlans.json
+
+Contains GitHub Copilot plan definitions — the `plans` object keys match the `copilot_plan` value returned by the `copilot_internal/user` API endpoint.
+
+**Structure:**
+```json
+{
+  "plans": {
+    "<plan-id>": {
+      "name": "Display name",
+      "monthlyPricePerUser": 10,
+      "monthlyPremiumRequests": 300,
+      "codeCompletionsPerMonth": null,
+      "description": "..."
+    }
+  }
+}
+```
+
+- `monthlyPremiumRequests` — included allotment per user per month; extra requests are $0.04 each
+- `codeCompletionsPerMonth` — tab completions limit; `null` = unlimited (paid plans)
+
+**Current plans:**
+
+| ID | Name | $/user/mo | Premium requests/mo |
+|----|------|-----------|---------------------|
+| `free` | Copilot Free | $0 | 50 |
+| `individual` / `pro` | Copilot Pro | $10 | 300 |
+| `pro_plus` | Copilot Pro+ | $39 | 1,500 |
+| `business` | Copilot Business | $19 | 300 |
+| `enterprise` | Copilot Enterprise | $39 | 1,000 |
+
+**How to update:** Edit the `plans` object when GitHub changes pricing or adds plans. Update `metadata.lastUpdated` and reference the [official plans page](https://docs.github.com/en/copilot/get-started/plans).
+
 ## tokenEstimators.json
 
 Contains character-to-token ratio estimators for different AI models. These ratios are used to estimate token counts from text length.
