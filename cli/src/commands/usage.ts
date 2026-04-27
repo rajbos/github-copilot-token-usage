@@ -107,7 +107,10 @@ function printPeriodStats(
 	console.log(`  Avg tokens/session:    ${chalk.bold(formatTokens(stats.avgTokensPerSession))}`);
 
 	if (options.cost && stats.estimatedCost > 0) {
-		console.log(`  Estimated cost:        ${chalk.green('$' + stats.estimatedCost.toFixed(4))}`);
+		console.log(`  Estimated cost (API):  ${chalk.green('$' + stats.estimatedCost.toFixed(4))}`);
+		if ((stats.estimatedCostCopilot ?? 0) > 0) {
+			console.log(`  Estimated cost (Copilot): ${chalk.green('$' + (stats.estimatedCostCopilot ?? 0).toFixed(4))}`);
+		}
 	}
 
 	// Model breakdown

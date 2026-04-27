@@ -1332,7 +1332,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📅 Today  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (API) :       | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (Copilot) :   | $ ${(detailedStats.today.estimatedCostCopilot ?? 0).toFixed(4)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
@@ -1345,7 +1346,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📊 Last 30 Days  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.last30Days.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.last30Days.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (API) :       | $ ${detailedStats.last30Days.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (Copilot) :   | $ ${(detailedStats.last30Days.estimatedCostCopilot ?? 0).toFixed(4)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.last30Days.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.last30Days.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.last30Days.sessions} |\n`);
@@ -1811,6 +1813,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const lastMonthCost = this.calculateEstimatedCost(lastMonthStats.modelUsage);
 		const last30DaysCost = this.calculateEstimatedCost(last30DaysStats.modelUsage);
 
+		const todayCostCopilot = this.calculateEstimatedCost(todayStats.modelUsage, 'copilot');
+		const monthCostCopilot = this.calculateEstimatedCost(monthStats.modelUsage, 'copilot');
+		const lastMonthCostCopilot = this.calculateEstimatedCost(lastMonthStats.modelUsage, 'copilot');
+		const last30DaysCostCopilot = this.calculateEstimatedCost(last30DaysStats.modelUsage, 'copilot');
+
 		const result: DetailedStats = {
 			today: {
 				tokens: todayStats.tokens,
@@ -1825,7 +1832,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: todayCo2,
 				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: todayWater,
-				estimatedCost: todayCost
+				estimatedCost: todayCost,
+				estimatedCostCopilot: todayCostCopilot
 			},
 			month: {
 				tokens: monthStats.tokens,
@@ -1840,7 +1848,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: monthCo2,
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: monthWater,
-				estimatedCost: monthCost
+				estimatedCost: monthCost,
+				estimatedCostCopilot: monthCostCopilot
 			},
 			lastMonth: {
 				tokens: lastMonthStats.tokens,
@@ -1855,7 +1864,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: lastMonthCo2,
 				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: lastMonthWater,
-				estimatedCost: lastMonthCost
+				estimatedCost: lastMonthCost,
+				estimatedCostCopilot: lastMonthCostCopilot
 			},
 			last30Days: {
 				tokens: last30DaysStats.tokens,
@@ -1870,7 +1880,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: last30DaysCo2,
 				treesEquivalent: last30DaysCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: last30DaysWater,
-				estimatedCost: last30DaysCost
+				estimatedCost: last30DaysCost,
+				estimatedCostCopilot: last30DaysCostCopilot
 			},
 			lastUpdated: now
 		};
@@ -3825,8 +3836,8 @@ usageAnalysis: undefined
 		return { responseText, thinkingText, toolCalls, mcpTools };
 	}
 
-	public calculateEstimatedCost(modelUsage: ModelUsage): number {
-		return _calculateEstimatedCost(modelUsage, this.modelPricing);
+	public calculateEstimatedCost(modelUsage: ModelUsage, pricingSource: 'provider' | 'copilot' = 'provider'): number {
+		return _calculateEstimatedCost(modelUsage, this.modelPricing, pricingSource);
 	}
 
 

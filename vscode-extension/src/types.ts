@@ -18,6 +18,15 @@ export interface ModelUsage {
   };
 }
 
+export interface CopilotPricing {
+  inputCostPerMillion: number;
+  outputCostPerMillion: number;
+  cachedInputCostPerMillion?: number;
+  cacheCreationCostPerMillion?: number;
+  releaseStatus?: string;       // e.g. "GA" or "Public preview"
+  category?: string;            // GitHub Copilot capability category (Lightweight / Versatile / Powerful)
+}
+
 export interface ModelPricing {
   inputCostPerMillion: number;
   outputCostPerMillion: number;
@@ -27,6 +36,12 @@ export interface ModelPricing {
   tier?: "standard" | "premium" | "unknown";
   multiplier?: number;
   displayNames?: string[];
+  /**
+   * GitHub Copilot AI-Credit per-token pricing (1 credit = $0.01).
+   * Source: https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+   * When omitted the top-level provider/API rates are used as a fallback proxy.
+   */
+  copilotPricing?: CopilotPricing;
 }
 
 export interface EditorUsage {
@@ -57,6 +72,12 @@ export interface PeriodStats {
   treesEquivalent: number;
   waterUsage: number;
   estimatedCost: number;
+  /**
+   * Estimated cost using GitHub Copilot AI-Credit per-token rates (when available
+   * for a given model). Optional/additive so existing fixtures don't need updating.
+   * Falls back to provider/API pricing for models without `copilotPricing`.
+   */
+  estimatedCostCopilot?: number;
 }
 
 export interface DetailedStats {

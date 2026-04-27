@@ -29,6 +29,7 @@ type PeriodStats = {
 	treesEquivalent: number;
 	waterUsage: number;
 	estimatedCost: number;
+	estimatedCostCopilot?: number;
 };
 
 type DetailedStats = {
@@ -92,6 +93,7 @@ function render(stats: DetailedStats): void {
 	const projectedCo2 = calculateProjection(stats.last30Days.co2);
 	const projectedWater = calculateProjection(stats.last30Days.waterUsage);
 	const projectedCost = calculateProjection(stats.last30Days.estimatedCost);
+	const projectedCostCopilot = calculateProjection(stats.last30Days.estimatedCostCopilot ?? 0);
 	const projectedTrees = calculateProjection(stats.last30Days.treesEquivalent);
 
 	renderShell(root, stats, {
@@ -100,6 +102,7 @@ function render(stats: DetailedStats): void {
 		projectedCo2,
 		projectedWater,
 		projectedCost,
+		projectedCostCopilot,
 		projectedTrees
 	});
 
@@ -115,6 +118,7 @@ function renderShell(
 		projectedCo2: number;
 		projectedWater: number;
 		projectedCost: number;
+		projectedCostCopilot?: number;
 		projectedTrees: number;
 	}
 ): void {
@@ -181,6 +185,7 @@ function buildMetricsSection(
 		projectedCo2: number;
 		projectedWater: number;
 		projectedCost: number;
+		projectedCostCopilot?: number;
 		projectedTrees: number;
 	}
 ): HTMLElement {
@@ -219,7 +224,8 @@ function buildMetricsSection(
 		{ label: 'Tokens (user estimated)', icon: '📝', color: '#b39ddb', today: formatCompact(stats.today.estimatedTokens), last30Days: formatCompact(stats.last30Days.estimatedTokens), lastMonth: formatCompact(stats.lastMonth.estimatedTokens), projected: '—' },
 		{ label: 'Service overhead %', icon: '☁️', color: '#90a4ae', today: (stats.today.actualTokens || 0) > 0 ? formatPercent(((stats.today.tokens - stats.today.estimatedTokens) / stats.today.tokens) * 100) : '—', last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatPercent(((stats.last30Days.tokens - stats.last30Days.estimatedTokens) / stats.last30Days.tokens) * 100) : '—', lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatPercent(((stats.lastMonth.tokens - stats.lastMonth.estimatedTokens) / stats.lastMonth.tokens) * 100) : '—', projected: '—' },
 		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatCompact(stats.today.thinkingTokens || 0), last30Days: formatCompact(stats.last30Days.thinkingTokens || 0), lastMonth: formatCompact(stats.lastMonth.thinkingTokens || 0), projected: '—' },
-		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
+		{ label: 'Estimated cost (API)', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
+		{ label: 'Estimated cost (Copilot)', icon: '🟢', color: '#7ce38b', today: formatCost(stats.today.estimatedCostCopilot ?? 0), last30Days: formatCost(stats.last30Days.estimatedCostCopilot ?? 0), lastMonth: formatCost(stats.lastMonth.estimatedCostCopilot ?? 0), projected: formatCost(projections.projectedCostCopilot ?? 0) },
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
 		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },
 		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatCompact(stats.today.avgTokensPerSession), last30Days: formatCompact(stats.last30Days.avgTokensPerSession), lastMonth: formatCompact(stats.lastMonth.avgTokensPerSession), projected: '—' }
