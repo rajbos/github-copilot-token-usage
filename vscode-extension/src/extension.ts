@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -178,9 +178,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Cache of the last diagnostic report text for copy/issue operations
 	private lastDiagnosticReport: string = '';
 	private logViewerPanel?: vscode.WebviewPanel;
-	private openCode: OpenCodeDataAccess;
-	private crush: CrushDataAccess;
-	private visualStudio: VisualStudioDataAccess;
+	public openCode: OpenCodeDataAccess;
+	public crush: CrushDataAccess;
+	public visualStudio: VisualStudioDataAccess;
 	private continue_: ContinueDataAccess;
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
@@ -191,7 +191,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
 		return { warn: (m: string) => this.warn(m), tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
 	}
-	private sessionDiscovery: SessionDiscovery;
+	public sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 	private readonly context: vscode.ExtensionContext;
@@ -276,7 +276,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
 
 	// GitHub authentication session
-	private githubSession: vscode.AuthenticationSession | undefined;
+	public githubSession: vscode.AuthenticationSession | undefined;
 	// Promise that resolves when the startup session restore completes
 	private _sessionRestorePromise: Promise<void> | undefined;
 	/** True when the user explicitly signed out from our extension this VS Code session. Gated by globalState so it survives reloads. */
@@ -289,7 +289,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
 
 	// Backend facade instance for accessing table storage data
-	private backend: BackendFacade | undefined;
+	public backend: BackendFacade | undefined;
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
@@ -325,7 +325,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Stat a session file, handling virtual paths for both OpenCode and Crush.
 	 * Must be used instead of fs.promises.stat() directly.
 	 */
-	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
+	public async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
 		const eco = this.findEcosystem(sessionFile);
 		if (eco) { return eco.stat(sessionFile); }
 		return fs.promises.stat(sessionFile);
@@ -378,7 +378,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
 	}
 
-	private warn(message: string): void {
+	public warn(message: string): void {
 		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
@@ -936,7 +936,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.startBackendSyncAfterInitialAnalysis();
 					// Force an immediate sync so the "Last Sync" timestamp updates right away
 					// instead of waiting for the next timer tick.
-					const backend = (this as any).backend;
+					const backend = this.backend;
 					if (backend && typeof backend.syncToBackendStore === 'function') {
 						backend.syncToBackendStore(true).then(() => {
 							// Refresh diagnostics again after sync completes so "Last Sync" shows the new time
@@ -994,7 +994,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private startBackendSyncAfterInitialAnalysis(): void {
 		try {
-			const backend = (this as any).backend;
+			const backend = this.backend;
 			if (backend && typeof backend.startTimerIfEnabled === 'function') {
 				backend.startTimerIfEnabled();
 			}
@@ -2800,7 +2800,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	// Cached versions of session file reading methods
-	private async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
+	public async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
 		// Check if we have valid cached data
 		const cached = this.getCachedSessionData(sessionFilePath);
 		if (cached && cached.mtime === mtime && cached.size === fileSize) {
@@ -3825,7 +3825,7 @@ usageAnalysis: undefined
 		return { responseText, thinkingText, toolCalls, mcpTools };
 	}
 
-	private calculateEstimatedCost(modelUsage: ModelUsage): number {
+	public calculateEstimatedCost(modelUsage: ModelUsage): number {
 		return _calculateEstimatedCost(modelUsage, this.modelPricing);
 	}
 
@@ -3932,7 +3932,7 @@ usageAnalysis: undefined
 
 
 
-	private getModelFromRequest(request: any): string {
+	public getModelFromRequest(request: any): string {
 		return _getModelFromRequest(request, this.modelPricing);
 	}
 
@@ -3949,7 +3949,7 @@ usageAnalysis: undefined
 	}
 
 
-	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
+	public estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
 		return _estimateTokensFromText(text, model, this.tokenEstimators);
 	}
 
@@ -7835,72 +7835,72 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Migrate settings from the old copilotTokenTracker namespace to aiEngineeringFluency.
   // Run before any other settings are read so the new keys are populated first.
-  await migrateSettingsIfNeeded((m) => (tokenTracker as any).log(m));
+  await migrateSettingsIfNeeded((m) => tokenTracker.log(m));
 
   // Wire up backend facade and commands so the diagnostics webview can launch the
   // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
   try {
     const backendFacade = new BackendFacade({
       context,
-      log: (m: string) => (tokenTracker as any).log(m),
-      warn: (m: string) => (tokenTracker as any).warn(m),
-      updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
-      calculateEstimatedCost: (modelUsage: any) => {
-        let total = 0;
-        const pricing = (modelPricingData as any).pricing || {};
-        for (const [model, usage] of Object.entries(modelUsage || {})) {
-          const p = pricing[model] || pricing["gpt-4o-mini"];
-          if (!p) {
-            continue;
-          }
-          const usageData = usage as {
-            inputTokens?: number;
-            outputTokens?: number;
-          };
-          total +=
-            ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
-          total +=
-            ((usageData.outputTokens || 0) / 1_000_000) *
-            p.outputCostPerMillion;
-        }
-        return total;
-      },
+      log: (m: string) => tokenTracker.log(m),
+      warn: (m: string) => tokenTracker.warn(m),
+      updateTokenStats: () => tokenTracker.updateTokenStats(),
+      calculateEstimatedCost: (modelUsage: ModelUsage) => tokenTracker.calculateEstimatedCost(modelUsage),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       co2Per1kTokens: 0.2,
       waterUsagePer1kTokens: 0.3,
       co2AbsorptionPerTreePerYear: 21000,
       getCopilotSessionFiles: () =>
-        (tokenTracker as any).sessionDiscovery.getCopilotSessionFiles(),
+        tokenTracker.sessionDiscovery.getCopilotSessionFiles(),
       estimateTokensFromText: (text: string, model?: string) =>
-        (tokenTracker as any).estimateTokensFromText(text, model),
+        tokenTracker.estimateTokensFromText(text, model),
       getModelFromRequest: (req: any) =>
-        (tokenTracker as any).getModelFromRequest(req),
+        tokenTracker.getModelFromRequest(req),
       getSessionFileDataCached: (p: string, m: number, s: number) =>
-        (tokenTracker as any).getSessionFileDataCached(p, m, s),
+        tokenTracker.getSessionFileDataCached(p, m, s),
       statSessionFile: (sessionFile: string) =>
-        (tokenTracker as any).statSessionFile(sessionFile),
+        tokenTracker.statSessionFile(sessionFile),
       isOpenCodeSession: (sessionFile: string) =>
-        (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
+        tokenTracker.openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
-        (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+        tokenTracker.openCode.getOpenCodeSessionData(sessionFile),
       isCrushSession: (sessionFile: string) =>
-        (tokenTracker as any).crush.isCrushSessionFile(sessionFile),
+        tokenTracker.crush.isCrushSessionFile(sessionFile),
       getCrushSessionData: (sessionFile: string) =>
-        (tokenTracker as any).crush.getCrushSessionData(sessionFile),
+        tokenTracker.crush.getCrushSessionData(sessionFile),
       isVSSessionFile: (sessionFile: string) =>
-        (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
-      getGithubToken: () => (tokenTracker as any).githubSession?.accessToken,
+        tokenTracker.visualStudio.isVSSessionFile(sessionFile),
+      getGithubToken: () => tokenTracker.githubSession?.accessToken,
     });
 
     const backendHandler = new BackendCommandHandler({
       facade: backendFacade as any,
       integration: undefined,
       calculateEstimatedCost: (mu: any) => 0,
-      warn: (m: string) => (tokenTracker as any).warn(m),
-      log: (m: string) => (tokenTracker as any).log(m),
+      warn: (m: string) => tokenTracker.warn(m),
+      log: (m: string) => tokenTracker.log(m),
     });
 
     // Store backend facade in the tracker instance for dashboard access
-    (tokenTracker as any).backend = backendFacade;
+    tokenTracker.backend = backendFacade;
 
     // Backend sync timer will be started after initial token analysis completes
     // (see startBackendSyncAfterInitialAnalysis method)
@@ -7924,7 +7924,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(configureTeamServerCommand);
   } catch (err) {
     // If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
-    (tokenTracker as any).warn(
+    tokenTracker.warn(
       "Failed to wire backend commands: " + String(err),
     );
   }
