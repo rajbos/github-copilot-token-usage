@@ -57,13 +57,28 @@ export function getDb(): DatabaseSync {
 			mkdirSync(dataDir, { recursive: true });
 		}
 		const dbPath = join(dataDir, 'sharing.db');
-		_db = new DatabaseSync(dbPath);
-		// DELETE mode is used instead of WAL because Azure Files (SMB) does not
-		// reliably support WAL's shared-memory locking. At our write frequency
-		// (small batch upserts every ~5 min) the performance difference is negligible.
-		_db.exec('PRAGMA journal_mode = DELETE');
-		_db.exec('PRAGMA foreign_keys = ON');
-		initSchema(_db);
+		// Open first, then configure — only assign _db once fully initialized so
+		// that a failed startup (e.g. transient Azure Files SMB lock) causes the
+		// next request to retry the full initialization rather than using a
+		// half-initialized connection.
+		const db = new DatabaseSync(dbPath);
+		try {
+			// Wait up to 10 s for any transient SMB lock from a previous container
+			// revision to release before giving up with SQLITE_BUSY.
+			db.exec('PRAGMA busy_timeout = 10000');
+			// DELETE mode is used instead of WAL because Azure Files (SMB) does not
+			// reliably support WAL's shared-memory locking. At our write frequency
+			// (small batch upserts every ~5 min) the performance difference is negligible.
+			db.exec('PRAGMA journal_mode = DELETE');
+			db.exec('PRAGMA foreign_keys = ON');
+			initSchema(db);
+			_db = db;
+		} catch (err) {
+			// Close the connection so the file lock is released and the next
+			// request can retry cleanly.
+			try { db.close(); } catch { /* ignore */ }
+			throw err;
+		}
 	}
 	return _db;
 }
