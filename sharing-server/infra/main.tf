@@ -96,7 +96,7 @@ resource "azurerm_container_app" "this" {
   }
 
   template {
-    min_replicas = var.min_replicas
+    min_replicas = var.min_replicas  # Must be 1: scale-to-zero leaves stale Azure Files SMB oplocks
     max_replicas = 1 # SQLite file locking requires single-instance
 
     volume {

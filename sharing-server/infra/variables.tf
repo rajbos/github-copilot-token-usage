@@ -51,9 +51,9 @@ variable "github_org_check_token" {
 }
 
 variable "min_replicas" {
-  description = "Minimum container replicas. Use 0 for scale-to-zero (cheapest), 1 for always-on (faster cold start)."
+  description = "Minimum container replicas. Must be 1 for SQLite on Azure Files — scale-to-zero causes stale SMB oplocks that block DB startup. Scale-to-zero (0) is only safe if you accept occasional lock errors on cold start."
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "tags" {
