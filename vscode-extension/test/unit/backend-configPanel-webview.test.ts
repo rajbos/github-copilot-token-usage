@@ -33,7 +33,8 @@ function createPanelHtml(): string {
 		sharedKeySet: false,
 		privacyBadge: 'Solo',
 		isConfigured: true,
-		authStatus: 'Entra ID'
+		authStatus: 'Entra ID',
+		githubTokenAvailable: false
 	};
 
 	const webview = {
