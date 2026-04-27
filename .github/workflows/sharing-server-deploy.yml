@@ -259,6 +259,7 @@ jobs:
         working-directory: sharing-server/infra
         run: |
           APP_URL=$(terraform output -raw app_url)
+          ACA_FQDN=$(terraform output -raw aca_fqdn)
           OAUTH_URL=$(terraform output -raw oauth_callback_url)
           DASH_URL=$(terraform output -raw dashboard_url)
           HEALTH_URL=$(terraform output -raw health_url)
@@ -272,7 +273,18 @@ jobs:
             echo "| Dashboard | ${DASH_URL} |"
             echo "| Health | ${HEALTH_URL} |"
             echo "| OAuth callback | ${OAUTH_URL} |"
+            echo "| ACA FQDN (CNAME target) | ${ACA_FQDN} |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ needs.setup.outputs.is_prod }}" == "true" ]]; then
+            {
+              echo ""
+              echo "> 📋 **Custom domain DNS setup** — if \`SHARING_CUSTOM_DOMAIN\` is not yet set,"
+              echo "> add these records at your DNS provider, then set the variable and redeploy:"
+              echo "> - \`CNAME <subdomain>\` → \`${ACA_FQDN}\`"
+              echo "> - \`TXT asuid.<subdomain>\` → *(ACA environment verification ID from Azure portal)*"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           if [[ "${{ needs.setup.outputs.is_prod }}" == "false" ]]; then
             {
