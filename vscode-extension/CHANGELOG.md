@@ -6,6 +6,92 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.2.0]
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Changes
+* chore: bump Visual Studio extension version to 1.0.5 by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/590
+* feat: add Product Owner agent with rubber-duck multi-model reviews by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/591
+* Fix Open VSX badge rendering by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/592
+* feat: add token count column to diagnostics session files tab by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/593
+* feat: add Day/Week/Month period toggle to chart view by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/594
+* feat(chart): persist period selection and compact period picker UI by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/595
+* chore: bump versions for release (vscode-extension) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/596
+* fix(workflows): consolidate VS extension release into release.yml by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/597
+* test(maturity-scoring): add unit tests for Fluency Score logic by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/598
+* test(workspace-helpers): add unit tests + fix off-by-one in extractCustomAgentName by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/599
+* test(usage-analysis): add unit tests for mergeUsageAnalysis, analyzeContextReferences, deriveConversationPatterns by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/600
+* Add test coverage to CI step summary by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/601
+* ci: update workflows to Node.js 24 by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/603
+* feat(tests): add Stryker mutation testing to VS Code extension by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/602
+* fix: compute mutation score from counts instead of r.mutationScore by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/605
+* test: improve mutation score from 29% to 40%+ with 89 targeted tests by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/608
+* feat: cache-aware cost estimation for Claude and OpenCode sessions by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/607
+* Add missing friendly names for click_element, mcp_github_pull_request_read, mcp_microsoftdocs_microsoft_docs_search, type_in_page by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/614
+* fix: skip VS filesystem scan on macOS/Linux to prevent extension hang (#611) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/615
+* docs: add Windsurf/Open VSX install badges and Windsurf details by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/617
+* feat: display CO2 in kg when ≥ 1 000 g for readability by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/618
+* Add sync-automatic-tools prompt by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/621
+* Add missing friendly names for capitalized tool variants and cowork/workspace MCP tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/620
+* ci: skip mutation tests on PRs with no TS source changes by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/622
+* Fix case-insensitive tool name lookup and remove duplicate entries by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/623
+* Add repository statistics calculation script by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/624
+* chore: bump versions for release (vscode-extension, cli, visualstudio-extension) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/626
+* chore(cli): bump version to v0.0.10 by @github-actions[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/627
+* fix: add node types to CLI tsconfig by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/629
+* fix: use absolute URLs for logo image in README files by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/633
+* test: extend coverage gate to core data pipeline modules (#630) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/634
+* Extract GitHub PR feature into a dedicated testable service by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/635
+* Add empty-state guidance for first-time users in the Details panel by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/636
+* chore: bump versions for release (vscode-extension, visualstudio-extension) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/637
+* feature/mistralvibe integration by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/640
+* fix prompt front matter by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/642
+* fix: rename VS Code command IDs to aiEngineeringFluency.* by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/643
+* refactor: replace ecosystem if-chains with IEcosystemAdapter registry by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/641
+* fix: discover Windows-side VS Code sessions when running inside WSL by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/650
+* Add missing friendly display names for 10 tools by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/651
+* Add friendly name for Azure MCP `get_bestpractices` tool by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/652
+* fix: handle case-sensitive extension ID and nested chatSessions path by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/653
+* fix: use content timestamps for lastInteraction, not max(timestamp, mtime) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/655
+* Extract CopilotChat and CopilotCli adapters (#654) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/656
+* feat: self-hosted sharing server (Phases 1–3) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/639
+* feat: add dedicated CLI interaction mode in Usage Analysis by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/659
+* fix: pin Docker base image to SHA256 digest by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/660
+* fix(usage-analysis): prevent blank page on cold start and improve error handling by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/661
+* docs: add sharing server setup guide with dashboard screenshot by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/662
+* Add friendly names for `Microsoft_Learn_microsoft_docs_search` and `get_output_window_logs` by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/664
+* Refresh model pricing data from current provider docs by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/666
+* Fix VS Code extension security alerts by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/665
+* Potential fix for code scanning alert no. 56: Client-side cross-site scripting by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/668
+* fix: update uuid to 14.0.0 via overrides (GHSA-w5hq-g745-h8pq) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/669
+* Stabilize VS Code extension npm test runs by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/670
+* feat: improve fluency spiderweb for Claude-only users by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/672
+* feat: add AI fluency score to sharing server dashboard by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/671
+* Add missing friendly display names for 13 tools (Claude/MCP variants) by @Copilot in https://github.com/rajbos/github-copilot-token-usage/pull/675
+* chore: bump versions for release (vscode-extension, cli, visualstudio-extension) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/676
+* chore: update in-range dev dependencies by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/679
+* feat: complete non-copilot instruction file detection (Missed Potential) by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/681
+* refactor: remove (tokenTracker as any) casts in activate() by @rajbos in https://github.com/rajbos/github-copilot-token-usage/pull/680
+### 📦 GitHub Actions Dependencies
+* github-actions(deps): bump the minor-and-patch-updates group with 3 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/606
+* github-actions(deps): bump the minor-and-patch-updates group with 4 updates by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/628
+* github-actions(deps): bump step-security/harden-runner from 2.18.0 to 2.19.0 in the minor-and-patch-updates group by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/673
+### 📦 Other Dependencies
+* chore(deps): bump basic-ftp from 5.2.2 to 5.3.0 in /.github/scripts in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/612
+* chore(deps): bump dompurify from 3.3.2 to 3.4.0 in /vscode-extension in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/610
+* chore(deps-dev): bump typescript from 6.0.2 to 6.0.3 in /cli by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/616
+* chore(deps): bump puppeteer from 24.40.0 to 24.41.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/609
+* chore(deps): bump puppeteer from 24.41.0 to 24.42.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/638
+* chore(deps): bump fast-xml-parser from 5.5.7 to 5.7.1 in /.github/skills/azure-storage-loader in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/645
+* chore(deps): bump fast-xml-parser from 5.5.7 to 5.7.1 in /vscode-extension in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/644
+* chore(deps-dev): bump esbuild from 0.24.2 to 0.25.0 in /sharing-server in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/657
+* chore(deps): bump postcss from 8.5.8 to 8.5.10 in /vscode-extension in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/github-copilot-token-usage/pull/667
+
+
+**Full Changelog**: https://github.com/rajbos/github-copilot-token-usage/compare/cli/v0.0.8...vscode/v0.2.0
+
 ## [0.1.1] - 2026-04-10
 
 ### Features and Improvements
