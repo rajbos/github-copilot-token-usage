@@ -73,6 +73,13 @@ test('isCopilotChatSessionPath: recognises emptyWindowChatSessions and globalSto
     assert.ok(isCopilotChatSessionPath('/x/User/globalStorage/github.copilot-chat/foo/bar.json'));
 });
 
+test('isCopilotChatSessionPath: recognises debug-logs layout (both casings)', () => {
+    assert.ok(isCopilotChatSessionPath('/x/User/workspaceStorage/abc/GitHub.copilot-chat/debug-logs/s1.json'));
+    assert.ok(isCopilotChatSessionPath('/x/User/workspaceStorage/abc/github.copilot-chat/debug-logs/s1.jsonl'));
+    assert.ok(isCopilotChatSessionPath('/x/User/workspaceStorage/abc/GitHub.copilot/debug-logs/s1.json'));
+    assert.ok(isCopilotChatSessionPath('/x/User/workspaceStorage/abc/github.copilot/debug-logs/s1.jsonl'));
+});
+
 test('isCopilotChatSessionPath: rejects non-session and unrelated paths', () => {
     assert.equal(isCopilotChatSessionPath('/x/User/globalStorage/GitHub.copilot-chat/embeddings.json'), false);
     assert.equal(isCopilotChatSessionPath('/x/User/globalStorage/GitHub.copilot-chat/foo/cache.json'), false);
@@ -207,4 +214,20 @@ test('CopilotChatAdapter.discover: candidatePaths matches getCandidatePaths()', 
     const result = await adapter.discover(() => { /* noop */ });
     const dis = result.candidatePaths.map(c => c.path).sort();
     assert.deepEqual(sync, dis);
+});
+
+test('CopilotChatAdapter.discover: finds session files in debug-logs directory', async (t) => {
+    const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cca-debuglogs-'));
+    t.after(async () => { await fs.promises.rm(tmp, { recursive: true, force: true }); });
+
+    // Build a minimal fake VS Code user layout with a debug-logs directory
+    const wsHash = '6493a5e29947913b6a67738025aa3374';
+    const debugLogsDir = path.join(tmp, 'workspaceStorage', wsHash, 'GitHub.copilot-chat', 'debug-logs');
+    await fs.promises.mkdir(debugLogsDir, { recursive: true });
+    await fs.promises.writeFile(path.join(debugLogsDir, 'session-debug.jsonl'), '{"type":"chat"}\n');
+
+    // Verify isCopilotChatSessionPath accepts the file
+    const sessionFile = path.join(debugLogsDir, 'session-debug.jsonl');
+    assert.ok(isCopilotChatSessionPath(sessionFile),
+        `isCopilotChatSessionPath should accept debug-logs path: ${sessionFile}`);
 });
