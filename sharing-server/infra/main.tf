@@ -186,6 +186,26 @@ resource "azurerm_container_app" "this" {
 # DNS prerequisites (must exist before applying):
 #   CNAME  <subdomain>        → local.aca_fqdn
 #   TXT    asuid.<subdomain>  → azurerm_container_app_environment.this.custom_domain_verification_id
+#
+# Azure requires the hostname to be registered on the container app BEFORE a
+# managed certificate can be created for it. We use a null_resource to register
+# the hostname (binding type Disabled) via az CLI, which breaks the circular
+# dependency: cert needs hostname, SniEnabled binding needs cert.
+
+resource "null_resource" "hostname_registration" {
+  count = var.custom_domain != "" ? 1 : 0
+
+  triggers = {
+    hostname = var.custom_domain
+    app_id   = azurerm_container_app.this.id
+  }
+
+  provisioner "local-exec" {
+    command = "az containerapp hostname add --name '${azurerm_container_app.this.name}' --resource-group '${var.resource_group_name}' --hostname '${var.custom_domain}' 2>/dev/null || true"
+  }
+
+  depends_on = [azurerm_container_app.this]
+}
 
 resource "azurerm_container_app_environment_managed_certificate" "this" {
   count                        = var.custom_domain != "" ? 1 : 0
@@ -193,6 +213,8 @@ resource "azurerm_container_app_environment_managed_certificate" "this" {
   container_app_environment_id = azurerm_container_app_environment.this.id
   subject_name                 = var.custom_domain
   domain_control_validation    = "CNAME"
+
+  depends_on = [null_resource.hostname_registration]
 
   lifecycle {
     create_before_destroy = true
