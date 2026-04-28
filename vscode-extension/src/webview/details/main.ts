@@ -243,13 +243,12 @@ function buildMetricsSection(
 			today: formatCost(stats.today.estimatedCostCopilot ?? 0), last30Days: formatCost(stats.last30Days.estimatedCostCopilot ?? 0), lastMonth: formatCost(stats.lastMonth.estimatedCostCopilot ?? 0), projected: formatCost(projections.projectedCostCopilot ?? 0)
 		},
 		...(stats.copilotPlan ? (() => {
-			const credits = stats.copilotPlan.monthlyAiCreditsUsd > 0 ? `$${stats.copilotPlan.monthlyAiCreditsUsd} credits` : 'no credits';
-			const planCell = `${stats.copilotPlan.planName} (${credits})`;
+			const credits = stats.copilotPlan.monthlyAiCreditsUsd > 0 ? `$${stats.copilotPlan.monthlyAiCreditsUsd} credits/month` : 'no credits';
 			return [{
-				label: 'Copilot plan',
+				label: `${stats.copilotPlan.planName} (${credits})`,
 				labelTooltip: `Your active GitHub Copilot subscription plan (ID: ${stats.copilotPlan.planId}). Included AI credits cover token-based billing (1 AI credit = $0.01).`,
 				icon: '🏷️', color: '#60a5fa',
-				today: '—', last30Days: planCell, lastMonth: planCell, projected: '—'
+				today: '—', last30Days: '—', lastMonth: '—', projected: '—'
 			}];
 		})() : []),
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
