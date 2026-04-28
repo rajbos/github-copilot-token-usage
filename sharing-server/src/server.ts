@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { api } from './routes/api.js';
 import { dashboard } from './routes/dashboard.js';
-import { getDb, closeDb, restoreFromBackup, backupToAzureFiles } from './db.js';
+import { getDb, closeDb, restoreFromBackup, backupToAzureFiles, syncAdminLogins } from './db.js';
 
 const app = new Hono();
 
@@ -35,8 +35,6 @@ function shutdown(signal: string): void {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
-
 async function initDbWithRetry(maxAttempts = 20): Promise<void> {
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
@@ -50,24 +48,40 @@ async function initDbWithRetry(maxAttempts = 20): Promise<void> {
 				await new Promise(r => setTimeout(r, delay));
 			} else {
 				console.error('[db] All init attempts exhausted:', err);
+				throw err;
 			}
 		}
 	}
 }
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
-	const org = process.env.ALLOWED_GITHUB_ORG;
-	console.log(`Token Tracker sharing server listening on port ${info.port}`);
-	if (org) {
-		console.log(`  Access restricted to members of GitHub org: ${org}`);
-	} else {
-		console.log('  Access: open to any GitHub user (set ALLOWED_GITHUB_ORG to restrict)');
-	}
+const PORT = parseInt(process.env.PORT ?? '3000', 10);
+
+async function main(): Promise<void> {
 	// Restore database from Azure Files backup before opening SQLite.
 	// SQLite runs on local container disk (/tmp/db) to avoid Azure Files SMB
 	// locking issues. Azure Files is used only as a backup/restore store.
 	restoreFromBackup();
-	initDbWithRetry();
+	await initDbWithRetry();
+	syncAdminLogins();
 	// Periodic backup every 5 minutes in case of unexpected SIGKILL.
 	setInterval(() => backupToAzureFiles(), 5 * 60 * 1000).unref();
+
+	const org = process.env.ALLOWED_GITHUB_ORG;
+	const adminLogins = process.env.ADMIN_GITHUB_LOGINS;
+	serve({ fetch: app.fetch, port: PORT }, (info) => {
+		console.log(`Token Tracker sharing server listening on port ${info.port}`);
+		if (org) {
+			console.log(`  Access restricted to members of GitHub org: ${org}`);
+		} else {
+			console.log('  Access: open to any GitHub user (set ALLOWED_GITHUB_ORG to restrict)');
+		}
+		if (adminLogins) {
+			console.log(`  Admin logins (ADMIN_GITHUB_LOGINS): ${adminLogins}`);
+		}
+	});
+}
+
+main().catch(err => {
+	console.error('Fatal startup error:', err);
+	process.exit(1);
 });

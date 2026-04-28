@@ -161,6 +161,14 @@ resource "azurerm_container_app" "this" {
           secret_name = "org-check-token"
         }
       }
+      # Only set ADMIN_GITHUB_LOGINS when a value is provided.
+      dynamic "env" {
+        for_each = var.admin_github_logins != "" ? [1] : []
+        content {
+          name  = "ADMIN_GITHUB_LOGINS"
+          value = var.admin_github_logins
+        }
+      }
 
       liveness_probe {
         path             = "/health"

@@ -227,6 +227,26 @@ function initSchema(db: DatabaseSync): void {
 	}
 }
 
+/** Returns the parsed ADMIN_GITHUB_LOGINS env var as an array of lowercase logins. */
+function getAdminLoginsFromEnv(): string[] {
+	const raw = process.env.ADMIN_GITHUB_LOGINS ?? '';
+	return raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Sync admin status for all existing users based on ADMIN_GITHUB_LOGINS.
+ * When the env var is set and non-empty, it is authoritative: users in the list
+ * get is_admin=1, all others get is_admin=0. When unset or empty, no changes are made.
+ */
+export function syncAdminLogins(): void {
+	const logins = getAdminLoginsFromEnv();
+	if (logins.length === 0) return;
+	const db = getDb();
+	const placeholders = logins.map(() => '?').join(', ');
+	db.prepare(`UPDATE users SET is_admin = CASE WHEN LOWER(github_login) IN (${placeholders}) THEN 1 ELSE 0 END`).run(...logins);
+	console.log(`[db] Admin sync from ADMIN_GITHUB_LOGINS: ${logins.join(', ')}`);
+}
+
 export function upsertUser(
 	githubId: number,
 	login: string,
@@ -243,6 +263,11 @@ export function upsertUser(
 			avatar_url   = excluded.avatar_url,
 			last_seen_at = datetime('now')
 	`).run(githubId, login, name, avatarUrl);
+	// Apply env-var admin grant immediately so new users get the right role on first login.
+	const adminLogins = getAdminLoginsFromEnv();
+	if (adminLogins.includes(login.toLowerCase())) {
+		db.prepare('UPDATE users SET is_admin = 1 WHERE github_id = ?').run(githubId);
+	}
 	return db.prepare('SELECT * FROM users WHERE github_id = ?').get(githubId) as unknown as UserRow;
 }
 
