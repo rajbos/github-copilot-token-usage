@@ -11,6 +11,14 @@ on:
       - ".github/workflows/sharing-server-deploy.yml"
   workflow_dispatch:
 
+# One deploy per branch at a time — prevents concurrent Terraform runs from
+# conflicting on the same remote state file (state blob already locked errors).
+# Cancel in-progress for branch pushes so stale deploys don't block newer ones;
+# queue (no cancel) for main so production deploys always complete.
+concurrency:
+  group: sharing-server-deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 # Minimal baseline; jobs declare only what they need.
 permissions:
   contents: read
