@@ -221,12 +221,38 @@ resource "azurerm_container_app_environment_managed_certificate" "this" {
   }
 }
 
-resource "azurerm_container_app_custom_domain" "this" {
-  count                                    = var.custom_domain != "" ? 1 : 0
-  name                                     = var.custom_domain
-  container_app_id                         = azurerm_container_app.this.id
-  container_app_environment_certificate_id = azurerm_container_app_environment_managed_certificate.this[0].id
-  certificate_binding_type                 = "SniEnabled"
+# azurerm_container_app_custom_domain cannot be used here because it only accepts
+# staticCertificate IDs (.../certificates/...) and rejects managedCertificate IDs
+# (.../managedCertificates/...) at plan time. Instead, bind the cert by PATCHing
+# the container app's ingress directly via az rest, which accepts the raw ARM ID.
+resource "null_resource" "cert_binding" {
+  count = var.custom_domain != "" ? 1 : 0
+
+  triggers = {
+    cert_id  = azurerm_container_app_environment_managed_certificate.this[0].id
+    app_id   = azurerm_container_app.this.id
+    hostname = var.custom_domain
+  }
+
+  provisioner "local-exec" {
+    environment = {
+      CERT_ID  = azurerm_container_app_environment_managed_certificate.this[0].id
+      APP_NAME = azurerm_container_app.this.name
+      APP_RG   = var.resource_group_name
+      HOSTNAME = var.custom_domain
+      APP_ID   = azurerm_container_app.this.id
+    }
+    command = <<-EOT
+      INGRESS=$(az containerapp show --name "$APP_NAME" --resource-group "$APP_RG" --query "properties.configuration.ingress" -o json)
+      PATCH=$(jq -n --argjson ing "$INGRESS" --arg h "$HOSTNAME" --arg c "$CERT_ID" \
+        '$ing | .customDomains = [{"name": $h, "bindingType": "SniEnabled", "certificateId": $c}] | {properties: {configuration: {ingress: .}}}')
+      az rest --method PATCH \
+        --url "https://management.azure.com${APP_ID}?api-version=2024-03-01" \
+        --body "$PATCH" \
+        --output none
+      echo "Cert $CERT_ID bound to $HOSTNAME (SniEnabled)."
+    EOT
+  }
 
   depends_on = [azurerm_container_app_environment_managed_certificate.this]
 }
