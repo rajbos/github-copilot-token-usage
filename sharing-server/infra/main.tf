@@ -208,6 +208,12 @@ resource "null_resource" "hostname_registration" {
     app_id   = azurerm_container_app.this.id
   }
 
+  # Re-run whenever the container app is modified, because ACA updates reset
+  # the ingress configuration and strip any previously-registered custom hostnames.
+  lifecycle {
+    replace_triggered_by = [azurerm_container_app.this]
+  }
+
   provisioner "local-exec" {
     command = "az containerapp hostname add --name '${azurerm_container_app.this.name}' --resource-group '${var.resource_group_name}' --hostname '${var.custom_domain}' 2>/dev/null || true"
   }
@@ -240,6 +246,12 @@ resource "null_resource" "cert_binding" {
     cert_id  = azurerm_container_app_environment_managed_certificate.this[0].id
     app_id   = azurerm_container_app.this.id
     hostname = var.custom_domain
+  }
+
+  # Re-run whenever the container app is modified, because ACA updates reset
+  # the ingress configuration and strip any previously-applied cert bindings.
+  lifecycle {
+    replace_triggered_by = [azurerm_container_app.this]
   }
 
   provisioner "local-exec" {
