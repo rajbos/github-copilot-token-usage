@@ -233,6 +233,13 @@ resource "azurerm_container_app_environment_managed_certificate" "this" {
   lifecycle {
     create_before_destroy = true
   }
+
+  timeouts {
+    create = "60m"
+    read   = "5m"
+    update = "30m"
+    delete = "30m"
+  }
 }
 
 # azurerm_container_app_custom_domain cannot be used here because it only accepts
