@@ -179,6 +179,7 @@ jobs:
           TF_VAR_session_secret:         ${{ secrets.SHARING_SESSION_SECRET }}
           TF_VAR_allowed_github_org:     ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
           TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_admin_github_logins:    ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
           TF_VAR_min_replicas:           ${{ needs.setup.outputs.min_replicas }}
           TF_VAR_custom_domain:          ${{ vars.SHARING_CUSTOM_DOMAIN }}
         run: |
@@ -240,6 +241,7 @@ jobs:
           TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
           TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
           TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_admin_github_logins: ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
           TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
         run: terraform plan -out=tfplan
@@ -257,6 +259,7 @@ jobs:
           TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
           TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
           TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_admin_github_logins: ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
           TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
         run: terraform apply -auto-approve tfplan
