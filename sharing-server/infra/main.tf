@@ -193,6 +193,10 @@ resource "azurerm_container_app_environment_managed_certificate" "this" {
   container_app_environment_id = azurerm_container_app_environment.this.id
   subject_name                 = var.custom_domain
   domain_control_validation    = "CNAME"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "azurerm_container_app_custom_domain" "this" {
