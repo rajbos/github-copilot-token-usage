@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, existsSync, copyFileSync } from 'fs';
+import { join, dirname } from 'path';
 
 export interface UserRow {
 	id: number;
@@ -50,17 +50,75 @@ export interface UploadEntry {
 
 let _db: DatabaseSync | undefined;
 
+// SQLite runs on the container's LOCAL ephemeral disk (LOCAL_DATA_DIR / /tmp/db).
+// Azure Files (/data) is used ONLY for backup/restore via plain file copy — never
+// as a live SQLite database. Azure Files SMB does not support the POSIX advisory
+// byte-range locks that SQLite requires, causing persistent "database is locked"
+// errors when using Azure Files as the live database path.
+function resolveLocalDbPath(): string {
+	const dir = process.env.LOCAL_DATA_DIR
+		?? process.env.DATA_DIR
+		?? (process.env.NODE_ENV === 'production' ? '/tmp/db' : './data');
+	return join(dir, 'sharing.db');
+}
+
+function resolveBackupPath(): string | null {
+	// Backup is only meaningful when LOCAL_DATA_DIR is set (SQLite not on DATA_DIR).
+	if (!process.env.LOCAL_DATA_DIR) return null;
+	const backupDir = process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : null);
+	return backupDir ? join(backupDir, 'sharing.db') : null;
+}
+
+/** Restore the database from Azure Files backup (if one exists) onto local disk. */
+export function restoreFromBackup(): void {
+	const backupPath = resolveBackupPath();
+	if (!backupPath || !existsSync(backupPath)) return;
+	const localPath = resolveLocalDbPath();
+	try {
+		mkdirSync(dirname(localPath), { recursive: true });
+		copyFileSync(backupPath, localPath);
+		console.log('[db] Restored database from Azure Files backup');
+	} catch (err) {
+		console.error('[db] Failed to restore from backup (will start fresh):', err);
+	}
+}
+
+/** Copy the local database to Azure Files for persistence across container restarts. */
+export function backupToAzureFiles(): void {
+	const backupPath = resolveBackupPath();
+	if (!backupPath) return;
+	const localPath = resolveLocalDbPath();
+	if (!existsSync(localPath)) return;
+	try {
+		mkdirSync(dirname(backupPath), { recursive: true });
+		copyFileSync(localPath, backupPath);
+		console.log('[db] Backed up database to Azure Files');
+	} catch (err) {
+		console.error('[db] Failed to backup to Azure Files:', err);
+	}
+}
+
 export function getDb(): DatabaseSync {
 	if (!_db) {
-		const dataDir = process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data');
+		const dbPath = resolveLocalDbPath();
+		const dataDir = dirname(dbPath);
 		if (!existsSync(dataDir)) {
 			mkdirSync(dataDir, { recursive: true });
 		}
-		const dbPath = join(dataDir, 'sharing.db');
-		_db = new DatabaseSync(dbPath);
-		_db.exec('PRAGMA journal_mode = WAL');
-		_db.exec('PRAGMA foreign_keys = ON');
-		initSchema(_db);
+		// Open first, then configure — only assign _db once fully initialized so
+		// that a failed startup causes the next request to retry initialization.
+		const db = new DatabaseSync(dbPath);
+		try {
+			db.exec('PRAGMA busy_timeout = 5000');
+			// WAL mode is safe on local disk and gives better concurrency than DELETE.
+			db.exec('PRAGMA journal_mode = WAL');
+			db.exec('PRAGMA foreign_keys = ON');
+			initSchema(db);
+			_db = db;
+		} catch (err) {
+			try { db.close(); } catch { /* ignore */ }
+			throw err;
+		}
 	}
 	return _db;
 }
@@ -266,4 +324,12 @@ export function upsertUserFluencyScore(userId: number, scoreJson: string): void 
 export function getUserFluencyScore(userId: number): string | null {
 	const row = getDb().prepare('SELECT fluency_score_json FROM users WHERE id = ?').get(userId) as unknown as { fluency_score_json: string | null } | undefined;
 	return row?.fluency_score_json ?? null;
+}
+
+/** Cleanly close the database connection — call on SIGTERM to release Azure Files SMB locks. */
+export function closeDb(): void {
+	if (_db) {
+		try { _db.close(); } catch { /* ignore */ }
+		_db = undefined;
+	}
 }

@@ -125,7 +125,13 @@ dashboard.get('/auth/github/callback', async (c) => {
 		}
 	}
 
-	const user = upsertUser(userData.id, userData.login, userData.name, userData.avatar_url);
+	let user;
+	try {
+		user = upsertUser(userData.id, userData.login, userData.name, userData.avatar_url);
+	} catch (err) {
+		console.error('[auth/callback] upsertUser failed:', err);
+		return c.html(errorPage(`Database error during sign-in: ${String(err)}`), 500);
+	}
 	const claims = makeClaims(user.id);
 	const sessionValue = encodeSession(claims);
 
