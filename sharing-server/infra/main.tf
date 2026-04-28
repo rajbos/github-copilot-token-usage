@@ -247,7 +247,7 @@ resource "null_resource" "cert_binding" {
       PATCH=$(jq -n --argjson ing "$INGRESS" --arg h "$HOSTNAME" --arg c "$CERT_ID" \
         '$ing | .customDomains = [{"name": $h, "bindingType": "SniEnabled", "certificateId": $c}] | {properties: {configuration: {ingress: .}}}')
       az rest --method PATCH \
-        --url "https://management.azure.com${APP_ID}?api-version=2024-03-01" \
+        --url "https://management.azure.com$APP_ID?api-version=2024-03-01" \
         --body "$PATCH" \
         --output none
       echo "Cert $CERT_ID bound to $HOSTNAME (SniEnabled)."
