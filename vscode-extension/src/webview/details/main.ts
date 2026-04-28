@@ -40,6 +40,12 @@ type DetailedStats = {
 	lastUpdated: string | Date;
 	backendConfigured?: boolean;
 	compactNumbers?: boolean;
+	copilotPlan?: {
+		planId: string;
+		planName: string;
+		monthlyAiCreditsUsd: number;
+		monthlyPremiumRequests: number | null;
+	};
 	sortSettings?: {
 		editor?: { key?: string; dir?: string };
 		model?: { key?: string; dir?: string };
@@ -236,6 +242,23 @@ function buildMetricsSection(
 			icon: '🟢', color: '#7ce38b',
 			today: formatCost(stats.today.estimatedCostCopilot ?? 0), last30Days: formatCost(stats.last30Days.estimatedCostCopilot ?? 0), lastMonth: formatCost(stats.lastMonth.estimatedCostCopilot ?? 0), projected: formatCost(projections.projectedCostCopilot ?? 0)
 		},
+		...(stats.copilotPlan ? [
+			{
+				label: 'Copilot plan',
+				labelTooltip: `Your active GitHub Copilot subscription plan (ID: ${stats.copilotPlan.planId})`,
+				icon: '🏷️', color: '#60a5fa',
+				today: '—', last30Days: stats.copilotPlan.planName, lastMonth: stats.copilotPlan.planName, projected: '—'
+			},
+			{
+				label: 'Included AI credits',
+				labelTooltip: 'Monthly AI credits included with your Copilot plan. Credits cover token-based billing (1 AI credit = $0.01).',
+				icon: '💳', color: '#34d399',
+				today: '—',
+				last30Days: stats.copilotPlan.monthlyAiCreditsUsd > 0 ? `$${stats.copilotPlan.monthlyAiCreditsUsd}` : 'none',
+				lastMonth: stats.copilotPlan.monthlyAiCreditsUsd > 0 ? `$${stats.copilotPlan.monthlyAiCreditsUsd}` : 'none',
+				projected: '—'
+			}
+		] : []),
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
 		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },
 		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatCompact(stats.today.avgTokensPerSession), last30Days: formatCompact(stats.last30Days.avgTokensPerSession), lastMonth: formatCompact(stats.lastMonth.avgTokensPerSession), projected: '—' }

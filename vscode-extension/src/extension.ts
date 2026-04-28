@@ -284,6 +284,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _sessionRestorePromise: Promise<void> | undefined;
 	/** True when the user explicitly signed out from our extension this VS Code session. Gated by globalState so it survives reloads. */
 	private _githubSignedOutByUser: boolean = false;
+	/** Resolved Copilot plan details fetched from copilot_internal/user after sign-in. */
+	private _copilotPlanResolved: { planId: string; planName: string; monthlyAiCreditsUsd: number; monthlyPremiumRequests: number | null } | undefined;
 
 	// Cached PR stats result for the repos tab
 	private _lastRepoPrStats?: RepoPrStatsResult;
@@ -1340,6 +1342,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log(`  Monthly premium requests: ${credits}`);
 				const aiCredits = knownPlan.monthlyAiCreditsUsd > 0 ? `$${knownPlan.monthlyAiCreditsUsd}/month included` : 'none';
 				this.log(`  Monthly AI credits: ${aiCredits}`);
+				this._copilotPlanResolved = {
+					planId: planId!,
+					planName: knownPlan.name,
+					monthlyAiCreditsUsd: knownPlan.monthlyAiCreditsUsd,
+					monthlyPremiumRequests: knownPlan.monthlyPremiumRequests,
+				};
+			} else if (planId) {
+				// Unknown plan ID — store it with no credits so the webview still shows it
+				this._copilotPlanResolved = { planId, planName: planId, monthlyAiCreditsUsd: 0, monthlyPremiumRequests: null };
 			}
 			if (planInfo.ide_chat !== undefined)          { this.log(`  IDE chat: ${planInfo.ide_chat}`); }
 			if (planInfo.copilot_ide_agent !== undefined) { this.log(`  Agent mode: ${planInfo.copilot_ide_agent}`); }
@@ -6446,6 +6457,7 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       sortSettings,
       compactNumbers: this.getCompactNumbersSetting(),
+      copilotPlan: this._copilotPlanResolved,
     };
     const initialData = JSON.stringify(dataWithBackend).replace(
       /</g,
