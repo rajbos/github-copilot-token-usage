@@ -14,6 +14,27 @@ export interface UserRow {
 	fluency_score_json: string | null;
 }
 
+export interface UserUsageSummary {
+	user_id: number;
+	github_login: string;
+	github_name: string | null;
+	avatar_url: string | null;
+	is_admin: number;
+	total_input: number;
+	total_output: number;
+	total_interactions: number;
+	days_active: number;
+	last_upload_day: string | null;
+}
+
+export interface AdminDailyRow {
+	day: string;
+	github_login: string;
+	input_tokens: number;
+	output_tokens: number;
+	interactions: number;
+}
+
 export interface UploadRow {
 	id: number;
 	user_id: number;
@@ -208,6 +229,7 @@ function initSchema(db: DatabaseSync): void {
 	db.exec(`
 		CREATE INDEX IF NOT EXISTS idx_uploads_user_day ON usage_uploads(user_id, day);
 		CREATE INDEX IF NOT EXISTS idx_uploads_dataset   ON usage_uploads(dataset_id, day);
+		CREATE INDEX IF NOT EXISTS idx_uploads_day       ON usage_uploads(day);
 	`);
 
 	// Add fluency_json column if it doesn't exist (migration for existing DBs)
@@ -357,4 +379,49 @@ export function closeDb(): void {
 		try { _db.close(); } catch { /* ignore */ }
 		_db = undefined;
 	}
+}
+
+/**
+ * Per-user aggregate stats for the admin dashboard.
+ * LEFT JOIN ensures users with no uploads in the period still appear (with zeros).
+ * `last_upload_day` reflects their all-time last upload, not filtered to the period.
+ */
+export function getAdminUserSummaries(days: number): UserUsageSummary[] {
+	const cutoff = new Date();
+	cutoff.setUTCDate(cutoff.getUTCDate() - days);
+	const cutoffStr = cutoff.toISOString().slice(0, 10);
+	return getDb().prepare(`
+		SELECT
+			u.id                                                                       AS user_id,
+			u.github_login,
+			u.github_name,
+			u.avatar_url,
+			u.is_admin,
+			COALESCE(SUM(CASE WHEN uu.day >= ? THEN uu.input_tokens  ELSE 0 END), 0)  AS total_input,
+			COALESCE(SUM(CASE WHEN uu.day >= ? THEN uu.output_tokens ELSE 0 END), 0)  AS total_output,
+			COALESCE(SUM(CASE WHEN uu.day >= ? THEN uu.interactions  ELSE 0 END), 0)  AS total_interactions,
+			COUNT(DISTINCT CASE WHEN uu.day >= ? THEN uu.day END)                     AS days_active,
+			MAX(uu.day)                                                                AS last_upload_day
+		FROM users u
+		LEFT JOIN usage_uploads uu ON uu.user_id = u.id
+		GROUP BY u.id
+		ORDER BY total_input + total_output DESC
+	`).all(cutoffStr, cutoffStr, cutoffStr, cutoffStr) as unknown as UserUsageSummary[];
+}
+
+/** Daily per-user token totals for the admin trend chart. */
+export function getAdminDailyTotals(days: number): AdminDailyRow[] {
+	return getDb().prepare(`
+		SELECT
+			uu.day,
+			u.github_login,
+			SUM(uu.input_tokens)  AS input_tokens,
+			SUM(uu.output_tokens) AS output_tokens,
+			SUM(uu.interactions)  AS interactions
+		FROM usage_uploads uu
+		JOIN users u ON u.id = uu.user_id
+		WHERE uu.day >= date('now', '-' || ? || ' days')
+		GROUP BY uu.day, u.github_login
+		ORDER BY uu.day, u.github_login
+	`).all(days) as unknown as AdminDailyRow[];
 }
