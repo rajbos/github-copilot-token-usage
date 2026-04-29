@@ -362,6 +362,20 @@ export function getAllUsers(): UserRow[] {
 	return getDb().prepare('SELECT * FROM users ORDER BY created_at DESC').all() as unknown as UserRow[];
 }
 
+export interface AdminUploadRow extends UploadRow {
+	github_login: string;
+}
+
+export function getAllUploads(days = 30): AdminUploadRow[] {
+	return getDb().prepare(`
+		SELECT uu.*, u.github_login
+		FROM usage_uploads uu
+		JOIN users u ON uu.user_id = u.id
+		WHERE uu.day >= date('now', '-' || ? || ' days')
+		ORDER BY uu.day DESC, uu.model
+	`).all(days) as unknown as AdminUploadRow[];
+}
+
 export function upsertUserFluencyScore(userId: number, scoreJson: string): void {
 	getDb().prepare(`
 		UPDATE users SET fluency_score_json = ? WHERE id = ?
