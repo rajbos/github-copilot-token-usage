@@ -7,6 +7,7 @@ import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
 import customizationPatternsData from './customizationPatterns.json';
+import copilotPlansData from './copilotPlans.json';
 import { REPO_HYGIENE_SKILL } from './backend/repoHygieneSkill';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
@@ -18,6 +19,8 @@ import {
 	detectAiType,
 	discoverGitHubRepos,
 	fetchRepoPrs,
+	fetchCopilotPlanInfo,
+	type CopilotPlanInfo,
 	type RepoPrDetail,
 	type RepoPrInfo,
 	type RepoPrStatsResult,
@@ -281,6 +284,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private _sessionRestorePromise: Promise<void> | undefined;
 	/** True when the user explicitly signed out from our extension this VS Code session. Gated by globalState so it survives reloads. */
 	private _githubSignedOutByUser: boolean = false;
+	/** Resolved Copilot plan details fetched from copilot_internal/user after sign-in. */
+	private _copilotPlanResolved: { planId: string; planName: string; monthlyAiCreditsUsd: number; monthlyPremiumRequests: number | null } | undefined;
 
 	// Cached PR stats result for the repos tab
 	private _lastRepoPrStats?: RepoPrStatsResult;
@@ -899,6 +904,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.githubSession = session;
 					await this.context.globalState.update('github.authenticated', true);
 					await this.context.globalState.update('github.username', session.account.label);
+					void this.loadAndLogCopilotPlanInfo();
 				} else {
 					this.githubSession = undefined;
 					await this.context.globalState.update('github.authenticated', false);
@@ -1101,6 +1107,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
 				await this.context.globalState.update('github.username', session.account.label);
+				void this.loadAndLogCopilotPlanInfo();
 			}
 		} catch (error) {
 			this.error('GitHub authentication failed:', error);
@@ -1296,6 +1303,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log(`✅ GitHub session found for ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
 				await this.context.globalState.update('github.username', session.account.label);
+				void this.loadAndLogCopilotPlanInfo();
 			} else {
 				const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
 				if (wasAuthenticated) {
@@ -1309,6 +1317,47 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn('Failed to restore GitHub session: ' + String(error));
 			await this.context.globalState.update('github.authenticated', false);
 			await this.context.globalState.update('github.username', undefined);
+		}
+	}
+
+	/**
+	 * Fetch and log Copilot plan information for the authenticated user.
+	 * Best-effort: silently skips if not authenticated or if the endpoint is unavailable.
+	 */
+	private async loadAndLogCopilotPlanInfo(): Promise<void> {
+		if (!this.githubSession) { return; }
+		try {
+			const { planInfo, statusCode, error } = await fetchCopilotPlanInfo(this.githubSession.accessToken);
+			if (error || !planInfo) {
+				this.warn(`Copilot plan info unavailable (HTTP ${statusCode ?? 'n/a'}): ${error ?? 'no data'}`);
+				return;
+			}
+			const planId = planInfo.copilot_plan as string | undefined;
+			const plans = copilotPlansData.plans as Record<string, { name: string; monthlyPremiumRequests: number | null; monthlyPricePerUser: number; monthlyAiCreditsUsd: number }>;
+			const knownPlan = planId ? plans[planId] : undefined;
+			const planLabel = knownPlan ? `${knownPlan.name} (${planId})` : (planId ?? 'unknown');
+			this.log(`Copilot plan: ${planLabel}`);
+			if (knownPlan) {
+				const credits = knownPlan.monthlyPremiumRequests !== null ? `${knownPlan.monthlyPremiumRequests.toLocaleString()}/month` : 'unlimited';
+				this.log(`  Monthly premium requests: ${credits}`);
+				const aiCredits = knownPlan.monthlyAiCreditsUsd > 0 ? `$${knownPlan.monthlyAiCreditsUsd}/month included` : 'none';
+				this.log(`  Monthly AI credits: ${aiCredits}`);
+				this._copilotPlanResolved = {
+					planId: planId!,
+					planName: knownPlan.name,
+					monthlyAiCreditsUsd: knownPlan.monthlyAiCreditsUsd,
+					monthlyPremiumRequests: knownPlan.monthlyPremiumRequests,
+				};
+			} else if (planId) {
+				// Unknown plan ID — store it with no credits so the webview still shows it
+				this._copilotPlanResolved = { planId, planName: planId, monthlyAiCreditsUsd: 0, monthlyPremiumRequests: null };
+			}
+			if (planInfo.ide_chat !== undefined)          { this.log(`  IDE chat: ${planInfo.ide_chat}`); }
+			if (planInfo.copilot_ide_agent !== undefined) { this.log(`  Agent mode: ${planInfo.copilot_ide_agent}`); }
+			if (planInfo.public_code_suggestions !== undefined) { this.log(`  Public code suggestions: ${planInfo.public_code_suggestions}`); }
+			if (planInfo.unlimited_pr_summaries !== undefined)  { this.log(`  Unlimited PR summaries: ${planInfo.unlimited_pr_summaries}`); }
+		} catch (err) {
+			this.warn('Failed to load Copilot plan info: ' + String(err));
 		}
 	}
 
@@ -6437,6 +6486,7 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       sortSettings,
       compactNumbers: this.getCompactNumbersSetting(),
+      copilotPlan: this._copilotPlanResolved,
     };
     const initialData = JSON.stringify(dataWithBackend).replace(
       /</g,
