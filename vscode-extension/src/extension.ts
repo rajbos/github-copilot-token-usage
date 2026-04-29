@@ -2864,6 +2864,35 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 		}
 
+		// Fallback for ecosystem sessions (Mistral Vibe, Claude Desktop Cowork, etc.):
+		// extractSessionMetadata always returns dailyInteractions: {} for these formats since
+		// their raw files (meta.json, .jsonl) aren't standard Copilot Chat JSONL/JSON.
+		// Use firstInteraction to attribute all tokens to the single day of the session so that
+		// processCachedSessionFile's fast path can use dailyRollups and does not fall through to
+		// the raw-file slow path which cannot parse these non-standard formats.
+		if (Object.keys(dailyRollups).length === 0 && tokenResult.tokens > 0 && sessionMeta.firstInteraction) {
+			try {
+				const interactionDate = new Date(sessionMeta.firstInteraction);
+				if (!isNaN(interactionDate.getTime())) {
+					const dayKey = interactionDate.toISOString().slice(0, 10);
+					const dayModelUsage: ModelUsage = {};
+					for (const [model, usage] of Object.entries(modelUsage)) {
+						dayModelUsage[model] = {
+							inputTokens: usage.inputTokens,
+							outputTokens: usage.outputTokens,
+						};
+					}
+					dailyRollups[dayKey] = {
+						tokens: tokenResult.tokens,
+						actualTokens: tokenResult.actualTokens || 0,
+						thinkingTokens: tokenResult.thinkingTokens || 0,
+						interactions: Math.max(1, interactions),
+						modelUsage: dayModelUsage,
+					};
+				}
+			} catch { /* ignore date parsing errors */ }
+		}
+
 		const sessionData: SessionFileCache = {
 			tokens: tokenResult.tokens,
 			interactions,

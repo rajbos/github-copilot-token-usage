@@ -514,6 +514,75 @@ test('processCachedSessionFile returns false on unexpected error', async () => {
 	assert.ok(warns.some(m => m.includes('cache error')));
 });
 
+// Ecosystem sessions (Mistral Vibe, Claude Desktop Cowork) always have dailyRollups
+// populated by getSessionFileDataCached via the firstInteraction fallback. These tests verify
+// that processCachedSessionFile fast path correctly handles that data structure — without
+// needing a real session file on disk.
+
+test('processCachedSessionFile fast path handles Mistral Vibe-style dailyRollups', async () => {
+	const now = new Date();
+	const dayKey = now.toISOString().slice(0, 10);
+	const startMs = new Date(dayKey + 'T00:00:00Z').getTime() - 1000; // day started before startMs check
+	const svc = makeService({
+		getSessionFileDataCached: async () => ({
+			tokens: 8000, mtime: Date.now(),
+			interactions: 5,
+			modelUsage: { 'devstral-2': { inputTokens: 5000, outputTokens: 3000 } },
+			dailyRollups: {
+				[dayKey]: {
+					tokens: 8000,
+					actualTokens: 8000,
+					thinkingTokens: 0,
+					interactions: 5,
+					modelUsage: { 'devstral-2': { inputTokens: 5000, outputTokens: 3000 } },
+				}
+			}
+		}),
+	});
+	const rollups = new Map();
+	const result = await (svc as any).processCachedSessionFile(
+		'/home/user/.vibe/logs/session/session_20250101_120000_abc/meta.json',
+		Date.now(), 100, 'ws', 'machine', undefined, rollups, startMs, now
+	);
+	assert.equal(result, true);
+	assert.equal(rollups.size, 1);
+	const entry = Array.from(rollups.values())[0] as any;
+	assert.equal(entry.key.model, 'devstral-2');
+	assert.equal(entry.value.inputTokens, 5000);
+	assert.equal(entry.value.outputTokens, 3000);
+	assert.equal(entry.value.interactions, 5);
+});
+
+test('processCachedSessionFile fast path skips day before startMs', async () => {
+	const now = new Date();
+	const yesterdayKey = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+	// startMs = today midnight → yesterday is excluded
+	const todayMidnightMs = new Date(now.toISOString().slice(0, 10) + 'T00:00:00Z').getTime();
+	const svc = makeService({
+		getSessionFileDataCached: async () => ({
+			tokens: 1000, mtime: Date.now(),
+			interactions: 2,
+			modelUsage: { 'devstral': { inputTokens: 600, outputTokens: 400 } },
+			dailyRollups: {
+				[yesterdayKey]: {
+					tokens: 1000,
+					actualTokens: 1000,
+					thinkingTokens: 0,
+					interactions: 2,
+					modelUsage: { 'devstral': { inputTokens: 600, outputTokens: 400 } },
+				}
+			}
+		}),
+	});
+	const rollups = new Map();
+	const result = await (svc as any).processCachedSessionFile(
+		'/home/user/.vibe/logs/session/session_20250101_120000_abc/meta.json',
+		Date.now(), 100, 'ws', 'machine', undefined, rollups, todayMidnightMs, now
+	);
+	assert.equal(result, true);
+	assert.equal(rollups.size, 0, 'yesterday session should be filtered out by startMs');
+});
+
 // ── computeDailyRollupsFromLocalSessions (private, fallback path) ────────
 
 test('computeDailyRollupsFromLocalSessions processes JSON files in fallback path', async () => {

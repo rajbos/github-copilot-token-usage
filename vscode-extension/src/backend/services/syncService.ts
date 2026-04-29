@@ -363,7 +363,9 @@ export class SyncService {
 			}
 
 			// Slow path: parse the session file to get actual request timestamps and create per-day rollups.
-			// Used when dailyRollups is absent (old cache entries before CACHE_VERSION bump, ecosystem sessions).
+			// Used when dailyRollups is absent (old cache entries before CACHE_VERSION bump).
+			// Note: ecosystem sessions (Mistral Vibe, Claude Desktop Cowork) now always have dailyRollups
+			// populated via the firstInteraction fallback in getSessionFileDataCached, so they use the fast path above.
 			const content = await fs.promises.readFile(sessionFile, 'utf8');
 			
 			// Map to track per-day per-model interactions for proper distribution
