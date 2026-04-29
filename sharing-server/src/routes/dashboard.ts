@@ -6,7 +6,7 @@ import {
 	encodeSession, decodeSession, makeClaims,
 	COOKIE_NAME, OAUTH_STATE_COOKIE, SESSION_MAX_AGE,
 } from '../session.js';
-import { getUserById, getUserByGithubId, getUploadsForUser, getAllUsers, upsertUser, type UploadRow, type UserRow } from '../db.js';
+import { getUserById, getUserByGithubId, getUploadsForUser, getAllUsers, getAllUploads, upsertUser, type UploadRow, type UserRow, type AdminUploadRow } from '../db.js';
 export const dashboard = new Hono();
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID ?? '';
@@ -244,8 +244,9 @@ dashboard.get('/dashboard', (c) => {
 	const uploads = getUploadsForUser(user.id, 30);
 	const isAdmin = user.is_admin === 1;
 	const allUsers = isAdmin ? getAllUsers() : undefined;
+	const allUploads = isAdmin ? getAllUploads(30) : undefined;
 
-	return c.html(dashboardPage(user, uploads, isAdmin, allUsers));
+	return c.html(dashboardPage(user, uploads, isAdmin, allUsers, allUploads));
 });
 
 // ── HTML Rendering ────────────────────────────────────────────────────────────
@@ -360,7 +361,7 @@ function layout(title: string, body: string): string {
   .stat-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 14px 16px; }
   .stat-card .label { color: #8b949e; font-size: 0.8rem; }
   .stat-card .value { font-size: 1.6rem; font-weight: 700; color: #58a6ff; margin-top: 2px; line-height: 1; }
-  .stats-panel.hidden { display: none; }
+  .stats-panel.hidden, .admin-stats-panel.hidden { display: none; }
 
   /* ── Editor bars ── */
   .editor-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -503,7 +504,7 @@ function loginPage(): string {
 </div>`);
 }
 
-function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, allUsers?: UserRow[]): string {
+function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, allUsers?: UserRow[], allUploads?: AdminUploadRow[]): string {
 	// ── Per-period stats ───────────────────────────────────────────────────────
 	const today = new Date().toISOString().slice(0, 10);
 	const sevenDaysAgo = (() => {
@@ -685,7 +686,9 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   </div>
 </details>` : '';
 
-	const adminHtml = isAdmin && allUsers ? `
+	// ── Admin section ─────────────────────────────────────────────────────────
+	// Renamed user-list collapsible (keeps existing behavior)
+	const adminUsersHtml = isAdmin && allUsers ? `
 <details class="card">
   <summary>👑 Admin: All Users (${allUsers.length})</summary>
   <div class="table-scroll">
@@ -705,6 +708,342 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   </table>
   </div>
 </details>` : '';
+
+	// Admin overview: aggregate stats + trend chart + top users (shown only to admins)
+	let adminChartData: { day: string; model: string; editor: string; user: string; inputTokens: number; outputTokens: number; interactions: number }[] = [];
+	let adminSectionHtml = '';
+	let adminInteractiveJs = '';
+
+	if (isAdmin && allUploads !== undefined) {
+		// Build per-user totals for top-users table and chart user cap
+		const userAvatarMap = new Map(allUsers?.map(u => [u.github_login, u.avatar_url]) ?? []);
+		type AdminUserStats = { login: string; avatarUrl: string | null; input: number; output: number; interactions: number; lastActive: string | null };
+		const userTotals = new Map<string, AdminUserStats>();
+		for (const r of allUploads) {
+			if (!userTotals.has(r.github_login)) {
+				userTotals.set(r.github_login, { login: r.github_login, avatarUrl: userAvatarMap.get(r.github_login) ?? null, input: 0, output: 0, interactions: 0, lastActive: null });
+			}
+			const s = userTotals.get(r.github_login)!;
+			s.input += r.input_tokens;
+			s.output += r.output_tokens;
+			s.interactions += r.interactions;
+			if (!s.lastActive || r.day > s.lastActive) s.lastActive = r.day;
+		}
+		const topUsers = [...userTotals.values()].sort((a, b) => (b.input + b.output) - (a.input + a.output));
+
+		// Cap "By User" chart grouping at top 10 — label the rest "Other"
+		const topChartLogins = new Set(topUsers.slice(0, 10).map(u => u.login));
+		adminChartData = allUploads.map(r => ({
+			day: r.day,
+			model: r.model,
+			editor: normalizeEditorName(r.editor),
+			user: topChartLogins.has(r.github_login) ? r.github_login : 'Other',
+			inputTokens: r.input_tokens,
+			outputTokens: r.output_tokens,
+			interactions: r.interactions,
+		}));
+
+		// Period stats for admin
+		const todayStr = new Date().toISOString().slice(0, 10);
+		const sevenDaysAgoStr = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 6); return d.toISOString().slice(0, 10); })();
+		type AdminPeriodStats = { inputTokens: number; outputTokens: number; interactions: number; activeUsers: number };
+		const computeAdminStats = (rows: AdminUploadRow[]): AdminPeriodStats => ({
+			inputTokens: rows.reduce((s, r) => s + r.input_tokens, 0),
+			outputTokens: rows.reduce((s, r) => s + r.output_tokens, 0),
+			interactions: rows.reduce((s, r) => s + r.interactions, 0),
+			activeUsers: new Set(rows.map(r => r.github_login)).size,
+		});
+		const adminStats = {
+			today: computeAdminStats(allUploads.filter(r => r.day === todayStr)),
+			week: computeAdminStats(allUploads.filter(r => r.day >= sevenDaysAgoStr)),
+			month: computeAdminStats(allUploads),
+		};
+
+		function adminStatCards(s: AdminPeriodStats, panelId: string, hidden: boolean): string {
+			return `<div id="${panelId}" class="admin-stats-panel${hidden ? ' hidden' : ''}">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="label">Input Tokens</div><div class="value">${fmt(s.inputTokens)}</div></div>
+    <div class="stat-card"><div class="label">Output Tokens</div><div class="value">${fmt(s.outputTokens)}</div></div>
+    <div class="stat-card"><div class="label">Interactions</div><div class="value">${fmt(s.interactions)}</div></div>
+    <div class="stat-card"><div class="label">Active Users</div><div class="value">${s.activeUsers}</div></div>
+  </div>
+</div>`;
+		}
+
+		const userCount = allUsers?.length ?? topUsers.length;
+		adminSectionHtml = `
+<div class="card">
+  <div class="card-header">
+    <h3>👑 Admin Overview</h3>
+    <div style="color:#8b949e;font-size:0.8rem">${userCount} user${userCount !== 1 ? 's' : ''}</div>
+    <div class="tabs" id="admin-period-tabs">
+      <button class="tab active" data-period="admin-stats-today">Today</button>
+      <button class="tab" data-period="admin-stats-week">Last 7 Days</button>
+      <button class="tab" data-period="admin-stats-month">Last 30 Days</button>
+    </div>
+  </div>
+  ${adminStatCards(adminStats.today, 'admin-stats-today', false)}
+  ${adminStatCards(adminStats.week, 'admin-stats-week', true)}
+  ${adminStatCards(adminStats.month, 'admin-stats-month', true)}
+</div>
+${allUploads.length > 0 ? `<div class="card">
+  <div class="card-header">
+    <h3>Token Usage Trend — All Users</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="tabs" id="admin-chart-period-tabs">
+        <button class="tab" data-chart-period="7">Last 7 days</button>
+        <button class="tab active" data-chart-period="30">Last 30 days</button>
+        <button class="tab" data-chart-period="0">All</button>
+      </div>
+      <div class="tabs" id="admin-group-tabs">
+        <button class="tab active" data-group="model">By Model</button>
+        <button class="tab" data-group="editor">By Editor</button>
+        <button class="tab" data-group="user">By User</button>
+      </div>
+      <div class="tabs" id="admin-view-tabs">
+        <button class="tab active" data-view="day">Day</button>
+        <button class="tab" data-view="week">Week</button>
+        <button class="tab" data-view="month">Month</button>
+      </div>
+      <div class="tabs" id="admin-scale-tabs">
+        <button class="tab active" data-scale="linear">Linear</button>
+        <button class="tab" data-scale="log">Log</button>
+      </div>
+    </div>
+  </div>
+  <div class="chart-wrap"><canvas id="admin-trend-chart"></canvas></div>
+</div>` : ''}
+${topUsers.length > 0 ? `<details class="card">
+  <summary>Top Users by Token Usage (Last 30 Days)</summary>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th></th><th>User</th><th>Input Tokens</th><th>Output Tokens</th><th>Interactions</th><th>Last Active</th></tr></thead>
+    <tbody>
+      ${topUsers.map(u => `
+      <tr>
+        <td>${u.avatarUrl ? `<img src="${h(u.avatarUrl)}" style="width:22px;height:22px;border-radius:50%;vertical-align:middle">` : ''}</td>
+        <td><a href="https://github.com/${h(u.login)}" target="_blank" rel="noopener" style="color:#58a6ff">${h(u.login)}</a></td>
+        <td style="text-align:right">${u.input.toLocaleString()}</td>
+        <td style="text-align:right">${u.output.toLocaleString()}</td>
+        <td style="text-align:right">${u.interactions.toLocaleString()}</td>
+        <td>${h(u.lastActive ?? '—')}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  </div>
+</details>` : ''}`;
+
+		adminInteractiveJs = `
+(function () {
+  // ── Admin period tabs ────────────────────────────────────────────────────
+  function activateAdminPeriod(period) {
+    document.querySelectorAll('#admin-period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+    var btn = document.querySelector('#admin-period-tabs .tab[data-period="' + period + '"]');
+    if (btn) btn.classList.add('active');
+    document.querySelectorAll('.admin-stats-panel').forEach(function(el) {
+      el.classList.toggle('hidden', el.id !== period);
+    });
+  }
+  document.querySelectorAll('#admin-period-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      activateAdminPeriod(btn.getAttribute('data-period'));
+    });
+  });
+
+  // ── Admin chart ──────────────────────────────────────────────────────────
+  var canvas = document.getElementById('admin-trend-chart');
+  if (!canvas || !ADMIN_CHART_DATA.length) return;
+
+  var MODEL_PALETTE  = ['#58a6ff','#3fb950','#bc8cff','#f0883e','#e3b341','#f778ba','#79c0ff','#56d364','#d2a8ff','#ffa657'];
+  var CLAUDE_COLORS  = ['#bc8cff','#a371f7','#d2a8ff','#6e40c9','#8250df'];
+  var GPT_COLORS     = ['#58a6ff','#388bfd','#1f6feb','#79c0ff'];
+  var GEMINI_COLORS  = ['#3fb950','#2ea043','#56d364'];
+  var EDITOR_COLORS  = ['#58a6ff','#3fb950','#bc8cff','#f0883e','#e3b341','#f778ba'];
+  var USER_COLORS    = ['#f0883e','#e3b341','#f778ba','#bc8cff','#58a6ff','#3fb950','#79c0ff','#56d364','#d2a8ff','#ffa657'];
+  var colorIdx = { claude: 0, gpt: 0, gemini: 0, other: 0, editor: 0, user: 0 };
+  var modelColorMap = {}, editorColorMap = {}, userColorMap = {};
+
+  function getModelColor(m) {
+    if (!modelColorMap[m]) {
+      if (m.includes('claude'))             modelColorMap[m] = CLAUDE_COLORS[colorIdx.claude++  % CLAUDE_COLORS.length];
+      else if (m.match(/\\bgpt|o[134]\\b/)) modelColorMap[m] = GPT_COLORS[colorIdx.gpt++     % GPT_COLORS.length];
+      else if (m.includes('gemini'))        modelColorMap[m] = GEMINI_COLORS[colorIdx.gemini++ % GEMINI_COLORS.length];
+      else                                   modelColorMap[m] = MODEL_PALETTE[colorIdx.other++  % MODEL_PALETTE.length];
+    }
+    return modelColorMap[m];
+  }
+  function getEditorColor(e) {
+    if (!editorColorMap[e]) editorColorMap[e] = EDITOR_COLORS[colorIdx.editor++ % EDITOR_COLORS.length];
+    return editorColorMap[e];
+  }
+  function getUserColor(u) {
+    if (!userColorMap[u]) userColorMap[u] = USER_COLORS[colorIdx.user++ % USER_COLORS.length];
+    return userColorMap[u];
+  }
+
+  var allModels  = [...new Set(ADMIN_CHART_DATA.map(function(r) { return r.model; }))].sort();
+  var allEditors = [...new Set(ADMIN_CHART_DATA.map(function(r) { return r.editor; }))].sort();
+  // Sort users by total tokens descending so legend order matches the top-users table
+  var userTokenTotals = {};
+  ADMIN_CHART_DATA.forEach(function(r) { userTokenTotals[r.user] = (userTokenTotals[r.user] || 0) + r.inputTokens + r.outputTokens; });
+  var allUsers = Object.keys(userTokenTotals).sort(function(a, b) { return userTokenTotals[b] - userTokenTotals[a]; });
+  allModels.forEach(getModelColor);
+  allEditors.forEach(getEditorColor);
+  allUsers.forEach(getUserColor);
+
+  function toWeekStart(day) {
+    var d = new Date(day + 'T00:00:00Z');
+    var dow = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - dow);
+    return d.toISOString().slice(0, 10);
+  }
+  function toMonth(day) { return day.slice(0, 7); }
+
+  function buildDatasets(grouped, labels, dims, colorFn) {
+    return dims
+      .map(function(dim) {
+        return {
+          label: dim,
+          data: labels.map(function(l) { return Math.round((grouped[l] && grouped[l][dim] || 0) / 1000); }),
+          backgroundColor: colorFn(dim) + 'bb',
+          borderColor: colorFn(dim),
+          borderWidth: 1,
+          borderRadius: 2,
+        };
+      })
+      .filter(function(ds) { return ds.data.some(function(v) { return v > 0; }); });
+  }
+
+  var currentGroup = 'model', currentView = 'day', currentChartDays = 30, currentScale = 'linear';
+
+  function getChartData() {
+    if (currentChartDays === 0) { return ADMIN_CHART_DATA; }
+    var cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - (currentChartDays - 1));
+    var cutoffStr = cutoff.toISOString().slice(0, 10);
+    return ADMIN_CHART_DATA.filter(function(r) { return r.day >= cutoffStr; });
+  }
+  function getDims() {
+    if (currentGroup === 'editor') return allEditors;
+    if (currentGroup === 'user')   return allUsers;
+    return allModels;
+  }
+  function getColorFn() {
+    if (currentGroup === 'editor') return getEditorColor;
+    if (currentGroup === 'user')   return getUserColor;
+    return getModelColor;
+  }
+  function getDimKey(r) {
+    if (currentGroup === 'editor') return r.editor;
+    if (currentGroup === 'user')   return r.user || 'Other';
+    return r.model;
+  }
+  function makeYAxisConfig() {
+    var isLog = currentScale === 'log';
+    return {
+      stacked: !isLog,
+      type: isLog ? 'logarithmic' : 'linear',
+      grid: { color: '#21262d' },
+      ticks: {
+        color: '#8b949e', font: { size: 11 },
+        callback: function(v) {
+          if (isLog) { var log = Math.log10(v); if (Math.abs(log - Math.round(log)) > 0.01) { return null; } }
+          return v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K';
+        },
+      },
+      title: { display: true, text: 'Tokens (K)', color: '#8b949e', font: { size: 11 } },
+    };
+  }
+
+  var initGrouped = {};
+  ADMIN_CHART_DATA.forEach(function(r) {
+    if (!initGrouped[r.day]) initGrouped[r.day] = {};
+    initGrouped[r.day][r.model] = (initGrouped[r.day][r.model] || 0) + r.inputTokens + r.outputTokens;
+  });
+  var initLabels = [...new Set(ADMIN_CHART_DATA.map(function(r) { return r.day; }))].sort();
+
+  var adminChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: initLabels, datasets: buildDatasets(initGrouped, initLabels, allModels, getModelColor) },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: 16, font: { size: 11 } } },
+        y: makeYAxisConfig(),
+      },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#c9d1d9', boxWidth: 11, padding: 14, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
+          callbacks: {
+            label: function(ctx) {
+              var v = ctx.parsed.y;
+              return '  ' + ctx.dataset.label + ': ' + (v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K') + ' tokens';
+            },
+            footer: function(items) {
+              var total = items.reduce(function(s,i) { return s + i.parsed.y; }, 0);
+              return 'Total: ' + (total >= 1000 ? (total/1000).toFixed(1)+'M' : total+'K') + ' tokens';
+            },
+          },
+        },
+      },
+    },
+  });
+
+  function rebuildAdminChart() {
+    var filteredData = getChartData();
+    var keyFn = currentView === 'week' ? toWeekStart : currentView === 'month' ? toMonth : function(d) { return d; };
+    var filteredMap = {};
+    filteredData.forEach(function(r) {
+      var label = keyFn(r.day);
+      var dim = getDimKey(r);
+      if (!filteredMap[label]) filteredMap[label] = {};
+      filteredMap[label][dim] = (filteredMap[label][dim] || 0) + r.inputTokens + r.outputTokens;
+    });
+    var labels = [...new Set(filteredData.map(function(r) { return keyFn(r.day); }))].sort();
+    adminChart.data.labels   = labels;
+    adminChart.data.datasets = buildDatasets(filteredMap, labels, getDims(), getColorFn());
+    adminChart.options.scales.x.stacked = currentScale !== 'log';
+    adminChart.options.scales.y = makeYAxisConfig();
+    adminChart.update();
+  }
+
+  document.querySelectorAll('#admin-chart-period-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#admin-chart-period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentChartDays = parseInt(btn.getAttribute('data-chart-period'), 10);
+      rebuildAdminChart();
+    });
+  });
+  document.querySelectorAll('#admin-scale-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#admin-scale-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentScale = btn.getAttribute('data-scale');
+      rebuildAdminChart();
+    });
+  });
+  document.querySelectorAll('#admin-group-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#admin-group-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentGroup = btn.getAttribute('data-group');
+      rebuildAdminChart();
+    });
+  });
+  document.querySelectorAll('#admin-view-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#admin-view-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentView = btn.getAttribute('data-view');
+      rebuildAdminChart();
+    });
+  });
+})();`;
+	}
 
 	// ── Interactive JS ────────────────────────────────────────────────────────
 	const interactiveJs = `
@@ -1070,19 +1409,22 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
 </div>
 <div class="content">
   ${profileHtml}
+  ${adminSectionHtml}
   ${summaryHtml}
   ${editorsHtml}
   ${chartHtml}
   ${tableHtml}
-  ${adminHtml}
+  ${adminUsersHtml}
 </div>
 ${fluencyModalHtml}
 
 <script>
 var CHART_DATA = ${safeJson(chartData)};
 </script>
+${allUploads !== undefined ? `<script>var ADMIN_CHART_DATA = ${safeJson(adminChartData)};</script>` : ''}
 <script>${_chartJsCode}</script>
 <script>${interactiveJs}</script>
+${adminInteractiveJs ? `<script>${adminInteractiveJs}</script>` : ''}
 <script>
 // Re-compute "Today" stats using browser's local timezone (server pre-renders in UTC)
 (function() {
@@ -1107,6 +1449,30 @@ var CHART_DATA = ${safeJson(chartData)};
   }
 })();
 </script>
+${allUploads !== undefined ? `<script>
+// Re-compute admin "Today" stats using browser's local timezone
+(function() {
+  function fmtLocal(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+  var todayLocal = new Date().toLocaleDateString('sv-SE');
+  var todayData = ADMIN_CHART_DATA.filter(function(r) { return r.day === todayLocal; });
+  var inputTokens = todayData.reduce(function(s, r) { return s + r.inputTokens; }, 0);
+  var outputTokens = todayData.reduce(function(s, r) { return s + r.outputTokens; }, 0);
+  var interactions = todayData.reduce(function(s, r) { return s + r.interactions; }, 0);
+  var activeUsers = new Set(todayData.map(function(r) { return r.user; })).size;
+  var panel = document.getElementById('admin-stats-today');
+  if (panel) {
+    var values = panel.querySelectorAll('.stat-card .value');
+    if (values[0]) values[0].textContent = fmtLocal(inputTokens);
+    if (values[1]) values[1].textContent = fmtLocal(outputTokens);
+    if (values[2]) values[2].textContent = fmtLocal(interactions);
+    if (values[3]) values[3].textContent = String(activeUsers);
+  }
+})();
+</script>` : ''}
 <script>${fluencyJs}</script>`);
 }
 
