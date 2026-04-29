@@ -20,6 +20,19 @@
       "problemMatcher": []
     },
     {
+      "label": "esbuild",
+      "type": "shell",
+      "command": "node esbuild.js",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "watch",
       "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
       "presentation": {
