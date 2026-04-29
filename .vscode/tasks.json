@@ -5,8 +5,8 @@
   "tasks": [
     {
       "label": "npm compile",
-      "type": "npm",
-      "script": "compile",
+      "type": "shell",
+      "command": "npm run compile",
       "options": {
         "cwd": "${workspaceFolder}/vscode-extension"
       },
@@ -14,6 +14,19 @@
         "kind": "build",
         "isDefault": true
       },
+      "presentation": {
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "esbuild",
+      "type": "shell",
+      "command": "node esbuild.js",
+      "options": {
+        "cwd": "${workspaceFolder}/vscode-extension"
+      },
+      "group": "build",
       "presentation": {
         "reveal": "silent"
       },

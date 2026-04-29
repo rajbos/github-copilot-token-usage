@@ -9,7 +9,7 @@
 			"name": "Run Extension",
 			"type": "extensionHost",
 			"request": "launch",
-			"preLaunchTask": "npm compile",
+			"preLaunchTask": "esbuild",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension"
 			],
