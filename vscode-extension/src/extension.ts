@@ -149,6 +149,7 @@ import {
   type ViewRegressionProbeConfig,
   type ViewRegressionProbeSnapshot,
 } from './viewRegression';
+import { determineOnboardingAction } from './onboarding';
 
 type LocalViewRegressionProbeResult = {
   pass: boolean;
@@ -986,12 +987,64 @@ class CopilotTokenTracker implements vscode.Disposable {
 			try {
 				await this.updateTokenStats();
 				this.startBackendSyncAfterInitialAnalysis();
+				await this.checkAndShowOnboarding();
 				await this.showFluencyScoreNewsBanner();
 				await this.showUnknownMcpToolsBanner();
 			} catch (error) {
 				this.error('Error in initial update:', error);
 			}
 		}, 3000);
+	}
+
+	/**
+	 * After the initial scan, decide whether to show onboarding guidance.
+	 * Branches on three cases:
+	 *   1. Returning user (`hasSeenOnboarding` already set) — do nothing.
+	 *   2. Genuine first use (no files, no discovery error) — show welcome notification.
+	 *   3. Discovery failure (no files + adapter error) — route to Diagnostics.
+	 * When data is found, the flag is marked so subsequent runs skip this.
+	 */
+	private async checkAndShowOnboarding(): Promise<void> {
+		const hasSeenOnboarding = this.context.globalState.get<boolean>('hasSeenOnboarding', false);
+		const sessionFilesCount = this.sessionDiscovery.lastDiscoveryFilesCount;
+		const hadDiscoveryError = this.sessionDiscovery.lastDiscoveryHadError;
+
+		// Compute action from pre-update state so the decision is stable.
+		const action = determineOnboardingAction(hasSeenOnboarding, sessionFilesCount, hadDiscoveryError);
+
+		// Mark as seen whenever data is present so future runs skip onboarding.
+		if (sessionFilesCount > 0) {
+			await this.context.globalState.update('hasSeenOnboarding', true);
+		}
+
+		switch (action) {
+			case 'welcome': {
+				const choice = await vscode.window.showInformationMessage(
+					'AI Engineering Fluency tracks your GitHub Copilot usage — token counts, cost estimates, and fluency scores based on how you interact with AI tools.',
+					'Open Fluency Score',
+					'Learn More',
+				);
+				await this.context.globalState.update('hasSeenOnboarding', true);
+				if (choice === 'Open Fluency Score') {
+					await this.showMaturity();
+				} else if (choice === 'Learn More') {
+					await vscode.env.openExternal(vscode.Uri.parse('https://github.com/rajbos/github-copilot-token-usage#supported-editors'));
+				}
+				break;
+			}
+			case 'diagnostics': {
+				const choice = await vscode.window.showWarningMessage(
+					'AI Engineering Fluency: session files could not be found. Open Diagnostics to investigate.',
+					'Open Diagnostics',
+				);
+				if (choice === 'Open Diagnostics') {
+					await this.showDiagnosticReport();
+				}
+				break;
+			}
+			default:
+				break;
+		}
 	}
 
 	/**
@@ -1372,7 +1425,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.setStatusBarText(`$(loading~spin) Analyzing Logs: ${percentage}%`);
 			});
 
-			this.setStatusBarText(`$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`);
+			if (detailedStats.today.sessions === 0 && detailedStats.last30Days.sessions === 0) {
+				this.setStatusBarText('$(symbol-numeric) No session data yet');
+			} else {
+				this.setStatusBarText(`$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`);
+			}
 
 			// Create detailed tooltip with improved style
 			const tooltip = new vscode.MarkdownString();
@@ -5477,10 +5534,9 @@ ${hashtag}`;
   }
 
   public async showFluencyLevelViewer(): Promise<void> {
-    const isDebugMode =
-      this.context.extensionMode === vscode.ExtensionMode.Development;
+    const isDebugMode = false;
 
-    this.log("🔍 Opening Fluency Level Viewer");
+    this.log("🔍 Opening Scoring Guide");
 
     // If panel already exists, dispose and recreate with fresh data
     if (this.fluencyLevelViewerPanel) {
@@ -5492,7 +5548,7 @@ ${hashtag}`;
 
     this.fluencyLevelViewerPanel = vscode.window.createWebviewPanel(
       "copilotFluencyLevelViewer",
-      "Fluency Level Viewer",
+      "Scoring Guide",
       { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
       {
         enableScripts: true,
@@ -5529,15 +5585,14 @@ ${hashtag}`;
       return;
     }
 
-    const isDebugMode =
-      this.context.extensionMode === vscode.ExtensionMode.Development;
-    this.log("🔄 Refreshing Fluency Level Viewer");
+    const isDebugMode = false;
+    this.log("🔄 Refreshing Scoring Guide");
     const fluencyLevelData = this.getFluencyLevelData(isDebugMode);
     this.fluencyLevelViewerPanel.webview.html = this.getFluencyLevelViewerHtml(
       this.fluencyLevelViewerPanel.webview,
       fluencyLevelData,
     );
-    this.log("✅ Fluency Level Viewer refreshed");
+    this.log("✅ Scoring Guide refreshed");
   }
 
   private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
@@ -5594,7 +5649,7 @@ ${hashtag}`;
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta http-equiv="Content-Security-Policy" content="${csp}" />
-		<title>Fluency Level Viewer</title>
+		<title>Scoring Guide</title>
 	</head>
 	<body>
 		<div id="root"></div>

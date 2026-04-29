@@ -54,9 +54,20 @@ export class SessionDiscovery {
 	private _sessionFilesCacheTime: number = 0;
 	private static readonly SESSION_FILES_CACHE_TTL = 60000;
 
+	/** Whether any adapter threw during the last discovery run. */
+	private _lastDiscoveryHadError = false;
+	/** Number of files returned by the last discovery run (reflects actual result, not just cache). */
+	private _lastDiscoveryFilesCount = 0;
+
 	constructor(deps: SessionDiscoveryDeps) {
 		this.deps = deps;
 	}
+
+	/** Whether any adapter threw an error during the most recent discovery scan. */
+	get lastDiscoveryHadError(): boolean { return this._lastDiscoveryHadError; }
+
+	/** Number of session files found in the most recent discovery scan. */
+	get lastDiscoveryFilesCount(): number { return this._lastDiscoveryFilesCount; }
 
 	clearCache(): void {
 		this._sessionFilesCache = null;
@@ -132,6 +143,10 @@ export class SessionDiscovery {
 			return this._sessionFilesCache;
 		}
 
+		// Reset discovery state for this run.
+		this._lastDiscoveryHadError = false;
+		this._lastDiscoveryFilesCount = 0;
+
 		// Screenshot/demo mode: sample data directory bypasses adapter discovery.
 		const sampleDir = this.deps.sampleDataDirectoryOverride?.()
 			?? vscode.workspace.getConfiguration('aiEngineeringFluency').get<string>('sampleDataDirectory');
@@ -145,6 +160,7 @@ export class SessionDiscovery {
 					this.deps.log(`📸 Sample data mode: using ${sampleFiles.length} file(s) from ${resolvedSampleDir}`);
 					this._sessionFilesCache = sampleFiles;
 					this._sessionFilesCacheTime = now;
+					this._lastDiscoveryFilesCount = sampleFiles.length;
 					return sampleFiles;
 				} else {
 					this.deps.warn(`Sample data directory not found: ${resolvedSampleDir}`);
@@ -164,6 +180,7 @@ export class SessionDiscovery {
 					sessionFiles.push(...result.sessionFiles);
 				} catch (ecoError) {
 					this.deps.warn(`Could not discover ${eco.displayName} sessions: ${ecoError}`);
+					this._lastDiscoveryHadError = true;
 				}
 			}
 
@@ -191,9 +208,12 @@ export class SessionDiscovery {
 
 			this._sessionFilesCache = deduped;
 			this._sessionFilesCacheTime = Date.now();
+			this._lastDiscoveryFilesCount = deduped.length;
 			return deduped;
 		} catch (error) {
 			this.deps.error('Error getting session files:', error);
+			this._lastDiscoveryHadError = true;
+			this._lastDiscoveryFilesCount = sessionFiles.length;
 			return sessionFiles;
 		}
 	}

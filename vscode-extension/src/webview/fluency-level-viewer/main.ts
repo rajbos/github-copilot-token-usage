@@ -143,8 +143,8 @@ function renderLayout(data: FluencyLevelData): void {
 		<div class="container">
 			<div class="header">
 				<div class="header-left">
-					<span class="header-icon">🔍</span>
-					<span class="header-title">Fluency Level Viewer</span>
+					<span class="header-icon">📊</span>
+					<span class="header-title">Scoring Guide</span>
 					${data.isDebugMode ? '<span class="debug-badge">🐛 DEBUG MODE</span>' : ''}
 				</div>
 				<div class="button-row">
@@ -176,7 +176,7 @@ function renderLayout(data: FluencyLevelData): void {
 			</div>
 
 			<div class="footer">
-				🔍 Fluency Level Viewer &middot; ${data.categories.length} categories &middot; 4 stages each
+				📊 Scoring Guide &middot; ${data.categories.length} categories &middot; 4 stages each
 			</div>
 		</div>
 	`;
