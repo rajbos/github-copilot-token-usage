@@ -1014,6 +1014,12 @@ function renderBackendStoragePanel(
       <div class="info-box">
         <div class="info-box-title">☁️ Backend Storage</div>
         <div>Backend storage information is not available. This may be a temporary issue.</div>
+        <div class="button-group" style="margin-top: 12px;">
+          <button class="button" id="btn-configure-backend">
+            <span>🔧</span>
+            <span>Configure Backend</span>
+          </button>
+        </div>
       </div>
     `;
   }
