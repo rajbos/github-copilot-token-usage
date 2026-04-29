@@ -10,6 +10,11 @@ on:
       - "sharing-server/**"
       - ".github/workflows/sharing-server-deploy.yml"
   workflow_dispatch:
+    inputs:
+      deploy_to_test:
+        description: 'Deploy main branch to the test environment instead of production'
+        type: boolean
+        default: false
 
 # One deploy per branch at a time — prevents concurrent Terraform runs from
 # conflicting on the same remote state file (state blob already locked errors).
@@ -42,8 +47,10 @@ jobs:
 
       - name: Compute deployment parameters
         id: env
+        env:
+          FORCE_TEST: ${{ inputs.deploy_to_test }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" != "true" ]]; then
             {
               echo "app_name=sharing-server-prod"
               echo "state_key=sharing-server/prod.tfstate"
