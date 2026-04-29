@@ -15,6 +15,10 @@ on:
         description: 'Deploy main branch to the test environment instead of production'
         type: boolean
         default: false
+      target_app:
+        description: 'Target an existing test app by name (e.g. sharing-test-rajbos-azurecf0d7e). Implies deploy_to_test. Leave blank to use branch-derived name.'
+        type: string
+        default: ''
 
 # One deploy per branch at a time — prevents concurrent Terraform runs from
 # conflicting on the same remote state file (state blob already locked errors).
@@ -48,9 +52,21 @@ jobs:
       - name: Compute deployment parameters
         id: env
         env:
-          FORCE_TEST: ${{ inputs.deploy_to_test }}
+          FORCE_TEST:  ${{ inputs.deploy_to_test }}
+          TARGET_APP:  ${{ inputs.target_app }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" != "true" ]]; then
+          # A named target_app always routes to the test environment.
+          if [[ -n "$TARGET_APP" ]]; then
+            # Strip the "sharing-test-" prefix to get the suffix used in the state key.
+            SUFFIX="${TARGET_APP#sharing-test-}"
+            {
+              echo "app_name=${TARGET_APP}"
+              echo "state_key=sharing-server/test-${SUFFIX}.tfstate"
+              echo "environment=testing"
+              echo "is_prod=false"
+              echo "min_replicas=0"
+            } >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" != "true" ]]; then
             {
               echo "app_name=sharing-server-prod"
               echo "state_key=sharing-server/prod.tfstate"
