@@ -514,6 +514,75 @@ test('processCachedSessionFile returns false on unexpected error', async () => {
 	assert.ok(warns.some(m => m.includes('cache error')));
 });
 
+// Ecosystem sessions (Mistral Vibe, Claude Desktop Cowork) always have dailyRollups
+// populated by getSessionFileDataCached via the firstInteraction fallback. These tests verify
+// that processCachedSessionFile fast path correctly handles that data structure — without
+// needing a real session file on disk.
+
+test('processCachedSessionFile fast path handles Mistral Vibe-style dailyRollups', async () => {
+	const now = new Date();
+	const dayKey = now.toISOString().slice(0, 10);
+	const startMs = new Date(dayKey + 'T00:00:00Z').getTime() - 1000; // day started before startMs check
+	const svc = makeService({
+		getSessionFileDataCached: async () => ({
+			tokens: 8000, mtime: Date.now(),
+			interactions: 5,
+			modelUsage: { 'devstral-2': { inputTokens: 5000, outputTokens: 3000 } },
+			dailyRollups: {
+				[dayKey]: {
+					tokens: 8000,
+					actualTokens: 8000,
+					thinkingTokens: 0,
+					interactions: 5,
+					modelUsage: { 'devstral-2': { inputTokens: 5000, outputTokens: 3000 } },
+				}
+			}
+		}),
+	});
+	const rollups = new Map();
+	const result = await (svc as any).processCachedSessionFile(
+		'/home/user/.vibe/logs/session/session_20250101_120000_abc/meta.json',
+		Date.now(), 100, 'ws', 'machine', undefined, rollups, startMs, now
+	);
+	assert.equal(result, true);
+	assert.equal(rollups.size, 1);
+	const entry = Array.from(rollups.values())[0] as any;
+	assert.equal(entry.key.model, 'devstral-2');
+	assert.equal(entry.value.inputTokens, 5000);
+	assert.equal(entry.value.outputTokens, 3000);
+	assert.equal(entry.value.interactions, 5);
+});
+
+test('processCachedSessionFile fast path skips day before startMs', async () => {
+	const now = new Date();
+	const yesterdayKey = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+	// startMs = today midnight → yesterday is excluded
+	const todayMidnightMs = new Date(now.toISOString().slice(0, 10) + 'T00:00:00Z').getTime();
+	const svc = makeService({
+		getSessionFileDataCached: async () => ({
+			tokens: 1000, mtime: Date.now(),
+			interactions: 2,
+			modelUsage: { 'devstral': { inputTokens: 600, outputTokens: 400 } },
+			dailyRollups: {
+				[yesterdayKey]: {
+					tokens: 1000,
+					actualTokens: 1000,
+					thinkingTokens: 0,
+					interactions: 2,
+					modelUsage: { 'devstral': { inputTokens: 600, outputTokens: 400 } },
+				}
+			}
+		}),
+	});
+	const rollups = new Map();
+	const result = await (svc as any).processCachedSessionFile(
+		'/home/user/.vibe/logs/session/session_20250101_120000_abc/meta.json',
+		Date.now(), 100, 'ws', 'machine', undefined, rollups, todayMidnightMs, now
+	);
+	assert.equal(result, true);
+	assert.equal(rollups.size, 0, 'yesterday session should be filtered out by startMs');
+});
+
 // ── computeDailyRollupsFromLocalSessions (private, fallback path) ────────
 
 test('computeDailyRollupsFromLocalSessions processes JSON files in fallback path', async () => {
@@ -696,6 +765,91 @@ test('computeDailyRollupsFromLocalSessions skips OpenCode sessions without handl
 		userId: undefined
 	});
 	assert.equal(result.rollups.size, 0);
+});
+
+// ── Ecosystem session pipeline regression tests ───────────────────────────
+// These tests verify the full pipeline for Mistral Vibe and Claude Desktop
+// Cowork sessions. Before the fix, getSessionFileDataCached returned no
+// dailyRollups for ecosystem sessions, causing processCachedSessionFile to
+// fall through to the slow path which could not parse meta.json/custom JSONL
+// files, and silently returned true with zero rollups.
+//
+// The fix populates dailyRollups in getSessionFileDataCached using
+// firstInteraction when dailyInteractions is empty (always the case for
+// ecosystem sessions). These tests verify the full cached pipeline round-trip.
+
+test('computeDailyRollupsFromLocalSessions: Mistral Vibe session produces non-zero rollups (regression)', async () => {
+	const now = new Date();
+	const dayKey = now.toISOString().slice(0, 10);
+	// Mistral Vibe session — no actual file on disk needed; fast path uses dailyRollups from cache.
+	const sessionFile = '/home/user/.vibe/logs/session/session_20260101_120000_abcdef/meta.json';
+	const svc = makeService({
+		getCopilotSessionFiles: async () => [sessionFile],
+		statSessionFile: async () => ({ mtimeMs: Date.now(), size: 1024 } as any),
+		getSessionFileDataCached: async () => ({
+			tokens: 12000,
+			interactions: 7,
+			modelUsage: { 'devstral-2': { inputTokens: 8000, outputTokens: 4000 } },
+			mtime: Date.now(),
+			size: 1024,
+			firstInteraction: now.toISOString(),
+			dailyRollups: {
+				[dayKey]: {
+					tokens: 12000,
+					actualTokens: 12000,
+					thinkingTokens: 0,
+					interactions: 7,
+					modelUsage: { 'devstral-2': { inputTokens: 8000, outputTokens: 4000 } },
+				}
+			}
+		}),
+	});
+	const result = await (svc as any).computeDailyRollupsFromLocalSessions({
+		lookbackDays: 7,
+		userId: undefined
+	});
+	assert.ok(result.rollups.size > 0, 'Mistral Vibe session must produce at least one rollup');
+	const entry = Array.from(result.rollups.values())[0] as any;
+	assert.equal(entry.key.model, 'devstral-2');
+	assert.equal(entry.value.inputTokens, 8000);
+	assert.equal(entry.value.outputTokens, 4000);
+	assert.equal(entry.value.interactions, 7);
+});
+
+test('computeDailyRollupsFromLocalSessions: Claude Desktop Cowork session produces non-zero rollups (regression)', async () => {
+	const now = new Date();
+	const dayKey = now.toISOString().slice(0, 10);
+	const sessionFile = '/home/user/AppData/Local/Packages/Claude_abc/LocalCache/Roaming/claude/local-agent-mode-sessions/session.jsonl';
+	const svc = makeService({
+		getCopilotSessionFiles: async () => [sessionFile],
+		statSessionFile: async () => ({ mtimeMs: Date.now(), size: 2048 } as any),
+		getSessionFileDataCached: async () => ({
+			tokens: 5000,
+			interactions: 3,
+			modelUsage: { 'claude-sonnet-4': { inputTokens: 3000, outputTokens: 2000 } },
+			mtime: Date.now(),
+			size: 2048,
+			firstInteraction: now.toISOString(),
+			dailyRollups: {
+				[dayKey]: {
+					tokens: 5000,
+					actualTokens: 5000,
+					thinkingTokens: 0,
+					interactions: 3,
+					modelUsage: { 'claude-sonnet-4': { inputTokens: 3000, outputTokens: 2000 } },
+				}
+			}
+		}),
+	});
+	const result = await (svc as any).computeDailyRollupsFromLocalSessions({
+		lookbackDays: 7,
+		userId: undefined
+	});
+	assert.ok(result.rollups.size > 0, 'Claude Desktop Cowork session must produce at least one rollup');
+	const entry = Array.from(result.rollups.values())[0] as any;
+	assert.equal(entry.key.model, 'claude-sonnet-4');
+	assert.equal(entry.value.inputTokens, 3000);
+	assert.equal(entry.value.outputTokens, 2000);
 });
 
 test('computeDailyRollupsFromLocalSessions handles malformed JSON gracefully', async () => {

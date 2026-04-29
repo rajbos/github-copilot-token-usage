@@ -324,6 +324,14 @@ test('getEditorTypeFromPath: detects OpenCode via callback', () => {
         assert.equal(getEditorTypeFromPath('/home/user/.local/share/opencode/session.db#ses_1', isOpenCode), 'OpenCode');
 });
 
+test('getEditorTypeFromPath: detects Mistral Vibe', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.vibe/logs/session/session_20250101_120000_abc12345/meta.json'), 'Mistral Vibe');
+});
+
+test('getEditorTypeFromPath: detects Claude Desktop Cowork', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/AppData/Local/Packages/Claude_pzs/LocalCache/Roaming/claude/local-agent-mode-sessions/session.jsonl'), 'Claude Desktop Cowork');
+});
+
 test('getEditorTypeFromPath: returns Unknown for unrecognized paths', () => {
         assert.equal(getEditorTypeFromPath('/tmp/random/file.json'), 'Unknown');
 });
