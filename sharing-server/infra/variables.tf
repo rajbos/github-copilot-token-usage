@@ -62,6 +62,12 @@ variable "min_replicas" {
   default     = 1
 }
 
+variable "admin_github_logins" {
+  description = "Optional: comma-separated GitHub logins to auto-grant admin access (e.g. 'alice,bob'). When set, this list is authoritative — listed users get is_admin=1, all others get is_admin=0. Leave empty to manage admin access manually via the SQLite database."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Azure resource tags"
   type        = map(string)

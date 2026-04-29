@@ -167,6 +167,7 @@ Open `http://localhost:3000/dashboard` in your browser to test the OAuth login f
 | `PORT` | ❌ | HTTP port (default: `3000`) |
 | `DB_PATH` | ❌ | SQLite database path (default: `/data/sharing.db`) |
 | `ALLOWED_GITHUB_ORG` | ❌ | If set, only members of this GitHub org can upload data |
+| `ADMIN_GITHUB_LOGINS` | ❌ | Comma-separated GitHub logins to auto-grant admin access (e.g. `alice,bob`). When set, this list is authoritative: listed users get admin, all others do not. Leave unset to manage admins manually via SQLite. |
 
 ## REST API
 

@@ -161,6 +161,14 @@ resource "azurerm_container_app" "this" {
           secret_name = "org-check-token"
         }
       }
+      # Only set ADMIN_GITHUB_LOGINS when a value is provided.
+      dynamic "env" {
+        for_each = var.admin_github_logins != "" ? [1] : []
+        content {
+          name  = "ADMIN_GITHUB_LOGINS"
+          value = var.admin_github_logins
+        }
+      }
 
       liveness_probe {
         path             = "/health"
@@ -200,6 +208,12 @@ resource "null_resource" "hostname_registration" {
     app_id   = azurerm_container_app.this.id
   }
 
+  # Re-run whenever the container app is modified, because ACA updates reset
+  # the ingress configuration and strip any previously-registered custom hostnames.
+  lifecycle {
+    replace_triggered_by = [azurerm_container_app.this]
+  }
+
   provisioner "local-exec" {
     command = "az containerapp hostname add --name '${azurerm_container_app.this.name}' --resource-group '${var.resource_group_name}' --hostname '${var.custom_domain}' 2>/dev/null || true"
   }
@@ -219,6 +233,13 @@ resource "azurerm_container_app_environment_managed_certificate" "this" {
   lifecycle {
     create_before_destroy = true
   }
+
+  timeouts {
+    create = "60m"
+    read   = "5m"
+    update = "30m"
+    delete = "30m"
+  }
 }
 
 # azurerm_container_app_custom_domain cannot be used here because it only accepts
@@ -232,6 +253,12 @@ resource "null_resource" "cert_binding" {
     cert_id  = azurerm_container_app_environment_managed_certificate.this[0].id
     app_id   = azurerm_container_app.this.id
     hostname = var.custom_domain
+  }
+
+  # Re-run whenever the container app is modified, because ACA updates reset
+  # the ingress configuration and strip any previously-applied cert bindings.
+  lifecycle {
+    replace_triggered_by = [azurerm_container_app.this]
   }
 
   provisioner "local-exec" {
