@@ -7,7 +7,15 @@ import { getDb, closeDb, restoreFromBackup, backupToAzureFiles, syncAdminLogins 
 const app = new Hono();
 
 // Health check — no auth required
-app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/health', (c) => c.json({
+	status: 'ok',
+	timestamp: new Date().toISOString(),
+	version: {
+		sha:    process.env.DEPLOY_SHA    ?? 'unknown',
+		branch: process.env.DEPLOY_BRANCH ?? 'unknown',
+		date:   process.env.DEPLOY_DATE   ?? 'unknown',
+	},
+}));
 
 // API routes (Bearer GitHub token auth)
 app.route('/api', api);

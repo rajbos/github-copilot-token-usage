@@ -114,6 +114,11 @@ jobs:
             type=sha,prefix=sha-,format=long
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
+      - name: Set build metadata
+        id: build-meta
+        run: |
+          echo "date=$(date -u +'%Y-%m-%d %H:%M UTC')" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -124,6 +129,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            DEPLOY_SHA=${{ github.sha }}
+            DEPLOY_BRANCH=${{ github.ref_name }}
+            DEPLOY_DATE=${{ steps.build-meta.outputs.date }}
 
       - name: Set image output (digest-pinned reference)
         id: image-ref
