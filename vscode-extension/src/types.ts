@@ -112,6 +112,12 @@ export interface ChartPeriodData {
   totalSessions: number;
   /** Average tokens per bar (per day / per week / per month). */
   avgPerPeriod: number;
+  /** Estimated cost per period entry in USD (provider/API rates). */
+  costData: number[];
+  /** Total estimated cost for this period in USD (provider/API rates). */
+  totalCost: number;
+  /** Average estimated cost per bar in USD (provider/API rates). Raw float, not rounded. */
+  avgCostPerPeriod: number;
 }
 
 /** Shape of the data payload sent to the chart webview (via window.__INITIAL_CHART__ or postMessage). */
