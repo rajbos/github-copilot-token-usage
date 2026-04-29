@@ -149,6 +149,12 @@ import {
   type ViewRegressionProbeConfig,
   type ViewRegressionProbeSnapshot,
 } from './viewRegression';
+import {
+  addModelUsage,
+  addEditorUsage,
+  aggregatePeriodStats,
+  type SessionAggregateInput,
+} from './statsHelpers';
 
 type LocalViewRegressionProbeResult = {
   pass: boolean;
@@ -1367,10 +1373,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
+			const { stats: detailedStats, dailyStats } = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
 				const percentage = Math.round((completed / total) * 100);
 				this.setStatusBarText(`$(loading~spin) Analyzing Logs: ${percentage}%`);
 			});
+			this.lastDailyStats = dailyStats;
 
 			this.setStatusBarText(`$(symbol-numeric) ${this.formatCompact(detailedStats.today.tokens)} | ${this.formatCompact(detailedStats.last30Days.tokens)}`);
 
@@ -1592,7 +1599,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 	}
 
-	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<DetailedStats> {
+	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<{ stats: DetailedStats; dailyStats: DailyTokenStats[] }> {
 		const now = new Date();
 		// UTC-based date keys for consistent daily attribution (matching server-side)
 		const todayUtcKey = now.toISOString().slice(0, 10);
@@ -1604,28 +1611,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
 		const last30DaysStartMs = last30DaysUtcStart.getTime();
 
-		const todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const lastMonthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		const last30DaysStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let lastMonthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let last30DaysStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
-		// Also compute daily stats for the chart as a byproduct (avoids a second full file scan)
-		const dailyStatsMap = new Map<string, DailyTokenStats>();
-
-		// Helper to merge model usage into a target map
-		const addModelUsage = (target: ModelUsage, source: ModelUsage) => {
-			for (const [model, usage] of Object.entries(source)) {
-				if (!target[model]) { target[model] = { inputTokens: 0, outputTokens: 0 }; }
-				target[model].inputTokens += usage.inputTokens;
-				target[model].outputTokens += usage.outputTokens;
-			}
-		};
-		// Helper to add editor usage to a period stat
-		const addEditorUsage = (target: EditorUsage, editorType: string, tokens: number) => {
-			if (!target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
-			target[editorType].tokens += tokens;
-			target[editorType].sessions += 1;
-		};
+		// Daily stats map for the chart (populated by aggregatePeriodStats, finalized below)
+		let dailyStatsMap = new Map<string, DailyTokenStats>();
 
 		try {
 			// Clean expired cache entries
@@ -1658,167 +1650,37 @@ class CopilotTokenTracker implements vscode.Disposable {
 				return { sessionFile, sessionData, details, mtime, wasCached };
 			});
 
+			// Build pure-function inputs: map non-null results and track cache stats
+			const aggregateInputs: SessionAggregateInput[] = [];
 			for (const r of sessionDataResults) {
 				if (!r) { skippedFiles++; continue; }
-				const { sessionFile, sessionData, details, mtime, wasCached } = r;
-
+				if (r.wasCached) { cacheHits++; } else { cacheMisses++; }
 				try {
-					const editorType = this.getEditorTypeFromPath(sessionFile);
-					const repository = sessionData.repository || 'Unknown';
-
-					// Update cache statistics (do this once per file)
-					if (wasCached) { cacheHits++; } else { cacheMisses++; }
-
-					if (sessionData.dailyRollups && Object.keys(sessionData.dailyRollups).length > 0) {
-						// Per-UTC-day rollup path: distribute tokens accurately across days
-						let addedToLast30Days = false;
-						let addedToMonth = false;
-						let addedToLastMonth = false;
-						let addedToToday = false;
-
-						for (const [dayKey, dayRollup] of Object.entries(sessionData.dailyRollups)) {
-							if (dayKey < last30DaysUtcStartKey) { continue; }
-
-							const dayTokens = dayRollup.actualTokens > 0 ? dayRollup.actualTokens : dayRollup.tokens;
-							const dayInteractions = dayRollup.interactions;
-
-							// Accumulate daily stats for the chart view
-							if (!dailyStatsMap.has(dayKey)) {
-								dailyStatsMap.set(dayKey, { date: dayKey, tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
-							}
-							const dailyEntry = dailyStatsMap.get(dayKey)!;
-							dailyEntry.tokens += dayTokens;
-							dailyEntry.sessions += 1;
-							dailyEntry.interactions += dayInteractions;
-							if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
-							dailyEntry.editorUsage[editorType].tokens += dayTokens;
-							dailyEntry.editorUsage[editorType].sessions += 1;
-							if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
-							dailyEntry.repositoryUsage[repository].tokens += dayTokens;
-							dailyEntry.repositoryUsage[repository].sessions += 1;
-							addModelUsage(dailyEntry.modelUsage, dayRollup.modelUsage);
-
-							// last30Days accumulation
-							last30DaysStats.tokens += dayTokens;
-							last30DaysStats.estimatedTokens += dayRollup.tokens;
-							last30DaysStats.actualTokens += dayRollup.actualTokens;
-							last30DaysStats.thinkingTokens += dayRollup.thinkingTokens;
-							last30DaysStats.interactions += dayInteractions;
-							if (!addedToLast30Days) { last30DaysStats.sessions += 1; addedToLast30Days = true; }
-							addEditorUsage(last30DaysStats.editorUsage, editorType, dayTokens);
-							addModelUsage(last30DaysStats.modelUsage, dayRollup.modelUsage);
-
-							if (dayKey >= monthUtcStartKey) {
-								// This month
-								monthStats.tokens += dayTokens;
-								monthStats.estimatedTokens += dayRollup.tokens;
-								monthStats.actualTokens += dayRollup.actualTokens;
-								monthStats.thinkingTokens += dayRollup.thinkingTokens;
-								monthStats.interactions += dayInteractions;
-								if (!addedToMonth) { monthStats.sessions += 1; addedToMonth = true; }
-								addEditorUsage(monthStats.editorUsage, editorType, dayTokens);
-								addModelUsage(monthStats.modelUsage, dayRollup.modelUsage);
-
-								if (dayKey === todayUtcKey) {
-									todayStats.tokens += dayTokens;
-									todayStats.estimatedTokens += dayRollup.tokens;
-									todayStats.actualTokens += dayRollup.actualTokens;
-									todayStats.thinkingTokens += dayRollup.thinkingTokens;
-									todayStats.interactions += dayInteractions;
-									if (!addedToToday) { todayStats.sessions += 1; addedToToday = true; }
-									addEditorUsage(todayStats.editorUsage, editorType, dayTokens);
-									addModelUsage(todayStats.modelUsage, dayRollup.modelUsage);
-								}
-							} else if (dayKey >= lastMonthUtcStartKey && dayKey <= lastMonthUtcEndKey) {
-								// Previous calendar month
-								lastMonthStats.tokens += dayTokens;
-								lastMonthStats.estimatedTokens += dayRollup.tokens;
-								lastMonthStats.actualTokens += dayRollup.actualTokens;
-								lastMonthStats.thinkingTokens += dayRollup.thinkingTokens;
-								lastMonthStats.interactions += dayInteractions;
-								if (!addedToLastMonth) { lastMonthStats.sessions += 1; addedToLastMonth = true; }
-								addEditorUsage(lastMonthStats.editorUsage, editorType, dayTokens);
-								addModelUsage(lastMonthStats.modelUsage, dayRollup.modelUsage);
-							}
-						}
-
-						if (!addedToLast30Days) { skippedFiles++; }
-					} else {
-						// Fallback: session-level attribution using UTC boundaries
-						const interactions = sessionData.interactions;
-						const estimatedTokens = sessionData.tokens;
-						const actualTokens = sessionData.actualTokens || 0;
-						const tokens = actualTokens > 0 ? actualTokens : estimatedTokens;
-						const modelUsage = sessionData.modelUsage;
-
-						const lastInteractionStr = sessionData.lastInteraction || details.lastInteraction;
-						const lastActivity = lastInteractionStr ? new Date(lastInteractionStr) : new Date(mtime);
-						const lastActivityUtcKey = lastActivity.toISOString().slice(0, 10);
-
-						if (lastActivityUtcKey < last30DaysUtcStartKey) { skippedFiles++; continue; }
-
-						// Accumulate daily stats
-						const repository2 = sessionData.repository || 'Unknown';
-						if (!dailyStatsMap.has(lastActivityUtcKey)) {
-							dailyStatsMap.set(lastActivityUtcKey, { date: lastActivityUtcKey, tokens: 0, sessions: 0, interactions: 0, modelUsage: {}, editorUsage: {}, repositoryUsage: {} });
-						}
-						const dailyEntry = dailyStatsMap.get(lastActivityUtcKey)!;
-						dailyEntry.tokens += tokens;
-						dailyEntry.sessions += 1;
-						dailyEntry.interactions += interactions;
-						if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
-						dailyEntry.editorUsage[editorType].tokens += tokens;
-						dailyEntry.editorUsage[editorType].sessions += 1;
-						if (!dailyEntry.repositoryUsage[repository2]) { dailyEntry.repositoryUsage[repository2] = { tokens: 0, sessions: 0 }; }
-						dailyEntry.repositoryUsage[repository2].tokens += tokens;
-						dailyEntry.repositoryUsage[repository2].sessions += 1;
-						addModelUsage(dailyEntry.modelUsage, modelUsage);
-
-						// last30Days
-						last30DaysStats.tokens += tokens;
-						last30DaysStats.estimatedTokens += estimatedTokens;
-						last30DaysStats.actualTokens += actualTokens;
-						last30DaysStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-						last30DaysStats.sessions += 1;
-						last30DaysStats.interactions += interactions;
-						addEditorUsage(last30DaysStats.editorUsage, editorType, tokens);
-						addModelUsage(last30DaysStats.modelUsage, modelUsage);
-
-						if (lastActivityUtcKey >= monthUtcStartKey) {
-							monthStats.tokens += tokens;
-							monthStats.estimatedTokens += estimatedTokens;
-							monthStats.actualTokens += actualTokens;
-							monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-							monthStats.sessions += 1;
-							monthStats.interactions += interactions;
-							addEditorUsage(monthStats.editorUsage, editorType, tokens);
-							addModelUsage(monthStats.modelUsage, modelUsage);
-
-							if (lastActivityUtcKey === todayUtcKey) {
-								todayStats.tokens += tokens;
-								todayStats.estimatedTokens += estimatedTokens;
-								todayStats.actualTokens += actualTokens;
-								todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-								todayStats.sessions += 1;
-								todayStats.interactions += interactions;
-								addEditorUsage(todayStats.editorUsage, editorType, tokens);
-								addModelUsage(todayStats.modelUsage, modelUsage);
-							}
-						} else if (lastActivityUtcKey >= lastMonthUtcStartKey && lastActivityUtcKey <= lastMonthUtcEndKey) {
-							lastMonthStats.tokens += tokens;
-							lastMonthStats.estimatedTokens += estimatedTokens;
-							lastMonthStats.actualTokens += actualTokens;
-							lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
-							lastMonthStats.sessions += 1;
-							lastMonthStats.interactions += interactions;
-							addEditorUsage(lastMonthStats.editorUsage, editorType, tokens);
-							addModelUsage(lastMonthStats.modelUsage, modelUsage);
-						}
-					}
+					aggregateInputs.push({
+						editorType: this.getEditorTypeFromPath(r.sessionFile),
+						sessionData: r.sessionData,
+						mtime: r.mtime,
+						lastInteraction: r.sessionData.lastInteraction || r.details.lastInteraction,
+					});
 				} catch (fileError) {
-					this.warn(`Error processing session file ${sessionFile}: ${fileError}`);
+					this.warn(`Error processing session file ${r.sessionFile}: ${fileError}`);
 				}
 			}
+
+			// Delegate all token accumulation to the pure helper
+			const aggregated = aggregatePeriodStats(aggregateInputs, {
+				todayUtcKey,
+				monthUtcStartKey,
+				lastMonthUtcStartKey,
+				lastMonthUtcEndKey,
+				last30DaysUtcStartKey,
+			});
+			todayStats = aggregated.todayStats;
+			monthStats = aggregated.monthStats;
+			lastMonthStats = aggregated.lastMonthStats;
+			last30DaysStats = aggregated.last30DaysStats;
+			dailyStatsMap = aggregated.dailyStatsMap;
+			skippedFiles += aggregated.skippedCount;
 
 			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
@@ -1850,7 +1712,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 			fillDate.setUTCDate(fillDate.getUTCDate() + 1);
 		}
-		this.lastDailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		const dailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
@@ -1940,7 +1802,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastUpdated: now
 		};
 
-		return result;
+		return { stats: result, dailyStats };
 	}
 
 	private formatDateKey(date: Date): string {
@@ -6362,7 +6224,8 @@ ${hashtag}`;
     let localTokens: number | undefined;
     let localInteractions: number | undefined;
     try {
-      await this.calculateDetailedStats(undefined); // ensures lastDailyStats is fresh
+      const { dailyStats: freshDailyStats } = await this.calculateDetailedStats(undefined); // ensures lastDailyStats is fresh
+      this.lastDailyStats = freshDailyStats;
       const lookback = settings.lookbackDays ?? 30;
       // Always derive exact counts from daily stats so we avoid the rounding loss introduced
       // by avgInteractionsPerSession = Math.round(interactions / sessions).
