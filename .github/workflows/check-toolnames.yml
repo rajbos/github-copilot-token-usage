@@ -18,7 +18,7 @@ jobs:
       contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
@@ -90,12 +90,21 @@ jobs:
           
               already_added = []
               needs_adding = []
+              case_variants = []
           
               for tool in tools:
                   if tool in known_tools:
                       already_added.append((tool, known_tools[tool]))
                   else:
-                      needs_adding.append(tool)
+                      # Case-insensitive check: if a differently-cased variant already
+                      # exists with the same friendly name, flag it as a case variant
+                      # rather than a missing entry — it should NOT be added separately.
+                      lower_tool = tool.lower()
+                      case_match = next((k for k in known_tools if k.lower() == lower_tool), None)
+                      if case_match and known_tools[case_match] == known_tools.get(tool, known_tools[case_match]):
+                          case_variants.append((tool, case_match, known_tools[case_match]))
+                      else:
+                          needs_adding.append(tool)
           
               lines = ["## 🔍 Toolnames Checkup", ""]
               lines.append("Checked the tool names in this issue against `vscode-extension/src/toolNames.json` on the `main` branch:")
@@ -110,6 +119,18 @@ jobs:
                       lines.append(f"| `{tool}` | {friendly} |")
                   lines.append("")
           
+              if case_variants:
+                  lines.append("### ⚠️ Case variant of an existing entry — do not add")
+                  lines.append("")
+                  lines.append("These tool names differ only in capitalisation from an entry that is already mapped.")
+                  lines.append("**Do not add a separate entry** — the existing lowercase form covers this tool.")
+                  lines.append("")
+                  lines.append("| Tool Name (from issue) | Existing Entry | Friendly Name |")
+                  lines.append("| --- | --- | --- |")
+                  for tool, existing, friendly in case_variants:
+                      lines.append(f"| `{tool}` | `{existing}` | {friendly} |")
+                  lines.append("")
+          
               if needs_adding:
                   lines.append("### ❌ Not yet in `toolNames.json`")
                   lines.append("")
@@ -119,8 +140,10 @@ jobs:
                       lines.append(f"| `{tool}` |")
                   lines.append("")
           
-              if already_added and not needs_adding:
+              if already_added and not needs_adding and not case_variants:
                   lines.append("> **All tool names in this issue are already mapped.** This issue may be a duplicate — consider closing it.")
+              elif case_variants and not needs_adding:
+                  lines.append("> **All unmapped tool names are case variants of existing entries.** No new entries should be added. Consider closing this issue.")
               elif needs_adding:
                   lines.append(f"> **{len(needs_adding)} tool name(s) still need to be added.** Please use the `tool-names` custom agent or update `vscode-extension/src/toolNames.json` manually.")
           

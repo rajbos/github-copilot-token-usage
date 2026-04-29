@@ -1,0 +1,371 @@
+name: Deploy Sharing Server
+
+# Triggers on any push that touches the sharing server or this workflow file.
+# main  → production environment  (sharing-server-prod)
+# branch → testing environment    (sharing-test-<slug><hash>)
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "sharing-server/**"
+      - ".github/workflows/sharing-server-deploy.yml"
+  workflow_dispatch:
+
+# One deploy per branch at a time — prevents concurrent Terraform runs from
+# conflicting on the same remote state file (state blob already locked errors).
+# Cancel in-progress for branch pushes so stale deploys don't block newer ones;
+# queue (no cancel) for main so production deploys always complete.
+concurrency:
+  group: sharing-server-deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Minimal baseline; jobs declare only what they need.
+permissions:
+  contents: read
+
+jobs:
+  # ── Compute environment metadata ─────────────────────────────────────────────
+  setup:
+    name: Compute deployment environment
+    runs-on: ubuntu-latest
+    outputs:
+      app_name:    ${{ steps.env.outputs.app_name }}
+      state_key:   ${{ steps.env.outputs.state_key }}
+      environment: ${{ steps.env.outputs.environment }}
+      is_prod:     ${{ steps.env.outputs.is_prod }}
+      min_replicas: ${{ steps.env.outputs.min_replicas }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Compute deployment parameters
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            {
+              echo "app_name=sharing-server-prod"
+              echo "state_key=sharing-server/prod.tfstate"
+              echo "environment=production"
+              echo "is_prod=true"
+              echo "min_replicas=1"
+            } >> "$GITHUB_OUTPUT"
+          else
+            BRANCH="${{ github.ref_name }}"
+            # Slugify: lowercase, replace non-alphanumeric with hyphens, dedupe hyphens, strip leading/trailing hyphens
+            SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
+            # Truncate slug to 13 chars and strip any trailing hyphen that truncation may leave
+            SLUG_TRUNC=$(echo "$SLUG" | cut -c1-13 | sed 's/-$//')
+            # 6-char hash of full branch name to prevent collisions on identical prefixes
+            HASH=$(echo -n "$BRANCH" | sha256sum | cut -c1-6)
+            APP_NAME="sharing-test-${SLUG_TRUNC}${HASH}"
+            {
+              echo "app_name=${APP_NAME}"
+              echo "state_key=sharing-server/test-${SLUG_TRUNC}${HASH}.tfstate"
+              echo "environment=testing"
+              echo "is_prod=false"
+              echo "min_replicas=0"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Build & push container image to GHCR ─────────────────────────────────────
+  build:
+    name: Build & push container image
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image-ref.outputs.image }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/copilot-sharing-server
+          tags: |
+            type=sha,prefix=sha-,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: sharing-server
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set image output (digest-pinned reference)
+        id: image-ref
+        run: |
+          echo "image=ghcr.io/${{ github.repository_owner }}/copilot-sharing-server@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  # ── Terraform deploy ──────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Azure (${{ needs.setup.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: [setup, build]
+    # GitHub Environment gates this job and provides environment-scoped secrets.
+    # Required environments:
+    #   production — service principal with Contributor on the resource group
+    #   testing    — service principal with Contributor on the resource group
+    environment: ${{ needs.setup.outputs.environment }}
+    permissions:
+      contents: read
+    # ARM_* env vars are read by both the AzureRM Terraform backend and provider.
+    env:
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check Azure credentials
+        id: prereqs
+        run: |
+          if [[ -z "$ARM_CLIENT_ID" ]]; then
+            echo "⚠️ Azure credentials not configured for '${{ needs.setup.outputs.environment }}' environment — skipping deployment." >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Terraform
+        if: steps.prereqs.outputs.configured == 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - name: Terraform init
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${{ vars.TF_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ needs.setup.outputs.state_key }}"
+
+      - name: Reconcile custom domain Terraform state
+        # Custom domains (and their managed certs) are only meaningful on stable, long-lived
+        # environments (production). Per-branch testing environments each get a unique ACA FQDN
+        # which already has Azure TLS — setting SHARING_CUSTOM_DOMAIN on the testing GitHub
+        # environment will be ignored here to prevent 60-minute cert provisioning on every PR.
+        if: steps.prereqs.outputs.configured == 'true' && vars.SHARING_CUSTOM_DOMAIN != '' && needs.setup.outputs.is_prod == 'true'
+        working-directory: sharing-server/infra
+        env:
+          TF_VAR_resource_group_name:    ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:               ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:               ${{ needs.setup.outputs.app_name }}
+          TF_VAR_container_image:        ${{ needs.build.outputs.image }}
+          TF_VAR_github_client_id:       ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret:   ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:         ${{ secrets.SHARING_SESSION_SECRET }}
+          TF_VAR_allowed_github_org:     ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_admin_github_logins:    ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
+          TF_VAR_min_replicas:           ${{ needs.setup.outputs.min_replicas }}
+          TF_VAR_custom_domain:          ${{ vars.SHARING_CUSTOM_DOMAIN }}
+        run: |
+          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" --output none
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+          ENV_NAME="${TF_VAR_app_name}-env"
+          EXPECTED_CERT_NAME="sharing-cert"
+
+          # Detect if TF state has a cert with a name that doesn't match what Terraform
+          # would create (e.g. a portal-created cert was previously imported). If so, we
+          # must clean up Azure + state before apply, otherwise Terraform will try to
+          # destroy the old cert while the custom domain is still bound to it (400 error).
+          CURRENT_CERT_NAME=$(terraform state show 'azurerm_container_app_environment_managed_certificate.this[0]' 2>/dev/null \
+            | grep -E '^\s+name\s+=' | head -1 \
+            | sed 's/.*= "\(.*\)".*/\1/' || true)
+
+          if [[ "$CURRENT_CERT_NAME" == "$EXPECTED_CERT_NAME" ]]; then
+            echo "Cert already TF-managed as '$EXPECTED_CERT_NAME'. No cleanup needed."
+          else
+            # Cert is absent from TF state or has a mismatched name.
+            # Before deleting anything, check whether the correctly-named cert already
+            # exists in Azure (e.g. a previous apply timed out while polling for the cert
+            # to become Succeeded, leaving it stranded in Azure but dropped from TF state).
+            AZURE_CERT_ID=$(az containerapp env certificate list \
+              --name "$ENV_NAME" \
+              --resource-group "$TF_VAR_resource_group_name" \
+              --query "[?name=='$EXPECTED_CERT_NAME'].id | [0]" \
+              -o tsv 2>/dev/null || true)
+
+            if [[ -n "$AZURE_CERT_ID" && "$AZURE_CERT_ID" != "None" ]]; then
+              # The correctly-named cert exists in Azure but TF lost track of it.
+              # Import it so apply doesn't delete-and-recreate (which resets provisioning
+              # and triggers another 60-minute wait).
+              echo "Cert '$EXPECTED_CERT_NAME' found in Azure but not in TF state. Importing..."
+              if terraform import 'azurerm_container_app_environment_managed_certificate.this[0]' "$AZURE_CERT_ID"; then
+                # Drop stale custom-domain state so cert_binding re-runs to re-bind.
+                terraform state rm 'azurerm_container_app_custom_domain.this[0]' 2>/dev/null || true
+                echo "Import done. Terraform will rebind the cert without recreating it."
+              else
+                # Import failed; delete the Azure cert so apply doesn't hit "already exists".
+                echo "Import failed. Deleting Azure cert so Terraform can create a fresh one."
+                az containerapp hostname delete \
+                  --name "$TF_VAR_app_name" \
+                  --resource-group "$TF_VAR_resource_group_name" \
+                  --hostname "$TF_VAR_custom_domain" --yes 2>/dev/null || true
+                az containerapp env certificate delete \
+                  --name "$ENV_NAME" \
+                  --resource-group "$TF_VAR_resource_group_name" \
+                  --certificate "$EXPECTED_CERT_NAME" --yes 2>/dev/null || true
+                terraform state rm 'azurerm_container_app_custom_domain.this[0]' 2>/dev/null || true
+                terraform state rm 'azurerm_container_app_environment_managed_certificate.this[0]' 2>/dev/null || true
+                echo "Cleanup done. Terraform will create cert and domain binding from scratch."
+              fi
+            else
+              echo "Cert not TF-managed (current: '${CURRENT_CERT_NAME:-none}'). Cleaning up Azure resources so Terraform can recreate them."
+
+              # Remove hostname binding first (cert cannot be deleted while a domain uses it)
+              az containerapp hostname delete \
+                --name "$TF_VAR_app_name" \
+                --resource-group "$TF_VAR_resource_group_name" \
+                --hostname "$TF_VAR_custom_domain" --yes 2>/dev/null || true
+
+              # Find the cert by subject name and delete it
+              AZURE_CERT_NAME=$(az containerapp env certificate list \
+                --name "$ENV_NAME" \
+                --resource-group "$TF_VAR_resource_group_name" \
+                --query "[?properties.subjectName=='$TF_VAR_custom_domain'].name | [0]" \
+                -o tsv 2>/dev/null || true)
+              if [[ -n "$AZURE_CERT_NAME" && "$AZURE_CERT_NAME" != "None" ]]; then
+                echo "Deleting Azure cert: $AZURE_CERT_NAME"
+                az containerapp env certificate delete \
+                  --name "$ENV_NAME" \
+                  --resource-group "$TF_VAR_resource_group_name" \
+                  --certificate "$AZURE_CERT_NAME" --yes 2>/dev/null || true
+              fi
+
+              # Remove stale TF state entries so Terraform creates fresh resources
+              terraform state rm 'azurerm_container_app_custom_domain.this[0]' 2>/dev/null || true
+              terraform state rm 'azurerm_container_app_environment_managed_certificate.this[0]' 2>/dev/null || true
+              echo "Cleanup done. Terraform will create cert and domain binding from scratch."
+            fi
+          fi
+
+      - name: Terraform plan
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        env:
+          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:            ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:            ${{ needs.setup.outputs.app_name }}
+          TF_VAR_container_image:     ${{ needs.build.outputs.image }}
+          TF_VAR_github_client_id:    ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
+          TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_admin_github_logins: ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
+          TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
+          TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        env:
+          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:            ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:            ${{ needs.setup.outputs.app_name }}
+          TF_VAR_container_image:     ${{ needs.build.outputs.image }}
+          TF_VAR_github_client_id:    ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
+          TF_VAR_allowed_github_org:  ${{ vars.SHARING_ALLOWED_GITHUB_ORG }}
+          TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
+          TF_VAR_admin_github_logins: ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
+          TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
+          TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Health check
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        run: |
+          HEALTH_URL=$(terraform output -raw health_url)
+          echo "Waiting for ${HEALTH_URL} to respond..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${HEALTH_URL}" || echo "000")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ Health check passed (attempt ${i})"
+              exit 0
+            fi
+            echo "  attempt ${i}/12 — HTTP ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ Health check failed after 2 minutes"
+          exit 1
+
+      - name: Output deployment summary
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        run: |
+          APP_URL=$(terraform output -raw app_url)
+          ACA_FQDN=$(terraform output -raw aca_fqdn)
+          OAUTH_URL=$(terraform output -raw oauth_callback_url)
+          DASH_URL=$(terraform output -raw dashboard_url)
+          HEALTH_URL=$(terraform output -raw health_url)
+
+          {
+            echo "## 🚀 Sharing Server Deployed"
+            echo ""
+            echo "| | URL |"
+            echo "|---|---|"
+            echo "| App | ${APP_URL} |"
+            echo "| Dashboard | ${DASH_URL} |"
+            echo "| Health | ${HEALTH_URL} |"
+            echo "| OAuth callback | ${OAUTH_URL} |"
+            echo "| ACA FQDN (CNAME target) | ${ACA_FQDN} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ needs.setup.outputs.is_prod }}" == "true" ]]; then
+            {
+              echo ""
+              echo "> 📋 **Custom domain DNS setup** — if \`SHARING_CUSTOM_DOMAIN\` is not yet set,"
+              echo "> add these records at your DNS provider, then set the variable and redeploy:"
+              echo "> - \`CNAME <subdomain>\` → \`${ACA_FQDN}\`"
+              echo "> - \`TXT asuid.<subdomain>\` → *(ACA environment verification ID from Azure portal)*"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "${{ needs.setup.outputs.is_prod }}" == "false" ]]; then
+            {
+              echo ""
+              echo "> ⚠️ **Test deployment** — the dashboard OAuth login requires the callback URL above"
+              echo "> to be registered in your GitHub OAuth App before the login flow will work."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

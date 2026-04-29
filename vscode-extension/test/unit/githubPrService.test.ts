@@ -1,6 +1,6 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
-import { detectAiType, fetchRepoPrs } from '../../src/githubPrService';
+import { detectAiType, fetchRepoPrs, fetchCopilotPlanInfo, type CopilotPlanInfo } from '../../src/githubPrService';
 
 // ---------------------------------------------------------------------------
 // detectAiType — pure function, no I/O
@@ -144,4 +144,61 @@ test('fetchRepoPrs: propagates generic error from fetchPage', async () => {
 	const { prs, error } = await fetchRepoPrs('owner', 'repo', 'token', since, mockFetchPage);
 	assert.equal(prs.length, 0);
 	assert.equal(error, 'Network error');
+});
+
+// ---------------------------------------------------------------------------
+// fetchCopilotPlanInfo — uses injectable fetcher
+// ---------------------------------------------------------------------------
+
+test('fetchCopilotPlanInfo: returns plan info on success', async () => {
+	const planData: CopilotPlanInfo = {
+		copilot_plan: 'copilot_individual',
+		ide_chat: 'enabled',
+		copilot_ide_agent: 'enabled',
+		public_code_suggestions: 'block',
+		unlimited_pr_summaries: true,
+	};
+	const mockFetcher = async () => ({ planInfo: planData, statusCode: 200 });
+	const { planInfo, statusCode, error } = await fetchCopilotPlanInfo('token', mockFetcher);
+	assert.equal(error, undefined);
+	assert.equal(statusCode, 200);
+	assert.deepEqual(planInfo, planData);
+});
+
+test('fetchCopilotPlanInfo: returns error on non-2xx response', async () => {
+	const mockFetcher = async () => ({ statusCode: 401, error: 'HTTP 401' });
+	const { planInfo, statusCode, error } = await fetchCopilotPlanInfo('token', mockFetcher);
+	assert.equal(planInfo, undefined);
+	assert.equal(statusCode, 401);
+	assert.equal(error, 'HTTP 401');
+});
+
+test('fetchCopilotPlanInfo: returns error on 403 response', async () => {
+	const mockFetcher = async () => ({ statusCode: 403, error: 'HTTP 403' });
+	const { planInfo, statusCode, error } = await fetchCopilotPlanInfo('token', mockFetcher);
+	assert.equal(planInfo, undefined);
+	assert.equal(statusCode, 403);
+});
+
+test('fetchCopilotPlanInfo: returns error on network failure', async () => {
+	const mockFetcher = async () => ({ error: 'socket hang up' });
+	const { planInfo, error } = await fetchCopilotPlanInfo('token', mockFetcher);
+	assert.equal(planInfo, undefined);
+	assert.equal(error, 'socket hang up');
+});
+
+test('fetchCopilotPlanInfo: returns error on unexpected response format', async () => {
+	const mockFetcher = async () => ({ statusCode: 200, error: 'Unexpected response format' });
+	const { planInfo, error } = await fetchCopilotPlanInfo('token', mockFetcher);
+	assert.equal(planInfo, undefined);
+	assert.ok(error?.includes('Unexpected response format'));
+});
+
+test('fetchCopilotPlanInfo: handles partial plan data gracefully', async () => {
+	// Not all fields may be present — only copilot_plan returned
+	const mockFetcher = async () => ({ planInfo: { copilot_plan: 'copilot_free' } as CopilotPlanInfo, statusCode: 200 });
+	const { planInfo, error } = await fetchCopilotPlanInfo('token', mockFetcher);
+	assert.equal(error, undefined);
+	assert.equal(planInfo?.copilot_plan, 'copilot_free');
+	assert.equal(planInfo?.ide_chat, undefined);
 });

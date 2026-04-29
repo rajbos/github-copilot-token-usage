@@ -92,13 +92,13 @@ export function formatCompact(value: number): string {
 }
 
 /**
- * Formats a number as a USD cost with 4 decimal places.
+ * Formats a number as a USD cost with 2 decimal places.
  */
 export function formatCost(value: number): string {
 	return new Intl.NumberFormat(currentLocale, {
 		style: 'currency',
 		currency: 'USD',
-		minimumFractionDigits: 4,
-		maximumFractionDigits: 4
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2
 	}).format(value);
 }

@@ -263,3 +263,44 @@ test('getCandidatePaths paths are consistent with discover candidatePaths', asyn
         }
     }
 });
+
+// ---------------------------------------------------------------------------
+// extractClaudeSlashCommand — slash command detection
+// ---------------------------------------------------------------------------
+
+import { extractClaudeSlashCommand } from '../../src/adapters/claudeCodeAdapter';
+
+test('extractClaudeSlashCommand: returns command name for allowed slash commands', () => {
+    assert.equal(extractClaudeSlashCommand('/review'), 'review');
+    assert.equal(extractClaudeSlashCommand('/bug'), 'bug');
+    assert.equal(extractClaudeSlashCommand('/think'), 'think');
+    assert.equal(extractClaudeSlashCommand('/compact'), 'compact');
+    assert.equal(extractClaudeSlashCommand('/pr_comments'), 'pr_comments');
+});
+
+test('extractClaudeSlashCommand: returns null for unknown commands', () => {
+    assert.equal(extractClaudeSlashCommand('/unknown'), null);
+    assert.equal(extractClaudeSlashCommand('/init'), null);
+    assert.equal(extractClaudeSlashCommand('/memory'), null);
+});
+
+test('extractClaudeSlashCommand: returns null for non-slash messages', () => {
+    assert.equal(extractClaudeSlashCommand('can you review my code'), null);
+    assert.equal(extractClaudeSlashCommand(''), null);
+    assert.equal(extractClaudeSlashCommand(null), null);
+});
+
+test('extractClaudeSlashCommand: handles string with trailing text', () => {
+    assert.equal(extractClaudeSlashCommand('/review this file'), 'review');
+    assert.equal(extractClaudeSlashCommand('/bug fix the null pointer'), 'bug');
+});
+
+test('extractClaudeSlashCommand: handles array content blocks', () => {
+    const content = [{ type: 'text', text: '/review' }];
+    assert.equal(extractClaudeSlashCommand(content), 'review');
+});
+
+test('extractClaudeSlashCommand: ignores slash commands not at the start', () => {
+    assert.equal(extractClaudeSlashCommand('some text\n/review'), null);
+    assert.equal(extractClaudeSlashCommand('prefix /review'), null);
+});

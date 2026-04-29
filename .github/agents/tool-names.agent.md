@@ -124,6 +124,7 @@ When adding a new tool to `toolNames.json`, also determine if it belongs in `aut
 - The file is a plain JSON array of tool ID strings
 - Add new entries at the end of the array (before the closing `]`)
 - Keep related tool variants together (e.g., all variants of `read_file`)
+- **Case-insensitive deduplication**: Before adding a tool ID, check if a differently-cased variant (e.g., lowercase equivalent) is already in the array. If `grep` is already there, do **not** add `Grep`. Only add a capitalized variant if the lowercase form is absent.
 
 
 
@@ -134,6 +135,7 @@ When adding a new tool to `toolNames.json`, also determine if it belongs in `aut
 - Insert new MCP entries near existing entries with the same prefix
 - Insert new non-MCP entries alphabetically or near logically related tools
 - Never remove existing entries
+- **Case-insensitive deduplication**: Before adding a new tool ID, check whether a lowercase (or differently-cased) variant already exists. If `grep` is already mapped, do **not** add `Grep`. If `tool_search` is already mapped, do **not** add `ToolSearch`. The lookup code handles exact-match only, so capitalized variants do map differently — but if both would resolve to the *exact same friendly name*, skip the duplicate. Only add a capitalized variant when it has a meaningfully different name or the lowercase form does not exist at all.
 
 ### Validation
 

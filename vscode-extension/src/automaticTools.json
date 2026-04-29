@@ -66,6 +66,7 @@
   "memory",
   "copilot_memory",
   "detect_memories",
+  "todo",
 
   "tool_replay",
   "copilot_toolReplay",

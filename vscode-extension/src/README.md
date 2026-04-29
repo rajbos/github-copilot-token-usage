@@ -2,6 +2,41 @@
 
 This directory contains JSON configuration files for the GitHub Copilot Token Tracker extension.
 
+## copilotPlans.json
+
+Contains GitHub Copilot plan definitions — the `plans` object keys match the `copilot_plan` value returned by the `copilot_internal/user` API endpoint.
+
+**Structure:**
+```json
+{
+  "plans": {
+    "<plan-id>": {
+      "name": "Display name",
+      "monthlyPricePerUser": 10,
+      "monthlyPremiumRequests": 300,
+      "codeCompletionsPerMonth": null,
+      "description": "..."
+    }
+  }
+}
+```
+
+- `monthlyPremiumRequests` — included allotment per user per month; extra requests are $0.04 each
+- `monthlyAiCreditsUsd` — dollar value of AI credits included with the plan (1 AI credit = $0.01); `0` = none included
+- `codeCompletionsPerMonth` — tab completions limit; `null` = unlimited (paid plans)
+
+**Current plans:**
+
+| ID | Name | $/user/mo | AI credits/mo | Premium requests/mo |
+|----|------|-----------|---------------|---------------------|
+| `free` | Copilot Free | $0 | none | 50 |
+| `individual` / `pro` | Copilot Pro | $10 | $10 | 300 |
+| `pro_plus` | Copilot Pro+ | $39 | $39 | 1,500 |
+| `business` | Copilot Business | $19 | $19 | 300 |
+| `enterprise` | Copilot Enterprise | $39 | $39 | 1,000 |
+
+**How to update:** Edit the `plans` object when GitHub changes pricing or adds plans. Update `metadata.lastUpdated` and reference the [official plans page](https://docs.github.com/en/copilot/get-started/plans).
+
 ## tokenEstimators.json
 
 Contains character-to-token ratio estimators for different AI models. These ratios are used to estimate token counts from text length.
@@ -46,11 +81,44 @@ Contains pricing information for AI models, including input and output token cos
       "cacheCreationCostPerMillion": 2.1875,
       "category": "Model category",
       "tier": "standard|premium|unknown",
-      "multiplier": 1
+      "multiplier": 1,
+      "copilotPricing": {
+        "inputCostPerMillion": 1.75,
+        "cachedInputCostPerMillion": 0.175,
+        "cacheCreationCostPerMillion": 2.1875,
+        "outputCostPerMillion": 14.0,
+        "releaseStatus": "GA",
+        "category": "Versatile"
+      }
     }
   }
 }
 ```
+
+**Provider vs. GitHub Copilot pricing**
+
+The top-level `inputCostPerMillion` / `outputCostPerMillion` / cache fields
+represent the **direct provider/API price** (OpenAI, Anthropic, Google, xAI, …).
+The optional `copilotPricing` block represents **GitHub Copilot's published
+per-token AI Credit rates**
+(<https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing>,
+1 AI credit = $0.01). Both are computed in parallel by `calculateEstimatedCost`:
+
+```ts
+calculateEstimatedCost(usage, pricing);             // provider/API cost (default)
+calculateEstimatedCost(usage, pricing, 'copilot');  // GitHub Copilot AI-Credit cost
+```
+
+When a model has no `copilotPricing` block the `'copilot'` source falls back to
+the provider rates as a proxy — this means the Copilot cost is never
+*under-reported* due to a missing entry, it just won't reflect the (often
+identical) GitHub-published rate explicitly.
+
+> ℹ️ **Caching note.** Copilot Chat session logs do not (yet) expose a
+> cached-read / cache-creation token breakdown, so the Copilot cost falls back
+> to the full input rate for those sources. Adapters that *do* surface cache
+> tokens (Claude Desktop, Claude Code, OpenCode) automatically benefit from the
+> reduced cached-input rates in `copilotPricing`.
 
 **Cache pricing fields (optional):**
 

@@ -29,6 +29,7 @@ type PeriodStats = {
 	treesEquivalent: number;
 	waterUsage: number;
 	estimatedCost: number;
+	estimatedCostCopilot?: number;
 };
 
 type DetailedStats = {
@@ -39,6 +40,12 @@ type DetailedStats = {
 	lastUpdated: string | Date;
 	backendConfigured?: boolean;
 	compactNumbers?: boolean;
+	copilotPlan?: {
+		planId: string;
+		planName: string;
+		monthlyAiCreditsUsd: number;
+		monthlyPremiumRequests: number | null;
+	};
 	sortSettings?: {
 		editor?: { key?: string; dir?: string };
 		model?: { key?: string; dir?: string };
@@ -92,6 +99,7 @@ function render(stats: DetailedStats): void {
 	const projectedCo2 = calculateProjection(stats.last30Days.co2);
 	const projectedWater = calculateProjection(stats.last30Days.waterUsage);
 	const projectedCost = calculateProjection(stats.last30Days.estimatedCost);
+	const projectedCostCopilot = calculateProjection(stats.last30Days.estimatedCostCopilot ?? 0);
 	const projectedTrees = calculateProjection(stats.last30Days.treesEquivalent);
 
 	renderShell(root, stats, {
@@ -100,6 +108,7 @@ function render(stats: DetailedStats): void {
 		projectedCo2,
 		projectedWater,
 		projectedCost,
+		projectedCostCopilot,
 		projectedTrees
 	});
 
@@ -115,6 +124,7 @@ function renderShell(
 		projectedCo2: number;
 		projectedWater: number;
 		projectedCost: number;
+		projectedCostCopilot?: number;
 		projectedTrees: number;
 	}
 ): void {
@@ -181,6 +191,7 @@ function buildMetricsSection(
 		projectedCo2: number;
 		projectedWater: number;
 		projectedCost: number;
+		projectedCostCopilot?: number;
 		projectedTrees: number;
 	}
 ): HTMLElement {
@@ -214,12 +225,32 @@ function buildMetricsSection(
 	table.append(thead);
 
 	const tbody = document.createElement('tbody');
-	const rows: Array<{ label: string; icon: string; color?: string; today: string; last30Days: string; lastMonth: string; projected: string }> = [
+	const rows: Array<{ label: string; labelTooltip?: string; icon: string; color?: string; today: string; last30Days: string; lastMonth: string; projected: string }> = [
 		{ label: 'Tokens (total)', icon: '🟣', color: '#c37bff', today: formatCompact(stats.today.tokens), last30Days: formatCompact(stats.last30Days.tokens), lastMonth: formatCompact(stats.lastMonth.tokens), projected: formatCompact(projections.projectedTokens) },
 		{ label: 'Tokens (user estimated)', icon: '📝', color: '#b39ddb', today: formatCompact(stats.today.estimatedTokens), last30Days: formatCompact(stats.last30Days.estimatedTokens), lastMonth: formatCompact(stats.lastMonth.estimatedTokens), projected: '—' },
 		{ label: 'Service overhead %', icon: '☁️', color: '#90a4ae', today: (stats.today.actualTokens || 0) > 0 ? formatPercent(((stats.today.tokens - stats.today.estimatedTokens) / stats.today.tokens) * 100) : '—', last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatPercent(((stats.last30Days.tokens - stats.last30Days.estimatedTokens) / stats.last30Days.tokens) * 100) : '—', lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatPercent(((stats.lastMonth.tokens - stats.lastMonth.estimatedTokens) / stats.lastMonth.tokens) * 100) : '—', projected: '—' },
 		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatCompact(stats.today.thinkingTokens || 0), last30Days: formatCompact(stats.last30Days.thinkingTokens || 0), lastMonth: formatCompact(stats.lastMonth.thinkingTokens || 0), projected: '—' },
-		{ label: 'Estimated cost', icon: '🪙', color: '#ffd166', today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
+		{
+			label: 'Estimated cost (est.)',
+			labelTooltip: 'Based on public provider API rates — for comparison only. This is not what you are billed.',
+			icon: '🪙', color: '#ffd166',
+			today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost)
+		},
+		{
+			label: 'Estimated cost (TBB)',
+			labelTooltip: 'Based on GitHub Copilot AI Credit rates (1 credit = $0.01) — this is what Copilot will bill you. TBB = To Be Billed.',
+			icon: '🟢', color: '#7ce38b',
+			today: formatCost(stats.today.estimatedCostCopilot ?? 0), last30Days: formatCost(stats.last30Days.estimatedCostCopilot ?? 0), lastMonth: formatCost(stats.lastMonth.estimatedCostCopilot ?? 0), projected: formatCost(projections.projectedCostCopilot ?? 0)
+		},
+		...(stats.copilotPlan ? (() => {
+			const credits = stats.copilotPlan.monthlyAiCreditsUsd > 0 ? `$${stats.copilotPlan.monthlyAiCreditsUsd} credits/month` : 'no credits';
+			return [{
+				label: `${stats.copilotPlan.planName} (${credits})`,
+				labelTooltip: `Your active GitHub Copilot subscription plan (ID: ${stats.copilotPlan.planId}). Included AI credits cover token-based billing (1 AI credit = $0.01).`,
+				icon: '🏷️', color: '#60a5fa',
+				today: '—', last30Days: '—', lastMonth: '—', projected: '—'
+			}];
+		})() : []),
 		{ label: 'Sessions', icon: '📅', color: '#66aaff', today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
 		{ label: 'Average interactions/session', icon: '💬', color: '#8ce0ff', today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: '—' },
 		{ label: 'Average tokens/session', icon: '🔢', color: '#7ce38b', today: formatCompact(stats.today.avgTokensPerSession), last30Days: formatCompact(stats.last30Days.avgTokensPerSession), lastMonth: formatCompact(stats.lastMonth.avgTokensPerSession), projected: '—' }
@@ -235,6 +266,14 @@ function buildMetricsSection(
 		if (row.color) { iconSpan.style.color = row.color; }
 		const textSpan = document.createElement('span');
 		textSpan.textContent = row.label;
+		if (row.labelTooltip) {
+			labelWrapper.title = row.labelTooltip;
+			labelWrapper.style.cursor = 'help';
+			const hintSpan = document.createElement('span');
+			hintSpan.textContent = ' ℹ️';
+			hintSpan.style.cssText = 'font-size:0.75em; opacity:0.6;';
+			textSpan.append(hintSpan);
+		}
 		labelWrapper.append(iconSpan, textSpan);
 		labelTd.append(labelWrapper);
 

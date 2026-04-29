@@ -5,6 +5,7 @@ import { ClaudeDesktopCoworkDataAccess } from '../claudedesktop';
 import { createEmptyContextRefs } from '../tokenEstimation';
 import { readClaudeCodeEventsForAnalysis, createEmptySessionUsageAnalysis, applyModelTierClassification } from '../usageAnalysis';
 import { normalizeClaudeModelId } from '../claudecode';
+import { extractClaudeSlashCommand } from './claudeCodeAdapter';
 
 export class ClaudeDesktopAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'claudedesktop';
@@ -170,6 +171,13 @@ export class ClaudeDesktopAdapter implements IEcosystemAdapter, IDiscoverableEco
 		for (const event of events) {
 			if (event.type === 'user' && event.message?.role === 'user' && !event.isSidechain) {
 				analysis.modeUsage.ask++;
+				// Detect Claude slash commands from the first line of user messages
+				const cmd = extractClaudeSlashCommand(event.message?.content);
+				if (cmd) {
+					const key = `__slash__${cmd}`;
+					analysis.toolCalls.byTool[key] = (analysis.toolCalls.byTool[key] || 0) + 1;
+					// Note: do NOT increment analysis.toolCalls.total — slash commands are not tool calls
+				}
 			} else if (event.type === 'assistant') {
 				const model = normalizeClaudeModelId(event.message?.model || 'unknown');
 				models.push(model);

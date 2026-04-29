@@ -295,12 +295,12 @@ export function getFluencyLevelData(isDebugMode: boolean): {
               label: "Stage 1: AI Skeptic",
               description: "Using default Copilot without customization",
               thresholds: [
-                "No repositories with custom instructions or agents.md",
+                "No repositories with custom instructions, agents.md, or CLAUDE.md",
                 "Using fewer than 3 different models",
               ],
               tips: [
-                "Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines — [▶ User Instructions video](https://tech.hub.ms/github-copilot/videos/user-instructions)",
-                "Start customizing Copilot for your workflow",
+                "Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) or [CLAUDE.md](https://docs.anthropic.com/en/docs/claude-code/memory) file with project-specific guidelines — [▶ User Instructions video](https://tech.hub.ms/github-copilot/videos/user-instructions)",
+                "Start customizing Copilot or Claude Code for your workflow",
               ],
             },
             {
@@ -445,15 +445,22 @@ export function calculateFluencyScoreForTeamMember(fd: {
     const hasModelSwitching = fd.mixedTierSessions > 0 || switchingFrequency > 0;
     const hasAgentMode = (fd.agentModeCount + fd.cliModeCount) > 0;
     const toolCount = Object.keys(fd.toolCallsByTool).length;
-    const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase())).length;
+    // Exclude __slash__ pseudo-entries from real tool counts (they track Claude slash commands, not actual tool calls)
+    const nonAutoToolCount = Object.keys(fd.toolCallsByTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase()) && !t.startsWith('__slash__')).length;
     const avgFilesPerSession = fd.filesPerEditCount > 0 ? fd.filesPerEditSum / fd.filesPerEditCount : 0;
     const avgApplyRate = fd.applyRateCount > 0 ? fd.applyRateSum / fd.applyRateCount : 0;
     const totalContextRefs = fd.ctxFile + fd.ctxSelection + fd.ctxSymbol + fd.ctxCodebase + fd.ctxWorkspace;
 
     // 1. Prompt Engineering
     let peStage = 1;
+    // VS Code Copilot slash commands (stored as tool calls by the session parser)
     const slashCmds = ["explain", "fix", "tests", "doc", "generate", "optimize", "new", "newNotebook", "search", "fixTestFailure", "setupTests"];
-    const usedSlashCommands = slashCmds.filter(cmd => (fd.toolCallsByTool[cmd] ?? 0) > 0);
+    // Claude Code slash commands (stored with __slash__ prefix to avoid inflating tool counts)
+    const claudeSlashCmds = ["review", "bug", "think", "compact", "pr_comments"];
+    const usedSlashCommands = [
+      ...slashCmds.filter(cmd => (fd.toolCallsByTool[cmd] ?? 0) > 0),
+      ...claudeSlashCmds.filter(cmd => (fd.toolCallsByTool[`__slash__${cmd}`] ?? 0) > 0),
+    ];
     if (avgTurnsPerSession >= 3) { peStage = Math.max(peStage, 2); }
     if (avgTurnsPerSession >= 5) { peStage = Math.max(peStage, 3); }
     if (totalInteractions >= 5) { peStage = Math.max(peStage, 2); }
@@ -574,7 +581,7 @@ export function calculateFluencyScoreForTeamMember(fd: {
     if (uniqueModels.size >= 3) { cuStage = Math.max(cuStage, 3); }
     if (uniqueModels.size >= 5 && reposWithCustomization >= 3) { cuStage = 4; }
     const cuTips: string[] = [];
-    if (cuStage < 2) { cuTips.push("Create a .github/copilot-instructions.md file with project-specific guidelines"); }
+    if (cuStage < 2) { cuTips.push("Create a .github/copilot-instructions.md or CLAUDE.md file with project-specific guidelines"); }
     if (cuStage < 3) { cuTips.push("Add custom instructions to more repositories to standardize your Copilot experience"); }
     if (cuStage < 4) {
       const uncustomized = totalRepos - reposWithCustomization;
@@ -695,8 +702,14 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 	}
 
 	// Check slash command / tool usage (indicates structured prompts)
+	// VS Code Copilot slash commands (stored as tool calls by the session parser)
 	const slashCommands = ['explain', 'fix', 'tests', 'doc', 'generate', 'optimize', 'new', 'newNotebook', 'search', 'fixTestFailure', 'setupTests'];
-	const usedSlashCommands = slashCommands.filter(cmd => (p.toolCalls.byTool[cmd] || 0) > 0);
+	// Claude Code slash commands (stored with __slash__ prefix to avoid inflating tool counts)
+	const claudeSlashCommands = ['review', 'bug', 'think', 'compact', 'pr_comments'];
+	const usedSlashCommands = [
+		...slashCommands.filter(cmd => (p.toolCalls.byTool[cmd] || 0) > 0),
+		...claudeSlashCommands.filter(cmd => (p.toolCalls.byTool[`__slash__${cmd}`] || 0) > 0),
+	];
 	if (usedSlashCommands.length > 0) {
 		peEvidence.push(`Used slash commands: /${usedSlashCommands.join(', /')}`);
 	}
@@ -868,7 +881,8 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 
 	// Diverse tool usage in agent mode
 	const toolCount = Object.keys(p.toolCalls.byTool).length;
-	const nonAutoToolCount = Object.keys(p.toolCalls.byTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase())).length;
+	// Exclude __slash__ pseudo-entries from real tool counts (they track Claude slash commands, not actual tool calls)
+	const nonAutoToolCount = Object.keys(p.toolCalls.byTool).filter(t => !AUTOMATIC_TOOL_SET.has(t.toLowerCase()) && !t.startsWith('__slash__')).length;
 	if ((p.modeUsage.agent + p.modeUsage.cli) >= 10 && nonAutoToolCount >= 3) {
 		agStage = 3;
 	}
@@ -1011,7 +1025,7 @@ export async function calculateMaturityScores(lastCustomizationMatrix: Workspace
 		cuEvidence.push(`${fmt(reposWithCustomization)} of ${fmt(totalRepos)} repos with custom instructions or agents.md`);
 	}
 
-	if (cuStage < 2) { cuTips.push('Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) file with project-specific guidelines'); }
+	if (cuStage < 2) { cuTips.push('Create a [.github/copilot-instructions.md](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) or [CLAUDE.md](https://docs.anthropic.com/en/docs/claude-code/memory) file with project-specific guidelines'); }
 	if (cuStage < 3) { cuTips.push('Add [custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions) to more repositories to standardize your Copilot experience'); }
 	if (cuStage < 4) {
 		const uncustomized = totalRepos - reposWithCustomization;

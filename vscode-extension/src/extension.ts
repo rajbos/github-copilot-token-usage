@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -7,6 +7,7 @@ import tokenEstimatorsData from './tokenEstimators.json';
 import modelPricingData from './modelPricing.json';
 import toolNamesData from './toolNames.json';
 import customizationPatternsData from './customizationPatterns.json';
+import copilotPlansData from './copilotPlans.json';
 import { REPO_HYGIENE_SKILL } from './backend/repoHygieneSkill';
 import { BackendFacade } from './backend/facade';
 import { BackendCommandHandler } from './backend/commands';
@@ -18,6 +19,8 @@ import {
 	detectAiType,
 	discoverGitHubRepos,
 	fetchRepoPrs,
+	fetchCopilotPlanInfo,
+	type CopilotPlanInfo,
 	type RepoPrDetail,
 	type RepoPrInfo,
 	type RepoPrStatsResult,
@@ -178,9 +181,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// Cache of the last diagnostic report text for copy/issue operations
 	private lastDiagnosticReport: string = '';
 	private logViewerPanel?: vscode.WebviewPanel;
-	private openCode: OpenCodeDataAccess;
-	private crush: CrushDataAccess;
-	private visualStudio: VisualStudioDataAccess;
+	public openCode: OpenCodeDataAccess;
+	public crush: CrushDataAccess;
+	public visualStudio: VisualStudioDataAccess;
 	private continue_: ContinueDataAccess;
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
@@ -191,7 +194,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
 		return { warn: (m: string) => this.warn(m), tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
 	}
-	private sessionDiscovery: SessionDiscovery;
+	public sessionDiscovery: SessionDiscovery;
 	private statusBarItem: vscode.StatusBarItem;
 	private readonly extensionUri: vscode.Uri;
 	private readonly context: vscode.ExtensionContext;
@@ -276,11 +279,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private modelPricing: { [key: string]: ModelPricing } = modelPricingData.pricing as { [key: string]: ModelPricing };
 
 	// GitHub authentication session
-	private githubSession: vscode.AuthenticationSession | undefined;
+	public githubSession: vscode.AuthenticationSession | undefined;
 	// Promise that resolves when the startup session restore completes
 	private _sessionRestorePromise: Promise<void> | undefined;
 	/** True when the user explicitly signed out from our extension this VS Code session. Gated by globalState so it survives reloads. */
 	private _githubSignedOutByUser: boolean = false;
+	/** Resolved Copilot plan details fetched from copilot_internal/user after sign-in. */
+	private _copilotPlanResolved: { planId: string; planName: string; monthlyAiCreditsUsd: number; monthlyPremiumRequests: number | null } | undefined;
 
 	// Cached PR stats result for the repos tab
 	private _lastRepoPrStats?: RepoPrStatsResult;
@@ -289,7 +294,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
 
 	// Backend facade instance for accessing table storage data
-	private backend: BackendFacade | undefined;
+	public backend: BackendFacade | undefined;
 
 	// Helper method to get repository URL from package.json
 	private getRepositoryUrl(): string {
@@ -325,7 +330,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Stat a session file, handling virtual paths for both OpenCode and Crush.
 	 * Must be used instead of fs.promises.stat() directly.
 	 */
-	private async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
+	public async statSessionFile(sessionFile: string): Promise<import('fs').Stats> {
 		const eco = this.findEcosystem(sessionFile);
 		if (eco) { return eco.stat(sessionFile); }
 		return fs.promises.stat(sessionFile);
@@ -378,7 +383,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.outputChannel.appendLine(`[${timestamp}] ${message}`);
 	}
 
-	private warn(message: string): void {
+	public warn(message: string): void {
 		if (this._disposed) { return; }
 		const timestamp = new Date().toLocaleTimeString();
 		this.outputChannel.appendLine(`[${timestamp}] WARNING: ${message}`);
@@ -899,6 +904,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.githubSession = session;
 					await this.context.globalState.update('github.authenticated', true);
 					await this.context.globalState.update('github.username', session.account.label);
+					void this.loadAndLogCopilotPlanInfo();
 				} else {
 					this.githubSession = undefined;
 					await this.context.globalState.update('github.authenticated', false);
@@ -936,7 +942,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					this.startBackendSyncAfterInitialAnalysis();
 					// Force an immediate sync so the "Last Sync" timestamp updates right away
 					// instead of waiting for the next timer tick.
-					const backend = (this as any).backend;
+					const backend = this.backend;
 					if (backend && typeof backend.syncToBackendStore === 'function') {
 						backend.syncToBackendStore(true).then(() => {
 							// Refresh diagnostics again after sync completes so "Last Sync" shows the new time
@@ -994,7 +1000,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private startBackendSyncAfterInitialAnalysis(): void {
 		try {
-			const backend = (this as any).backend;
+			const backend = this.backend;
 			if (backend && typeof backend.startTimerIfEnabled === 'function') {
 				backend.startTimerIfEnabled();
 			}
@@ -1101,6 +1107,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				vscode.window.showInformationMessage(`GitHub authentication successful! Logged in as ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
 				await this.context.globalState.update('github.username', session.account.label);
+				void this.loadAndLogCopilotPlanInfo();
 			}
 		} catch (error) {
 			this.error('GitHub authentication failed:', error);
@@ -1296,6 +1303,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log(`✅ GitHub session found for ${session.account.label}`);
 				await this.context.globalState.update('github.authenticated', true);
 				await this.context.globalState.update('github.username', session.account.label);
+				void this.loadAndLogCopilotPlanInfo();
 			} else {
 				const wasAuthenticated = this.context.globalState.get<boolean>('github.authenticated', false);
 				if (wasAuthenticated) {
@@ -1309,6 +1317,47 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.warn('Failed to restore GitHub session: ' + String(error));
 			await this.context.globalState.update('github.authenticated', false);
 			await this.context.globalState.update('github.username', undefined);
+		}
+	}
+
+	/**
+	 * Fetch and log Copilot plan information for the authenticated user.
+	 * Best-effort: silently skips if not authenticated or if the endpoint is unavailable.
+	 */
+	private async loadAndLogCopilotPlanInfo(): Promise<void> {
+		if (!this.githubSession) { return; }
+		try {
+			const { planInfo, statusCode, error } = await fetchCopilotPlanInfo(this.githubSession.accessToken);
+			if (error || !planInfo) {
+				this.warn(`Copilot plan info unavailable (HTTP ${statusCode ?? 'n/a'}): ${error ?? 'no data'}`);
+				return;
+			}
+			const planId = planInfo.copilot_plan as string | undefined;
+			const plans = copilotPlansData.plans as Record<string, { name: string; monthlyPremiumRequests: number | null; monthlyPricePerUser: number; monthlyAiCreditsUsd: number }>;
+			const knownPlan = planId ? plans[planId] : undefined;
+			const planLabel = knownPlan ? `${knownPlan.name} (${planId})` : (planId ?? 'unknown');
+			this.log(`Copilot plan: ${planLabel}`);
+			if (knownPlan) {
+				const credits = knownPlan.monthlyPremiumRequests !== null ? `${knownPlan.monthlyPremiumRequests.toLocaleString()}/month` : 'unlimited';
+				this.log(`  Monthly premium requests: ${credits}`);
+				const aiCredits = knownPlan.monthlyAiCreditsUsd > 0 ? `$${knownPlan.monthlyAiCreditsUsd}/month included` : 'none';
+				this.log(`  Monthly AI credits: ${aiCredits}`);
+				this._copilotPlanResolved = {
+					planId: planId!,
+					planName: knownPlan.name,
+					monthlyAiCreditsUsd: knownPlan.monthlyAiCreditsUsd,
+					monthlyPremiumRequests: knownPlan.monthlyPremiumRequests,
+				};
+			} else if (planId) {
+				// Unknown plan ID — store it with no credits so the webview still shows it
+				this._copilotPlanResolved = { planId, planName: planId, monthlyAiCreditsUsd: 0, monthlyPremiumRequests: null };
+			}
+			if (planInfo.ide_chat !== undefined)          { this.log(`  IDE chat: ${planInfo.ide_chat}`); }
+			if (planInfo.copilot_ide_agent !== undefined) { this.log(`  Agent mode: ${planInfo.copilot_ide_agent}`); }
+			if (planInfo.public_code_suggestions !== undefined) { this.log(`  Public code suggestions: ${planInfo.public_code_suggestions}`); }
+			if (planInfo.unlimited_pr_summaries !== undefined)  { this.log(`  Unlimited PR summaries: ${planInfo.unlimited_pr_summaries}`); }
+		} catch (err) {
+			this.warn('Failed to load Copilot plan info: ' + String(err));
 		}
 	}
 
@@ -1332,7 +1381,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📅 Today  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.today.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.today.estimatedCost.toFixed(2)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.today.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
@@ -1345,7 +1395,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📊 Last 30 Days  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.last30Days.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost :             | $ ${detailedStats.last30Days.estimatedCost.toFixed(4)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.last30Days.estimatedCost.toFixed(2)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.last30Days.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.last30Days.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.last30Days.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.last30Days.sessions} |\n`);
@@ -1354,6 +1405,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Footer
 			tooltip.appendMarkdown('\n---\n');
 			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
+			tooltip.appendMarkdown('*(est.) = provider API market rates, for reference only.*  \n');
+			tooltip.appendMarkdown('*(TBB) = Copilot AI Credit rates — what Copilot will bill you.*  \n');
 			tooltip.appendMarkdown('*Updates automatically every 5 minutes.*');
 
 			this.statusBarItem.tooltip = tooltip;
@@ -1811,6 +1864,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const lastMonthCost = this.calculateEstimatedCost(lastMonthStats.modelUsage);
 		const last30DaysCost = this.calculateEstimatedCost(last30DaysStats.modelUsage);
 
+		const todayCostCopilot = this.calculateEstimatedCost(todayStats.modelUsage, 'copilot');
+		const monthCostCopilot = this.calculateEstimatedCost(monthStats.modelUsage, 'copilot');
+		const lastMonthCostCopilot = this.calculateEstimatedCost(lastMonthStats.modelUsage, 'copilot');
+		const last30DaysCostCopilot = this.calculateEstimatedCost(last30DaysStats.modelUsage, 'copilot');
+
 		const result: DetailedStats = {
 			today: {
 				tokens: todayStats.tokens,
@@ -1825,7 +1883,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: todayCo2,
 				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: todayWater,
-				estimatedCost: todayCost
+				estimatedCost: todayCost,
+				estimatedCostCopilot: todayCostCopilot
 			},
 			month: {
 				tokens: monthStats.tokens,
@@ -1840,7 +1899,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: monthCo2,
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: monthWater,
-				estimatedCost: monthCost
+				estimatedCost: monthCost,
+				estimatedCostCopilot: monthCostCopilot
 			},
 			lastMonth: {
 				tokens: lastMonthStats.tokens,
@@ -1855,7 +1915,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: lastMonthCo2,
 				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: lastMonthWater,
-				estimatedCost: lastMonthCost
+				estimatedCost: lastMonthCost,
+				estimatedCostCopilot: lastMonthCostCopilot
 			},
 			last30Days: {
 				tokens: last30DaysStats.tokens,
@@ -1870,7 +1931,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				co2: last30DaysCo2,
 				treesEquivalent: last30DaysCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: last30DaysWater,
-				estimatedCost: last30DaysCost
+				estimatedCost: last30DaysCost,
+				estimatedCostCopilot: last30DaysCostCopilot
 			},
 			lastUpdated: now
 		};
@@ -2800,7 +2862,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	// Cached versions of session file reading methods
-	private async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
+	public async getSessionFileDataCached(sessionFilePath: string, mtime: number, fileSize: number): Promise<SessionFileCache> {
 		// Check if we have valid cached data
 		const cached = this.getCachedSessionData(sessionFilePath);
 		if (cached && cached.mtime === mtime && cached.size === fileSize) {
@@ -2849,6 +2911,35 @@ class CopilotTokenTracker implements vscode.Disposable {
 					modelUsage: dayModelUsage,
 				};
 			}
+		}
+
+		// Fallback for ecosystem sessions (Mistral Vibe, Claude Desktop Cowork, etc.):
+		// extractSessionMetadata always returns dailyInteractions: {} for these formats since
+		// their raw files (meta.json, .jsonl) aren't standard Copilot Chat JSONL/JSON.
+		// Use firstInteraction to attribute all tokens to the single day of the session so that
+		// processCachedSessionFile's fast path can use dailyRollups and does not fall through to
+		// the raw-file slow path which cannot parse these non-standard formats.
+		if (Object.keys(dailyRollups).length === 0 && tokenResult.tokens > 0 && sessionMeta.firstInteraction) {
+			try {
+				const interactionDate = new Date(sessionMeta.firstInteraction);
+				if (!isNaN(interactionDate.getTime())) {
+					const dayKey = interactionDate.toISOString().slice(0, 10);
+					const dayModelUsage: ModelUsage = {};
+					for (const [model, usage] of Object.entries(modelUsage)) {
+						dayModelUsage[model] = {
+							inputTokens: usage.inputTokens,
+							outputTokens: usage.outputTokens,
+						};
+					}
+					dailyRollups[dayKey] = {
+						tokens: tokenResult.tokens,
+						actualTokens: tokenResult.actualTokens || 0,
+						thinkingTokens: tokenResult.thinkingTokens || 0,
+						interactions: Math.max(1, interactions),
+						modelUsage: dayModelUsage,
+					};
+				}
+			} catch { /* ignore date parsing errors */ }
 		}
 
 		const sessionData: SessionFileCache = {
@@ -3825,8 +3916,8 @@ usageAnalysis: undefined
 		return { responseText, thinkingText, toolCalls, mcpTools };
 	}
 
-	private calculateEstimatedCost(modelUsage: ModelUsage): number {
-		return _calculateEstimatedCost(modelUsage, this.modelPricing);
+	public calculateEstimatedCost(modelUsage: ModelUsage, pricingSource: 'provider' | 'copilot' = 'provider'): number {
+		return _calculateEstimatedCost(modelUsage, this.modelPricing, pricingSource);
 	}
 
 
@@ -3932,7 +4023,7 @@ usageAnalysis: undefined
 
 
 
-	private getModelFromRequest(request: any): string {
+	public getModelFromRequest(request: any): string {
 		return _getModelFromRequest(request, this.modelPricing);
 	}
 
@@ -3949,7 +4040,7 @@ usageAnalysis: undefined
 	}
 
 
-	private estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
+	public estimateTokensFromText(text: string, model: string = 'gpt-4'): number {
 		return _estimateTokensFromText(text, model, this.tokenEstimators);
 	}
 
@@ -6395,6 +6486,7 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       sortSettings,
       compactNumbers: this.getCompactNumbersSetting(),
+      copilotPlan: this._copilotPlanResolved,
     };
     const initialData = JSON.stringify(dataWithBackend).replace(
       /</g,
@@ -7835,72 +7927,72 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Migrate settings from the old copilotTokenTracker namespace to aiEngineeringFluency.
   // Run before any other settings are read so the new keys are populated first.
-  await migrateSettingsIfNeeded((m) => (tokenTracker as any).log(m));
+  await migrateSettingsIfNeeded((m) => tokenTracker.log(m));
 
   // Wire up backend facade and commands so the diagnostics webview can launch the
   // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
   try {
     const backendFacade = new BackendFacade({
       context,
-      log: (m: string) => (tokenTracker as any).log(m),
-      warn: (m: string) => (tokenTracker as any).warn(m),
-      updateTokenStats: () => (tokenTracker as any).updateTokenStats(),
-      calculateEstimatedCost: (modelUsage: any) => {
-        let total = 0;
-        const pricing = (modelPricingData as any).pricing || {};
-        for (const [model, usage] of Object.entries(modelUsage || {})) {
-          const p = pricing[model] || pricing["gpt-4o-mini"];
-          if (!p) {
-            continue;
-          }
-          const usageData = usage as {
-            inputTokens?: number;
-            outputTokens?: number;
-          };
-          total +=
-            ((usageData.inputTokens || 0) / 1_000_000) * p.inputCostPerMillion;
-          total +=
-            ((usageData.outputTokens || 0) / 1_000_000) *
-            p.outputCostPerMillion;
-        }
-        return total;
-      },
+      log: (m: string) => tokenTracker.log(m),
+      warn: (m: string) => tokenTracker.warn(m),
+      updateTokenStats: async () => { await tokenTracker.updateTokenStats(); },
+      calculateEstimatedCost: (modelUsage: ModelUsage) => tokenTracker.calculateEstimatedCost(modelUsage),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       co2Per1kTokens: 0.2,
       waterUsagePer1kTokens: 0.3,
       co2AbsorptionPerTreePerYear: 21000,
       getCopilotSessionFiles: () =>
-        (tokenTracker as any).sessionDiscovery.getCopilotSessionFiles(),
+        tokenTracker.sessionDiscovery.getCopilotSessionFiles(),
       estimateTokensFromText: (text: string, model?: string) =>
-        (tokenTracker as any).estimateTokensFromText(text, model),
+        tokenTracker.estimateTokensFromText(text, model),
       getModelFromRequest: (req: any) =>
-        (tokenTracker as any).getModelFromRequest(req),
+        tokenTracker.getModelFromRequest(req),
       getSessionFileDataCached: (p: string, m: number, s: number) =>
-        (tokenTracker as any).getSessionFileDataCached(p, m, s),
+        tokenTracker.getSessionFileDataCached(p, m, s),
       statSessionFile: (sessionFile: string) =>
-        (tokenTracker as any).statSessionFile(sessionFile),
+        tokenTracker.statSessionFile(sessionFile),
       isOpenCodeSession: (sessionFile: string) =>
-        (tokenTracker as any).openCode.isOpenCodeSessionFile(sessionFile),
+        tokenTracker.openCode.isOpenCodeSessionFile(sessionFile),
       getOpenCodeSessionData: (sessionFile: string) =>
-        (tokenTracker as any).getOpenCodeSessionData(sessionFile),
+        tokenTracker.openCode.getOpenCodeSessionData(sessionFile),
       isCrushSession: (sessionFile: string) =>
-        (tokenTracker as any).crush.isCrushSessionFile(sessionFile),
+        tokenTracker.crush.isCrushSessionFile(sessionFile),
       getCrushSessionData: (sessionFile: string) =>
-        (tokenTracker as any).crush.getCrushSessionData(sessionFile),
+        tokenTracker.crush.getCrushSessionData(sessionFile),
       isVSSessionFile: (sessionFile: string) =>
-        (tokenTracker as any).visualStudio.isVSSessionFile(sessionFile),
-      getGithubToken: () => (tokenTracker as any).githubSession?.accessToken,
+        tokenTracker.visualStudio.isVSSessionFile(sessionFile),
+      getGithubToken: () => tokenTracker.githubSession?.accessToken,
     });
 
     const backendHandler = new BackendCommandHandler({
       facade: backendFacade as any,
       integration: undefined,
       calculateEstimatedCost: (mu: any) => 0,
-      warn: (m: string) => (tokenTracker as any).warn(m),
-      log: (m: string) => (tokenTracker as any).log(m),
+      warn: (m: string) => tokenTracker.warn(m),
+      log: (m: string) => tokenTracker.log(m),
     });
 
     // Store backend facade in the tracker instance for dashboard access
-    (tokenTracker as any).backend = backendFacade;
+    tokenTracker.backend = backendFacade;
 
     // Backend sync timer will be started after initial token analysis completes
     // (see startBackendSyncAfterInitialAnalysis method)
@@ -7924,7 +8016,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(configureTeamServerCommand);
   } catch (err) {
     // If backend wiring fails for any reason, don't block activation - fall back to settings behavior.
-    (tokenTracker as any).warn(
+    tokenTracker.warn(
       "Failed to wire backend commands: " + String(err),
     );
   }

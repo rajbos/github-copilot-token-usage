@@ -11,6 +11,10 @@
  *   - workspaceStorage/<hash>/github.copilot-chat/chatSessions/        (Linux case-sensitive variant)
  *   - workspaceStorage/<hash>/GitHub.copilot/chatSessions/             (unified extension, VS Code 1.117+)
  *   - workspaceStorage/<hash>/github.copilot/chatSessions/             (Linux case-sensitive variant)
+ *   - workspaceStorage/<hash>/GitHub.copilot-chat/debug-logs/          (debug logs, e.g. devcontainer layout)
+ *   - workspaceStorage/<hash>/github.copilot-chat/debug-logs/          (Linux case-sensitive variant)
+ *   - workspaceStorage/<hash>/GitHub.copilot/debug-logs/               (unified extension debug logs)
+ *   - workspaceStorage/<hash>/github.copilot/debug-logs/               (Linux case-sensitive variant)
  *   - globalStorage/emptyWindowChatSessions/                           (legacy)
  *   - globalStorage/{GitHub,github}.copilot-chat/**                    (both casings, recursive)
  *   - globalStorage/{GitHub,github}.copilot/**                         (unified extension, both casings)
@@ -249,11 +253,16 @@ export function isCopilotChatSessionPath(filePath: string): boolean {
 	const norm = filePath.replace(/\\/g, '/');
 	if (!/\.jsonl?$/.test(norm)) { return false; }
 
-	// workspaceStorage/<hash>/chatSessions/<file>
+	// workspaceStorage/<hash>/chatSessions/<file>  (legacy)
+	if (/\/workspaceStorage\/[^/]+\/chatSessions\/[^/]+$/.test(norm)) {
+		return true;
+	}
+	// workspaceStorage/<hash>/{extension}/chatSessions/<file>
 	if (/\/workspaceStorage\/[^/]+\/(?:GitHub\.copilot-chat|github\.copilot-chat|GitHub\.copilot|github\.copilot)\/chatSessions\/[^/]+$/.test(norm)) {
 		return true;
 	}
-	if (/\/workspaceStorage\/[^/]+\/chatSessions\/[^/]+$/.test(norm)) {
+	// workspaceStorage/<hash>/{extension}/debug-logs/<file>
+	if (/\/workspaceStorage\/[^/]+\/(?:GitHub\.copilot-chat|github\.copilot-chat|GitHub\.copilot|github\.copilot)\/debug-logs\/[^/]+$/.test(norm)) {
 		return true;
 	}
 	// globalStorage/emptyWindowChatSessions/<file>
@@ -376,7 +385,7 @@ export class CopilotChatAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 		await runWithConcurrency(foundPaths, async (codeUserPath) => {
 			const pathName = path.basename(path.dirname(codeUserPath));
 
-			// workspaceStorage/<hash>/{,GitHub.copilot-chat/,github.copilot-chat/,GitHub.copilot/,github.copilot/}chatSessions/
+			// workspaceStorage/<hash>/{,GitHub.copilot-chat/,github.copilot-chat/,GitHub.copilot/,github.copilot/}{chatSessions/,debug-logs/}
 			const workspaceStoragePath = path.join(codeUserPath, 'workspaceStorage');
 			try {
 				if (await pathExists(workspaceStoragePath)) {
@@ -388,6 +397,10 @@ export class CopilotChatAdapter implements IEcosystemAdapter, IDiscoverableEcosy
 							path.join(workspaceStoragePath, workspaceDir, 'github.copilot-chat', 'chatSessions'),
 							path.join(workspaceStoragePath, workspaceDir, 'GitHub.copilot', 'chatSessions'),
 							path.join(workspaceStoragePath, workspaceDir, 'github.copilot', 'chatSessions'),
+							path.join(workspaceStoragePath, workspaceDir, 'GitHub.copilot-chat', 'debug-logs'),
+							path.join(workspaceStoragePath, workspaceDir, 'github.copilot-chat', 'debug-logs'),
+							path.join(workspaceStoragePath, workspaceDir, 'GitHub.copilot', 'debug-logs'),
+							path.join(workspaceStoragePath, workspaceDir, 'github.copilot', 'debug-logs'),
 						];
 						for (const chatSessionsPath of candidates) {
 							try {

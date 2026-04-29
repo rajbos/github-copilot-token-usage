@@ -535,14 +535,32 @@ export function getModelTier(modelId: string, modelPricing: { [key: string]: Mod
  *        + cachedReadTokens × cachedInputCostPerMillion (fallback: inputCostPerMillion)
  *        + cacheCreationTokens × cacheCreationCostPerMillion (fallback: inputCostPerMillion)
  *        + outputTokens × outputCostPerMillion
+ *
  * @param modelUsage Object with model names as keys and token counts as values
+ * @param modelPricing Pricing table keyed by model id
+ * @param pricingSource 'provider' (default) uses the top-level provider/API rates;
+ *                      'copilot' uses each model's `copilotPricing` block when present,
+ *                      and falls back to provider rates for models without one.
  * @returns Estimated cost in USD
  */
-export function calculateEstimatedCost(modelUsage: ModelUsage, modelPricing: { [key: string]: ModelPricing } = {}): number {
+export function calculateEstimatedCost(
+	modelUsage: ModelUsage,
+	modelPricing: { [key: string]: ModelPricing } = {},
+	pricingSource: 'provider' | 'copilot' = 'provider'
+): number {
 	let totalCost = 0;
 
 	for (const [model, usage] of Object.entries(modelUsage)) {
-		const pricing = modelPricing[model] ?? modelPricing['gpt-4o-mini'];
+		const baseEntry = modelPricing[model] ?? modelPricing['gpt-4o-mini'];
+		if (!baseEntry) {
+			continue;
+		}
+
+		// Pick which rate set to use. For 'copilot', prefer the model's copilotPricing
+		// block; if absent, fall back to the provider/API rates as a proxy.
+		const pricing = pricingSource === 'copilot' && baseEntry.copilotPricing
+			? baseEntry.copilotPricing
+			: baseEntry;
 
 		const cachedRead = usage.cachedReadTokens ?? 0;
 		const cacheCreation = usage.cacheCreationTokens ?? 0;

@@ -207,6 +207,61 @@ test('calculateEstimatedCost: uses fallback pricing for unknown models', () => {
         assert.ok(Math.abs(cost - 0.00075) < 0.0001);
 });
 
+test('calculateEstimatedCost: copilot source uses copilotPricing block when present', () => {
+        const modelUsage = { 'gpt-x': { inputTokens: 1_000_000, outputTokens: 1_000_000 } };
+        const pricing = {
+                'gpt-x': {
+                        inputCostPerMillion: 1.0,
+                        outputCostPerMillion: 2.0,
+                        copilotPricing: { inputCostPerMillion: 5.0, outputCostPerMillion: 10.0 }
+                }
+        };
+        const providerCost = calculateEstimatedCost(modelUsage, pricing);
+        const copilotCost = calculateEstimatedCost(modelUsage, pricing, 'copilot');
+        assert.ok(Math.abs(providerCost - 3.0) < 1e-9);   // 1 + 2
+        assert.ok(Math.abs(copilotCost - 15.0) < 1e-9);   // 5 + 10
+});
+
+test('calculateEstimatedCost: copilot source falls back to provider pricing when copilotPricing missing', () => {
+        const modelUsage = { 'gpt-y': { inputTokens: 1_000_000, outputTokens: 1_000_000 } };
+        const pricing = { 'gpt-y': { inputCostPerMillion: 1.0, outputCostPerMillion: 2.0 } };
+        const providerCost = calculateEstimatedCost(modelUsage, pricing);
+        const copilotCost = calculateEstimatedCost(modelUsage, pricing, 'copilot');
+        assert.equal(providerCost, copilotCost);
+});
+
+test('calculateEstimatedCost: copilot source applies cached + cache-creation rates from copilotPricing', () => {
+        const modelUsage = {
+                'claude-x': {
+                        inputTokens: 1_000_000,         // total input
+                        outputTokens: 1_000_000,
+                        cachedReadTokens: 400_000,
+                        cacheCreationTokens: 100_000
+                }
+        };
+        const pricing = {
+                'claude-x': {
+                        inputCostPerMillion: 3.0,
+                        cachedInputCostPerMillion: 0.3,
+                        cacheCreationCostPerMillion: 3.75,
+                        outputCostPerMillion: 15.0,
+                        copilotPricing: {
+                                inputCostPerMillion: 6.0,
+                                cachedInputCostPerMillion: 0.6,
+                                cacheCreationCostPerMillion: 7.5,
+                                outputCostPerMillion: 30.0
+                        }
+                }
+        };
+        const cost = calculateEstimatedCost(modelUsage, pricing, 'copilot');
+        // uncached = 500_000 → 0.5*6 = 3.0
+        // cached read = 400_000 → 0.4*0.6 = 0.24
+        // cache creation = 100_000 → 0.1*7.5 = 0.75
+        // output = 1_000_000 → 1.0*30 = 30.0
+        // total = 33.99
+        assert.ok(Math.abs(cost - 33.99) < 1e-9);
+});
+
 // ── getTotalTokensFromModelUsage ────────────────────────────────────────
 
 test('getTotalTokensFromModelUsage: sums input and output across models', () => {

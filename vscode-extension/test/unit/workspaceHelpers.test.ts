@@ -324,6 +324,14 @@ test('getEditorTypeFromPath: detects OpenCode via callback', () => {
         assert.equal(getEditorTypeFromPath('/home/user/.local/share/opencode/session.db#ses_1', isOpenCode), 'OpenCode');
 });
 
+test('getEditorTypeFromPath: detects Mistral Vibe', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.vibe/logs/session/session_20250101_120000_abc12345/meta.json'), 'Mistral Vibe');
+});
+
+test('getEditorTypeFromPath: detects Claude Desktop Cowork', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/AppData/Local/Packages/Claude_pzs/LocalCache/Roaming/claude/local-agent-mode-sessions/session.jsonl'), 'Claude Desktop Cowork');
+});
+
 test('getEditorTypeFromPath: returns Unknown for unrecognized paths', () => {
         assert.equal(getEditorTypeFromPath('/tmp/random/file.json'), 'Unknown');
 });
@@ -466,4 +474,98 @@ test('getRepoDisplayName: handles URL without trailing .git', () => {
 test('getRepoDisplayName: handles SSH URL with .git', () => {
         const result = getRepoDisplayName('git@github.com:owner/repo.git');
         assert.equal(result, 'owner/repo');
+});
+
+// ── Claude Code MCP double-underscore format ──────────────────────────────
+
+test('isMcpTool: mcp__ double-underscore prefix (Claude Code format) returns true', () => {
+        assert.equal(isMcpTool('mcp__github__create_issue'), true);
+        assert.equal(isMcpTool('mcp__filesystem__read_file'), true);
+});
+
+test('isMcpTool: regular tool without mcp__ prefix returns false', () => {
+        assert.equal(isMcpTool('github__create_issue'), false);
+        assert.equal(isMcpTool('__slash__review'), false);
+});
+
+test('extractMcpServerName: mcp__server__tool format extracts server name', () => {
+        assert.equal(extractMcpServerName('mcp__github__create_issue'), 'github');
+        assert.equal(extractMcpServerName('mcp__filesystem__read_file'), 'filesystem');
+});
+
+test('extractMcpServerName: mcp__server__multi__part__tool extracts only first server segment', () => {
+        assert.equal(extractMcpServerName('mcp__my_server__tool__with__parts'), 'my_server');
+});
+// ── scanWorkspaceCustomizationFiles — category detection ─────────────────
+
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as nodePath from 'node:path';
+import { scanWorkspaceCustomizationFiles } from '../../src/workspaceHelpers';
+
+test('scanWorkspaceCustomizationFiles: returns empty array for non-existent dir', () => {
+const result = scanWorkspaceCustomizationFiles('/does/not/exist/xyz123');
+assert.deepEqual(result, []);
+});
+
+test('scanWorkspaceCustomizationFiles: detects copilot-instructions.md as copilot category', () => {
+const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'wh-test-'));
+try {
+const githubDir = nodePath.join(tmpDir, '.github');
+fs.mkdirSync(githubDir);
+fs.writeFileSync(nodePath.join(githubDir, 'copilot-instructions.md'), '# Instructions');
+const result = scanWorkspaceCustomizationFiles(tmpDir);
+const copilotFile = result.find(f => f.type !== 'unknown' && f.path.includes('copilot-instructions.md'));
+assert.ok(copilotFile, 'should find copilot-instructions.md');
+assert.equal(copilotFile?.category, 'copilot');
+} finally {
+fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+});
+
+test('scanWorkspaceCustomizationFiles: detects .cursorrules as non-copilot category', () => {
+const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'wh-test-'));
+try {
+fs.writeFileSync(nodePath.join(tmpDir, '.cursorrules'), '# Cursor rules');
+const result = scanWorkspaceCustomizationFiles(tmpDir);
+const cursorFile = result.find(f => f.path.includes('.cursorrules'));
+assert.ok(cursorFile, 'should find .cursorrules');
+assert.equal(cursorFile?.category, 'non-copilot');
+} finally {
+fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+});
+
+test('scanWorkspaceCustomizationFiles: detects .claude/settings.json as non-copilot (not CLAUDE.md)', () => {
+const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'wh-test-'));
+try {
+// CLAUDE.md should NOT appear as non-copilot (it is Copilot-compatible)
+fs.writeFileSync(nodePath.join(tmpDir, 'CLAUDE.md'), '# Claude instructions');
+const result = scanWorkspaceCustomizationFiles(tmpDir);
+const claudeMd = result.find(f => f.path.includes('CLAUDE.md') && f.category === 'non-copilot');
+assert.equal(claudeMd, undefined, 'CLAUDE.md should not be flagged as non-copilot');
+
+// .claude/settings.json SHOULD appear as non-copilot
+const claudeDir = nodePath.join(tmpDir, '.claude');
+fs.mkdirSync(claudeDir);
+fs.writeFileSync(nodePath.join(claudeDir, 'settings.json'), '{}');
+const result2 = scanWorkspaceCustomizationFiles(tmpDir);
+const claudeSettings = result2.find(f => f.path.includes('settings.json') && f.category === 'non-copilot');
+assert.ok(claudeSettings, 'should find .claude/settings.json as non-copilot');
+} finally {
+fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+});
+
+test('scanWorkspaceCustomizationFiles: detects opencode.json as non-copilot', () => {
+const tmpDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'wh-test-'));
+try {
+fs.writeFileSync(nodePath.join(tmpDir, 'opencode.json'), '{}');
+const result = scanWorkspaceCustomizationFiles(tmpDir);
+const opencodeFile = result.find(f => f.path.includes('opencode.json'));
+assert.ok(opencodeFile, 'should find opencode.json');
+assert.equal(opencodeFile?.category, 'non-copilot');
+} finally {
+fs.rmSync(tmpDir, { recursive: true, force: true });
+}
 });

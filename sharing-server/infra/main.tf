@@ -1,0 +1,289 @@
+data "azurerm_resource_group" "this" {
+  name = var.resource_group_name
+}
+
+# Storage account names must be globally unique, 3-24 chars, lowercase alphanumeric only.
+# The 8-char random suffix is keyed on app_name so it stays stable across applies.
+resource "random_string" "storage_suffix" {
+  length  = 8
+  special = false
+  upper   = false
+  keepers = {
+    app_name = var.app_name
+  }
+}
+
+# Storage account that holds the Azure Files share for SQLite persistence.
+resource "azurerm_storage_account" "this" {
+  name                     = "sharing${random_string.storage_suffix.result}"
+  resource_group_name      = data.azurerm_resource_group.this.name
+  location                 = var.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  min_tls_version          = "TLS1_2"
+  tags                     = var.tags
+}
+
+# Azure Files share mounted into the container at /data.
+# SQLite runs in DELETE journal mode (not WAL) for Azure Files compatibility.
+resource "azurerm_storage_share" "data" {
+  name               = "sharing-data"
+  storage_account_id = azurerm_storage_account.this.id
+  quota              = 1 # minimum 1 GB
+}
+
+# Container Apps Environment — one per deployment for full isolation.
+resource "azurerm_container_app_environment" "this" {
+  name                = "${var.app_name}-env"
+  location            = var.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  tags                = var.tags
+}
+
+# Link the Azure Files share to the ACA environment so apps can mount it.
+resource "azurerm_container_app_environment_storage" "data" {
+  name                         = "sharing-data"
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  account_name                 = azurerm_storage_account.this.name
+  access_key                   = azurerm_storage_account.this.primary_access_key
+  share_name                   = azurerm_storage_share.data.name
+  access_mode                  = "ReadWrite"
+}
+
+# The ACA environment default_domain is known after environment creation,
+# so this local can be used for BASE_URL before the container app is created.
+locals {
+  # Native ACA FQDN — always available; used as CNAME target for custom DNS setup.
+  aca_fqdn = "${var.app_name}.${azurerm_container_app_environment.this.default_domain}"
+  # Effective public hostname — custom domain when provided, ACA FQDN otherwise.
+  app_fqdn = var.custom_domain != "" ? var.custom_domain : local.aca_fqdn
+}
+
+resource "azurerm_container_app" "this" {
+  name                         = var.app_name
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  resource_group_name          = data.azurerm_resource_group.this.name
+  revision_mode                = "Single"
+  tags                         = var.tags
+
+  # Secrets are stored in ACA's secret store; containers reference them by name.
+  secret {
+    name  = "github-client-secret"
+    value = var.github_client_secret
+  }
+
+  secret {
+    name  = "session-secret"
+    value = var.session_secret
+  }
+
+  # Only create the org-check-token secret when a value is provided.
+  # ACA rejects secrets with empty values.
+  dynamic "secret" {
+    for_each = var.github_org_check_token != "" ? [1] : []
+    content {
+      name  = "org-check-token"
+      value = var.github_org_check_token
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 3000
+    transport        = "http"
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  template {
+    min_replicas = var.min_replicas  # Keep at 1 to avoid cold-start restore latency
+    max_replicas = 1 # SQLite single-writer; only one instance at a time
+
+    volume {
+      name         = "data"
+      storage_name = azurerm_container_app_environment_storage.data.name
+      storage_type = "AzureFile"
+    }
+
+    container {
+      name   = "sharing-server"
+      image  = var.container_image
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      volume_mounts {
+        name = "data"
+        path = "/data"
+      }
+
+      env {
+        name  = "GITHUB_CLIENT_ID"
+        value = var.github_client_id
+      }
+      env {
+        name        = "GITHUB_CLIENT_SECRET"
+        secret_name = "github-client-secret"
+      }
+      env {
+        name        = "SESSION_SECRET"
+        secret_name = "session-secret"
+      }
+      env {
+        name  = "BASE_URL"
+        value = "https://${local.app_fqdn}"
+      }
+      env {
+        name  = "DATA_DIR"
+        value = "/data"
+      }
+      env {
+        # SQLite runs on local container disk to avoid Azure Files SMB locking.
+        # DATA_DIR (/data, Azure Files) is used only for backup/restore via file copy.
+        name  = "LOCAL_DATA_DIR"
+        value = "/tmp/db"
+      }
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+      env {
+        name  = "ALLOWED_GITHUB_ORG"
+        value = var.allowed_github_org
+      }
+      # Only wire GITHUB_ORG_CHECK_TOKEN when the secret exists.
+      dynamic "env" {
+        for_each = var.github_org_check_token != "" ? [1] : []
+        content {
+          name        = "GITHUB_ORG_CHECK_TOKEN"
+          secret_name = "org-check-token"
+        }
+      }
+      # Only set ADMIN_GITHUB_LOGINS when a value is provided.
+      dynamic "env" {
+        for_each = var.admin_github_logins != "" ? [1] : []
+        content {
+          name  = "ADMIN_GITHUB_LOGINS"
+          value = var.admin_github_logins
+        }
+      }
+
+      liveness_probe {
+        path             = "/health"
+        port             = 3000
+        transport        = "HTTP"
+        initial_delay    = 10
+        interval_seconds = 30
+      }
+
+      readiness_probe {
+        path             = "/health"
+        port             = 3000
+        transport        = "HTTP"
+        initial_delay    = 5
+        interval_seconds = 10
+      }
+    }
+  }
+}
+
+# ── Custom domain + managed TLS certificate ───────────────────────────────────
+# Only created when var.custom_domain is set.
+# Intended for stable, long-lived environments (production) only.
+# Per-branch testing environments should leave var.custom_domain empty — they use
+# the ACA-generated FQDN (*.azurecontainerapps.io) which already has Azure TLS.
+# Provisioning a managed cert requires CNAME validation and can take up to 60 min.
+# DNS prerequisites (must exist before applying):
+#   CNAME  <subdomain>        → local.aca_fqdn
+#   TXT    asuid.<subdomain>  → azurerm_container_app_environment.this.custom_domain_verification_id
+#
+# Azure requires the hostname to be registered on the container app BEFORE a
+# managed certificate can be created for it. We use a null_resource to register
+# the hostname (binding type Disabled) via az CLI, which breaks the circular
+# dependency: cert needs hostname, SniEnabled binding needs cert.
+
+resource "null_resource" "hostname_registration" {
+  count = var.custom_domain != "" ? 1 : 0
+
+  triggers = {
+    hostname = var.custom_domain
+    app_id   = azurerm_container_app.this.id
+  }
+
+  # Re-run whenever the container app is modified, because ACA updates reset
+  # the ingress configuration and strip any previously-registered custom hostnames.
+  lifecycle {
+    replace_triggered_by = [azurerm_container_app.this]
+  }
+
+  provisioner "local-exec" {
+    command = "az containerapp hostname add --name '${azurerm_container_app.this.name}' --resource-group '${var.resource_group_name}' --hostname '${var.custom_domain}' 2>/dev/null || true"
+  }
+
+  depends_on = [azurerm_container_app.this]
+}
+
+resource "azurerm_container_app_environment_managed_certificate" "this" {
+  count                        = var.custom_domain != "" ? 1 : 0
+  name                         = "sharing-cert"
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  subject_name                 = var.custom_domain
+  domain_control_validation    = "CNAME"
+
+  depends_on = [null_resource.hostname_registration]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  timeouts {
+    create = "60m"
+    read   = "5m"
+    update = "30m"
+    delete = "30m"
+  }
+}
+
+# azurerm_container_app_custom_domain cannot be used here because it only accepts
+# staticCertificate IDs (.../certificates/...) and rejects managedCertificate IDs
+# (.../managedCertificates/...) at plan time. Instead, bind the cert by PATCHing
+# the container app's ingress directly via az rest, which accepts the raw ARM ID.
+resource "null_resource" "cert_binding" {
+  count = var.custom_domain != "" ? 1 : 0
+
+  triggers = {
+    cert_id  = azurerm_container_app_environment_managed_certificate.this[0].id
+    app_id   = azurerm_container_app.this.id
+    hostname = var.custom_domain
+  }
+
+  # Re-run whenever the container app is modified, because ACA updates reset
+  # the ingress configuration and strip any previously-applied cert bindings.
+  lifecycle {
+    replace_triggered_by = [azurerm_container_app.this]
+  }
+
+  provisioner "local-exec" {
+    environment = {
+      CERT_ID  = azurerm_container_app_environment_managed_certificate.this[0].id
+      APP_NAME = azurerm_container_app.this.name
+      APP_RG   = var.resource_group_name
+      HOSTNAME = var.custom_domain
+      APP_ID   = azurerm_container_app.this.id
+    }
+    command = <<-EOT
+      INGRESS=$(az containerapp show --name "$APP_NAME" --resource-group "$APP_RG" --query "properties.configuration.ingress" -o json)
+      PATCH=$(jq -n --argjson ing "$INGRESS" --arg h "$HOSTNAME" --arg c "$CERT_ID" \
+        '$ing | .customDomains = [{"name": $h, "bindingType": "SniEnabled", "certificateId": $c}] | {properties: {configuration: {ingress: .}}}')
+      az rest --method PATCH \
+        --url "https://management.azure.com$APP_ID?api-version=2024-03-01" \
+        --body "$PATCH" \
+        --output none
+      echo "Cert $CERT_ID bound to $HOSTNAME (SniEnabled)."
+    EOT
+  }
+
+  depends_on = [azurerm_container_app_environment_managed_certificate.this]
+}

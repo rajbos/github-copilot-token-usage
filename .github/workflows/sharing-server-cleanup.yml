@@ -1,0 +1,82 @@
+name: Cleanup Sharing Server (branch deleted)
+
+# Destroys the test Container Apps environment when a branch is deleted.
+# Production (main) is intentionally excluded.
+on:
+  delete:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Destroy test environment
+    runs-on: ubuntu-latest
+    # Only run for branch deletions; skip tag deletions and the main branch.
+    if: github.event.ref_type == 'branch' && github.event.ref != 'main'
+    environment: testing
+    permissions:
+      contents: read
+    env:
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Reproduce the exact same slug+hash logic used by the deploy workflow
+      # so the state key resolves to the same tfstate file.
+      - name: Compute state key for deleted branch
+        id: env
+        run: |
+          # NOTE: on the `delete` event, github.event.ref is the deleted branch name.
+          BRANCH="${{ github.event.ref }}"
+          SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
+          SLUG_TRUNC=$(echo "$SLUG" | cut -c1-13 | sed 's/-$//')
+          HASH=$(echo -n "$BRANCH" | sha256sum | cut -c1-6)
+          APP_NAME="sharing-test-${SLUG_TRUNC}${HASH}"
+          echo "app_name=${APP_NAME}"                                           >> "$GITHUB_OUTPUT"
+          echo "state_key=sharing-server/test-${SLUG_TRUNC}${HASH}.tfstate"    >> "$GITHUB_OUTPUT"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - name: Terraform init
+        id: init
+        working-directory: sharing-server/infra
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${{ vars.TF_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ steps.env.outputs.state_key }}"
+
+      - name: Destroy resources (if any exist)
+        working-directory: sharing-server/infra
+        env:
+          # Variables are required by Terraform even for destroy; use safe placeholders
+          # for values that only affect resource creation (image, secrets).
+          TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location:            ${{ vars.AZURE_LOCATION || 'westeurope' }}
+          TF_VAR_app_name:            ${{ steps.env.outputs.app_name }}
+          TF_VAR_container_image:     "ghcr.io/${{ github.repository_owner }}/copilot-sharing-server:latest"
+          TF_VAR_github_client_id:    ${{ secrets.SHARING_GITHUB_CLIENT_ID }}
+          TF_VAR_github_client_secret: ${{ secrets.SHARING_GITHUB_CLIENT_SECRET }}
+          TF_VAR_session_secret:      ${{ secrets.SHARING_SESSION_SECRET }}
+        run: |
+          RESOURCE_COUNT=$(terraform state list 2>/dev/null | wc -l)
+          if [ "$RESOURCE_COUNT" -gt 0 ]; then
+            echo "Found ${RESOURCE_COUNT} resource(s) in state — running destroy..."
+            terraform destroy -auto-approve
+            echo "✅ Environment destroyed: ${{ steps.env.outputs.app_name }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No resources found in state for branch '${{ github.event.ref }}' — nothing to destroy."
+            echo "ℹ️ No resources found for branch \`${{ github.event.ref }}\` — nothing to destroy." >> "$GITHUB_STEP_SUMMARY"
+          fi

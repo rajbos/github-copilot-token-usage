@@ -3,8 +3,6 @@
  * Used by the Visual Studio extension to load every view in one CLI call
  * instead of spawning four separate processes.
  */
-import * as fs from 'fs';
-import * as path from 'path';
 import { Command } from 'commander';
 import {
 	discoverSessionFiles,
@@ -12,63 +10,9 @@ import {
 	calculateDailyStats,
 	buildChartPayload,
 	calculateUsageAnalysisStats,
+	buildCustomizationMatrix,
 } from '../helpers';
 import { calculateMaturityScores } from '../../../vscode-extension/src/maturityScoring';
-import type { WorkspaceCustomizationMatrix } from '../../../vscode-extension/src/types';
-
-/**
- * Builds a WorkspaceCustomizationMatrix by deriving workspace folder paths from
- * VS Code-style session file paths (workspaceStorage/<hash>/chatSessions/<file>),
- * then checking each workspace for .github/copilot-instructions.md or agents.md.
- *
- * Non-VS Code session files (Crush, OpenCode, Copilot CLI, Visual Studio) are skipped.
- */
-async function buildCustomizationMatrix(sessionFiles: string[]): Promise<WorkspaceCustomizationMatrix | undefined> {
-	const workspacePaths = new Set<string>();
-
-	for (const sessionFile of sessionFiles) {
-		// Expected structure: .../workspaceStorage/<hash>/chatSessions/<file>
-		const chatSessionsDir = path.dirname(sessionFile);
-		if (path.basename(chatSessionsDir) !== 'chatSessions') { continue; }
-		const hashDir = path.dirname(chatSessionsDir);
-		const workspaceJsonPath = path.join(hashDir, 'workspace.json');
-
-		try {
-			if (!fs.existsSync(workspaceJsonPath)) { continue; }
-			const content = JSON.parse(await fs.promises.readFile(workspaceJsonPath, 'utf-8'));
-			const folderUri: string | undefined = content.folder;
-			if (!folderUri || !folderUri.startsWith('file://')) { continue; }
-
-			// Convert file URI to a local path, handling Windows drive letters
-			let folderPath = decodeURIComponent(folderUri.replace(/^file:\/\//, ''));
-			// On Windows, file:///C:/... becomes /C:/... — strip the leading slash
-			if (/^\/[A-Za-z]:/.test(folderPath)) { folderPath = folderPath.slice(1); }
-			workspacePaths.add(folderPath);
-		} catch {
-			// Skip unreadable workspace.json files
-		}
-	}
-
-	if (workspacePaths.size === 0) { return undefined; }
-
-	let workspacesWithIssues = 0;
-	for (const wsPath of workspacePaths) {
-		try {
-			const hasInstructions = fs.existsSync(path.join(wsPath, '.github', 'copilot-instructions.md'));
-			const hasAgentsMd    = fs.existsSync(path.join(wsPath, 'agents.md'));
-			if (!hasInstructions && !hasAgentsMd) { workspacesWithIssues++; }
-		} catch {
-			workspacesWithIssues++; // Count inaccessible workspaces as lacking customization
-		}
-	}
-
-	return {
-		customizationTypes: [],
-		workspaces: [],
-		totalWorkspaces: workspacePaths.size,
-		workspacesWithIssues,
-	};
-}
 
 export const allCommand = new Command('all')
 	.description('Output all view data in a single JSON response (for Visual Studio extension)')
