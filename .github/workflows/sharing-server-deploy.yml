@@ -48,7 +48,7 @@ jobs:
       - name: Compute deployment parameters
         id: env
         env:
-          FORCE_TEST: ${{ inputs.deploy_to_test }}
+          FORCE_TEST:  ${{ inputs.deploy_to_test }}
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" != "true" ]]; then
             {
