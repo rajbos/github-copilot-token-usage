@@ -191,6 +191,10 @@ resource "azurerm_container_app" "this" {
 
 # ── Custom domain + managed TLS certificate ───────────────────────────────────
 # Only created when var.custom_domain is set.
+# Intended for stable, long-lived environments (production) only.
+# Per-branch testing environments should leave var.custom_domain empty — they use
+# the ACA-generated FQDN (*.azurecontainerapps.io) which already has Azure TLS.
+# Provisioning a managed cert requires CNAME validation and can take up to 60 min.
 # DNS prerequisites (must exist before applying):
 #   CNAME  <subdomain>        → local.aca_fqdn
 #   TXT    asuid.<subdomain>  → azurerm_container_app_environment.this.custom_domain_verification_id

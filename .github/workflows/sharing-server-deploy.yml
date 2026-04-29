@@ -175,7 +175,11 @@ jobs:
             -backend-config="key=${{ needs.setup.outputs.state_key }}"
 
       - name: Reconcile custom domain Terraform state
-        if: steps.prereqs.outputs.configured == 'true' && vars.SHARING_CUSTOM_DOMAIN != ''
+        # Custom domains (and their managed certs) are only meaningful on stable, long-lived
+        # environments (production). Per-branch testing environments each get a unique ACA FQDN
+        # which already has Azure TLS — setting SHARING_CUSTOM_DOMAIN on the testing GitHub
+        # environment will be ignored here to prevent 60-minute cert provisioning on every PR.
+        if: steps.prereqs.outputs.configured == 'true' && vars.SHARING_CUSTOM_DOMAIN != '' && needs.setup.outputs.is_prod == 'true'
         working-directory: sharing-server/infra
         env:
           TF_VAR_resource_group_name:    ${{ vars.AZURE_RESOURCE_GROUP }}

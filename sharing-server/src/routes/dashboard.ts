@@ -6,7 +6,11 @@ import {
 	encodeSession, decodeSession, makeClaims,
 	COOKIE_NAME, OAUTH_STATE_COOKIE, SESSION_MAX_AGE,
 } from '../session.js';
-import { getUserById, getUserByGithubId, getUploadsForUser, getAllUsers, upsertUser, type UploadRow, type UserRow } from '../db.js';
+import {
+	getUserById, getUserByGithubId, getUploadsForUser, getAllUsers, upsertUser,
+	getAdminUserSummaries, getAdminDailyTotals,
+	type UploadRow, type UserRow, type UserUsageSummary, type AdminDailyRow,
+} from '../db.js';
 export const dashboard = new Hono();
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID ?? '';
@@ -178,6 +182,21 @@ dashboard.get('/dashboard', (c) => {
 	const allUsers = isAdmin ? getAllUsers() : undefined;
 
 	return c.html(dashboardPage(user, uploads, isAdmin, allUsers));
+});
+
+/** GET /admin — Admin-only dashboard showing all-user token usage and trends. */
+dashboard.get('/admin', (c) => {
+	const cookieValue = getCookie(c, COOKIE_NAME);
+	const claims = cookieValue ? decodeSession(cookieValue) : null;
+	if (!claims) return c.redirect('/dashboard');
+
+	const user = getUserById(claims.sub);
+	if (!user || user.is_admin !== 1) return c.redirect('/dashboard');
+
+	const userSummaries = getAdminUserSummaries(30);
+	const dailyTotals = getAdminDailyTotals(90);
+
+	return c.html(adminDashboardPage(user, userSummaries, dailyTotals));
 });
 
 // ── HTML Rendering ────────────────────────────────────────────────────────────
@@ -975,6 +994,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean, al
   <h1>🤖 Copilot Token Tracker</h1>
   <span class="spacer"></span>
   ${fluencyBadgeHtml}
+  ${isAdmin ? `<a href="/admin" style="margin-left:8px;color:#e3b341">👑 Admin</a>` : ''}
   ${avatarUrl ? `<img src="${avatarUrl}" class="avatar-sm" alt="${login}" style="margin-left:8px">` : ''}
   <span style="color:#c9d1d9;font-size:0.875rem">${displayName}</span>
   <a href="/auth/logout" style="margin-left:8px">Sign out</a>
@@ -1019,6 +1039,344 @@ var CHART_DATA = ${safeJson(chartData)};
 })();
 </script>
 <script>${fluencyJs}</script>`);
+}
+
+// ── Admin Dashboard ──────────────────────────────────────────────────────────
+
+interface AdminPeriodStats {
+	totalInput: number;
+	totalOutput: number;
+	totalInteractions: number;
+	activeUsers: number;
+}
+
+function computeAdminPeriodStats(rows: AdminDailyRow[], days: number): AdminPeriodStats {
+	const cutoff = new Date();
+	cutoff.setUTCDate(cutoff.getUTCDate() - days);
+	const cutoffStr = cutoff.toISOString().slice(0, 10);
+	const filtered = rows.filter(r => r.day >= cutoffStr);
+	const totalInput = filtered.reduce((s, r) => s + r.input_tokens, 0);
+	const totalOutput = filtered.reduce((s, r) => s + r.output_tokens, 0);
+	const totalInteractions = filtered.reduce((s, r) => s + r.interactions, 0);
+	const activeUsers = new Set(
+		filtered
+			.filter(r => r.input_tokens + r.output_tokens + r.interactions > 0)
+			.map(r => r.github_login)
+	).size;
+	return { totalInput, totalOutput, totalInteractions, activeUsers };
+}
+
+function adminStatPanel(stats: AdminPeriodStats, totalUsers: number, panelId: string, hidden: boolean): string {
+	const avgPerActiveUser = stats.activeUsers > 0
+		? Math.round((stats.totalInput + stats.totalOutput) / stats.activeUsers)
+		: 0;
+	return `<div id="${panelId}" class="stats-panel${hidden ? ' hidden' : ''}">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="label">Total Users</div><div class="value">${totalUsers}</div></div>
+    <div class="stat-card"><div class="label">Active Users</div><div class="value">${stats.activeUsers}</div></div>
+    <div class="stat-card"><div class="label">Total Tokens</div><div class="value">${fmt(stats.totalInput + stats.totalOutput)}</div></div>
+    <div class="stat-card"><div class="label">Avg Tokens / User</div><div class="value">${fmt(avgPerActiveUser)}</div></div>
+    <div class="stat-card"><div class="label">Interactions</div><div class="value">${fmt(stats.totalInteractions)}</div></div>
+  </div>
+</div>`;
+}
+
+function adminDashboardPage(
+	adminUser: UserRow,
+	userSummaries: UserUsageSummary[],
+	dailyTotals: AdminDailyRow[],
+): string {
+	const totalUsers = userSummaries.length;
+
+	const stats7  = computeAdminPeriodStats(dailyTotals, 7);
+	const stats30 = computeAdminPeriodStats(dailyTotals, 30);
+	const stats90 = computeAdminPeriodStats(dailyTotals, 90);
+
+	const adminLogin = h(adminUser.github_login);
+	const adminAvatar = adminUser.avatar_url ? h(adminUser.avatar_url) : '';
+	const adminName = h(adminUser.github_name ?? adminUser.github_login);
+
+	const chartData = dailyTotals.map(r => ({
+		day: r.day,
+		login: r.github_login,
+		inputTokens: r.input_tokens,
+		outputTokens: r.output_tokens,
+		interactions: r.interactions,
+	}));
+
+	const overviewHtml = `
+<div class="card">
+  <div class="card-header">
+    <h3>Overview</h3>
+    <div class="tabs" id="admin-period-tabs">
+      <button class="tab" data-admin-period="7">Last 7 days</button>
+      <button class="tab active" data-admin-period="30">Last 30 days</button>
+      <button class="tab" data-admin-period="90">Last 90 days</button>
+    </div>
+  </div>
+  ${adminStatPanel(stats7,  totalUsers, 'admin-stats-7',  true)}
+  ${adminStatPanel(stats30, totalUsers, 'admin-stats-30', false)}
+  ${adminStatPanel(stats90, totalUsers, 'admin-stats-90', true)}
+</div>`;
+
+	const chartHtml = chartData.length > 0 ? `
+<div class="card">
+  <div class="card-header">
+    <h3>Usage Trend</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="tabs" id="admin-mode-tabs">
+        <button class="tab active" data-admin-mode="total">Total</button>
+        <button class="tab" data-admin-mode="average">Per-User Average</button>
+      </div>
+    </div>
+  </div>
+  <div class="chart-wrap"><canvas id="admin-trend-chart"></canvas></div>
+</div>` : `
+<div class="alert alert-warn">No usage data uploaded yet.</div>`;
+
+	const tableHtml = `
+<div class="card">
+  <div class="card-header"><h3>Users — last 30 days</h3></div>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th></th><th>Login</th><th>Name</th>
+        <th>Input Tokens</th><th>Output Tokens</th><th>Interactions</th>
+        <th>Days Active</th><th>Last Upload</th><th>Admin</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${userSummaries.map(u => `
+      <tr>
+        <td>${u.avatar_url ? `<img src="${h(u.avatar_url)}" style="width:24px;height:24px;border-radius:50%;vertical-align:middle">` : ''}</td>
+        <td><a href="https://github.com/${h(u.github_login)}" target="_blank" rel="noopener" style="color:#58a6ff">${h(u.github_login)}</a></td>
+        <td>${h(u.github_name ?? '—')}</td>
+        <td>${u.total_input > 0 ? fmt(u.total_input) : '—'}</td>
+        <td>${u.total_output > 0 ? fmt(u.total_output) : '—'}</td>
+        <td>${u.total_interactions > 0 ? u.total_interactions.toLocaleString() : '—'}</td>
+        <td>${u.days_active > 0 ? String(u.days_active) : '—'}</td>
+        <td>${h(u.last_upload_day ?? '—')}</td>
+        <td>${u.is_admin ? '✅' : ''}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  </div>
+</div>`;
+
+	const adminInteractiveJs = `
+(function () {
+  // ── Period tabs (stat cards only — chart uses its own period state) ─────────
+  var currentPeriod = 30;
+  var currentMode = 'total';
+
+  function activatePeriod(period) {
+    document.querySelectorAll('#admin-period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+    var btn = document.querySelector('#admin-period-tabs .tab[data-admin-period="' + period + '"]');
+    if (btn) btn.classList.add('active');
+    ['admin-stats-7','admin-stats-30','admin-stats-90'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden', id !== 'admin-stats-' + period);
+    });
+    currentPeriod = period;
+    rebuildChart();
+  }
+
+  document.querySelectorAll('#admin-period-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      activatePeriod(parseInt(btn.getAttribute('data-admin-period'), 10));
+    });
+  });
+
+  document.querySelectorAll('#admin-mode-tabs .tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#admin-mode-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentMode = btn.getAttribute('data-admin-mode');
+      rebuildChart();
+    });
+  });
+
+  // ── Chart ────────────────────────────────────────────────────────────────
+  var canvas = document.getElementById('admin-trend-chart');
+  if (!canvas || !ADMIN_CHART_DATA.length) return;
+
+  var TOP_N = 10;
+  var USER_COLORS = ['#58a6ff','#3fb950','#bc8cff','#f0883e','#e3b341','#f778ba','#79c0ff','#56d364','#d2a8ff','#ffa657'];
+  var OTHERS_COLOR = '#8b949e';
+
+  function makeDayRange(days) {
+    var dates = [];
+    var now = new Date();
+    for (var i = days - 1; i >= 0; i--) {
+      var d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  }
+
+  function filterData(days) {
+    var labels = makeDayRange(days);
+    var cutoff = labels[0];
+    return ADMIN_CHART_DATA.filter(function(r) { return r.day >= cutoff; });
+  }
+
+  function topUsersByTokens(data) {
+    var totals = {};
+    data.forEach(function(r) {
+      totals[r.login] = (totals[r.login] || 0) + r.inputTokens + r.outputTokens;
+    });
+    return Object.keys(totals)
+      .sort(function(a, b) { return totals[b] - totals[a]; })
+      .slice(0, TOP_N);
+  }
+
+  function buildTotalDatasets(data, labels, topLogins) {
+    var topSet = {};
+    topLogins.forEach(function(l) { topSet[l] = true; });
+    var hasOthers = data.some(function(r) { return !topSet[r.login]; });
+
+    var datasets = topLogins.map(function(login, i) {
+      var color = USER_COLORS[i % USER_COLORS.length];
+      return {
+        label: login,
+        data: labels.map(function(day) {
+          var total = 0;
+          data.forEach(function(r) { if (r.day === day && r.login === login) total += r.inputTokens + r.outputTokens; });
+          return Math.round(total / 1000);
+        }),
+        backgroundColor: color + 'bb',
+        borderColor: color,
+        borderWidth: 1, borderRadius: 2,
+      };
+    });
+
+    if (hasOthers) {
+      datasets.push({
+        label: 'Others',
+        data: labels.map(function(day) {
+          var total = 0;
+          data.forEach(function(r) { if (r.day === day && !topSet[r.login]) total += r.inputTokens + r.outputTokens; });
+          return Math.round(total / 1000);
+        }),
+        backgroundColor: OTHERS_COLOR + 'bb',
+        borderColor: OTHERS_COLOR,
+        borderWidth: 1, borderRadius: 2,
+      });
+    }
+
+    return datasets.filter(function(ds) { return ds.data.some(function(v) { return v > 0; }); });
+  }
+
+  function buildAverageDatasets(data, labels) {
+    var dayMap = {};
+    data.forEach(function(r) {
+      if (!dayMap[r.day]) dayMap[r.day] = {};
+      dayMap[r.day][r.login] = (dayMap[r.day][r.login] || 0) + r.inputTokens + r.outputTokens;
+    });
+    return [{
+      label: 'Avg tokens per active user',
+      data: labels.map(function(day) {
+        if (!dayMap[day]) return 0;
+        var logins = Object.keys(dayMap[day]).filter(function(l) { return dayMap[day][l] > 0; });
+        if (!logins.length) return 0;
+        var total = logins.reduce(function(s, l) { return s + dayMap[day][l]; }, 0);
+        return Math.round(total / logins.length / 1000);
+      }),
+      backgroundColor: '#58a6ffbb',
+      borderColor: '#58a6ff',
+      borderWidth: 1, borderRadius: 2,
+    }];
+  }
+
+  function makeYConfig(stacked) {
+    return {
+      stacked: stacked,
+      grid: { color: '#21262d' },
+      ticks: {
+        color: '#8b949e', font: { size: 11 },
+        callback: function(v) { return v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K'; },
+      },
+      title: { display: true, text: 'Tokens (K)', color: '#8b949e', font: { size: 11 } },
+    };
+  }
+
+  var initLabels = makeDayRange(currentPeriod);
+  var initData   = filterData(currentPeriod);
+  var initTop    = topUsersByTokens(initData);
+  var initDs     = buildTotalDatasets(initData, initLabels, initTop);
+
+  var chart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: initLabels, datasets: initDs },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: 20, font: { size: 11 } } },
+        y: makeYConfig(true),
+      },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#c9d1d9', boxWidth: 11, padding: 14, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
+          callbacks: {
+            label: function(ctx) {
+              var v = ctx.parsed.y;
+              return '  ' + ctx.dataset.label + ': ' + (v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K') + ' tokens';
+            },
+            footer: function(items) {
+              var total = items.reduce(function(s, i) { return s + i.parsed.y; }, 0);
+              return 'Total: ' + (total >= 1000 ? (total/1000).toFixed(1)+'M' : total+'K') + ' tokens';
+            },
+          },
+        },
+      },
+    },
+  });
+
+  function rebuildChart() {
+    var labels  = makeDayRange(currentPeriod);
+    var data    = filterData(currentPeriod);
+    var stacked = currentMode === 'total';
+    var datasets;
+    if (currentMode === 'total') {
+      var top = topUsersByTokens(data);
+      datasets = buildTotalDatasets(data, labels, top);
+    } else {
+      datasets = buildAverageDatasets(data, labels);
+    }
+    chart.data.labels   = labels;
+    chart.data.datasets = datasets;
+    chart.options.scales.x.stacked = stacked;
+    chart.options.scales.y = makeYConfig(stacked);
+    chart.options.scales.y.title.text = currentMode === 'total' ? 'Tokens (K)' : 'Avg Tokens/User (K)';
+    chart.update();
+  }
+})();`;
+
+	return layout('Admin Dashboard', `
+<div class="header">
+  <h1>🤖 Copilot Token Tracker — Admin</h1>
+  <span class="spacer"></span>
+  ${adminAvatar ? `<img src="${adminAvatar}" class="avatar-sm" alt="${adminLogin}" style="margin-left:8px">` : ''}
+  <span style="color:#c9d1d9;font-size:0.875rem">${adminName}</span>
+  <a href="/dashboard" style="margin-left:8px">My Dashboard</a>
+  <a href="/auth/logout" style="margin-left:8px">Sign out</a>
+</div>
+<div class="content">
+  ${overviewHtml}
+  ${chartHtml}
+  ${tableHtml}
+</div>
+
+<script>
+var ADMIN_CHART_DATA = ${safeJson(chartData)};
+</script>
+<script>${_chartJsCode}</script>
+<script>${adminInteractiveJs}</script>`);
 }
 
 function errorPage(message: string): string {
