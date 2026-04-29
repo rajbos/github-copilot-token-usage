@@ -26,6 +26,9 @@ type ChartPeriodData = {
 	totalTokens: number;
 	totalSessions: number;
 	avgPerPeriod: number;
+	costData: number[];
+	totalCost: number;
+	avgCostPerPeriod: number;
 };
 
 type ChartPeriod = 'day' | 'week' | 'month';
@@ -81,7 +84,7 @@ async function loadChartModule(): Promise<void> {
 	const mod = await import('chart.js/auto');
 	Chart = mod.default;
 }
-let currentView: 'total' | 'model' | 'editor' | 'repository' = 'total';
+let currentView: 'total' | 'model' | 'editor' | 'repository' | 'cost' = 'total';
 let currentPeriod: ChartPeriod = 'day';
 // Stores state to restore after a background data update re-initializes the chart
 let pendingView: typeof currentView | null = null;
@@ -104,13 +107,16 @@ function getActivePeriodData(data: InitialChartData): ChartPeriodData {
 		totalTokens: data.totalTokens,
 		totalSessions: data.totalSessions,
 		avgPerPeriod: data.avgTokensPerDay,
+		costData: [],
+		totalCost: 0,
+		avgCostPerPeriod: 0,
 	};
 }
 
-const PERIOD_LABELS: Record<ChartPeriod, { title: string; footer: string; countLabel: string; avgLabel: string }> = {
-	day:   { title: 'Token Usage – Last 30 Days',  footer: 'Day-by-day token usage for the last 30 days',   countLabel: 'Total Days',   avgLabel: 'Avg Tokens / Day'   },
-	week:  { title: 'Token Usage – Last 6 Weeks',  footer: 'Week-by-week token usage for the last 6 weeks', countLabel: 'Total Weeks',  avgLabel: 'Avg Tokens / Week'  },
-	month: { title: 'Token Usage – Last 12 Months', footer: 'Monthly token usage for the last 12 months',   countLabel: 'Total Months', avgLabel: 'Avg Tokens / Month' },
+const PERIOD_LABELS: Record<ChartPeriod, { title: string; footer: string; countLabel: string; avgLabel: string; costTitle: string; avgCostLabel: string }> = {
+	day:   { title: 'Token Usage – Last 30 Days',  footer: 'Day-by-day token usage for the last 30 days',   countLabel: 'Total Days',   avgLabel: 'Avg Tokens / Day',   costTitle: 'Est. Cost – Last 30 Days',  avgCostLabel: 'Avg Cost / Day'   },
+	week:  { title: 'Token Usage – Last 6 Weeks',  footer: 'Week-by-week token usage for the last 6 weeks', countLabel: 'Total Weeks',  avgLabel: 'Avg Tokens / Week',  costTitle: 'Est. Cost – Last 6 Weeks',  avgCostLabel: 'Avg Cost / Week'  },
+	month: { title: 'Token Usage – Last 12 Months', footer: 'Monthly token usage for the last 12 months',   countLabel: 'Total Months', avgLabel: 'Avg Tokens / Month', costTitle: 'Est. Cost – Last 12 Months', avgCostLabel: 'Avg Cost / Month' },
 };
 
 function renderLayout(data: InitialChartData): void {
@@ -131,7 +137,7 @@ function renderLayout(data: InitialChartData): void {
 	const header = el('div', 'header');
 	const headerLeft = el('div', 'header-left');
 	const icon = el('span', 'header-icon', '📈');
-	const title = el('span', 'header-title', PERIOD_LABELS[currentPeriod].title);
+	const title = el('span', 'header-title', currentView === 'cost' ? PERIOD_LABELS[currentPeriod].costTitle : PERIOD_LABELS[currentPeriod].title);
 	title.id = 'chart-title';
 	headerLeft.append(icon, title);
 	const buttons = el('div', 'button-row');
@@ -157,8 +163,8 @@ function renderLayout(data: InitialChartData): void {
 	cards.id = 'summary-cards';
 	cards.append(
 		buildCard('card-period-count',  periodMeta.countLabel,   periodData.periodCount.toLocaleString()),
-		buildCard('card-total-tokens',  'Total Tokens',           formatCompact(periodData.totalTokens)),
-		buildCard('card-avg-tokens',    periodMeta.avgLabel,      formatCompact(periodData.avgPerPeriod)),
+		buildCard('card-total-tokens',  currentView === 'cost' ? 'Total Cost (est.)' : 'Total Tokens', currentView === 'cost' ? `$${periodData.totalCost.toFixed(2)}` : formatCompact(periodData.totalTokens)),
+		buildCard('card-avg-tokens',    currentView === 'cost' ? periodMeta.avgCostLabel : periodMeta.avgLabel, currentView === 'cost' ? `$${periodData.avgCostPerPeriod.toFixed(2)}` : formatCompact(periodData.avgPerPeriod)),
 		buildCard('card-total-sessions','Total Sessions',         periodData.totalSessions.toLocaleString())
 	);
 	summarySection.append(cards);
@@ -206,7 +212,9 @@ function renderLayout(data: InitialChartData): void {
 	editorBtn.id = 'view-editor';
 	const repoBtn = el('button', `toggle${currentView === 'repository' ? ' active' : ''}`, 'By Repository');
 	repoBtn.id = 'view-repository';
-	toggles.append(totalBtn, modelBtn, editorBtn, repoBtn);
+	const costBtn = el('button', `toggle${currentView === 'cost' ? ' active' : ''}`, '💰 Est. Cost');
+	costBtn.id = 'view-cost';
+	toggles.append(totalBtn, modelBtn, editorBtn, repoBtn, costBtn);
 
 	const canvasWrap = el('div', 'canvas-wrap');
 	const canvas = document.createElement('canvas');
@@ -262,13 +270,20 @@ function updateSummaryCards(data: InitialChartData): void {
 		if (valueEl) { valueEl.textContent = value; }
 	};
 
-	updateCard('card-period-count',   periodMeta.countLabel,  periodData.periodCount.toLocaleString());
-	updateCard('card-total-tokens',   null,                   formatCompact(periodData.totalTokens));
-	updateCard('card-avg-tokens',     periodMeta.avgLabel,    formatCompact(periodData.avgPerPeriod));
-	updateCard('card-total-sessions', null,                   periodData.totalSessions.toLocaleString());
+	updateCard('card-period-count', periodMeta.countLabel, periodData.periodCount.toLocaleString());
+
+	if (currentView === 'cost') {
+		updateCard('card-total-tokens', 'Total Cost (est.)', `$${periodData.totalCost.toFixed(2)}`);
+		updateCard('card-avg-tokens', periodMeta.avgCostLabel, `$${periodData.avgCostPerPeriod.toFixed(2)}`);
+	} else {
+		updateCard('card-total-tokens', 'Total Tokens', formatCompact(periodData.totalTokens));
+		updateCard('card-avg-tokens', periodMeta.avgLabel, formatCompact(periodData.avgPerPeriod));
+	}
+
+	updateCard('card-total-sessions', null, periodData.totalSessions.toLocaleString());
 
 	const title = document.getElementById('chart-title');
-	if (title) { title.textContent = periodMeta.title; }
+	if (title) { title.textContent = currentView === 'cost' ? periodMeta.costTitle : periodMeta.title; }
 
 	const footer = document.getElementById('chart-footer');
 	if (footer) {
@@ -315,6 +330,7 @@ function wireInteractions(data: InitialChartData): void {
 		{ id: 'view-model',      view: 'model'      as const },
 		{ id: 'view-editor',     view: 'editor'     as const },
 		{ id: 'view-repository', view: 'repository' as const },
+		{ id: 'view-cost',       view: 'cost'       as const },
 	];
 	viewButtons.forEach(({ id, view }) => {
 		const btn = document.getElementById(id);
@@ -373,12 +389,13 @@ async function switchPeriod(period: ChartPeriod, data: InitialChartData): Promis
 	chart = new Chart(ctx, createConfig(currentView, data));
 }
 
-async function switchView(view: 'total' | 'model' | 'editor' | 'repository', data: InitialChartData): Promise<void> {
+async function switchView(view: 'total' | 'model' | 'editor' | 'repository' | 'cost', data: InitialChartData): Promise<void> {
 	if (currentView === view) {
 		return;
 	}
 	currentView = view;
 	setActiveView(view);
+	updateSummaryCards(data);
 	if (!chart) {
 		return;
 	}
@@ -406,8 +423,8 @@ function setActivePeriod(period: ChartPeriod): void {
 	});
 }
 
-function setActiveView(view: 'total' | 'model' | 'editor' | 'repository'): void {
-	['view-total', 'view-model', 'view-editor', 'view-repository'].forEach(id => {
+function setActiveView(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'): void {
+	['view-total', 'view-model', 'view-editor', 'view-repository', 'view-cost'].forEach(id => {
 		const btn = document.getElementById(id);
 		if (!btn) {
 			return;
@@ -416,7 +433,7 @@ function setActiveView(view: 'total' | 'model' | 'editor' | 'repository'): void 
 	});
 }
 
-function createConfig(view: 'total' | 'model' | 'editor' | 'repository', data: InitialChartData): ChartConfig {
+function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost', data: InitialChartData): ChartConfig {
 	const period = getActivePeriodData(data);
 
 	// Get CSS variables for theme-aware colors
@@ -501,6 +518,48 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository', data: I
 	}
 
 	const datasets = view === 'model' ? period.modelDatasets : view === 'repository' ? period.repositoryDatasets : period.editorDatasets;
+
+	if (view === 'cost') {
+		return {
+			type: 'bar' as const,
+			data: {
+				labels: period.labels,
+				datasets: [
+					{
+						label: 'Est. Cost (TBB)',
+						data: period.costData,
+						backgroundColor: 'rgba(34, 197, 94, 0.6)',
+						borderColor: 'rgba(34, 197, 94, 1)',
+						borderWidth: 1,
+						yAxisID: 'y'
+					}
+				]
+			},
+			options: {
+				...baseOptions,
+				plugins: {
+					...baseOptions.plugins,
+					tooltip: {
+						...baseOptions.plugins.tooltip,
+						callbacks: {
+							label: (ctx: any) => ` $${Number(ctx.parsed.y).toFixed(4)}`
+						}
+					}
+				},
+				scales: {
+					x: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 11 } } },
+					y: {
+						type: 'linear' as const,
+						display: true,
+						position: 'left' as const,
+						grid: { color: gridColor },
+						ticks: { color: textColor, font: { size: 11 }, callback: (value: any) => `$${Number(value).toFixed(2)}` },
+						title: { display: true, text: 'Estimated Cost (USD)', color: textColor, font: { size: 12, weight: 'bold' as const } }
+					}
+				}
+			}
+		};
+	}
 
 	// Add sessions line as an overlay on all stacked views
 	const sessionsDataset = {

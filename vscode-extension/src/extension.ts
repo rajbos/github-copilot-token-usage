@@ -7525,6 +7525,12 @@ ${hashtag}`;
         if (!target.modelUsage[m]) { target.modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
         target.modelUsage[m].inputTokens += u.inputTokens;
         target.modelUsage[m].outputTokens += u.outputTokens;
+        if (u.cachedReadTokens !== undefined) {
+          target.modelUsage[m].cachedReadTokens = (target.modelUsage[m].cachedReadTokens ?? 0) + u.cachedReadTokens;
+        }
+        if (u.cacheCreationTokens !== undefined) {
+          target.modelUsage[m].cacheCreationTokens = (target.modelUsage[m].cacheCreationTokens ?? 0) + u.cacheCreationTokens;
+        }
       }
       for (const [e, u] of Object.entries(src.editorUsage)) {
         if (!target.editorUsage[e]) { target.editorUsage[e] = { tokens: 0, sessions: 0 }; }
@@ -7611,10 +7617,17 @@ ${hashtag}`;
       const totalTokens = tokensData.reduce((a, b) => a + b, 0);
       const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
       const periodCount = buckets.length;
+
+      const costData = entries.map(e => this.calculateEstimatedCost(e.modelUsage, 'copilot'));
+      const totalCost = costData.reduce((a, b) => a + b, 0);
+
       return {
         labels, tokensData, sessionsData, modelDatasets, editorDatasets, repositoryDatasets,
         periodCount, totalTokens, totalSessions,
         avgPerPeriod: periodCount > 0 ? Math.round(totalTokens / periodCount) : 0,
+        costData,
+        totalCost,
+        avgCostPerPeriod: periodCount > 0 ? totalCost / periodCount : 0,
       };
     };
 
