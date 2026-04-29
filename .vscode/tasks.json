@@ -5,8 +5,8 @@
   "tasks": [
     {
       "label": "npm compile",
-      "type": "npm",
-      "script": "compile",
+      "type": "shell",
+      "command": "npm run compile",
       "options": {
         "cwd": "${workspaceFolder}/vscode-extension"
       },
@@ -15,7 +15,7 @@
         "isDefault": true
       },
       "presentation": {
-        "reveal": "silent"
+        "reveal": "always"
       },
       "problemMatcher": []
     },
