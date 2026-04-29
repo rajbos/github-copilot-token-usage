@@ -526,7 +526,7 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 				labels: period.labels,
 				datasets: [
 					{
-						label: 'Est. Cost (API rates)',
+						label: 'Est. Cost (TBB)',
 						data: period.costData,
 						backgroundColor: 'rgba(34, 197, 94, 0.6)',
 						borderColor: 'rgba(34, 197, 94, 1)',

@@ -7615,7 +7615,7 @@ ${hashtag}`;
       const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
       const periodCount = buckets.length;
 
-      const costData = entries.map(e => this.calculateEstimatedCost(e.modelUsage));
+      const costData = entries.map(e => this.calculateEstimatedCost(e.modelUsage, 'copilot'));
       const totalCost = costData.reduce((a, b) => a + b, 0);
 
       return {
