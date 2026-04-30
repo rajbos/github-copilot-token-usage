@@ -7,3 +7,4 @@ export { VisualStudioAdapter } from './visualStudioAdapter';
 export { MistralVibeAdapter } from './mistralVibeAdapter';
 export { CopilotChatAdapter } from './copilotChatAdapter';
 export { CopilotCliAdapter } from './copilotCliAdapter';
+export { JetBrainsAdapter } from './jetbrainsAdapter';

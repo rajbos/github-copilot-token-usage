@@ -15,7 +15,7 @@ import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
 import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claudedesktop';
 import { MistralVibeDataAccess } from '../../vscode-extension/src/mistralvibe';
 import type { IEcosystemAdapter } from '../../vscode-extension/src/ecosystemAdapter';
-import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter, CopilotChatAdapter, CopilotCliAdapter } from '../../vscode-extension/src/adapters';
+import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter, CopilotChatAdapter, CopilotCliAdapter, JetBrainsAdapter } from '../../vscode-extension/src/adapters';
 import { isMcpTool, extractMcpServerName } from '../../vscode-extension/src/workspaceHelpers';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
@@ -109,6 +109,7 @@ const _ecosystems: IEcosystemAdapter[] = [
 	// for VS Code Copilot Chat and CLI files. See issue #654.
 	new CopilotChatAdapter(),
 	new CopilotCliAdapter(),
+	new JetBrainsAdapter(),
 ];
 
 /** Create session discovery instance for CLI */
