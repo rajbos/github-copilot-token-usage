@@ -57,7 +57,7 @@
       },
       {
         "command": "aiEngineeringFluency.showFluencyLevelViewer",
-        "title": "Show Fluency Level Viewer (Debug Only)",
+        "title": "Scoring Guide",
         "category": "AI Engineering Fluency"
       },
       {
