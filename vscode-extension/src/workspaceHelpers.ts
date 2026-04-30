@@ -355,6 +355,7 @@ export function getEditorNameFromRoot(rootPath: string): string {
 	if (!rootPath) { return 'Unknown'; }
 	const lower = rootPath.toLowerCase();
 	// Check obvious markers first
+	if (lower.includes('.copilot/jb') || lower.includes('.copilot\\jb')) { return 'JetBrains'; }
 	if (lower.includes('.copilot') || lower.includes('copilot')) { return 'Copilot CLI'; }
 	if (lower.includes('opencode')) { return 'OpenCode'; }
 	if (lower.includes('.continue')) { return 'Continue'; }
@@ -758,6 +759,7 @@ export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: 
  */
 export function detectEditorSource(filePath: string, isOpenCodeSessionFile?: (p: string) => boolean): string {
 	const lowerPath = filePath.toLowerCase().replace(/\\/g, '/');
+	if (lowerPath.includes('/.copilot/jb/')) { return 'JetBrains'; }
 	if (lowerPath.includes('/.copilot/session-state/')) { return 'Copilot CLI'; }
 	if (isOpenCodeSessionFile?.(filePath)) { return 'OpenCode'; }
 	if (lowerPath.includes('/.crush/crush.db#')) { return 'Crush'; }

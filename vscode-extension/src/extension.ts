@@ -1,4 +1,4 @@
-﻿import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -3579,6 +3579,16 @@ usageAnalysis: undefined
 					if (ev.type === 'tool.execution_complete' && typeof ev.data?.model === 'string') {
 						cliSessionModel = ev.data.model;
 						break;
+					}
+					// JetBrains / generic: model in assistant.turn_start.data.model
+					if (ev.type === 'assistant.turn_start' && typeof ev.data?.model === 'string') {
+						cliSessionModel = ev.data.model;
+						break;
+					}
+					// Fallback: session.start.data.model (not selectedModel)
+					if (ev.type === 'session.start' && typeof ev.data?.model === 'string' && !cliModelFound) {
+						cliSessionModel = ev.data.model;
+						cliModelFound = true;
 					}
 				} catch { /* skip */ }
 			}

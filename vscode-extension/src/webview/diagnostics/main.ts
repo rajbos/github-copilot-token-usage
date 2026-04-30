@@ -402,6 +402,9 @@ function getEditorBadgeClass(editor: string): string {
   if (lower.includes("visual studio")) {
     return "editor-badge editor-badge-vs";
   }
+  if (lower.includes("jetbrains")) {
+    return "editor-badge editor-badge-jetbrains";
+  }
   if (lower.includes("mistral")) {
     return "editor-badge editor-badge-mistral-vibe";
   }
@@ -413,6 +416,9 @@ function getEditorBadgeClass(editor: string): string {
 
 function getEditorIcon(editor: string): string {
   const lower = editor.toLowerCase();
+  if (lower.includes("jetbrains") || lower.includes("rider") || lower.includes("intellij")) {
+    return "🟣";
+  }
   if (lower.includes("visual studio")) {
     return "🪟";
   }
