@@ -1105,8 +1105,8 @@ function renderFolderAnalysisResults(
   folderPath: string,
 ): string {
   const sessionFiles = files.filter(f => f.interactions > 0 || f.tokens > 0);
-  const totalInteractions = files.reduce((sum, f) => sum + f.interactions, 0);
-  const totalTokens = files.reduce((sum, f) => sum + f.tokens, 0);
+  const totalInteractions = files.reduce((sum, f) => sum + Number(f.interactions), 0);
+  const totalTokens = files.reduce((sum, f) => sum + Number(f.tokens), 0);
 
   const sorted = [...files].sort((a, b) => {
     const aScore = a.interactions * 1000 + a.tokens;
@@ -1132,11 +1132,13 @@ function renderFolderAnalysisResults(
     const rel = f.file.startsWith(folderPath)
       ? f.file.slice(folderPath.length).replace(/^[/\\]/, "")
       : getFileName(f.file);
-    const interactionsCell = f.interactions > 0
-      ? `<strong>${f.interactions}</strong>`
+    const safeInteractions = Number(f.interactions);
+    const interactionsCell = safeInteractions > 0
+      ? `<strong>${safeInteractions}</strong>`
       : `<span style="color: var(--text-muted);">0</span>`;
-    const tokensCell = f.tokens > 0
-      ? `<strong title="${f.tokens.toLocaleString()} tokens">${formatTokenCount(f.tokens)}</strong>`
+    const safeTokens = Number(f.tokens);
+    const tokensCell = safeTokens > 0
+      ? `<strong title="${safeTokens.toLocaleString()} tokens">${formatTokenCount(safeTokens)}</strong>`
       : `<span style="color: var(--text-muted);">0</span>`;
     return `
       <tr style="${hasData ? "" : "opacity: 0.45;"}">
