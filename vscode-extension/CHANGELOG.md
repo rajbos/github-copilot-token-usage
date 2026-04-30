@@ -6,8 +6,16 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-30
+
 ### Features and Improvements
-- Added "💰 Est. Cost" view to the chart page: shows estimated daily/weekly/monthly API cost based on per-model token usage and provider pricing data
+- Added "💰 Est. Cost" view to the chart page: shows estimated daily/weekly/monthly API cost based on per-model token usage and provider pricing data (#703)
+- Added first-value onboarding empty-state guidance and Scoring Guide panel (#710)
+- Added macOS path support for Claude Desktop Cowork sessions (#714)
+
+### Bug Fixes
+- Fixed: show Configure Backend button when backend storage info is unavailable
+- Fixed: exclude suppressed tools from unknown tools alert banner
 
 ## [0.1.1] - 2026-04-10
 
