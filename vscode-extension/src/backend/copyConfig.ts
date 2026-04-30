@@ -74,7 +74,7 @@ export async function copyBackendConfigToClipboard(settings: BackendSettings): P
 				includeMachineBreakdown: settings.includeMachineBreakdown
 			},
 			machineId: '<redacted>', // Fully redact machineId
-			extensionVersion: vscode.extensions.getExtension('RobBos.copilot-token-tracker')?.packageJSON?.version || 'unknown',
+			extensionVersion: (vscode.extensions.getExtension('RobBos.ai-engineering-fluency') ?? vscode.extensions.getExtension('RobBos.copilot-token-tracker'))?.packageJSON?.version || 'unknown',
 			note: 'This config does NOT include secrets (Storage Shared Key), machineId, sessionId, or home directory. Share safely.'
 		};
 

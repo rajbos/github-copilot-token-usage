@@ -269,7 +269,7 @@ function attachMock(target: any): void {
 
 	target.extensions = target.extensions ?? {};
 	target.extensions.getExtension = target.extensions.getExtension ?? ((id: string) => {
-		if (id === 'RobBos.copilot-token-tracker') {
+		if (id === 'RobBos.ai-engineering-fluency' || id === 'RobBos.copilot-token-tracker') {
 			return { packageJSON: { version: '0.0.0-test' } };
 		}
 		return state.extensions[id] as any;

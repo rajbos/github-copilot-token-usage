@@ -5112,7 +5112,7 @@ private async resetDismissedFluencyTips(): Promise<void> {
  */
 private async shareToSocialMedia(platform: 'linkedin' | 'bluesky' | 'mastodon'): Promise<void> {
 	const scores = await this.calculateMaturityScores();
-	const marketplaceUrl = 'https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker';
+	const marketplaceUrl = 'https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency';
 	const hashtag = '#CopilotFluencyScore';
 	
 	// Build share text with stats
@@ -6511,7 +6511,7 @@ ${hashtag}`;
     // Extension Information
     report.push("## Extension Information");
     report.push(
-      `Extension Version: ${vscode.extensions.getExtension("RobBos.copilot-token-tracker")?.packageJSON.version || "Unknown"}`,
+      `Extension Version: ${(vscode.extensions.getExtension("RobBos.ai-engineering-fluency") ?? vscode.extensions.getExtension("RobBos.copilot-token-tracker"))?.packageJSON.version || "Unknown"}`,
     );
     report.push(`VS Code Version: ${vscode.version}`);
     report.push("");
@@ -7613,27 +7613,30 @@ ${hashtag}`;
     // Try to locate the actual storage file (state DB) for the extension global state
     let storageFilePath: string | null = null;
     try {
-      const extensionId = "RobBos.copilot-token-tracker";
+      // Check both IDs so the diagnostic works whether the user installed the new or legacy extension ID
+      const extensionIds = ["RobBos.ai-engineering-fluency", "RobBos.copilot-token-tracker"];
       const userPaths = getVSCodeUserPaths();
-      for (const userPath of userPaths) {
-        try {
-          const candidate = path.join(userPath, "globalStorage", extensionId);
-          if (fs.existsSync(candidate)) {
-            const files = fs.readdirSync(candidate);
-            // Look for likely state files
-            const match = files.find(
-              (f) =>
-                f.includes("state") ||
-                f.endsWith(".vscdb") ||
-                f.endsWith(".json"),
-            );
-            if (match) {
-              storageFilePath = path.join(candidate, match);
-              break;
+      outer: for (const userPath of userPaths) {
+        for (const extId of extensionIds) {
+          try {
+            const candidate = path.join(userPath, "globalStorage", extId);
+            if (fs.existsSync(candidate)) {
+              const files = fs.readdirSync(candidate);
+              // Look for likely state files
+              const match = files.find(
+                (f) =>
+                  f.includes("state") ||
+                  f.endsWith(".vscdb") ||
+                  f.endsWith(".json"),
+              );
+              if (match) {
+                storageFilePath = path.join(candidate, match);
+                break outer;
+              }
             }
+          } catch (e) {
+            // ignore path access errors
           }
-        } catch (e) {
-          // ignore path access errors
         }
       }
     } catch (e) {
