@@ -298,7 +298,7 @@ function renderTurnModelBadge(model: string): string {
 	return `<span class="turn-model">🎯 ${escapeHtml(model)}</span>`;
 }
 
-function renderTurnCard(turn: ChatTurn): string {
+function renderTurnCard(turn: ChatTurn, isJetBrains = false): string {
 	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate + turn.thinkingTokensEstimate;
 	const hasToolCalls = turn.toolCalls.length > 0;
 	const hasMcpTools = turn.mcpTools.length > 0;
@@ -541,7 +541,7 @@ function renderTurnCard(turn: ChatTurn): string {
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
 					${turn.model ? renderTurnModelBadge(turn.model) : ''}
 					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(getEffortDisplayName(turn.thinkingEffort))}</span>` : ''}
-				${totalTokens > 0 ? `<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>` : ''}
+				${totalTokens > 0 ? `<span class="turn-tokens"${isJetBrains ? ` title="JetBrains: estimated from user message + assistant text only. Actual API counts and thinking tokens are not available."` : ''}>📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})${isJetBrains ? ' ⓘ' : ''}</span>` : ''}
 				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
 				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${formatCompact(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens)} actual</span>` : ''}
 					${contextHeaderHtml}
@@ -809,7 +809,7 @@ function renderLayout(data: SessionLogData): void {
 			
 			<div class="turns-list">
 				${data.turns.length > 0 
-					? data.turns.map(turn => renderTurnCard(turn)).join('')
+					? data.turns.map(turn => renderTurnCard(turn, data.editorName === 'JetBrains')).join('')
 					: '<div class="empty-state">No chat turns found in this session.</div>'
 				}
 			</div>
