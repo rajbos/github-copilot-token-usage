@@ -415,6 +415,22 @@ test('estimateTokensFromJsonlSession: counts user.message tokens', () => {
         assert.ok(result.tokens > 0);
 });
 
+test('estimateTokensFromJsonlSession: counts user.message_rendered tokens (JetBrains format)', () => {
+        const renderedMessage = '<context>\nFile content here with lots of code...\n</context>\n\nwhats in this repo?';
+        const events = [
+                JSON.stringify({ type: 'user.message', data: { content: 'whats in this repo?', turnId: 'turn-1' } }),
+                JSON.stringify({ type: 'user.message_rendered', data: { renderedMessage, turnId: 'turn-1' } }),
+        ].join('\n');
+        const result = estimateTokensFromJsonlSession(events);
+        // Should count both user.message and user.message_rendered (rendered is the richer/longer form)
+        const renderedResult = estimateTokensFromJsonlSession(
+                JSON.stringify({ type: 'user.message_rendered', data: { renderedMessage } })
+        );
+        assert.ok(renderedResult.tokens > 0, 'user.message_rendered should contribute tokens');
+        assert.ok(result.tokens >= renderedResult.tokens, 'Combined result should include rendered tokens');
+});
+
+
 test('estimateTokensFromJsonlSession: counts assistant.message tokens', () => {
         const content = JSON.stringify({ type: 'assistant.message', data: { content: 'the answer is yes' } });
         const result = estimateTokensFromJsonlSession(content);

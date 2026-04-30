@@ -81,6 +81,7 @@ import {
 	MistralVibeAdapter,
 	CopilotChatAdapter,
 	CopilotCliAdapter,
+	JetBrainsAdapter,
 } from './adapters';
 import { getVSCodeUserPaths } from './adapters/copilotChatAdapter';
 import {
@@ -861,6 +862,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// See issue #654.
 			new CopilotChatAdapter(),
 			new CopilotCliAdapter(),
+			new JetBrainsAdapter(),
 		];
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
 		this.sessionDiscovery = new SessionDiscovery({

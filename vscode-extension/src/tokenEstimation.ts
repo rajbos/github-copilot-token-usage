@@ -107,9 +107,16 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 				}
 			}
 
-			// Handle Copilot CLI event types
+			// Handle Copilot CLI / JetBrains event types
 			if (event.type === 'user.message' && event.data?.content) {
 				totalTokens += estimateTokensFromText(event.data.content);
+			} else if (event.type === 'user.message_rendered' && event.data?.renderedMessage) {
+				// JetBrains IDE: rendered message includes injected file context alongside the
+				// user question. Count it in place of user.message so the context tokens are
+				// captured. (user.message and user.message_rendered share the same turnId;
+				// the rendered version subsumes the bare message, so any double-count is minor
+				// as user.message is typically short compared to the full rendered content.)
+				totalTokens += estimateTokensFromText(event.data.renderedMessage);
 			} else if (event.type === 'assistant.message' && event.data?.content) {
 				totalTokens += estimateTokensFromText(event.data.content);
 			} else if (event.type === 'tool.result' && event.data?.output) {
