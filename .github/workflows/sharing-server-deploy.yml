@@ -34,11 +34,12 @@ jobs:
     name: Compute deployment environment
     runs-on: ubuntu-latest
     outputs:
-      app_name:    ${{ steps.env.outputs.app_name }}
-      state_key:   ${{ steps.env.outputs.state_key }}
-      environment: ${{ steps.env.outputs.environment }}
-      is_prod:     ${{ steps.env.outputs.is_prod }}
-      min_replicas: ${{ steps.env.outputs.min_replicas }}
+      app_name:           ${{ steps.env.outputs.app_name }}
+      state_key:          ${{ steps.env.outputs.state_key }}
+      environment:        ${{ steps.env.outputs.environment }}
+      is_prod:            ${{ steps.env.outputs.is_prod }}
+      min_replicas:       ${{ steps.env.outputs.min_replicas }}
+      allow_custom_domain: ${{ steps.env.outputs.allow_custom_domain }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -57,6 +58,18 @@ jobs:
               echo "environment=production"
               echo "is_prod=true"
               echo "min_replicas=1"
+              echo "allow_custom_domain=true"
+            } >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" && "$FORCE_TEST" == "true" ]]; then
+            # Stable test environment — fixed app name so ai-fluency-server-test.devopsjournal.io
+            # always points to the same ACA app. Keeps min_replicas=1 so it stays warm.
+            {
+              echo "app_name=sharing-server-test"
+              echo "state_key=sharing-server/test.tfstate"
+              echo "environment=testing"
+              echo "is_prod=false"
+              echo "min_replicas=1"
+              echo "allow_custom_domain=true"
             } >> "$GITHUB_OUTPUT"
           else
             BRANCH="${{ github.ref_name }}"
@@ -73,6 +86,7 @@ jobs:
               echo "environment=testing"
               echo "is_prod=false"
               echo "min_replicas=0"
+              echo "allow_custom_domain=false"
             } >> "$GITHUB_OUTPUT"
           fi
 
@@ -114,6 +128,11 @@ jobs:
             type=sha,prefix=sha-,format=long
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
+      - name: Set build metadata
+        id: build-meta
+        run: |
+          echo "date=$(date -u +'%Y-%m-%d %H:%M UTC')" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -124,6 +143,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            DEPLOY_SHA=${{ github.sha }}
+            DEPLOY_BRANCH=${{ github.ref_name }}
+            DEPLOY_DATE=${{ steps.build-meta.outputs.date }}
 
       - name: Set image output (digest-pinned reference)
         id: image-ref
@@ -186,7 +209,7 @@ jobs:
         # environments (production). Per-branch testing environments each get a unique ACA FQDN
         # which already has Azure TLS — setting SHARING_CUSTOM_DOMAIN on the testing GitHub
         # environment will be ignored here to prevent 60-minute cert provisioning on every PR.
-        if: steps.prereqs.outputs.configured == 'true' && vars.SHARING_CUSTOM_DOMAIN != '' && needs.setup.outputs.is_prod == 'true'
+        if: steps.prereqs.outputs.configured == 'true' && vars.SHARING_CUSTOM_DOMAIN != '' && needs.setup.outputs.allow_custom_domain == 'true'
         working-directory: sharing-server/infra
         env:
           TF_VAR_resource_group_name:    ${{ vars.AZURE_RESOURCE_GROUP }}

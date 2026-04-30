@@ -17,6 +17,10 @@ const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID ?? '';
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET ?? '';
 const BASE_URL = (process.env.BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
+const DEPLOY_SHA    = process.env.DEPLOY_SHA    ?? 'unknown';
+const DEPLOY_BRANCH = process.env.DEPLOY_BRANCH ?? 'unknown';
+const DEPLOY_DATE   = process.env.DEPLOY_DATE   ?? 'unknown';
+
 // Load Chart.js UMD bundle once at startup — copied to dist/ by esbuild.js
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const _chartJsCode: string = (() => {
@@ -403,10 +407,18 @@ function layout(title: string, body: string): string {
   .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
   .btn-secondary:hover { background: #30363d; }
   code { background: #21262d; border-radius: 4px; padding: 1px 5px; font-size: 0.875em; }
+
+  /* ── Footer ── */
+  .deploy-footer { text-align: center; padding: 20px; margin-top: 8px;
+    color: #484f58; font-size: 0.75rem; border-top: 1px solid #21262d; }
+  .deploy-footer code { background: transparent; color: #484f58; padding: 0; font-size: 0.75em; }
 </style>
 </head>
 <body>
 ${body}
+<footer class="deploy-footer">
+  deployed from <code>${h(DEPLOY_BRANCH)}</code> &middot; <code>${h(DEPLOY_SHA)}</code> &middot; ${h(DEPLOY_DATE)}
+</footer>
 </body>
 </html>`;
 }
