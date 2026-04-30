@@ -652,7 +652,25 @@ function renderLayout(data: SessionLogData): void {
 		}
 	}
 	const modelNames = Object.keys(modelUsage);
-	
+
+	const modeLabels: Record<string, string> = {
+		ask: 'Ask', edit: 'Edit', agent: 'Agent', plan: 'Plan', customAgent: 'Custom Agent', cli: 'CLI'
+	};
+	const modeEntries = (Object.entries(modeUsage) as [keyof typeof modeUsage, number][])
+		.filter(([, n]) => n > 0)
+		.sort((a, b) => b[1] - a[1]);
+	const totalModeTurns = modeEntries.reduce((s, [, n]) => s + n, 0);
+	const modeSummary = modeEntries.length === 0
+		? 'Unknown'
+		: modeEntries.map(([m, n]) => `${getModeIcon(m)} ${modeLabels[m]} (${n})`).join(' · ');
+	const primaryMode = modeEntries[0];
+	const primaryModeLabel = primaryMode
+		? `${getModeIcon(primaryMode[0])} ${modeLabels[primaryMode[0]]}`
+		: '—';
+	const modeSubLabel = modeEntries.length <= 1
+		? (totalModeTurns === 1 ? '1 turn' : `${totalModeTurns} turns`)
+		: `mixed across ${totalModeTurns} turns`;
+
 	root.innerHTML = `
 		<style>${themeStyles}</style>
 		<style>${styles}</style>
@@ -664,6 +682,11 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${data.interactions}</div>
 					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
+				${totalModeTurns > 0 ? `<div class="summary-card" title="${escapeHtml(modeSummary)}">
+					<div class="summary-label">🎛️ Editor Mode</div>
+					<div class="summary-value" style="font-size: 1.1em;">${primaryModeLabel}</div>
+					<div class="summary-sub">${escapeHtml(modeSubLabel)}${modeEntries.length > 1 ? ` · ${modeEntries.slice(1).map(([m, n]) => `${modeLabels[m]} ${n}`).join(', ')}` : ''}</div>
+				</div>` : ''}
 				<div class="summary-card"${data.editorName === 'JetBrains' ? ` title="JetBrains: only user messages + assistant text are persisted in the session log, so this is an estimate of those alone. Actual API token counts and thinking tokens are not available."` : ''}>
 					<div class="summary-label">📊 Estimated Tokens${data.editorName === 'JetBrains' ? ' ⓘ' : ''}</div>
 					<div class="summary-value">${formatCompact(totalTokens)}</div>
