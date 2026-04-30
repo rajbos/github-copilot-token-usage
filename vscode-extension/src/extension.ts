@@ -7158,6 +7158,9 @@ ${hashtag}`;
 
       // Build folder counts grouped by top-level VS Code user folder (editor roots)
       const dirCounts = new Map<string, number>();
+      // Tracks friendly display names for eco-adapter directories so the directory
+      // table shows "Claude Desktop Cowork" etc. instead of "Unknown".
+      const dirEditorNames = new Map<string, string>();
       const pathModule = require("path");
       const copilotSessionStateDir = pathModule.join(
         os.homedir(),
@@ -7170,6 +7173,7 @@ ${hashtag}`;
         if (eco) {
           const editorRoot = eco.getEditorRoot(file);
           dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
+          dirEditorNames.set(editorRoot, eco.displayName);
           continue;
         }
         const parts = file.split(/[\\\/]/);
@@ -7196,7 +7200,7 @@ ${hashtag}`;
         ([dir, count]) => ({
           dir,
           count,
-          editorName: this.getEditorNameFromRoot(dir),
+          editorName: dirEditorNames.get(dir) || this.getEditorNameFromRoot(dir),
         }),
       );
 
