@@ -150,6 +150,7 @@ import {
   type ViewRegressionProbeSnapshot,
 } from './viewRegression';
 import { determineOnboardingAction } from './onboarding';
+import { addModelUsage, addEditorUsage, computeUtcDateRanges } from './statsHelpers';
 
 type LocalViewRegressionProbeResult = {
   pass: boolean;
@@ -1420,10 +1421,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const detailedStats = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
+			const { stats: detailedStats, dailyStats } = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
 				const percentage = Math.round((completed / total) * 100);
 				this.setStatusBarText(`$(loading~spin) Analyzing Logs: ${percentage}%`);
 			});
+			this.lastDailyStats = dailyStats;
 
 			if (detailedStats.today.sessions === 0 && detailedStats.last30Days.sessions === 0) {
 				this.setStatusBarText('$(symbol-numeric) No session data yet');
@@ -1649,17 +1651,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 	}
 
-	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<DetailedStats> {
+	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<{ stats: DetailedStats; dailyStats: DailyTokenStats[] }> {
 		const now = new Date();
 		// UTC-based date keys for consistent daily attribution (matching server-side)
-		const todayUtcKey = now.toISOString().slice(0, 10);
-		const monthUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
-		const lastMonthLastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
-		const lastMonthUtcEndKey = lastMonthLastDay.toISOString().slice(0, 10);
-		const lastMonthUtcStartKey = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).toISOString().slice(0, 10);
-		const last30DaysUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30));
-		const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
-		const last30DaysStartMs = last30DaysUtcStart.getTime();
+		const { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs } = computeUtcDateRanges(now);
 
 		const todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		const monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
@@ -1668,21 +1663,6 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Also compute daily stats for the chart as a byproduct (avoids a second full file scan)
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
-
-		// Helper to merge model usage into a target map
-		const addModelUsage = (target: ModelUsage, source: ModelUsage) => {
-			for (const [model, usage] of Object.entries(source)) {
-				if (!target[model]) { target[model] = { inputTokens: 0, outputTokens: 0 }; }
-				target[model].inputTokens += usage.inputTokens;
-				target[model].outputTokens += usage.outputTokens;
-			}
-		};
-		// Helper to add editor usage to a period stat
-		const addEditorUsage = (target: EditorUsage, editorType: string, tokens: number) => {
-			if (!target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
-			target[editorType].tokens += tokens;
-			target[editorType].sessions += 1;
-		};
 
 		try {
 			// Clean expired cache entries
@@ -1907,7 +1887,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 			fillDate.setUTCDate(fillDate.getUTCDate() + 1);
 		}
-		this.lastDailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+		const dailyStats = Array.from(dailyStatsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
 		const todayCo2 = (todayStats.tokens / 1000) * this.co2Per1kTokens;
 		const monthCo2 = (monthStats.tokens / 1000) * this.co2Per1kTokens;
@@ -1997,7 +1977,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastUpdated: now
 		};
 
-		return result;
+		return { stats: result, dailyStats };
 	}
 
 	private formatDateKey(date: Date): string {
@@ -6417,7 +6397,8 @@ ${hashtag}`;
     let localTokens: number | undefined;
     let localInteractions: number | undefined;
     try {
-      await this.calculateDetailedStats(undefined); // ensures lastDailyStats is fresh
+      const { dailyStats: freshDailyStats } = await this.calculateDetailedStats(undefined);
+      this.lastDailyStats = freshDailyStats;
       const lookback = settings.lookbackDays ?? 30;
       // Always derive exact counts from daily stats so we avoid the rounding loss introduced
       // by avgInteractionsPerSession = Math.round(interactions / sessions).
