@@ -1134,17 +1134,17 @@ function renderFolderAnalysisResults(
       : getFileName(f.file);
     const safeInteractions = Number(f.interactions);
     const interactionsCell = safeInteractions > 0
-      ? `<strong>${safeInteractions}</strong>`
+      ? `<strong>${escapeHtml(String(safeInteractions))}</strong>`
       : `<span style="color: var(--text-muted);">0</span>`;
     const safeTokens = Number(f.tokens);
     const tokensCell = safeTokens > 0
-      ? `<strong title="${safeTokens.toLocaleString()} tokens">${formatTokenCount(safeTokens)}</strong>`
+      ? `<strong title="${escapeHtml(String(safeTokens.toLocaleString()))} tokens">${escapeHtml(String(formatTokenCount(safeTokens)))}</strong>`
       : `<span style="color: var(--text-muted);">0</span>`;
     return `
       <tr style="${hasData ? "" : "opacity: 0.45;"}">
         <td>${idx + 1}</td>
         <td title="${escapeHtml(f.file)}" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(rel)}</td>
-        <td>${formatFileSize(f.size)}</td>
+        <td>${escapeHtml(String(formatFileSize(f.size)))}</td>
         <td>${interactionsCell}</td>
         <td>${tokensCell}</td>
         <td>${formatDate(f.modified)}</td>
@@ -1158,7 +1158,7 @@ function renderFolderAnalysisResults(
       <div class="summary-cards">
         <div class="summary-card">
           <div class="summary-label">📄 Files Scanned</div>
-          <div class="summary-value">${totalScanned}${truncated ? "+" : ""}</div>
+          <div class="summary-value">${escapeHtml(String(totalScanned))}${truncated ? "+" : ""}</div>
         </div>
         <div class="summary-card">
           <div class="summary-label">✅ With Sessions</div>
@@ -1167,16 +1167,16 @@ function renderFolderAnalysisResults(
         </div>
         <div class="summary-card">
           <div class="summary-label">💬 Interactions</div>
-          <div class="summary-value">${totalInteractions}</div>
+          <div class="summary-value">${escapeHtml(String(totalInteractions))}</div>
         </div>
         <div class="summary-card">
           <div class="summary-label">🪙 Tokens</div>
-          <div class="summary-value" title="${totalTokens.toLocaleString()} tokens">${formatTokenCount(totalTokens)}</div>
+          <div class="summary-value" title="${escapeHtml(String(totalTokens.toLocaleString()))} tokens">${escapeHtml(String(formatTokenCount(totalTokens)))}</div>
         </div>
         ${parseErrors > 0 ? `
         <div class="summary-card" style="border-left: 3px solid #d97706;">
           <div class="summary-label">⚠️ Unreadable</div>
-          <div class="summary-value" style="color: #d97706;">${parseErrors}</div>
+          <div class="summary-value" style="color: #d97706;">${escapeHtml(String(parseErrors))}</div>
         </div>` : ""}
       </div>
       ${files.length === 0 ? emptyState : `
