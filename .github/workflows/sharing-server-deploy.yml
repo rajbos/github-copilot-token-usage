@@ -349,7 +349,10 @@ jobs:
           TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
           TF_VAR_admin_github_logins: ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
-          TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
+          # Only pass custom domain to stable environments — branch test envs use the ACA FQDN.
+          # Passing a custom domain to a branch env causes cert creation to fail (CNAME points
+          # to the stable env's ACA FQDN, not the branch env).
+          TF_VAR_custom_domain:       ${{ needs.setup.outputs.allow_custom_domain == 'true' && vars.SHARING_CUSTOM_DOMAIN || '' }}
         run: terraform plan -out=tfplan
 
       - name: Terraform apply
@@ -367,7 +370,7 @@ jobs:
           TF_VAR_github_org_check_token: ${{ secrets.ORG_CHECK_TOKEN }}
           TF_VAR_admin_github_logins: ${{ vars.SHARING_ADMIN_GITHUB_LOGINS }}
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
-          TF_VAR_custom_domain:       ${{ vars.SHARING_CUSTOM_DOMAIN }}
+          TF_VAR_custom_domain:       ${{ needs.setup.outputs.allow_custom_domain == 'true' && vars.SHARING_CUSTOM_DOMAIN || '' }}
         run: terraform apply -auto-approve tfplan
 
       - name: Health check
