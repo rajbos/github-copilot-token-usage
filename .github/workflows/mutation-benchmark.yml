@@ -154,8 +154,13 @@ jobs:
 
     # ----- Copilot CLI: produce an improvement issue from the report -----
 
+    # The Copilot CLI follow-up only runs on the default branch (i.e. from the
+    # daily schedule or a manual dispatch on main). PR-branch runs validate the
+    # mutation steps but skip issue creation, since secrets like GH_PAT may be
+    # absent or scoped differently outside main.
+
     - name: Authenticate GitHub CLI
-      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success'
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
@@ -166,14 +171,14 @@ jobs:
         gh auth status
 
     - name: Check Copilot CLI version
-      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success'
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
         COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       run: npx @github/copilot --version
 
     - name: Run Copilot CLI to draft mutation improvement issue
-      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success'
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
         COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
