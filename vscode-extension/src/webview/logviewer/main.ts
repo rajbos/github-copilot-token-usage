@@ -664,10 +664,10 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${data.interactions}</div>
 					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
-				<div class="summary-card">
-					<div class="summary-label">📊 Estimated Tokens</div>
+				<div class="summary-card"${data.editorName === 'JetBrains' ? ` title="JetBrains: only user messages + assistant text are persisted in the session log, so this is an estimate of those alone. Actual API token counts and thinking tokens are not available."` : ''}>
+					<div class="summary-label">📊 Estimated Tokens${data.editorName === 'JetBrains' ? ' ⓘ' : ''}</div>
 					<div class="summary-value">${formatCompact(totalTokens)}</div>
-					<div class="summary-sub">Input + Output estimated from text</div>
+					<div class="summary-sub">${data.editorName === 'JetBrains' ? 'User + assistant text only (no API counts, no thinking)' : 'Input + Output estimated from text'}</div>
 				</div>
 				${hasAnyActualUsage ? `
 				<div class="summary-card actual-usage-card">
