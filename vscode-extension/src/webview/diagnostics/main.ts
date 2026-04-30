@@ -102,6 +102,15 @@ type DiagnosticsViewState = {
   activeSubtab?: string;
 };
 
+type FolderFileResult = {
+  file: string;
+  size: number;
+  modified: string;
+  interactions: number;
+  tokens: number;
+  actualTokens: number;
+};
+
 declare function acquireVsCodeApi<TState = DiagnosticsViewState>(): {
   postMessage: (message: unknown) => void;
   setState: (newState: TState) => void;
@@ -1038,6 +1047,149 @@ function renderBackendStoragePanel(
   `;
 }
 
+function renderFolderAnalyzerTab(): string {
+  return `
+    <div class="info-box">
+      <div class="info-box-title">🔬 Path Analyzer</div>
+      <div>
+        Analyze any folder to find session files and inspect their content.
+        This helps troubleshoot why the extension isn't finding your AI tool's session files,
+        or verify that files from another OS would be recognized.
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">📁 Folder Selection</div>
+      <div class="folder-input-row">
+        <input
+          type="text"
+          id="folder-path-input"
+          class="folder-input"
+          placeholder="Paste a folder path here, e.g. /Users/you/.claude/projects/abc123"
+        />
+        <button class="button secondary" id="btn-browse-folder">📂 Browse…</button>
+      </div>
+      <div style="margin-top: 14px;">
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+          Tool type (determines which file types to scan):
+        </label>
+        <select id="tool-type-select" class="tool-type-select">
+          <option value="auto">🔍 Auto-detect (all JSON / JSONL files)</option>
+          <option value="copilot-chat">💙 GitHub Copilot Chat (VS Code)</option>
+          <option value="copilot-cli">🤖 GitHub Copilot CLI</option>
+          <option value="claude-code">🟣 Claude Code (.jsonl only)</option>
+          <option value="continue">⚡ Continue</option>
+          <option value="opencode">🟢 OpenCode (JSON format only — DB not supported)</option>
+          <option value="mistral-vibe">🔥 Mistral Vibe</option>
+          <option value="claude-desktop">🖥️ Claude Desktop</option>
+        </select>
+      </div>
+      <div style="margin-top: 16px;">
+        <button class="button" id="btn-analyze-folder">🔍 Analyze</button>
+      </div>
+    </div>
+    <div id="folder-analysis-results"></div>
+  `;
+}
+
+function renderFolderAnalysisResults(
+  files: FolderFileResult[],
+  totalScanned: number,
+  parseErrors: number,
+  truncated: boolean,
+  folderPath: string,
+): string {
+  const sessionFiles = files.filter(f => f.interactions > 0 || f.tokens > 0);
+  const totalInteractions = files.reduce((sum, f) => sum + f.interactions, 0);
+  const totalTokens = files.reduce((sum, f) => sum + f.tokens, 0);
+
+  const sorted = [...files].sort((a, b) => {
+    const aScore = a.interactions * 1000 + a.tokens;
+    const bScore = b.interactions * 1000 + b.tokens;
+    return bScore - aScore;
+  });
+
+  const truncatedWarning = truncated
+    ? `<div class="info-box" style="margin-bottom: 12px; border-color: #d97706; background: rgba(217,119,6,0.08);">
+        <div>⚠️ Scan limit reached (500 files). Results may be incomplete. Try a more specific subfolder.</div>
+      </div>`
+    : "";
+
+  const emptyState = `
+    <div style="padding: 32px; text-align: center; color: var(--text-muted);">
+      <div style="font-size: 36px; margin-bottom: 12px;">📭</div>
+      <div style="font-size: 14px;">No matching files found in this folder.</div>
+      <div style="font-size: 12px; margin-top: 8px;">Try a different folder path or tool type.</div>
+    </div>`;
+
+  const tableRows = sorted.map((f, idx) => {
+    const hasData = f.interactions > 0 || f.tokens > 0;
+    const rel = f.file.startsWith(folderPath)
+      ? f.file.slice(folderPath.length).replace(/^[/\\]/, "")
+      : getFileName(f.file);
+    const interactionsCell = f.interactions > 0
+      ? `<strong>${f.interactions}</strong>`
+      : `<span style="color: var(--text-muted);">0</span>`;
+    const tokensCell = f.tokens > 0
+      ? `<strong title="${f.tokens.toLocaleString()} tokens">${formatTokenCount(f.tokens)}</strong>`
+      : `<span style="color: var(--text-muted);">0</span>`;
+    return `
+      <tr style="${hasData ? "" : "opacity: 0.45;"}">
+        <td>${idx + 1}</td>
+        <td title="${escapeHtml(f.file)}" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(rel)}</td>
+        <td>${formatFileSize(f.size)}</td>
+        <td>${interactionsCell}</td>
+        <td>${tokensCell}</td>
+        <td>${formatDate(f.modified)}</td>
+      </tr>`;
+  }).join("");
+
+  return `
+    <div class="section" style="margin-top: 0;">
+      <div class="section-title">📊 Analysis Results</div>
+      ${truncatedWarning}
+      <div class="summary-cards">
+        <div class="summary-card">
+          <div class="summary-label">📄 Files Scanned</div>
+          <div class="summary-value">${totalScanned}${truncated ? "+" : ""}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">✅ With Sessions</div>
+          <div class="summary-value">${sessionFiles.length}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${files.length - sessionFiles.length} empty / unknown</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">💬 Interactions</div>
+          <div class="summary-value">${totalInteractions}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">🪙 Tokens</div>
+          <div class="summary-value" title="${totalTokens.toLocaleString()} tokens">${formatTokenCount(totalTokens)}</div>
+        </div>
+        ${parseErrors > 0 ? `
+        <div class="summary-card" style="border-left: 3px solid #d97706;">
+          <div class="summary-label">⚠️ Unreadable</div>
+          <div class="summary-value" style="color: #d97706;">${parseErrors}</div>
+        </div>` : ""}
+      </div>
+      ${files.length === 0 ? emptyState : `
+        <div class="table-container" style="margin-top: 12px; max-height: 420px;">
+          <table class="session-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>File</th>
+                <th>Size</th>
+                <th>Interactions</th>
+                <th>Tokens</th>
+                <th>Last Modified</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>`}
+    </div>`;
+}
+
 function renderLayout(data: DiagnosticsData): void {
   const root = document.getElementById("root");
   if (!root) {
@@ -1153,6 +1305,7 @@ function renderLayout(data: DiagnosticsData): void {
 				<button class="tab" data-tab="backend">☁️ Backend Storage</button>
 				<button class="tab" data-tab="github">🔑 GitHub Auth</button>
 				<button class="tab" data-tab="display">⚙️ Settings</button>
+				<button class="tab" data-tab="path-analyzer">🔬 Path Analyzer</button>
 				${data.isDebugMode ? '<button class="tab" data-tab="debug">🐛 Debug</button>' : ''}
 			</div>
 
@@ -1267,6 +1420,9 @@ function renderLayout(data: DiagnosticsData): void {
 				</div>
 			</div>
 			${data.isDebugMode ? renderDebugTab(data.globalStateCounters) : ''}
+			<div id="tab-path-analyzer" class="tab-content">
+				${renderFolderAnalyzerTab()}
+			</div>
 		</div>
 	`;
 
@@ -1591,6 +1747,36 @@ function renderLayout(data: DiagnosticsData): void {
           }
         }
       }
+    } else if (message.command === "folderPicked") {
+      const input = document.getElementById("folder-path-input") as HTMLInputElement | null;
+      if (input && message.folderPath) {
+        input.value = message.folderPath;
+        input.style.borderColor = "";
+      }
+    } else if (message.command === "folderAnalysisResult") {
+      const btn = document.getElementById("btn-analyze-folder") as HTMLButtonElement | null;
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = "<span>🔍</span><span>Analyze</span>";
+      }
+      const resultsDiv = document.getElementById("folder-analysis-results");
+      if (resultsDiv) {
+        if (message.error) {
+          resultsDiv.innerHTML = `
+            <div class="info-box" style="border-color: #d97706; background: rgba(217,119,6,0.08); margin-top: 12px;">
+              <div class="info-box-title">⚠️ Analysis Error</div>
+              <div>${escapeHtml(message.error)}</div>
+            </div>`;
+        } else {
+          resultsDiv.innerHTML = renderFolderAnalysisResults(
+            message.files || [],
+            message.totalScanned || 0,
+            message.parseErrors || 0,
+            message.truncated || false,
+            message.folderPath || "",
+          );
+        }
+      }
     }
   });
 
@@ -1881,6 +2067,50 @@ function renderLayout(data: DiagnosticsData): void {
     }
   }
 
+  function setupFolderAnalyzerHandlers(): void {
+    document.getElementById("btn-browse-folder")?.addEventListener("click", () => {
+      vscode.postMessage({ command: "pickFolder" });
+    });
+
+    document.getElementById("btn-analyze-folder")?.addEventListener("click", () => {
+      const input = document.getElementById("folder-path-input") as HTMLInputElement | null;
+      const select = document.getElementById("tool-type-select") as HTMLSelectElement | null;
+      const folderPath = input?.value.trim() ?? "";
+
+      if (!folderPath) {
+        if (input) {
+          input.style.borderColor = "#d97706";
+          input.focus();
+        }
+        return;
+      }
+      if (input) {
+        input.style.borderColor = "";
+      }
+
+      const btn = document.getElementById("btn-analyze-folder") as HTMLButtonElement | null;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = "<span>⏳</span><span>Analyzing…</span>";
+      }
+
+      const resultsDiv = document.getElementById("folder-analysis-results");
+      if (resultsDiv) {
+        resultsDiv.innerHTML = `
+          <div class="analyzer-loading">
+            <span class="spinner" style="width:18px;height:18px;border:2px solid var(--link-color);border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 0.7s linear infinite;"></span>
+            <span>Scanning files…</span>
+          </div>`;
+      }
+
+      vscode.postMessage({
+        command: "analyzeFolder",
+        folderPath,
+        toolType: select?.value ?? "auto",
+      });
+    });
+  }
+
   document.getElementById("btn-clear-cache")?.addEventListener("click", () => {
     const btn = document.getElementById(
       "btn-clear-cache",
@@ -2005,6 +2235,7 @@ function renderLayout(data: DiagnosticsData): void {
   setupFileLinks();
   setupStorageLinkHandlers();
   setupGitHubAuthHandlers();
+  setupFolderAnalyzerHandlers();
 
   // Restore active tab from saved state, with fallback to default
   const savedState = vscode.getState();

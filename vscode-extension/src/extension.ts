@@ -6952,6 +6952,62 @@ ${hashtag}`;
             }
           });
           break;
+        case "pickFolder":
+          await this.dispatch('pickFolder:diagnostics', async () => {
+            const uris = await vscode.window.showOpenDialog({
+              canSelectFiles: false,
+              canSelectFolders: true,
+              canSelectMany: false,
+              openLabel: "Select Folder to Analyze",
+            });
+            if (uris && uris.length > 0 && this.diagnosticsPanel && this.isPanelOpen(this.diagnosticsPanel)) {
+              this.diagnosticsPanel.webview.postMessage({
+                command: "folderPicked",
+                folderPath: uris[0].fsPath,
+              });
+            }
+          });
+          break;
+        case "analyzeFolder":
+          await this.dispatch('analyzeFolder:diagnostics', async () => {
+            const { folderPath, toolType } = message as { folderPath: string; toolType: string };
+            if (!folderPath) {
+              if (this.diagnosticsPanel && this.isPanelOpen(this.diagnosticsPanel)) {
+                this.diagnosticsPanel.webview.postMessage({
+                  command: "folderAnalysisResult",
+                  error: "No folder path provided.",
+                  files: [],
+                  totalScanned: 0,
+                  parseErrors: 0,
+                  truncated: false,
+                  folderPath: "",
+                  toolType: toolType ?? "auto",
+                });
+              }
+              return;
+            }
+            try {
+              await fs.promises.access(folderPath);
+            } catch {
+              if (this.diagnosticsPanel && this.isPanelOpen(this.diagnosticsPanel)) {
+                this.diagnosticsPanel.webview.postMessage({
+                  command: "folderAnalysisResult",
+                  error: `Folder not found or not accessible: ${folderPath}`,
+                  files: [],
+                  totalScanned: 0,
+                  parseErrors: 0,
+                  truncated: false,
+                  folderPath,
+                  toolType: toolType ?? "auto",
+                });
+              }
+              return;
+            }
+            if (this.diagnosticsPanel) {
+              await this.analyzeFolderPath(this.diagnosticsPanel, folderPath, toolType ?? "auto");
+            }
+          });
+          break;
       }
     });
 
@@ -7223,6 +7279,129 @@ ${hashtag}`;
     } catch (err) {
       // Panel may have been disposed
       this.log("Could not send session files to panel (may be closed)");
+    }
+  }
+
+  /**
+   * Analyze a custom folder for session files belonging to any of the supported AI tools.
+   * Scans recursively up to depth 5, max 500 files.
+   * Does NOT touch the cache — reads each file once and calls countInteractionsInSession
+   * and estimateTokensFromSession directly with preloaded content.
+   */
+  private async analyzeFolderPath(
+    panel: vscode.WebviewPanel,
+    folderPath: string,
+    toolType: string,
+  ): Promise<void> {
+    const MAX_FILES = 500;
+    const MAX_DEPTH = 5;
+
+    // Determine which extensions to accept
+    const jsonOnly = ["claude-code"];
+    const jsonlOnly = ["continue", "opencode", "mistral-vibe", "claude-desktop"];
+    let allowJson = true;
+    let allowJsonl = true;
+    if (jsonOnly.includes(toolType)) {
+      allowJson = false;
+      allowJsonl = true;
+    } else if (jsonlOnly.includes(toolType)) {
+      allowJson = true;
+      allowJsonl = false;
+    }
+
+    const results: Array<{
+      file: string;
+      size: number;
+      modified: string;
+      interactions: number;
+      tokens: number;
+      actualTokens: number;
+    }> = [];
+    let totalScanned = 0;
+    let parseErrors = 0;
+    let truncated = false;
+
+    // Recursive scan helper
+    const scan = async (dir: string, depth: number): Promise<void> => {
+      if (totalScanned >= MAX_FILES) {
+        truncated = true;
+        return;
+      }
+      if (depth > MAX_DEPTH) { return; }
+
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        if (totalScanned >= MAX_FILES) {
+          truncated = true;
+          break;
+        }
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await scan(full, depth + 1);
+        } else if (entry.isFile()) {
+          const isJson = entry.name.endsWith(".json");
+          const isJsonl = entry.name.endsWith(".jsonl");
+          if ((isJson && allowJson) || (isJsonl && allowJsonl)) {
+            totalScanned++;
+
+            let stat: fs.Stats;
+            try {
+              stat = await fs.promises.stat(full);
+            } catch {
+              parseErrors++;
+              continue;
+            }
+
+            let content: string;
+            try {
+              content = await fs.promises.readFile(full, "utf8");
+            } catch {
+              parseErrors++;
+              results.push({
+                file: full,
+                size: stat.size,
+                modified: stat.mtime.toISOString(),
+                interactions: 0,
+                tokens: 0,
+                actualTokens: 0,
+              });
+              continue;
+            }
+
+            const interactions = await this.countInteractionsInSession(full, content);
+            const tokenResult = await this.estimateTokensFromSession(full, content);
+
+            results.push({
+              file: full,
+              size: stat.size,
+              modified: stat.mtime.toISOString(),
+              interactions,
+              tokens: tokenResult.tokens,
+              actualTokens: tokenResult.actualTokens,
+            });
+          }
+        }
+      }
+    };
+
+    await scan(folderPath, 0);
+
+    if (this.isPanelOpen(panel)) {
+      panel.webview.postMessage({
+        command: "folderAnalysisResult",
+        files: results,
+        totalScanned,
+        parseErrors,
+        truncated,
+        folderPath,
+        toolType,
+      });
     }
   }
 

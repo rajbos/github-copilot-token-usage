@@ -550,3 +550,50 @@ background-position: center;
 	font-size: 14px;
 	margin-bottom: 8px;
 }
+
+/* Path Analyzer tab */
+.folder-input-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.folder-input {
+	flex: 1;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border, var(--border-color));
+	border-radius: 4px;
+	padding: 6px 10px;
+	font-size: 13px;
+	min-width: 0;
+}
+
+.folder-input:focus {
+	outline: 1px solid var(--link-color);
+	border-color: var(--link-color);
+}
+
+.tool-type-select {
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border, var(--border-color));
+	border-radius: 4px;
+	padding: 6px 10px;
+	font-size: 13px;
+	cursor: pointer;
+	min-width: 280px;
+}
+
+.analyzer-loading {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 20px;
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
