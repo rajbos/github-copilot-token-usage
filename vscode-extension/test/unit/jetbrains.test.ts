@@ -8,6 +8,7 @@ import * as assert from 'node:assert/strict';
 import {
 	parseJetBrainsPartition,
 	detectJetBrainsModeFromContent,
+	detectJetBrainsModelHintFromContent,
 	modelHintFromToolCallId,
 } from '../../src/jetbrains';
 
@@ -100,6 +101,28 @@ test('detectJetBrainsModeFromContent: ignores the substring inside tool result t
 test('detectJetBrainsModeFromContent: skips malformed JSON lines', () => {
 	const content = '{"type":"partition.created"}\nthis is not json\n{"type":"tool.execution_start","data":{}}\n';
 	assert.equal(detectJetBrainsModeFromContent(content), 'agent');
+});
+
+// ── detectJetBrainsModelHintFromContent ────────────────────────────────
+
+test('detectJetBrainsModelHintFromContent: derives claude from toolu_* prefix', () => {
+	const content = JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: 'toolu_bdrk_abc', toolName: 'read_file' } });
+	assert.equal(detectJetBrainsModelHintFromContent(content), 'claude');
+});
+
+test('detectJetBrainsModelHintFromContent: derives gpt from call_* prefix', () => {
+	const content = JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: 'call_xyz', toolName: 'read_file' } });
+	assert.equal(detectJetBrainsModelHintFromContent(content), 'gpt');
+});
+
+test('detectJetBrainsModelHintFromContent: returns unknown for ask-mode (no tools)', () => {
+	const content = JSON.stringify({ type: 'user.message', data: { content: 'hi' } });
+	assert.equal(detectJetBrainsModelHintFromContent(content), 'unknown');
+});
+
+test('detectJetBrainsModelHintFromContent: returns unknown for unrecognised tool prefix', () => {
+	const content = JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: 'weird_id', toolName: 'x' } });
+	assert.equal(detectJetBrainsModelHintFromContent(content), 'unknown');
 });
 
 // ── parseJetBrainsPartition ─────────────────────────────────────────────

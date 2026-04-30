@@ -85,7 +85,7 @@ import {
 } from './adapters';
 import { getVSCodeUserPaths } from './adapters/copilotChatAdapter';
 import { isJetBrainsSessionPath } from './adapters/jetbrainsAdapter';
-import { detectJetBrainsModeFromContent } from './jetbrains';
+import { detectJetBrainsModeFromContent, detectJetBrainsModelHintFromContent } from './jetbrains';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -3559,16 +3559,23 @@ usageAnalysis: undefined
 			} else {
 			// Non-delta JSONL (Copilot CLI format, also used by JetBrains IDE partition files)
 			let turnNumber = 0;
-			let cliSessionModel = 'gpt-4o';
+			// Default model is 'gpt-4o' for Copilot CLI sessions but JetBrains JSONL never
+			// carries a model field, so for JetBrains files we'd rather show 'unknown' or a
+			// best-effort hint derived from `toolCallId` prefixes (toolu_* → claude,
+			// call_* → gpt) than mislead users with a hard-coded gpt-4o.
+			const isJetBrainsFile = isJetBrainsSessionPath(sessionFile);
+			const jetBrainsTurnMode: 'ask' | 'agent' | null = isJetBrainsFile
+				? detectJetBrainsModeFromContent(fileContent)
+				: null;
+			const jetBrainsModelHint: string | null = isJetBrainsFile
+				? detectJetBrainsModelHintFromContent(fileContent)
+				: null;
+			let cliSessionModel = isJetBrainsFile ? (jetBrainsModelHint || 'unknown') : 'gpt-4o';
 			let cliSessionEffort: string | undefined;
 
 			// JetBrains partition files (~/.copilot/jb/{uuid}/partition-{n}.jsonl) share
 			// this fallback parser with the Copilot CLI but are IDE chat sessions, so
 			// per-turn `mode` should be ask/agent rather than the catch-all `cli`.
-			const isJetBrainsFile = isJetBrainsSessionPath(sessionFile);
-			const jetBrainsTurnMode: 'ask' | 'agent' | null = isJetBrainsFile
-				? detectJetBrainsModeFromContent(fileContent)
-				: null;
 
 			// Pre-scan for model and effort:
 			// 1. session.start.data.selectedModel (older CLI format)

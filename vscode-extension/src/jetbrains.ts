@@ -256,6 +256,31 @@ export function parseJetBrainsPartition(content: string): JetBrainsParsedSession
 }
 
 /**
+ * Lightweight model-hint detector. Scans for the first `tool.execution_start`
+ * with a `toolCallId` whose prefix maps to a known model family. Returns
+ * `'unknown'` when no usable hint is present (e.g. ask-mode sessions with no
+ * tool calls).
+ *
+ * This is separate from {@link parseJetBrainsPartition} so callers that only
+ * need the model hint (e.g. for per-turn `ChatTurn.model`) can avoid the cost
+ * of building the full common-output object.
+ */
+export function detectJetBrainsModelHintFromContent(content: string): string {
+	const lines = content.split(/\r?\n/);
+	for (const line of lines) {
+		if (!line || line.indexOf('tool.execution_start') === -1) { continue; }
+		try {
+			const event = JSON.parse(line);
+			if (event && event.type === 'tool.execution_start') {
+				const hint = modelHintFromToolCallId(event.data?.toolCallId);
+				if (hint) { return hint; }
+			}
+		} catch { /* skip malformed */ }
+	}
+	return 'unknown';
+}
+
+/**
  * Lightweight mode-only detector. Reads the JSONL only far enough to find a
  * `tool.execution_start` event; falls back to ask mode if none is present.
  *
