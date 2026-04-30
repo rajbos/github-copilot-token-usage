@@ -403,6 +403,19 @@ details[open] > summary .collapse-arrow {
 	padding: 2px 8px;
 	border-radius: 4px;
 	white-space: nowrap;
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
+}
+
+.tool-summary-item:hover {
+	background: rgb(192, 132, 252, 0.22);
+	border-color: rgb(192, 132, 252, 0.6);
+}
+
+.tool-summary-item.active {
+	background: rgb(192, 132, 252, 0.35);
+	border-color: rgb(192, 132, 252, 0.85);
+	outline: 1px solid rgb(192, 132, 252, 0.5);
 }
 
 .tool-summary-item strong {
@@ -474,6 +487,17 @@ details[open] > summary .collapse-arrow {
 	font-size: 11px;
 	background: rgba(99, 102, 241, 0.18);
 	color: #a5b4fc;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+
+.sub-agent-summary-item:hover {
+	background: rgba(99, 102, 241, 0.32);
+}
+
+.sub-agent-summary-item.active {
+	background: rgba(99, 102, 241, 0.5);
+	outline: 1px solid rgba(99, 102, 241, 0.8);
 }
 
 .tool-name-cell {
