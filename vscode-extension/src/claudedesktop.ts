@@ -4,6 +4,7 @@
  *
  * Cowork sessions are stored at:
  *   Windows: %LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\local-agent-mode-sessions\
+ *   macOS:   ~/Library/Application Support/Claude/local-agent-mode-sessions/
  *
  * Directory structure:
  *   <base>/<app-uuid>/<machine-uuid>/local_<session-id>.json        — session metadata (title, timestamps, model)
@@ -66,20 +67,32 @@ export class ClaudeDesktopCoworkDataAccess {
 
 	/**
 	 * Get the Claude Desktop Cowork sessions base directory.
-	 * Returns an empty string on non-Windows platforms.
+	 * Returns an empty string on unsupported platforms (Linux).
 	 */
 	getCoworkBaseDir(): string {
-		if (os.platform() !== 'win32') { return ''; }
-		const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-		return path.join(
-			localAppData,
-			'Packages',
-			CLAUDE_DESKTOP_PACKAGE,
-			'LocalCache',
-			'Roaming',
-			'Claude',
-			'local-agent-mode-sessions'
-		);
+		const platform = os.platform();
+		if (platform === 'win32') {
+			const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+			return path.join(
+				localAppData,
+				'Packages',
+				CLAUDE_DESKTOP_PACKAGE,
+				'LocalCache',
+				'Roaming',
+				'Claude',
+				'local-agent-mode-sessions'
+			);
+		}
+		if (platform === 'darwin') {
+			return path.join(
+				os.homedir(),
+				'Library',
+				'Application Support',
+				'Claude',
+				'local-agent-mode-sessions'
+			);
+		}
+		return '';
 	}
 
 	/**

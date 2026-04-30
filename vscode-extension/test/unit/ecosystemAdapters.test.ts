@@ -203,8 +203,8 @@ test('MistralVibeAdapter.getCandidatePaths: returns session log directory', () =
 test('getEditorRoot: all adapters return non-empty string', () => {
     const dummyFile = '/dummy/path/session.json';
     for (const adapter of allAdapters) {
-        // claudedesktop is Windows-only; getCoworkBaseDir() returns '' on non-Windows platforms
-        if (adapter.id === 'claudedesktop' && os.platform() !== 'win32') { continue; }
+        // claudedesktop is Windows/macOS only; getCoworkBaseDir() returns '' on Linux
+        if (adapter.id === 'claudedesktop' && os.platform() === 'linux') { continue; }
         const root = adapter.getEditorRoot(dummyFile);
         assert.ok(typeof root === 'string' && root.length > 0, `${adapter.id}: getEditorRoot should return non-empty string`);
     }
