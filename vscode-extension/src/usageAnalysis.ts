@@ -37,6 +37,8 @@ import {
 	normalizeMcpToolName,
 	extractMcpServerName,
 } from './workspaceHelpers';
+import { isJetBrainsSessionPath } from './adapters/jetbrainsAdapter';
+import { detectJetBrainsModeFromContent, type JetBrainsMode } from './jetbrains';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
 import { isAnalyzable } from './ecosystemAdapter';
 
@@ -1138,6 +1140,15 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 			let cliDefaultEffort: string | null = null;
 			let cliRequestCount = 0;
 			const cliEffortByRequest: { [effort: string]: number } = {};
+
+			// JetBrains partition files (~/.copilot/jb/{uuid}/partition-{n}.jsonl) share
+			// the JSONL fallback path with Copilot CLI but represent IDE chat (ask/agent),
+			// not a CLI tool session. Detect this once up front so we can route their
+			// `user.message` events into modeUsage.ask / modeUsage.agent below.
+			const isJetBrains = isJetBrainsSessionPath(sessionFile);
+			const jetBrainsMode: JetBrainsMode | null = isJetBrains
+				? detectJetBrainsModeFromContent(fileContent)
+				: null;
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
 				try {
@@ -1260,9 +1271,17 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					}
 
 					// Handle Copilot CLI format
-					// CLI sessions are always classified as 'cli' mode
+					// CLI sessions are always classified as 'cli' mode, EXCEPT for
+					// JetBrains IDE partition files which share the same event shape
+					// but represent in-IDE chat (ask/agent).
 					if (event.type === 'user.message') {
-						analysis.modeUsage.cli++;
+						if (jetBrainsMode === 'agent') {
+							analysis.modeUsage.agent++;
+						} else if (jetBrainsMode === 'ask') {
+							analysis.modeUsage.ask++;
+						} else {
+							analysis.modeUsage.cli++;
+						}
 					}
 
 					// Detect tool calls from Copilot CLI

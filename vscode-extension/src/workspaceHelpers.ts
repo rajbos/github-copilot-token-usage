@@ -705,6 +705,11 @@ export function resolveWorkspaceFolderFromSessionPath(sessionFilePath: string, w
 export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: (p: string) => boolean): string {
 	const normalizedPath = filePath.toLowerCase().replace(/\\/g, '/');
 
+	// Check JetBrains before Copilot CLI: both live under ~/.copilot/ but jb/
+	// is a sibling of session-state/ and must be attributed to the JetBrains IDE.
+	if (normalizedPath.includes('/.copilot/jb/')) {
+		return 'JetBrains';
+	}
 	if (normalizedPath.includes('/.copilot/session-state/')) {
 		return 'Copilot CLI';
 	}

@@ -84,6 +84,8 @@ import {
 	JetBrainsAdapter,
 } from './adapters';
 import { getVSCodeUserPaths } from './adapters/copilotChatAdapter';
+import { isJetBrainsSessionPath } from './adapters/jetbrainsAdapter';
+import { detectJetBrainsModelHintFromContent } from './jetbrains';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -3555,10 +3557,27 @@ usageAnalysis: undefined
 					turns.push(turn);
 				}
 			} else {
-			// Non-delta JSONL (Copilot CLI format)
+			// Non-delta JSONL (Copilot CLI format, also used by JetBrains IDE partition files)
 			let turnNumber = 0;
-			let cliSessionModel = 'gpt-4o';
+			// Default model is 'gpt-4o' for Copilot CLI sessions but JetBrains JSONL never
+			// carries a model field, so for JetBrains files we'd rather show 'unknown' or a
+			// best-effort hint derived from `toolCallId` prefixes (toolu_* → claude,
+			// call_* → gpt) than mislead users with a hard-coded gpt-4o.
+			const isJetBrainsFile = isJetBrainsSessionPath(sessionFile);
+			// Per-turn mode for JetBrains is computed below as we scan events
+			// (default 'ask', upgraded to 'agent' on tool.execution_start within
+			// the same turn). The conversation-wide detector
+			// `detectJetBrainsModeFromContent` is no longer needed for this path.
+
+			const jetBrainsModelHint: string | null = isJetBrainsFile
+				? detectJetBrainsModelHintFromContent(fileContent)
+				: null;
+			let cliSessionModel = isJetBrainsFile ? (jetBrainsModelHint || 'unknown') : 'gpt-4o';
 			let cliSessionEffort: string | undefined;
+
+			// JetBrains partition files (~/.copilot/jb/{uuid}/partition-{n}.jsonl) share
+			// this fallback parser with the Copilot CLI but are IDE chat sessions, so
+			// per-turn `mode` should be ask/agent rather than the catch-all `cli`.
 
 			// Pre-scan for model and effort:
 			// 1. session.start.data.selectedModel (older CLI format)
@@ -3607,14 +3626,30 @@ usageAnalysis: undefined
 						const contextRefs = this.createEmptyContextRefs();
 						const userMessage = event.data.content;
 						this.analyzeContextReferences(userMessage, contextRefs);
-						const turnModel = event.model || event.data?.model || cliSessionModel;
+						let turnModel: string = event.model || event.data?.model || cliSessionModel;
+						// JetBrains JSONL never persists the model, so be honest:
+						//   • First turn → "claude?" / "gpt?" — the family is inferred from
+						//     the first tool.execution_start.toolCallId prefix.
+						//   • Subsequent turns → "?" — we can't tell whether the user
+						//     switched models partway through the session.
+						// The renderer recognises these sentinels and renders an
+						// explanatory tooltip.
+						if (isJetBrainsFile) {
+							if (turnNumber === 1) {
+								turnModel = jetBrainsModelHint && jetBrainsModelHint !== 'unknown'
+									? `${jetBrainsModelHint}?`
+									: '?';
+							} else {
+								turnModel = '?';
+							}
+						}
 						const turnEffort: string | undefined = typeof event.data?.reasoningEffort === 'string'
 							? event.data.reasoningEffort
 							: cliSessionEffort;
 						const turn: ChatTurn = {
 							turnNumber,
 							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
-							mode: 'cli', // CLI tool sessions use the dedicated cli mode
+							mode: isJetBrainsFile ? 'ask' : 'cli',
 							userMessage,
 							assistantResponse: '',
 							model: turnModel,
@@ -3650,6 +3685,14 @@ usageAnalysis: undefined
 						const lastTurn = turns[turns.length - 1];
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 						const isSubAgent = CLI_SUB_AGENT_TOOLS.has(toolName);
+
+						// JetBrains: a turn defaults to 'ask' and is upgraded to 'agent'
+						// the moment we see any tool execution within it. This lets us
+						// detect per-turn mode flips (e.g. agent → ask later in the
+						// conversation) since JetBrains JSONL has no explicit mode field.
+						if (isJetBrainsFile && event.type === 'tool.execution_start') {
+							lastTurn.mode = 'agent';
+						}
 
 						// Check if this is an MCP tool by name pattern
 						if (this.isMcpTool(toolName)) {

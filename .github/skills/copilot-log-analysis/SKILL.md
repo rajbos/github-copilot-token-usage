@@ -11,7 +11,7 @@ This skill documents the methods and approaches used by the GitHub Copilot Token
 
 The extension analyzes two types of log files:
 - **`.json` files**: Standard VS Code Copilot Chat session files
-- **`.jsonl` files**: Copilot CLI/Agent mode sessions (one JSON event per line)
+- **`.jsonl` files**: Copilot CLI/Agent mode sessions, JetBrains IDE Copilot Chat sessions, Claude Code sessions, and other ecosystem adapters (one JSON event per line)
 
 ## Session File Discovery
 
@@ -35,6 +35,7 @@ This method discovers session files across all VS Code variants and locations:
 2. **Global Storage (Legacy)**: `{VSCode User Path}/globalStorage/emptyWindowChatSessions/*.json`
 3. **Copilot Chat Extension Storage**: `{VSCode User Path}/globalStorage/github.copilot-chat/**/*.json`
 4. **Copilot CLI Sessions**: `~/.copilot/session-state/*.jsonl`
+5. **JetBrains IDE Copilot Sessions**: `~/.copilot/jb/{conversationId}/partition-{n}.jsonl`
 
 **Platform-Specific Paths:**
 - **Windows**: `%APPDATA%/{Variant}/User`
@@ -78,6 +79,7 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 **Purpose**: Determines which VS Code variant created the session file.
 
 **Detection patterns:**
+- Contains `/.copilot/jb/` → `'JetBrains'` (must be checked BEFORE the Copilot CLI rule below since both live under `~/.copilot/`)
 - Contains `/.copilot/session-state/` → `'Copilot CLI'`
 - Contains `/code - insiders/` → `'VS Code Insiders'`
 - Contains `/code - exploration/` → `'VS Code Exploration'`
@@ -186,6 +188,38 @@ See the **Executable Scripts** section for available utilities:
 - Assistant output: `data.content` (when `type: 'assistant.message'`)
 - Tool output: `data.output` (when `type: 'tool.result'`)
 - Model: `model` (optional, defaults to `gpt-4o`)
+
+## JSONL File Structure (JetBrains IDE)
+
+**Location**: `~/.copilot/jb/{conversationId}/partition-{n}.jsonl` — one UUID-named directory per conversation, one or more partition files per conversation. Empty partition files are skipped.
+
+**Full schema documentation**: [`docs/logFilesSchema/jetbrains-session-schema.json`](../../../docs/logFilesSchema/jetbrains-session-schema.json)
+
+**Common envelope** — every line is `{ type, data, id, timestamp, parentId }`.
+
+**Event types:**
+
+```jsonl
+{"type":"partition.created","data":{"conversationId":"...","partitionId":1,"source":"panel","createdAt":1777552130660}}
+{"type":"user.message","data":{"content":"...","turnId":"..."}}
+{"type":"user.message_rendered","data":{"turnId":"...","renderedMessage":"<context>...</context><reminderInstructions>You are an agent...</reminderInstructions><userRequest>...</userRequest>"}}
+{"type":"assistant.turn_start","data":{"turnId":"..."}}
+{"type":"assistant.message","data":{"text":"...","thinking":{"text":"..."},"iterationNumber":1,"messageId":"..."}}
+{"type":"tool.execution_start","data":{"toolCallId":"toolu_bdrk_...","toolName":"read_file","arguments":{...}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"...","success":true,"result":{"result":[{"type":"text","value":"..."}]}}}
+{"type":"assistant.turn_end","data":{"turnId":"...","status":"success"}}
+```
+
+**Key extraction rules** (also implemented by `parseJetBrainsPartition` in `src/jetbrains.ts`):
+
+- **Interactions**: count of `user.message` events
+- **Input tokens**: estimated from `user.message_rendered.data.renderedMessage` (falls back to `user.message.data.content`)
+- **Output tokens**: estimated from `assistant.message.data.text`
+- **Thinking tokens**: estimated from `assistant.message.data.thinking.text`
+- **Actual tokens**: always 0 — JetBrains does not record API-side usage counts in the session file
+- **Mode**: presence of any `tool.execution_start` event ⇒ `agent`, otherwise `ask` (no edit/plan/customAgent)
+- **Model**: not in the file. Best-effort heuristic from `toolCallId` prefix (`toolu_*` ⇒ Anthropic Claude, `call_*` ⇒ OpenAI), otherwise `unknown`
+- **First/last interaction**: timestamps of the first `user.message` and the last `assistant.turn_end` (or `assistant.message`) event
 
 ## Pricing and Cost Calculation
 

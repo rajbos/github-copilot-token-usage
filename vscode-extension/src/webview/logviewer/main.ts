@@ -275,7 +275,30 @@ function truncateText(text: string, maxLength: number): string {
 	return text.substring(0, maxLength) + '...';
 }
 
-function renderTurnCard(turn: ChatTurn): string {
+/**
+ * Render the per-turn model badge.
+ *
+ * JetBrains JSONL never persists the model selector, so the model field uses
+ * sentinel suffixes/values to communicate uncertainty:
+ *   • `"claude?"` / `"gpt?"` — first turn, family was inferred from the
+ *     `tool.execution_start.toolCallId` prefix; specific version is unknown.
+ *   • `"?"` — subsequent JetBrains turns where we have no per-turn signal at
+ *     all (the user may have switched models partway through).
+ *
+ * Both variants render with an explanatory tooltip so users aren't misled.
+ */
+function renderTurnModelBadge(model: string): string {
+	if (model === '?') {
+		return `<span class="turn-model" title="Model not persisted in JetBrains session log; may differ from earlier turns if the user switched models.">🎯 ?</span>`;
+	}
+	if (model.endsWith('?')) {
+		const family = escapeHtml(model);
+		return `<span class="turn-model" title="JetBrains session logs only record the model family (inferred from the tool call ID prefix). Specific version isn't persisted.">🎯 ${family}</span>`;
+	}
+	return `<span class="turn-model">🎯 ${escapeHtml(model)}</span>`;
+}
+
+function renderTurnCard(turn: ChatTurn, isJetBrains = false): string {
 	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate + turn.thinkingTokensEstimate;
 	const hasToolCalls = turn.toolCalls.length > 0;
 	const hasMcpTools = turn.mcpTools.length > 0;
@@ -516,9 +539,9 @@ function renderTurnCard(turn: ChatTurn): string {
 				<div class="turn-meta">
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
-					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
+					${turn.model ? renderTurnModelBadge(turn.model) : ''}
 					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(getEffortDisplayName(turn.thinkingEffort))}</span>` : ''}
-				${totalTokens > 0 ? `<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>` : ''}
+				${totalTokens > 0 ? `<span class="turn-tokens"${isJetBrains ? ` title="JetBrains: estimated from user message + assistant text only. Actual API counts and thinking tokens are not available."` : ''}>📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})${isJetBrains ? ' ⓘ' : ''}</span>` : ''}
 				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
 				${hasActualUsage ? `<span class="turn-tokens" style="color: #22c55e;">✓ ${formatCompact(turn.actualUsage!.promptTokens + turn.actualUsage!.completionTokens)} actual</span>` : ''}
 					${contextHeaderHtml}
@@ -629,7 +652,25 @@ function renderLayout(data: SessionLogData): void {
 		}
 	}
 	const modelNames = Object.keys(modelUsage);
-	
+
+	const modeLabels: Record<string, string> = {
+		ask: 'Ask', edit: 'Edit', agent: 'Agent', plan: 'Plan', customAgent: 'Custom Agent', cli: 'CLI'
+	};
+	const modeEntries = (Object.entries(modeUsage) as [keyof typeof modeUsage, number][])
+		.filter(([, n]) => n > 0)
+		.sort((a, b) => b[1] - a[1]);
+	const totalModeTurns = modeEntries.reduce((s, [, n]) => s + n, 0);
+	const modeSummary = modeEntries.length === 0
+		? 'Unknown'
+		: modeEntries.map(([m, n]) => `${getModeIcon(m)} ${modeLabels[m]} (${n})`).join(' · ');
+	const primaryMode = modeEntries[0];
+	const primaryModeLabel = primaryMode
+		? `${getModeIcon(primaryMode[0])} ${modeLabels[primaryMode[0]]}`
+		: '—';
+	const modeSubLabel = modeEntries.length <= 1
+		? (totalModeTurns === 1 ? '1 turn' : `${totalModeTurns} turns`)
+		: `mixed across ${totalModeTurns} turns`;
+
 	root.innerHTML = `
 		<style>${themeStyles}</style>
 		<style>${styles}</style>
@@ -641,10 +682,15 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${data.interactions}</div>
 					<div class="summary-sub">Total chat turns in this session</div>
 				</div>
-				<div class="summary-card">
-					<div class="summary-label">📊 Estimated Tokens</div>
+				${totalModeTurns > 0 ? `<div class="summary-card" title="${escapeHtml(modeSummary)}">
+					<div class="summary-label">🎛️ Editor Mode</div>
+					<div class="summary-value" style="font-size: 1.1em;">${primaryModeLabel}</div>
+					<div class="summary-sub">${escapeHtml(modeSubLabel)}${modeEntries.length > 1 ? ` · ${modeEntries.slice(1).map(([m, n]) => `${modeLabels[m]} ${n}`).join(', ')}` : ''}</div>
+				</div>` : ''}
+				<div class="summary-card"${data.editorName === 'JetBrains' ? ` title="JetBrains: only user messages + assistant text are persisted in the session log, so this is an estimate of those alone. Actual API token counts and thinking tokens are not available."` : ''}>
+					<div class="summary-label">📊 Estimated Tokens${data.editorName === 'JetBrains' ? ' ⓘ' : ''}</div>
 					<div class="summary-value">${formatCompact(totalTokens)}</div>
-					<div class="summary-sub">Input + Output estimated from text</div>
+					<div class="summary-sub">${data.editorName === 'JetBrains' ? 'User + assistant text only (no API counts, no thinking)' : 'Input + Output estimated from text'}</div>
 				</div>
 				${hasAnyActualUsage ? `
 				<div class="summary-card actual-usage-card">
@@ -786,7 +832,7 @@ function renderLayout(data: SessionLogData): void {
 			
 			<div class="turns-list">
 				${data.turns.length > 0 
-					? data.turns.map(turn => renderTurnCard(turn)).join('')
+					? data.turns.map(turn => renderTurnCard(turn, data.editorName === 'JetBrains')).join('')
 					: '<div class="empty-state">No chat turns found in this session.</div>'
 				}
 			</div>

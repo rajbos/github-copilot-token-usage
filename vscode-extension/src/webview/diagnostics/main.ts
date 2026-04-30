@@ -1199,6 +1199,36 @@ function renderFolderAnalysisResults(
     </div>`;
 }
 
+function groupSessionFolders(
+  raw: Array<{ dir: string; count: number; editorName?: string }>,
+): Array<{ dir: string; count: number; editorName?: string }> {
+  // Each JetBrains conversation lives in its own UUID subfolder under
+  // `~/.copilot/jb/`, so without grouping the table grows unbounded with one
+  // row per chat. Collapse them into a single row keyed on the parent dir.
+  const result: Array<{ dir: string; count: number; editorName?: string }> = [];
+  const jbBuckets = new Map<string, { dir: string; count: number; editorName?: string }>();
+  for (const sf of raw || []) {
+    const norm = String(sf.dir || "").replace(/\\/g, "/");
+    const m = norm.match(/^(.*\/\.copilot\/jb)\/[^/]+\/?$/);
+    if (m) {
+      const parent = m[1];
+      const existing = jbBuckets.get(parent);
+      if (existing) {
+        existing.count += sf.count;
+      } else {
+        // Preserve the original separator style of the input path.
+        const tail = norm.length - parent.length;
+        const parentNative = sf.dir.slice(0, sf.dir.length - tail);
+        jbBuckets.set(parent, { dir: parentNative, count: sf.count, editorName: sf.editorName || "JetBrains" });
+      }
+    } else {
+      result.push(sf);
+    }
+  }
+  for (const bucket of jbBuckets.values()) { result.push(bucket); }
+  return result;
+}
+
 function renderLayout(data: DiagnosticsData): void {
   const root = document.getElementById("root");
   if (!root) {
@@ -1207,7 +1237,7 @@ function renderLayout(data: DiagnosticsData): void {
 
   // Build session folder summary (main entry folders) for reference
   let sessionFilesHtml = "";
-  const sessionFolders = (data as any).sessionFolders || [];
+  const sessionFolders = groupSessionFolders((data as any).sessionFolders || []);
   if (sessionFolders.length > 0) {
     // Sort folders by descending count so top folders show first
     const sorted = [...sessionFolders].sort((a, b) => b.count - a.count);
@@ -1489,7 +1519,8 @@ function renderLayout(data: DiagnosticsData): void {
       if (message.sessionFolders && message.sessionFolders.length > 0) {
         const reportTabContent = document.getElementById("tab-report");
         if (reportTabContent) {
-          const sorted = [...message.sessionFolders].sort(
+          const grouped = groupSessionFolders(message.sessionFolders);
+          const sorted = [...grouped].sort(
             (a: any, b: any) => b.count - a.count,
           );
 

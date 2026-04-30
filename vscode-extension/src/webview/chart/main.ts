@@ -250,7 +250,16 @@ function buildEditorCards(editorTotals: Record<string, number>): HTMLElement | n
 	}
 	const wrap = el('div', 'cards');
 	entries.forEach(([editor, tokens]) => {
-		wrap.append(buildCard(`editor-${editor}`, editor, formatCompact(tokens)));
+		const card = buildCard(`editor-${editor}`, editor, formatCompact(tokens));
+		// JetBrains only persists user messages + assistant text in its JSONL
+		// — no API counts, no thinking tokens. Flag the caveat with an
+		// info marker on the card so users don't compare apples-to-oranges.
+		if (editor === 'JetBrains') {
+			card.title = 'JetBrains: only user messages + assistant text are persisted, so token counts here are estimates of those alone. Actual API counts and thinking tokens are not available.';
+			const labelEl = card.querySelector('.card-label');
+			if (labelEl) { labelEl.textContent = `${editor} ⓘ`; }
+		}
+		wrap.append(card);
 	});
 	return wrap;
 }
@@ -580,7 +589,22 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 			...baseOptions,
 			plugins: {
 				...baseOptions.plugins,
-				legend: { position: 'top' as const, labels: { color: textColor, font: { size: 11 } } }
+				legend: { position: 'top' as const, labels: { color: textColor, font: { size: 11 } } },
+				tooltip: {
+					...baseOptions.plugins.tooltip,
+					callbacks: {
+						// JetBrains JSONL only persists user messages + assistant text
+						// (no API counts, no thinking tokens). Flag this in the chart
+						// tooltip whenever a JetBrains dataset is present in the hover.
+						footer: (items: any[]) => {
+							if (view !== 'editor') { return ''; }
+							const hasJetBrains = items.some(i => i?.dataset?.label === 'JetBrains');
+							return hasJetBrains
+								? 'JetBrains: estimates from user messages + assistant text only.\nActual API counts and thinking tokens are not available.'
+								: '';
+						}
+					}
+				}
 			},
 			scales: {
 				...baseOptions.scales,

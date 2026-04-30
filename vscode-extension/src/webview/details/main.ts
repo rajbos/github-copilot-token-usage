@@ -367,10 +367,20 @@ function buildEditorTbody(stats: DetailedStats, allEditors: string[]): HTMLTable
 		const lastMonthPercent = lastMonthTotal > 0 ? (lastMonthUsage.tokens / lastMonthTotal) * 100 : 0;
 
 		const tr = document.createElement('tr');
+		// JetBrains JSONL only persists user messages and assistant text — no
+		// API token counts, no thinking tokens. Surface that caveat as a row
+		// tooltip so users don't compare these numbers apples-to-apples with
+		// editors that report actual usage.
+		if (editor === 'JetBrains') {
+			tr.title = 'JetBrains: only user messages + assistant text are persisted, so token counts here are estimates of those alone. Actual API counts and thinking tokens are not available.';
+		}
 		const labelTd = document.createElement('td');
 		const labelWrapper = document.createElement('span');
 		labelWrapper.className = 'metric-label';
 		labelWrapper.textContent = `${getEditorIcon(editor)} ${editor}`;
+		if (editor === 'JetBrains') {
+			labelWrapper.textContent = `${labelWrapper.textContent} ⓘ`;
+		}
 		labelTd.append(labelWrapper);
 
 		const todayTd = document.createElement('td');
