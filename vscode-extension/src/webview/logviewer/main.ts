@@ -839,7 +839,6 @@ function renderLayout(data: SessionLogData): void {
 	// Tool pill filter: clicking a pill filters the tool rows in that turn
 	document.querySelectorAll<HTMLElement>('.tool-summary-item[data-tool-filter], .sub-agent-summary-item[data-tool-filter]').forEach(pill => {
 		pill.addEventListener('click', (e) => {
-			e.stopPropagation(); // prevent <details> toggle
 			const turnNumber = pill.getAttribute('data-turn');
 			const filter = pill.getAttribute('data-tool-filter');
 			const isActive = pill.classList.contains('active');
