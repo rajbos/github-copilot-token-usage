@@ -171,7 +171,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 42; // Use UTC-based daily rollups for consistent token attribution
+	private static readonly CACHE_VERSION = 43; // Fix eco-session token count in diagnostics path
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -3135,28 +3135,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Update or create cache entry with session file details.
 	 * Merges new detail fields with existing cached data if available.
+	 * @param tokenResult - Fresh token data from eco.getTokens(); when provided, takes
+	 *   precedence over any cached token values so eco-session diagnostics always show
+	 *   the correct (actual-API) count rather than a stale or zero value.
 	 */
 	private async updateCacheWithSessionDetails(
 		sessionFile: string,
 		stat: fs.Stats,
-		details: SessionFileDetails
+		details: SessionFileDetails,
+		tokenResult?: { tokens: number; thinkingTokens: number; actualTokens: number }
 	): Promise<void> {
 		// Get existing cache entry if available
 		const existingCache = this.getCachedSessionData(sessionFile);
 
-		// Enrich details with token count from existing cache (populated by main stats calculation).
-		// Prefer actualTokens (real API count) when available; fall back to estimated tokens.
-		details.tokens = existingCache?.actualTokens || existingCache?.tokens || 0;
+		// Prefer fresh token data (eco path supplies this) over any cached value.
+		// For Copilot Chat sessions no tokenResult is provided, so we fall back to
+		// the existing cache that was already populated by getSessionFileDataCached().
+		const resolvedActualTokens = tokenResult?.actualTokens ?? existingCache?.actualTokens;
+		const resolvedTokens = tokenResult?.tokens ?? existingCache?.tokens ?? 0;
+		const resolvedThinkingTokens = tokenResult?.thinkingTokens ?? existingCache?.thinkingTokens;
+		details.tokens = resolvedActualTokens || resolvedTokens || 0;
 
 		// Create or update cache entry
 		const cacheEntry: SessionFileCache = {
-			tokens: existingCache?.tokens || 0,
+			tokens: resolvedTokens,
 			interactions: details.interactions,
 			modelUsage: existingCache?.modelUsage || {},
 			mtime: stat.mtime.getTime(),
 			size: stat.size,
-			actualTokens: existingCache?.actualTokens,
-			thinkingTokens: existingCache?.thinkingTokens,
+			actualTokens: resolvedActualTokens,
+			thinkingTokens: resolvedThinkingTokens,
+			// Preserve existing dailyRollups so this partial update does not discard
+			// the per-day breakdown computed by getSessionFileDataCached().
+			dailyRollups: existingCache?.dailyRollups,
 			usageAnalysis: existingCache?.usageAnalysis || {
 				toolCalls: { total: 0, byTool: {} },
 				modeUsage: { ask: 0, edit: 0, agent: 0, plan: 0, customAgent: 0, cli: 0 },
@@ -3239,17 +3250,26 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Handle all non-Copilot-Chat ecosystems via adapter dispatch
 			const eco = this.findEcosystem(sessionFile);
 			if (eco) {
-				const meta = await eco.getMeta(sessionFile);
+				// Fetch meta, tokens, and interaction count in parallel to minimise file-read latency.
+				// getTokens() is the key addition here: it reads the actual API token counts so the
+				// diagnostics view shows the same (correct) total that the file viewer header does.
+				const [meta, tokenResult, interactionCount] = await Promise.all([
+					eco.getMeta(sessionFile),
+					eco.getTokens(sessionFile),
+					eco.countInteractions(sessionFile)
+				]);
 				details.title = meta.title;
 				details.firstInteraction = meta.firstInteraction;
 				details.lastInteraction = meta.lastInteraction;
-				details.interactions = await eco.countInteractions(sessionFile);
+				details.interactions = interactionCount;
 				details.editorRoot = eco.getEditorRoot(sessionFile);
 				details.editorName = eco.displayName;
 				if (meta.workspacePath) {
 					details.repository = path.basename(meta.workspacePath);
 				}
-				await this.updateCacheWithSessionDetails(sessionFile, stat, details);
+				// Pass fresh tokenResult so updateCacheWithSessionDetails stores the correct counts
+				// and does not overwrite a good full-cache entry with a stale/zero token value.
+				await this.updateCacheWithSessionDetails(sessionFile, stat, details, tokenResult);
 				return details;
 			}
 
