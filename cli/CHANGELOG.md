@@ -6,6 +6,20 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-04-30
+
+### ✨ Features & Improvements
+- Added macOS path support for Claude Desktop Cowork sessions (#714)
+- Added dedicated CLI interaction mode in Usage Analysis (#659)
+- Added GitHub Copilot AI-Credit pricing alongside provider pricing
+- Added Mistral Vibe session support
+- Improved fluency spiderweb chart for Claude-only users
+- Renamed cost labels: `(API)` → `(est.)` and `(Copilot)` → `(TBB)` with explainer tooltips
+- Display CO2 in kg when ≥ 1000g for readability
+
+### 🔧 Maintenance
+- Migrated to IEcosystemAdapter registry pattern for improved extensibility
+
 ## [0.0.8] - 2026-04-11
 
 ### ✨ Features & Improvements
