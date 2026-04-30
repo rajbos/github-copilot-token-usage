@@ -171,7 +171,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 43; // Fix eco-session token count in diagnostics path
+	private static readonly CACHE_VERSION = 44; // Add tool.execution_complete token counting for CLI sessions
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -3517,6 +3517,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async getSessionLogData(sessionFile: string): Promise<SessionLogData> {
 		const details = await this.getSessionFileDetails(sessionFile);
 		const turns: ChatTurn[] = [];
+		let subAgentsStarted: number | undefined;
 
 		try {
 // Delegate to ecosystem adapter if available
@@ -3751,7 +3752,9 @@ usageAnalysis: undefined
 
 					// Handle CLI tool calls (tool.execution_start is the actual event type in current CLI format)
 					const CLI_SUB_AGENT_TOOLS = new Set(['task', 'read_agent', 'write_agent', 'list_agents']);
-					if ((event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start') && turns.length > 0) {
+					if ((event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start')
+					&& turns.length > 0
+					&& !event.data?.parentToolCallId) {
 						const lastTurn = turns[turns.length - 1];
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 						const isSubAgent = CLI_SUB_AGENT_TOOLS.has(toolName);
@@ -3789,6 +3792,11 @@ usageAnalysis: undefined
 						const serverName = event.data?.mcpServer || 'unknown';
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 						lastTurn.mcpTools.push({ server: serverName, tool: toolName });
+					}
+
+					// Count distinct subagent sessions launched
+					if (event.type === 'subagent.started') {
+						subAgentsStarted = (subAgentsStarted ?? 0) + 1;
 					}
 				} catch {
 					// Skip malformed lines
@@ -3897,7 +3905,8 @@ usageAnalysis: undefined
 			lastInteraction: details.lastInteraction,
 			turns,
 			usageAnalysis,
-			actualTokens: sessionCache?.actualTokens || 0
+			actualTokens: sessionCache?.actualTokens || 0,
+			...(subAgentsStarted !== undefined ? { subAgentsStarted } : {})
 		};
 	}
 

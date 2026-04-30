@@ -445,6 +445,8 @@ export interface SessionLogData {
   usageAnalysis?: SessionUsageAnalysis;
   /** Session-level actual token count from LLM API (e.g. session.shutdown in CLI format). 0 when unavailable. */
   actualTokens?: number;
+  /** Number of distinct subagent sessions started (CLI format only, from subagent.started events). */
+  subAgentsStarted?: number;
 }
 
 // Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)

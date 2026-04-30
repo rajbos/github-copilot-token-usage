@@ -112,8 +112,12 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 				totalTokens += estimateTokensFromText(event.data.content);
 			} else if (event.type === 'assistant.message' && event.data?.content) {
 				totalTokens += estimateTokensFromText(event.data.content);
-			} else if (event.type === 'tool.result' && event.data?.output) {
-				totalTokens += estimateTokensFromText(event.data.output);
+			} else if (event.type === 'tool.execution_complete' && event.data?.result) {
+				const result = event.data.result;
+				// Prefer detailedContent (captures full subagent prompt for task launches)
+				const text = typeof result.detailedContent === 'string' ? result.detailedContent
+					: typeof result.content === 'string' ? result.content : '';
+				if (text) { totalTokens += estimateTokensFromText(text); }
 			} else if (event.content) {
 				// Fallback for other formats that might have content
 				totalTokens += estimateTokensFromText(event.content);

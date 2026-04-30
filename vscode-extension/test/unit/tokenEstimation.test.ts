@@ -421,10 +421,42 @@ test('estimateTokensFromJsonlSession: counts assistant.message tokens', () => {
         assert.ok(result.tokens > 0);
 });
 
-test('estimateTokensFromJsonlSession: counts tool.result tokens', () => {
+test('estimateTokensFromJsonlSession: does not count legacy tool.result tokens', () => {
+        // tool.result is the old dead event type — it should no longer count
         const content = JSON.stringify({ type: 'tool.result', data: { output: 'tool output data' } });
         const result = estimateTokensFromJsonlSession(content);
+        assert.equal(result.tokens, 0);
+});
+
+test('estimateTokensFromJsonlSession: counts tool.execution_complete content tokens', () => {
+        const content = JSON.stringify({
+                type: 'tool.execution_complete',
+                data: { result: { content: 'file contents here' } }
+        });
+        const result = estimateTokensFromJsonlSession(content);
         assert.ok(result.tokens > 0);
+});
+
+test('estimateTokensFromJsonlSession: prefers detailedContent over content in tool.execution_complete', () => {
+        const shortContent = 'short';
+        const longDetailedContent = 'a'.repeat(400); // much longer — should give more tokens
+        const eventWithBoth = JSON.stringify({
+                type: 'tool.execution_complete',
+                data: { result: { content: shortContent, detailedContent: longDetailedContent } }
+        });
+        const eventWithShort = JSON.stringify({
+                type: 'tool.execution_complete',
+                data: { result: { content: shortContent } }
+        });
+        const resultBoth = estimateTokensFromJsonlSession(eventWithBoth);
+        const resultShort = estimateTokensFromJsonlSession(eventWithShort);
+        assert.ok(resultBoth.tokens > resultShort.tokens, 'detailedContent should be used when present');
+});
+
+test('estimateTokensFromJsonlSession: skips tool.execution_complete when result is missing', () => {
+        const content = JSON.stringify({ type: 'tool.execution_complete', data: {} });
+        const result = estimateTokensFromJsonlSession(content);
+        assert.equal(result.tokens, 0);
 });
 
 test('estimateTokensFromJsonlSession: uses session.shutdown actual tokens', () => {

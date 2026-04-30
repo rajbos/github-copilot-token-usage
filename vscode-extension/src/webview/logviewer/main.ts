@@ -62,6 +62,8 @@ type SessionLogData = {
 	usageAnalysis?: SessionUsageAnalysis;
 	/** Session-level actual token count from LLM API (e.g. CLI session.shutdown). 0 when unavailable. */
 	actualTokens?: number;
+	/** Number of subagent sessions started (CLI format only). */
+	subAgentsStarted?: number;
 	compactNumbers?: boolean;
 };
 
@@ -666,10 +668,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${effortDefaultLabel}</div>
 					<div class="summary-sub">${effortSummary}${sessionEffort.switchCount > 0 ? ` · ${sessionEffort.switchCount} switch${sessionEffort.switchCount !== 1 ? 'es' : ''}` : ''}</div>
 				</div>` : ''}
-				${totalSubAgentCalls > 0 ? `<div class="summary-card">
-					<div class="summary-label">🤖 Sub-Agent Calls</div>
-					<div class="summary-value">${totalSubAgentCalls}</div>
-					<div class="summary-sub">Agent mode sub-agent invocations</div>
+				${(totalSubAgentCalls > 0 || (data.subAgentsStarted ?? 0) > 0) ? `<div class="summary-card">
+					<div class="summary-label">🤖 Sub-Agents</div>
+					<div class="summary-value">${data.subAgentsStarted ?? totalSubAgentCalls}</div>
+					<div class="summary-sub">${data.subAgentsStarted !== undefined
+						? `${data.subAgentsStarted} started · ${totalSubAgentCalls} tool calls`
+						: 'Agent mode sub-agent invocations'}</div>
 				</div>` : ''}
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
