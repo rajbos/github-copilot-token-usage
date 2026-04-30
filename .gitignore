@@ -24,3 +24,4 @@ visualstudio-extension/src/CopilotTokenTracker.Tests/bin/
 visualstudio-extension/src/CopilotTokenTracker.Tests/obj/
 visualstudio-extension/TestResults/
 vscode-extension/.session_secret.txt
+visualstudio-extension/.idea/
