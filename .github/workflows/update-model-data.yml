@@ -93,7 +93,7 @@ jobs:
 
             **⚠️ Note:** New model pricing stubs are set to `$0.00` by default and require
             manual verification before merging. See the
-            [pricing sources](https://github.com/rajbos/github-copilot-token-usage/blob/main/vscode-extension/src/modelPricing.json#L6)
+            [pricing sources](https://github.com/rajbos/ai-engineering-fluency/blob/main/vscode-extension/src/modelPricing.json#L6)
             in `modelPricing.json` for reference URLs.
 
             **Source data SHA:** `${{ steps.update.outputs.source_sha }}`

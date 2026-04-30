@@ -39,7 +39,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.1.0]
 
-Release notes: https://github.com/rajbos/github-copilot-token-usage/compare/vscode/v0.0.23...vscode/v0.1.0
+Release notes: https://github.com/rajbos/ai-engineering-fluency/compare/vscode/v0.0.23...vscode/v0.1.0
 
 ## [0.0.27] - 2026-04-07
 

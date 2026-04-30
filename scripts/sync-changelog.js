@@ -36,7 +36,7 @@ const TEST_RELEASES = [
   {
     tagName: "v0.0.1",
     name: "First draft",
-    body: "First rough version, not complete of course! \r\n\r\n- Only tested on windows\r\n- Use at your own risk 😄\r\n- Screenshots in the README\r\n- VS Code v1.104 or higher\r\n\r\n**Full Changelog**: https://github.com/rajbos/github-copilot-token-usage/commits/v0.0.1",
+    body: "First rough version, not complete of course! \r\n\r\n- Only tested on windows\r\n- Use at your own risk 😄\r\n- Screenshots in the README\r\n- VS Code v1.104 or higher\r\n\r\n**Full Changelog**: https://github.com/rajbos/ai-engineering-fluency/commits/v0.0.1",
     createdAt: "2025-09-26T21:55:29Z",
     isPrerelease: true
   }

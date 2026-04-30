@@ -68,4 +68,4 @@ The extension automatically discovers all sessions under the `.vs` folder for ea
 
 ## Feedback
 
-Please open an issue on [GitHub](https://github.com/rajbos/github-copilot-token-usage/issues) for bugs or feature requests specific to the Visual Studio extension.
+Please open an issue on [GitHub](https://github.com/rajbos/ai-engineering-fluency/issues) for bugs or feature requests specific to the Visual Studio extension.

@@ -2,7 +2,7 @@
 
 ## Getting Help
 
-If you encounter issues with the GitHub Copilot Token Tracker extension, the best way to get support is by creating a well-documented bug report in the [GitHub Issues](https://github.com/rajbos/github-copilot-token-usage/issues) section of this repository.
+If you encounter issues with the GitHub Copilot Token Tracker extension, the best way to get support is by creating a well-documented bug report in the [GitHub Issues](https://github.com/rajbos/ai-engineering-fluency/issues) section of this repository.
 
 ## How to Report a Bug
 
@@ -36,7 +36,7 @@ Before reporting, please check if your issue is related to these known limitatio
 - Numbers are based on local log files only (multi-machine usage not tracked)
 - Premium Request Units are not tracked by this extension, only their token usage is included
 - Token counts are estimates based on character count from the chat sessions stored on disk
-- Extension currently tested primarily on Windows, found something? Report an issue in the repo: https://github.com/rajbos/github-copilot-token-usage
+- Extension currently tested primarily on Windows, found something? Report an issue in the repo: https://github.com/rajbos/ai-engineering-fluency
 
 ## Feature Requests
 

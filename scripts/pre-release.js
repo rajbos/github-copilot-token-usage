@@ -148,7 +148,7 @@ async function main() {
     console.log('  2. Commit changes (screenshots + CONTRIBUTING.md)');
     console.log('  3. Push to main branch');
     console.log('  4. Trigger the Release workflow from GitHub Actions:');
-    console.log('     https://github.com/rajbos/github-copilot-token-usage/actions');
+    console.log('     https://github.com/rajbos/ai-engineering-fluency/actions');
     console.log('     (this handles tagging, building, releasing, and publishing)');
     console.log('');
 }
