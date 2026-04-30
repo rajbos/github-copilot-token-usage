@@ -3624,7 +3624,23 @@ usageAnalysis: undefined
 						const contextRefs = this.createEmptyContextRefs();
 						const userMessage = event.data.content;
 						this.analyzeContextReferences(userMessage, contextRefs);
-						const turnModel = event.model || event.data?.model || cliSessionModel;
+						let turnModel: string = event.model || event.data?.model || cliSessionModel;
+						// JetBrains JSONL never persists the model, so be honest:
+						//   • First turn → "claude?" / "gpt?" — the family is inferred from
+						//     the first tool.execution_start.toolCallId prefix.
+						//   • Subsequent turns → "?" — we can't tell whether the user
+						//     switched models partway through the session.
+						// The renderer recognises these sentinels and renders an
+						// explanatory tooltip.
+						if (isJetBrainsFile) {
+							if (turnNumber === 1) {
+								turnModel = jetBrainsModelHint && jetBrainsModelHint !== 'unknown'
+									? `${jetBrainsModelHint}?`
+									: '?';
+							} else {
+								turnModel = '?';
+							}
+						}
 						const turnEffort: string | undefined = typeof event.data?.reasoningEffort === 'string'
 							? event.data.reasoningEffort
 							: cliSessionEffort;

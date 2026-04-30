@@ -275,6 +275,29 @@ function truncateText(text: string, maxLength: number): string {
 	return text.substring(0, maxLength) + '...';
 }
 
+/**
+ * Render the per-turn model badge.
+ *
+ * JetBrains JSONL never persists the model selector, so the model field uses
+ * sentinel suffixes/values to communicate uncertainty:
+ *   • `"claude?"` / `"gpt?"` — first turn, family was inferred from the
+ *     `tool.execution_start.toolCallId` prefix; specific version is unknown.
+ *   • `"?"` — subsequent JetBrains turns where we have no per-turn signal at
+ *     all (the user may have switched models partway through).
+ *
+ * Both variants render with an explanatory tooltip so users aren't misled.
+ */
+function renderTurnModelBadge(model: string): string {
+	if (model === '?') {
+		return `<span class="turn-model" title="Model not persisted in JetBrains session log; may differ from earlier turns if the user switched models.">🎯 ?</span>`;
+	}
+	if (model.endsWith('?')) {
+		const family = escapeHtml(model);
+		return `<span class="turn-model" title="JetBrains session logs only record the model family (inferred from the tool call ID prefix). Specific version isn't persisted.">🎯 ${family}</span>`;
+	}
+	return `<span class="turn-model">🎯 ${escapeHtml(model)}</span>`;
+}
+
 function renderTurnCard(turn: ChatTurn): string {
 	const totalTokens = turn.inputTokensEstimate + turn.outputTokensEstimate + turn.thinkingTokensEstimate;
 	const hasToolCalls = turn.toolCalls.length > 0;
@@ -516,7 +539,7 @@ function renderTurnCard(turn: ChatTurn): string {
 				<div class="turn-meta">
 					<span class="turn-number">#${turn.turnNumber}</span>
 					<span class="turn-mode" style="background: ${getModeColor(turn.mode)};">${getModeIcon(turn.mode)} ${turn.mode}</span>
-					${turn.model ? `<span class="turn-model">🎯 ${escapeHtml(turn.model)}</span>` : ''}
+					${turn.model ? renderTurnModelBadge(turn.model) : ''}
 					${turn.thinkingEffort ? `<span class="turn-effort">💡 ${escapeHtml(getEffortDisplayName(turn.thinkingEffort))}</span>` : ''}
 				${totalTokens > 0 ? `<span class="turn-tokens">📊 ${formatCompact(totalTokens)} tokens (↑${turn.inputTokensEstimate} ↓${turn.outputTokensEstimate})</span>` : ''}
 				${hasThinking ? `<span class="turn-tokens" style="color: #a78bfa;">🧠 ${formatCompact(turn.thinkingTokensEstimate)} thinking</span>` : ''}
