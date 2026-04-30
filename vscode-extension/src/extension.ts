@@ -6922,6 +6922,31 @@ ${hashtag}`;
             await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
           });
           break;
+        case "reportNewEditorPath":
+          if (message.path) {
+            await this.dispatch('reportNewEditorPath:diagnostics', async () => {
+              const rawPath: string = message.path;
+              const home = os.homedir();
+              const anonymizedPath = rawPath.startsWith(home) ? rawPath.replace(home, '~') : rawPath;
+              const title = encodeURIComponent('New editor support: unknown session path found');
+              const body = encodeURIComponent([
+                '## Unknown editor session path found',
+                '',
+                'The extension found a session file at a path it does not recognise:',
+                '',
+                '```',
+                anonymizedPath,
+                '```',
+                '',
+                '**Which editor or tool does this path belong to?**',
+                '',
+                'Please describe the editor/tool and how you installed it so we can add support for it.',
+              ].join('\n'));
+              const issueUrl = `${this.getRepositoryUrl()}/issues/new?title=${title}&body=${body}&labels=${encodeURIComponent('new-editor-support')}`;
+              await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+            });
+          }
+          break;
         case "openSessionFile":
           if (message.file) {
             await this.dispatch('openSessionFile:diagnostics', async () => {

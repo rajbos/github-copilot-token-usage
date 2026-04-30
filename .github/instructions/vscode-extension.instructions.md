@@ -163,5 +163,12 @@ Current adapter set (9):
 
 **Adapter ordering matters**: register more-specific adapters first. `CopilotChatAdapter` and `CopilotCliAdapter` are registered **last** in `this.ecosystems`.
 
+### Checklist when adding a new adapter
+
+- [ ] Add adapter class under `vscode-extension/src/adapters/`
+- [ ] Register adapter in `extension.ts` `this.ecosystems` (before Copilot adapters)
+- [ ] `docs/vscode-extension/README.md` — add the new editor to the "Supported editors shown in the chart" list in the **Chart View** section
+- [ ] Also update the CLI side — see `.github/instructions/cli.instructions.md`
+
 **`handles()` for CopilotChat/Cli currently returns `false`**: discovery is owned by the adapters, but per-session parsing is still routed through the existing fallback path in `extension.ts` (`countInteractionsInSession`, `estimateTokensFromSession`, `getSessionFileDataCached`). A future PR can flip `handles()` to use the exported `isCopilotChatSessionPath` / `isCopilotCliSessionPath` predicates once the JSON parser helpers are extracted from `extension.ts`. When you flip `handles()`, also fix `_detectEditorSource(filePath, (p) => !!this.findEcosystem(p))` at extension.ts:~3224 — the predicate must check `?.id === 'opencode'` (or use `getEditorTypeFromPath` convention) so that VS Code paths are still labeled "VS Code", not "OpenCode".
 
