@@ -1,0 +1,50 @@
+<!--
+  AI Engineering Fluency — JetBrains plugin descriptor.
+
+  Architecture mirrors the Visual Studio extension:
+    * tool window hosts a JCEF (JBCefBrowser) panel
+    * panel loads vscode-shim.js + a compiled webview bundle from classpath
+    * stats are produced by spawning the bundled CLI and parsing its JSON
+
+  Depending only on `com.intellij.modules.platform` keeps the plugin
+  installable into the entire IntelliJ family (IDEA, Rider, PyCharm,
+  WebStorm, GoLand, RubyMine, CLion, …).
+-->
+<idea-plugin>
+    <id>com.github.rajbos.ai-engineering-fluency</id>
+    <name>AI Engineering Fluency</name>
+    <vendor email="" url="https://github.com/rajbos/github-copilot-token-usage">rajbos</vendor>
+
+    <description><![CDATA[
+        Visualises your GitHub Copilot token usage and AI engineering fluency
+        directly inside any JetBrains IDE.
+        <br/><br/>
+        Uses the same analytics and visualisations as the
+        <a href="https://github.com/rajbos/github-copilot-token-usage">VS Code extension</a>
+        and Visual Studio extension; powered by a bundled native CLI so no
+        extra runtime is required.
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>0.1.0</h3>
+        <ul>
+            <li>Initial scaffold: tool window + JCEF host + CLI bridge</li>
+        </ul>
+    ]]></change-notes>
+
+    <!--
+      `com.intellij.modules.platform` is the lowest-common-denominator module —
+      every JetBrains IDE provides it, so a plugin that only depends on it
+      installs everywhere. We additionally need JCEF, which is bundled with the
+      platform on 2024.3+ for all IDEs that ship the JBR with JCEF.
+    -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+            id="AI Engineering Fluency"
+            anchor="right"
+            factoryClass="com.github.rajbos.aiengineeringfluency.TokenTrackerToolWindowFactory"
+            icon="AllIcons.Toolwindows.ToolWindowAnt"/>
+    </extensions>
+</idea-plugin>

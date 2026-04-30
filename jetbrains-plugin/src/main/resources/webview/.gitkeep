@@ -1,0 +1,3 @@
+# Compiled webview bundles are copied here by the build (see build.gradle.kts
+# `prepareBundledAssets` task or the root `build.ps1 -Project jetbrains` target).
+# Do not commit the .js files.

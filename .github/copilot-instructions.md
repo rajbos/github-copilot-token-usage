@@ -9,7 +9,8 @@ This document provides top-level guidance for AI agents contributing to this rep
 ├── build.ps1                    ← Root build orchestrator (all projects)
 ├── vscode-extension/            ← VS Code extension (TypeScript / Node.js)
 ├── cli/                         ← Command-line tool  (TypeScript / Node.js)
-├── visualstudio-extension/      ← Visual Studio extension (C# / .NET, planned)
+├── visualstudio-extension/      ← Visual Studio extension (C# / .NET)
+├── jetbrains-plugin/            ← JetBrains IDE plugin (Kotlin / Gradle / IntelliJ Platform)
 ├── docs/                        ← Shared documentation
 └── .github/
     ├── copilot-instructions.md  ← This file
@@ -17,6 +18,7 @@ This document provides top-level guidance for AI agents contributing to this rep
         ├── vscode-extension.instructions.md   ← VS Code extension guide
         ├── cli.instructions.md                ← CLI guide
         ├── visualstudio-extension.instructions.md ← Visual Studio extension guide
+        ├── jetbrains-plugin.instructions.md   ← JetBrains plugin guide
         └── workflows.instructions.md           ← CI/CD workflow security guide
 ```
 
@@ -27,6 +29,7 @@ This document provides top-level guidance for AI agents contributing to this rep
 | `vscode-extension/` | `.github/instructions/vscode-extension.instructions.md` |
 | `cli/` | `.github/instructions/cli.instructions.md` |
 | `visualstudio-extension/` | `.github/instructions/visualstudio-extension.instructions.md` |
+| `jetbrains-plugin/` | `.github/instructions/jetbrains-plugin.instructions.md` |
 | `.github/workflows/` | `.github/instructions/workflows.instructions.md` |
 
 ## Building Everything
