@@ -1266,7 +1266,8 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 					}
 
 					// Detect tool calls from Copilot CLI
-					if (event.type === 'tool.call' || event.type === 'tool.result') {
+					// tool.execution_start is the Copilot CLI event for built-in tools (rename_session, powershell, etc.)
+					if (event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start') {
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 
 						// Check if this is an MCP tool by name pattern
