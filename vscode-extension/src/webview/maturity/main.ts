@@ -414,7 +414,7 @@ function renderLayout(data: MaturityData): void {
 					This dashboard maps your AI tool usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories.
 					It helps you understand which AI capabilities you already use and suggests areas to explore for greater productivity.
 					<br><br>
-					📖 <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">🔍 Fluency Level Viewer</button>
+					📖 <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">📊 How is my score calculated?</button>
 					<br><br>
 					<strong>Note:</strong> Scores are based on data from session log files. Some features (e.g., inline suggestion acceptance) cannot be tracked via logs.
 				</div>

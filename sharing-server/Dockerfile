@@ -30,9 +30,16 @@ VOLUME ["/data"]
 
 EXPOSE 3000
 
+ARG DEPLOY_SHA=unknown
+ARG DEPLOY_BRANCH=unknown
+ARG DEPLOY_DATE=unknown
+
 ENV NODE_ENV=production \
     DATA_DIR=/data \
-    PORT=3000
+    PORT=3000 \
+    DEPLOY_SHA=$DEPLOY_SHA \
+    DEPLOY_BRANCH=$DEPLOY_BRANCH \
+    DEPLOY_DATE=$DEPLOY_DATE
 
 # Use tini as PID 1 for proper signal handling
 ENTRYPOINT ["tini", "--"]
