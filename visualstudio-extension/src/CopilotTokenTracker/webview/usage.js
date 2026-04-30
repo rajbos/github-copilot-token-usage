@@ -20613,7 +20613,7 @@
     return Array.from(allTools).filter((tool) => lookupToolName(tool) === tool).sort();
   }
   function createMcpToolIssueUrl(unknownTools) {
-    const repoUrl = "https://github.com/rajbos/github-copilot-token-usage";
+    const repoUrl = "https://github.com/rajbos/ai-engineering-fluency";
     const title = encodeURIComponent("Add missing friendly names for tools");
     const toolList = unknownTools.map((tool) => `- \`${tool}\``).join("\n");
     const body = encodeURIComponent(

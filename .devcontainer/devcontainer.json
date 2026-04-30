@@ -28,7 +28,7 @@
   "mounts": [
     "source=${localEnv:APPDATA}/Code/User,target=/home/node/.config/Code/User,type=bind,readonly=true",
     "source=${localEnv:APPDATA}/Code - Insiders/User,target=/home/node/.config/Code - Insiders/User,type=bind,readonly=true",
-    "source=github-copilot-token-usage-nodemodules,target=/workspaces/github-copilot-token-usage/node_modules,type=volume"
+    "source=ai-engineering-fluency-nodemodules,target=/workspaces/ai-engineering-fluency/node_modules,type=volume"
   ],
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096"

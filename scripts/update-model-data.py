@@ -43,7 +43,7 @@ def api_request(url: str) -> dict | list:
     """Make an authenticated GitHub API request and return parsed JSON."""
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "github-copilot-token-usage-updater",
+        "User-Agent": "ai-engineering-fluency-updater",
     }
     token = os.environ.get("GITHUB_TOKEN")
     if token:

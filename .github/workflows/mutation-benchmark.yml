@@ -1,35 +1,28 @@
-name: Mutation Testing Benchmark
+name: Daily Mutation Test
 
 on:
   workflow_dispatch:
+  schedule:
+    # 03:00 UTC every day
+    - cron: '0 3 * * *'
   push:
     paths:
       - '.github/workflows/mutation-benchmark.yml'
+      - '.github/prompts/improve-mutation-score.prompt.md'
       - 'vscode-extension/stryker.config.mjs'
 
 permissions:
   contents: read
 
 jobs:
-  benchmark:
-    name: Concurrency ${{ matrix.concurrency }} / ${{ matrix.runner }}
-    runs-on: ${{ matrix.runner }}
-    continue-on-error: true
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - concurrency: 4
-            runner: ubuntu-latest
-          # ubuntu-latest concurrency=8 showed same throughput as concurrency=4 -- no benefit.
-          # - concurrency: 8
-          #   runner: ubuntu-latest
-          # windows-latest runners are significantly slower than ubuntu-latest for this workload.
-          # - concurrency: 4
-          #   runner: windows-latest
-          # - concurrency: 8
-          #   runner: windows-latest
+  mutation:
+    name: Daily mutation run
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' && !startsWith(github.ref_name, 'dependabot/')
+    permissions:
+      contents: read
+      issues: write   # needed for the Copilot CLI step to open / comment on an issue
+    timeout-minutes: 180
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -39,8 +32,42 @@ jobs:
 
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 0
+
+    - name: Determine whether to run
+      id: gate
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        set -euo pipefail
+        if [[ "$EVENT_NAME" != "schedule" ]]; then
+          echo "Non-scheduled event ($EVENT_NAME) — always running."
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Scheduled event — checking for changes in the last 24h under vscode-extension/..."
+        CHANGED=$(git log --since="24 hours ago" --pretty=format:'%H' -- \
+          vscode-extension/src \
+          vscode-extension/test \
+          vscode-extension/package.json \
+          vscode-extension/package-lock.json \
+          vscode-extension/stryker.config.mjs \
+          vscode-extension/tsconfig.json \
+          | wc -l)
+
+        if [[ "$CHANGED" -gt 0 ]]; then
+          echo "Detected $CHANGED commit(s) touching mutation-relevant paths in the last 24h — running."
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No relevant changes in the last 24h — skipping mutation run."
+          echo "should_run=false" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Setup Node.js
+      if: steps.gate.outputs.should_run == 'true'
       uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
       with:
         node-version: '24.x'
@@ -48,31 +75,33 @@ jobs:
         cache-dependency-path: vscode-extension/package-lock.json
 
     - name: Install dependencies
+      if: steps.gate.outputs.should_run == 'true'
       working-directory: vscode-extension
       run: npm ci
 
     - name: Compile tests
+      if: steps.gate.outputs.should_run == 'true'
       working-directory: vscode-extension
       run: npm run compile-tests
 
-    - name: Run mutation tests (concurrency=${{ matrix.concurrency }})
+    - name: Run mutation tests (concurrency=4)
       id: mutation
+      if: steps.gate.outputs.should_run == 'true'
       working-directory: vscode-extension
       shell: bash
       run: |
         START=$(date +%s)
-        npx stryker run --concurrency ${{ matrix.concurrency }} || true
+        npx stryker run --concurrency 4 || true
         END=$(date +%s)
         ELAPSED=$((END - START))
         echo "elapsed=${ELAPSED}" >> "$GITHUB_OUTPUT"
       timeout-minutes: 120
 
-    - name: Publish benchmark summary
-      if: always()
+    - name: Publish mutation summary
+      if: always() && steps.gate.outputs.should_run == 'true'
       working-directory: vscode-extension
       shell: bash
       env:
-        CONCURRENCY: ${{ matrix.concurrency }}
         ELAPSED: ${{ steps.mutation.outputs.elapsed }}
       run: |
         if [ -f "reports/mutation/mutation.json" ]; then
@@ -89,7 +118,6 @@ jobs:
                 else if (m.status === 'NoCoverage') noCoverage++;
               }
             }
-            const concurrency = process.env.CONCURRENCY;
             const elapsedSec = parseInt(process.env.ELAPSED || '0', 10);
             const mins = Math.floor(elapsedSec / 60);
             const secs = elapsedSec % 60;
@@ -97,29 +125,106 @@ jobs:
             const denominator = killed + survived + timedOut;
             const score = denominator > 0 ? ((killed / denominator) * 100).toFixed(1) : '0.0';
             const lines = [
-              \`## 🧬 Mutation Benchmark — Concurrency \${concurrency}\`,
+              '## 🧬 Daily Mutation Test',
               '',
               '| Metric | Value |',
               '|--------|-------|',
-              \`| ⚙️ Concurrency | \${concurrency} |\`,
               \`| ⏱️ Wall time | \${wallTime} |\`,
               \`| 📊 Score | \${score}% |\`,
               \`| ✅ Killed | \${killed} |\`,
               \`| ⚠️ Survived | \${survived} |\`,
               \`| 🕐 Timeout | \${timedOut} |\`,
-              \`| Total | \${total} |\`,
+              \`| 🙈 NoCoverage | \${noCoverage} |\`,
+              \`| Σ Total | \${total} |\`,
             ].join('\n');
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines + '\n');
           "
         else
-          printf '## 🧬 Mutation Benchmark — Concurrency %s\n\n⚠️ Report not generated (Stryker timed out or errored).\n' "$CONCURRENCY" >> "$GITHUB_STEP_SUMMARY"
+          printf '## 🧬 Daily Mutation Test\n\n⚠️ Report not generated (Stryker timed out or errored).\n' >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Upload mutation report
+      if: always() && steps.gate.outputs.should_run == 'true'
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      if: always()
       with:
-        name: mutation-report-${{ matrix.runner }}-concurrency-${{ matrix.concurrency }}
+        name: mutation-report
         path: vscode-extension/reports/mutation/
         if-no-files-found: ignore
-        retention-days: 14
+        retention-days: 30
+
+    # ----- Copilot CLI: produce an improvement issue from the report -----
+
+    # The Copilot CLI follow-up only runs on the default branch (i.e. from the
+    # daily schedule or a manual dispatch on main). PR-branch runs validate the
+    # mutation steps but skip issue creation, since secrets like GH_PAT may be
+    # absent or scoped differently outside main.
+
+    - name: Authenticate GitHub CLI
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT }}
+      run: |
+        if [ -z "$GH_TOKEN" ]; then
+          echo "❌ GH_PAT secret is not set; cannot run Copilot CLI step."
+          exit 1
+        fi
+        gh auth status
+
+    - name: Check Copilot CLI version
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT }}
+        COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      run: npx @github/copilot --version
+
+    - name: Run Copilot CLI to draft mutation improvement issue
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT }}
+        COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        REPORT_PATH="${GITHUB_WORKSPACE}/vscode-extension/reports/mutation/mutation.json"
+        if [ ! -f "$REPORT_PATH" ]; then
+          echo "No mutation report at $REPORT_PATH — skipping Copilot CLI step."
+          exit 0
+        fi
+
+        PROMPT=$(cat .github/prompts/improve-mutation-score.prompt.md)
+        {
+          echo "$PROMPT"
+          echo ""
+          echo "## Context Paths"
+          echo ""
+          echo "- Mutation report (JSON): ${REPORT_PATH}"
+          echo "- Repository root: ${GITHUB_WORKSPACE}"
+          echo "- Workflow run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo ""
+          echo "## Additional Instructions"
+          echo ""
+          echo "Use the existing GH CLI auth (already configured). Open the issue in this repository (\`${GITHUB_REPOSITORY}\`)."
+        } > /tmp/copilot-prompt.md
+
+        echo "=== Copilot CLI prompt ==="
+        cat /tmp/copilot-prompt.md
+        echo ""
+        echo "=== Copilot CLI output ==="
+
+        COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
+        npx @github/copilot \
+          -p "$COPILOT_PROMPT_TEXT" \
+          --silent \
+          --allow-all \
+          --add-dir "${GITHUB_WORKSPACE}" \
+          --no-ask-user 2>&1 || {
+            EXIT_CODE=$?
+            echo "Warning: gh copilot exited with code $EXIT_CODE"
+            exit $EXIT_CODE
+          }
+
+    - name: Skipped notice
+      if: steps.gate.outputs.should_run != 'true'
+      shell: bash
+      run: |
+        printf '## 🧬 Daily Mutation Test\n\nℹ️ Skipped — no relevant changes in the last 24 hours.\n' >> "$GITHUB_STEP_SUMMARY"

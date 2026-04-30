@@ -825,7 +825,7 @@ test('validateTeamAlias rejects common name patterns', () => {
 - ✅ This document consolidates all backend documentation
 
 ### External References
-- [GitHub Issue #121](https://github.com/rajbos/github-copilot-token-usage/issues/121) - Original feature request
+- [GitHub Issue #121](https://github.com/rajbos/ai-engineering-fluency/issues/121) - Original feature request
 - [Session File Schema](../logFilesSchema/session-file-schema.json) - Log file format
 - [VS Code Variants](../logFilesSchema/VSCODE-VARIANTS.md) - Supported editors
 

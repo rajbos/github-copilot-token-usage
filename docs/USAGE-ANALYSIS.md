@@ -195,4 +195,4 @@ Potential future additions to the analysis dashboard:
 
 ## Feedback
 
-If you discover new patterns in session log files that should be tracked, or if you have suggestions for improving the analysis dashboard, please [open an issue](https://github.com/rajbos/github-copilot-token-usage/issues) on GitHub.
+If you discover new patterns in session log files that should be tracked, or if you have suggestions for improving the analysis dashboard, please [open an issue](https://github.com/rajbos/ai-engineering-fluency/issues) on GitHub.

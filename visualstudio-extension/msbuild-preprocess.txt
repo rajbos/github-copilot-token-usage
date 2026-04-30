@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="IBM437"?>
 <!--
 ============================================================================================================================================
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\CopilotTokenTracker.csproj
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\CopilotTokenTracker.csproj
 ============================================================================================================================================
 -->
 <Project DefaultTargets="Build">
@@ -168,7 +168,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Microsoft
 ============================================================================================================================================
   <Import Project="$(MSBuildProjectExtensionsPath)$(MSBuildProjectFile).*.props" Condition="'$(ImportProjectExtensionProps)' == 'true' and exists('$(MSBuildProjectExtensionsPath)')">
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
 ============================================================================================================================================
 -->
   <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' " xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
@@ -210,7 +210,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.vssdk.compatibilityanalyzer\17.6.2164\
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
 ============================================================================================================================================
 -->
   <!--
@@ -232,7 +232,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.codeanalysis.bannedapianalyzers\3.3.2\
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
 ============================================================================================================================================
 -->
   <!--
@@ -255,7 +255,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.vssdk.buildtools\17.6.2164\build\Micro
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.props
 ============================================================================================================================================
 -->
   <!--</ImportGroup>-->
@@ -1639,7 +1639,7 @@ C:\Program Files\dotnet\sdk\10.0.201\Sdks\Microsoft.NET.Sdk\Sdk\Sdk.props
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\CopilotTokenTracker.csproj
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\CopilotTokenTracker.csproj
 ============================================================================================================================================
 -->
   <PropertyGroup>
@@ -12960,7 +12960,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\Micro
 ============================================================================================================================================
   <Import Project="$(MSBuildProjectExtensionsPath)$(MSBuildProjectFile).*.targets" Condition="'$(ImportProjectExtensionTargets)' == 'true' and exists('$(MSBuildProjectExtensionsPath)')">
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--<ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">-->
@@ -12992,7 +12992,7 @@ C:\Users\RobBos\.nuget\packages\system.text.json\8.0.5\buildTransitive\net462\Sy
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13011,7 +13011,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.visualstudio.threading.analyzers\17.6.
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13459,7 +13459,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.web.webview2\1.0.2478.35\build\Microso
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13499,7 +13499,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.vssdk.compatibilityanalyzer\17.6.2164\
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13555,7 +13555,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.codeanalysis.bannedapianalyzers\3.3.2\
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13574,7 +13574,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.visualstudio.sdk.analyzers\16.10.10\bu
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13604,7 +13604,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.vssdk.buildtools\17.6.2164\build\Micro
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--
@@ -13626,7 +13626,7 @@ C:\Users\RobBos\.nuget\packages\microsoft.visualstudio.setup.configuration.inter
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\obj\CopilotTokenTracker.csproj.nuget.g.targets
 ============================================================================================================================================
 -->
   <!--</ImportGroup>-->
@@ -21226,7 +21226,7 @@ C:\Program Files\dotnet\sdk\10.0.201\Sdks\Microsoft.NET.Sdk\Sdk\Sdk.targets
 ============================================================================================================================================
   </Import>
 
-C:\Users\RobBos\code\repos\rajbos\github-copilot-token-usage\visualstudio-extension\src\CopilotTokenTracker\CopilotTokenTracker.csproj
+C:\Users\RobBos\code\repos\rajbos\ai-engineering-fluency\visualstudio-extension\src\CopilotTokenTracker\CopilotTokenTracker.csproj
 ============================================================================================================================================
 -->
 </Project>

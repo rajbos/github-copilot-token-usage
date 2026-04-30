@@ -414,7 +414,7 @@ function renderLayout(data: MaturityData): void {
 					This dashboard maps your AI tool usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories.
 					It helps you understand which AI capabilities you already use and suggests areas to explore for greater productivity.
 					<br><br>
-					📖 <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">📊 How is my score calculated?</button>
+					📖 <a href="https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">📊 How is my score calculated?</button>
 					<br><br>
 					<strong>Note:</strong> Scores are based on data from session log files. Some features (e.g., inline suggestion acceptance) cannot be tracked via logs.
 				</div>
@@ -534,7 +534,7 @@ function renderLayout(data: MaturityData): void {
 				<span class="beta-footer-icon">⚠️</span>
 				<div class="beta-footer-content">
 					<strong>Beta</strong> — This screen is still in beta. If you have feedback or suggestions for improvements,
-					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository.
+					please <a href="https://github.com/rajbos/ai-engineering-fluency/issues" class="beta-link">create an issue</a> on the repository.
 				</div>
 				<button id="btn-share-issue" class="share-issue-btn">📤 Share to Issue</button>
 			</div>
