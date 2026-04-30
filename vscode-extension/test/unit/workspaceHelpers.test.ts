@@ -218,6 +218,14 @@ test('getEditorNameFromRoot: .copilot path returns Copilot CLI', () => {
     assert.equal(getEditorNameFromRoot('C:\\Users\\user\\.copilot\\worktrees\\session'), 'Copilot CLI');
 });
 
+test('getEditorNameFromRoot: .copilot/jb path returns JetBrains', () => {
+    assert.equal(getEditorNameFromRoot('C:\\Users\\user\\.copilot\\jb'), 'JetBrains');
+});
+
+test('getEditorNameFromRoot: .copilot/jb forward-slash path returns JetBrains', () => {
+    assert.equal(getEditorNameFromRoot('/home/user/.copilot/jb'), 'JetBrains');
+});
+
 test('getEditorNameFromRoot: Code Insiders path returns VS Code Insiders', () => {
     assert.equal(getEditorNameFromRoot('C:\\Users\\user\\AppData\\Roaming\\Code - Insiders'), 'VS Code Insiders');
 });
@@ -435,6 +443,15 @@ test('detectEditorSource: code-insiders hyphenated variant detected', () => {
 test('detectEditorSource: Copilot CLI takes priority over code path', () => {
         // .copilot/session-state path should return Copilot CLI, not VS Code
         assert.equal(detectEditorSource('/home/user/.copilot/session-state/session123.json'), 'Copilot CLI');
+});
+
+test('detectEditorSource: JetBrains detected from .copilot/jb path', () => {
+        assert.equal(detectEditorSource('/home/user/.copilot/jb/uuid-1234/partition-0.jsonl'), 'JetBrains');
+});
+
+test('detectEditorSource: JetBrains takes priority over Copilot CLI fallback', () => {
+        // .copilot/jb/ path should return JetBrains, not Copilot CLI
+        assert.notEqual(detectEditorSource('/home/user/.copilot/jb/uuid-1234/partition-0.jsonl'), 'Copilot CLI');
 });
 
 test('detectEditorSource: Claude Code takes priority over code path', () => {
