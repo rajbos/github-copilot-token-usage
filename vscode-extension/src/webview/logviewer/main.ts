@@ -25,7 +25,7 @@ type ChatTurn = {
 	userMessage: string;
 	assistantResponse: string;
 	model: string | null;
-	toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
+	toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string; subAgentTokens?: { input: number; output: number } }[];
 	contextReferences: ContextReferenceUsage;
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
@@ -463,8 +463,9 @@ function renderTurnCard(turn: ChatTurn): string {
 							${turn.toolCalls.map((tc, idx) => `
 								<tr class="tool-row${tc.isSubAgent ? ' sub-agent-row' : ''}" data-tool-name="${tc.isSubAgent ? '__subagent__' : escapeHtml(lookupToolName(tc.toolName))}">
 									<td class="tool-name-cell">
-										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(tc.isSubAgent ? `🤖 ${tc.toolName}` : lookupToolName(tc.toolName))}</span>
+										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(tc.isSubAgent ? ({'task':'🤖 Sub-Agent','read_agent':'🤖 Sub-Agent (read)','write_agent':'🤖 Sub-Agent (write)','list_agents':'🤖 Sub-Agent (list)'}[tc.toolName] || `🤖 ${tc.toolName}`) : lookupToolName(tc.toolName))}</span>
 										${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(tc.subAgentModel)}</span>` : ''}
+										${tc.isSubAgent && tc.subAgentTokens ? `<span class="sub-agent-tokens">↑${tc.subAgentTokens.input.toLocaleString()} ↓${tc.subAgentTokens.output.toLocaleString()} tokens</span>` : ''}
 										${tc.arguments && !tc.isSubAgent ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
 										${tc.result && !tc.isSubAgent ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
 									</td>
@@ -862,6 +863,15 @@ function renderLayout(data: SessionLogData): void {
 				rows.forEach(row => {
 					row.style.display = row.getAttribute('data-tool-name') === filter ? '' : 'none';
 				});
+			}
+		});
+	});
+
+	// Prevent <details> from toggling when a filter pill inside <summary> is clicked
+	document.querySelectorAll<HTMLElement>('summary.tool-calls-summary').forEach(summary => {
+		summary.addEventListener('click', (e) => {
+			if ((e.target as HTMLElement).closest('.tool-summary-item, .sub-agent-summary-item')) {
+				e.preventDefault();
 			}
 		});
 	});

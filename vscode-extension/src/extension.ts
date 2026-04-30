@@ -3711,6 +3711,9 @@ usageAnalysis: undefined
 				} catch { /* skip */ }
 			}
 
+			// Track output tokens per subagent (keyed by parentToolCallId)
+			const subAgentOutputTokenMap = new Map<string, number>();
+
 			for (const line of lines) {
 				try {
 					const event = JSON.parse(line);
@@ -3744,10 +3747,16 @@ usageAnalysis: undefined
 					}
 
 					// Handle CLI assistant response
-					if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
-						const lastTurn = turns[turns.length - 1];
-						lastTurn.assistantResponse += event.data.content;
-						lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+					if (event.type === 'assistant.message' && event.data?.content) {
+						if (event.data.parentToolCallId) {
+							// Subagent response — accumulate output tokens keyed by parent tool call
+							const prev = subAgentOutputTokenMap.get(event.data.parentToolCallId) ?? 0;
+							subAgentOutputTokenMap.set(event.data.parentToolCallId, prev + this.estimateTokensFromText(event.data.content, cliSessionModel));
+						} else if (turns.length > 0) {
+							const lastTurn = turns[turns.length - 1];
+							lastTurn.assistantResponse += event.data.content;
+							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+						}
 					}
 
 					// Handle CLI tool calls (tool.execution_start is the actual event type in current CLI format)
@@ -3764,12 +3773,15 @@ usageAnalysis: undefined
 							const serverName = this.extractMcpServerName(toolName);
 							lastTurn.mcpTools.push({ server: serverName, tool: toolName });
 						} else if (isSubAgent) {
-							lastTurn.toolCalls.push({
+							const subAgentCallId: string | undefined = event.data?.toolCallId;
+							const subAgentEntry: any = {
 								toolName,
 								arguments: event.data?.arguments ? JSON.stringify(event.data.arguments) : undefined,
 								result: undefined,
 								isSubAgent: true,
-							});
+							};
+							if (subAgentCallId) { subAgentEntry._callId = subAgentCallId; }
+							lastTurn.toolCalls.push(subAgentEntry);
 						} else {
 							// Add to regular tool calls (skip duplicate execution_start events per toolCallId)
 							const callId: string | undefined = event.data?.toolCallId;
@@ -3800,6 +3812,30 @@ usageAnalysis: undefined
 					}
 				} catch {
 					// Skip malformed lines
+				}
+			}
+
+			// Attach subagent token estimates to sub-agent tool call entries
+			if (subAgentOutputTokenMap.size > 0) {
+				for (const turn of turns) {
+					for (const tc of turn.toolCalls as any[]) {
+						if (tc.isSubAgent && tc._callId) {
+							const outputTokens = subAgentOutputTokenMap.get(tc._callId) ?? 0;
+							let inputTokens = 0;
+							if (tc.arguments) {
+								try {
+									const args = JSON.parse(tc.arguments);
+									const prompt = typeof args?.prompt === 'string' ? args.prompt : tc.arguments;
+									inputTokens = this.estimateTokensFromText(prompt, cliSessionModel);
+								} catch {
+									inputTokens = this.estimateTokensFromText(tc.arguments, cliSessionModel);
+								}
+							}
+							if (outputTokens > 0 || inputTokens > 0) {
+								tc.subAgentTokens = { input: inputTokens, output: outputTokens };
+							}
+						}
+					}
 				}
 			}
 		}
