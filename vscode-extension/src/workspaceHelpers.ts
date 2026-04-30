@@ -271,7 +271,7 @@ export function scanWorkspaceCustomizationFiles(workspaceFolderPath: string): Cu
 // Helper method to get repository URL from package.json
 export function getRepositoryUrl(): string {
 	const repoUrl = packageJson.repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '');
-	return repoUrl || 'https://github.com/rajbos/github-copilot-token-usage';
+	return repoUrl || 'https://github.com/rajbos/ai-engineering-fluency';
 }
 
 /**

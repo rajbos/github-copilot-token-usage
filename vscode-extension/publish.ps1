@@ -21,7 +21,7 @@ $packageJson  = Get-Content -Path "package.json" -Raw | ConvertFrom-Json
 $version      = $packageJson.version
 $expectedTag  = "v$version"
 $owner        = "rajbos"
-$repo         = "github-copilot-token-usage"
+$repo         = "ai-engineering-fluency"
 $publisherName = "RobBos"
 
 # ── Resolve / prompt for VSIX path ───────────────────────────────────────────

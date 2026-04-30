@@ -1,4 +1,4 @@
-﻿// Usage Analysis webview
+// Usage Analysis webview
 import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
@@ -238,7 +238,7 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 }
 
 function createMcpToolIssueUrl(unknownTools: string[]): string {
-	const repoUrl = 'https://github.com/rajbos/github-copilot-token-usage';
+	const repoUrl = 'https://github.com/rajbos/ai-engineering-fluency';
 	const title = encodeURIComponent('Add missing friendly names for tools');
 	const toolList = unknownTools.map(tool => `- \`${tool}\``).join('\n');
 	const body = encodeURIComponent(

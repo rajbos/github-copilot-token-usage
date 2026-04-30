@@ -29183,7 +29183,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 					This dashboard maps your AI tool usage patterns from the last 30 days to a maturity model with 4 stages across 6 categories.
 					It helps you understand which AI capabilities you already use and suggests areas to explore for greater productivity.
 					<br><br>
-					\u{1F4D6} <a href="https://github.com/rajbos/github-copilot-token-usage/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">\u{1F50D} Fluency Level Viewer</button>
+					\u{1F4D6} <a href="https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/FLUENCY-LEVELS.md" class="beta-link">Read the full scoring rules</a> to learn how each category and stage is calculated. <button id="btn-level-viewer-inline" class="inline-action-btn">\u{1F50D} Fluency Level Viewer</button>
 					<br><br>
 					<strong>Note:</strong> Scores are based on data from session log files. Some features (e.g., inline suggestion acceptance) cannot be tracked via logs.
 				</div>
@@ -29303,7 +29303,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .demo-step-active.demo
 				<span class="beta-footer-icon">\u26A0\uFE0F</span>
 				<div class="beta-footer-content">
 					<strong>Beta</strong> \u2014 This screen is still in beta. If you have feedback or suggestions for improvements,
-					please <a href="https://github.com/rajbos/github-copilot-token-usage/issues" class="beta-link">create an issue</a> on the repository.
+					please <a href="https://github.com/rajbos/ai-engineering-fluency/issues" class="beta-link">create an issue</a> on the repository.
 				</div>
 				<button id="btn-share-issue" class="share-issue-btn">\u{1F4E4} Share to Issue</button>
 			</div>

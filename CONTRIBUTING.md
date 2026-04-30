@@ -37,8 +37,8 @@ You have two options for setting up your development environment:
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/rajbos/github-copilot-token-usage.git
-   cd github-copilot-token-usage
+   git clone https://github.com/rajbos/ai-engineering-fluency.git
+   cd ai-engineering-fluency
    ```
 
 2. **Open in VS Code:**
@@ -150,8 +150,8 @@ If you prefer not to use the devcontainer, you can set up the extension locally:
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/rajbos/github-copilot-token-usage.git
-   cd github-copilot-token-usage
+   git clone https://github.com/rajbos/ai-engineering-fluency.git
+   cd ai-engineering-fluency
    ```
 
 2. **Install dependencies:**
@@ -379,7 +379,7 @@ The project includes comprehensive GitHub Actions workflows:
 - **Platforms:** Tests on Ubuntu, Windows, and macOS
 - **Node Versions:** 18.x and 20.x
 - **Checks:** Linting, type checking, compilation, and packaging
-- **Badge:** [![Build](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/github-copilot-token-usage/actions/workflows/build.yml)
+- **Badge:** [![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml)
 
 ### What Gets Tested
 
@@ -472,7 +472,7 @@ If you need to re-publish manually (e.g., after a marketplace upload failure):
 
 ## Questions or Issues?
 
-- **Bug Reports:** Open an issue on [GitHub Issues](https://github.com/rajbos/github-copilot-token-usage/issues)
+- **Bug Reports:** Open an issue on [GitHub Issues](https://github.com/rajbos/ai-engineering-fluency/issues)
 - **Feature Requests:** Submit as a GitHub issue with the "enhancement" label
 - **Questions:** Ask in the issue comments or discussions
 

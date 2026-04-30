@@ -6,7 +6,7 @@
   "author": "RobBos",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rajbos/github-copilot-token-usage.git",
+    "url": "git+https://github.com/rajbos/ai-engineering-fluency.git",
     "directory": "sharing-server"
   },
   "scripts": {

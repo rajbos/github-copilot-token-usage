@@ -1031,7 +1031,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				if (choice === 'Open Fluency Score') {
 					await this.showMaturity();
 				} else if (choice === 'Learn More') {
-					await vscode.env.openExternal(vscode.Uri.parse('https://github.com/rajbos/github-copilot-token-usage#supported-editors'));
+					await vscode.env.openExternal(vscode.Uri.parse('https://github.com/rajbos/ai-engineering-fluency#supported-editors'));
 				}
 				break;
 			}
@@ -5018,7 +5018,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 							return `<h2>${c.icon} ${c.category} — Stage ${c.stage}</h2>\n\n${evidenceList}`;
 						}).join('\n\n');
 						const body = `<h2>AI Engineering Fluency Score Feedback</h2>\n\n**Overall Stage:** ${scores.overallLabel}\n\n${categorySections}\n\n<h2>Feedback</h2>\n<!-- Describe your feedback or suggestion here -->\n`;
-						const issueUrl = `https://github.com/rajbos/github-copilot-token-usage/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
+						const issueUrl = `https://github.com/rajbos/ai-engineering-fluency/issues/new?title=${encodeURIComponent('Fluency Score Feedback')}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent('fluency-score')}`;
 						await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
 					});
 					break;
