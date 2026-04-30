@@ -344,6 +344,19 @@ test('getEditorTypeFromPath: returns Unknown for unrecognized paths', () => {
         assert.equal(getEditorTypeFromPath('/tmp/random/file.json'), 'Unknown');
 });
 
+test('getEditorTypeFromPath: detects JetBrains from .copilot/jb path', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.copilot/jb/uuid-1234/partition-0.jsonl'), 'JetBrains');
+});
+
+test('getEditorTypeFromPath: detects JetBrains from Windows-style .copilot\\jb path', () => {
+        assert.equal(getEditorTypeFromPath('C:\\Users\\user\\.copilot\\jb\\uuid-1234\\partition-0.jsonl'), 'JetBrains');
+});
+
+test('getEditorTypeFromPath: JetBrains takes priority over Copilot CLI fallback', () => {
+        // .copilot/jb/ path must NOT be mis-attributed to Copilot CLI
+        assert.notEqual(getEditorTypeFromPath('/home/user/.copilot/jb/uuid-1234/partition-0.jsonl'), 'Copilot CLI');
+});
+
 // ── detectEditorSource ──────────────────────────────────────────────────
 
 test('detectEditorSource: detects Claude Code from path', () => {
