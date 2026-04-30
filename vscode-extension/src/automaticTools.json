@@ -22,6 +22,7 @@
   "grep_search",
   "grep",
   "glob",
+  "rg",
 
   "semantic_search",
   "copilot_searchCodebase",
@@ -99,5 +100,12 @@
 
   "vscode_editFile_internal",
   "vscode_fetchWebPage_internal",
-  "vscode_searchExtensions_internal"
+  "vscode_searchExtensions_internal",
+
+  "fetch_copilot_cli_documentation",
+  "generate_findings",
+  "generate_topics",
+
+  "list_powershell",
+  "read_powershell"
 ]
