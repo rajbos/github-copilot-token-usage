@@ -54,6 +54,27 @@ export interface JetBrainsParsedSession {
 	source: string | null;
 	/** Conversation UUID from `partition.created.data.conversationId`. */
 	conversationId: string | null;
+	/**
+	 * Per-tool-call entries in execution order. Mirrors the per-turn
+	 * `ChatTurn.toolCalls` shape used by the rest of the extension so callers
+	 * can render them uniformly.
+	 */
+	toolCalls: JetBrainsToolCall[];
+	/**
+	 * Aggregate count per tool name across the whole partition (e.g.
+	 * `{ run_in_terminal: 27, read_file: 2 }`). Empty when no tools ran.
+	 */
+	toolCounts: Record<string, number>;
+}
+
+export interface JetBrainsToolCall {
+	toolName: string;
+	/** Stringified `data.arguments` from `tool.execution_start`, when present. */
+	arguments?: string;
+	/** Concatenated text blocks from `tool.execution_complete.data.result.result[]`. */
+	result?: string;
+	/** Mirrors `tool.execution_complete.data.success`. */
+	success?: boolean;
 }
 
 /**
@@ -94,6 +115,8 @@ export function parseJetBrainsPartition(content: string): JetBrainsParsedSession
 		lastInteraction: null,
 		source: null,
 		conversationId: null,
+		toolCalls: [],
+		toolCounts: {},
 	};
 
 	let inputTokens = 0;
@@ -103,6 +126,10 @@ export function parseJetBrainsPartition(content: string): JetBrainsParsedSession
 	let modelFromTurnStart: string | null = null;
 	let modelFromToolCallId: string | null = null;
 	let sawToolCall = false;
+
+	// Index tool calls by toolCallId so `tool.execution_complete` can attach
+	// success/result data to the entry created by `tool.execution_start`.
+	const toolCallById = new Map<string, JetBrainsToolCall>();
 
 	// Pre-parse the line stream once so we know which turnIds have a
 	// `user.message_rendered` event. The rendered version subsumes the bare
@@ -173,15 +200,34 @@ export function parseJetBrainsPartition(content: string): JetBrainsParsedSession
 					const hint = modelHintFromToolCallId(event.data?.toolCallId);
 					if (hint) { modelFromToolCallId = hint; }
 				}
+				const toolName = typeof event.data?.toolName === 'string' ? event.data.toolName : 'unknown';
+				const tc: JetBrainsToolCall = { toolName };
+				if (event.data?.arguments !== undefined) {
+					try { tc.arguments = JSON.stringify(event.data.arguments); } catch { /* ignore */ }
+				}
+				result.toolCalls.push(tc);
+				result.toolCounts[toolName] = (result.toolCounts[toolName] || 0) + 1;
+				const callId = event.data?.toolCallId;
+				if (typeof callId === 'string') { toolCallById.set(callId, tc); }
 				break;
 			}
 			case 'tool.execution_complete': {
 				const blocks = event.data?.result?.result;
+				let resultText = '';
 				if (Array.isArray(blocks)) {
 					for (const block of blocks) {
 						if (block && typeof block.value === 'string') {
 							outputTokens += estimateTokensFromText(block.value);
+							resultText += (resultText ? '\n' : '') + block.value;
 						}
+					}
+				}
+				const callId = event.data?.toolCallId;
+				if (typeof callId === 'string') {
+					const tc = toolCallById.get(callId);
+					if (tc) {
+						if (typeof event.data?.success === 'boolean') { tc.success = event.data.success; }
+						if (resultText) { tc.result = resultText; }
 					}
 				}
 				break;

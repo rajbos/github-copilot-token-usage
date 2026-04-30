@@ -31,7 +31,7 @@ import type {
 	DiscoveryResult,
 	CandidatePath,
 } from '../ecosystemAdapter';
-import { parseJetBrainsPartition, type JetBrainsParsedSession } from '../jetbrains';
+import { parseJetBrainsPartition, type JetBrainsParsedSession, type JetBrainsToolCall } from '../jetbrains';
 
 /** Returns the canonical JetBrains Copilot session directory (~/.copilot/jb). */
 export function getJetBrainsSessionDir(): string {
@@ -113,6 +113,26 @@ export class JetBrainsAdapter implements IEcosystemAdapter, IDiscoverableEcosyst
 			firstInteraction: parsed?.firstInteraction ?? null,
 			lastInteraction: parsed?.lastInteraction ?? null,
 		};
+	}
+
+	/**
+	 * Per-tool aggregate counts for a JetBrains partition (e.g. for the Tool
+	 * Usage view). Returns `{}` when the file can't be read or had no tool
+	 * calls (typical for ask-mode conversations).
+	 */
+	async getToolCounts(sessionFile: string): Promise<Record<string, number>> {
+		const parsed = await this.parsePartition(sessionFile);
+		return parsed?.toolCounts ?? {};
+	}
+
+	/**
+	 * Ordered tool-call list for a JetBrains partition, mirroring the per-turn
+	 * `ChatTurn.toolCalls` shape used elsewhere. JetBrains has no subagent
+	 * concept so `isSubAgent` is never set.
+	 */
+	async getToolCalls(sessionFile: string): Promise<JetBrainsToolCall[]> {
+		const parsed = await this.parsePartition(sessionFile);
+		return parsed?.toolCalls ?? [];
 	}
 
 	getEditorRoot(_sessionFile: string): string {

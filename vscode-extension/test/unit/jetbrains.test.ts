@@ -115,6 +115,42 @@ test('parseJetBrainsPartition: empty content returns zeroed result', () => {
 	assert.deepEqual(r.modelUsage, {});
 	assert.equal(r.firstInteraction, null);
 	assert.equal(r.lastInteraction, null);
+	assert.deepEqual(r.toolCalls, []);
+	assert.deepEqual(r.toolCounts, {});
+});
+
+test('parseJetBrainsPartition: extracts toolCalls and toolCounts with success/result', () => {
+	const lines = [
+		JSON.stringify({ type: 'user.message', data: { content: 'go', turnId: 't1' }, timestamp: '2026-04-30T12:00:00Z' }),
+		JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: 'toolu_a', toolName: 'read_file', arguments: { filePath: 'a.txt' } } }),
+		JSON.stringify({ type: 'tool.execution_complete', data: { toolCallId: 'toolu_a', success: true, result: { result: [{ type: 'text', value: 'hello world' }] } } }),
+		JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: 'toolu_b', toolName: 'read_file', arguments: { filePath: 'b.txt' } } }),
+		JSON.stringify({ type: 'tool.execution_complete', data: { toolCallId: 'toolu_b', success: false, result: { result: [] } } }),
+		JSON.stringify({ type: 'tool.execution_start', data: { toolCallId: 'toolu_c', toolName: 'run_in_terminal', arguments: { cmd: 'ls' } } }),
+		JSON.stringify({ type: 'tool.execution_complete', data: { toolCallId: 'toolu_c', success: true, result: { result: [{ type: 'text', value: 'output' }] } } }),
+	].join('\n');
+	const r = parseJetBrainsPartition(lines);
+	assert.equal(r.toolCalls.length, 3);
+	assert.equal(r.toolCalls[0].toolName, 'read_file');
+	assert.equal(r.toolCalls[0].success, true);
+	assert.equal(r.toolCalls[0].result, 'hello world');
+	assert.ok(r.toolCalls[0].arguments && r.toolCalls[0].arguments.includes('a.txt'));
+	assert.equal(r.toolCalls[1].success, false);
+	assert.equal(r.toolCalls[1].result, undefined);
+	assert.equal(r.toolCalls[2].toolName, 'run_in_terminal');
+	assert.deepEqual(r.toolCounts, { read_file: 2, run_in_terminal: 1 });
+	assert.equal(r.mode, 'agent');
+});
+
+test('parseJetBrainsPartition: ask-mode session has empty tool fields', () => {
+	const lines = [
+		JSON.stringify({ type: 'user.message', data: { content: 'hi' }, timestamp: '2026-04-30T12:00:00Z' }),
+		JSON.stringify({ type: 'assistant.message', data: { text: 'hello' } }),
+	].join('\n');
+	const r = parseJetBrainsPartition(lines);
+	assert.equal(r.mode, 'ask');
+	assert.deepEqual(r.toolCalls, []);
+	assert.deepEqual(r.toolCounts, {});
 });
 
 test('parseJetBrainsPartition: counts one user.message as one interaction', () => {
