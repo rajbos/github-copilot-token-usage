@@ -1,5 +1,6 @@
-# GitHub Copilot Token Tracker
+# AI Engineering Fluency
 
+(Previously known as the "GitHub Copilot Token Tracker")
 ![AI Engineering Fluency](https://raw.githubusercontent.com/rajbos/github-copilot-token-usage/main/assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
 
 Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Studio, and the command line. All data is read from local session logs — nothing leaves your machine unless you opt in to cloud sync.
