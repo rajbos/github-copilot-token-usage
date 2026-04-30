@@ -85,7 +85,7 @@ import {
 } from './adapters';
 import { getVSCodeUserPaths } from './adapters/copilotChatAdapter';
 import { isJetBrainsSessionPath } from './adapters/jetbrainsAdapter';
-import { detectJetBrainsModeFromContent, detectJetBrainsModelHintFromContent } from './jetbrains';
+import { detectJetBrainsModelHintFromContent } from './jetbrains';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -3564,9 +3564,11 @@ usageAnalysis: undefined
 			// best-effort hint derived from `toolCallId` prefixes (toolu_* → claude,
 			// call_* → gpt) than mislead users with a hard-coded gpt-4o.
 			const isJetBrainsFile = isJetBrainsSessionPath(sessionFile);
-			const jetBrainsTurnMode: 'ask' | 'agent' | null = isJetBrainsFile
-				? detectJetBrainsModeFromContent(fileContent)
-				: null;
+			// Per-turn mode for JetBrains is computed below as we scan events
+			// (default 'ask', upgraded to 'agent' on tool.execution_start within
+			// the same turn). The conversation-wide detector
+			// `detectJetBrainsModeFromContent` is no longer needed for this path.
+
 			const jetBrainsModelHint: string | null = isJetBrainsFile
 				? detectJetBrainsModelHintFromContent(fileContent)
 				: null;
@@ -3647,7 +3649,7 @@ usageAnalysis: undefined
 						const turn: ChatTurn = {
 							turnNumber,
 							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
-							mode: jetBrainsTurnMode ?? 'cli',
+							mode: isJetBrainsFile ? 'ask' : 'cli',
 							userMessage,
 							assistantResponse: '',
 							model: turnModel,
@@ -3683,6 +3685,14 @@ usageAnalysis: undefined
 						const lastTurn = turns[turns.length - 1];
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 						const isSubAgent = CLI_SUB_AGENT_TOOLS.has(toolName);
+
+						// JetBrains: a turn defaults to 'ask' and is upgraded to 'agent'
+						// the moment we see any tool execution within it. This lets us
+						// detect per-turn mode flips (e.g. agent → ask later in the
+						// conversation) since JetBrains JSONL has no explicit mode field.
+						if (isJetBrainsFile && event.type === 'tool.execution_start') {
+							lastTurn.mode = 'agent';
+						}
 
 						// Check if this is an MCP tool by name pattern
 						if (this.isMcpTool(toolName)) {
