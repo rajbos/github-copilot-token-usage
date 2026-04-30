@@ -14,12 +14,12 @@ suite('Extension Test Suite', () => {
 	});
 
 	test('Extension should be present', () => {
-		const extension = vscode.extensions.getExtension('RobBos.copilot-token-tracker');
+		const extension = vscode.extensions.getExtension('RobBos.ai-engineering-fluency');
 		assert.ok(extension, 'Extension should be installed');
 	});
 
 	test('Commands should be registered', async () => {
-		const extension = vscode.extensions.getExtension('RobBos.copilot-token-tracker');
+		const extension = vscode.extensions.getExtension('RobBos.ai-engineering-fluency');
 		if (extension && !extension.isActive) {
 			await extension.activate();
 		}

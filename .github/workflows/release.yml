@@ -40,6 +40,7 @@ jobs:
       version: ${{ steps.extract_version.outputs.tag_version }}
       tag_name: ${{ steps.tag_name.outputs.tag_name }}
       vsix_file: ${{ steps.vsix_filename.outputs.vsix_file }}
+      legacy_vsix_file: ${{ steps.vsix_filename.outputs.legacy_vsix_file }}
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -259,21 +260,44 @@ jobs:
       working-directory: vscode-extension
       run: npx vsce package
       
+    - name: Create legacy VSIX (copilot-token-tracker)
+      if: inputs.vs_only != true
+      working-directory: vscode-extension
+      run: |
+        node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+          pkg.name = 'copilot-token-tracker';
+          fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+        "
+        npx vsce package
+        node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+          pkg.name = 'ai-engineering-fluency';
+          fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+        "
+
     - name: Get VSIX filename
       if: inputs.vs_only != true
       id: vsix_filename
       working-directory: vscode-extension
       run: |
-        VSIX_FILE=$(find . -maxdepth 1 -name "*.vsix" -exec basename {} \; | head -n 1)
+        VSIX_FILE=$(find . -maxdepth 1 -name "ai-engineering-fluency-*.vsix" -exec basename {} \; | head -n 1)
+        LEGACY_VSIX_FILE=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)
         echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
-        echo "VSIX file: $VSIX_FILE"
+        echo "legacy_vsix_file=$LEGACY_VSIX_FILE" >> "$GITHUB_OUTPUT"
+        echo "Primary VSIX: $VSIX_FILE"
+        echo "Legacy VSIX:  $LEGACY_VSIX_FILE"
 
     - name: Upload VSIX as workflow artifact
       if: inputs.vs_only != true
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: vsix-package
-        path: vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}
+        path: |
+          vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}
+          vscode-extension/${{ steps.vsix_filename.outputs.legacy_vsix_file }}
         retention-days: 90
         
     - name: Create Release
@@ -289,15 +313,16 @@ jobs:
         
         # Create release (skip if it already exists — e.g. re-running after a downstream job failure)
         TAG="${{ steps.tag_name.outputs.tag_name }}"
+        PRIMARY_VSIX="vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}"
+        LEGACY_VSIX="vscode-extension/${{ steps.vsix_filename.outputs.legacy_vsix_file }}"
         if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-          echo "ℹ️ Release $TAG already exists — uploading VSIX with --clobber"
-          gh release upload "$TAG" \
-            vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} --clobber 2>&1 | tee /tmp/release_output.txt
+          echo "ℹ️ Release $TAG already exists — uploading VSIXs with --clobber"
+          gh release upload "$TAG" "$PRIMARY_VSIX" "$LEGACY_VSIX" --clobber 2>&1 | tee /tmp/release_output.txt
         else
           gh release create "$TAG" \
             --title "VS Code Extension v${{ steps.extract_version.outputs.tag_version }}" \
             --notes-file /tmp/release_notes.md \
-            vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }} 2>&1 | tee /tmp/release_output.txt
+            "$PRIMARY_VSIX" "$LEGACY_VSIX" 2>&1 | tee /tmp/release_output.txt
         fi
 
     - name: Release Summary
@@ -368,7 +393,7 @@ jobs:
           "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=3.0-preview.1" \
           -H "Content-Type: application/json" \
           -H "Accept: application/json;api-version=3.0-preview.1" \
-          -d '{"filters":[{"criteria":[{"filterType":7,"value":"RobBos.copilot-token-tracker"}]}],"flags":512}' \
+          -d '{"filters":[{"criteria":[{"filterType":7,"value":"RobBos.ai-engineering-fluency"}]}],"flags":512}' \
           | jq -r '.results[0].extensions[0].versions[0].version // empty')
 
         if [ -z "$MARKETPLACE_VERSION" ]; then
@@ -397,20 +422,23 @@ jobs:
       working-directory: vscode-extension
       run: npm ci
 
-    - name: Download VSIX from release
+    - name: Download VSIXs from release
       id: download_vsix
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         TAG_NAME="${{ needs.release.outputs.tag_name }}"
-        echo "Downloading VSIX from release $TAG_NAME..."
+        echo "Downloading VSIXs from release $TAG_NAME..."
         gh release download "$TAG_NAME" \
           --repo "${{ github.repository }}" \
           --pattern "*.vsix" \
           --dir .
-        VSIX_FILE=$(find . -maxdepth 1 -name "*.vsix" -exec basename {} \; | head -n 1)
-        echo "Downloaded: $VSIX_FILE"
-        echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
+        PRIMARY_VSIX=$(find . -maxdepth 1 -name "ai-engineering-fluency-*.vsix" -exec basename {} \; | head -n 1)
+        LEGACY_VSIX=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)
+        echo "Primary VSIX: $PRIMARY_VSIX"
+        echo "Legacy VSIX:  $LEGACY_VSIX"
+        echo "vsix_file=$PRIMARY_VSIX" >> "$GITHUB_OUTPUT"
+        echo "legacy_vsix_file=$LEGACY_VSIX" >> "$GITHUB_OUTPUT"
 
     - name: Publish to VS Code Marketplace
       id: publish
@@ -427,6 +455,11 @@ jobs:
         echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to VS Code Marketplace..."
         npx vsce publish \
           --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
+          --pat "$VSCE_PAT"
+        
+        echo "Publishing ${{ steps.download_vsix.outputs.legacy_vsix_file }} to VS Code Marketplace (legacy ID)..."
+        npx vsce publish \
+          --packagePath "${{ steps.download_vsix.outputs.legacy_vsix_file }}" \
           --pat "$VSCE_PAT"
 
     - name: Publish to Open VSX Registry
@@ -445,6 +478,11 @@ jobs:
           --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
           -p "$OPEN_VSX_TOKEN"
 
+        echo "Publishing ${{ steps.download_vsix.outputs.legacy_vsix_file }} to Open VSX Registry (legacy ID)..."
+        npx --yes ovsx publish \
+          --packagePath "${{ steps.download_vsix.outputs.legacy_vsix_file }}" \
+          -p "$OPEN_VSX_TOKEN"
+
     - name: Publish Summary
       if: always()
       run: |
@@ -452,9 +490,9 @@ jobs:
           echo "# 🚀 VS Code Marketplace"
           echo ""
           if [ "${{ steps.publish.outcome }}" == "success" ]; then
-            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)"
+            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace (new ID)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) and [legacy ID](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)"
           elif [ "${{ steps.version_check.outcome }}" == "failure" ]; then
-            echo "⏭️ Publish skipped — v${{ needs.release.outputs.version }} is already live on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)."
+            echo "⏭️ Publish skipped — v${{ needs.release.outputs.version }} is already live on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency)."
             echo ""
             echo "Bump the version in \`vscode-extension/package.json\` before publishing again."
           else
@@ -467,7 +505,7 @@ jobs:
           echo "# 🌐 Open VSX Registry"
           echo ""
           if [ "${{ steps.publish_open_vsx.outcome }}" == "success" ]; then
-            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [Open VSX Registry](https://open-vsx.org/extension/RobBos/copilot-token-tracker)"
+            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [Open VSX Registry](https://open-vsx.org/extension/RobBos/ai-engineering-fluency)"
           elif [ "${{ steps.publish_open_vsx.outcome }}" == "skipped" ]; then
             echo "⏭️ Open VSX publish skipped."
           else
