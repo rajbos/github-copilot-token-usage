@@ -1773,7 +1773,7 @@ function renderLayout(data: DiagnosticsData): void {
             message.totalScanned || 0,
             message.parseErrors || 0,
             message.truncated || false,
-            message.folderPath || "",
+            escapeHtml(String(message.folderPath || "")),
           );
         }
       }
