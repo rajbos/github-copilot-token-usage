@@ -25,7 +25,7 @@ type ChatTurn = {
 	userMessage: string;
 	assistantResponse: string;
 	model: string | null;
-	toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
+	toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string; subAgentTokens?: { input: number; output: number } }[];
 	contextReferences: ContextReferenceUsage;
 	mcpTools: { server: string; tool: string }[];
 	inputTokensEstimate: number;
@@ -62,6 +62,8 @@ type SessionLogData = {
 	usageAnalysis?: SessionUsageAnalysis;
 	/** Session-level actual token count from LLM API (e.g. CLI session.shutdown). 0 when unavailable. */
 	actualTokens?: number;
+	/** Number of subagent sessions started (CLI format only). */
+	subAgentsStarted?: number;
 	compactNumbers?: boolean;
 };
 
@@ -436,10 +438,10 @@ function renderTurnCard(turn: ChatTurn): string {
 		});
 		
 		const toolSummary = Object.entries(toolCounts)
-			.map(([name, count]) => `<span class="tool-summary-item">${escapeHtml(name)}: <strong>${count}</strong></span>`)
+			.map(([name, count]) => `<span class="tool-summary-item" data-tool-filter="${escapeHtml(name)}" data-turn="${turn.turnNumber}" title="Click to filter by ${escapeHtml(name)}">${escapeHtml(name)}: <strong>${count}</strong></span>`)
 			.join('');
 		const subAgentSummary = subAgentCallsInTurn.length > 0
-			? `<span class="sub-agent-summary-item">🤖 Sub-Agents: <strong>${subAgentCallsInTurn.length}</strong></span>`
+			? `<span class="sub-agent-summary-item" data-tool-filter="__subagent__" data-turn="${turn.turnNumber}" title="Click to filter sub-agent calls">🤖 Sub-Agents: <strong>${subAgentCallsInTurn.length}</strong></span>`
 			: '';
 		
 		toolCallsHtml = `
@@ -459,10 +461,11 @@ function renderTurnCard(turn: ChatTurn): string {
 						</thead>
 						<tbody>
 							${turn.toolCalls.map((tc, idx) => `
-								<tr class="tool-row${tc.isSubAgent ? ' sub-agent-row' : ''}">
+								<tr class="tool-row${tc.isSubAgent ? ' sub-agent-row' : ''}" data-tool-name="${tc.isSubAgent ? '__subagent__' : escapeHtml(lookupToolName(tc.toolName))}">
 									<td class="tool-name-cell">
-										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(tc.isSubAgent ? `🤖 ${tc.toolName}` : lookupToolName(tc.toolName))}</span>
+										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(tc.isSubAgent ? ({'task':'🤖 Sub-Agent','read_agent':'🤖 Sub-Agent (read)','write_agent':'🤖 Sub-Agent (write)','list_agents':'🤖 Sub-Agent (list)'}[tc.toolName] || `🤖 ${tc.toolName}`) : lookupToolName(tc.toolName))}</span>
 										${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(tc.subAgentModel)}</span>` : ''}
+										${tc.isSubAgent && tc.subAgentTokens ? `<span class="sub-agent-tokens">↑${tc.subAgentTokens.input.toLocaleString()} ↓${tc.subAgentTokens.output.toLocaleString()} tokens</span>` : ''}
 										${tc.arguments && !tc.isSubAgent ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
 										${tc.result && !tc.isSubAgent ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
 									</td>
@@ -666,10 +669,12 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-value">${effortDefaultLabel}</div>
 					<div class="summary-sub">${effortSummary}${sessionEffort.switchCount > 0 ? ` · ${sessionEffort.switchCount} switch${sessionEffort.switchCount !== 1 ? 'es' : ''}` : ''}</div>
 				</div>` : ''}
-				${totalSubAgentCalls > 0 ? `<div class="summary-card">
-					<div class="summary-label">🤖 Sub-Agent Calls</div>
-					<div class="summary-value">${totalSubAgentCalls}</div>
-					<div class="summary-sub">Agent mode sub-agent invocations</div>
+				${(totalSubAgentCalls > 0 || (data.subAgentsStarted ?? 0) > 0) ? `<div class="summary-card">
+					<div class="summary-label">🤖 Sub-Agents</div>
+					<div class="summary-value">${data.subAgentsStarted ?? totalSubAgentCalls}</div>
+					<div class="summary-sub">${data.subAgentsStarted !== undefined
+						? `${data.subAgentsStarted} started · ${totalSubAgentCalls} tool calls`
+						: 'Agent mode sub-agent invocations'}</div>
 				</div>` : ''}
 				<div class="summary-card">
 					<div class="summary-label">🔧 Tool Calls</div>
@@ -828,6 +833,45 @@ function renderLayout(data: SessionLogData): void {
 			const turnNumber = parseInt(link.getAttribute('data-turn') || '0', 10);
 			const toolCallIdx = parseInt(link.getAttribute('data-toolcall') || '0', 10);
 			vscode.postMessage({ command: 'showToolCallPretty', turnNumber, toolCallIdx });
+		});
+	});
+
+	// Tool pill filter: clicking a pill filters the tool rows in that turn
+	document.querySelectorAll<HTMLElement>('.tool-summary-item[data-tool-filter], .sub-agent-summary-item[data-tool-filter]').forEach(pill => {
+		pill.addEventListener('click', (e) => {
+			const turnNumber = pill.getAttribute('data-turn');
+			const filter = pill.getAttribute('data-tool-filter');
+			const isActive = pill.classList.contains('active');
+
+			const turnCard = document.querySelector<HTMLElement>(`.turn-card[data-turn="${turnNumber}"]`);
+			if (!turnCard) { return; }
+
+			// Clear active state from all pills in this turn
+			turnCard.querySelectorAll<HTMLElement>('.tool-summary-item, .sub-agent-summary-item').forEach(p => p.classList.remove('active'));
+
+			const rows = turnCard.querySelectorAll<HTMLElement>('tr.tool-row');
+			const detailsEl = turnCard.querySelector<HTMLDetailsElement>('details.tool-calls-details');
+
+			if (isActive) {
+				// Second click: clear filter, show all rows
+				rows.forEach(row => { row.style.display = ''; });
+			} else {
+				// Activate filter
+				pill.classList.add('active');
+				if (detailsEl) { detailsEl.open = true; }
+				rows.forEach(row => {
+					row.style.display = row.getAttribute('data-tool-name') === filter ? '' : 'none';
+				});
+			}
+		});
+	});
+
+	// Prevent <details> from toggling when a filter pill inside <summary> is clicked
+	document.querySelectorAll<HTMLElement>('summary.tool-calls-summary').forEach(summary => {
+		summary.addEventListener('click', (e) => {
+			if ((e.target as HTMLElement).closest('.tool-summary-item, .sub-agent-summary-item')) {
+				e.preventDefault();
+			}
 		});
 	});
 

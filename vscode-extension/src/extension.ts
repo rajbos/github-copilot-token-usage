@@ -172,7 +172,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 43; // Fix eco-session token count in diagnostics path
+	private static readonly CACHE_VERSION = 44; // Add tool.execution_complete token counting for CLI sessions
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -3390,6 +3390,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async getSessionLogData(sessionFile: string): Promise<SessionLogData> {
 		const details = await this.getSessionFileDetails(sessionFile);
 		const turns: ChatTurn[] = [];
+		let subAgentsStarted: number | undefined;
 
 		try {
 // Delegate to ecosystem adapter if available
@@ -3583,6 +3584,9 @@ usageAnalysis: undefined
 				} catch { /* skip */ }
 			}
 
+			// Track output tokens per subagent (keyed by parentToolCallId)
+			const subAgentOutputTokenMap = new Map<string, number>();
+
 			for (const line of lines) {
 				try {
 					const event = JSON.parse(line);
@@ -3616,15 +3620,23 @@ usageAnalysis: undefined
 					}
 
 					// Handle CLI assistant response
-					if (event.type === 'assistant.message' && event.data?.content && turns.length > 0) {
-						const lastTurn = turns[turns.length - 1];
-						lastTurn.assistantResponse += event.data.content;
-						lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+					if (event.type === 'assistant.message' && event.data?.content) {
+						if (event.data.parentToolCallId) {
+							// Subagent response — accumulate output tokens keyed by parent tool call
+							const prev = subAgentOutputTokenMap.get(event.data.parentToolCallId) ?? 0;
+							subAgentOutputTokenMap.set(event.data.parentToolCallId, prev + this.estimateTokensFromText(event.data.content, cliSessionModel));
+						} else if (turns.length > 0) {
+							const lastTurn = turns[turns.length - 1];
+							lastTurn.assistantResponse += event.data.content;
+							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+						}
 					}
 
 					// Handle CLI tool calls (tool.execution_start is the actual event type in current CLI format)
 					const CLI_SUB_AGENT_TOOLS = new Set(['task', 'read_agent', 'write_agent', 'list_agents']);
-					if ((event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start') && turns.length > 0) {
+					if ((event.type === 'tool.call' || event.type === 'tool.result' || event.type === 'tool.execution_start')
+					&& turns.length > 0
+					&& !event.data?.parentToolCallId) {
 						const lastTurn = turns[turns.length - 1];
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 						const isSubAgent = CLI_SUB_AGENT_TOOLS.has(toolName);
@@ -3634,12 +3646,15 @@ usageAnalysis: undefined
 							const serverName = this.extractMcpServerName(toolName);
 							lastTurn.mcpTools.push({ server: serverName, tool: toolName });
 						} else if (isSubAgent) {
-							lastTurn.toolCalls.push({
+							const subAgentCallId: string | undefined = event.data?.toolCallId;
+							const subAgentEntry: any = {
 								toolName,
 								arguments: event.data?.arguments ? JSON.stringify(event.data.arguments) : undefined,
 								result: undefined,
 								isSubAgent: true,
-							});
+							};
+							if (subAgentCallId) { subAgentEntry._callId = subAgentCallId; }
+							lastTurn.toolCalls.push(subAgentEntry);
 						} else {
 							// Add to regular tool calls (skip duplicate execution_start events per toolCallId)
 							const callId: string | undefined = event.data?.toolCallId;
@@ -3663,8 +3678,37 @@ usageAnalysis: undefined
 						const toolName = event.data?.toolName || event.toolName || 'unknown';
 						lastTurn.mcpTools.push({ server: serverName, tool: toolName });
 					}
+
+					// Count distinct subagent sessions launched
+					if (event.type === 'subagent.started') {
+						subAgentsStarted = (subAgentsStarted ?? 0) + 1;
+					}
 				} catch {
 					// Skip malformed lines
+				}
+			}
+
+			// Attach subagent token estimates to sub-agent tool call entries
+			if (subAgentOutputTokenMap.size > 0) {
+				for (const turn of turns) {
+					for (const tc of turn.toolCalls as any[]) {
+						if (tc.isSubAgent && tc._callId) {
+							const outputTokens = subAgentOutputTokenMap.get(tc._callId) ?? 0;
+							let inputTokens = 0;
+							if (tc.arguments) {
+								try {
+									const args = JSON.parse(tc.arguments);
+									const prompt = typeof args?.prompt === 'string' ? args.prompt : tc.arguments;
+									inputTokens = this.estimateTokensFromText(prompt, cliSessionModel);
+								} catch {
+									inputTokens = this.estimateTokensFromText(tc.arguments, cliSessionModel);
+								}
+							}
+							if (outputTokens > 0 || inputTokens > 0) {
+								tc.subAgentTokens = { input: inputTokens, output: outputTokens };
+							}
+						}
+					}
 				}
 			}
 		}
@@ -3770,7 +3814,8 @@ usageAnalysis: undefined
 			lastInteraction: details.lastInteraction,
 			turns,
 			usageAnalysis,
-			actualTokens: sessionCache?.actualTokens || 0
+			actualTokens: sessionCache?.actualTokens || 0,
+			...(subAgentsStarted !== undefined ? { subAgentsStarted } : {})
 		};
 	}
 
@@ -6749,6 +6794,31 @@ ${hashtag}`;
           const issueUrl = `${this.getRepositoryUrl()}/issues/new?body=${shortBody}`;
             await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
           });
+          break;
+        case "reportNewEditorPath":
+          if (message.path) {
+            await this.dispatch('reportNewEditorPath:diagnostics', async () => {
+              const rawPath: string = message.path;
+              const home = os.homedir();
+              const anonymizedPath = rawPath.startsWith(home) ? rawPath.replace(home, '~') : rawPath;
+              const title = encodeURIComponent('New editor support: unknown session path found');
+              const body = encodeURIComponent([
+                '## Unknown editor session path found',
+                '',
+                'The extension found a session file at a path it does not recognise:',
+                '',
+                '```',
+                anonymizedPath,
+                '```',
+                '',
+                '**Which editor or tool does this path belong to?**',
+                '',
+                'Please describe the editor/tool and how you installed it so we can add support for it.',
+              ].join('\n'));
+              const issueUrl = `${this.getRepositoryUrl()}/issues/new?title=${title}&body=${body}&labels=${encodeURIComponent('new-editor-support')}`;
+              await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+            });
+          }
           break;
         case "openSessionFile":
           if (message.file) {

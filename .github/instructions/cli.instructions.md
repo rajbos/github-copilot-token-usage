@@ -58,6 +58,7 @@ When adding support for a new editor or data source, wire it into **both** `vsco
 - [ ] `cli/src/helpers.ts` — import, factory, singleton, detection, stat routing, processSessionFile block, usageAnalysis deps
 - [ ] `cli/src/commands/stats.ts` — `getEditorDisplayName()` entry
 - [ ] `cli/README.md` — "Data Sources" section updated
+- [ ] `docs/vscode-extension/README.md` — add the new editor to the "Supported editors shown in the chart" list in the **Chart View** section
 - [ ] `npm run build` passes (from `cli/`)
 - [ ] CLI `stats` command shows the new editor in the session list
 - [ ] Token counts are non-zero and plausible

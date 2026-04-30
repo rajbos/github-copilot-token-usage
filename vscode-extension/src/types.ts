@@ -418,7 +418,7 @@ export interface ChatTurn {
   userMessage: string;
   assistantResponse: string;
   model: string | null;
-  toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string }[];
+  toolCalls: { toolName: string; arguments?: string; result?: string; isSubAgent?: boolean; subAgentModel?: string; subAgentTokens?: { input: number; output: number } }[];
   contextReferences: ContextReferenceUsage;
   mcpTools: { server: string; tool: string }[];
   inputTokensEstimate: number;
@@ -445,6 +445,8 @@ export interface SessionLogData {
   usageAnalysis?: SessionUsageAnalysis;
   /** Session-level actual token count from LLM API (e.g. session.shutdown in CLI format). 0 when unavailable. */
   actualTokens?: number;
+  /** Number of distinct subagent sessions started (CLI format only, from subagent.started events). */
+  subAgentsStarted?: number;
 }
 
 // Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)

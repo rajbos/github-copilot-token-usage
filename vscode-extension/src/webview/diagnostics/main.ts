@@ -691,6 +691,7 @@ function renderSessionTable(
 							<td>${formatDate(sf.lastInteraction)}</td>
 							<td>
 								<a href="#" class="view-formatted-link" data-file="${encodeURIComponent(sf.file)}" title="View formatted JSONL file">📄 View</a>
+								${(sf.editorName || sf.editorSource || "Unknown") === "Unknown" ? ` <a href="#" class="report-editor-link" data-path="${encodeURIComponent(sf.file)}" title="Report this unknown path so we can add editor support">📢 Report</a>` : ""}
 							</td>
 						</tr>
 					`,
@@ -1089,7 +1090,7 @@ function renderLayout(data: DiagnosticsData): void {
 					<td title="${escapeHtml(sf.dir)}">${escapeHtml(display)}</td>
 				<td><span class="${getEditorBadgeClass(editorName)}">${getEditorIcon(editorName)} ${escapeHtml(editorName)}</span></td>
 					<td>${sf.count}</td>
-					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a></td>
+					<td><a href="#" class="reveal-link" data-path="${encodeURIComponent(sf.dir)}">Open directory</a>${editorName === "Unknown" ? ` <a href="#" class="report-editor-link" data-path="${encodeURIComponent(sf.dir)}" title="Report this unknown path so we can add editor support">📢 Report</a>` : ""}</td>
 				</tr>`;
       },
     );
@@ -1838,6 +1839,17 @@ function renderLayout(data: DiagnosticsData): void {
           (link as HTMLElement).getAttribute("data-path") || "",
         );
         vscode.postMessage({ command: "revealPath", path });
+      });
+    });
+
+    // Report unknown editor path handlers
+    document.querySelectorAll(".report-editor-link").forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        const path = decodeURIComponent(
+          (link as HTMLElement).getAttribute("data-path") || "",
+        );
+        vscode.postMessage({ command: "reportNewEditorPath", path });
       });
     });
   }

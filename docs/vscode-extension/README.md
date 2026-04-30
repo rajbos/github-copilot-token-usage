@@ -123,6 +123,42 @@ For detailed scoring rules, see [Fluency Levels Documentation](../FLUENCY-LEVELS
 
 ---
 
+## Session Log Viewer
+
+The extension includes a session log viewer for inspecting individual Copilot Chat or Copilot CLI session files in detail.
+
+**To open:** In the **Diagnostics** view → session files tab, click the **📄 View** link next to any session.
+
+### What you see
+
+Each chat turn is shown as a card with:
+- Input, output, and (where applicable) thinking token counts
+- The model used
+- A summary of tool calls and sub-agent activity
+
+### Sub-Agent tracking
+
+When a turn launched sub-agents, the summary card shows:
+
+> 🤖 Sub-Agents: N started · M tool calls
+
+Sub-agent tool rows are displayed with friendly names:
+- `task` → **Sub-Agent**
+- `read_agent` → **Sub-Agent (read)**
+- `write_agent` → **Sub-Agent (write)**
+- `list_agents` → **Sub-Agent (list)**
+
+Each sub-agent row also shows a green **↑N ↓M tokens** badge with the estimated input/output token usage for that specific sub-agent invocation.
+
+### Tool call pill filters
+
+Each turn with tool calls shows clickable pill badges (e.g. `read_file: 3`, `🤖 Sub-Agents: 2`). Clicking a pill:
+- Opens the tool calls panel for that turn if it is not already open
+- Filters the list to show only tool rows of that type
+- Click the same pill again to clear the filter and show all rows
+
+---
+
 ## Usage Analysis Dashboard
 
 The extension includes a comprehensive usage analysis dashboard that helps you understand how you interact with GitHub Copilot.
