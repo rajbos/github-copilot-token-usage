@@ -21,8 +21,9 @@
     },
     {
       "label": "esbuild",
-      "type": "shell",
-      "command": "node esbuild.js",
+      "type": "process",
+      "command": "node",
+      "args": ["esbuild.js"],
       "options": {
         "cwd": "${workspaceFolder}/vscode-extension"
       },
