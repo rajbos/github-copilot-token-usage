@@ -81,13 +81,47 @@ test('JetBrainsAdapter.getCandidatePaths: returns single JetBrains entry', () =>
 // Safe-default contract methods
 // ---------------------------------------------------------------------------
 
-test('JetBrainsAdapter: safe-default methods return zero values', async () => {
+test('JetBrainsAdapter: safe-default methods return zero values for unreadable files', async () => {
 	const f = '/some/file.jsonl';
 	assert.deepEqual(await adapter.getTokens(f), { tokens: 0, thinkingTokens: 0, actualTokens: 0 });
 	assert.equal(await adapter.countInteractions(f), 0);
 	assert.deepEqual(await adapter.getModelUsage(f), {});
 	const meta = await adapter.getMeta(f);
 	assert.equal(meta.title, undefined);
+	assert.equal(meta.firstInteraction, null);
+	assert.equal(meta.lastInteraction, null);
+});
+
+test('JetBrainsAdapter: parses a real partition file and returns common output', async (t) => {
+	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'jb-parse-'));
+	t.after(async () => { await fs.promises.rm(tmpDir, { recursive: true, force: true }); });
+	const file = path.join(tmpDir, 'partition-1.jsonl');
+	const events = [
+		{ type: 'partition.created', data: { conversationId: 'conv-1', partitionId: 1, source: 'panel', createdAt: 1777552130660 }, timestamp: '2026-04-30T12:28:50.660Z' },
+		{ type: 'user.message', data: { content: 'hello world', turnId: 't1' }, timestamp: '2026-04-30T12:28:50.713Z' },
+		{ type: 'user.message_rendered', data: { turnId: 't1', renderedMessage: '<userRequest>hello world</userRequest>' }, timestamp: '2026-04-30T12:28:51.826Z' },
+		{ type: 'assistant.turn_start', data: { turnId: 't1' }, timestamp: '2026-04-30T12:28:51.900Z' },
+		{ type: 'tool.execution_start', data: { toolCallId: 'toolu_bdrk_xyz', toolName: 'read_file', arguments: { filePath: '/tmp/x' } }, timestamp: '2026-04-30T12:28:55.802Z' },
+		{ type: 'tool.execution_complete', data: { toolCallId: 'toolu_bdrk_xyz', success: true, result: { result: [{ type: 'text', value: 'file contents go here' }] } }, timestamp: '2026-04-30T12:28:56.000Z' },
+		{ type: 'assistant.message', data: { text: 'here is your answer', thinking: { id: 'th0', text: 'thinking about it' }, iterationNumber: 1, messageId: 't1' }, timestamp: '2026-04-30T12:29:07.000Z' },
+		{ type: 'assistant.turn_end', data: { turnId: 't1', status: 'success' }, timestamp: '2026-04-30T12:29:07.522Z' },
+	];
+	await fs.promises.writeFile(file, events.map(e => JSON.stringify(e)).join('\n') + '\n');
+
+	const tokens = await adapter.getTokens(file);
+	assert.ok(tokens.tokens > 0, `expected positive tokens, got ${tokens.tokens}`);
+	assert.ok(tokens.thinkingTokens > 0, 'thinking tokens expected from assistant.message.data.thinking.text');
+	assert.equal(tokens.actualTokens, 0, 'JetBrains files have no actual API token counts');
+
+	assert.equal(await adapter.countInteractions(file), 1);
+
+	const modelUsage = await adapter.getModelUsage(file);
+	// Tool call id starts with `toolu_` → claude family hint
+	assert.ok(modelUsage['claude'], 'expected claude model attribution from toolCallId prefix');
+
+	const meta = await adapter.getMeta(file);
+	assert.equal(meta.firstInteraction, '2026-04-30T12:28:50.713Z');
+	assert.equal(meta.lastInteraction, '2026-04-30T12:29:07.522Z');
 });
 
 // ---------------------------------------------------------------------------

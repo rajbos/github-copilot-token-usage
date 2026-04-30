@@ -31,6 +31,7 @@ import type {
 	DiscoveryResult,
 	CandidatePath,
 } from '../ecosystemAdapter';
+import { parseJetBrainsPartition, type JetBrainsParsedSession } from '../jetbrains';
 
 /** Returns the canonical JetBrains Copilot session directory (~/.copilot/jb). */
 export function getJetBrainsSessionDir(): string {
@@ -71,20 +72,47 @@ export class JetBrainsAdapter implements IEcosystemAdapter, IDiscoverableEcosyst
 		return fs.promises.stat(sessionFile);
 	}
 
-	async getTokens(_sessionFile: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
-		return { tokens: 0, thinkingTokens: 0, actualTokens: 0 };
+	/**
+	 * Read and parse the partition file once; safe-default to zeros if the
+	 * file can't be read. Callers that need multiple fields off the same
+	 * file can use {@link parsePartition} directly to avoid re-reading.
+	 */
+	private async parsePartition(sessionFile: string): Promise<JetBrainsParsedSession | null> {
+		try {
+			const content = await fs.promises.readFile(sessionFile, 'utf8');
+			return parseJetBrainsPartition(content);
+		} catch {
+			return null;
+		}
 	}
 
-	async countInteractions(_sessionFile: string): Promise<number> {
-		return 0;
+	async getTokens(sessionFile: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
+		const parsed = await this.parsePartition(sessionFile);
+		if (!parsed) { return { tokens: 0, thinkingTokens: 0, actualTokens: 0 }; }
+		return {
+			tokens: parsed.tokens,
+			thinkingTokens: parsed.thinkingTokens,
+			actualTokens: parsed.actualTokens,
+		};
 	}
 
-	async getModelUsage(_sessionFile: string): Promise<ModelUsage> {
-		return {};
+	async countInteractions(sessionFile: string): Promise<number> {
+		const parsed = await this.parsePartition(sessionFile);
+		return parsed?.interactions ?? 0;
 	}
 
-	async getMeta(_sessionFile: string): Promise<{ title: string | undefined; firstInteraction: string | null; lastInteraction: string | null; workspacePath?: string }> {
-		return { title: undefined, firstInteraction: null, lastInteraction: null };
+	async getModelUsage(sessionFile: string): Promise<ModelUsage> {
+		const parsed = await this.parsePartition(sessionFile);
+		return parsed?.modelUsage ?? {};
+	}
+
+	async getMeta(sessionFile: string): Promise<{ title: string | undefined; firstInteraction: string | null; lastInteraction: string | null; workspacePath?: string }> {
+		const parsed = await this.parsePartition(sessionFile);
+		return {
+			title: undefined,
+			firstInteraction: parsed?.firstInteraction ?? null,
+			lastInteraction: parsed?.lastInteraction ?? null,
+		};
 	}
 
 	getEditorRoot(_sessionFile: string): string {

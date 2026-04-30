@@ -1,0 +1,259 @@
+{
+  "title": "JetBrains IDE GitHub Copilot Session File Schema Documentation",
+  "description": "Structure of session log files written by GitHub Copilot in JetBrains IDEs (IntelliJ IDEA, Rider, WebStorm, PyCharm, GoLand, etc.). Each conversation lives in its own UUID-named subdirectory; one or more partition-{n}.jsonl files store the events. The Copilot Token Tracker uses these files to attribute tokens, interactions, models, modes, and tools to the JetBrains editor surface.",
+  "version": "1.0",
+  "lastUpdated": "2026-04-30",
+  "schemaChanges": {
+    "1.0": {
+      "date": "2026-04-30",
+      "changes": [
+        "Initial schema documentation based on observed session files from GitHub Copilot in Rider 2026.1 (~/.copilot/jb/{conversationId}/partition-{n}.jsonl)."
+      ]
+    }
+  },
+  "officialSourceReferences": {
+    "description": "GitHub Copilot for JetBrains is a closed-source plugin distributed via the JetBrains Marketplace. The on-disk JSONL format is internal to the plugin and is not formally documented by GitHub. Fields below were observed empirically and may evolve across plugin releases.",
+    "marketplace": "https://plugins.jetbrains.com/plugin/17718-github-copilot",
+    "note": "All fields documented here were observed in the GitHub Copilot plugin as bundled with Rider 2026.1 (April 2026)."
+  },
+  "keyDifferencesFromCopilot": {
+    "description": "Notable differences between JetBrains Copilot session files and the VS Code Copilot Chat session formats",
+    "format": "JSONL only; one JSON event per line. There is no equivalent of the VS Code workspaceStorage .json file shape.",
+    "noModelField": "The JetBrains JSONL does NOT contain the model name in any event. Token counts must be estimated; model attribution is best-effort (heuristic: the toolCallId prefix — e.g. 'toolu_bdrk_*' suggests Anthropic Claude on AWS Bedrock, 'call_*' suggests OpenAI). The bundled idea.log records the selected model, but it is not part of the session file.",
+    "noActualTokenCounts": "Unlike Claude Code, no usage object is recorded. The extension estimates tokens from the text fields using the same character-ratio heuristic used for Copilot CLI sessions.",
+    "modeDetection": "There is no explicit mode field. Mode (ask vs. agent) must be inferred. Reliable heuristic: if the partition contains any 'tool.execution_start' event the user was in agent mode; otherwise ask mode. A weaker textual signal is the '<reminderInstructions>' block embedded in 'user.message_rendered.data.renderedMessage' which begins with 'You are an agent ...' for agent-mode turns.",
+    "renderedMessages": "Each user turn writes both a 'user.message' event (the literal user text) and a 'user.message_rendered' event (the same text with injected file context, reminders, and current-date wrappers). Token estimation should use the rendered version so context tokens are captured.",
+    "thinking": "assistant.message.data.thinking.text carries chain-of-thought-style reasoning for models that emit it (e.g. Claude). It should be counted as thinking tokens, not output tokens."
+  },
+  "installationLocations": {
+    "description": "Directories written by the GitHub Copilot JetBrains plugin",
+    "sessionFiles": {
+      "path": "~/.copilot/jb/",
+      "description": "Root directory for all JetBrains Copilot Chat conversations. Sibling of '~/.copilot/session-state/' which holds Copilot CLI sessions — they must NOT be conflated.",
+      "example_windows": "C:\\Users\\{username}\\.copilot\\jb\\",
+      "example_macos": "/Users/{username}/.copilot/jb/",
+      "example_linux": "/home/{username}/.copilot/jb/",
+      "subdirectories": {
+        "{conversationId}/": {
+          "description": "One UUID-named directory per chat conversation. The same UUID appears as 'partition.created.data.conversationId'.",
+          "files": {
+            "partition-{n}.jsonl": {
+              "description": "One JSONL file per partition of the conversation (n is a 1-based integer). Long conversations can be split across multiple partition files; events from the same conversation share the same conversationId. Empty partition files (size 0) indicate a conversation that was opened but never used and should be excluded from discovery."
+            }
+          }
+        }
+      }
+    },
+    "ideLog": {
+      "path": "{IDE config root}/log/idea.log",
+      "description": "Bundled IDE log. Contains Copilot tool registration, fetchChat requests, and (uniquely) the selected model name and conversationId. Useful as an out-of-band source for model attribution but is NOT part of the session schema."
+    },
+    "languageServerLogs": {
+      "path": "~/.copilot/logs/process-*.log",
+      "description": "Logs from the bundled Copilot language server process. Debug/telemetry only — no chat content."
+    }
+  },
+  "filePathPredicate": {
+    "description": "How the extension recognizes a JetBrains session file path.",
+    "pattern": "Path contains '/.copilot/jb/' (or Windows '\\.copilot\\jb\\') AND ends with '/partition-{digits}.jsonl'.",
+    "implementation": "isJetBrainsSessionPath() in src/adapters/jetbrainsAdapter.ts"
+  },
+  "eventTypes": {
+    "description": "Every line in a partition file is a JSON object with the same envelope: { type, data, id, timestamp, parentId }. The 'type' field selects one of the following payload shapes.",
+    "envelope": {
+      "type": "Event discriminator (string).",
+      "data": "Event-specific payload (object).",
+      "id": "Stable event UUID (string).",
+      "timestamp": "ISO-8601 UTC timestamp the event was written (string).",
+      "parentId": "Parent event UUID for threading; usually null."
+    },
+    "partition.created": {
+      "occurrence": "Exactly once, as the first line of every partition file.",
+      "purpose": "Header / session marker. Equivalent to 'session.start' in Copilot CLI sessions.",
+      "data": {
+        "conversationId": "UUID matching the parent directory name (string).",
+        "partitionId": "1-based partition index (number).",
+        "source": "How the chat was opened — observed values: 'panel' (chat tool window), likely also 'inline' / 'editor' (string).",
+        "createdAt": "Epoch milliseconds the partition was created (number)."
+      }
+    },
+    "user.message": {
+      "occurrence": "Once per user turn.",
+      "purpose": "The literal user-typed message. Used for interaction counting.",
+      "data": {
+        "content": "Raw user message text (string).",
+        "turnId": "UUID linking all events that belong to this turn (string)."
+      }
+    },
+    "user.message_rendered": {
+      "occurrence": "Once per user turn, immediately after 'assistant.turn_start'.",
+      "purpose": "The user message after the plugin has expanded context (current date, reminder instructions, attached files). This is what the model actually receives. Token estimation prefers this field over user.message because it includes the injected context.",
+      "data": {
+        "turnId": "UUID matching the originating user.message turnId (string).",
+        "renderedMessage": "Full rendered prompt sent to the model. Wrapped in pseudo-XML tags such as <context>, <reminderInstructions>, <userRequest> (string)."
+      },
+      "modeSignal": "The '<reminderInstructions>' block that begins with 'You are an agent ...' indicates agent mode. Ask mode produces a different reminder."
+    },
+    "assistant.turn_start": {
+      "occurrence": "Once per assistant turn.",
+      "purpose": "Marks the beginning of an assistant response.",
+      "data": {
+        "turnId": "UUID matching the user turn this responds to (string).",
+        "model": "OPTIONAL — present in some Copilot CLI / JetBrains plugin builds; carries the model id (string). NOT observed in the Rider 2026.1 sample."
+      }
+    },
+    "assistant.message": {
+      "occurrence": "Multiple per turn — one per iteration / streaming chunk boundary.",
+      "purpose": "An assistant content chunk. Carries text, optional thinking content, and an iteration counter.",
+      "data": {
+        "content": "Free-form content string. Often empty when 'text' or 'thinking' is set (string).",
+        "messageId": "Same UUID as turnId for the parent turn (string).",
+        "text": "Final visible response text for this iteration (string).",
+        "iterationNumber": "1-based iteration counter inside the turn (number).",
+        "thinking": {
+          "id": "Identifier for the thinking block (string).",
+          "text": "Chain-of-thought content. Counted as thinking tokens, not output tokens (string)."
+        }
+      }
+    },
+    "tool.execution_start": {
+      "occurrence": "Once per tool invocation. Presence in a partition file is the strongest signal that the conversation was in agent mode.",
+      "purpose": "Records that the assistant decided to call a tool.",
+      "data": {
+        "toolCallId": "Unique tool call id. Prefix is a model-family hint: 'toolu_*' = Anthropic Claude (often 'toolu_bdrk_*' for Bedrock), 'call_*' = OpenAI (string).",
+        "toolName": "Name of the tool the assistant called, e.g. 'read_file', 'list_dir', 'run_in_terminal' (string).",
+        "arguments": "Tool-specific arguments object passed by the assistant (object)."
+      }
+    },
+    "tool.execution_complete": {
+      "occurrence": "Once per matching tool.execution_start (matched by toolCallId).",
+      "purpose": "Captures the tool's return value.",
+      "data": {
+        "toolCallId": "Matches the originating tool.execution_start (string).",
+        "success": "Whether the tool succeeded (boolean).",
+        "result": {
+          "result": "Array of typed result blocks. Each block has '{ type: \"text\", value: \"...\" }'. Token estimation should sum the text values across blocks (array)."
+        }
+      }
+    },
+    "assistant.turn_end": {
+      "occurrence": "Once per assistant turn.",
+      "purpose": "Marks the end of an assistant turn and carries its terminal status.",
+      "data": {
+        "turnId": "UUID matching the assistant.turn_start of the same turn (string).",
+        "status": "Outcome of the turn — observed: 'success' (string).",
+        "turnStatus": "Duplicate of 'status' in observed samples (string)."
+      }
+    }
+  },
+  "extractionRules": {
+    "description": "How the Copilot Token Tracker derives the common output fields from a JetBrains partition file.",
+    "interactions": "Count of events with type === 'user.message' (one per user turn).",
+    "estimatedInputTokens": "estimateTokensFromText(user.message_rendered.data.renderedMessage) summed across turns. Falls back to user.message.data.content when no rendered version exists.",
+    "estimatedOutputTokens": "estimateTokensFromText(assistant.message.data.text) summed across all assistant.message events for the turn.",
+    "thinkingTokens": "estimateTokensFromText(assistant.message.data.thinking.text) summed across all assistant.message events.",
+    "actualTokens": "Always 0 — the JetBrains plugin does not record API-side usage counts in the session file.",
+    "model": "Best-effort. Preferred order: (1) assistant.turn_start.data.model if present (not observed in Rider 2026.1); (2) heuristic from toolCallId prefix ('toolu_*' → Anthropic Claude, 'call_*' → OpenAI); (3) 'unknown'.",
+    "mode": "ask vs. agent: if the partition file contains any 'tool.execution_start' event, classify all turns in this partition as 'agent'; otherwise 'ask'. Edit / plan / customAgent modes do not apply to JetBrains.",
+    "firstInteraction": "timestamp of the first user.message event (or partition.created.timestamp if absent).",
+    "lastInteraction": "timestamp of the last assistant.turn_end (or last assistant.message) event.",
+    "title": "Not present in the session file. Conversation has no human-readable title."
+  },
+  "exampleEvents": {
+    "partition.created": {
+      "type": "partition.created",
+      "data": {
+        "conversationId": "3678192b-9e4e-41fa-adfc-0865b3f42b87",
+        "partitionId": 1,
+        "source": "panel",
+        "createdAt": 1777552130660
+      },
+      "id": "5363a9fa-bd8d-43be-8b87-627b92bc5ba3",
+      "timestamp": "2026-04-30T12:28:50.660Z",
+      "parentId": null
+    },
+    "user.message": {
+      "type": "user.message",
+      "data": {
+        "content": "whats in this repo?",
+        "turnId": "d70292ca-4f11-44ea-812e-61b81525b247"
+      },
+      "id": "18eb9009-e9be-48ea-b6e6-5cd070999caf",
+      "timestamp": "2026-04-30T12:28:50.713Z",
+      "parentId": null
+    },
+    "user.message_rendered": {
+      "type": "user.message_rendered",
+      "data": {
+        "turnId": "d70292ca-4f11-44ea-812e-61b81525b247",
+        "renderedMessage": "<context>\nThe current date is April 30, 2026.\n</context>\n<reminderInstructions>\nYou are an agent - you must keep going until the user's query is completely resolved...\n</reminderInstructions>\n<userRequest>\nwhats in this repo?\n</userRequest>\n"
+      },
+      "id": "396886f5-80b3-49c4-b237-4857ad997500",
+      "timestamp": "2026-04-30T12:28:51.826Z",
+      "parentId": null
+    },
+    "assistant.message_with_thinking": {
+      "type": "assistant.message",
+      "data": {
+        "content": "",
+        "messageId": "d70292ca-4f11-44ea-812e-61b81525b247",
+        "text": "",
+        "iterationNumber": 1,
+        "thinking": {
+          "id": "thinking_0",
+          "text": "The user wants to know what's in this repository. Let me look at the README and structure to give a good overview."
+        }
+      },
+      "id": "eee8c3ac-dd71-43b2-bf9b-c72b2ab7f6e8",
+      "timestamp": "2026-04-30T12:28:55.793Z",
+      "parentId": null
+    },
+    "tool.execution_start": {
+      "type": "tool.execution_start",
+      "data": {
+        "toolCallId": "toolu_bdrk_01WYnvZGhZJmC7goepMQxSnF",
+        "toolName": "read_file",
+        "arguments": {
+          "filePath": "C:\\Users\\RobBos\\code\\repos\\rajbos\\github-copilot-token-usage\\README.md",
+          "limit": 80
+        }
+      },
+      "id": "e0ea9e23-7db7-4ef6-a37a-15a07bb6916a",
+      "timestamp": "2026-04-30T12:28:55.802Z",
+      "parentId": null
+    },
+    "tool.execution_complete": {
+      "type": "tool.execution_complete",
+      "data": {
+        "toolCallId": "toolu_bdrk_01WYnvZGhZJmC7goepMQxSnF",
+        "success": true,
+        "result": {
+          "result": [
+            { "type": "text", "value": "File `...README.md`. Total 142 lines.\n```markdown\n 1 | # GitHub Copilot Token Tracker\n...```" }
+          ]
+        }
+      },
+      "id": "...",
+      "timestamp": "2026-04-30T12:28:56.500Z",
+      "parentId": null
+    },
+    "assistant.turn_end": {
+      "type": "assistant.turn_end",
+      "data": {
+        "turnId": "d70292ca-4f11-44ea-812e-61b81525b247",
+        "status": "success",
+        "turnStatus": "success"
+      },
+      "id": "dc5a5ce7-d969-4a6d-b19c-6e8af6626a13",
+      "timestamp": "2026-04-30T12:29:07.522Z",
+      "parentId": null
+    }
+  },
+  "implementation": {
+    "adapter": "src/adapters/jetbrainsAdapter.ts (JetBrainsAdapter)",
+    "parser": "src/jetbrains.ts (parseJetBrainsPartition, detectJetBrainsMode)",
+    "tokenEstimation": "src/tokenEstimation.ts already handles 'user.message_rendered', 'assistant.message', and 'tool.execution_complete' for JetBrains files alongside Copilot CLI events.",
+    "editorAttribution": "src/workspaceHelpers.ts: getEditorTypeFromPath() and detectEditorSource() both map paths under '/.copilot/jb/' to the 'JetBrains' label.",
+    "modeAttribution": "src/usageAnalysis.ts: when an event-stream parse encounters a JetBrains path, user.message events are bumped into modeUsage.ask or modeUsage.agent instead of modeUsage.cli."
+  }
+}

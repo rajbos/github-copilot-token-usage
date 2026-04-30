@@ -84,6 +84,8 @@ import {
 	JetBrainsAdapter,
 } from './adapters';
 import { getVSCodeUserPaths } from './adapters/copilotChatAdapter';
+import { isJetBrainsSessionPath } from './adapters/jetbrainsAdapter';
+import { detectJetBrainsModeFromContent } from './jetbrains';
 import {
   estimateTokensFromText as _estimateTokensFromText,
   estimateTokensFromJsonlSession as _estimateTokensFromJsonlSession,
@@ -3555,10 +3557,18 @@ usageAnalysis: undefined
 					turns.push(turn);
 				}
 			} else {
-			// Non-delta JSONL (Copilot CLI format)
+			// Non-delta JSONL (Copilot CLI format, also used by JetBrains IDE partition files)
 			let turnNumber = 0;
 			let cliSessionModel = 'gpt-4o';
 			let cliSessionEffort: string | undefined;
+
+			// JetBrains partition files (~/.copilot/jb/{uuid}/partition-{n}.jsonl) share
+			// this fallback parser with the Copilot CLI but are IDE chat sessions, so
+			// per-turn `mode` should be ask/agent rather than the catch-all `cli`.
+			const isJetBrainsFile = isJetBrainsSessionPath(sessionFile);
+			const jetBrainsTurnMode: 'ask' | 'agent' | null = isJetBrainsFile
+				? detectJetBrainsModeFromContent(fileContent)
+				: null;
 
 			// Pre-scan for model and effort:
 			// 1. session.start.data.selectedModel (older CLI format)
@@ -3614,7 +3624,7 @@ usageAnalysis: undefined
 						const turn: ChatTurn = {
 							turnNumber,
 							timestamp: event.timestamp ? new Date(event.timestamp).toISOString() : null,
-							mode: 'cli', // CLI tool sessions use the dedicated cli mode
+							mode: jetBrainsTurnMode ?? 'cli',
 							userMessage,
 							assistantResponse: '',
 							model: turnModel,
