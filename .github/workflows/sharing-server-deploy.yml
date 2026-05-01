@@ -162,7 +162,9 @@ jobs:
     # Required environments:
     #   production — service principal with Contributor on the resource group
     #   testing    — service principal with Contributor on the resource group
-    environment: ${{ needs.setup.outputs.environment }}
+    environment:
+      name: ${{ needs.setup.outputs.environment }}
+      url:  ${{ steps.app-url.outputs.url }}
     permissions:
       contents: read
     # ARM_* env vars are read by both the AzureRM Terraform backend and provider.
@@ -372,6 +374,12 @@ jobs:
           TF_VAR_min_replicas:        ${{ needs.setup.outputs.min_replicas }}
           TF_VAR_custom_domain:       ${{ needs.setup.outputs.allow_custom_domain == 'true' && vars.SHARING_CUSTOM_DOMAIN || '' }}
         run: terraform apply -auto-approve tfplan
+
+      - name: Set environment URL
+        id: app-url
+        if: steps.prereqs.outputs.configured == 'true'
+        working-directory: sharing-server/infra
+        run: echo "url=$(terraform output -raw app_url)" >> "$GITHUB_OUTPUT"
 
       - name: Health check
         if: steps.prereqs.outputs.configured == 'true'
