@@ -391,6 +391,56 @@ jobs:
           echo "❌ Health check failed after 2 minutes"
           exit 1
 
+      - name: DNS drift check
+        if: steps.prereqs.outputs.configured == 'true' && needs.setup.outputs.allow_custom_domain == 'true'
+        working-directory: sharing-server/infra
+        env:
+          CUSTOM_DOMAIN: ${{ needs.setup.outputs.allow_custom_domain == 'true' && vars.SHARING_CUSTOM_DOMAIN || '' }}
+        run: |
+          if [[ -z "$CUSTOM_DOMAIN" ]]; then
+            echo "No custom domain configured — skipping DNS drift check."
+            exit 0
+          fi
+
+          ACA_FQDN=$(terraform output -raw aca_fqdn)
+
+          # Resolve the CNAME chain for the custom domain (dig follows CNAMEs).
+          # We only care about the final CNAME target, not the A record.
+          RESOLVED=$(dig +short CNAME "$CUSTOM_DOMAIN" 2>/dev/null | sed 's/\.$//')
+
+          if [[ -z "$RESOLVED" ]]; then
+            echo "::warning::DNS drift: no CNAME record found for ${CUSTOM_DOMAIN}. Expected CNAME → ${ACA_FQDN}"
+            {
+              echo ""
+              echo "## ⚠️ DNS Drift Detected"
+              echo ""
+              echo "No CNAME record found for \`${CUSTOM_DOMAIN}\`."
+              echo ""
+              echo "**Expected CNAME target:** \`${ACA_FQDN}\`"
+              echo ""
+              echo "Add or update the CNAME record at your DNS provider:"
+              echo "\`\`\`"
+              echo "CNAME ${CUSTOM_DOMAIN} → ${ACA_FQDN}"
+              echo "\`\`\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$RESOLVED" != "$ACA_FQDN" ]]; then
+            echo "::warning::DNS drift: ${CUSTOM_DOMAIN} CNAME → ${RESOLVED} but expected → ${ACA_FQDN}"
+            {
+              echo ""
+              echo "## ⚠️ DNS Drift Detected"
+              echo ""
+              echo "| | Value |"
+              echo "|---|---|"
+              echo "| Custom domain | \`${CUSTOM_DOMAIN}\` |"
+              echo "| Current CNAME target | \`${RESOLVED}\` |"
+              echo "| Expected CNAME target | \`${ACA_FQDN}\` |"
+              echo ""
+              echo "Update the CNAME record at your DNS provider to point to \`${ACA_FQDN}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ DNS OK: ${CUSTOM_DOMAIN} CNAME → ${ACA_FQDN}"
+          fi
+
       - name: Output deployment summary
         if: steps.prereqs.outputs.configured == 'true'
         working-directory: sharing-server/infra
