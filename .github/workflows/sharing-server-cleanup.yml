@@ -1,9 +1,11 @@
-name: Cleanup Sharing Server (manual)
+name: Cleanup Sharing Server
 
-# Destroys the test Container Apps environment on demand.
-# Run this manually via workflow_dispatch to clean up a test environment.
-# Production (main) is intentionally excluded.
+# Destroys per-branch test Container Apps environments:
+#   1. Automatically when a branch is deleted (e.g. after PR merge)
+#   2. Manually via workflow_dispatch for ad-hoc cleanup
+# Production (main) and the stable test environment are intentionally excluded.
 on:
+  delete: {}
   workflow_dispatch:
     inputs:
       branch:
@@ -18,8 +20,10 @@ jobs:
   cleanup:
     name: Destroy test environment
     runs-on: ubuntu-latest
-    # Prevent accidental destruction of production.
-    if: github.event.inputs.branch != 'main'
+    # Only run for branch deletions (not tag deletions), and never for main.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.branch != 'main')
+      || (github.event_name == 'delete' && github.event.ref_type == 'branch' && github.event.ref != 'main')
     environment: testing
     permissions:
       contents: read
@@ -42,7 +46,12 @@ jobs:
       - name: Compute state key for branch
         id: env
         run: |
-          BRANCH="${{ github.event.inputs.branch }}"
+          if [[ "${{ github.event_name }}" == "delete" ]]; then
+            BRANCH="${{ github.event.ref }}"
+          else
+            BRANCH="${{ github.event.inputs.branch }}"
+          fi
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
           SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
           SLUG_TRUNC=$(echo "$SLUG" | cut -c1-13 | sed 's/-$//')
           HASH=$(echo -n "$BRANCH" | sha256sum | cut -c1-6)
@@ -82,6 +91,6 @@ jobs:
             terraform destroy -auto-approve
             echo "✅ Environment destroyed: ${{ steps.env.outputs.app_name }}" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No resources found in state for branch '${{ github.event.inputs.branch }}' — nothing to destroy."
-            echo "ℹ️ No resources found for branch \`${{ github.event.inputs.branch }}\` — nothing to destroy." >> "$GITHUB_STEP_SUMMARY"
+            echo "No resources found in state for branch '${{ steps.env.outputs.branch }}' — nothing to destroy."
+            echo "ℹ️ No resources found for branch \`${{ steps.env.outputs.branch }}\` — nothing to destroy." >> "$GITHUB_STEP_SUMMARY"
           fi
