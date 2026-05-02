@@ -43,18 +43,43 @@ object CliBridge {
         val cmd = listOf(exe.toString(), viewToCommand(view), "--json")
 
         log.info("Running CLI: ${cmd.joinToString(" ")}")
+        val startMs = System.currentTimeMillis()
         val process = ProcessBuilder(cmd)
+            .directory(exe.parent.toFile())   // working dir = exe dir so it finds sql-wasm.wasm
             .redirectErrorStream(false)
             .start()
 
+        // Close stdin immediately — the CLI doesn't read from it, but
+        // leaving the pipe open can prevent Node.js SEA from exiting.
+        process.outputStream.close()
+
+        // Read stdout/stderr on dedicated daemon threads to avoid pipe-buffer
+        // deadlock. The `all --json` output can exceed the OS pipe buffer
+        // (64 KB on Windows), so we must drain both streams while the process runs.
+        val stdoutBuilder = StringBuilder()
+        val stderrBuilder = StringBuilder()
+        val stdoutThread = Thread({
+            process.inputStream.bufferedReader().use { stdoutBuilder.append(it.readText()) }
+        }, "cli-stdout-reader").apply { isDaemon = true; start() }
+        val stderrThread = Thread({
+            process.errorStream.bufferedReader().use { stderrBuilder.append(it.readText()) }
+        }, "cli-stderr-reader").apply { isDaemon = true; start() }
+
         val finished = process.waitFor(CLI_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        val elapsedMs = System.currentTimeMillis() - startMs
         if (!finished) {
             process.destroyForcibly()
             throw IOException("CLI timed out after ${CLI_TIMEOUT_SECONDS}s")
         }
 
-        val stdout = process.inputStream.bufferedReader().use { it.readText() }
-        val stderr = process.errorStream.bufferedReader().use { it.readText() }
+        // Wait for reader threads to finish (they should complete almost
+        // immediately once the process has exited and closed its streams).
+        stdoutThread.join(5_000)
+        stderrThread.join(5_000)
+
+        val stdout = stdoutBuilder.toString()
+        val stderr = stderrBuilder.toString()
+        log.info("CLI completed in ${elapsedMs}ms, exit=${process.exitValue()}, stdout=${stdout.length} chars, stderr=${stderr.length} chars")
         if (process.exitValue() != 0) {
             throw IOException("CLI exited ${process.exitValue()}: $stderr")
         }
@@ -92,20 +117,32 @@ object CliBridge {
     }
 
     private fun copyResource(resourcePath: String, target: Path): Path {
+        // Skip extraction when a non-empty file already exists — the exe may
+        // still be locked by a previous sandbox run or by Windows Defender.
+        if (Files.exists(target) && Files.size(target) > 0) {
+            log.info("CLI binary already exists at $target (${Files.size(target)} bytes), skipping extraction")
+            return target
+        }
         val stream = CliBridge::class.java.getResourceAsStream(resourcePath)
             ?: throw IllegalStateException(
                 "Bundled CLI not found at classpath:$resourcePath — " +
                     "this OS may not be supported by this build of the plugin."
             )
         stream.use {
+            log.info("Extracting CLI from $resourcePath -> $target")
             Files.copy(it, target, StandardCopyOption.REPLACE_EXISTING)
         }
         return target
     }
 
     private fun copyResourceIfPresent(resourcePath: String, target: Path) {
+        if (Files.exists(target) && Files.size(target) > 0) return
         CliBridge::class.java.getResourceAsStream(resourcePath)?.use {
-            Files.copy(it, target, StandardCopyOption.REPLACE_EXISTING)
+            try {
+                Files.copy(it, target, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: java.nio.file.AccessDeniedException) {
+                log.warn("Could not overwrite $target (locked), using existing copy")
+            }
         }
     }
 
@@ -129,5 +166,19 @@ object CliBridge {
         "environmental" -> "all"
         "maturity" -> "fluency"
         else -> "all"
+    }
+
+    /**
+     * When the CLI command is `all`, the response is a combined object
+     * `{ details, chart, usage, fluency }`. This returns the JSON key
+     * to extract for a given view, or `null` when the CLI returns the
+     * view data directly (individual commands like `chart`, `usage`).
+     */
+    fun viewToAllJsonKey(view: String): String? = when (viewToCommand(view)) {
+        "all" -> when (view) {
+            "details", "diagnostics", "environmental" -> "details"
+            else -> "details"
+        }
+        else -> null // individual commands return data directly
     }
 }

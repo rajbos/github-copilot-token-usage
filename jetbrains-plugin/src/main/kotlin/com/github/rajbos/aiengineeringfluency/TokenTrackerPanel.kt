@@ -33,6 +33,7 @@ class TokenTrackerPanel(
 
     private val log = thisLogger()
     private val browser: JBCefBrowser = JBCefBrowser()
+    @Volatile private var initialLoadDone = false
 
     /**
      * `JBCefJSQuery` is the JCEF-side equivalent of WebView2's
@@ -57,7 +58,8 @@ class TokenTrackerPanel(
         // extension uses (window.__INITIAL_<VIEW>__ = ...).
         browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
             override fun onLoadEnd(b: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
-                if (frame.isMain) {
+                if (frame.isMain && !initialLoadDone) {
+                    initialLoadDone = true
                     refreshStatsAsync()
                 }
             }
@@ -86,19 +88,32 @@ class TokenTrackerPanel(
     }
 
     private fun pushStatsToWebview(statsJson: String) {
+        log.info("Pushing stats to webview: ${statsJson.length} chars, globalKey=${WebviewResources.viewToGlobalKey(view)}")
         val globalKey = WebviewResources.viewToGlobalKey(view)
-        // Set the global the bundle reads on init, then post a message in case
-        // it has already initialised and is listening for an update event.
+        val jsonKey = CliBridge.viewToAllJsonKey(view)
+        val escapedJson = statsJson
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        // Extract the sub-key when using the 'all' command (e.g., data.details for details view)
+        val extractExpr = if (jsonKey != null) "data['$jsonKey']" else "data"
         val js = """
             (function() {
                 try {
-                    window.$globalKey = $statsJson;
-                    window.postMessage({ command: 'statsUpdated', view: '$view', stats: $statsJson }, '*');
+                    var data = JSON.parse('$escapedJson');
+                    var viewData = $extractExpr;
+                    window.$globalKey = viewData;
+                    window.dispatchEvent(new MessageEvent('message', {
+                        data: { command: 'updateStats', data: viewData }
+                    }));
                 } catch (e) {
-                    console.error('Failed to apply stats:', e);
+                    var root = document.getElementById('root');
+                    if (root) root.textContent = 'JS Error: ' + e.message;
                 }
             })();
         """.trimIndent()
+        log.info("Executing JS with jsonKey=$jsonKey (${js.length} chars)")
         browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)
     }
 

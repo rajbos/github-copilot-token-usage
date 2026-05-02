@@ -22,12 +22,18 @@ object WebviewResources {
      * snippet produced by `JBCefJSQuery.inject("payload")` — calling it sends
      * the value of the `payload` variable to the Kotlin handler.
      */
-    fun buildHtml(view: String, hostBridgeInjectFunction: String): String {
+    fun buildHtml(view: String, hostBridgeInjectFunction: String, initialStatsJson: String? = null): String {
         val shim = loadResource("/webview/vscode-shim.js")
             ?: "/* vscode-shim.js missing from plugin resources */"
         val bundle = loadResource("/webview/$view.js")
             ?: "/* webview bundle $view.js missing from plugin resources */"
         val globalKey = viewToGlobalKey(view)
+
+        // Escape JSON for safe inline <script> embedding:
+        // "</script>" in a JSON value would prematurely close the tag.
+        val safeInitialData = initialStatsJson
+            ?.replace("</", "<\\/")
+            ?: "undefined"
 
         // Bridge bootstrap:
         //   * defines window.chrome.webview.postMessage(...) which forwards
@@ -65,7 +71,7 @@ object WebviewResources {
                 </style>
                 <script>$bridgeBootstrap</script>
                 <script>$shim</script>
-                <script>window.$globalKey = {};</script>
+                <script>window.$globalKey = $safeInitialData;</script>
             </head>
             <body>
                 <div id="root"></div>
