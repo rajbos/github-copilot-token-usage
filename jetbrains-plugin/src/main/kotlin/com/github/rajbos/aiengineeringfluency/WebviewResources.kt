@@ -68,13 +68,36 @@ object WebviewResources {
                 <style>
                     html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4;
                                  font-family: -apple-system, 'Segoe UI', sans-serif; }
+                    .loading-container { display: flex; flex-direction: column; align-items: center;
+                                         justify-content: center; height: calc(100vh - 32px); text-align: center; }
+                    .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #0078d4;
+                               border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                    .loading-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+                    .loading-detail { font-size: 12px; color: #999; }
+                    .repo-footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 6px 16px;
+                                   font-size: 11px; color: #666; text-align: center; background: #1e1e1e;
+                                   border-top: 1px solid #333; }
+                    .repo-footer a { color: #4daafc; text-decoration: none; }
+                    .repo-footer a:hover { text-decoration: underline; }
                 </style>
                 <script>$bridgeBootstrap</script>
                 <script>$shim</script>
                 <script>window.$globalKey = $safeInitialData;</script>
             </head>
             <body>
-                <div id="root"></div>
+                <div id="root">
+                    <div class="loading-container">
+                        <div class="spinner"></div>
+                        <div class="loading-title">Loading Copilot usage data&hellip;</div>
+                        <div class="loading-detail">Scanning session logs &mdash; this may take 15&ndash;30 seconds on the first run.</div>
+                    </div>
+                </div>
+                <div class="repo-footer">
+                    <a href="https://github.com/rajbos/ai-engineering-fluency" target="_blank">AI Engineering Fluency</a>
+                    &nbsp;&middot;&nbsp; Questions or issues?
+                    <a href="https://github.com/rajbos/ai-engineering-fluency/issues" target="_blank">Open an issue</a>
+                </div>
                 <script>$bundle</script>
             </body>
             </html>
@@ -97,11 +120,17 @@ object WebviewResources {
                 .icon { font-size: 32px; }
                 .title { font-size: 15px; font-weight: 600; margin: 8px 0; }
                 .detail { font-size: 12px; color: #999; max-width: 480px; white-space: pre-wrap; word-break: break-word; }
+                .repo-link { margin-top: 16px; font-size: 12px; }
+                .repo-link a { color: #4daafc; text-decoration: none; }
+                .repo-link a:hover { text-decoration: underline; }
             </style></head>
             <body>
                 <div class="icon">&#x26A0;</div>
                 <div class="title">Error loading Copilot usage data</div>
                 <div class="detail">$safe</div>
+                <div class="repo-link">
+                    Something unexpected? <a href="https://github.com/rajbos/ai-engineering-fluency/issues" target="_blank">Report an issue</a>
+                </div>
             </body></html>
         """.trimIndent()
     }
