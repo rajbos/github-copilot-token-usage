@@ -113,7 +113,7 @@ class TokenTrackerPanel(
                     var root = document.getElementById('root');
                     if (root) root.style.display = 'block';
                     window.dispatchEvent(new MessageEvent('message', {
-                        data: { command: 'updateStats', data: viewData }
+                        data: { command: '${viewToUpdateCommand(view)}', data: viewData }
                     }));
                 } catch (e) {
                     var overlay = document.getElementById('loading-overlay');
@@ -189,19 +189,124 @@ class TokenTrackerPanel(
     }
 
     /**
-     * Navigates to a different view by reloading the JCEF browser with the new
-     * view's HTML bundle and fetching fresh data from the CLI.
+     * Maps a view name to the message command the webview bundle listens for.
+     * Each bundle has its own expected command name for live updates.
+     */
+    private fun viewToUpdateCommand(view: String): String = when (view) {
+        "chart" -> "updateChartData"
+        else -> "updateStats"
+    }
+
+    /**
+     * Navigates to a different view by fetching CLI data first, then loading
+     * the HTML with data pre-embedded so the bundle sees it at bootstrap.
      */
     private fun navigateToView(view: String) {
         if (view == currentView) {
-            // Same view — just refresh data
-            refreshStatsAsync()
+            // Same view — for views with message listeners, dispatch an update.
+            // For views without (maturity), reload with fresh data.
+            if (viewHasMessageListener(view)) {
+                refreshStatsAsync()
+            } else {
+                navigateWithFreshData(view)
+            }
             return
         }
         currentView = view
-        initialLoadDone = false
+        navigateWithFreshData(view)
+    }
+
+    private fun viewHasMessageListener(view: String): Boolean = when (view) {
+        "details", "chart", "usage", "environmental" -> true
+        else -> false // maturity, diagnostics have no live-update listener
+    }
+
+    /**
+     * Fetches CLI data on a background thread, then loads the view HTML with
+     * data pre-embedded so the bundle sees it immediately at bootstrap.
+     * Shows a loading spinner while waiting for CLI data.
+     */
+    private fun navigateWithFreshData(view: String) {
+        initialLoadDone = true // prevent onLoadEnd from double-fetching
+        // Show loading spinner immediately
         browser.loadHTML(WebviewResources.buildHtml(view, hostBridgeInjectFunction = hostBridge.inject("payload")))
-        // onLoadEnd will fire and call refreshStatsAsync() via the load handler
+        // Fetch data on background thread, then reload HTML with data embedded
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = runCatching { CliBridge.fetchStats(view) }
+            ApplicationManager.getApplication().invokeLater {
+                result.fold(
+                    onSuccess = { json ->
+                        val jsonKey = CliBridge.viewToAllJsonKey(view)
+                        val initialJson = if (jsonKey != null) {
+                            extractJsonKey(json, jsonKey)
+                        } else {
+                            json
+                        }
+                        browser.loadHTML(
+                            WebviewResources.buildHtml(
+                                view,
+                                hostBridgeInjectFunction = hostBridge.inject("payload"),
+                                initialStatsJson = initialJson,
+                            )
+                        )
+                    },
+                    onFailure = { err ->
+                        log.warn("CLI stats fetch failed for view $view", err)
+                        showError(err.message ?: "Unknown error fetching stats")
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Extracts a top-level key from a JSON object string.
+     * e.g. extractJsonKey('{"details":{...},"chart":{...}}', "details") -> '{...}'
+     */
+    private fun extractJsonKey(json: String, key: String): String {
+        return try {
+            // Use a simple approach: parse with built-in javax.script or regex
+            // Since we just need one top-level key, use indexOf-based extraction
+            val searchKey = "\"$key\""
+            val keyIdx = json.indexOf(searchKey)
+            if (keyIdx < 0) return json
+
+            // Find the colon after the key
+            val colonIdx = json.indexOf(':', keyIdx + searchKey.length)
+            if (colonIdx < 0) return json
+
+            // Find the start of the value (skip whitespace)
+            var valueStart = colonIdx + 1
+            while (valueStart < json.length && json[valueStart].isWhitespace()) valueStart++
+            if (valueStart >= json.length) return json
+
+            // If value starts with '{' or '[', find matching close bracket
+            val startChar = json[valueStart]
+            if (startChar == '{' || startChar == '[') {
+                val endChar = if (startChar == '{') '}' else ']'
+                var depth = 0
+                var inString = false
+                var escaped = false
+                var i = valueStart
+                while (i < json.length) {
+                    val c = json[i]
+                    if (escaped) { escaped = false; i++; continue }
+                    if (c == '\\' && inString) { escaped = true; i++; continue }
+                    if (c == '"') { inString = !inString; i++; continue }
+                    if (!inString) {
+                        if (c == startChar) depth++
+                        else if (c == endChar) {
+                            depth--
+                            if (depth == 0) return json.substring(valueStart, i + 1)
+                        }
+                    }
+                    i++
+                }
+            }
+            json // fallback
+        } catch (_: Exception) {
+            json
+        }
     }
 
     override fun dispose() {
