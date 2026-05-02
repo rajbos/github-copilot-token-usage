@@ -60,6 +60,11 @@ object WebviewResources {
 
         // Initial stats are an empty object; TokenTrackerPanel.refreshStatsAsync()
         // assigns the real value as soon as the CLI returns.
+        // When initial data is provided, hide the loading overlay and show root immediately
+        val overlayStyle = if (initialStatsJson != null) "display: none" else
+            "display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 32px); text-align: center"
+        val rootStyle = if (initialStatsJson != null) "" else "display: none"
+
         return """
             <!DOCTYPE html>
             <html lang="en">
@@ -68,9 +73,8 @@ object WebviewResources {
                 <style>
                     html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4;
                                  font-family: -apple-system, 'Segoe UI', sans-serif; }
-                    #loading-overlay { display: flex; flex-direction: column; align-items: center;
-                                       justify-content: center; height: calc(100vh - 32px); text-align: center; }
-                    #root { display: none; }
+                    #loading-overlay { $overlayStyle; }
+                    #root { $rootStyle; }
                     .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #0078d4;
                                border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
                     @keyframes spin { to { transform: rotate(360deg); } }
