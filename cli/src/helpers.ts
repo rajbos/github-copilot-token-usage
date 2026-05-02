@@ -327,6 +327,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			const result = estimateTokensFromJsonlSession(content);
 			tokens = result.tokens;
 			thinkingTokens = result.thinkingTokens;
+			fileModelUsage = result.modelUsage;
 
 			// Count interactions from JSONL
 			const lines = content.trim().split('\n');

@@ -70,7 +70,7 @@ export function extractSubAgentData(item: unknown): { prompt: string; result: st
  * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
  * Each line is a separate JSON object representing an event in the session
  */
-export function estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number } {
+export function estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; modelUsage: ModelUsage } {
 	let totalTokens = 0;
 	let totalThinkingTokens = 0;
 	const lines = fileContent.trim().split('\n');
@@ -83,6 +83,8 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 	let parseFailedLines = 0;
 	// For CLI (non-delta) format: accumulate actual token totals from session.shutdown
 	let cliActualTokens = 0;
+	// Per-model breakdown from CLI session.shutdown events
+	let cliShutdownModelUsage: ModelUsage | null = null;
 
 	for (const line of lines) {
 		if (!line.trim()) { continue; }
@@ -98,11 +100,18 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 
 			// Copilot CLI: session.shutdown contains exact token totals per model
 			if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
-				for (const metrics of Object.values(event.data.modelMetrics) as any[]) {
+				if (!cliShutdownModelUsage) { cliShutdownModelUsage = {}; }
+				for (const [modelName, metrics] of Object.entries(event.data.modelMetrics) as [string, any][]) {
 					const usage = metrics?.usage;
 					if (usage) {
-						cliActualTokens += (typeof usage.inputTokens === 'number' ? usage.inputTokens : 0)
-							+ (typeof usage.outputTokens === 'number' ? usage.outputTokens : 0);
+						const input = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
+						const output = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
+						cliActualTokens += input + output;
+						if (!cliShutdownModelUsage[modelName]) {
+							cliShutdownModelUsage[modelName] = { inputTokens: 0, outputTokens: 0 };
+						}
+						cliShutdownModelUsage[modelName].inputTokens += input;
+						cliShutdownModelUsage[modelName].outputTokens += output;
 					}
 				}
 			}
@@ -224,7 +233,7 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 		}
 	}
 
-	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens };
+	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, modelUsage: cliShutdownModelUsage ?? {} };
 }
 
 /**
