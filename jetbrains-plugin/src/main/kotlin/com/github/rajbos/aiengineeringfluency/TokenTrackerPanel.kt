@@ -125,7 +125,28 @@ class TokenTrackerPanel(
     }
 
     private fun showError(message: String) {
-        browser.loadHTML(WebviewResources.buildErrorHtml(message))
+        val safe = message
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        val js = """
+            (function() {
+                var overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.innerHTML =
+                        '<div style="font-size:32px">&#x26A0;</div>' +
+                        '<div style="font-size:15px;font-weight:600;margin:8px 0">Error loading Copilot usage data</div>' +
+                        '<div style="font-size:12px;color:#999;max-width:480px;white-space:pre-wrap;word-break:break-word">' +
+                            '$safe' +
+                        '</div>' +
+                        '<div style="margin-top:16px;font-size:12px">' +
+                            'Something unexpected? <a href="https://github.com/rajbos/ai-engineering-fluency/issues" target="_blank" style="color:#4daafc;text-decoration:none">Report an issue</a>' +
+                        '</div>';
+                }
+            })();
+        """.trimIndent()
+        browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)
     }
 
     /**
