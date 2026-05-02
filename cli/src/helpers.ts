@@ -378,11 +378,13 @@ export async function calculateDetailedStats(
 	progressCallback?: (completed: number, total: number) => void
 ): Promise<DetailedStats> {
 	const now = new Date();
-	const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-	const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-	const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+	const todayUtcKey = now.toISOString().slice(0, 10);
+	const monthUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+	const lastMonthLastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+	const lastMonthUtcEndKey = lastMonthLastDay.toISOString().slice(0, 10);
+	const lastMonthUtcStartKey = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).toISOString().slice(0, 10);
+	const last30DaysUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30));
+	const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
 
 	const periods: {
 		today: PeriodStats;
@@ -408,24 +410,24 @@ export async function calculateDetailedStats(
 			continue;
 		}
 
-		const modified = data.lastModified;
+		const modifiedUtcKey = data.lastModified.toISOString().slice(0, 10);
 
 		// Skip files older than the last month's start
-		if (modified < lastMonthStart) {
+		if (modifiedUtcKey < lastMonthUtcStartKey) {
 			continue;
 		}
 
-		// Aggregate into appropriate periods
-		if (modified >= todayStart) {
+		// Aggregate into appropriate periods using UTC day keys
+		if (modifiedUtcKey === todayUtcKey) {
 			aggregateIntoPeriod(periods.today, data);
 		}
-		if (modified >= monthStart) {
+		if (modifiedUtcKey >= monthUtcStartKey) {
 			aggregateIntoPeriod(periods.month, data);
 		}
-		if (modified >= lastMonthStart && modified <= lastMonthEnd) {
+		if (modifiedUtcKey >= lastMonthUtcStartKey && modifiedUtcKey <= lastMonthUtcEndKey) {
 			aggregateIntoPeriod(periods.lastMonth, data);
 		}
-		if (modified >= last30DaysStart) {
+		if (modifiedUtcKey >= last30DaysUtcStartKey) {
 			aggregateIntoPeriod(periods.last30Days, data);
 		}
 	}
