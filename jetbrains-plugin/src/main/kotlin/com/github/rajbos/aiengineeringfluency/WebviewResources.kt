@@ -68,8 +68,9 @@ object WebviewResources {
                 <style>
                     html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4;
                                  font-family: -apple-system, 'Segoe UI', sans-serif; }
-                    .loading-container { display: flex; flex-direction: column; align-items: center;
-                                         justify-content: center; height: calc(100vh - 32px); text-align: center; }
+                    #loading-overlay { display: flex; flex-direction: column; align-items: center;
+                                       justify-content: center; height: calc(100vh - 32px); text-align: center; }
+                    #root { display: none; }
                     .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #0078d4;
                                border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
                     @keyframes spin { to { transform: rotate(360deg); } }
@@ -86,13 +87,12 @@ object WebviewResources {
                 <script>window.$globalKey = $safeInitialData;</script>
             </head>
             <body>
-                <div id="root">
-                    <div class="loading-container">
-                        <div class="spinner"></div>
-                        <div class="loading-title">Loading Copilot usage data&hellip;</div>
-                        <div class="loading-detail">Scanning session logs &mdash; this may take 15&ndash;30 seconds on the first run.</div>
-                    </div>
+                <div id="loading-overlay">
+                    <div class="spinner"></div>
+                    <div class="loading-title">Loading Copilot usage data&hellip;</div>
+                    <div class="loading-detail">Scanning session logs &mdash; this may take 15&ndash;30 seconds on the first run.</div>
                 </div>
+                <div id="root"></div>
                 <div class="repo-footer">
                     <a href="https://github.com/rajbos/ai-engineering-fluency" target="_blank">AI Engineering Fluency</a>
                     &nbsp;&middot;&nbsp; Questions or issues?

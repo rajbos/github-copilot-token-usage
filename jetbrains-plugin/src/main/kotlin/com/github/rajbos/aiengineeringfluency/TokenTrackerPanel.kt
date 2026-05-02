@@ -104,12 +104,19 @@ class TokenTrackerPanel(
                     var data = JSON.parse('$escapedJson');
                     var viewData = $extractExpr;
                     window.$globalKey = viewData;
+                    // Hide loading overlay, show the data root
+                    var overlay = document.getElementById('loading-overlay');
+                    if (overlay) overlay.style.display = 'none';
+                    var root = document.getElementById('root');
+                    if (root) root.style.display = 'block';
                     window.dispatchEvent(new MessageEvent('message', {
                         data: { command: 'updateStats', data: viewData }
                     }));
                 } catch (e) {
+                    var overlay = document.getElementById('loading-overlay');
+                    if (overlay) overlay.style.display = 'none';
                     var root = document.getElementById('root');
-                    if (root) root.textContent = 'JS Error: ' + e.message;
+                    if (root) { root.style.display = 'block'; root.textContent = 'JS Error: ' + e.message; }
                 }
             })();
         """.trimIndent()
