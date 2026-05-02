@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
 object CliBridge {
 
     private val log = Logger.getInstance(CliBridge::class.java)
-    private const val CLI_TIMEOUT_SECONDS = 60L
+    private const val CLI_TIMEOUT_SECONDS = 120L
 
     @Volatile private var cachedExePath: Path? = null
 

@@ -274,6 +274,8 @@ export interface SessionData {
 	modelUsage: ModelUsage;
 	lastModified: Date;
 	editorSource: string;
+	/** Per-UTC-day actual token breakdown from shutdown event timestamps. */
+	dailyActualTokens?: Record<string, number>;
 }
 
 /**
@@ -322,6 +324,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 		let thinkingTokens = 0;
 		let interactions = 0;
 		let fileModelUsage: ModelUsage = {};
+		let fileDailyActualTokens: Record<string, number> | undefined;
 
 		if (isJsonl) {
 			const result = estimateTokensFromJsonlSession(content);
@@ -330,6 +333,10 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			tokens = result.actualTokens > 0 ? result.actualTokens : result.tokens;
 			thinkingTokens = result.thinkingTokens;
 			fileModelUsage = result.modelUsage;
+			// Store per-day breakdown for accurate period attribution of multi-day sessions
+			if (Object.keys(result.dailyActualTokens).length > 0) {
+				fileDailyActualTokens = result.dailyActualTokens;
+			}
 
 			// Count interactions from JSONL
 			const lines = content.trim().split('\n');
@@ -364,6 +371,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			modelUsage: fileModelUsage,
 			lastModified: stats.mtime,
 			editorSource: getEditorSourceFromPath(filePath),
+			dailyActualTokens: fileDailyActualTokens,
 		};
 		setCached(filePath, stats.mtimeMs, stats.size, sessionData);
 		return sessionData;
@@ -419,7 +427,44 @@ export async function calculateDetailedStats(
 			continue;
 		}
 
-		// Aggregate into appropriate periods using UTC day keys
+		// When per-day actual token breakdown is available (multi-day sessions),
+		// distribute tokens accurately across the days they occurred — matching
+		// VS Code's dailyRollups behavior.
+		if (data.dailyActualTokens && Object.keys(data.dailyActualTokens).length > 1) {
+			let addedToToday = false;
+			let addedToMonth = false;
+			let addedToLastMonth = false;
+			let addedToLast30Days = false;
+
+			for (const [dayKey, dayTokens] of Object.entries(data.dailyActualTokens)) {
+				if (dayKey < lastMonthUtcStartKey) { continue; }
+
+				const dayData: SessionData = {
+					...data,
+					tokens: dayTokens,
+				};
+
+				if (dayKey === todayUtcKey) {
+					aggregateIntoPeriod(periods.today, dayData, !addedToToday);
+					addedToToday = true;
+				}
+				if (dayKey >= monthUtcStartKey) {
+					aggregateIntoPeriod(periods.month, dayData, !addedToMonth);
+					addedToMonth = true;
+				}
+				if (dayKey >= lastMonthUtcStartKey && dayKey <= lastMonthUtcEndKey) {
+					aggregateIntoPeriod(periods.lastMonth, dayData, !addedToLastMonth);
+					addedToLastMonth = true;
+				}
+				if (dayKey >= last30DaysUtcStartKey) {
+					aggregateIntoPeriod(periods.last30Days, dayData, !addedToLast30Days);
+					addedToLast30Days = true;
+				}
+			}
+			continue;
+		}
+
+		// Single-day session (or no daily breakdown): attribute all tokens to mtime day
 		if (modifiedUtcKey === todayUtcKey) {
 			aggregateIntoPeriod(periods.today, data);
 		}
@@ -470,11 +515,13 @@ function createEmptyPeriodStats(): PeriodStats {
 	};
 }
 
-function aggregateIntoPeriod(period: PeriodStats, data: SessionData): void {
+function aggregateIntoPeriod(period: PeriodStats, data: SessionData, countSession = true): void {
 	period.tokens += data.tokens;
 	period.thinkingTokens += data.thinkingTokens;
 	period.estimatedTokens += data.tokens;
-	period.sessions++;
+	if (countSession) {
+		period.sessions++;
+	}
 
 	// Merge model usage
 	for (const [model, usage] of Object.entries(data.modelUsage)) {
@@ -486,15 +533,19 @@ function aggregateIntoPeriod(period: PeriodStats, data: SessionData): void {
 	}
 
 	// Track interactions
-	const totalInteractions = period.avgInteractionsPerSession * (period.sessions - 1) + data.interactions;
-	period.avgInteractionsPerSession = period.sessions > 0 ? totalInteractions / period.sessions : 0;
+	if (countSession) {
+		const totalInteractions = period.avgInteractionsPerSession * (period.sessions - 1) + data.interactions;
+		period.avgInteractionsPerSession = period.sessions > 0 ? totalInteractions / period.sessions : 0;
+	}
 
 	// Editor usage
 	if (!period.editorUsage[data.editorSource]) {
 		period.editorUsage[data.editorSource] = { tokens: 0, sessions: 0 };
 	}
 	period.editorUsage[data.editorSource].tokens += data.tokens;
-	period.editorUsage[data.editorSource].sessions++;
+	if (countSession) {
+		period.editorUsage[data.editorSource].sessions++;
+	}
 }
 
 /**

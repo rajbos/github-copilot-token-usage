@@ -70,7 +70,7 @@ export function extractSubAgentData(item: unknown): { prompt: string; result: st
  * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
  * Each line is a separate JSON object representing an event in the session
  */
-export function estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; modelUsage: ModelUsage } {
+export function estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; modelUsage: ModelUsage; dailyActualTokens: Record<string, number> } {
 	let totalTokens = 0;
 	let totalThinkingTokens = 0;
 	const lines = fileContent.trim().split('\n');
@@ -85,6 +85,8 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 	let cliActualTokens = 0;
 	// Per-model breakdown from CLI session.shutdown events
 	let cliShutdownModelUsage: ModelUsage | null = null;
+	// Per-UTC-day actual token breakdown from shutdown event timestamps
+	const dailyActualTokens: Record<string, number> = {};
 
 	for (const line of lines) {
 		if (!line.trim()) { continue; }
@@ -101,17 +103,26 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 			// Copilot CLI: session.shutdown contains exact token totals per model
 			if (event.type === 'session.shutdown' && event.data?.modelMetrics) {
 				if (!cliShutdownModelUsage) { cliShutdownModelUsage = {}; }
+				let shutdownTotal = 0;
 				for (const [modelName, metrics] of Object.entries(event.data.modelMetrics) as [string, any][]) {
 					const usage = metrics?.usage;
 					if (usage) {
 						const input = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 						const output = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
 						cliActualTokens += input + output;
+						shutdownTotal += input + output;
 						if (!cliShutdownModelUsage[modelName]) {
 							cliShutdownModelUsage[modelName] = { inputTokens: 0, outputTokens: 0 };
 						}
 						cliShutdownModelUsage[modelName].inputTokens += input;
 						cliShutdownModelUsage[modelName].outputTokens += output;
+					}
+				}
+				// Attribute this shutdown's tokens to its UTC day
+				if (shutdownTotal > 0 && event.timestamp) {
+					const dayKey = new Date(event.timestamp).toISOString().slice(0, 10);
+					if (dayKey && dayKey !== 'Inval') {
+						dailyActualTokens[dayKey] = (dailyActualTokens[dayKey] || 0) + shutdownTotal;
 					}
 				}
 			}
@@ -233,7 +244,7 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 		}
 	}
 
-	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, modelUsage: cliShutdownModelUsage ?? {} };
+	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, modelUsage: cliShutdownModelUsage ?? {}, dailyActualTokens };
 }
 
 /**
