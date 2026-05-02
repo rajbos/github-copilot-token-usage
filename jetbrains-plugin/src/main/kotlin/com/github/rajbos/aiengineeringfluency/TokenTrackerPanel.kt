@@ -28,12 +28,13 @@ import javax.swing.JComponent
  */
 class TokenTrackerPanel(
     private val project: Project,
-    private val view: String = "details",
+    initialView: String = "details",
 ) : Disposable {
 
     private val log = thisLogger()
     private val browser: JBCefBrowser = JBCefBrowser()
     @Volatile private var initialLoadDone = false
+    @Volatile private var currentView: String = initialView
 
     /**
      * `JBCefJSQuery` is the JCEF-side equivalent of WebView2's
@@ -65,7 +66,7 @@ class TokenTrackerPanel(
             }
         }, browser.cefBrowser)
 
-        browser.loadHTML(WebviewResources.buildHtml(view, hostBridgeInjectFunction = hostBridge.inject("payload")))
+        browser.loadHTML(WebviewResources.buildHtml(currentView, hostBridgeInjectFunction = hostBridge.inject("payload")))
     }
 
     /**
@@ -73,6 +74,7 @@ class TokenTrackerPanel(
      * webview when complete. Errors are surfaced as an inline error overlay.
      */
     private fun refreshStatsAsync() {
+        val view = currentView
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = runCatching { CliBridge.fetchStats(view) }
             ApplicationManager.getApplication().invokeLater {
@@ -88,6 +90,7 @@ class TokenTrackerPanel(
     }
 
     private fun pushStatsToWebview(statsJson: String) {
+        val view = currentView
         log.info("Pushing stats to webview: ${statsJson.length} chars, globalKey=${WebviewResources.viewToGlobalKey(view)}")
         val globalKey = WebviewResources.viewToGlobalKey(view)
         val jsonKey = CliBridge.viewToAllJsonKey(view)
@@ -151,11 +154,54 @@ class TokenTrackerPanel(
 
     /**
      * Handles messages posted by the webview via the shim.
-     * For now we only log — future commands (e.g. `openExternal`, `refresh`)
-     * mirror the VS extension's `WebView_WebMessageReceived` switch.
+     * Mirrors the VS extension's `OnWebMessageReceived` switch.
      */
     private fun handleWebviewMessage(rawMessage: String) {
-        log.debug("webview -> host: $rawMessage")
+        log.info("webview -> host: $rawMessage")
+        try {
+            // Messages arrive as JSON strings: {"command":"showChart"} etc.
+            // Use simple regex extraction to avoid external JSON library dependency.
+            val command = """"command"\s*:\s*"([^"]+)"""".toRegex()
+                .find(rawMessage)?.groupValues?.get(1) ?: return
+
+            when (command) {
+                "refresh" -> refreshStatsAsync()
+
+                "showDetails" -> navigateToView("details")
+                "showChart" -> navigateToView("chart")
+                "showUsageAnalysis" -> navigateToView("usage")
+                "showEnvironmental" -> navigateToView("environmental")
+                "showMaturity" -> navigateToView("maturity")
+                "showDiagnostics" -> navigateToView("details") // not supported yet
+                "showDashboard" -> navigateToView("details") // not supported yet
+
+                "jsError" -> {
+                    val msg = """"message"\s*:\s*"([^"]+)"""".toRegex()
+                        .find(rawMessage)?.groupValues?.get(1) ?: "(no message)"
+                    log.error("WebView JS error in view '$currentView': $msg")
+                }
+
+                else -> log.warn("Unknown webview command: $command")
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to parse webview message: ${e.message}")
+        }
+    }
+
+    /**
+     * Navigates to a different view by reloading the JCEF browser with the new
+     * view's HTML bundle and fetching fresh data from the CLI.
+     */
+    private fun navigateToView(view: String) {
+        if (view == currentView) {
+            // Same view — just refresh data
+            refreshStatsAsync()
+            return
+        }
+        currentView = view
+        initialLoadDone = false
+        browser.loadHTML(WebviewResources.buildHtml(view, hostBridgeInjectFunction = hostBridge.inject("payload")))
+        // onLoadEnd will fire and call refreshStatsAsync() via the load handler
     }
 
     override fun dispose() {
