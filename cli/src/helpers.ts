@@ -299,7 +299,7 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			]);
 			const ecoResult: SessionData = {
 				file: filePath,
-				tokens: tokenResult.tokens,
+				tokens: tokenResult.actualTokens > 0 ? tokenResult.actualTokens : tokenResult.tokens,
 				thinkingTokens: tokenResult.thinkingTokens,
 				interactions,
 				modelUsage,
@@ -325,7 +325,9 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 
 		if (isJsonl) {
 			const result = estimateTokensFromJsonlSession(content);
-			tokens = result.tokens;
+			// Prefer actualTokens (from session.shutdown modelMetrics) over estimated tokens,
+			// matching VS Code's logic: actualTokens > 0 ? actualTokens : estimatedTokens
+			tokens = result.actualTokens > 0 ? result.actualTokens : result.tokens;
 			thinkingTokens = result.thinkingTokens;
 			fileModelUsage = result.modelUsage;
 
