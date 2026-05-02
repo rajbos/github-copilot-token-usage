@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens. Each model has direct provider/API pricing at the top level (used as a reference); models billed through GitHub Copilot AI Credits also include a `copilotPricing` block reflecting GitHub's published per-token rates (1 AI credit = $0.01).",
   "metadata": {
-    "lastUpdated": "2026-04-30",
+    "lastUpdated": "2026-05-01",
     "sources": [
       {
         "name": "OpenAI API Pricing",
@@ -449,7 +449,7 @@
       "cacheCreationCostPerMillion": 6.25,
       "category": "Claude models (Anthropic)",
       "tier": "premium",
-      "multiplier": 7.5,
+      "multiplier": 15.0,
       "displayNames": [
         "Claude Opus 4.7"
       ],
