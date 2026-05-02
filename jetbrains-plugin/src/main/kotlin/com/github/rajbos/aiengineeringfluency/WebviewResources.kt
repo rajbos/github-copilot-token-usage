@@ -90,7 +90,7 @@ object WebviewResources {
                 <div id="loading-overlay">
                     <div class="spinner"></div>
                     <div class="loading-title">Loading Copilot usage data&hellip;</div>
-                    <div class="loading-detail">Scanning session logs &mdash; this may take 15&ndash;30 seconds on the first run.</div>
+                    <div class="loading-detail">Scanning session logs &mdash; this may take up to 2 minutes on the first run.</div>
                 </div>
                 <div id="root"></div>
                 <div class="repo-footer">
