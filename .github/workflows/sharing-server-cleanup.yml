@@ -79,7 +79,7 @@ jobs:
       - name: Azure CLI login
         run: az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" --output none
 
-      - name: Pre-destroy: unbind custom domains and delete managed certs
+      - name: Pre-destroy - unbind custom domains and delete managed certs
         env:
           APP_NAME: ${{ steps.env.outputs.app_name }}
           RG:       ${{ vars.AZURE_RESOURCE_GROUP }}
