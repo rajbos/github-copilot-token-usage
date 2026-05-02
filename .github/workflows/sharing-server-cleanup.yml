@@ -72,6 +72,51 @@ jobs:
             -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}" \
             -backend-config="key=${{ steps.env.outputs.state_key }}"
 
+      # Azure CLI login is needed to detach custom domain bindings and delete managed
+      # certs before Terraform destroy. ACA rejects cert deletion while a hostname
+      # binding still references the cert (400 CertificateInUse), which breaks
+      # terraform destroy. We must unbind all hostnames and delete all certs first.
+      - name: Azure CLI login
+        run: az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" --output none
+
+      - name: Pre-destroy: unbind custom domains and delete managed certs
+        env:
+          APP_NAME: ${{ steps.env.outputs.app_name }}
+          RG:       ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          ENV_NAME="${APP_NAME}-env"
+
+          # Remove any custom hostname bindings from the container app.
+          # Terraform destroy fails to delete managed certs while hostnames still reference them.
+          if az containerapp show --name "$APP_NAME" --resource-group "$RG" --output none 2>/dev/null; then
+            HOSTNAMES=$(az containerapp hostname list \
+              --name "$APP_NAME" --resource-group "$RG" \
+              --query "[].name" -o tsv 2>/dev/null || true)
+            for HOSTNAME in $HOSTNAMES; do
+              echo "Removing hostname binding: $HOSTNAME"
+              az containerapp hostname delete \
+                --name "$APP_NAME" --resource-group "$RG" \
+                --hostname "$HOSTNAME" --yes 2>/dev/null || true
+            done
+          else
+            echo "Container app '${APP_NAME}' not found — skipping hostname cleanup."
+          fi
+
+          # Delete all managed certs from the environment so Terraform can destroy it cleanly.
+          if az containerapp env show --name "$ENV_NAME" --resource-group "$RG" --output none 2>/dev/null; then
+            CERTS=$(az containerapp env certificate list \
+              --name "$ENV_NAME" --resource-group "$RG" \
+              --query "[].name" -o tsv 2>/dev/null || true)
+            for CERT in $CERTS; do
+              echo "Deleting managed cert: $CERT"
+              az containerapp env certificate delete \
+                --name "$ENV_NAME" --resource-group "$RG" \
+                --certificate "$CERT" --yes 2>/dev/null || true
+            done
+          else
+            echo "Container app environment '${ENV_NAME}' not found — skipping cert cleanup."
+          fi
+
       - name: Destroy resources (if any exist)
         working-directory: sharing-server/infra
         env:
