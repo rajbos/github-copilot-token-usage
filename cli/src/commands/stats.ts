@@ -3,7 +3,7 @@
  */
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { discoverSessionFiles, processSessionFile, getDiagnosticPaths, fmt, formatTokens, getCacheStats } from '../helpers';
+import { discoverSessionFiles, processSessionFile, effectiveTokens, getDiagnosticPaths, fmt, formatTokens, getCacheStats } from '../helpers';
 
 export const statsCommand = new Command('stats')
 	.description('Show overview of discovered session files, sessions, chat turns, and tokens')
@@ -53,7 +53,7 @@ export const statsCommand = new Command('stats')
 			}
 
 			processedCount++;
-			totalTokens += data.tokens;
+			totalTokens += effectiveTokens(data);
 			totalThinkingTokens += data.thinkingTokens;
 			totalInteractions += data.interactions;
 
@@ -62,7 +62,7 @@ export const statsCommand = new Command('stats')
 				editorCounts[data.editorSource] = { files: 0, tokens: 0, interactions: 0 };
 			}
 			editorCounts[data.editorSource].files++;
-			editorCounts[data.editorSource].tokens += data.tokens;
+			editorCounts[data.editorSource].tokens += effectiveTokens(data);
 			editorCounts[data.editorSource].interactions += data.interactions;
 
 			// Track by parent folder
@@ -72,7 +72,7 @@ export const statsCommand = new Command('stats')
 					folderCounts[folder] = { files: 0, tokens: 0 };
 				}
 				folderCounts[folder].files++;
-				folderCounts[folder].tokens += data.tokens;
+				folderCounts[folder].tokens += effectiveTokens(data);
 			}
 
 			// Progress indicator
@@ -90,7 +90,7 @@ export const statsCommand = new Command('stats')
 			console.log(`  Empty/skipped files:        ${chalk.dim(fmt(emptyCount))}`);
 		}
 		console.log(`  Total chat turns:           ${chalk.bold(fmt(totalInteractions))}`);
-		console.log(`  Total estimated tokens:     ${chalk.bold.yellow(formatTokens(totalTokens))}`);
+		console.log(`  Total tokens:               ${chalk.bold.yellow(formatTokens(totalTokens))}`);
 		if (totalThinkingTokens > 0) {
 			console.log(`  Thinking tokens (included): ${chalk.dim(formatTokens(totalThinkingTokens))}`);
 		}

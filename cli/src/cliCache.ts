@@ -10,7 +10,7 @@ import * as os from 'os';
 import type { SessionData } from './helpers';
 
 /** Bump this when the SessionData shape changes to force a full re-parse. */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 /** Maximum number of entries to keep in the cache file. */
 const MAX_CACHE_ENTRIES = 2000;

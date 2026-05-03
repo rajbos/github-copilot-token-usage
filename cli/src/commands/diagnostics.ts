@@ -4,7 +4,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as path from 'path';
-import { discoverSessionFiles, getDiagnosticPaths, processSessionFile, fmt, formatTokens } from '../helpers';
+import { discoverSessionFiles, getDiagnosticPaths, processSessionFile, effectiveTokens, fmt, formatTokens } from '../helpers';
 
 interface LocationStats {
 	label: string;
@@ -159,10 +159,10 @@ export const diagnosticsCommand = new Command('diagnostics')
 			if (data && data.tokens > 0) {
 				loc.sessions++;
 				loc.interactions += data.interactions;
-				loc.tokens += data.tokens;
+				loc.tokens += effectiveTokens(data);
 				totalSessions++;
 				totalInteractions += data.interactions;
-				totalTokens += data.tokens;
+				totalTokens += effectiveTokens(data);
 			}
 		}
 
@@ -204,7 +204,7 @@ export const diagnosticsCommand = new Command('diagnostics')
 		console.log(`  Total files found:      ${chalk.bold(fmt(totalFiles))}`);
 		console.log(`  Files with data:        ${chalk.bold(fmt(totalSessions))}`);
 		console.log(`  Total chat turns:       ${chalk.bold(fmt(totalInteractions))}`);
-		console.log(`  Total tokens (est.):    ${chalk.bold.yellow(formatTokens(totalTokens))}`);
+		console.log(`  Total tokens:           ${chalk.bold.yellow(formatTokens(totalTokens))}`);
 
 		if (missing.length > 0) {
 			console.log();

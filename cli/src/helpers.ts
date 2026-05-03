@@ -19,6 +19,7 @@ import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, C
 import { isMcpTool, extractMcpServerName } from '../../vscode-extension/src/workspaceHelpers';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
+import { extractDailyFractions } from '../../vscode-extension/src/dailyAttribution';
 import type { DetailedStats, PeriodStats, ModelUsage, EditorUsage, SessionFileCache, UsageAnalysisStats, UsageAnalysisPeriod, WorkspaceCustomizationMatrix } from '../../vscode-extension/src/types';
 import { analyzeSessionUsage, mergeUsageAnalysis, calculateModelSwitching, trackEnhancedMetrics } from '../../vscode-extension/src/usageAnalysis';
 import { createEmptyContextRefs } from '../../vscode-extension/src/tokenEstimation';
@@ -270,12 +271,41 @@ export interface SessionData {
 	file: string;
 	tokens: number;
 	thinkingTokens: number;
+	/** Actual LLM tokens from session.shutdown or request-level usage data. 0 means unavailable. */
+	actualTokens: number;
 	interactions: number;
 	modelUsage: ModelUsage;
 	lastModified: Date;
 	editorSource: string;
-	/** Per-UTC-day actual token breakdown from shutdown event timestamps. */
-	dailyActualTokens?: Record<string, number>;
+	/**
+	 * Per-UTC-day token fractions, keyed by "YYYY-MM-DD".
+	 * Values sum to 1.0. Built from interaction timestamps extracted from the session file.
+	 * Falls back to { [mtimeDateKey]: 1.0 } when no timestamps are available.
+	 *
+	 * This is the canonical attribution mechanism for all session formats:
+	 *  - Copilot CLI JSONL: from user.message event timestamps
+	 *  - VS Code delta JSONL: from kind:0/1/2 request timestamps
+	 *  - VS Code JSON: from requests[].timestamp fields
+	 *  - Ecosystem adapters: mtime fallback (until adapter implements getDailyFractions)
+	 */
+	dailyFractions: Record<string, number>;
+}
+
+/**
+ * Extract per-UTC-day fractions from session content using interaction timestamps.
+ * Fractions sum to 1.0. Falls back to { [fallbackDateKey]: 1.0 } when no timestamps found.
+ *
+ * Single canonical implementation for all text-based session formats:
+ *  - Copilot CLI JSONL: timestamps on `user.message` events
+ *  - VS Code delta JSONL: timestamps in kind:0 initial state, kind:2 appends, kind:1 updates
+ *  - VS Code JSON: timestamps on request objects
+ *
+ * When adding support for a new session format, extend this function rather than creating
+ * a separate attribution implementation — this keeps all formats consistent.
+ */
+/** Returns actual tokens when available (more accurate), else falls back to estimated. */
+export function effectiveTokens(data: SessionData): number {
+	return data.actualTokens > 0 ? data.actualTokens : data.tokens;
 }
 
 /**
@@ -299,14 +329,17 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 				eco.countInteractions(filePath),
 				eco.getModelUsage(filePath),
 			]);
+			const mtimeDateKey = stats.mtime.toISOString().slice(0, 10);
 			const ecoResult: SessionData = {
 				file: filePath,
 				tokens: tokenResult.actualTokens > 0 ? tokenResult.actualTokens : tokenResult.tokens,
 				thinkingTokens: tokenResult.thinkingTokens,
+				actualTokens: tokenResult.actualTokens,
 				interactions,
 				modelUsage,
 				lastModified: stats.mtime,
 				editorSource: getEditorSourceFromPath(filePath),
+				dailyFractions: (await eco.getDailyFractions?.(filePath)) ?? { [mtimeDateKey]: 1.0 },
 			};
 			setCached(filePath, stats.mtimeMs, stats.size, ecoResult);
 			return ecoResult;
@@ -322,9 +355,9 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 
 		let tokens = 0;
 		let thinkingTokens = 0;
+		let actualTokens = 0;
 		let interactions = 0;
 		let fileModelUsage: ModelUsage = {};
-		let fileDailyActualTokens: Record<string, number> | undefined;
 
 		if (isJsonl) {
 			const result = estimateTokensFromJsonlSession(content);
@@ -332,11 +365,9 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			// matching VS Code's logic: actualTokens > 0 ? actualTokens : estimatedTokens
 			tokens = result.actualTokens > 0 ? result.actualTokens : result.tokens;
 			thinkingTokens = result.thinkingTokens;
+			actualTokens = result.actualTokens;
+			// Use per-model breakdown from session.shutdown events (more accurate than request-level estimates)
 			fileModelUsage = result.modelUsage;
-			// Store per-day breakdown for accurate period attribution of multi-day sessions
-			if (Object.keys(result.dailyActualTokens).length > 0) {
-				fileDailyActualTokens = result.dailyActualTokens;
-			}
 
 			// Count interactions from JSONL
 			const lines = content.trim().split('\n');
@@ -359,19 +390,23 @@ export async function processSessionFile(filePath: string): Promise<SessionData 
 			);
 			tokens = result.tokens;
 			thinkingTokens = result.thinkingTokens;
+			actualTokens = result.actualTokens;
 			interactions = result.interactions;
 			fileModelUsage = result.modelUsage as ModelUsage;
 		}
+
+		const dailyFractions = extractDailyFractions(content, isJsonl, stats.mtime);
 
 		const sessionData: SessionData = {
 			file: filePath,
 			tokens,
 			thinkingTokens,
+			actualTokens,
 			interactions,
 			modelUsage: fileModelUsage,
 			lastModified: stats.mtime,
 			editorSource: getEditorSourceFromPath(filePath),
-			dailyActualTokens: fileDailyActualTokens,
+			dailyFractions,
 		};
 		setCached(filePath, stats.mtimeMs, stats.size, sessionData);
 		return sessionData;
@@ -388,13 +423,23 @@ export async function calculateDetailedStats(
 	progressCallback?: (completed: number, total: number) => void
 ): Promise<DetailedStats> {
 	const now = new Date();
+
+	// All period boundaries are UTC date keys (YYYY-MM-DD) to match the VS Code extension's behaviour.
 	const todayUtcKey = now.toISOString().slice(0, 10);
-	const monthUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
-	const lastMonthLastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
-	const lastMonthUtcEndKey = lastMonthLastDay.toISOString().slice(0, 10);
-	const lastMonthUtcStartKey = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).toISOString().slice(0, 10);
-	const last30DaysUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30));
-	const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
+
+	const y = now.getUTCFullYear();
+	const m = now.getUTCMonth(); // 0-indexed
+	const monthStartKey = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+
+	// Last month: the month before the current UTC month
+	const lmYear = m === 0 ? y - 1 : y;
+	const lmMonth = m === 0 ? 12 : m; // 1-indexed last month number
+	const lastMonthStartKey = `${lmYear}-${String(lmMonth).padStart(2, '0')}-01`;
+	// lastMonthEndKey is the day before monthStartKey — string comparison handles this naturally
+	// (any date >= lastMonthStartKey && < monthStartKey is in last month)
+
+	const last30DaysDate = new Date(Date.UTC(y, m, now.getUTCDate() - 30));
+	const last30DaysStartKey = last30DaysDate.toISOString().slice(0, 10);
 
 	const periods: {
 		today: PeriodStats;
@@ -420,63 +465,27 @@ export async function calculateDetailedStats(
 			continue;
 		}
 
-		const modifiedUtcKey = data.lastModified.toISOString().slice(0, 10);
+		// Skip sessions that have no relevant days (all older than last month)
+		const hasRelevantDay = Object.keys(data.dailyFractions).some(k => k >= lastMonthStartKey);
+		if (!hasRelevantDay) { continue; }
 
-		// Skip files older than the last month's start
-		if (modifiedUtcKey < lastMonthUtcStartKey) {
-			continue;
+		// Accumulate per-period fractions from the session's daily breakdown
+		let todayFrac = 0;
+		let monthFrac = 0;
+		let lastMonthFrac = 0;
+		let last30DaysFrac = 0;
+
+		for (const [dateKey, fraction] of Object.entries(data.dailyFractions)) {
+			if (dateKey === todayUtcKey) { todayFrac += fraction; }
+			if (dateKey >= monthStartKey) { monthFrac += fraction; }
+			if (dateKey >= lastMonthStartKey && dateKey < monthStartKey) { lastMonthFrac += fraction; }
+			if (dateKey >= last30DaysStartKey) { last30DaysFrac += fraction; }
 		}
 
-		// When per-day actual token breakdown is available (multi-day sessions),
-		// distribute tokens accurately across the days they occurred — matching
-		// VS Code's dailyRollups behavior.
-		if (data.dailyActualTokens && Object.keys(data.dailyActualTokens).length > 1) {
-			let addedToToday = false;
-			let addedToMonth = false;
-			let addedToLastMonth = false;
-			let addedToLast30Days = false;
-
-			for (const [dayKey, dayTokens] of Object.entries(data.dailyActualTokens)) {
-				if (dayKey < lastMonthUtcStartKey) { continue; }
-
-				const dayData: SessionData = {
-					...data,
-					tokens: dayTokens,
-				};
-
-				if (dayKey === todayUtcKey) {
-					aggregateIntoPeriod(periods.today, dayData, !addedToToday);
-					addedToToday = true;
-				}
-				if (dayKey >= monthUtcStartKey) {
-					aggregateIntoPeriod(periods.month, dayData, !addedToMonth);
-					addedToMonth = true;
-				}
-				if (dayKey >= lastMonthUtcStartKey && dayKey <= lastMonthUtcEndKey) {
-					aggregateIntoPeriod(periods.lastMonth, dayData, !addedToLastMonth);
-					addedToLastMonth = true;
-				}
-				if (dayKey >= last30DaysUtcStartKey) {
-					aggregateIntoPeriod(periods.last30Days, dayData, !addedToLast30Days);
-					addedToLast30Days = true;
-				}
-			}
-			continue;
-		}
-
-		// Single-day session (or no daily breakdown): attribute all tokens to mtime day
-		if (modifiedUtcKey === todayUtcKey) {
-			aggregateIntoPeriod(periods.today, data);
-		}
-		if (modifiedUtcKey >= monthUtcStartKey) {
-			aggregateIntoPeriod(periods.month, data);
-		}
-		if (modifiedUtcKey >= lastMonthUtcStartKey && modifiedUtcKey <= lastMonthUtcEndKey) {
-			aggregateIntoPeriod(periods.lastMonth, data);
-		}
-		if (modifiedUtcKey >= last30DaysUtcStartKey) {
-			aggregateIntoPeriod(periods.last30Days, data);
-		}
+		if (todayFrac > 0) { aggregateIntoPeriod(periods.today, data, todayFrac); }
+		if (monthFrac > 0) { aggregateIntoPeriod(periods.month, data, monthFrac); }
+		if (lastMonthFrac > 0) { aggregateIntoPeriod(periods.lastMonth, data, lastMonthFrac); }
+		if (last30DaysFrac > 0) { aggregateIntoPeriod(periods.last30Days, data, last30DaysFrac); }
 	}
 
 	// Compute derived stats
@@ -515,37 +524,37 @@ function createEmptyPeriodStats(): PeriodStats {
 	};
 }
 
-function aggregateIntoPeriod(period: PeriodStats, data: SessionData, countSession = true): void {
-	period.tokens += data.tokens;
-	period.thinkingTokens += data.thinkingTokens;
-	period.estimatedTokens += data.tokens;
-	if (countSession) {
-		period.sessions++;
-	}
+function aggregateIntoPeriod(period: PeriodStats, data: SessionData, fraction: number): void {
+	const displayTok = Math.round(effectiveTokens(data) * fraction);
+	const thinkingTok = Math.round(data.thinkingTokens * fraction);
+	const actualTok = Math.round(data.actualTokens * fraction);
 
-	// Merge model usage
+	period.tokens += displayTok;
+	period.thinkingTokens += thinkingTok;
+	period.estimatedTokens += Math.round(data.tokens * fraction);
+	period.actualTokens += actualTok;
+	period.sessions++;
+
+	// Merge model usage proportionally
 	for (const [model, usage] of Object.entries(data.modelUsage)) {
 		if (!period.modelUsage[model]) {
 			period.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
 		}
-		period.modelUsage[model].inputTokens += usage.inputTokens;
-		period.modelUsage[model].outputTokens += usage.outputTokens;
+		period.modelUsage[model].inputTokens += Math.round(usage.inputTokens * fraction);
+		period.modelUsage[model].outputTokens += Math.round(usage.outputTokens * fraction);
 	}
 
-	// Track interactions
-	if (countSession) {
-		const totalInteractions = period.avgInteractionsPerSession * (period.sessions - 1) + data.interactions;
-		period.avgInteractionsPerSession = period.sessions > 0 ? totalInteractions / period.sessions : 0;
-	}
+	// Track interactions proportionally for the running average
+	const interactions = Math.round(data.interactions * fraction);
+	const totalInteractions = period.avgInteractionsPerSession * (period.sessions - 1) + interactions;
+	period.avgInteractionsPerSession = period.sessions > 0 ? totalInteractions / period.sessions : 0;
 
 	// Editor usage
 	if (!period.editorUsage[data.editorSource]) {
 		period.editorUsage[data.editorSource] = { tokens: 0, sessions: 0 };
 	}
-	period.editorUsage[data.editorSource].tokens += data.tokens;
-	if (countSession) {
-		period.editorUsage[data.editorSource].sessions++;
-	}
+	period.editorUsage[data.editorSource].tokens += displayTok;
+	period.editorUsage[data.editorSource].sessions++;
 }
 
 /**
@@ -674,7 +683,7 @@ interface DailyEntry {
 
 /**
  * Process session files and return per-day stats for the last 30 days.
- * Returns `{ labels, days }` where labels are sorted YYYY-MM-DD strings and
+ * Returns `{ labels, days }` where labels are sorted YYYY-MM-DD strings (UTC) and
  * days are the corresponding aggregated stats.
  */
 export async function calculateDailyStats(sessionFiles: string[]): Promise<{
@@ -683,51 +692,72 @@ export async function calculateDailyStats(sessionFiles: string[]): Promise<{
 	allDaysMap: Map<string, DailyEntry>;
 }> {
 	const now = new Date();
-	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-	const fmtKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	const last30DaysDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30));
+	const last30DaysStartKey = last30DaysDate.toISOString().slice(0, 10);
+	const todayKey = now.toISOString().slice(0, 10);
 
 	// Fill in all 31 days (today inclusive) with zeroes so the chart has continuous labels
 	const dailyMap = new Map<string, DailyEntry>();
-	const cursor = new Date(last30DaysStart);
-	while (cursor <= now) {
-		dailyMap.set(fmtKey(new Date(cursor)), { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
-		cursor.setDate(cursor.getDate() + 1);
+	const cursor = new Date(last30DaysDate);
+	while (cursor.toISOString().slice(0, 10) <= todayKey) {
+		const key = cursor.toISOString().slice(0, 10);
+		dailyMap.set(key, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+		cursor.setUTCDate(cursor.getUTCDate() + 1);
 	}
 
-	// Full historical map (all time) for weekly/monthly chart periods
+	// Full historical map (all time, no age filter) for weekly/monthly chart periods
 	const allDaysMap = new Map<string, DailyEntry>();
 
-	const addToEntry = (map: Map<string, DailyEntry>, dateKey: string, data: { tokens: number; modelUsage: ModelUsage; editorSource: string }) => {
-		if (!map.has(dateKey)) {
-			map.set(dateKey, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
-		}
-		const entry = map.get(dateKey)!;
-		entry.tokens += data.tokens;
-		entry.sessions++;
-		for (const [model, usage] of Object.entries(data.modelUsage)) {
-			if (!entry.modelUsage[model]) { entry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
-			entry.modelUsage[model].inputTokens += (usage as any).inputTokens;
-			entry.modelUsage[model].outputTokens += (usage as any).outputTokens;
-		}
-		const editor = data.editorSource;
-		if (!entry.editorUsage[editor]) { entry.editorUsage[editor] = { tokens: 0, sessions: 0 }; }
-		entry.editorUsage[editor].tokens += data.tokens;
-		entry.editorUsage[editor].sessions++;
-	};
+	const sessionResults = await runWithConcurrency(sessionFiles, async (file) => processSessionFile(file));
 
-	for (const file of sessionFiles) {
-		const data = await processSessionFile(file);
+	for (const data of sessionResults) {
 		if (!data || data.tokens === 0 || data.interactions === 0) { continue; }
 
-		const d = data.lastModified;
-		const dateKey = fmtKey(d);
+		const displayTok = effectiveTokens(data);
 
-		// Always add to the full history map
-		addToEntry(allDaysMap, dateKey, data);
+		for (const [dateKey, fraction] of Object.entries(data.dailyFractions)) {
+			const tokForDay = Math.round(displayTok * fraction);
 
-		// Only add to the 30-day map if within window
-		if (data.lastModified >= last30DaysStart && dailyMap.has(dateKey)) {
-			addToEntry(dailyMap, dateKey, data);
+			// 30-day map: only add days within the window
+			const dailyEntry = dailyMap.get(dateKey);
+			if (dailyEntry) {
+				dailyEntry.tokens += tokForDay;
+				dailyEntry.sessions++;
+				for (const [model, usage] of Object.entries(data.modelUsage)) {
+					if (!dailyEntry.modelUsage[model]) {
+						dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+					}
+					dailyEntry.modelUsage[model].inputTokens += Math.round(usage.inputTokens * fraction);
+					dailyEntry.modelUsage[model].outputTokens += Math.round(usage.outputTokens * fraction);
+				}
+				const editor = data.editorSource;
+				if (!dailyEntry.editorUsage[editor]) {
+					dailyEntry.editorUsage[editor] = { tokens: 0, sessions: 0 };
+				}
+				dailyEntry.editorUsage[editor].tokens += tokForDay;
+				dailyEntry.editorUsage[editor].sessions++;
+			}
+
+			// Full history map: always add regardless of age (used for weekly/monthly charts)
+			if (!allDaysMap.has(dateKey)) {
+				allDaysMap.set(dateKey, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+			}
+			const allEntry = allDaysMap.get(dateKey)!;
+			allEntry.tokens += tokForDay;
+			allEntry.sessions++;
+			for (const [model, usage] of Object.entries(data.modelUsage)) {
+				if (!allEntry.modelUsage[model]) {
+					allEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
+				}
+				allEntry.modelUsage[model].inputTokens += Math.round(usage.inputTokens * fraction);
+				allEntry.modelUsage[model].outputTokens += Math.round(usage.outputTokens * fraction);
+			}
+			const editor = data.editorSource;
+			if (!allEntry.editorUsage[editor]) {
+				allEntry.editorUsage[editor] = { tokens: 0, sessions: 0 };
+			}
+			allEntry.editorUsage[editor].tokens += tokForDay;
+			allEntry.editorUsage[editor].sessions++;
 		}
 	}
 
