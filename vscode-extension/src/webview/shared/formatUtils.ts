@@ -39,6 +39,7 @@ export function getEditorIcon(editor: string): string {
 		'Claude Code': '🟠',
 		'Claude Desktop Cowork': '🟠',
 		'Mistral Vibe': '🔥',
+		'Gemini CLI': '💎',
 		'Unknown': '❓'
 	};
 	return icons[editor] || '📝';

@@ -24,6 +24,14 @@ npm run cli -- --help       # Run any CLI command
 - Node.js 18 or later
 - GitHub Copilot Chat session files on the local machine
 
+## Data Sources
+
+The CLI reads the same local session sources as the extension, including:
+
+- GitHub Copilot Chat / Copilot CLI sessions
+- OpenCode, Claude Code, and Gemini CLI sessions
+- Other supported editor integrations wired through the shared adapter pipeline
+
 ## License
 
 MIT — see [LICENSE](../LICENSE) for details.

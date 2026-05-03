@@ -140,6 +140,7 @@ function getEditorDisplayName(source: string): string {
 		'claude-code': 'Claude Code',
 		'claude-desktop-cowork': 'Claude Desktop (Cowork)',
 		'mistral-vibe': 'Mistral Vibe',
+		'gemini-cli': 'Gemini CLI',
 	};
 	return names[source] || source;
 }

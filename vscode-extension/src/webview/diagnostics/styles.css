@@ -403,6 +403,12 @@ background-repeat: no-repeat;
 background-position: center;
 }
 
+.editor-badge-gemini-cli {
+	background: #111827;
+	color: #8ec5ff;
+	border: 1px solid #5b8cff;
+}
+
 .session-folders-table {
 	margin-top: 16px;
 	margin-bottom: 16px;

@@ -14,8 +14,9 @@ import { VisualStudioDataAccess } from '../../vscode-extension/src/visualstudio'
 import { ClaudeCodeDataAccess } from '../../vscode-extension/src/claudecode';
 import { ClaudeDesktopCoworkDataAccess } from '../../vscode-extension/src/claudedesktop';
 import { MistralVibeDataAccess } from '../../vscode-extension/src/mistralvibe';
+import { GeminiCliDataAccess } from '../../vscode-extension/src/geminicli';
 import type { IEcosystemAdapter } from '../../vscode-extension/src/ecosystemAdapter';
-import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter, CopilotChatAdapter, CopilotCliAdapter, JetBrainsAdapter } from '../../vscode-extension/src/adapters';
+import { OpenCodeAdapter, CrushAdapter, ContinueAdapter, ClaudeDesktopAdapter, ClaudeCodeAdapter, VisualStudioAdapter, MistralVibeAdapter, GeminiCliAdapter, CopilotChatAdapter, CopilotCliAdapter, JetBrainsAdapter } from '../../vscode-extension/src/adapters';
 import { isMcpTool, extractMcpServerName } from '../../vscode-extension/src/workspaceHelpers';
 import { parseSessionFileContent } from '../../vscode-extension/src/sessionParser';
 import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, getModelTier } from '../../vscode-extension/src/tokenEstimation';
@@ -82,6 +83,11 @@ function createMistralVibe(): MistralVibeDataAccess {
 	return new MistralVibeDataAccess();
 }
 
+/** Create Gemini CLI data access instance for CLI */
+function createGeminiCli(): GeminiCliDataAccess {
+	return new GeminiCliDataAccess();
+}
+
 // Module-level singletons so sql.js WASM is only initialised once across all session files
 const _openCodeInstance = createOpenCode();
 const _crushInstance = createCrush();
@@ -90,6 +96,7 @@ const _visualStudioInstance = createVisualStudio();
 const _claudeCodeInstance = createClaudeCode();
 const _claudeDesktopCoworkInstance = createClaudeDesktopCowork();
 const _mistralVibeInstance = createMistralVibe();
+const _geminiCliInstance = createGeminiCli();
 
 /** Ordered registry of ecosystem adapters — first match wins. */
 const _ecosystems: IEcosystemAdapter[] = [
@@ -105,6 +112,7 @@ const _ecosystems: IEcosystemAdapter[] = [
 	),
 	new ClaudeCodeAdapter(_claudeCodeInstance),
 	new MistralVibeAdapter(_mistralVibeInstance),
+	new GeminiCliAdapter(_geminiCliInstance),
 	// Copilot Chat / CLI adapters: discovery-only. Their handles() returns
 	// false so processSessionFile() falls through to the shared parser path
 	// for VS Code Copilot Chat and CLI files. See issue #654.
@@ -240,6 +248,7 @@ function getEditorSourceFromPath(filePath: string): string {
 	if (normalized.includes('/local-agent-mode-sessions/')) { return 'claude-desktop-cowork'; }
 	if (normalized.includes('/.claude/projects/')) { return 'claude-code'; }
 	if (normalized.includes('/.vibe/logs/session/')) { return 'mistral-vibe'; }
+	if (normalized.includes('/.gemini/tmp/') && normalized.includes('/chats/session-') && normalized.endsWith('.jsonl')) { return 'gemini-cli'; }
 	if (normalized.includes('.vscode-server')) { return 'vscode-remote'; }
 	if (normalized.includes('/.vs/') && normalized.includes('/copilot-chat/')) { return 'Visual Studio'; }
 	return 'vscode';
@@ -948,4 +957,3 @@ export { modelPricing, tokenEstimators, toolNameMap };
 
 /** Cache lifecycle — re-export for use in commands */
 export { loadCache, saveCache, disableCache, getCacheStats } from './cliCache';
-
