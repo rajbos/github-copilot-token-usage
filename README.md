@@ -12,11 +12,31 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 - VS Code + GitHub Copilot (Stable, Insiders, Exploration)
 - VSCodium / Cursor
 - GitHub Copilot CLI
-- OpenCode + GitHub Copilot
-- Crush + GitHub Copilot
+- JetBrains IDEs + GitHub Copilot
+- Continue
+- OpenCode
+- Crush
 - Claude Code (Anthropic)
 - Claude Desktop Cowork (Anthropic)
+- Mistral Vibe
 - Visual Studio + GitHub Copilot
+
+<p align="left">
+  <img src="assets/tool-logos/vscode.svg" alt="VS Code" title="VS Code" height="30" />&nbsp;
+  <img src="assets/tool-logos/vscodium.svg" alt="VSCodium" title="VSCodium" height="30" />&nbsp;
+  <img src="assets/tool-logos/cursor.svg" alt="Cursor" title="Cursor" height="28" />&nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/tool-logos/github-copilot-dark.svg" />
+    <img src="assets/tool-logos/github-copilot.svg" alt="GitHub Copilot" title="GitHub Copilot" height="30" />
+  </picture>&nbsp;
+  <img src="assets/tool-logos/jetbrains.png" alt="JetBrains" title="JetBrains" height="30" />&nbsp;
+  <img src="assets/tool-logos/continue.png" alt="Continue" title="Continue" height="30" />&nbsp;
+  <img src="assets/tool-logos/opencode.png" alt="OpenCode" title="OpenCode" height="30" />&nbsp;
+  <img src="assets/tool-logos/crush.svg" alt="Crush" title="Crush" height="26" />&nbsp;
+  <img src="assets/tool-logos/claude.png" alt="Claude" title="Claude" height="30" />&nbsp;
+  <img src="assets/tool-logos/mistral.png" alt="Mistral" title="Mistral" height="30" />&nbsp;
+  <img src="assets/tool-logos/visual-studio.svg" alt="Visual Studio" title="Visual Studio" height="30" />
+</p>
 
 ---
 
@@ -65,7 +85,7 @@ void --install-extension RobBos.copilot-token-tracker
 
 ---
 
-### 🐦 JetBrains IDE Plugin (NEW — preview)
+### 🐦 JetBrains IDE Plugin (awaiting JetBrains Marketplace approval)
 
 Token usage and fluency dashboards inside any JetBrains IDE (IntelliJ IDEA, Rider, PyCharm, WebStorm, GoLand, RubyMine, CLion, …). Built as a thin Kotlin/JCEF host that reuses the same webview bundles as the VS Code extension and the same bundled CLI as the Visual Studio extension.
 
