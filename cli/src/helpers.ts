@@ -777,7 +777,10 @@ export function buildChartPayload(labels: string[], days: DailyEntry[], allDaysM
 		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
 		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
 		const periodCount = buckets.length;
-		return { labels: bLabels, tokensData, sessionsData, modelDatasets, editorDatasets, repositoryDatasets: [], periodCount, totalTokens, totalSessions, avgPerPeriod: periodCount > 0 ? Math.round(totalTokens / periodCount) : 0, costData: [], totalCost: 0, avgCostPerPeriod: 0 };
+		const costData = entries.map(e => calculateEstimatedCost(e.modelUsage, modelPricing));
+		const totalCost = costData.reduce((a, b) => a + b, 0);
+		const avgCostPerPeriod = periodCount > 0 ? totalCost / periodCount : 0;
+		return { labels: bLabels, tokensData, sessionsData, modelDatasets, editorDatasets, repositoryDatasets: [], periodCount, totalTokens, totalSessions, avgPerPeriod: periodCount > 0 ? Math.round(totalTokens / periodCount) : 0, costData, totalCost, avgCostPerPeriod };
 	};
 
 	const mergeEntry = (target: DailyEntry, src: DailyEntry) => {

@@ -535,7 +535,7 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 				labels: period.labels,
 				datasets: [
 					{
-						label: 'Est. Cost (TBB)',
+						label: 'Est. Cost (USD)',
 						data: period.costData,
 						backgroundColor: 'rgba(34, 197, 94, 0.6)',
 						borderColor: 'rgba(34, 197, 94, 1)',
