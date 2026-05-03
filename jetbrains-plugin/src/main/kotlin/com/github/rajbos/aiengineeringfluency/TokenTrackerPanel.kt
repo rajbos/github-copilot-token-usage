@@ -32,6 +32,7 @@ class TokenTrackerPanel(
     private val browser: JBCefBrowser = JBCefBrowser()
     @Volatile private var initialLoadDone = false
     @Volatile private var currentView: String = initialView
+    @Volatile private var currentChartPeriod: String = "day"
 
     /**
      * `JBCefJSQuery` is the JCEF-side equivalent of WebView2's
@@ -87,7 +88,16 @@ class TokenTrackerPanel(
         val result = runCatching {
             val json = CliBridge.fetchStats(view)
             val jsonKey = CliBridge.viewToAllJsonKey(view)
-            if (jsonKey != null) extractJsonKey(json, jsonKey) else json
+            var initialJson = if (jsonKey != null) extractJsonKey(json, jsonKey) else json
+            // For the chart view, inject the stored period preference so the chart
+            // opens on the last-selected period rather than defaulting to "day"
+            if (view == "chart" && currentChartPeriod != "day") {
+                val trimmed = initialJson.trimEnd()
+                if (trimmed.endsWith("}")) {
+                    initialJson = trimmed.dropLast(1) + ",\"initialPeriod\":\"${currentChartPeriod}\"}"
+                }
+            }
+            initialJson
         }
         result.fold(
             onSuccess = { initialJson ->
@@ -145,27 +155,24 @@ class TokenTrackerPanel(
         val view = currentView
         log.info("Pushing stats to webview: ${statsJson.length} chars, globalKey=${WebviewResources.viewToGlobalKey(view)}")
         val globalKey = WebviewResources.viewToGlobalKey(view)
-        val jsonKey = CliBridge.viewToAllJsonKey(view)
         val escapedJson = statsJson
             .replace("\\", "\\\\")
             .replace("'", "\\'")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
-        // Extract the sub-key when using the 'all' command (e.g., data.details for details view)
-        val extractExpr = if (jsonKey != null) "data['$jsonKey']" else "data"
+        // statsJson is already the extracted view sub-object (done by refreshStatsAsync before calling here)
         val js = """
             (function() {
                 try {
                     var data = JSON.parse('$escapedJson');
-                    var viewData = $extractExpr;
-                    window.$globalKey = viewData;
+                    window.$globalKey = data;
                     // Hide loading overlay, show the data root
                     var overlay = document.getElementById('loading-overlay');
                     if (overlay) overlay.style.display = 'none';
                     var root = document.getElementById('root');
                     if (root) root.style.display = 'block';
                     window.dispatchEvent(new MessageEvent('message', {
-                        data: { command: '${viewToUpdateCommand(view)}', data: viewData }
+                        data: { command: '${viewToUpdateCommand(view)}', data: data }
                     }));
                 } catch (e) {
                     var overlay = document.getElementById('loading-overlay');
@@ -175,7 +182,7 @@ class TokenTrackerPanel(
                 }
             })();
         """.trimIndent()
-        log.info("Executing JS with jsonKey=$jsonKey (${js.length} chars)")
+        log.info("Executing JS update for view=$view (${js.length} chars)")
         browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)
     }
 
@@ -231,6 +238,15 @@ class TokenTrackerPanel(
                     val msg = """"message"\s*:\s*"([^"]+)"""".toRegex()
                         .find(rawMessage)?.groupValues?.get(1) ?: "(no message)"
                     log.error("WebView JS error in view '$currentView': $msg")
+                }
+
+                "setPeriodPreference" -> {
+                    val period = """"period"\s*:\s*"([^"]+)"""".toRegex()
+                        .find(rawMessage)?.groupValues?.get(1)
+                    if (period == "day" || period == "week" || period == "month") {
+                        currentChartPeriod = period
+                        log.info("Chart period preference updated to: $period")
+                    }
                 }
 
                 else -> log.warn("Unknown webview command: $command")
