@@ -9,10 +9,11 @@
       vscode-extension  – VS Code extension (TypeScript / Node.js)
       cli               – Command-line tool  (TypeScript / Node.js)
       sharing           – Self-hosted sharing server (TypeScript / Node.js)
-      visualstudio-extension – Visual Studio extension (C# / .NET)   [future]
+      visualstudio-extension – Visual Studio extension (C# / .NET)
+      jetbrains-plugin  – JetBrains IDE plugin (Kotlin / Gradle / IntelliJ Platform)
 
 .PARAMETER Project
-    Which project(s) to build.  Accepts: all | vscode | cli | sharing | visualstudio
+    Which project(s) to build.  Accepts: all | vscode | cli | sharing | visualstudio | jetbrains
     Default: all
 
 .PARAMETER Target
@@ -29,7 +30,7 @@
 #>
 
 param(
-    [ValidateSet('all', 'vscode', 'cli', 'visualstudio', 'sharing')]
+    [ValidateSet('all', 'vscode', 'cli', 'visualstudio', 'sharing', 'jetbrains')]
     [string] $Project = 'all',
 
     [ValidateSet('build', 'package', 'test', 'clean')]
@@ -196,6 +197,57 @@ function Build-VisualStudio {
 }
 
 # ---------------------------------------------------------------------------
+# JetBrains Plugin
+#
+# Prereq: JDK 21+ on PATH (the included Gradle wrapper handles Gradle itself).
+# Always rebuilds the vscode-extension webview bundles and the CLI binary
+# first so the plugin gets the latest UI + stats engine. The Gradle
+# `prepareBundledAssets` task copies them into the plugin resources.
+# ---------------------------------------------------------------------------
+function Build-Jetbrains {
+    Write-Step "jetbrains-plugin: $Target"
+
+    if (-not (Test-Path "$PSScriptRoot/jetbrains-plugin/build.gradle.kts")) {
+        Write-Host "    (jetbrains-plugin not yet scaffolded - skipping)" -ForegroundColor Yellow
+        return
+    }
+
+    # Ensure Java is available; the wrapper script otherwise fails with a cryptic error.
+    $java = Get-Command java -ErrorAction SilentlyContinue
+    if (-not $java) {
+        Write-Err "Java not found on PATH - install JDK 21+ (e.g. `winget install Microsoft.OpenJDK.21`)"
+        return
+    }
+
+    # Always refresh the inputs the plugin embeds.
+    Write-Step "vscode-extension: compile (for JetBrains webview bundles)"
+    Push-Location "$PSScriptRoot/vscode-extension"
+    try {
+        npm ci
+        npm run compile
+        if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
+    }
+    finally { Pop-Location }
+
+    # Bundle the CLI exe so the JetBrains plugin can ship it for Windows users.
+    Build-CliExe
+
+    Push-Location "$PSScriptRoot/jetbrains-plugin"
+    try {
+        $gw = if ($IsWindows -or $env:OS -eq 'Windows_NT') { '.\gradlew.bat' } else { './gradlew' }
+        switch ($Target) {
+            'build'   { & $gw buildPlugin --no-daemon }
+            'package' { & $gw buildPlugin --no-daemon }
+            'test'    { & $gw test --no-daemon }
+            'clean'   { & $gw clean --no-daemon }
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Gradle target '$Target' failed" }
+        Write-Ok "jetbrains-plugin done."
+    }
+    finally { Pop-Location }
+}
+
+# ---------------------------------------------------------------------------
 # Sharing Server
 # ---------------------------------------------------------------------------
 function Build-Sharing {
@@ -220,11 +272,13 @@ switch ($Project) {
         Build-Cli
         Build-Sharing
         Build-VisualStudio
+        Build-Jetbrains
     }
     'vscode'      { Build-VsCode }
     'cli'         { Build-Cli }
     'sharing'     { Build-Sharing }
     'visualstudio'{ Build-VisualStudio }
+    'jetbrains'   { Build-Jetbrains }
 }
 
 Write-Host "`nBuild complete." -ForegroundColor Green

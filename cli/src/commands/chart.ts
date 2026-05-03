@@ -20,7 +20,7 @@ export const chartCommand = new Command('chart')
 			return;
 		}
 
-		const { labels, days } = await calculateDailyStats(files);
-		const payload = buildChartPayload(labels, days);
+		const { labels, days, allDaysMap } = await calculateDailyStats(files);
+		const payload = buildChartPayload(labels, days, allDaysMap);
 		process.stdout.write(JSON.stringify(payload));
 	});

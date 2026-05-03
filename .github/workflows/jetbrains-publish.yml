@@ -1,0 +1,369 @@
+name: JetBrains Plugin - Publish
+
+# Trigger on a versioned tag push (for automated releases) or manually.
+#
+# Tag convention: jetbrains/v<version>  (e.g. jetbrains/v0.1.0)
+# The version in jetbrains-plugin/gradle.properties MUST match the pushed tag.
+#
+# Required secret:
+#   JB_PUBLISH_TOKEN — personal token from https://plugins.jetbrains.com/author/me/tokens
+#
+# Build pipeline:
+#   1. Three parallel CLI builds (Windows / macOS / Linux) produce platform binaries.
+#   2. One vscode-extension build produces the webview JS bundles.
+#   3. A final job assembles all assets, runs `./gradlew buildPlugin`, and
+#      optionally runs `./gradlew publishPlugin` to upload to the Marketplace.
+
+on:
+  push:
+    tags:
+      - 'jetbrains/v*'
+  workflow_dispatch:
+    inputs:
+      publish_marketplace:
+        description: 'Publish to JetBrains Marketplace after building'
+        required: false
+        default: true
+        type: boolean
+      dry_run:
+        description: 'Dry run: build the plugin ZIP but do not publish'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Step 1a — CLI binary: Windows (.exe + sql-wasm.wasm)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-cli-windows:
+    name: Build CLI (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm ci
+
+      - name: Build and bundle Windows executable
+        working-directory: cli
+        run: pwsh -NoProfile -File bundle-exe.ps1
+
+      - name: Smoke-test the executable
+        working-directory: cli
+        run: dist\copilot-token-tracker.exe --version
+
+      - name: Upload Windows CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-windows
+          path: |
+            cli/dist/copilot-token-tracker.exe
+            cli/dist/sql-wasm.wasm
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Step 1b — CLI binary: macOS
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-cli-macos:
+    name: Build CLI (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: cli
+        run: node esbuild.js --production
+
+      - name: Build macOS SEA binary
+        working-directory: cli
+        run: |
+          node --experimental-sea-config sea-config.json
+          cp "$(which node)" dist/copilot-token-tracker-macos
+          npx --yes postject dist/copilot-token-tracker-macos NODE_SEA_BLOB dist/sea-prep.blob \
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 \
+            --macho-segment-name NODE_SEA
+          chmod +x dist/copilot-token-tracker-macos
+
+      - name: Smoke-test the binary
+        working-directory: cli
+        run: dist/copilot-token-tracker-macos --version
+
+      - name: Upload macOS CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-macos
+          path: cli/dist/copilot-token-tracker-macos
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Step 1c — CLI binary: Linux
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-cli-linux:
+    name: Build CLI (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: cli
+        run: node esbuild.js --production
+
+      - name: Build Linux SEA binary
+        working-directory: cli
+        run: |
+          node --experimental-sea-config sea-config.json
+          cp "$(which node)" dist/copilot-token-tracker-linux
+          npx --yes postject dist/copilot-token-tracker-linux NODE_SEA_BLOB dist/sea-prep.blob \
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+          chmod +x dist/copilot-token-tracker-linux
+
+      - name: Smoke-test the binary
+        working-directory: cli
+        run: dist/copilot-token-tracker-linux --version
+
+      - name: Upload Linux CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-linux
+          path: cli/dist/copilot-token-tracker-linux
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Step 2 — Compile the webview JS bundles (vscode-extension produces them)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-webview:
+    name: Build webview bundles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Build webview bundles
+        working-directory: vscode-extension
+        run: npm run compile
+
+      - name: Upload webview bundle artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webview-bundles
+          path: vscode-extension/dist/webview/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Step 3 — Assemble, build the plugin, and optionally publish
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-and-publish:
+    name: Build and Publish Plugin
+    runs-on: ubuntu-latest
+    needs: [build-cli-windows, build-cli-macos, build-cli-linux, build-webview]
+    permissions:
+      contents: write   # needed to create GitHub release on tag push
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Java 21 (Temurin)
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4.3.1
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts/
+
+      - name: Place CLI binaries and webview bundles
+        run: |
+          echo "=== Downloaded artifacts ==="
+          find artifacts/ -type f | sort
+
+          mkdir -p cli/dist vscode-extension/dist/webview
+
+          # CLI binaries (sql-wasm.wasm is the same on all platforms; one copy suffices)
+          cp artifacts/cli-windows/copilot-token-tracker.exe  cli/dist/
+          cp artifacts/cli-windows/sql-wasm.wasm              cli/dist/
+          cp artifacts/cli-macos/copilot-token-tracker-macos  cli/dist/
+          cp artifacts/cli-linux/copilot-token-tracker-linux  cli/dist/
+
+          # Webview JS bundles (built by vscode-extension)
+          cp artifacts/webview-bundles/*  vscode-extension/dist/webview/
+
+          # Make unix binaries executable
+          chmod +x cli/dist/copilot-token-tracker-macos cli/dist/copilot-token-tracker-linux
+
+          echo ""
+          echo "=== cli/dist ==="
+          ls -lh cli/dist/
+          echo ""
+          echo "=== vscode-extension/dist/webview ==="
+          ls -lh vscode-extension/dist/webview/
+
+      - name: Read plugin version from gradle.properties
+        id: version
+        env:
+          GIT_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          PLUGIN_VERSION=$(grep '^pluginVersion' jetbrains-plugin/gradle.properties | cut -d'=' -f2 | tr -d ' ')
+          echo "plugin_version=$PLUGIN_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [[ "$EVENT_NAME" == "push" && "$GIT_REF" == refs/tags/jetbrains/v* ]]; then
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+            TAG_VERSION="${GIT_REF#refs/tags/jetbrains/v}"
+            echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+            if [ "$PLUGIN_VERSION" != "$TAG_VERSION" ]; then
+              echo "❌ Version mismatch!"
+              echo "  gradle.properties: $PLUGIN_VERSION"
+              echo "  tag:               $TAG_VERSION"
+              echo "Please bump pluginVersion in jetbrains-plugin/gradle.properties to match the tag."
+              exit 1
+            fi
+            echo "✅ Version check passed: $PLUGIN_VERSION"
+          else
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+            echo "tag_version=$PLUGIN_VERSION" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build plugin ZIP
+        working-directory: jetbrains-plugin
+        run: ./gradlew buildPlugin
+
+      - name: Verify plugin ZIP was produced
+        run: |
+          ZIP=$(find jetbrains-plugin/build/distributions/ -name "*.zip" | head -1)
+          if [ -z "$ZIP" ]; then
+            echo "❌ No plugin ZIP found in jetbrains-plugin/build/distributions/"
+            exit 1
+          fi
+          SIZE=$(du -sh "$ZIP" | cut -f1)
+          echo "✅ Plugin ZIP: $ZIP ($SIZE)"
+
+      - name: Publish to JetBrains Marketplace
+        # Publish on tag push, or on workflow_dispatch when explicitly requested
+        if: ${{ inputs.dry_run != true && (github.event_name == 'push' || inputs.publish_marketplace == true) }}
+        working-directory: jetbrains-plugin
+        run: ./gradlew publishPlugin
+        env:
+          PUBLISH_TOKEN: ${{ secrets.JB_PUBLISH_TOKEN }}
+
+      - name: Upload plugin ZIP as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jetbrains-plugin-${{ steps.version.outputs.plugin_version }}
+          path: jetbrains-plugin/build/distributions/*.zip
+          retention-days: 30
+
+      - name: Generate release notes
+        id: release_notes
+        if: ${{ steps.version.outputs.is_tag == 'true' && inputs.dry_run != true }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="jetbrains/v${{ steps.version.outputs.plugin_version }}"
+          if gh api "repos/${{ github.repository }}/releases/generate-notes" \
+               -f tag_name="${TAG_NAME}" \
+               --jq '.body' > /tmp/release_notes.md 2>/dev/null \
+             && [ -s /tmp/release_notes.md ]; then
+            echo "✅ Generated release notes from merged PRs"
+          else
+            echo "JetBrains Plugin v${{ steps.version.outputs.plugin_version }}" > /tmp/release_notes.md
+          fi
+
+      - name: Create GitHub release
+        if: ${{ steps.version.outputs.is_tag == 'true' && inputs.dry_run != true }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="jetbrains/v${{ steps.version.outputs.plugin_version }}"
+          ZIP=$(find jetbrains-plugin/build/distributions/ -name "*.zip" | head -1)
+          gh release create "$TAG_NAME" \
+            --title "JetBrains Plugin v${{ steps.version.outputs.plugin_version }}" \
+            --notes-file /tmp/release_notes.md \
+            "$ZIP"
+          echo "✅ GitHub release created: $TAG_NAME"
+
+      - name: Summary
+        run: |
+          {
+            echo "## JetBrains Plugin Build 🧩"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | v${{ steps.version.outputs.plugin_version }} |"
+            echo "| **Trigger** | ${{ github.event_name }} |"
+            echo "| **Dry run** | ${{ inputs.dry_run || 'false' }} |"
+            if [ "${{ inputs.dry_run }}" != "true" ] && \
+               { [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.publish_marketplace }}" = "true" ]; }; then
+              echo "| **Marketplace** | ✅ Published |"
+            else
+              echo "| **Marketplace** | ⏭️ Skipped |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

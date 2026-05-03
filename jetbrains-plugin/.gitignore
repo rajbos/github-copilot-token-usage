@@ -1,0 +1,15 @@
+.gradle/
+build/
+out/
+.idea/
+.intellijPlatform/
+*.iml
+
+# Bundled assets are produced from sibling projects; never commit them.
+src/main/resources/webview/*.js
+src/main/resources/cli-bundle/**/copilot-token-tracker*
+src/main/resources/cli-bundle/**/sql-wasm.wasm
+
+# Keep the empty placeholder so the directories exist in git.
+!src/main/resources/webview/.gitkeep
+!src/main/resources/cli-bundle/.gitkeep

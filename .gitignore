@@ -25,3 +25,14 @@ visualstudio-extension/src/CopilotTokenTracker.Tests/obj/
 visualstudio-extension/TestResults/
 vscode-extension/.session_secret.txt
 visualstudio-extension/.idea/
+
+# JetBrains IDE (plugin workspace and sandbox)
+jetbrains-plugin/.idea/
+jetbrains-plugin/build/
+jetbrains-plugin/build/idea-sandbox/
+jetbrains-plugin/.kotlin/
+jetbrains-plugin/.gradle/
+# ignore any IDEA project files anywhere
+**/.idea/
+# IntelliJ sandbox directories
+**/idea-sandbox/

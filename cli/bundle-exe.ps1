@@ -44,8 +44,11 @@ if (-not (Test-Path (Join-Path $distDir 'cli.js'))) {
 
 # 2. Generate the SEA preparation blob
 Write-Host "    Generating SEA blob..."
-& node --experimental-sea-config (Join-Path $cliRoot 'sea-config.json')
-if ($LASTEXITCODE -ne 0) { throw "SEA blob generation failed" }
+Push-Location $cliRoot
+try {
+    & node --experimental-sea-config (Join-Path $cliRoot 'sea-config.json')
+    if ($LASTEXITCODE -ne 0) { throw "SEA blob generation failed" }
+} finally { Pop-Location }
 
 # 3. Copy node.exe and inject the blob
 Write-Host "    Copying node.exe..."

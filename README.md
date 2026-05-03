@@ -65,6 +65,14 @@ void --install-extension RobBos.copilot-token-tracker
 
 ---
 
+### 🐦 JetBrains IDE Plugin (NEW — preview)
+
+Token usage and fluency dashboards inside any JetBrains IDE (IntelliJ IDEA, Rider, PyCharm, WebStorm, GoLand, RubyMine, CLion, …). Built as a thin Kotlin/JCEF host that reuses the same webview bundles as the VS Code extension and the same bundled CLI as the Visual Studio extension.
+
+📖 [JetBrains plugin docs](jetbrains-plugin/README.md) · [Debugging guide](jetbrains-plugin/DEBUGGING-GUIDE.md)
+
+---
+
 ### 🏗️ Visual Studio Extension
 
 Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session files directly.
