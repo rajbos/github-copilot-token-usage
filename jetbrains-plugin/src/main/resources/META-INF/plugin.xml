@@ -13,16 +13,18 @@
 <idea-plugin>
     <id>com.github.rajbos.ai-engineering-fluency</id>
     <name>AI Engineering Fluency</name>
-    <vendor email="" url="https://github.com/rajbos/github-copilot-token-usage">rajbos</vendor>
+    <vendor email="" url="https://github.com/rajbos/ai-engineering-fluency">rajbos</vendor>
 
     <description><![CDATA[
         Visualises your GitHub Copilot token usage and AI engineering fluency
         directly inside any JetBrains IDE.
         <br/><br/>
         Uses the same analytics and visualisations as the
-        <a href="https://github.com/rajbos/github-copilot-token-usage">VS Code extension</a>
-        and Visual Studio extension; powered by a bundled native CLI so no
-        extra runtime is required.
+        <a href="https://marketplace.visualstudio.com/items?itemName=rajbos.github-copilot-token-usage">VS Code extension</a>
+        and <a href="https://marketplace.visualstudio.com/items?itemName=rajbos.AIEngineeringFluency">Visual Studio extension</a>;
+        powered by a bundled native CLI so no extra runtime is required.
+        <br/><br/>
+        Source and documentation: <a href="https://github.com/rajbos/ai-engineering-fluency">github.com/rajbos/ai-engineering-fluency</a>
     ]]></description>
 
     <change-notes><![CDATA[
