@@ -50,6 +50,8 @@
   ,"mcp_com_microsoft_get_bestpractices": "GitHub MCP: Get Best Practices"
   ,"mcp_microsoft_doc_microsoft_code_sample_search": "Microsoft Docs MCP: Code Sample Search"
   ,"mcp_microsoft_doc_microsoft_docs_search": "Microsoft Docs MCP: Docs Search"
+  ,"mcp_microsoftdocs_microsoft_code_sample_search": "Microsoft Docs MCP: Code Sample Search"
+  ,"mcp_microsoftdocs_microsoft_docs_fetch": "Microsoft Docs MCP: Docs Fetch"
   ,"mcp_microsoftdocs_microsoft_docs_search": "Microsoft Docs MCP: Docs Search"
   ,"Microsoft_Learn_microsoft_docs_search": "Microsoft Learn: Docs Search"
   ,"mcp_gitkraken_git_add_or_commit": "GitKraken MCP: Git Add or Commit"
@@ -204,6 +206,7 @@
   ,"mcp_io_github_ups_get-library-docs": "Context7 MCP: Get Library Docs"
   ,"mcp_io_github_ups_query-docs": "Context7 MCP: Query Docs"
   ,"mcp_io_github_ups_resolve-library-id": "Context7 MCP: Resolve Library ID"
+  ,"mcp_context7_get-library-docs": "Context7 MCP: Get Library Docs"
   ,"mcp_context7_query-docs": "Context7 MCP: Query Docs"
   ,"mcp_context7_resolve-library-id": "Context7 MCP: Resolve Library ID"
   ,"mcp_microsoft_pla_browser_evaluate": "Playwright MCP: Browser Evaluate"
@@ -465,4 +468,6 @@
   ,"store_memory": "Store Memory"
   ,"web_search": "Web Search"
   ,"write_powershell": "Write PowerShell"
+  ,"slidev_chooseEntry": "Slidev: Choose Entry"
+  ,"slidev_getPreviewPort": "Slidev: Get Preview Port"
 }
