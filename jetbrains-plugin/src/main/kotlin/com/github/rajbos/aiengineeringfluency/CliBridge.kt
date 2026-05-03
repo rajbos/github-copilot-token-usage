@@ -160,8 +160,8 @@ object CliBridge {
      */
     private fun viewToCommand(view: String): String = when (view) {
         "details" -> "all"
-        "chart" -> "chart"
-        "usage" -> "usage"
+        "chart" -> "all"    // all --json includes chart data with weekly/monthly periods
+        "usage" -> "all"    // all --json includes proper usage analysis data
         "diagnostics" -> "all"
         "environmental" -> "all"
         "maturity" -> "fluency"
@@ -172,11 +172,13 @@ object CliBridge {
      * When the CLI command is `all`, the response is a combined object
      * `{ details, chart, usage, fluency }`. This returns the JSON key
      * to extract for a given view, or `null` when the CLI returns the
-     * view data directly (individual commands like `chart`, `usage`).
+     * view data directly (individual commands like `fluency`).
      */
     fun viewToAllJsonKey(view: String): String? = when (viewToCommand(view)) {
         "all" -> when (view) {
             "details", "diagnostics", "environmental" -> "details"
+            "chart" -> "chart"
+            "usage" -> "usage"
             else -> "details"
         }
         else -> null // individual commands return data directly

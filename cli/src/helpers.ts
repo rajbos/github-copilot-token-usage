@@ -680,51 +680,60 @@ interface DailyEntry {
 export async function calculateDailyStats(sessionFiles: string[]): Promise<{
 	labels: string[];
 	days: DailyEntry[];
+	allDaysMap: Map<string, DailyEntry>;
 }> {
 	const now = new Date();
 	const last30DaysStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+	const fmtKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 	// Fill in all 31 days (today inclusive) with zeroes so the chart has continuous labels
 	const dailyMap = new Map<string, DailyEntry>();
 	const cursor = new Date(last30DaysStart);
 	while (cursor <= now) {
-		const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-		dailyMap.set(key, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+		dailyMap.set(fmtKey(new Date(cursor)), { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
 		cursor.setDate(cursor.getDate() + 1);
 	}
+
+	// Full historical map (all time) for weekly/monthly chart periods
+	const allDaysMap = new Map<string, DailyEntry>();
+
+	const addToEntry = (map: Map<string, DailyEntry>, dateKey: string, data: { tokens: number; modelUsage: ModelUsage; editorSource: string }) => {
+		if (!map.has(dateKey)) {
+			map.set(dateKey, { tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+		}
+		const entry = map.get(dateKey)!;
+		entry.tokens += data.tokens;
+		entry.sessions++;
+		for (const [model, usage] of Object.entries(data.modelUsage)) {
+			if (!entry.modelUsage[model]) { entry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
+			entry.modelUsage[model].inputTokens += (usage as any).inputTokens;
+			entry.modelUsage[model].outputTokens += (usage as any).outputTokens;
+		}
+		const editor = data.editorSource;
+		if (!entry.editorUsage[editor]) { entry.editorUsage[editor] = { tokens: 0, sessions: 0 }; }
+		entry.editorUsage[editor].tokens += data.tokens;
+		entry.editorUsage[editor].sessions++;
+	};
 
 	for (const file of sessionFiles) {
 		const data = await processSessionFile(file);
 		if (!data || data.tokens === 0 || data.interactions === 0) { continue; }
-		if (data.lastModified < last30DaysStart) { continue; }
 
 		const d = data.lastModified;
-		const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-		const entry = dailyMap.get(dateKey);
-		if (!entry) { continue; }
+		const dateKey = fmtKey(d);
 
-		entry.tokens += data.tokens;
-		entry.sessions++;
+		// Always add to the full history map
+		addToEntry(allDaysMap, dateKey, data);
 
-		for (const [model, usage] of Object.entries(data.modelUsage)) {
-			if (!entry.modelUsage[model]) {
-				entry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-			}
-			entry.modelUsage[model].inputTokens += usage.inputTokens;
-			entry.modelUsage[model].outputTokens += usage.outputTokens;
+		// Only add to the 30-day map if within window
+		if (data.lastModified >= last30DaysStart && dailyMap.has(dateKey)) {
+			addToEntry(dailyMap, dateKey, data);
 		}
-
-		const editor = data.editorSource;
-		if (!entry.editorUsage[editor]) {
-			entry.editorUsage[editor] = { tokens: 0, sessions: 0 };
-		}
-		entry.editorUsage[editor].tokens += data.tokens;
-		entry.editorUsage[editor].sessions++;
 	}
 
 	const labels = Array.from(dailyMap.keys()).sort();
 	const days = labels.map(l => dailyMap.get(l)!);
-	return { labels, days };
+	return { labels, days, allDaysMap };
 }
 
 const CHART_COLORS = [
@@ -740,41 +749,107 @@ const CHART_COLORS = [
 
 /**
  * Build the JSON payload consumed by the chart webview from the daily stats arrays
- * returned by `calculateDailyStats`.
+ * returned by `calculateDailyStats`. Includes weekly and monthly period aggregations.
  */
-export function buildChartPayload(labels: string[], days: DailyEntry[]): object {
-	const tokensData  = days.map(d => d.tokens);
-	const sessionsData = days.map(d => d.sessions);
+export function buildChartPayload(labels: string[], days: DailyEntry[], allDaysMap?: Map<string, DailyEntry>): object {
+	const fmtKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-	const allModels = new Set<string>();
-	days.forEach(d => Object.keys(d.modelUsage).forEach(m => allModels.add(m)));
-	const modelDatasets = Array.from(allModels).map((model, idx) => {
-		const color = CHART_COLORS[idx % CHART_COLORS.length];
-		return {
-			label: model,
-			data: days.map(d => {
-				const u = d.modelUsage[model];
-				return u ? u.inputTokens + u.outputTokens : 0;
-			}),
-			backgroundColor: color.bg,
-			borderColor: color.border,
-			borderWidth: 1,
-		};
-	});
+	const buildPeriodFromEntries = (buckets: Array<{ label: string; entry: DailyEntry }>) => {
+		const entries = buckets.map(b => b.entry);
+		const bLabels = buckets.map(b => b.label);
+		const tokensData = entries.map(e => e.tokens);
+		const sessionsData = entries.map(e => e.sessions);
 
-	const allEditors = new Set<string>();
-	days.forEach(d => Object.keys(d.editorUsage).forEach(e => allEditors.add(e)));
-	const editorDatasets = Array.from(allEditors).map((editor, idx) => {
-		const color = CHART_COLORS[idx % CHART_COLORS.length];
-		return {
-			label: editor,
-			data: days.map(d => d.editorUsage[editor]?.tokens || 0),
-			backgroundColor: color.bg,
-			borderColor: color.border,
-			borderWidth: 1,
-		};
-	});
+		const allModels = new Set<string>();
+		entries.forEach(e => Object.keys(e.modelUsage).forEach(m => allModels.add(m)));
+		const modelDatasets = Array.from(allModels).map((model, idx) => {
+			const color = CHART_COLORS[idx % CHART_COLORS.length];
+			return { label: model, data: entries.map(e => { const u = e.modelUsage[model]; return u ? u.inputTokens + u.outputTokens : 0; }), backgroundColor: color.bg, borderColor: color.border, borderWidth: 1 };
+		});
 
+		const allEditors = new Set<string>();
+		entries.forEach(e => Object.keys(e.editorUsage).forEach(ed => allEditors.add(ed)));
+		const editorDatasets = Array.from(allEditors).map((editor, idx) => {
+			const color = CHART_COLORS[idx % CHART_COLORS.length];
+			return { label: editor, data: entries.map(e => e.editorUsage[editor]?.tokens || 0), backgroundColor: color.bg, borderColor: color.border, borderWidth: 1 };
+		});
+
+		const totalTokens = tokensData.reduce((a, b) => a + b, 0);
+		const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
+		const periodCount = buckets.length;
+		return { labels: bLabels, tokensData, sessionsData, modelDatasets, editorDatasets, repositoryDatasets: [], periodCount, totalTokens, totalSessions, avgPerPeriod: periodCount > 0 ? Math.round(totalTokens / periodCount) : 0, costData: [], totalCost: 0, avgCostPerPeriod: 0 };
+	};
+
+	const mergeEntry = (target: DailyEntry, src: DailyEntry) => {
+		target.tokens += src.tokens;
+		target.sessions += src.sessions;
+		for (const [m, u] of Object.entries(src.modelUsage)) {
+			if (!target.modelUsage[m]) { target.modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
+			target.modelUsage[m].inputTokens += u.inputTokens;
+			target.modelUsage[m].outputTokens += u.outputTokens;
+		}
+		for (const [e, u] of Object.entries(src.editorUsage)) {
+			if (!target.editorUsage[e]) { target.editorUsage[e] = { tokens: 0, sessions: 0 }; }
+			target.editorUsage[e].tokens += u.tokens;
+			target.editorUsage[e].sessions += u.sessions;
+		}
+	};
+
+	const emptyEntry = (): DailyEntry => ({ tokens: 0, sessions: 0, modelUsage: {}, editorUsage: {} });
+
+	const now = new Date();
+
+	// ── Daily period: the existing 30-day data ──────────────────────────
+	const dailyBuckets = labels.map((l, i) => ({ label: l, entry: days[i] }));
+	const dailyPeriod = buildPeriodFromEntries(dailyBuckets);
+
+	// ── Weekly period: last 6 calendar weeks ───────────────────────────
+	const getMondayOfWeek = (d: Date): Date => {
+		const copy = new Date(d); copy.setHours(0, 0, 0, 0);
+		const day = copy.getDay();
+		copy.setDate(copy.getDate() - (day === 0 ? 6 : day - 1));
+		return copy;
+	};
+	const fmtWeekLabel = (monday: Date): string => {
+		const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+		if (monday.getMonth() === sunday.getMonth()) {
+			return `${monday.toLocaleDateString('en-US', { month: 'short' })} ${monday.getDate()}–${sunday.getDate()}`;
+		}
+		return `${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+	};
+	const thisMonday = getMondayOfWeek(now);
+	const weekBucketMap = new Map<string, { label: string; entry: DailyEntry }>();
+	for (let w = 5; w >= 0; w--) {
+		const monday = new Date(thisMonday); monday.setDate(thisMonday.getDate() - w * 7);
+		const key = fmtKey(monday);
+		weekBucketMap.set(key, { label: fmtWeekLabel(monday), entry: emptyEntry() });
+	}
+	const sourceMap = allDaysMap || new Map(labels.map((l, i) => [l, days[i]]));
+	for (const [dateKey, entry] of sourceMap.entries()) {
+		const monday = getMondayOfWeek(new Date(dateKey + 'T00:00:00'));
+		const bucket = weekBucketMap.get(fmtKey(monday));
+		if (bucket) { mergeEntry(bucket.entry, entry); }
+	}
+	const weeklyBuckets = Array.from(weekBucketMap.values());
+	const weeklyPeriod = buildPeriodFromEntries(weeklyBuckets);
+
+	// ── Monthly period: last 12 calendar months ────────────────────────
+	const monthBucketMap = new Map<string, { label: string; entry: DailyEntry }>();
+	for (let m = 11; m >= 0; m--) {
+		const monthDate = new Date(now.getFullYear(), now.getMonth() - m, 1);
+		const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+		const label = monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+		monthBucketMap.set(key, { label, entry: emptyEntry() });
+	}
+	for (const [dateKey, entry] of sourceMap.entries()) {
+		const monthKey = dateKey.slice(0, 7);
+		const bucket = monthBucketMap.get(monthKey);
+		if (bucket) { mergeEntry(bucket.entry, entry); }
+	}
+	const monthlyBuckets = Array.from(monthBucketMap.values());
+	const monthlyPeriod = buildPeriodFromEntries(monthlyBuckets);
+
+	// ── Editor totals map (last 30 days) ───────────────────────────────
 	const editorTotalsMap: Record<string, number> = {};
 	days.forEach(d => {
 		Object.entries(d.editorUsage).forEach(([editor, usage]) => {
@@ -782,24 +857,28 @@ export function buildChartPayload(labels: string[], days: DailyEntry[]): object 
 		});
 	});
 
-	const totalTokens   = tokensData.reduce((a, b) => a + b, 0);
-	const totalSessions = sessionsData.reduce((a, b) => a + b, 0);
-
 	return {
-		labels,
-		tokensData,
-		sessionsData,
-		modelDatasets,
-		editorDatasets,
+		// Backward-compat flat fields (daily period)
+		labels: dailyPeriod.labels,
+		tokensData: dailyPeriod.tokensData,
+		sessionsData: dailyPeriod.sessionsData,
+		modelDatasets: dailyPeriod.modelDatasets,
+		editorDatasets: dailyPeriod.editorDatasets,
 		editorTotalsMap,
 		repositoryDatasets: [],
 		repositoryTotalsMap: {},
-		dailyCount: labels.length,
-		totalTokens,
-		avgTokensPerDay: labels.length > 0 ? Math.round(totalTokens / labels.length) : 0,
-		totalSessions,
+		dailyCount: dailyPeriod.periodCount,
+		totalTokens: dailyPeriod.totalTokens,
+		avgTokensPerDay: dailyPeriod.periodCount > 0 ? Math.round(dailyPeriod.totalTokens / dailyPeriod.periodCount) : 0,
+		totalSessions: dailyPeriod.totalSessions,
 		lastUpdated: new Date().toISOString(),
 		backendConfigured: false,
+		periodsReady: true,
+		periods: {
+			day: dailyPeriod,
+			week: weeklyPeriod,
+			month: monthlyPeriod,
+		},
 	};
 }
 
