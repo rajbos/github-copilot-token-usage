@@ -241,6 +241,10 @@ test('getEditorNameFromRoot: .continue path returns Continue', () => {
 test('getEditorNameFromRoot: opencode path returns OpenCode', () => {
     assert.equal(getEditorNameFromRoot('/home/user/.local/share/opencode'), 'OpenCode');
 });
+
+test('getEditorNameFromRoot: .gemini path returns Gemini CLI', () => {
+    assert.equal(getEditorNameFromRoot('/home/user/.gemini'), 'Gemini CLI');
+});
 // ── Mutation-killing tests ──────────────────────────────────────────────
 
 import {
@@ -336,6 +340,10 @@ test('getEditorTypeFromPath: detects Mistral Vibe', () => {
         assert.equal(getEditorTypeFromPath('/home/user/.vibe/logs/session/session_20250101_120000_abc12345/meta.json'), 'Mistral Vibe');
 });
 
+test('getEditorTypeFromPath: detects Gemini CLI', () => {
+        assert.equal(getEditorTypeFromPath('/home/user/.gemini/tmp/demo-project/chats/session-abc.jsonl'), 'Gemini CLI');
+});
+
 test('getEditorTypeFromPath: detects Claude Desktop Cowork', () => {
         assert.equal(getEditorTypeFromPath('/home/user/AppData/Local/Packages/Claude_pzs/LocalCache/Roaming/claude/local-agent-mode-sessions/session.jsonl'), 'Claude Desktop Cowork');
 });
@@ -385,6 +393,10 @@ test('detectEditorSource: detects Claude Desktop Cowork', () => {
 
 test('detectEditorSource: detects Crush', () => {
         assert.equal(detectEditorSource('/home/user/.crush/crush.db#session'), 'Crush');
+});
+
+test('detectEditorSource: detects Gemini CLI from path', () => {
+        assert.equal(detectEditorSource('/home/user/.gemini/tmp/demo-project/chats/session-abc.jsonl'), 'Gemini CLI');
 });
 
 test('detectEditorSource: returns Unknown for unrecognized paths', () => {

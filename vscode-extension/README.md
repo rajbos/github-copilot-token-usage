@@ -80,6 +80,8 @@ Supported editors shown in the chart:
 - `Cursor` — Cursor editor
 - `OpenCode` — Terminal-based coding agent
 - `Crush` — Terminal-based coding agent
+- `Claude Code` — Anthropic CLI/IDE extension (actual API token counts, no estimation)
+- `Gemini CLI` — Google's CLI coding agent (actual token counts from session JSONL)
 - `Visual Studio` — Visual Studio IDE (2022+); token counts are **estimated** from prompt and response text length
 
 ---

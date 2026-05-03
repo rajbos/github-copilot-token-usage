@@ -17,6 +17,7 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 - OpenCode
 - Crush
 - Claude Code (Anthropic)
+- Gemini CLI (Google)
 - Claude Desktop Cowork (Anthropic)
 - Mistral Vibe
 - Visual Studio + GitHub Copilot
@@ -34,6 +35,7 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
   <img src="assets/tool-logos/opencode.png" alt="OpenCode" title="OpenCode" height="30" />&nbsp;
   <img src="assets/tool-logos/crush.svg" alt="Crush" title="Crush" height="26" />&nbsp;
   <img src="assets/tool-logos/claude.png" alt="Claude" title="Claude" height="30" />&nbsp;
+  <img src="assets/tool-logos/gemini.svg" alt="Gemini" title="Gemini" height="30" />&nbsp;
   <img src="assets/tool-logos/mistral.png" alt="Mistral" title="Mistral" height="30" />&nbsp;
   <img src="assets/tool-logos/visual-studio.svg" alt="Visual Studio" title="Visual Studio" height="30" />
 </p>

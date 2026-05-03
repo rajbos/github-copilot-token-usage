@@ -53,6 +53,9 @@ async function main() {
       js: "#!/usr/bin/env node",
     },
     external: ["vscode"],
+    // The CLI bundles shared sources from ../vscode-extension/src, so tell esbuild
+    // to resolve package imports from the CLI's own node_modules as well.
+    nodePaths: [path.join(__dirname, "node_modules")],
     // Resolve the parent src/ directory modules
     alias: {
       vscode: path.join(__dirname, "src", "vscode-stub.ts"),

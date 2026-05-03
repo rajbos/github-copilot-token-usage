@@ -32,6 +32,7 @@ test('getEditorIcon: returns correct icons for known editors', () => {
 	assert.equal(getEditorIcon('VS Code'), '💙');
 	assert.equal(getEditorIcon('Cursor'), '⚡');
 	assert.equal(getEditorIcon('OpenCode'), '🟢');
+	assert.equal(getEditorIcon('Gemini CLI'), '💎');
 	assert.equal(getEditorIcon('Unknown'), '❓');
 });
 

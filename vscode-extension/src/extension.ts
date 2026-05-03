@@ -70,6 +70,7 @@ import { ContinueDataAccess } from './continue';
 import { ClaudeCodeDataAccess } from './claudecode';
 import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 import { MistralVibeDataAccess } from './mistralvibe';
+import { GeminiCliDataAccess } from './geminicli';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
 import {
 	OpenCodeAdapter,
@@ -79,6 +80,7 @@ import {
 	ClaudeCodeAdapter,
 	VisualStudioAdapter,
 	MistralVibeAdapter,
+	GeminiCliAdapter,
 	CopilotChatAdapter,
 	CopilotCliAdapter,
 	JetBrainsAdapter,
@@ -193,6 +195,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private claudeCode: ClaudeCodeDataAccess;
 	private claudeDesktopCowork: ClaudeDesktopCoworkDataAccess;
 	private mistralVibe: MistralVibeDataAccess;
+	private geminiCli: GeminiCliDataAccess;
 	private readonly ecosystems: IEcosystemAdapter[];
 	private cacheManager: CacheManager;
 
@@ -850,6 +853,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.claudeCode = new ClaudeCodeDataAccess();
 		this.claudeDesktopCowork = new ClaudeDesktopCoworkDataAccess();
 		this.mistralVibe = new MistralVibeDataAccess();
+		this.geminiCli = new GeminiCliDataAccess();
 		this.ecosystems = [
 			new OpenCodeAdapter(this.openCode),
 			new CrushAdapter(this.crush),
@@ -858,6 +862,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			new ClaudeDesktopAdapter(this.claudeDesktopCowork, (t) => this.isMcpTool(t), (t) => this.extractMcpServerName(t), (t, m) => this.estimateTokensFromText(t, m)),
 			new ClaudeCodeAdapter(this.claudeCode),
 			new MistralVibeAdapter(this.mistralVibe),
+			new GeminiCliAdapter(this.geminiCli),
 			// Copilot Chat / CLI adapters: discovery-only. Their handles() returns
 			// false so the existing fallback parsing in this file continues to
 			// own per-session parsing for VS Code Copilot Chat and CLI files.
@@ -3383,7 +3388,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Detect which editor the session file belongs to based on its path.
 	 */
 	private detectEditorSource(filePath: string): string {
-		return _detectEditorSource(filePath, (p) => !!this.findEcosystem(p));
+		return _detectEditorSource(filePath, (p) => this.findEcosystem(p)?.id === 'opencode');
 	}
 
 	/**
@@ -7420,7 +7425,7 @@ ${hashtag}`;
     const MAX_DEPTH = 5;
 
     // Determine which extensions to accept
-    const jsonOnly = ["claude-code"];
+    const jsonOnly = ["claude-code", "gemini-cli"];
     const jsonlOnly = ["continue", "opencode", "mistral-vibe", "claude-desktop"];
     let allowJson = true;
     let allowJsonl = true;
