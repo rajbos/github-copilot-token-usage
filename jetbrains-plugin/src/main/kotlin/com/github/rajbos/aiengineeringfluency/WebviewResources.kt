@@ -73,8 +73,14 @@ object WebviewResources {
                 <style>
                     html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4;
                                  font-family: -apple-system, 'Segoe UI', sans-serif; }
-                    /* Buttons not supported in JetBrains (no CLI command available) */
-                    #btn-diagnostics, #btn-dashboard, #btn-level-viewer { display: none !important; }
+                    /* Buttons/sections not supported in JetBrains — mirrors ThemedHtmlBuilder.cs in VS extension */
+                    #btn-diagnostics,
+                    #btn-level-viewer,
+                    #btn-level-viewer-inline,
+                    #view-repository,
+                    .share-section,
+                    .beta-footer,
+                    .mcp-discover-btn { display: none !important; }
                     #loading-overlay { $overlayStyle; }
                     #root { $rootStyle; }
                     .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #0078d4;
@@ -105,6 +111,7 @@ object WebviewResources {
                     <a href="https://github.com/rajbos/ai-engineering-fluency/issues" target="_blank">Open an issue</a>
                 </div>
                 <script>$bundle</script>
+                ${buildJbHideScript(view)}
             </body>
             </html>
         """.trimIndent()
@@ -153,4 +160,60 @@ object WebviewResources {
 
     private fun loadResource(path: String): String? =
         WebviewResources::class.java.getResourceAsStream(path)?.bufferedReader()?.use { it.readText() }
+
+    /**
+     * Returns a view-specific JS block injected after the bundle, mirroring
+     * `ThemedHtmlBuilder.BuildVsHideScript` in the Visual Studio extension.
+     */
+    private fun buildJbHideScript(view: String): String = when (view) {
+        "usage" -> """
+            <script>
+            (function () {
+              function hideUnsupportedSections() {
+                document.querySelectorAll('.repo-hygiene-section').forEach(function(el) { el.style.display = 'none'; });
+                document.querySelectorAll('.section').forEach(function(el) {
+                  var title = el.querySelector('.section-title');
+                  if (title && title.textContent.includes('Copilot Customization Files')) { el.style.display = 'none'; }
+                });
+                document.querySelectorAll('div').forEach(function(el) {
+                  var firstChild = el.firstElementChild;
+                  if (!firstChild) { return; }
+                  var headingText = firstChild.textContent || '';
+                  if ((headingText.includes('No other AI tool configs missing') || headingText.includes('Missed Potential: Non-Copilot')) &&
+                      el.style && el.parentElement) { el.style.display = 'none'; }
+                });
+              }
+              var observer = new MutationObserver(function() { hideUnsupportedSections(); });
+              observer.observe(document.body, { childList: true, subtree: true });
+              hideUnsupportedSections();
+            })();
+            </script>
+        """.trimIndent()
+
+        "maturity" -> """
+            <script>
+            (function () {
+              var GITHUB_MCP_DOCS = 'https://docs.github.com/en/copilot/customizing-copilot/using-model-context-protocol-with-github-copilot';
+              function fixMcpLinks() {
+                document.querySelectorAll('a').forEach(function(a) {
+                  var href = a.getAttribute('href') || '';
+                  var text = a.textContent || '';
+                  if (href.indexOf('code.visualstudio.com') !== -1 && href.indexOf('mcp') !== -1) {
+                    a.setAttribute('href', GITHUB_MCP_DOCS);
+                    a.setAttribute('target', '_blank');
+                  }
+                  if (text.indexOf('VS Code MCP registry') !== -1) {
+                    a.textContent = text.replace('VS Code MCP registry', 'GitHub Copilot MCP docs');
+                  }
+                });
+              }
+              var observer = new MutationObserver(function() { fixMcpLinks(); });
+              observer.observe(document.body, { childList: true, subtree: true });
+              fixMcpLinks();
+            })();
+            </script>
+        """.trimIndent()
+
+        else -> ""
+    }
 }
