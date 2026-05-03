@@ -1,7 +1,7 @@
 ---
 title: Documentation Index
 created: 2026-01-19
-updated: 2026-01-19
+updated: 2026-05-03
 status: active
 type: reference
 tags: [documentation, index]
@@ -26,6 +26,7 @@ For comprehensive documentation about Copilot session log file schemas, see:
 - **[schema-analysis.md](logFilesSchema/schema-analysis.md)** - Quick reference guide
 - **[session-file-schema.json](logFilesSchema/session-file-schema.json)** - Manual schema documentation
 - **[session-file-schema-analysis.json](logFilesSchema/session-file-schema-analysis.json)** - Auto-generated analysis
+- **[gemini-cli-session-format.md](logFilesSchema/gemini-cli-session-format.md)** - Observed Gemini CLI JSONL session format on Windows
 - **[README.md](logFilesSchema/README.md)** - Detailed guide for working with schemas
 - **[vscode-variants.md](logFilesSchema/vscode-variants.md)** - VS Code variants support info
 
