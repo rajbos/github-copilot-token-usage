@@ -81,6 +81,11 @@ object WebviewResources {
                     .share-section,
                     .beta-footer,
                     .mcp-discover-btn { display: none !important; }
+                    /* Usage view: hide Workspace Health and Repository PRs tabs (no data source in JetBrains) */
+                    .tab-button[data-tab="health"],
+                    .tab-button[data-tab="repos"],
+                    #tab-panel-health,
+                    #tab-panel-repos { display: none !important; }
                     #loading-overlay { $overlayStyle; }
                     #root { $rootStyle; }
                     .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #0078d4;
