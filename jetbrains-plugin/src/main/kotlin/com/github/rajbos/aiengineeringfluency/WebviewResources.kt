@@ -94,7 +94,41 @@ object WebviewResources {
                     .repo-footer a { color: #4daafc; text-decoration: none; }
                     .repo-footer a:hover { text-decoration: underline; }
                 </style>
-                <script>$bridgeBootstrap</script>
+                <style>
+                    /* Dark theme values for VS Code CSS variables — all bundles rely on these */
+                    :root {
+                        --vscode-editor-background: #1e1e1e;
+                        --vscode-editor-foreground: #d4d4d4;
+                        --vscode-sideBar-background: #252526;
+                        --vscode-editorWidget-background: #2d2d30;
+                        --vscode-descriptionForeground: #9d9d9d;
+                        --vscode-disabledForeground: #808080;
+                        --vscode-panel-border: #444444;
+                        --vscode-widget-border: #454545;
+                        --vscode-button-background: #0e639c;
+                        --vscode-button-foreground: #ffffff;
+                        --vscode-button-hoverBackground: #1177bb;
+                        --vscode-button-secondaryBackground: #3a3d41;
+                        --vscode-button-secondaryForeground: #cccccc;
+                        --vscode-button-secondaryHoverBackground: #45494e;
+                        --vscode-input-background: #3c3c3c;
+                        --vscode-input-foreground: #cccccc;
+                        --vscode-input-border: #3c3c3c;
+                        --vscode-list-hoverBackground: #2a2d2e;
+                        --vscode-list-activeSelectionBackground: #094771;
+                        --vscode-list-activeSelectionForeground: #ffffff;
+                        --vscode-list-inactiveSelectionBackground: #37373d;
+                        --vscode-badge-background: #4d5666;
+                        --vscode-badge-foreground: #ffffff;
+                        --vscode-focusBorder: #007fd4;
+                        --vscode-textLink-foreground: #4daafc;
+                        --vscode-textLink-activeForeground: #4daafc;
+                        --vscode-errorForeground: #f48771;
+                        --vscode-editorWarning-foreground: #f5c942;
+                        --vscode-terminal-ansiGreen: #89d185;
+                        --vscode-contrastBorder: #6fc3df;
+                    }
+                </style>
                 <script>$shim</script>
                 <script>window.$globalKey = $safeInitialData;</script>
             </head>
