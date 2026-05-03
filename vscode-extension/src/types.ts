@@ -254,6 +254,7 @@ export interface ContextReferenceUsage {
   changes: number; // #changes references
   outputPanel: number; // #outputPanel references
   problemsPanel: number; // #problemsPanel references
+  pullRequest: number; // #pr / #pullRequest references (Copilot PR chat, April 2026)
 // contentReferences tracking from session logs
   byKind: { [kind: string]: number }; // Count by reference kind
   copilotInstructions: number; // .github/copilot-instructions.md
