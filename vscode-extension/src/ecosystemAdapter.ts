@@ -79,6 +79,19 @@ export interface IEcosystemAdapter {
 	getRawFileContent?(sessionFile: string): string | undefined;
 
 	/**
+	 * Return per-UTC-day token fractions for accurate multi-day attribution.
+	 *
+	 * When implemented, `processSessionFile` in the CLI uses these fractions instead of
+	 * falling back to file mtime (which would count all session tokens as "today").
+	 * The returned record must have "YYYY-MM-DD" keys whose values sum to 1.0.
+	 *
+	 * Implement this when the adapter's data source contains per-request timestamps
+	 * (e.g. a database with a `created_at` column, or a JSON file with `requests[].timestamp`).
+	 * Adapters that do not implement this method fall back to the mtime date.
+	 */
+	getDailyFractions?(sessionFile: string): Promise<Record<string, number>>;
+
+	/**
 	 * Return data needed for backend sync.
 	 * Only implemented by ecosystems that support sync (OpenCode, Crush).
 	 */
