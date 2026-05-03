@@ -7,9 +7,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
-import org.cef.browser.CefBrowser
-import org.cef.browser.CefFrame
-import org.cef.handler.CefLoadHandlerAdapter
 import javax.swing.JComponent
 
 /**
@@ -49,39 +46,94 @@ class TokenTrackerPanel(
     init {
         hostBridge.addHandler { rawMessage ->
             handleWebviewMessage(rawMessage)
-            // Returning a successful empty response keeps the JS Promise resolved
-            // so the shim doesn't accumulate pending callbacks.
             null
         }
 
-        // After every successful page load, run the stats refresh and push the
-        // resulting JSON into the page using the same global key the VS
-        // extension uses (window.__INITIAL_<VIEW>__ = ...).
-        browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
-            override fun onLoadEnd(b: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
-                if (frame.isMain && !initialLoadDone) {
-                    initialLoadDone = true
-                    refreshStatsAsync()
-                }
-            }
-        }, browser.cefBrowser)
-
+        // Show spinner immediately, then kick off a background prefetch of ALL
+        // CLI data (all --json + fluency --json in parallel). Once both are cached,
+        // load the initial view with data pre-embedded — no second load needed.
+        initialLoadDone = true // prevent onLoadEnd from triggering a redundant fetch
         browser.loadHTML(WebviewResources.buildHtml(currentView, hostBridgeInjectFunction = hostBridge.inject("payload")))
+        prefetchAndLoadView(currentView)
+    }
+
+    /**
+     * Prefetches all CLI data (all --json + fluency --json in parallel) on a
+     * background thread, then reloads [view] with the data pre-embedded.
+     * Subsequent navigations use the warm cache — no spinner needed.
+     */
+    private fun prefetchAndLoadView(view: String) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = runCatching { CliBridge.prefetchAll() }
+            ApplicationManager.getApplication().invokeLater {
+                result.fold(
+                    onSuccess = {
+                        // Cache is now warm — load the current view with data embedded
+                        loadViewFromCache(currentView)
+                    },
+                    onFailure = { err ->
+                        log.warn("CLI prefetch failed", err)
+                        showError(err.message ?: "Unknown error fetching stats")
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Loads [view] HTML with data from cache pre-embedded. Cache must be warm.
+     */
+    private fun loadViewFromCache(view: String) {
+        val result = runCatching {
+            val json = CliBridge.fetchStats(view)
+            val jsonKey = CliBridge.viewToAllJsonKey(view)
+            if (jsonKey != null) extractJsonKey(json, jsonKey) else json
+        }
+        result.fold(
+            onSuccess = { initialJson ->
+                browser.loadHTML(
+                    WebviewResources.buildHtml(
+                        view,
+                        hostBridgeInjectFunction = hostBridge.inject("payload"),
+                        initialStatsJson = initialJson,
+                    )
+                )
+            },
+            onFailure = { err ->
+                log.warn("Failed to load view $view from cache", err)
+                showError(err.message ?: "Unknown error")
+            },
+        )
     }
 
     /**
      * Triggers a CLI run on a background thread and pushes the result into the
-     * webview when complete. Errors are surfaced as an inline error overlay.
+     * webview when complete. Invalidates the cache first so fresh data is fetched.
+     * Errors are surfaced as an inline error overlay.
      */
     private fun refreshStatsAsync() {
+        CliBridge.invalidateCache()
         val view = currentView
         ApplicationManager.getApplication().executeOnPooledThread {
-            val result = runCatching { CliBridge.fetchStats(view) }
+            val result = runCatching { CliBridge.prefetchAll() }
             ApplicationManager.getApplication().invokeLater {
                 result.fold(
-                    onSuccess = { json -> pushStatsToWebview(json) },
+                    onSuccess = {
+                        val statsResult = runCatching {
+                            val json = CliBridge.fetchStats(view)
+                            val jsonKey = CliBridge.viewToAllJsonKey(view)
+                            if (jsonKey != null) extractJsonKey(json, jsonKey) else json
+                        }
+                        statsResult.fold(
+                            onSuccess = { json -> pushStatsToWebview(json) },
+                            onFailure = { err ->
+                                log.warn("CLI stats push failed", err)
+                                showError(err.message ?: "Unknown error fetching stats")
+                            },
+                        )
+                    },
                     onFailure = { err ->
-                        log.warn("CLI stats fetch failed", err)
+                        log.warn("CLI refresh failed", err)
                         showError(err.message ?: "Unknown error fetching stats")
                     },
                 )
@@ -222,40 +274,18 @@ class TokenTrackerPanel(
     }
 
     /**
-     * Fetches CLI data on a background thread, then loads the view HTML with
-     * data pre-embedded so the bundle sees it immediately at bootstrap.
-     * Shows a loading spinner while waiting for CLI data.
+     * Navigates to [view] using cached data if available (instant, no spinner),
+     * or fetches fresh data with a loading spinner if cache is cold.
      */
     private fun navigateWithFreshData(view: String) {
-        initialLoadDone = true // prevent onLoadEnd from double-fetching
-        // Show loading spinner immediately
-        browser.loadHTML(WebviewResources.buildHtml(view, hostBridgeInjectFunction = hostBridge.inject("payload")))
-        // Fetch data on background thread, then reload HTML with data embedded
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val result = runCatching { CliBridge.fetchStats(view) }
-            ApplicationManager.getApplication().invokeLater {
-                result.fold(
-                    onSuccess = { json ->
-                        val jsonKey = CliBridge.viewToAllJsonKey(view)
-                        val initialJson = if (jsonKey != null) {
-                            extractJsonKey(json, jsonKey)
-                        } else {
-                            json
-                        }
-                        browser.loadHTML(
-                            WebviewResources.buildHtml(
-                                view,
-                                hostBridgeInjectFunction = hostBridge.inject("payload"),
-                                initialStatsJson = initialJson,
-                            )
-                        )
-                    },
-                    onFailure = { err ->
-                        log.warn("CLI stats fetch failed for view $view", err)
-                        showError(err.message ?: "Unknown error fetching stats")
-                    },
-                )
-            }
+        if (CliBridge.prefetchDone) {
+            // Cache is warm — load immediately, no spinner
+            loadViewFromCache(view)
+        } else {
+            // Cache is cold — show spinner while fetching
+            initialLoadDone = true
+            browser.loadHTML(WebviewResources.buildHtml(view, hostBridgeInjectFunction = hostBridge.inject("payload")))
+            prefetchAndLoadView(view)
         }
     }
 

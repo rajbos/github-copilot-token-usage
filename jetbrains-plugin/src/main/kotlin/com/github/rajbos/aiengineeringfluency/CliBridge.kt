@@ -31,16 +31,63 @@ object CliBridge {
 
     @Volatile private var cachedExePath: Path? = null
 
+    /** Cached result of `all --json` (covers details, chart, usage, environmental). */
+    @Volatile var cachedAllJson: String? = null
+
+    /** Cached result of `fluency --json` (covers maturity). */
+    @Volatile var cachedFluencyJson: String? = null
+
+    /** True once [prefetchAll] has completed successfully. */
+    @Volatile var prefetchDone: Boolean = false
+
+    /** Clears both caches so the next fetch goes to the CLI again. */
+    fun invalidateCache() {
+        cachedAllJson = null
+        cachedFluencyJson = null
+        prefetchDone = false
+    }
+
+    /**
+     * Fetches `all --json` and `fluency --json` in parallel on the current
+     * (background) thread. Populates [cachedAllJson] and [cachedFluencyJson].
+     *
+     * @throws IOException if either CLI invocation fails.
+     */
+    fun prefetchAll() {
+        val allFuture = java.util.concurrent.FutureTask { fetchRaw("all") }
+        val fluencyFuture = java.util.concurrent.FutureTask { fetchRaw("fluency") }
+        val allThread = Thread(allFuture, "cli-prefetch-all").apply { isDaemon = true; start() }
+        val fluencyThread = Thread(fluencyFuture, "cli-prefetch-fluency").apply { isDaemon = true; start() }
+        allThread.join()
+        fluencyThread.join()
+        cachedAllJson = allFuture.get()
+        cachedFluencyJson = fluencyFuture.get()
+        prefetchDone = true
+    }
+
     /**
      * Runs the CLI for [view] and returns the parsed JSON string from stdout.
+     * Uses [cachedAllJson] / [cachedFluencyJson] when available.
      *
      * @throws IllegalStateException if the OS is unsupported or the CLI
      *         binary failed to extract / execute.
      */
     @Throws(IOException::class)
     fun fetchStats(view: String): String {
+        return when (viewToCommand(view)) {
+            "all" -> cachedAllJson ?: fetchRaw("all").also { cachedAllJson = it }
+            "fluency" -> cachedFluencyJson ?: fetchRaw("fluency").also { cachedFluencyJson = it }
+            else -> fetchRaw(viewToCommand(view))
+        }
+    }
+
+    /**
+     * Invokes the CLI sub-command directly (no cache) and returns stdout.
+     */
+    @Throws(IOException::class)
+    fun fetchRaw(command: String): String {
         val exe = ensureExtracted()
-        val cmd = listOf(exe.toString(), viewToCommand(view), "--json")
+        val cmd = listOf(exe.toString(), command, "--json")
 
         log.info("Running CLI: ${cmd.joinToString(" ")}")
         val startMs = System.currentTimeMillis()

@@ -129,6 +129,7 @@ object WebviewResources {
                         --vscode-contrastBorder: #6fc3df;
                     }
                 </style>
+                <script>$bridgeBootstrap</script>
                 <script>$shim</script>
                 <script>window.$globalKey = $safeInitialData;</script>
             </head>
