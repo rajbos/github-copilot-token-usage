@@ -73,6 +73,8 @@ object WebviewResources {
                 <style>
                     html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4;
                                  font-family: -apple-system, 'Segoe UI', sans-serif; }
+                    /* Buttons not supported in JetBrains (no CLI command available) */
+                    #btn-diagnostics, #btn-dashboard, #btn-level-viewer { display: none !important; }
                     #loading-overlay { $overlayStyle; }
                     #root { $rootStyle; }
                     .spinner { width: 32px; height: 32px; border: 3px solid #333; border-top: 3px solid #0078d4;
