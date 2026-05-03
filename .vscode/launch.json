@@ -11,7 +11,9 @@
 			"request": "launch",
 			"preLaunchTask": "esbuild",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension"
+				"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension",
+				"--disable-extension",
+				"RobBos.ai-engineering-fluency"
 			],
 			"outFiles": [
 				"${workspaceFolder}/vscode-extension/dist/**/*.js"
