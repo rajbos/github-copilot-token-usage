@@ -535,7 +535,7 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 				labels: period.labels,
 				datasets: [
 					{
-						label: 'Est. Cost (USD)',
+						label: 'Est. Cost (TBB)',
 						data: period.costData,
 						backgroundColor: 'rgba(34, 197, 94, 0.6)',
 						borderColor: 'rgba(34, 197, 94, 1)',
@@ -563,7 +563,7 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 						position: 'left' as const,
 						grid: { color: gridColor },
 						ticks: { color: textColor, font: { size: 11 }, callback: (value: any) => `$${Number(value).toFixed(2)}` },
-						title: { display: true, text: 'Estimated Cost (USD)', color: textColor, font: { size: 12, weight: 'bold' as const } }
+						title: { display: true, text: 'Estimated Cost (TBB)', color: textColor, font: { size: 12, weight: 'bold' as const } }
 					}
 				}
 			}
