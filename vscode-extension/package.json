@@ -61,6 +61,11 @@
         "category": "AI Engineering Fluency"
       },
       {
+        "command": "aiEngineeringFluency.showSessionEfficiency",
+        "title": "Show Session Efficiency",
+        "category": "AI Engineering Fluency"
+      },
+      {
         "command": "aiEngineeringFluency.runLocalViewRegression",
         "title": "Run Local View Regression (Debug Only)",
         "category": "AI Engineering Fluency"
