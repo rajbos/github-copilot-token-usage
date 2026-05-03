@@ -66,6 +66,32 @@ updates:
           - "minor"
           - "patch"
 
+  # Enable version updates for the JetBrains plugin Gradle wrapper and dependencies
+  - package-ecosystem: "gradle"
+    directory: "/jetbrains-plugin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "gradle"
+      include: "scope"
+    reviewers:
+      - "rajbos"
+    assignees:
+      - "rajbos"
+    labels:
+      - "dependencies"
+    groups:
+      minor-and-patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: npm
     directory: /.github/scripts
     schedule:
