@@ -138,6 +138,7 @@ function getContextRefBadges(refs: ContextReferenceUsage): string {
 	if ((refs.changes || 0) > 0) { badges.push(`<span class="context-ref-item">#changes: <strong>${refs.changes}</strong></span>`); }
 	if ((refs.outputPanel || 0) > 0) { badges.push(`<span class="context-ref-item">#outputPanel: <strong>${refs.outputPanel}</strong></span>`); }
 	if ((refs.problemsPanel || 0) > 0) { badges.push(`<span class="context-ref-item">#problemsPanel: <strong>${refs.problemsPanel}</strong></span>`); }
+	if ((refs.pullRequest || 0) > 0) { badges.push(`<span class="context-ref-item">#pr: <strong>${refs.pullRequest}</strong></span>`); }
 	if (refs.implicitSelection > 0) { badges.push(`<span class="context-ref-item context-ref-implicit">implicit: <strong>${refs.implicitSelection}</strong></span>`); }
 	return badges.join('');
 }

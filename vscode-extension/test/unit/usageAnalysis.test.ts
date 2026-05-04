@@ -28,7 +28,7 @@ function emptyRefs(): ContextReferenceUsage {
         file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
         workspace: 0, terminal: 0, vscode: 0, terminalLastCommand: 0,
         terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0,
-        problemsPanel: 0, byKind: {}, byPath: {}, copilotInstructions: 0, agentsMd: 0,
+        problemsPanel: 0, pullRequest: 0, byKind: {}, byPath: {}, copilotInstructions: 0, agentsMd: 0,
     };
 }
 
@@ -276,6 +276,25 @@ test('analyzeContextReferences: counts #problemsPanel references', () => {
     assert.equal(refs.problemsPanel, 1);
 });
 
+test('analyzeContextReferences: counts #pr references', () => {
+    const refs = emptyRefs();
+    analyzeContextReferences('review #pr changes', refs);
+    assert.equal(refs.pullRequest, 1);
+});
+
+test('analyzeContextReferences: counts #pullRequest references', () => {
+    const refs = emptyRefs();
+    analyzeContextReferences('summarize #pullRequest please', refs);
+    assert.equal(refs.pullRequest, 1);
+});
+
+test('analyzeContextReferences: #pr does not match #problemsPanel', () => {
+    const refs = emptyRefs();
+    analyzeContextReferences('check #problemsPanel', refs);
+    assert.equal(refs.pullRequest, 0);
+    assert.equal(refs.problemsPanel, 1);
+});
+
 test('analyzeContextReferences: accumulates on existing counts', () => {
     const refs = emptyRefs();
     refs.file = 2;
@@ -408,6 +427,24 @@ test('analyzeContentReferences: handles inlineReference kind with fsPath', () =>
         { kind: 'inlineReference', inlineReference: { fsPath: '/src/component.ts' } },
     ], refs);
     assert.equal(refs.file, 1);
+});
+
+test('analyzeContentReferences: increments pullRequest for pullRequest kind', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'pullRequest', pullRequest: { number: 42, title: 'My PR' } },
+    ], refs);
+    assert.equal(refs.pullRequest, 1);
+    assert.equal(refs.byKind['pullRequest'], 1);
+});
+
+test('analyzeContentReferences: multiple pullRequest entries accumulate', () => {
+    const refs = emptyRefs();
+    analyzeContentReferences([
+        { kind: 'pullRequest', pullRequest: { number: 1 } },
+        { kind: 'pullRequest', pullRequest: { number: 2 } },
+    ], refs);
+    assert.equal(refs.pullRequest, 2);
 });
 
 // ---------------------------------------------------------------------------

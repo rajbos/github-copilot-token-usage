@@ -84,6 +84,7 @@ export function mergeUsageAnalysis(period: UsageAnalysisPeriod, analysis: Sessio
 	period.contextReferences.changes += analysis.contextReferences.changes || 0;
 	period.contextReferences.outputPanel += analysis.contextReferences.outputPanel || 0;
 	period.contextReferences.problemsPanel += analysis.contextReferences.problemsPanel || 0;
+	period.contextReferences.pullRequest += analysis.contextReferences.pullRequest || 0;
 
 	// Merge contentReferences counts
 	period.contextReferences.copilotInstructions += analysis.contextReferences.copilotInstructions || 0;
@@ -310,9 +311,20 @@ export function analyzeContextReferences(text: string, refs: ContextReferenceUsa
 	}
 
 	// Count #problemsPanel references
-	const problemsPanelMatches = text.match(/#problemsPanel/gi);
+	const problemsPanelMatches = text.match(/#problemsPanel\b/gi);
 	if (problemsPanelMatches) {
 		refs.problemsPanel += problemsPanelMatches.length;
+	}
+
+	// Count #pr and #pullRequest references (Copilot PR chat, April 2026)
+	// Use word boundaries to avoid matching #problemsPanel or #pullRequestReview etc.
+	const prMatches = text.match(/#pr\b/gi);
+	if (prMatches) {
+		refs.pullRequest += prMatches.length;
+	}
+	const pullRequestMatches = text.match(/#pullRequest\b/gi);
+	if (pullRequestMatches) {
+		refs.pullRequest += pullRequestMatches.length;
 	}
 
 	// Count @workspace references
@@ -363,6 +375,13 @@ export function analyzeContentReferences(contentReferences: any[], refs: Context
 			reference = contentRef.reference;
 		} else if (kind === 'inlineReference' && contentRef.inlineReference) {
 			reference = contentRef.inlineReference;
+		}
+
+		// Pull request context references (Copilot PR chat, April 2026)
+		// These appear as contentRef.kind === 'pullRequest' with PR metadata inside
+		if (kind === 'pullRequest') {
+			refs.pullRequest++;
+			continue;
 		}
 
 		// Process the reference if found

@@ -17,6 +17,7 @@ export type ContextReferenceUsage = {
 	changes: number;
 	outputPanel: number;
 	problemsPanel: number;
+	pullRequest: number; // #pr / #pullRequest references (Copilot PR chat, April 2026)
 	byKind: { [kind: string]: number };
 	copilotInstructions: number;
 	agentsMd: number;
@@ -80,7 +81,7 @@ export function getTotalContextRefs(refs: ContextReferenceUsage): number {
 	return refs.file + refs.selection + refs.implicitSelection + refs.symbol + refs.codebase +
 		refs.workspace + refs.terminal + refs.vscode + refs.copilotInstructions + refs.agentsMd +
 		(refs.terminalLastCommand || 0) + (refs.terminalSelection || 0) + (refs.clipboard || 0) +
-		(refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0);
+		(refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0) + (refs.pullRequest || 0);
 }
 
 /**
@@ -94,13 +95,13 @@ export function getImplicitContextRefs(refs: ContextReferenceUsage): number {
 /**
  * Calculate the count of explicit (user-initiated) context references.
  * Explicit refs are user-initiated: #file, #selection, #symbol, #codebase, @workspace, @terminal, @vscode,
- * #terminalLastCommand, #terminalSelection, #clipboard, #changes, #outputPanel, #problemsPanel
+ * #terminalLastCommand, #terminalSelection, #clipboard, #changes, #outputPanel, #problemsPanel, #pr
  */
 export function getExplicitContextRefs(refs: ContextReferenceUsage): number {
 	return refs.file + refs.selection + refs.symbol + refs.codebase +
 		refs.workspace + refs.terminal + refs.vscode +
 		(refs.terminalLastCommand || 0) + (refs.terminalSelection || 0) + (refs.clipboard || 0) +
-		(refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0);
+		(refs.changes || 0) + (refs.outputPanel || 0) + (refs.problemsPanel || 0) + (refs.pullRequest || 0);
 }
 
 /**
@@ -127,6 +128,7 @@ export function getContextRefsSummary(refs: ContextReferenceUsage, abbreviated =
 		if ((refs.changes || 0) > 0) { parts.push(`#chg: ${refs.changes}`); }
 		if ((refs.outputPanel || 0) > 0) { parts.push(`#out: ${refs.outputPanel}`); }
 		if ((refs.problemsPanel || 0) > 0) { parts.push(`#prob: ${refs.problemsPanel}`); }
+		if ((refs.pullRequest || 0) > 0) { parts.push(`#pr: ${refs.pullRequest}`); }
 		if (refs.copilotInstructions > 0) { parts.push(`📋 inst: ${refs.copilotInstructions}`); }
 		if (refs.agentsMd > 0) { parts.push(`🤖 ag: ${refs.agentsMd}`); }
 	} else {
@@ -145,6 +147,7 @@ export function getContextRefsSummary(refs: ContextReferenceUsage, abbreviated =
 		if ((refs.changes || 0) > 0) { parts.push(`#changes: ${refs.changes}`); }
 		if ((refs.outputPanel || 0) > 0) { parts.push(`#outputPanel: ${refs.outputPanel}`); }
 		if ((refs.problemsPanel || 0) > 0) { parts.push(`#problemsPanel: ${refs.problemsPanel}`); }
+		if ((refs.pullRequest || 0) > 0) { parts.push(`#pr: ${refs.pullRequest}`); }
 		if (refs.copilotInstructions > 0) { parts.push(`📋 instructions: ${refs.copilotInstructions}`); }
 		if (refs.agentsMd > 0) { parts.push(`🤖 agents: ${refs.agentsMd}`); }
 	}
