@@ -8253,6 +8253,41 @@ async function handleLegacyExtensionDeprecation(context: vscode.ExtensionContext
   return false; // Continue legacy activation so the user keeps working functionality.
 }
 
+/**
+ * When running as the new ai-engineering-fluency extension, checks whether the legacy
+ * copilot-token-tracker extension is also installed and shows a one-time prompt to
+ * uninstall it. The old extension already skips its own activation when the new one
+ * is present, but this gives users a clear nudge to clean up.
+ */
+async function checkForLegacyExtensionConflict(context: vscode.ExtensionContext): Promise<void> {
+  if (context.extension.id !== NEW_EXTENSION_ID) {
+    return;
+  }
+  const legacyExt = vscode.extensions.getExtension(LEGACY_EXTENSION_ID);
+  if (!legacyExt) {
+    return;
+  }
+  const key = 'conflict.legacyExtensionPresent.v1.dismissed';
+  if (context.globalState.get<boolean>(key, false)) {
+    return;
+  }
+  const choice = await vscode.window.showWarningMessage(
+    'The deprecated "AI Engineering Fluency (Deprecated)" extension is also installed. It has been prevented from running, but you should uninstall it to keep things clean.',
+    'Uninstall Deprecated',
+    'Dismiss'
+  );
+  if (choice === 'Uninstall Deprecated') {
+    try {
+      await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', LEGACY_EXTENSION_ID);
+    } catch {
+      vscode.window.showInformationMessage('Please manually uninstall "AI Engineering Fluency (Deprecated)" from the Extensions view.');
+    }
+  } else if (choice === 'Dismiss') {
+    // Only suppress on explicit Dismiss — closing with ✕ shows again next startup.
+    await context.globalState.update(key, true);
+  }
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   // For the legacy copilot-token-tracker VSIX: show migration notice and skip full
   // activation if the new extension is already installed and running.
@@ -8266,6 +8301,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // Migrate settings from the old copilotTokenTracker namespace to aiEngineeringFluency.
   // Run before any other settings are read so the new keys are populated first.
   await migrateSettingsIfNeeded((m) => tokenTracker.log(m));
+
+  // If the legacy extension is also installed, nudge the user to uninstall it.
+  // Fire-and-forget: don't block activation on the user's response.
+  checkForLegacyExtensionConflict(context).catch(() => { /* ignore */ });
 
   // Wire up backend facade and commands so the diagnostics webview can launch the
   // configuration wizard. Uses tokenTracker logging and helpers via casting to any.
