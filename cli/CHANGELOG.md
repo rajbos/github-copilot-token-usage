@@ -6,6 +6,32 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-04
+
+### ✨ Features & Improvements
+- Added Gemini CLI support as a trackable ecosystem
+- Added JetBrains adapter to CLI ecosystem registry
+- Added Mistral Vibe session support
+- Added weekly/monthly chart periods and fixed usage analysis routing
+- Added GitHub Copilot AI-Credit pricing alongside provider pricing
+- Added dedicated CLI interaction mode in Usage Analysis (#659)
+- Added macOS path support for Claude Desktop Cowork sessions (#714)
+- Improved fluency spiderweb chart for Claude-only users
+- Renamed cost labels: (API) → (est.) and (Copilot) → (TBB) with explainer tooltips
+- Display CO2 in kg when ≥ 1000g for readability
+
+### 🐛 Bug Fixes
+- Fixed: align token counting with VS Code extension
+- Fixed: use actual tokens for all periods; increased session timeout to 120s
+- Fixed: prefer `actualTokens` from `session.shutdown` over estimates
+- Fixed: use UTC date boundaries for period attribution
+- Fixed: extract per-model usage from `session.shutdown` events
+- Fixed: populate estimated cost data in chart view for all periods
+
+### 🔧 Maintenance
+- Migrated to IEcosystemAdapter registry pattern for improved extensibility
+- Bumped cache version to 3 to reflect SessionData shape changes
+
 ## [0.0.14] - 2026-04-30
 
 ### ✨ Features & Improvements
