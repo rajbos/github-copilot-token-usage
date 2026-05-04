@@ -6,6 +6,30 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-04
+
+### Features and Improvements
+- Added Gemini CLI support as a trackable ecosystem
+- Added JetBrains IDE Copilot session discovery with ask/agent mode detection, per-turn model tracking, and tooltips for data limits
+- Added Copilot PR chat context references detection — surfaces #pr context in session log viewer (#760)
+- Added Path Analyzer tab to diagnostics panel (#713)
+- Added Editor Mode summary card to log viewer
+- Added daily auto-sync of model multipliers from github-copilot-model-notifier (#718)
+- Dual-publish VS Code extension under new AI Engineering Fluency marketplace ID (#731)
+- Added detection of legacy copilot-token-tracker extension with prompt to uninstall and migration notice
+- Added friendly display names for mcp_context7, mcp_microsoftdocs, Slidev, Copilot CLI built-in tools, and JetBrains tools (#723, #726)
+- Added missing friendly names for additional tools (#771)
+- Surface subagent count in log viewer; fixed subagent tool-result token estimation (#720)
+- Added weekly/monthly chart periods and fixed usage analysis routing
+
+### Bug Fixes
+- Fixed: only suppress deprecation notice on explicit Dismiss
+- Fixed: show correct editor name for eco sessions in diagnostics directory table
+- Fixed: eco-session token count in diagnostics matches file viewer
+- Fixed: replace hardcoded dark backgrounds in log viewer with theme CSS variables (#716)
+- Fixed: populate estimated cost data in chart view for all periods
+- Fixed: cost estimate reason display
+
 ## [0.3.0] - 2026-04-30
 
 ### Features and Improvements
