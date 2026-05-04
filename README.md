@@ -48,11 +48,11 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 
 Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more. Works with all Chromium-based VS Code forks — VS Code, Windsurf, Cursor, VSCodium, Trae, Kiro, Void, and more.
 
-[![Install - VS Code](https://img.shields.io/badge/Install-VS%20Code-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker) [![VS Code installs](https://vsmarketplacebadges.dev/installs-short/RobBos.copilot-token-tracker.svg?label=VS%20Code%20installs)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker) [![Install - Windsurf (Open VSX)](https://img.shields.io/badge/Install-Windsurf-00B4D8?logo=open-vsx)](https://open-vsx.org/extension/RobBos/copilot-token-tracker) [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/copilot-token-tracker?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/copilot-token-tracker)
+[![Install - VS Code](https://img.shields.io/badge/Install-VS%20Code-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) [![VS Code installs](https://img.shields.io/visual-studio-marketplace/i/RobBos.ai-engineering-fluency?label=VS%20Code%20installs)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) [![Install - Windsurf (Open VSX)](https://img.shields.io/badge/Install-Windsurf-00B4D8?logo=open-vsx)](https://open-vsx.org/extension/RobBos/ai-engineering-fluency) [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/ai-engineering-fluency?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/ai-engineering-fluency)
 
 ```bash
 # Install from the VS Code Marketplace
-ext install RobBos.copilot-token-tracker
+ext install RobBos.ai-engineering-fluency
 ```
 
 <details>
@@ -60,25 +60,25 @@ ext install RobBos.copilot-token-tracker
 
 ```bash
 # VSCodium
-codium --install-extension RobBos.copilot-token-tracker
+codium --install-extension RobBos.ai-engineering-fluency
 
 # Code OSS
-code --install-extension RobBos.copilot-token-tracker
+code --install-extension RobBos.ai-engineering-fluency
 
 # Windsurf
-windsurf --install-extension RobBos.copilot-token-tracker
+windsurf --install-extension RobBos.ai-engineering-fluency
 
 # Cursor
-cursor --install-extension RobBos.copilot-token-tracker
+cursor --install-extension RobBos.ai-engineering-fluency
 
 # Trae (ByteDance)
-trae --install-extension RobBos.copilot-token-tracker
+trae --install-extension RobBos.ai-engineering-fluency
 
 # Kiro (AWS)
-kiro --install-extension RobBos.copilot-token-tracker
+kiro --install-extension RobBos.ai-engineering-fluency
 
 # Void
-void --install-extension RobBos.copilot-token-tracker
+void --install-extension RobBos.ai-engineering-fluency
 ```
 
 </details>
@@ -99,7 +99,7 @@ Token usage and fluency dashboards inside any JetBrains IDE (IntelliJ IDEA, Ride
 
 Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session files directly.
 
-[![Visual Studio Marketplace Installs](https://vsmarketplacebadges.dev/installs-short/RobBos.AIEngineeringFluency.svg)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
+[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/RobBos.AIEngineeringFluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
 
 📖 [Full Visual Studio extension documentation](docs/visual-studio/README.md)
 

@@ -40,7 +40,7 @@ jobs:
       version: ${{ steps.extract_version.outputs.tag_version }}
       tag_name: ${{ steps.tag_name.outputs.tag_name }}
       vsix_file: ${{ steps.vsix_filename.outputs.vsix_file }}
-      legacy_vsix_file: ${{ steps.vsix_filename.outputs.legacy_vsix_file }}
+      # legacy_vsix_file: ${{ steps.vsix_filename.outputs.legacy_vsix_file }}  # legacy publishing disabled
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -260,25 +260,26 @@ jobs:
       working-directory: vscode-extension
       run: npx vsce package
       
-    - name: Create legacy VSIX (copilot-token-tracker)
-      if: inputs.vs_only != true
-      working-directory: vscode-extension
-      run: |
-        node -e "
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-          pkg.name = 'copilot-token-tracker';
-          pkg.displayName = 'AI Engineering Fluency (Deprecated)';
-          fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-        "
-        npx vsce package
-        node -e "
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-          pkg.name = 'ai-engineering-fluency';
-          pkg.displayName = 'AI Engineering Fluency';
-          fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-        "
+    # Legacy VSIX creation disabled — migration flow is complete, no longer publishing copilot-token-tracker.
+    # - name: Create legacy VSIX (copilot-token-tracker)
+    #   if: inputs.vs_only != true
+    #   working-directory: vscode-extension
+    #   run: |
+    #     node -e "
+    #       const fs = require('fs');
+    #       const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+    #       pkg.name = 'copilot-token-tracker';
+    #       pkg.displayName = 'AI Engineering Fluency (Deprecated)';
+    #       fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+    #     "
+    #     npx vsce package
+    #     node -e "
+    #       const fs = require('fs');
+    #       const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+    #       pkg.name = 'ai-engineering-fluency';
+    #       pkg.displayName = 'AI Engineering Fluency';
+    #       fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+    #     "
 
     - name: Get VSIX filename
       if: inputs.vs_only != true
@@ -286,11 +287,11 @@ jobs:
       working-directory: vscode-extension
       run: |
         VSIX_FILE=$(find . -maxdepth 1 -name "ai-engineering-fluency-*.vsix" -exec basename {} \; | head -n 1)
-        LEGACY_VSIX_FILE=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)
+        # LEGACY_VSIX_FILE=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)  # legacy disabled
         echo "vsix_file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
-        echo "legacy_vsix_file=$LEGACY_VSIX_FILE" >> "$GITHUB_OUTPUT"
+        # echo "legacy_vsix_file=$LEGACY_VSIX_FILE" >> "$GITHUB_OUTPUT"  # legacy disabled
         echo "Primary VSIX: $VSIX_FILE"
-        echo "Legacy VSIX:  $LEGACY_VSIX_FILE"
+        # echo "Legacy VSIX:  $LEGACY_VSIX_FILE"  # legacy disabled
 
     - name: Upload VSIX as workflow artifact
       if: inputs.vs_only != true
@@ -299,7 +300,7 @@ jobs:
         name: vsix-package
         path: |
           vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}
-          vscode-extension/${{ steps.vsix_filename.outputs.legacy_vsix_file }}
+          # vscode-extension/${{ steps.vsix_filename.outputs.legacy_vsix_file }}  # legacy disabled
         retention-days: 90
         
     - name: Create Release
@@ -316,15 +317,15 @@ jobs:
         # Create release (skip if it already exists — e.g. re-running after a downstream job failure)
         TAG="${{ steps.tag_name.outputs.tag_name }}"
         PRIMARY_VSIX="vscode-extension/${{ steps.vsix_filename.outputs.vsix_file }}"
-        LEGACY_VSIX="vscode-extension/${{ steps.vsix_filename.outputs.legacy_vsix_file }}"
+        # LEGACY_VSIX="vscode-extension/${{ steps.vsix_filename.outputs.legacy_vsix_file }}"  # legacy disabled
         if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-          echo "ℹ️ Release $TAG already exists — uploading VSIXs with --clobber"
-          gh release upload "$TAG" "$PRIMARY_VSIX" "$LEGACY_VSIX" --clobber 2>&1 | tee /tmp/release_output.txt
+          echo "ℹ️ Release $TAG already exists — uploading VSIX with --clobber"
+          gh release upload "$TAG" "$PRIMARY_VSIX" --clobber 2>&1 | tee /tmp/release_output.txt
         else
           gh release create "$TAG" \
             --title "VS Code Extension v${{ steps.extract_version.outputs.tag_version }}" \
             --notes-file /tmp/release_notes.md \
-            "$PRIMARY_VSIX" "$LEGACY_VSIX" 2>&1 | tee /tmp/release_output.txt
+            "$PRIMARY_VSIX" 2>&1 | tee /tmp/release_output.txt
         fi
 
     - name: Release Summary
@@ -436,11 +437,11 @@ jobs:
           --pattern "*.vsix" \
           --dir .
         PRIMARY_VSIX=$(find . -maxdepth 1 -name "ai-engineering-fluency-*.vsix" -exec basename {} \; | head -n 1)
-        LEGACY_VSIX=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)
+        # LEGACY_VSIX=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)  # legacy disabled
         echo "Primary VSIX: $PRIMARY_VSIX"
-        echo "Legacy VSIX:  $LEGACY_VSIX"
+        # echo "Legacy VSIX:  $LEGACY_VSIX"  # legacy disabled
         echo "vsix_file=$PRIMARY_VSIX" >> "$GITHUB_OUTPUT"
-        echo "legacy_vsix_file=$LEGACY_VSIX" >> "$GITHUB_OUTPUT"
+        # echo "legacy_vsix_file=$LEGACY_VSIX" >> "$GITHUB_OUTPUT"  # legacy disabled
 
     - name: Publish to VS Code Marketplace
       id: publish
@@ -454,6 +455,7 @@ jobs:
           exit 1
         fi
         
+        # Legacy publishing disabled — migration flow is complete, no longer publishing copilot-token-tracker.
         # Publish legacy first to release the "AI Engineering Fluency" display name,
         # then publish the new extension which claims it.
         # Skip each publish if that exact version is already live (makes re-runs safe).
@@ -476,7 +478,7 @@ jobs:
           fi
         }
 
-        publish_if_needed "${{ steps.download_vsix.outputs.legacy_vsix_file }}" "RobBos.copilot-token-tracker" "legacy ID"
+        # publish_if_needed "${{ steps.download_vsix.outputs.legacy_vsix_file }}" "RobBos.copilot-token-tracker" "legacy ID"  # legacy disabled
         publish_if_needed "${{ steps.download_vsix.outputs.vsix_file }}" "RobBos.ai-engineering-fluency" "new ID"
 
     - name: Publish to Open VSX Registry
@@ -490,6 +492,7 @@ jobs:
           exit 1
         fi
 
+        # Legacy publishing disabled — migration flow is complete, no longer publishing copilot-token-tracker.
         # Publish legacy first, then new extension. Skip if already published (re-run safe).
         publish_if_needed() {
           local vsix="$1" ext_id="$2" label="$3"
@@ -506,7 +509,7 @@ jobs:
           fi
         }
 
-        publish_if_needed "${{ steps.download_vsix.outputs.legacy_vsix_file }}" "RobBos/copilot-token-tracker" "legacy ID"
+        # publish_if_needed "${{ steps.download_vsix.outputs.legacy_vsix_file }}" "RobBos/copilot-token-tracker" "legacy ID"  # legacy disabled
         publish_if_needed "${{ steps.download_vsix.outputs.vsix_file }}" "RobBos/ai-engineering-fluency" "new ID"
 
     - name: Publish Summary
@@ -516,7 +519,7 @@ jobs:
           echo "# 🚀 VS Code Marketplace"
           echo ""
           if [ "${{ steps.publish.outcome }}" == "success" ]; then
-            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace (new ID)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) and [legacy ID](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)"
+            echo "✅ Extension v${{ needs.release.outputs.version }} published to the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency)"
           elif [ "${{ steps.version_check.outcome }}" == "failure" ]; then
             echo "⏭️ Publish skipped — v${{ needs.release.outputs.version }} is already live on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency)."
             echo ""
