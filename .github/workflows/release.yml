@@ -268,7 +268,7 @@ jobs:
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
           pkg.name = 'copilot-token-tracker';
-          pkg.displayName = 'GitHub Copilot Token Tracker';
+          pkg.displayName = 'AI Engineering Fluency (Deprecated)';
           fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
         npx vsce package
