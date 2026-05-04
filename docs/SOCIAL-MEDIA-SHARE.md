@@ -35,7 +35,7 @@ Overall: [Your Stage Label]
 
 Track your Copilot usage and level up your AI-assisted development skills!
 
-Get the extension: https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker
+Get the extension: https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency
 
 #CopilotFluencyScore
 ```
@@ -92,7 +92,7 @@ All shares include the unique hashtag **#CopilotFluencyScore** to help build a c
 ## Marketplace Link
 
 Each share includes a direct link to the VS Code Marketplace page for the extension:
-`https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker`
+`https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency`
 
 This makes it easy for interested developers to install the extension and start tracking their own Copilot usage.
 

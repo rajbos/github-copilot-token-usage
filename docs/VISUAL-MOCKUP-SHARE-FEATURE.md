@@ -89,7 +89,7 @@ Overall: Stage 3: Copilot Collaborator
 
 Track your Copilot usage and level up your AI-assisted development skills!
 
-Get the extension: https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker
+Get the extension: https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency
 
 #CopilotFluencyScore
 ```

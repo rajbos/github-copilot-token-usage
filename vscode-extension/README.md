@@ -6,7 +6,7 @@ Track your AI Engineering Fluency — daily and monthly token usage, cost estima
 
 ## Install
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/RobBos.copilot-token-tracker)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/RobBos.ai-engineering-fluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency)
 
 Search for **"AI Engineering Fluency"** in the VS Code Extensions panel, or install via the Marketplace link above.
 
