@@ -8222,8 +8222,8 @@ async function handleLegacyExtensionDeprecation(context: vscode.ExtensionContext
           } catch {
             vscode.window.showInformationMessage('Please manually uninstall "AI Engineering Fluency (Deprecated)" from the Extensions view.');
           }
-        } else {
-          // Only suppress future prompts when the user explicitly dismisses.
+        } else if (choice === 'Dismiss') {
+          // Only suppress on explicit Dismiss — closing with ✕ shows again next startup.
           await context.globalState.update(key, true);
         }
       }
@@ -8244,7 +8244,8 @@ async function handleLegacyExtensionDeprecation(context: vscode.ExtensionContext
       await vscode.env.openExternal(
         vscode.Uri.parse('https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency')
       );
-    } else {
+    } else if (choice === 'Dismiss') {
+      // Only suppress on explicit Dismiss — closing with ✕ shows again next startup.
       await context.globalState.update(key, true);
     }
   }
