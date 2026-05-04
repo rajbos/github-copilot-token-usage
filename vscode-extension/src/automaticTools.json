@@ -7,6 +7,7 @@
   "copilot_viewImage",
 
   "list_dir",
+  "list_directory",
   "ls",
   "copilot_listDirectory",
 
@@ -91,6 +92,7 @@
 
   "ask_questions",
   "AskUserQuestion",
+  "ask_user_question",
   "copilot_askQuestions",
 
   "switch_agent",
