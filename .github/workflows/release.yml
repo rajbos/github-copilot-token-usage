@@ -456,15 +456,28 @@ jobs:
         
         # Publish legacy first to release the "AI Engineering Fluency" display name,
         # then publish the new extension which claims it.
-        echo "Publishing ${{ steps.download_vsix.outputs.legacy_vsix_file }} to VS Code Marketplace (legacy ID)..."
-        npx vsce publish \
-          --packagePath "${{ steps.download_vsix.outputs.legacy_vsix_file }}" \
-          --pat "$VSCE_PAT"
+        # Skip each publish if that exact version is already live (makes re-runs safe).
+        publish_if_needed() {
+          local vsix="$1" ext_id="$2" label="$3"
+          local local_ver
+          local_ver=$(unzip -p "$vsix" extension/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+          local mkt_ver
+          mkt_ver=$(curl -sf -X POST \
+            "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=3.0-preview.1" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json;api-version=3.0-preview.1" \
+            -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$ext_id\"}]}],\"flags\":512}" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['results'][0]['extensions'][0]['versions'][0]['version'])" 2>/dev/null || echo "")
+          if [ "$local_ver" = "$mkt_ver" ]; then
+            echo "⏭️  $label v$local_ver already published — skipping."
+          else
+            echo "Publishing $vsix to VS Code Marketplace ($label)..."
+            npx vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
+          fi
+        }
 
-        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to VS Code Marketplace..."
-        npx vsce publish \
-          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
-          --pat "$VSCE_PAT"
+        publish_if_needed "${{ steps.download_vsix.outputs.legacy_vsix_file }}" "RobBos.copilot-token-tracker" "legacy ID"
+        publish_if_needed "${{ steps.download_vsix.outputs.vsix_file }}" "RobBos.ai-engineering-fluency" "new ID"
 
     - name: Publish to Open VSX Registry
       id: publish_open_vsx
@@ -477,17 +490,24 @@ jobs:
           exit 1
         fi
 
-        # Publish legacy first to release the "AI Engineering Fluency" display name,
-        # then publish the new extension which claims it.
-        echo "Publishing ${{ steps.download_vsix.outputs.legacy_vsix_file }} to Open VSX Registry (legacy ID)..."
-        npx --yes ovsx publish \
-          --packagePath "${{ steps.download_vsix.outputs.legacy_vsix_file }}" \
-          -p "$OPEN_VSX_TOKEN"
+        # Publish legacy first, then new extension. Skip if already published (re-run safe).
+        publish_if_needed() {
+          local vsix="$1" ext_id="$2" label="$3"
+          local local_ver
+          local_ver=$(unzip -p "$vsix" extension/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+          local ovsx_ver
+          ovsx_ver=$(curl -sf "https://open-vsx.org/api/$ext_id/latest" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+          if [ "$local_ver" = "$ovsx_ver" ]; then
+            echo "⏭️  $label v$local_ver already published on Open VSX — skipping."
+          else
+            echo "Publishing $vsix to Open VSX Registry ($label)..."
+            npx --yes ovsx publish --packagePath "$vsix" -p "$OPEN_VSX_TOKEN"
+          fi
+        }
 
-        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to Open VSX Registry..."
-        npx --yes ovsx publish \
-          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
-          -p "$OPEN_VSX_TOKEN"
+        publish_if_needed "${{ steps.download_vsix.outputs.legacy_vsix_file }}" "RobBos/copilot-token-tracker" "legacy ID"
+        publish_if_needed "${{ steps.download_vsix.outputs.vsix_file }}" "RobBos/ai-engineering-fluency" "new ID"
 
     - name: Publish Summary
       if: always()
