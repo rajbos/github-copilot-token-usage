@@ -18,6 +18,7 @@ import { ClaudeCodeAdapter } from '../../src/adapters/claudeCodeAdapter';
 import { ClaudeDesktopAdapter } from '../../src/adapters/claudeDesktopAdapter';
 import { VisualStudioAdapter } from '../../src/adapters/visualStudioAdapter';
 import { MistralVibeAdapter } from '../../src/adapters/mistralVibeAdapter';
+import { GeminiCliAdapter } from '../../src/adapters/geminiCliAdapter';
 import { CopilotChatAdapter } from '../../src/adapters/copilotChatAdapter';
 import { CopilotCliAdapter } from '../../src/adapters/copilotCliAdapter';
 
@@ -28,6 +29,7 @@ import { ClaudeCodeDataAccess } from '../../src/claudecode';
 import { ClaudeDesktopCoworkDataAccess } from '../../src/claudedesktop';
 import { VisualStudioDataAccess } from '../../src/visualstudio';
 import { MistralVibeDataAccess } from '../../src/mistralvibe';
+import { GeminiCliDataAccess } from '../../src/geminicli';
 
 // Stub functions for adapters requiring callbacks
 const noopEstimateTokens = (_text: string, _model?: string) => 0;
@@ -42,6 +44,7 @@ const claudeCodeDA = new ClaudeCodeDataAccess();
 const claudeDesktopDA = new ClaudeDesktopCoworkDataAccess();
 const visualStudioDA = new VisualStudioDataAccess();
 const mistralVibeDA = new MistralVibeDataAccess();
+const geminiCliDA = new GeminiCliDataAccess();
 
 const openCodeAdapter = new OpenCodeAdapter(openCodeDA);
 const crushAdapter = new CrushAdapter(crushDA);
@@ -50,12 +53,13 @@ const claudeCodeAdapter = new ClaudeCodeAdapter(claudeCodeDA);
 const claudeDesktopAdapter = new ClaudeDesktopAdapter(claudeDesktopDA, noopIsMcpTool, noopExtractMcpServerName, noopEstimateTokens);
 const visualStudioAdapter = new VisualStudioAdapter(visualStudioDA, noopEstimateTokens);
 const mistralVibeAdapter = new MistralVibeAdapter(mistralVibeDA);
+const geminiCliAdapter = new GeminiCliAdapter(geminiCliDA);
 const copilotChatAdapter = new CopilotChatAdapter();
 const copilotCliAdapter = new CopilotCliAdapter();
 
 const allAdapters: IEcosystemAdapter[] = [
     openCodeAdapter, crushAdapter, continueAdapter,
-    claudeCodeAdapter, claudeDesktopAdapter, visualStudioAdapter, mistralVibeAdapter,
+    claudeCodeAdapter, claudeDesktopAdapter, visualStudioAdapter, mistralVibeAdapter, geminiCliAdapter,
     copilotChatAdapter, copilotCliAdapter,
 ];
 
@@ -63,11 +67,11 @@ const allAdapters: IEcosystemAdapter[] = [
 // isDiscoverable type guard
 // ---------------------------------------------------------------------------
 
-test('isDiscoverable: returns true for all 9 adapters', () => {
+test('isDiscoverable: returns true for all 10 adapters', () => {
     for (const adapter of allAdapters) {
         assert.ok(isDiscoverable(adapter), `Expected ${adapter.id} to be discoverable`);
     }
-    assert.equal(allAdapters.length, 9);
+    assert.equal(allAdapters.length, 10);
 });
 
 test('isDiscoverable: returns false for plain IEcosystemAdapter without discover()', () => {
@@ -94,6 +98,7 @@ test('adapter IDs are stable lowercase identifiers', () => {
     assert.equal(claudeDesktopAdapter.id, 'claudedesktop');
     assert.equal(visualStudioAdapter.id, 'visualstudio');
     assert.equal(mistralVibeAdapter.id, 'mistralvibe');
+    assert.equal(geminiCliAdapter.id, 'geminicli');
     assert.equal(copilotChatAdapter.id, 'copilotchat');
     assert.equal(copilotCliAdapter.id, 'copilotcli');
 });
@@ -142,6 +147,15 @@ test('MistralVibeAdapter.handles: recognises ~/.vibe/logs/session paths', () => 
 
 test('MistralVibeAdapter.handles: rejects unrelated paths', () => {
     assert.ok(!mistralVibeAdapter.handles(path.join(os.homedir(), '.claude', 'projects', 'hash', 'abc.jsonl')));
+});
+
+test('GeminiCliAdapter.handles: recognises ~/.gemini session paths', () => {
+    const p = path.join(os.homedir(), '.gemini', 'tmp', 'demo-project', 'chats', 'session-abc.jsonl');
+    assert.ok(geminiCliAdapter.handles(p));
+});
+
+test('GeminiCliAdapter.handles: rejects unrelated paths', () => {
+    assert.ok(!geminiCliAdapter.handles(path.join(os.homedir(), '.gemini', 'logs.json')));
 });
 
 // ---------------------------------------------------------------------------
@@ -196,6 +210,14 @@ test('MistralVibeAdapter.getCandidatePaths: returns session log directory', () =
     assert.equal(paths[0].source, 'Mistral Vibe');
 });
 
+test('GeminiCliAdapter.getCandidatePaths: returns Gemini session and index paths', () => {
+    const paths = geminiCliAdapter.getCandidatePaths();
+    assert.equal(paths.length, 3);
+    assert.ok(paths.some(p => p.source === 'Gemini CLI (sessions)'));
+    assert.ok(paths.some(p => p.source === 'Gemini CLI (projects.json)'));
+    assert.ok(paths.some(p => p.source === 'Gemini CLI (logs.json)'));
+});
+
 // ---------------------------------------------------------------------------
 // getEditorRoot() — returns non-empty string
 // ---------------------------------------------------------------------------
@@ -223,6 +245,11 @@ test('ContinueAdapter.getEditorRoot: returns continue data directory', () => {
 test('ClaudeCodeAdapter.getEditorRoot: returns claude data directory', () => {
     const root = claudeCodeAdapter.getEditorRoot('/any/path');
     assert.ok(root.includes('.claude'));
+});
+
+test('GeminiCliAdapter.getEditorRoot: returns Gemini data directory', () => {
+    const root = geminiCliAdapter.getEditorRoot('/any/path');
+    assert.ok(root.includes('.gemini'));
 });
 
 // ---------------------------------------------------------------------------

@@ -408,6 +408,9 @@ function getEditorBadgeClass(editor: string): string {
   if (lower.includes("mistral")) {
     return "editor-badge editor-badge-mistral-vibe";
   }
+  if (lower.includes("gemini")) {
+    return "editor-badge editor-badge-gemini-cli";
+  }
   if (lower.includes("crush")) {
     return "editor-badge editor-badge-crush";
   }
@@ -427,6 +430,9 @@ function getEditorIcon(editor: string): string {
   }
   if (lower.includes("mistral")) {
     return "🔥";
+  }
+  if (lower.includes("gemini")) {
+    return "💎";
   }
   if (lower.includes("crush")) {
     return "🩷";
@@ -1084,6 +1090,7 @@ function renderFolderAnalyzerTab(): string {
           <option value="copilot-chat">💙 GitHub Copilot Chat (VS Code)</option>
           <option value="copilot-cli">🤖 GitHub Copilot CLI</option>
           <option value="claude-code">🟣 Claude Code (.jsonl only)</option>
+          <option value="gemini-cli">💎 Gemini CLI (.jsonl only)</option>
           <option value="continue">⚡ Continue</option>
           <option value="opencode">🟢 OpenCode (JSON format only — DB not supported)</option>
           <option value="mistral-vibe">🔥 Mistral Vibe</option>

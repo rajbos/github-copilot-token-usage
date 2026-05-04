@@ -13,7 +13,9 @@
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension",
 				"--disable-extension",
-				"RobBos.ai-engineering-fluency"
+				"RobBos.ai-engineering-fluency",
+				"--disable-extension",
+				"RobBos.copilot-token-tracker"
 			],
 			"outFiles": [
 				"${workspaceFolder}/vscode-extension/dist/**/*.js"

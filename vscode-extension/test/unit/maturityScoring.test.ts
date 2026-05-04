@@ -42,7 +42,7 @@ function emptyPeriod(): UsageAnalysisPeriod {
             file: 0, selection: 0, implicitSelection: 0, symbol: 0, codebase: 0,
             workspace: 0, terminal: 0, vscode: 0, terminalLastCommand: 0,
             terminalSelection: 0, clipboard: 0, changes: 0, outputPanel: 0,
-            problemsPanel: 0, byKind: {}, byPath: {}, copilotInstructions: 0, agentsMd: 0,
+            problemsPanel: 0, pullRequest: 0, byKind: {}, byPath: {}, copilotInstructions: 0, agentsMd: 0,
         },
         mcpTools: { total: 0, byServer: {}, byTool: {} },
         modelSwitching: {

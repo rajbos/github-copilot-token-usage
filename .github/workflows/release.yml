@@ -44,7 +44,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
       with:
         egress-policy: audit
 
@@ -268,6 +268,7 @@ jobs:
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
           pkg.name = 'copilot-token-tracker';
+          pkg.displayName = 'AI Engineering Fluency (Deprecated)';
           fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
         npx vsce package
@@ -275,6 +276,7 @@ jobs:
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
           pkg.name = 'ai-engineering-fluency';
+          pkg.displayName = 'AI Engineering Fluency';
           fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
 
@@ -376,7 +378,7 @@ jobs:
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
       with:
         egress-policy: audit
 
@@ -452,14 +454,16 @@ jobs:
           exit 1
         fi
         
-        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to VS Code Marketplace..."
-        npx vsce publish \
-          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
-          --pat "$VSCE_PAT"
-        
+        # Publish legacy first to release the "AI Engineering Fluency" display name,
+        # then publish the new extension which claims it.
         echo "Publishing ${{ steps.download_vsix.outputs.legacy_vsix_file }} to VS Code Marketplace (legacy ID)..."
         npx vsce publish \
           --packagePath "${{ steps.download_vsix.outputs.legacy_vsix_file }}" \
+          --pat "$VSCE_PAT"
+
+        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to VS Code Marketplace..."
+        npx vsce publish \
+          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
           --pat "$VSCE_PAT"
 
     - name: Publish to Open VSX Registry
@@ -473,14 +477,16 @@ jobs:
           exit 1
         fi
 
-        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to Open VSX Registry..."
-        npx --yes ovsx publish \
-          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
-          -p "$OPEN_VSX_TOKEN"
-
+        # Publish legacy first to release the "AI Engineering Fluency" display name,
+        # then publish the new extension which claims it.
         echo "Publishing ${{ steps.download_vsix.outputs.legacy_vsix_file }} to Open VSX Registry (legacy ID)..."
         npx --yes ovsx publish \
           --packagePath "${{ steps.download_vsix.outputs.legacy_vsix_file }}" \
+          -p "$OPEN_VSX_TOKEN"
+
+        echo "Publishing ${{ steps.download_vsix.outputs.vsix_file }} to Open VSX Registry..."
+        npx --yes ovsx publish \
+          --packagePath "${{ steps.download_vsix.outputs.vsix_file }}" \
           -p "$OPEN_VSX_TOKEN"
 
     - name: Publish Summary
@@ -527,7 +533,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
       with:
         egress-policy: audit
 

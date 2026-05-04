@@ -360,6 +360,7 @@ export function getEditorNameFromRoot(rootPath: string): string {
 	if (lower.includes('opencode')) { return 'OpenCode'; }
 	if (lower.includes('.continue')) { return 'Continue'; }
 	if (lower.includes('.vibe')) { return 'Mistral Vibe'; }
+	if (lower.includes('.gemini')) { return 'Gemini CLI'; }
 	if (lower.includes('code - insiders') || lower.includes('code-insiders') || lower.includes('insiders')) { return 'VS Code Insiders'; }
 	if (lower.includes('code - exploration') || lower.includes('code%20-%20exploration')) { return 'VS Code Exploration'; }
 	if (lower.includes('vscodium')) { return 'VSCodium'; }
@@ -731,6 +732,9 @@ export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: 
 	if (normalizedPath.includes('/.vibe/logs/session/')) {
 		return 'Mistral Vibe';
 	}
+	if (normalizedPath.includes('/.gemini/tmp/') && normalizedPath.includes('/chats/session-') && normalizedPath.endsWith('.jsonl')) {
+		return 'Gemini CLI';
+	}
 	if (normalizedPath.includes('/code - insiders/') || normalizedPath.includes('/code%20-%20insiders/')) {
 		return 'VS Code Insiders';
 	}
@@ -772,6 +776,7 @@ export function detectEditorSource(filePath: string, isOpenCodeSessionFile?: (p:
 	if (lowerPath.includes('/local-agent-mode-sessions/')) { return 'Claude Desktop Cowork'; }
 	if (lowerPath.includes('/.claude/projects/')) { return 'Claude Code'; }
 	if (lowerPath.includes('/.vibe/logs/session/')) { return 'Mistral Vibe'; }
+	if (lowerPath.includes('/.gemini/tmp/') && lowerPath.includes('/chats/session-') && lowerPath.endsWith('.jsonl')) { return 'Gemini CLI'; }
 	if (lowerPath.includes('cursor')) { return 'Cursor'; }
 	if (lowerPath.includes('code - insiders') || lowerPath.includes('code-insiders')) { return 'VS Code Insiders'; }
 	if (lowerPath.includes('vscodium')) { return 'VSCodium'; }

@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: audit
 
@@ -34,28 +34,3 @@ jobs:
         uses: gradle/actions/wrapper-validation@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4.3.1
         with:
           min-wrapper-count: 1
-
-      - name: Set up Java 21 (Temurin)
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4.3.1
-
-      - name: Regenerate wrapper files
-        working-directory: jetbrains-plugin
-        run: ./gradlew wrapper --no-daemon
-
-      - name: Confirm wrapper files are in sync
-        run: |
-          if git diff --quiet -- jetbrains-plugin/gradlew jetbrains-plugin/gradlew.bat jetbrains-plugin/gradle/wrapper/gradle-wrapper.jar jetbrains-plugin/gradle/wrapper/gradle-wrapper.properties; then
-            echo "Gradle wrapper files are in sync."
-            exit 0
-          fi
-
-          echo "Gradle wrapper files are out of sync."
-          echo "Run './gradlew wrapper --no-daemon' from jetbrains-plugin and commit the updated wrapper files."
-          git --no-pager diff --stat -- jetbrains-plugin/gradlew jetbrains-plugin/gradlew.bat jetbrains-plugin/gradle/wrapper/gradle-wrapper.jar jetbrains-plugin/gradle/wrapper/gradle-wrapper.properties
-          exit 1

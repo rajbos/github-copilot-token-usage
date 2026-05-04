@@ -206,6 +206,7 @@ To test and debug the extension in a local VS Code environment:
 3. **Press `F5`** in VS Code to launch the Extension Development Host
    - This opens a new VS Code window with the extension running
    - The original window shows debug output and allows you to set breakpoints
+   - The launch profile disables both published extension IDs so the dev build does not fight an installed marketplace copy for the same commands
 
 4. **In the Extension Development Host window:**
    - The extension will be active and you'll see the token tracker in the status bar

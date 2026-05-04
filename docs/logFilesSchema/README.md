@@ -91,7 +91,7 @@ Claude Code (Anthropic's CLI/IDE extension) writes sessions to `~/.claude/projec
 
 See `claude-code-session-schema.json` for full details.
 
-### Gemini CLI Format (Observed, not yet integrated)
+### Gemini CLI Format
 
 An observed Windows Gemini CLI installation wrote sessions to:
 
@@ -99,7 +99,7 @@ An observed Windows Gemini CLI installation wrote sessions to:
 ~/.gemini/tmp/<project>/chats/session-*.jsonl
 ```
 
-The observed format contains:
+The integrated Gemini CLI support is based on the observed format, which contains:
 
 - session metadata in a header line
 - `user` turn records with plain-text prompts
