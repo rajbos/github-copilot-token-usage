@@ -15,7 +15,7 @@ on:
       - 'jetbrains-plugin/gradle/wrapper/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate-gradle-wrapper:
@@ -29,6 +29,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Validate Gradle wrapper JAR
         uses: gradle/actions/wrapper-validation@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4.3.1
@@ -55,7 +57,16 @@ jobs:
             exit 0
           fi
 
-          echo "Gradle wrapper files are out of sync."
-          echo "Run './gradlew wrapper --no-daemon' from jetbrains-plugin and commit the updated wrapper files."
-          git --no-pager diff --stat -- jetbrains-plugin/gradlew jetbrains-plugin/gradlew.bat jetbrains-plugin/gradle/wrapper/gradle-wrapper.jar jetbrains-plugin/gradle/wrapper/gradle-wrapper.properties
-          exit 1
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Gradle wrapper files are out of sync. Auto-committing updates to PR branch..."
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add jetbrains-plugin/gradlew jetbrains-plugin/gradlew.bat jetbrains-plugin/gradle/wrapper/gradle-wrapper.jar jetbrains-plugin/gradle/wrapper/gradle-wrapper.properties
+            git commit -m "chore: sync gradle wrapper files after version bump"
+            git push
+          else
+            echo "Gradle wrapper files are out of sync."
+            echo "Run './gradlew wrapper --no-daemon' from jetbrains-plugin and commit the updated wrapper files."
+            git --no-pager diff --stat -- jetbrains-plugin/gradlew jetbrains-plugin/gradlew.bat jetbrains-plugin/gradle/wrapper/gradle-wrapper.jar jetbrains-plugin/gradle/wrapper/gradle-wrapper.properties
+            exit 1
+          fi
