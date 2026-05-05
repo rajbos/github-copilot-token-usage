@@ -966,16 +966,17 @@ function renderTeamServerPanel(teamInfo: TeamServerInfo, githubAuth?: GitHubAuth
     </div>
 
     ${githubNotAuthenticated ? `
-    <div style="margin-bottom: 16px; padding: 12px 16px; background: rgba(217, 119, 6, 0.15); border: 1px solid #d97706; border-radius: 6px; display: flex; gap: 10px; align-items: flex-start;">
+    <button id="btn-team-server-auth-warning" style="width: 100%; margin-bottom: 16px; padding: 12px 16px; background: rgba(217, 119, 6, 0.15); border: 1px solid #d97706; border-radius: 6px; display: flex; gap: 10px; align-items: center; cursor: pointer; text-align: left;" title="Click to sign in to GitHub">
       <span style="font-size: 18px; flex-shrink: 0;">⚠️</span>
-      <div>
+      <div style="flex: 1;">
         <div style="color: #fbbf24; font-weight: 600; font-size: 13px; margin-bottom: 4px;">GitHub Authentication Required</div>
         <div style="color: #d4a017; font-size: 12px;">
           Team server sync will not run until you sign in to GitHub.
-          Go to the <strong>GitHub</strong> tab to authenticate.
+          <strong style="color: #fbbf24;">Click here to sign in.</strong>
         </div>
       </div>
-    </div>
+      <span style="color: #fbbf24; font-size: 18px; flex-shrink: 0;">→</span>
+    </button>
     ` : ''}
 
     <div class="summary-cards">
@@ -2029,6 +2030,12 @@ function renderLayout(data: DiagnosticsData): void {
         const currentState = vscode.getState() ?? {};
         vscode.setState({ ...currentState, activeTab: "backend", activeSubtab: "backend-teamserver" });
         vscode.postMessage({ command: "configureTeamServer" });
+      });
+
+    document
+      .getElementById("btn-team-server-auth-warning")
+      ?.addEventListener("click", () => {
+        vscode.postMessage({ command: "authenticateGitHub" });
       });
 
     document
