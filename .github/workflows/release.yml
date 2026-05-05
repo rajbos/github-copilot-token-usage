@@ -258,7 +258,9 @@ jobs:
     - name: Create VSIX package
       if: inputs.vs_only != true
       working-directory: vscode-extension
-      run: npx vsce package
+      # --baseImagesUrl ensures relative image paths in README.md resolve correctly
+      # on the marketplace for this monorepo (extension root ≠ repo root).
+      run: npx vsce package --baseImagesUrl https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/vscode-extension
       
     # Legacy VSIX creation disabled — migration flow is complete, no longer publishing copilot-token-tracker.
     # - name: Create legacy VSIX (copilot-token-tracker)
