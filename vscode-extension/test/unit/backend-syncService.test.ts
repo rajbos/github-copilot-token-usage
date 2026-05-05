@@ -1137,6 +1137,48 @@ test('acquireSyncLock breaks stale lock', async () => {
 	}
 });
 
+test('acquireSyncLock returns false when same server URL is locked by another session', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		fs.writeFileSync(lockPath, JSON.stringify({
+			sessionId: 'other-session',
+			timestamp: Date.now(),
+			serverUrl: 'https://mystorage.table.core.windows.net',
+		}));
+
+		const mockContext = { globalStorageUri: { fsPath: dir } };
+		const svc = makeService({ context: mockContext as any });
+
+		const acquired = await (svc as any).acquireSyncLock(undefined, 'https://mystorage.table.core.windows.net');
+		assert.equal(acquired, false, 'should be blocked when same server URL is locked');
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('acquireSyncLock returns true when lock is held for a different server URL', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		// Simulate VS Code stable holding the lock for server A
+		fs.writeFileSync(lockPath, JSON.stringify({
+			sessionId: 'other-session',
+			timestamp: Date.now(),
+			serverUrl: 'https://server-a.table.core.windows.net',
+		}));
+
+		const mockContext = { globalStorageUri: { fsPath: dir } };
+		const svc = makeService({ context: mockContext as any });
+
+		// VS Code Insiders is configured for server B — should not be blocked
+		const acquired = await (svc as any).acquireSyncLock(undefined, 'https://server-b.table.core.windows.net');
+		assert.equal(acquired, true, 'should be allowed when lock is for a different server URL');
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test('releaseSyncLock does nothing when no context', async () => {
 	const svc = makeService({ context: undefined });
 	// Should not throw
