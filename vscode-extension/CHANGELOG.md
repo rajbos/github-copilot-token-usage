@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-05
+
+### Bug Fixes
+- Fixed Cowork (Claude) token over-count caused by duplicate `requestId` entries in `buildTurns` — each request is now counted exactly once (#790)
+- Fixed sharing server sync being skipped when Azure Storage sync fails — both backends now sync independently (#789)
+
 ## [0.4.3] - 2026-05-05
 
 ### Bug Fixes
