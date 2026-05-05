@@ -127,6 +127,7 @@ test('listAllEntitiesForRange parses partition and row keys correctly', async ()
 		entities: [{
 			partitionKey: 'myDataset|2024-06-15',
 			rowKey: 'gpt-4o|ws1|m1|user1',
+			day: '2024-06-15',
 			inputTokens: 500,
 			outputTokens: 1000,
 			interactions: 10,
@@ -147,12 +148,34 @@ test('listAllEntitiesForRange parses partition and row keys correctly', async ()
 	assert.equal(result[0].userId, 'user1');
 });
 
+test('listAllEntitiesForRange uses day field range filter (not Timestamp)', async () => {
+	const svc = makeService();
+	let capturedFilter = '';
+	const mockClient: TableClientLike = {
+		async *listEntities(options: any) {
+			capturedFilter = options?.queryOptions?.filter ?? '';
+			yield { partitionKey: 'ds:myds|d:2024-06-15', rowKey: 'm:gpt-4o|w:ws1|mc:m1|u:u1', day: '2024-06-15', inputTokens: 100, outputTokens: 200, interactions: 1 };
+		},
+		upsertEntity: async () => ({}),
+		deleteEntity: async () => ({}),
+	};
+
+	await svc.listAllEntitiesForRange({ tableClient: mockClient, startDayKey: '2024-06-10', endDayKey: '2024-06-20' });
+
+	// Verify the filter uses `day` field (not Timestamp which is incompatible with Cosmos DB Tables API)
+	assert.ok(capturedFilter.includes("day ge '2024-06-10'"), `Expected day ge filter, got: ${capturedFilter}`);
+	assert.ok(capturedFilter.includes("day le '2024-06-20'"), `Expected day le filter, got: ${capturedFilter}`);
+	assert.ok(!capturedFilter.includes('Timestamp'), `Filter should not use Timestamp: ${capturedFilter}`);
+	assert.ok(!capturedFilter.includes("datetime'"), `Filter should not use datetime type annotation: ${capturedFilter}`);
+});
+
 test('listAllEntitiesForRange includes fluency metrics when present', async () => {
 	const svc = makeService();
 	const mockClient = makeMockTableClient({
 		entities: [{
 			partitionKey: 'ds1|2024-06-15',
 			rowKey: 'gpt-4o|ws1|m1|',
+			day: '2024-06-15',
 			inputTokens: 100,
 			outputTokens: 200,
 			interactions: 5,

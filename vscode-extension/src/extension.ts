@@ -6077,7 +6077,7 @@ ${hashtag}`;
       const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
       const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
       const machineId = (entity.machineId ?? "").toString().replace(/^mc:/, ""); // Strip mc: prefix
-      const workspaceId = (entity.workspaceId ?? "").toString();
+      const workspaceId = (entity.workspaceId ?? "").toString().replace(/^w:/, ""); // Strip w: prefix
       const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
       const inputTokens = Number.isFinite(Number(entity.inputTokens))
         ? Number(entity.inputTokens)
