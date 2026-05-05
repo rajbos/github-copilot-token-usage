@@ -96,11 +96,18 @@ export class ClaudeDesktopAdapter implements IEcosystemAdapter, IDiscoverableEco
 			const toolCalls: { toolName: string; arguments?: string }[] = [];
 			const mcpTools: { server: string; tool: string }[] = [];
 
+			// The Cowork JSONL writes one event per content block for each API call,
+			// so multiple events may share the same requestId with identical usage counts.
+			// Deduplicate by requestId to avoid counting tokens multiple times per API call.
+			const seenRequestIds = new Set<string>();
 			for (const ae of pendingAssistantEvents) {
 				const msg = ae.message;
 				if (!model && msg?.model) { model = msg.model; }
+				const reqId = ae.requestId as string | undefined;
+				const isFirstOccurrence = !reqId || !seenRequestIds.has(reqId);
+				if (reqId) { seenRequestIds.add(reqId); }
 				const usage = msg?.usage;
-				if (usage) {
+				if (usage && isFirstOccurrence) {
 					actualInputTokens += (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
 					actualOutputTokens += usage.output_tokens || 0;
 				}
