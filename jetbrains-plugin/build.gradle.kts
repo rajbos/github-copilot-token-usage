@@ -72,16 +72,17 @@ intellijPlatform {
 // Copies the prebuilt artefacts produced by the other monorepo projects into
 // the resources directory so they end up on the plugin classpath:
 //
-//   vscode-extension/dist/webview/*.js                  -> resources/webview/
-//   visualstudio-extension/.../vscode-shim.js           -> resources/webview/
-//   cli/dist/copilot-token-tracker.exe (+ sql-wasm.wasm) -> resources/cli-bundle/win-x64/
-//   cli/dist/copilot-token-tracker-macos                -> resources/cli-bundle/darwin-x64/
-//   cli/dist/copilot-token-tracker-linux                -> resources/cli-bundle/linux-x64/
+//   vscode-extension/dist/webview/*.js                      -> resources/webview/
+//   visualstudio-extension/.../vscode-shim.js               -> resources/webview/
+//   cli/dist/copilot-token-tracker.exe (+ sql-wasm.wasm)    -> resources/cli-bundle/win-x64/
+//   cli/dist/copilot-token-tracker-macos-arm64              -> resources/cli-bundle/darwin-arm64/
+//   cli/dist/copilot-token-tracker-macos-x64                -> resources/cli-bundle/darwin-x64/
+//   cli/dist/copilot-token-tracker-linux                    -> resources/cli-bundle/linux-x64/
 //
-// The macOS/Linux binaries are produced by an extended bundle-exe script (see
-// jetbrains-plugin/README.md). Missing files are tolerated so the plugin can
-// still build with only the OS bundles that are currently available — at
-// runtime CliBridge surfaces a clear error if the user's OS isn't covered.
+// The macOS/Linux binaries are produced by the CI pipeline (see jetbrains-publish.yml).
+// Missing files are tolerated so the plugin can still build with only the OS bundles
+// that are currently available — at runtime CliBridge surfaces a clear error if the
+// user's OS isn't covered.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val prepareBundledAssets by tasks.registering(Copy::class) {
@@ -108,9 +109,16 @@ val prepareBundledAssets by tasks.registering(Copy::class) {
         include("copilot-token-tracker.exe", "sql-wasm.wasm")
         into("cli-bundle/win-x64")
     }
+    // ARM64 macOS binary — built on an ARM64 runner (macos-15) by CI.
     from("$repoRoot/cli/dist") {
-        include("copilot-token-tracker-macos", "sql-wasm.wasm")
-        rename("copilot-token-tracker-macos", "copilot-token-tracker")
+        include("copilot-token-tracker-macos-arm64", "sql-wasm.wasm")
+        rename("copilot-token-tracker-macos-arm64", "copilot-token-tracker")
+        into("cli-bundle/darwin-arm64")
+    }
+    // Intel x64 macOS binary — built on an x64 runner (macos-13) by CI.
+    from("$repoRoot/cli/dist") {
+        include("copilot-token-tracker-macos-x64", "sql-wasm.wasm")
+        rename("copilot-token-tracker-macos-x64", "copilot-token-tracker")
         into("cli-bundle/darwin-x64")
     }
     from("$repoRoot/cli/dist") {

@@ -80,17 +80,22 @@ Or, equivalently, use the orchestrator:
 
 ### macOS / Linux CLI binaries
 
-Out of the box `cli/bundle-exe.ps1` only produces the Windows `.exe`. To
-ship a fully cross-platform plugin, the bundle script must be extended to
-also emit:
+The CI pipeline in `.github/workflows/jetbrains-publish.yml` produces all
+platform binaries automatically:
 
-* `cli/dist/copilot-token-tracker-macos`
-* `cli/dist/copilot-token-tracker-linux`
+| OS | Runner | Output file |
+|----|--------|-------------|
+| macOS ARM64 (Apple Silicon) | `macos-15` | `copilot-token-tracker-macos-arm64` |
+| macOS x64 (Intel) | `macos-13` | `copilot-token-tracker-macos-x64` |
+| Linux x64 | `ubuntu-latest` | `copilot-token-tracker-linux` |
 
-These are produced via Node SEA + `postject` against the matching Node
-binary downloads. CI is the natural place to do this (one job per OS,
-artifacts uploaded into the plugin resources). Until then, the Gradle build
-silently omits the missing binaries and the plugin only works on Windows.
+`CliBridge.kt` detects the JVM runtime architecture at startup and selects
+`darwin-arm64` for ARM64 JVMs (Apple Silicon running IntelliJ natively) or
+`darwin-x64` for x64 JVMs (Intel Macs, or Apple Silicon running IntelliJ
+under Rosetta 2).
+
+Until then, the Gradle build silently omits any missing binary and the plugin
+surfaces a clear error message if the user's OS/arch is not covered.
 
 ## Running and debugging
 

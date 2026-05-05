@@ -1,6 +1,8 @@
 package com.github.rajbos.aiengineeringfluency
 
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.io.createDirectories
 import java.io.IOException
@@ -138,6 +140,14 @@ object CliBridge {
      * Returns the path to the extracted CLI binary, extracting it on first use.
      * Cached for the lifetime of the IDE so repeated calls are cheap.
      */
+
+    /** Plugin version string, used to version the extraction directory so upgrades don't reuse stale binaries. */
+    private val pluginVersion: String by lazy {
+        PluginManagerCore.getPlugin(PluginId.getId("com.github.rajbos.ai-engineering-fluency"))
+            ?.version
+            ?: "unknown"
+    }
+
     private fun ensureExtracted(): Path {
         cachedExePath?.let { return it }
         synchronized(this) {
@@ -147,7 +157,9 @@ object CliBridge {
             val exeName = if (SystemInfo.isWindows) "copilot-token-tracker.exe" else "copilot-token-tracker"
             val resourcePrefix = "/cli-bundle/$osDir"
 
-            val targetDir = Path.of(System.getProperty("java.io.tmpdir"), "ai-engineering-fluency", osDir)
+            // Include plugin version in the path so each upgrade extracts a fresh copy
+            // instead of reusing a potentially stale binary from a previous version.
+            val targetDir = Path.of(System.getProperty("java.io.tmpdir"), "ai-engineering-fluency", pluginVersion, osDir)
             targetDir.createDirectories()
 
             val exePath = copyResource("$resourcePrefix/$exeName", targetDir.resolve(exeName))
@@ -195,9 +207,21 @@ object CliBridge {
 
     private fun osBundleDir(): String = when {
         SystemInfo.isWindows -> "win-x64"
-        SystemInfo.isMac -> "darwin-x64"   // x64 binary runs on Apple Silicon under Rosetta until we ship arm64
+        SystemInfo.isMac -> if (isArm64Runtime()) "darwin-arm64" else "darwin-x64"
         SystemInfo.isLinux -> "linux-x64"
         else -> throw IllegalStateException("Unsupported OS: ${SystemInfo.OS_NAME}")
+    }
+
+    /**
+     * Returns true when this JVM process is running as an ARM64 (aarch64) binary.
+     *
+     * On Apple Silicon Macs running IntelliJ under Rosetta 2, [System.getProperty]
+     * returns "x86_64", so the x64 CLI bundle is correctly selected in that scenario.
+     * Only a natively-running ARM64 JVM returns "aarch64" here.
+     */
+    private fun isArm64Runtime(): Boolean {
+        val arch = System.getProperty("os.arch", "")
+        return arch.equals("aarch64", ignoreCase = true) || arch.equals("arm64", ignoreCase = true)
     }
 
     /**
