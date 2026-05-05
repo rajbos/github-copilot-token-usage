@@ -176,7 +176,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 44; // Add tool.execution_complete token counting for CLI sessions
+	private static readonly CACHE_VERSION = 45; // Fix Cowork token double-counting: deduplicate by requestId in buildTurns
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 

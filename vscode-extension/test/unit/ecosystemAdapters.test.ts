@@ -1,12 +1,14 @@
 /**
  * Unit tests for ecosystem adapters and the IDiscoverableEcosystem interface.
  * Tests cover: isDiscoverable type guard, handles(), getCandidatePaths(),
- * getEditorRoot(), and discover() adapter loop behavior.
+ * getEditorRoot(), discover() adapter loop behavior, and ClaudeDesktopAdapter
+ * buildTurns() token deduplication for Cowork JSONL sessions.
  */
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import * as fs from 'node:fs';
 
 import { isDiscoverable } from '../../src/ecosystemAdapter';
 import type { IEcosystemAdapter } from '../../src/ecosystemAdapter';
@@ -330,4 +332,138 @@ test('extractClaudeSlashCommand: handles array content blocks', () => {
 test('extractClaudeSlashCommand: ignores slash commands not at the start', () => {
     assert.equal(extractClaudeSlashCommand('some text\n/review'), null);
     assert.equal(extractClaudeSlashCommand('prefix /review'), null);
+});
+
+// ---------------------------------------------------------------------------
+// ClaudeDesktopAdapter.buildTurns() — requestId deduplication
+// ---------------------------------------------------------------------------
+
+test('ClaudeDesktopAdapter.buildTurns: counts tokens once per requestId (dedup split content blocks)', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-test-'));
+    const sessionFile = path.join(tmpDir, 'session.jsonl');
+    try {
+        // Simulate Cowork JSONL: one API call (req_001) split into two events —
+        // first event has the thinking block, second has the text block.
+        // Both share the same requestId and identical token counts.
+        const events = [
+            { type: 'user', isSidechain: false, message: { role: 'user', content: 'Hello' } },
+            {
+                type: 'assistant', requestId: 'req_001',
+                message: {
+                    role: 'assistant', stop_reason: 'end_turn',
+                    usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'thinking', thinking: 'thoughts' }],
+                },
+            },
+            {
+                type: 'assistant', requestId: 'req_001',
+                message: {
+                    role: 'assistant', stop_reason: 'end_turn',
+                    usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'text', text: 'Hello there!' }],
+                },
+            },
+        ];
+        fs.writeFileSync(sessionFile, events.map(e => JSON.stringify(e)).join('\n'));
+
+        const { turns } = await claudeDesktopAdapter.buildTurns(sessionFile);
+        assert.equal(turns.length, 1, 'Should produce exactly 1 turn');
+        const turn = turns[0];
+        // Tokens should be counted ONCE (100 input + 50 output = 150), not doubled
+        assert.equal(turn.actualUsage?.promptTokens, 100, 'Input tokens should not be doubled');
+        assert.equal(turn.actualUsage?.completionTokens, 50, 'Output tokens should not be doubled');
+        assert.equal(turn.inputTokensEstimate, 100);
+        assert.equal(turn.outputTokensEstimate, 50);
+        // Text from second event should still be collected
+        assert.equal(turn.assistantResponse, 'Hello there!');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('ClaudeDesktopAdapter.buildTurns: collects tool calls from all content-block events of same requestId', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-test-'));
+    const sessionFile = path.join(tmpDir, 'session.jsonl');
+    try {
+        // One API call (req_001) split into 3 events: thinking, tool_use A, tool_use B
+        const events = [
+            { type: 'user', isSidechain: false, message: { role: 'user', content: 'Do stuff' } },
+            {
+                type: 'assistant', requestId: 'req_001',
+                message: {
+                    role: 'assistant', stop_reason: 'tool_use',
+                    usage: { input_tokens: 200, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'thinking', thinking: 'planning' }],
+                },
+            },
+            {
+                type: 'assistant', requestId: 'req_001',
+                message: {
+                    role: 'assistant', stop_reason: 'tool_use',
+                    usage: { input_tokens: 200, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'tool_use', id: 'tool_A', name: 'Read', input: { path: '/tmp/a' } }],
+                },
+            },
+            {
+                type: 'assistant', requestId: 'req_001',
+                message: {
+                    role: 'assistant', stop_reason: 'tool_use',
+                    usage: { input_tokens: 200, output_tokens: 30, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'tool_use', id: 'tool_B', name: 'Write', input: { path: '/tmp/b', content: 'x' } }],
+                },
+            },
+        ];
+        fs.writeFileSync(sessionFile, events.map(e => JSON.stringify(e)).join('\n'));
+
+        const { turns } = await claudeDesktopAdapter.buildTurns(sessionFile);
+        assert.equal(turns.length, 1);
+        const turn = turns[0];
+        // Tokens counted once (not 3x)
+        assert.equal(turn.actualUsage?.promptTokens, 200);
+        assert.equal(turn.actualUsage?.completionTokens, 30);
+        // Both tool calls should be present (from events 2 and 3)
+        assert.equal(turn.toolCalls.length, 2, 'Both tool calls should be collected');
+        assert.ok(turn.toolCalls.some(tc => tc.toolName === 'Read'), 'Should include Read tool call');
+        assert.ok(turn.toolCalls.some(tc => tc.toolName === 'Write'), 'Should include Write tool call');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('ClaudeDesktopAdapter.buildTurns: unique requestIds across turns sum correctly', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-test-'));
+    const sessionFile = path.join(tmpDir, 'session.jsonl');
+    try {
+        // Two user turns, each with one API call (no duplicates)
+        const events = [
+            { type: 'user', isSidechain: false, message: { role: 'user', content: 'Turn 1' } },
+            {
+                type: 'assistant', requestId: 'req_A',
+                message: {
+                    role: 'assistant', stop_reason: 'end_turn',
+                    usage: { input_tokens: 100, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'text', text: 'Response 1' }],
+                },
+            },
+            { type: 'user', isSidechain: false, message: { role: 'user', content: 'Turn 2' } },
+            {
+                type: 'assistant', requestId: 'req_B',
+                message: {
+                    role: 'assistant', stop_reason: 'end_turn',
+                    usage: { input_tokens: 150, output_tokens: 25, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+                    content: [{ type: 'text', text: 'Response 2' }],
+                },
+            },
+        ];
+        fs.writeFileSync(sessionFile, events.map(e => JSON.stringify(e)).join('\n'));
+
+        const { turns } = await claudeDesktopAdapter.buildTurns(sessionFile);
+        assert.equal(turns.length, 2);
+        assert.equal(turns[0].actualUsage?.promptTokens, 100);
+        assert.equal(turns[0].actualUsage?.completionTokens, 20);
+        assert.equal(turns[1].actualUsage?.promptTokens, 150);
+        assert.equal(turns[1].actualUsage?.completionTokens, 25);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
 });
