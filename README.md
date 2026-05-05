@@ -85,6 +85,8 @@ void --install-extension RobBos.ai-engineering-fluency
 
 📖 [Full VS Code extension documentation](docs/vscode-extension/README.md)
 
+> **Previously known as `copilot-token-tracker` (deprecated):** [![legacy installs](https://badgen.net/vs-marketplace/i/RobBos.copilot-token-tracker)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker) — If you still have it installed, the extension will prompt you to migrate.
+
 ---
 
 ### 🐦 JetBrains IDE Plugin
