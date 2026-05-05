@@ -465,13 +465,14 @@ jobs:
           local vsix="$1" ext_id="$2" label="$3"
           local local_ver
           local_ver=$(unzip -p "$vsix" extension/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
-          local mkt_ver
-          mkt_ver=$(curl -sf -X POST \
+          local mkt_json mkt_ver
+          mkt_json=$(curl -sf -X POST \
             "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=3.0-preview.1" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json;api-version=3.0-preview.1" \
             -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$ext_id\"}]}],\"flags\":512}" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['results'][0]['extensions'][0]['versions'][0]['version'])" 2>/dev/null || echo "")
+            2>/dev/null || echo "")
+          mkt_ver=$(echo "$mkt_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['results'][0]['extensions'][0]['versions'][0]['version'])" 2>/dev/null || echo "")
           if [ "$local_ver" = "$mkt_ver" ]; then
             echo "⏭️  $label v$local_ver already published — skipping."
           else
@@ -500,9 +501,10 @@ jobs:
           local vsix="$1" ext_id="$2" label="$3"
           local local_ver
           local_ver=$(unzip -p "$vsix" extension/package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
-          local ovsx_ver
-          ovsx_ver=$(curl -sf "https://open-vsx.org/api/$ext_id/latest" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+          local ovsx_json ovsx_ver
+          ovsx_json=$(curl -sf "https://open-vsx.org/api/$ext_id/latest" \
+            2>/dev/null || echo "")
+          ovsx_ver=$(echo "$ovsx_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
           if [ "$local_ver" = "$ovsx_ver" ]; then
             echo "⏭️  $label v$local_ver already published on Open VSX — skipping."
           else
