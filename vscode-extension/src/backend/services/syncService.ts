@@ -122,20 +122,26 @@ export class SyncService {
 	/**
 	 * Try to acquire an exclusive file lock so only one VS Code window
 	 * can run a backend sync at a time.
+	 *
+	 * If the existing lock was written by an instance configured against a
+	 * *different* server URL, the lock does not apply — both instances are
+	 * syncing to independent endpoints and should not block each other.
 	 */
-	private async acquireSyncLock(backend?: string): Promise<boolean> {
+	private async acquireSyncLock(backend?: string, serverUrl?: string): Promise<boolean> {
 		const ctx = this.deps.context;
 		if (!ctx) { return true; } // No context → allow (tests)
 		// Use a backend-specific lock so Azure and sharingServer syncs don't block each other.
 		const suffix = backend === 'sharingServer' ? '_sharingserver' : '';
 		const lockPath = path.join(ctx.globalStorageUri.fsPath, `backend_sync${suffix}.lock`);
+		const lockContent = JSON.stringify({
+			sessionId: vscode.env.sessionId,
+			timestamp: Date.now(),
+			serverUrl,
+		});
 		try {
 			await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
 			const fd = await fs.promises.open(lockPath, 'wx');
-			await fd.writeFile(JSON.stringify({
-				sessionId: vscode.env.sessionId,
-				timestamp: Date.now()
-			}));
+			await fd.writeFile(lockContent);
 			await fd.close();
 			return true;
 		} catch (err: any) {
@@ -143,19 +149,21 @@ export class SyncService {
 				this.deps.warn(`Sync lock: unexpected error acquiring lock: ${err.message}`);
 				return false;
 			}
-			// Lock file exists — check if stale
+			// Lock file exists — check if it belongs to a different server or is stale
 			try {
 				const content = await fs.promises.readFile(lockPath, 'utf-8');
 				const lock = JSON.parse(content);
+				// Different server URL → the lock does not apply to this instance.
+				if (serverUrl && lock.serverUrl && lock.serverUrl !== serverUrl) {
+					this.deps.log(`Sync lock: lock is held for a different server (${lock.serverUrl}), proceeding for ${serverUrl}`);
+					return true;
+				}
 				if (Date.now() - lock.timestamp > SyncService.SYNC_LOCK_STALE_MS) {
 					this.deps.log('Sync lock: breaking stale lock from another window');
 					await fs.promises.unlink(lockPath);
 					try {
 						const fd = await fs.promises.open(lockPath, 'wx');
-						await fd.writeFile(JSON.stringify({
-							sessionId: vscode.env.sessionId,
-							timestamp: Date.now()
-						}));
+						await fd.writeFile(lockContent);
 						await fd.close();
 						return true;
 					} catch {
@@ -1193,10 +1201,15 @@ export class SyncService {
 				return;
 			}
 
-			// Acquire cross-instance file lock to prevent concurrent syncs from multiple VS Code windows
-			const lockAcquired = await this.acquireSyncLock(settings.backend);
+			// Acquire cross-instance file lock to prevent concurrent syncs from multiple VS Code
+			// windows targeting the same server. Windows configured for different endpoints are
+			// allowed to sync concurrently — the URL is stored in the lock and compared here.
+			const serverUrl = settings.backend === 'sharingServer'
+				? settings.sharingServerEndpointUrl
+				: settings.storageAccount;
+			const lockAcquired = await this.acquireSyncLock(settings.backend, serverUrl);
 			if (!lockAcquired) {
-				this.deps.log('Backend sync: skipping (another VS Code window is currently syncing)');
+				this.deps.log('Backend sync: skipping (another VS Code window is currently syncing to the same server)');
 				return;
 			}
 
@@ -1382,7 +1395,18 @@ export class SyncService {
 						this.deps.warn(`Blob upload: failed - ${blobError?.message ?? blobError}`);
 					}
 				}
-				
+
+				// Additionally sync to sharing server if it is configured alongside Azure.
+				// The sharing server is an additive upload destination — it receives rollup data
+				// for the team dashboard independently of the Azure storage backend.
+				if (settings.sharingServerEnabled && settings.sharingServerEndpointUrl) {
+					try {
+						await this.syncToSharingServer(settings, sharingPolicy);
+					} catch (ssErr: any) {
+						this.deps.warn(`Sharing server sync: failed - ${ssErr?.message ?? ssErr}`);
+					}
+				}
+
 				// DO NOT trigger UI refresh here - it causes redundant analysis and blocks UI
 				// The periodic timer in extension.ts will handle UI updates
 			} catch (e: any) {

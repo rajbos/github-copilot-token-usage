@@ -1137,8 +1137,156 @@ test('acquireSyncLock breaks stale lock', async () => {
 	}
 });
 
+test('acquireSyncLock returns false when same server URL is locked by another session', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		fs.writeFileSync(lockPath, JSON.stringify({
+			sessionId: 'other-session',
+			timestamp: Date.now(),
+			serverUrl: 'https://mystorage.table.core.windows.net',
+		}));
+
+		const mockContext = { globalStorageUri: { fsPath: dir } };
+		const svc = makeService({ context: mockContext as any });
+
+		const acquired = await (svc as any).acquireSyncLock(undefined, 'https://mystorage.table.core.windows.net');
+		assert.equal(acquired, false, 'should be blocked when same server URL is locked');
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('acquireSyncLock returns true when lock is held for a different server URL', async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-test-'));
+	try {
+		const lockPath = path.join(dir, 'backend_sync.lock');
+		// Simulate VS Code stable holding the lock for server A
+		fs.writeFileSync(lockPath, JSON.stringify({
+			sessionId: 'other-session',
+			timestamp: Date.now(),
+			serverUrl: 'https://server-a.table.core.windows.net',
+		}));
+
+		const mockContext = { globalStorageUri: { fsPath: dir } };
+		const svc = makeService({ context: mockContext as any });
+
+		// VS Code Insiders is configured for server B — should not be blocked
+		const acquired = await (svc as any).acquireSyncLock(undefined, 'https://server-b.table.core.windows.net');
+		assert.equal(acquired, true, 'should be allowed when lock is for a different server URL');
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test('releaseSyncLock does nothing when no context', async () => {
 	const svc = makeService({ context: undefined });
 	// Should not throw
 	await (svc as any).releaseSyncLock();
+});
+
+// -- Dual-backend sync (Azure + Sharing Server together) -------
+
+test(`syncToBackendStore also syncs to sharing server when backend=storageTables and sharingServerEnabled=true`, async () => {
+	const logs: string[] = [];
+	const tmpFile = createTempFile(JSON.stringify({
+		requests: [{
+			timestamp: Date.now() - 60000,
+			model: 'gpt-4o',
+			type: 'conversational',
+			result: { type: 'success' },
+			response: [{ inputTokens: 10, outputTokens: 20 }]
+		}]
+	}));
+	try {
+		const deps = makeDeps({
+			log: (m) => logs.push(m),
+			getCopilotSessionFiles: async () => [tmpFile.filePath],
+			getGithubToken: () => undefined,
+		});
+		const credSvc = {
+			getBackendDataPlaneCredentials: async () => ({ tableCredential: {}, blobCredential: {} }),
+			getBackendSecretsToRedactForError: async () => [],
+		};
+		const dataSvc = {
+			ensureTableExists: async () => {},
+			validateAccess: async () => {},
+			createTableClient: () => ({}),
+			upsertEntitiesBatch: async () => ({ successCount: 0, errors: [] }),
+			deleteEntitiesForUserDataset: async () => ({ deletedCount: 0, errors: [] }),
+			getStorageBlobEndpoint: () => '',
+		};
+		const sharingServerSvc = { uploadRollups: async () => {}, uploadFluencyScore: async () => {} };
+		const svc = new SyncService(deps, credSvc as any, dataSvc as any, undefined, BackendUtility, sharingServerSvc as any);
+		await svc.syncToBackendStore(true, {
+			enabled: true,
+			backend: 'storageTables',
+			sharingProfile: 'teamIdentified',
+			shareWorkspaceMachineNames: false,
+			storageAccount: 'sa1',
+			subscriptionId: 'sub1',
+			resourceGroup: 'rg1',
+			aggTable: 'usageAgg',
+			eventsTable: 'usageEvents',
+			lookbackDays: 7,
+			sharingServerEnabled: true,
+			sharingServerEndpointUrl: 'https://test-sharing-server/',
+			shareWithTeam: true,
+			userIdentityMode: 'pseudonymous',
+			userId: '',
+			userIdMode: 'alias',
+			datasetId: 'default',
+			shareConsentAt: '',
+			includeMachineBreakdown: false,
+			blobUploadEnabled: false,
+			blobContainerName: '',
+			blobUploadFrequencyHours: 24,
+			blobCompressFiles: true,
+			authMode: 'entraId',
+		} as any, true);
+		assert.ok(
+			logs.some(m => m.includes('Sharing server upload: skipping')),
+			`Expected sharing server skip log. Got: ${logs.join('\n')}`
+		);
+	} finally {
+		tmpFile.cleanup();
+	}
+});
+
+test(`syncToBackendStore does NOT sync to sharing server when sharingServerEnabled=false`, async () => {
+	const logs: string[] = [];
+	const svc = makeServiceWithServices(
+		{ log: (m) => logs.push(m) },
+		{
+			getBackendDataPlaneCredentials: async () => ({ tableCredential: {}, blobCredential: {} }),
+			getBackendSecretsToRedactForError: async () => [],
+		},
+		{
+			ensureTableExists: async () => {},
+			validateAccess: async () => {},
+			createTableClient: () => ({}),
+			upsertEntitiesBatch: async () => ({ successCount: 0, errors: [] }),
+			deleteEntitiesForUserDataset: async () => ({ deletedCount: 0, errors: [] }),
+			getStorageBlobEndpoint: () => '',
+		}
+	);
+	await svc.syncToBackendStore(true, {
+		enabled: true,
+		backend: 'storageTables',
+		sharingProfile: 'soloFull',
+		shareWorkspaceMachineNames: false,
+		storageAccount: 'sa1',
+		subscriptionId: 'sub1',
+		resourceGroup: 'rg1',
+		aggTable: 'usageAgg',
+		eventsTable: 'usageEvents',
+		lookbackDays: 7,
+		sharingServerEnabled: false,
+		sharingServerEndpointUrl: '',
+		authMode: 'entraId',
+	} as any, true);
+	assert.ok(
+		!logs.some(m => m.includes('Sharing server')),
+		`Expected no sharing server logs but got: ${logs.join('\n')}`
+	);
 });
