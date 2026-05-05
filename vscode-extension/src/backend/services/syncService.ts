@@ -1413,6 +1413,15 @@ export class SyncService {
 				// Keep local mode functional.
 				const secretsToRedact = await this.credentialService.getBackendSecretsToRedactForError(settings);
 				this.deps.warn(`Backend sync: ${safeStringifyError(e, secretsToRedact)}`);
+
+				// Azure sync failed — still attempt the sharing server sync if configured.
+				if (settings.sharingServerEnabled && settings.sharingServerEndpointUrl) {
+					try {
+						await this.syncToSharingServer(settings, sharingPolicy);
+					} catch (ssErr: any) {
+						this.deps.warn(`Sharing server sync: failed - ${ssErr?.message ?? ssErr}`);
+					}
+				}
 			} finally {
 				this.backendSyncInProgress = false;
 				await this.releaseSyncLock(settings.backend);

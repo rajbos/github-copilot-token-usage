@@ -1059,6 +1059,69 @@ test('syncToBackendStore handles ensureTableExists or validateAccess failure gra
 	assert.ok(warns.some(m => m.includes('network error')));
 });
 
+test('syncToBackendStore still attempts sharing server sync when Azure sync fails', async () => {
+	const logs: string[] = [];
+	const warns: string[] = [];
+	const sharingServerSvc = { uploadRollups: async () => {}, uploadFluencyScore: async () => {} };
+	const svc = new SyncService(
+		makeDeps({
+			log: (m) => logs.push(m),
+			warn: (m) => warns.push(m),
+			getGithubToken: () => undefined,
+		}),
+		{
+			getBackendDataPlaneCredentials: async () => ({
+				tableCredential: {},
+				blobCredential: {},
+				secretsToRedact: [],
+			}),
+			getBackendSecretsToRedactForError: async () => [],
+		} as any,
+		{
+			ensureTableExists: async () => { throw new Error('Azure connection failed'); },
+			validateAccess: async () => {},
+			createTableClient: () => ({}),
+			upsertEntitiesBatch: async () => ({ successCount: 0, errors: [] }),
+			getStorageBlobEndpoint: () => '',
+		} as any,
+		undefined,
+		BackendUtility,
+		sharingServerSvc as any,
+	);
+	await svc.syncToBackendStore(true, {
+		enabled: true,
+		backend: 'storageTables',
+		sharingProfile: 'teamIdentified',
+		shareWorkspaceMachineNames: false,
+		storageAccount: 'sa1',
+		subscriptionId: 'sub1',
+		resourceGroup: 'rg1',
+		aggTable: 'usageAgg',
+		eventsTable: 'usageEvents',
+		lookbackDays: 7,
+		sharingServerEnabled: true,
+		sharingServerEndpointUrl: 'https://test-sharing-server/',
+		shareWithTeam: true,
+		userIdentityMode: 'pseudonymous',
+		userId: '',
+		userIdMode: 'alias',
+		datasetId: 'default',
+		shareConsentAt: '',
+		includeMachineBreakdown: false,
+		blobUploadEnabled: false,
+		blobContainerName: '',
+		blobUploadFrequencyHours: 24,
+		blobCompressFiles: true,
+		authMode: 'entraId',
+	} as any, true);
+	assert.ok(warns.some(m => m.includes('Azure connection failed')), `Expected Azure error in warns. Got: ${warns.join('\n')}`);
+	// Sharing server sync should still be attempted (no GitHub token → skipping log appears)
+	assert.ok(
+		logs.some(m => m.includes('Sharing server upload: skipping')),
+		`Expected sharing server sync attempt even after Azure failure. Logs: ${logs.join('\n')}`
+	);
+});
+
 // ── Sync lock management ─────────────────────────────────────────────────
 
 test('acquireSyncLock succeeds when no context is provided', async () => {
