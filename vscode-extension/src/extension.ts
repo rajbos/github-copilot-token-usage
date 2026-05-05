@@ -6077,7 +6077,7 @@ ${hashtag}`;
       const userId = (entity.userId ?? "").toString().replace(/^u:/, ""); // Strip u: prefix
       const datasetId = (entity.datasetId ?? "").toString().replace(/^ds:/, ""); // Strip ds: prefix
       const machineId = (entity.machineId ?? "").toString().replace(/^mc:/, ""); // Strip mc: prefix
-      const workspaceId = (entity.workspaceId ?? "").toString();
+      const workspaceId = (entity.workspaceId ?? "").toString().replace(/^w:/, ""); // Strip w: prefix
       const model = (entity.model ?? "").toString().replace(/^m:/, ""); // Strip m: prefix
       const inputTokens = Number.isFinite(Number(entity.inputTokens))
         ? Number(entity.inputTokens)
@@ -6629,6 +6629,28 @@ ${hashtag}`;
       );
     } else {
       report.push(`GitHub Copilot Chat Extension: Not Installed`);
+    }
+    report.push("");
+
+    // Backend Configuration
+    report.push("## Backend Configuration");
+    const settings = this.backend?.getSettings();
+    const githubAuthStatus = this.getGitHubAuthStatus();
+    report.push(`GitHub Authentication: ${githubAuthStatus.authenticated ? `Authenticated (${githubAuthStatus.username || "unknown"})` : "Not Authenticated"}`);
+    if (settings?.sharingServerEnabled) {
+      report.push(`Team Server: Enabled`);
+      report.push(`  - Server URL: ${settings.sharingServerEndpointUrl || "(not set)"}`);
+      if (!githubAuthStatus.authenticated) {
+        report.push(`  - ⚠️ WARNING: GitHub authentication is required for team server sync`);
+      }
+    } else {
+      report.push(`Team Server: Disabled`);
+    }
+    if (settings?.enabled) {
+      report.push(`Azure Storage: Enabled`);
+      report.push(`  - Storage Account: ${settings.storageAccount || "(not set)"}`);
+    } else {
+      report.push(`Azure Storage: Disabled`);
     }
     report.push("");
 

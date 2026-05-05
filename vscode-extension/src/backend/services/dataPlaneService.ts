@@ -210,13 +210,13 @@ export class DataPlaneService {
   }): Promise<BackendAggDailyEntityLike[]> {
     const { tableClient, startDayKey, endDayKey } = args;
 
-    // Query all entities in the date range without filtering by dataset
-    // Filter by timestamp to limit the scan
-    const startDate = new Date(startDayKey);
-    const endDate = new Date(endDayKey);
-    endDate.setUTCHours(23, 59, 59, 999); // End of day
-
-    const filter = `Timestamp ge datetime'${startDate.toISOString()}' and Timestamp le datetime'${endDate.toISOString()}'`;
+    // Query all entities in the date range without filtering by dataset.
+    // Filter by the `day` entity field (plain YYYY-MM-DD string).
+    // Filtering by Timestamp (the system write-time property) using the OData `datetime'...'`
+    // type annotation is not supported by Cosmos DB Tables API, which silently returns zero
+    // results. Using the `day` field works reliably across both Azure Storage Tables and
+    // Cosmos DB Tables API.
+    const filter = `day ge '${startDayKey}' and day le '${endDayKey}'`;
 
     this.log(
       `Querying all datasets for date range ${startDayKey} to ${endDayKey}`,

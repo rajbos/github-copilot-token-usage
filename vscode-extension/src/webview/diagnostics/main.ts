@@ -948,7 +948,7 @@ function renderAzureStoragePanel(azureInfo: AzureStorageInfo): string {
   `;
 }
 
-function renderTeamServerPanel(teamInfo: TeamServerInfo): string {
+function renderTeamServerPanel(teamInfo: TeamServerInfo, githubAuth?: GitHubAuthStatus): string {
   const statusColor = teamInfo.isConfigured ? "#2d6a4f" : teamInfo.enabled ? "#d97706" : "#666";
   const statusIcon = teamInfo.isConfigured ? "✅" : teamInfo.enabled ? "⚠️" : "⚪";
   const statusText = teamInfo.isConfigured
@@ -957,16 +957,36 @@ function renderTeamServerPanel(teamInfo: TeamServerInfo): string {
       ? "Enabled but Not Configured"
       : "Disabled";
 
+  const githubNotAuthenticated = teamInfo.isConfigured && !githubAuth?.authenticated;
+
   return `
     <div class="info-box">
       <div class="info-box-title">🖥️ Team Server Backend</div>
       <div>Sync your token usage data to a self-hosted team server for team-wide reporting.</div>
     </div>
 
+    ${githubNotAuthenticated ? `
+    <button id="btn-team-server-auth-warning" style="width: 100%; margin-bottom: 16px; padding: 12px 16px; background: rgba(217, 119, 6, 0.15); border: 1px solid #d97706; border-radius: 6px; display: flex; gap: 10px; align-items: center; cursor: pointer; text-align: left;" title="Click to sign in to GitHub">
+      <span style="font-size: 18px; flex-shrink: 0;">⚠️</span>
+      <div style="flex: 1;">
+        <div style="color: #fbbf24; font-weight: 600; font-size: 13px; margin-bottom: 4px;">GitHub Authentication Required</div>
+        <div style="color: #d4a017; font-size: 12px;">
+          Team server sync will not run until you sign in to GitHub.
+          <strong style="color: #fbbf24;">Click here to sign in.</strong>
+        </div>
+      </div>
+      <span style="color: #fbbf24; font-size: 18px; flex-shrink: 0;">→</span>
+    </button>
+    ` : ''}
+
     <div class="summary-cards">
       <div class="summary-card" style="border-left: 4px solid ${statusColor};">
         <div class="summary-label">${statusIcon} Status</div>
         <div class="summary-value" style="font-size: 16px; color: ${statusColor};">${statusText}</div>
+      </div>
+      <div class="summary-card" style="border-left: 4px solid ${githubNotAuthenticated ? '#d97706' : githubAuth?.authenticated ? '#2d6a4f' : '#666'};">
+        <div class="summary-label">${githubNotAuthenticated ? '⚠️' : githubAuth?.authenticated ? '✅' : '⚪'} GitHub Auth</div>
+        <div class="summary-value" style="font-size: 14px; color: ${githubNotAuthenticated ? '#d97706' : githubAuth?.authenticated ? '#2d6a4f' : '#666'};">${githubNotAuthenticated ? 'Not Authenticated' : githubAuth?.authenticated ? escapeHtml(githubAuth.username || 'Authenticated') : 'Not Authenticated'}</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">👥 Sharing Profile</div>
@@ -1030,6 +1050,7 @@ function renderTeamServerPanel(teamInfo: TeamServerInfo): string {
 
 function renderBackendStoragePanel(
   backendInfo: BackendStorageInfo | undefined,
+  githubAuth?: GitHubAuthStatus,
 ): string {
   if (!backendInfo) {
     return `
@@ -1055,7 +1076,7 @@ function renderBackendStoragePanel(
       ${renderAzureStoragePanel(backendInfo.azure)}
     </div>
     <div id="subtab-backend-teamserver" class="subtab-content">
-      ${renderTeamServerPanel(backendInfo.teamServer)}
+      ${renderTeamServerPanel(backendInfo.teamServer, githubAuth)}
     </div>
   `;
 }
@@ -1440,7 +1461,7 @@ function renderLayout(data: DiagnosticsData): void {
 			</div>
 
 			<div id="tab-backend" class="tab-content">
-				${renderBackendStoragePanel(data.backendStorageInfo)}
+				${renderBackendStoragePanel(data.backendStorageInfo, data.githubAuth)}
 			</div>
 
 			<div id="tab-github" class="tab-content">
@@ -1475,6 +1496,9 @@ function renderLayout(data: DiagnosticsData): void {
   // Store data for re-rendering on sort - will be updated when data loads
   let storedDetailedFiles = detailedFiles;
   let isLoading = detailedFiles.length === 0;
+  // Cache backend and auth state so re-renders triggered by either update have both
+  let currentBackendInfo: BackendStorageInfo | undefined = data.backendStorageInfo;
+  let currentGithubAuth: GitHubAuthStatus | undefined = data.githubAuth;
 
   // Listen for messages from the extension (background loading)
   window.addEventListener("message", (event) => {
@@ -1497,6 +1521,10 @@ function renderLayout(data: DiagnosticsData): void {
 
       // Update backend storage info if provided
       if (message.backendStorageInfo) {
+        currentBackendInfo = message.backendStorageInfo;
+        if (message.githubAuth !== undefined) {
+          currentGithubAuth = message.githubAuth;
+        }
         const backendTabContent = document.getElementById("tab-backend");
         if (backendTabContent) {
           // Capture active subtab before re-rendering so we can restore it
@@ -1505,7 +1533,8 @@ function renderLayout(data: DiagnosticsData): void {
             ?? vscode.getState()?.activeSubtab;
 
           backendTabContent.innerHTML = renderBackendStoragePanel(
-            message.backendStorageInfo,
+            currentBackendInfo,
+            currentGithubAuth,
           );
           // Re-attach event listeners for backend buttons
           setupBackendButtonHandlers();
@@ -1696,10 +1725,23 @@ function renderLayout(data: DiagnosticsData): void {
       }
     } else if (message.command === "githubAuthUpdated") {
       // Update GitHub Auth tab with new authentication status
+      currentGithubAuth = message.githubAuth;
       const githubTabContent = document.getElementById("tab-github");
       if (githubTabContent) {
-        githubTabContent.innerHTML = renderGitHubAuthPanel(message.githubAuth);
+        githubTabContent.innerHTML = renderGitHubAuthPanel(currentGithubAuth);
         setupGitHubAuthHandlers();
+      }
+      // Re-render the backend panel so the team server warning reflects the new auth state
+      const backendTabContent = document.getElementById("tab-backend");
+      if (backendTabContent && currentBackendInfo) {
+        const activeSubtabEl = backendTabContent.querySelector(".subtab.active") as HTMLElement | null;
+        const previousSubtab = activeSubtabEl?.getAttribute("data-subtab");
+        backendTabContent.innerHTML = renderBackendStoragePanel(currentBackendInfo, currentGithubAuth);
+        setupBackendButtonHandlers();
+        setupSubtabHandlers();
+        if (previousSubtab) {
+          activateSubtab(previousSubtab);
+        }
       }
     } else if (message.command === "diagnosticDataError") {
       // Show error message
@@ -1988,6 +2030,12 @@ function renderLayout(data: DiagnosticsData): void {
         const currentState = vscode.getState() ?? {};
         vscode.setState({ ...currentState, activeTab: "backend", activeSubtab: "backend-teamserver" });
         vscode.postMessage({ command: "configureTeamServer" });
+      });
+
+    document
+      .getElementById("btn-team-server-auth-warning")
+      ?.addEventListener("click", () => {
+        vscode.postMessage({ command: "authenticateGitHub" });
       });
 
     document
