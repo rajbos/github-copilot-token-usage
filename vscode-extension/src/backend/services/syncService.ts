@@ -1395,7 +1395,18 @@ export class SyncService {
 						this.deps.warn(`Blob upload: failed - ${blobError?.message ?? blobError}`);
 					}
 				}
-				
+
+				// Additionally sync to sharing server if it is configured alongside Azure.
+				// The sharing server is an additive upload destination — it receives rollup data
+				// for the team dashboard independently of the Azure storage backend.
+				if (settings.sharingServerEnabled && settings.sharingServerEndpointUrl) {
+					try {
+						await this.syncToSharingServer(settings, sharingPolicy);
+					} catch (ssErr: any) {
+						this.deps.warn(`Sharing server sync: failed - ${ssErr?.message ?? ssErr}`);
+					}
+				}
+
 				// DO NOT trigger UI refresh here - it causes redundant analysis and blocks UI
 				// The periodic timer in extension.ts will handle UI updates
 			} catch (e: any) {
