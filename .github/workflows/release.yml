@@ -477,7 +477,7 @@ jobs:
             echo "⏭️  $label v$local_ver already published — skipping."
           else
             echo "Publishing $vsix to VS Code Marketplace ($label)..."
-            npx vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
+            vscode-extension/node_modules/.bin/vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
           fi
         }
 
@@ -509,7 +509,7 @@ jobs:
             echo "⏭️  $label v$local_ver already published on Open VSX — skipping."
           else
             echo "Publishing $vsix to Open VSX Registry ($label)..."
-            npx --yes ovsx publish --packagePath "$vsix" -p "$OPEN_VSX_TOKEN"
+            vscode-extension/node_modules/.bin/ovsx publish --packagePath "$vsix" -p "$OPEN_VSX_TOKEN"
           fi
         }
 
