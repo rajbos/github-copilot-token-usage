@@ -6,6 +6,19 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-05
+
+### Bug Fixes
+- Fixed team dashboard showing empty results with Cosmos DB backend — replaced unsupported OData `datetime'...'` filter with `day` field string comparison (#783)
+- Fixed `workspaceId` `w:` prefix not being stripped in extension dashboard entity processing (#783)
+- Fixed logo image URL in VS Code Marketplace README (#782)
+
+### Improvements
+- Team Server diagnostics panel now shows GitHub auth status and a clickable warning banner when backend is configured but GitHub is not authenticated (#783)
+- Added friendly display names for 10 additional tools (#784)
+- Added friendly names for two missing GitHub MCP (Local) tools (#781)
+- Pinned `vsce` and `ovsx` as exact devDependencies for reproducible builds (#785)
+
 ## [0.4.1] - 2026-05-05
 
 ### Fixes
