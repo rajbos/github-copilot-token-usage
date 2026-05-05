@@ -6632,6 +6632,28 @@ ${hashtag}`;
     }
     report.push("");
 
+    // Backend Configuration
+    report.push("## Backend Configuration");
+    const settings = this.backend?.getSettings();
+    const githubAuthStatus = this.getGitHubAuthStatus();
+    report.push(`GitHub Authentication: ${githubAuthStatus.authenticated ? `Authenticated (${githubAuthStatus.username || "unknown"})` : "Not Authenticated"}`);
+    if (settings?.sharingServerEnabled) {
+      report.push(`Team Server: Enabled`);
+      report.push(`  - Server URL: ${settings.sharingServerEndpointUrl || "(not set)"}`);
+      if (!githubAuthStatus.authenticated) {
+        report.push(`  - ⚠️ WARNING: GitHub authentication is required for team server sync`);
+      }
+    } else {
+      report.push(`Team Server: Disabled`);
+    }
+    if (settings?.enabled) {
+      report.push(`Azure Storage: Enabled`);
+      report.push(`  - Storage Account: ${settings.storageAccount || "(not set)"}`);
+    } else {
+      report.push(`Azure Storage: Disabled`);
+    }
+    report.push("");
+
     // Session Files Discovery
     report.push("## Session Files Discovery");
     try {
