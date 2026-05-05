@@ -6,6 +6,13 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-05
+
+### Fixes
+- Fixed README badges: replaced retired vsmarketplacebadges.dev with shields.io
+- Updated all VS Code install links and commands to the current extension ID (`ai-engineering-fluency`)
+- Disabled legacy `copilot-token-tracker` VSIX creation and publishing in the release workflow (migration flow complete)
+
 ## [0.4.0] - 2026-05-04
 
 ### Features and Improvements

@@ -48,7 +48,7 @@ Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Stud
 
 Real-time token usage in the status bar, fluency score dashboard, usage analysis, cloud sync, and more. Works with all Chromium-based VS Code forks — VS Code, Windsurf, Cursor, VSCodium, Trae, Kiro, Void, and more.
 
-[![Install - VS Code](https://img.shields.io/badge/Install-VS%20Code-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) [![VS Code installs](https://img.shields.io/visual-studio-marketplace/i/RobBos.ai-engineering-fluency?label=VS%20Code%20installs)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) [![Install - Windsurf (Open VSX)](https://img.shields.io/badge/Install-Windsurf-00B4D8?logo=open-vsx)](https://open-vsx.org/extension/RobBos/ai-engineering-fluency) [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/ai-engineering-fluency?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/ai-engineering-fluency)
+[![Install - VS Code](https://img.shields.io/badge/Install-VS%20Code-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) [![VS Code installs](https://badgen.net/vs-marketplace/i/RobBos.ai-engineering-fluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.ai-engineering-fluency) [![Install - Windsurf (Open VSX)](https://img.shields.io/badge/Install-Windsurf-00B4D8?logo=open-vsx)](https://open-vsx.org/extension/RobBos/ai-engineering-fluency) [![Open VSX installs](https://img.shields.io/open-vsx/dt/RobBos/ai-engineering-fluency?label=Open%20VSX%20installs)](https://open-vsx.org/extension/RobBos/ai-engineering-fluency)
 
 ```bash
 # Install from the VS Code Marketplace
@@ -85,11 +85,15 @@ void --install-extension RobBos.ai-engineering-fluency
 
 📖 [Full VS Code extension documentation](docs/vscode-extension/README.md)
 
+> **Previously known as `copilot-token-tracker` (deprecated):** [![legacy installs](https://badgen.net/vs-marketplace/i/RobBos.copilot-token-tracker)](https://marketplace.visualstudio.com/items?itemName=RobBos.copilot-token-tracker) — If you still have it installed, the extension will prompt you to migrate.
+
 ---
 
-### 🐦 JetBrains IDE Plugin (awaiting JetBrains Marketplace approval)
+### 🐦 JetBrains IDE Plugin
 
 Token usage and fluency dashboards inside any JetBrains IDE (IntelliJ IDEA, Rider, PyCharm, WebStorm, GoLand, RubyMine, CLion, …). Built as a thin Kotlin/JCEF host that reuses the same webview bundles as the VS Code extension and the same bundled CLI as the Visual Studio extension.
+
+[![Install - JetBrains](https://img.shields.io/badge/Install-JetBrains-000000?logo=jetbrains)](https://plugins.jetbrains.com/plugin/31580-ai-engineering-fluency) [![JetBrains installs](https://img.shields.io/jetbrains/plugin/d/31580?label=JetBrains%20installs)](https://plugins.jetbrains.com/plugin/31580-ai-engineering-fluency)
 
 📖 [JetBrains plugin docs](jetbrains-plugin/README.md) · [Debugging guide](jetbrains-plugin/DEBUGGING-GUIDE.md)
 
@@ -99,7 +103,7 @@ Token usage and fluency dashboards inside any JetBrains IDE (IntelliJ IDEA, Ride
 
 Token usage tracking inside Visual Studio 2022+, reading Copilot Chat session files directly.
 
-[![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/RobBos.AIEngineeringFluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
+[![Visual Studio Marketplace Installs](https://badgen.net/vs-marketplace/i/RobBos.AIEngineeringFluency)](https://marketplace.visualstudio.com/items?itemName=RobBos.AIEngineeringFluency)
 
 📖 [Full Visual Studio extension documentation](docs/visual-studio/README.md)
 
