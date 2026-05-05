@@ -110,4 +110,12 @@
 
   "list_powershell",
   "read_powershell"
+,
+
+  "clarify_requirements",
+  "get_tests",
+  "ide-get_diagnostics",
+  "plan",
+  "signal_plan_ready",
+  "update_plan_progress"
 ]
