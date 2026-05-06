@@ -58,6 +58,7 @@ export interface SessionEfficiency {
 
 	output: number;       // composite output score
 	efficiency: number;   // output / cost
+	aiCredits: number;    // AI credits used (from session.shutdown modelMetrics); 0 if not available
 	category: EfficiencyCategory;
 	firstUserMsg: string | null;
 }
@@ -73,6 +74,7 @@ interface HarvestResult {
 		commitCount: number;
 		filesEdited: number;
 		subagentCount: number;
+		aiCredits: number;
 		firstUserMsg: string | null;
 		firstTs: string | null;
 		lastTs: string | null;
@@ -136,6 +138,7 @@ function harvestFromEventsFile(file: string): HarvestResult {
 	let editCount = 0;
 	let commitCount = 0;
 	let subagentCount = 0;
+	let aiCredits = 0;
 	let firstUserMsg: string | null = null;
 	let firstTs: string | null = null;
 	let lastTs: string | null = null;
@@ -165,6 +168,16 @@ function harvestFromEventsFile(file: string): HarvestResult {
 		const d = ev.data || {};
 
 		if (t === 'session.start') {model = d.selectedModel || model;}
+		if (t === 'session.shutdown') {
+			// Sum AI credits used across all models from the shutdown summary.
+			const metrics = d.modelMetrics;
+			if (metrics && typeof metrics === 'object') {
+				for (const key of Object.keys(metrics)) {
+					const cost = metrics[key]?.requests?.cost;
+					if (typeof cost === 'number') {aiCredits += cost;}
+				}
+			}
+		}
 		if (t === 'user.message') {
 			userTurns++;
 			if (!firstUserMsg && d.content) {firstUserMsg = String(d.content).slice(0, 240);}
@@ -253,6 +266,7 @@ function harvestFromEventsFile(file: string): HarvestResult {
 			commitCount,
 			filesEdited: editedFiles.size,
 			subagentCount,
+			aiCredits,
 			firstUserMsg,
 			firstTs,
 			lastTs,
@@ -309,6 +323,7 @@ function buildSession(dir: string, info: HarvestResult, ws: any): SessionEfficie
 		issuesCreated,
 		output,
 		efficiency,
+		aiCredits: stats.aiCredits,
 		category,
 		firstUserMsg: stats.firstUserMsg,
 	};
@@ -340,7 +355,7 @@ export function loadSessionEfficiency(rootDir?: string): SessionEfficiency[] {
 			issueRefs: [],
 			stats: {
 				userTurns: 0, assistantTurns: 0, toolCalls: 0,
-				editCount: 0, commitCount: 0, filesEdited: 0, subagentCount: 0,
+				editCount: 0, commitCount: 0, filesEdited: 0, subagentCount: 0, aiCredits: 0,
 				firstUserMsg: null, firstTs: null, lastTs: null, model: null,
 			},
 		};

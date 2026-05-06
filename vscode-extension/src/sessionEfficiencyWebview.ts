@@ -35,6 +35,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
 		issuesCreated: s.issuesCreated,
 		output: s.output,
 		efficiency: s.efficiency,
+		aiCredits: s.aiCredits,
 		model: s.model || '',
 		updatedAt: s.updatedAt,
 		topPrs: s.prRefs
@@ -107,6 +108,11 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
              color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
              border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; }
   .nav-btn:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.25)); }
+  .mode-toggle { display: flex; border: 1px solid var(--vscode-button-border, rgba(127,127,127,0.3)); border-radius: 3px; overflow: hidden; }
+  .mode-btn { padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; border: none; border-radius: 0;
+              background: transparent; color: var(--vscode-descriptionForeground); }
+  .mode-btn.active { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
+  .mode-btn:hover:not(.active) { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.15)); }
 </style>
 </head><body>
 <h1>Session Efficiency</h1>
@@ -129,8 +135,22 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
 <div id="root">
   <div class="panel">
     <strong>Output score</strong> = <code>10·PRs + 4·commits + 3·issues + filesEdited</code>.
-    <strong>Cost</strong> = total tool calls (proxy for tokens).
+    <strong>Cost</strong> = total tool calls (proxy for effort) <em>or</em> AI credits used.
     <strong>Efficiency</strong> = output ÷ cost.
+    <div style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <span class="muted" style="font-size:12px">Cost basis:</span>
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode-effort" title="Use tool-call count as the cost metric">⚙ Effort (tool calls)</button>
+        <button class="mode-btn" id="mode-money" title="Use AI credits consumed as the cost metric (available for ~80% of sessions)">💳 Cost (AI credits)</button>
+      </div>
+    </div>
+    <p class="muted" style="margin:8px 0 4px; font-size:12px; line-height:1.5; max-width:860px">
+      <strong>Note:</strong> The output score only reflects what is visible in the session log.
+      A session can create real value in ways that don't appear here — for example:
+      researching a topic before acting on it elsewhere, testing multiple hypotheses to settle on the right approach,
+      or producing work that was continued, copy-pasted, or applied outside this editor.
+      Use this view as a signal to spot patterns, not as a verdict on individual sessions.
+    </p>
     <div class="legend" style="margin-top:6px" id="legend"></div>
   </div>
 
@@ -164,9 +184,9 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
         <th data-k="commitCount" class="num">Commits</th>
         <th data-k="filesEdited" class="num">Files</th>
         <th data-k="userTurns" class="num">Turns</th>
-        <th data-k="toolCalls" class="num">Tool calls</th>
+        <th data-k="toolCalls" class="num" data-label="Tool calls">Tool calls</th>
         <th data-k="output" class="num">Output</th>
-        <th data-k="efficiency" class="num" title="Output ÷ tool calls × 100">Eff×100</th>
+        <th data-k="efficiency" class="num" data-label="Eff×100" title="Output ÷ tool calls × 100">Eff×100</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -179,6 +199,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
 const DATA = ${dataJson};
 const LEGEND = ${JSON.stringify(CATEGORY_LEGEND)};
 let SORT = { k: 'efficiency', dir: -1 };
+let COST_MODE = 'effort'; // 'effort' | 'money'
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[<&>"']/g, c => ({ '<':'&lt;','&':'&amp;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -224,7 +245,28 @@ function init() {
       else { SORT.k = k; SORT.dir = (k === 'repo' || k === 'category') ? 1 : -1; }
       renderTable();
     }));
+
+  document.getElementById('mode-effort').addEventListener('click', () => setCostMode('effort'));
+  document.getElementById('mode-money').addEventListener('click', () => setCostMode('money'));
 }
+
+function setCostMode(mode) {
+  COST_MODE = mode;
+  document.getElementById('mode-effort').classList.toggle('active', mode === 'effort');
+  document.getElementById('mode-money').classList.toggle('active', mode === 'money');
+  // Update table header labels
+  const thCost = document.querySelector('th[data-k="toolCalls"]');
+  const thEff  = document.querySelector('th[data-k="efficiency"]');
+  if (thCost) { thCost.dataset.label = mode === 'effort' ? 'Tool calls' : 'AI credits'; }
+  if (thEff)  { thEff.dataset.label = mode === 'effort' ? 'Eff×100' : 'Eff/cr'; thEff.title = mode === 'effort' ? 'Output ÷ tool calls × 100' : 'Output ÷ AI credits × 100'; }
+  renderScatter();
+  renderTable();
+}
+
+// Returns the "cost" value to use for a session in the current COST_MODE.
+// Money mode falls back to tool calls when aiCredits = 0.
+function costVal(s) { return COST_MODE === 'money' && s.aiCredits > 0 ? s.aiCredits : s.toolCalls; }
+function effVal(s)  { const c = costVal(s); return c > 0 ? s.output / c : 0; }
 
 function filtered() {
   const q = document.getElementById('q').value.toLowerCase();
@@ -247,9 +289,11 @@ function renderTable() {
   const r = filtered().slice();
   r.sort((a, b) => {
     const k = SORT.k;
-    const av = a[k], bv = b[k];
-    if (typeof av === 'string') return SORT.dir * av.localeCompare(bv);
-    return SORT.dir * (((av || 0) - (bv || 0)) || 0);
+    // For sort keys that depend on mode, use computed values
+    const va = k === 'toolCalls' ? costVal(a) : k === 'efficiency' ? effVal(a) : a[k];
+    const vb = k === 'toolCalls' ? costVal(b) : k === 'efficiency' ? effVal(b) : b[k];
+    if (typeof va === 'string') return SORT.dir * va.localeCompare(vb);
+    return SORT.dir * (((va || 0) - (vb || 0)) || 0);
   });
   // Update sort indicators on column headers
   document.querySelectorAll('th[data-k]').forEach(th => {
@@ -257,6 +301,12 @@ function renderTable() {
     th.classList.toggle('sorted', isSorted);
     let icon = th.querySelector('.sort-icon');
     if (!icon) { icon = document.createElement('span'); icon.className = 'sort-icon'; th.appendChild(icon); }
+    // Update label text (may have changed with mode toggle) keeping icon separate
+    const label = th.dataset.label;
+    if (label) {
+      const textNode = [...th.childNodes].find(n => n.nodeType === 3); // TEXT_NODE
+      if (textNode) textNode.textContent = label + ' ';
+    }
     icon.textContent = isSorted ? (SORT.dir === 1 ? '▲' : '▼') : '⇅';
   });
   document.getElementById('rowcount').textContent = \`\${r.length} match(es)\`;
@@ -265,6 +315,10 @@ function renderTable() {
     const prCells = s.topPrs.length
       ? s.topPrs.map(p => \`<a href="https://github.com/\${p.repo}/pull/\${p.number}">#\${p.number}</a>\`).join(' ')
       : (s.prsCreated || '');
+    const costCell = COST_MODE === 'money'
+      ? (s.aiCredits > 0 ? s.aiCredits : \`<span class="muted" title="No shutdown data">\${s.toolCalls}*</span>\`)
+      : s.toolCalls;
+    const effCell = (effVal(s) * 100).toFixed(1);
     return \`<tr>
       <td><span class="cat cat-\${s.category}">\${s.category}</span></td>
       <td>\${esc(s.repo)}</td>
@@ -274,9 +328,9 @@ function renderTable() {
       <td class="num">\${s.commitCount || ''}</td>
       <td class="num">\${s.filesEdited || ''}</td>
       <td class="num">\${s.userTurns}</td>
-      <td class="num">\${s.toolCalls}</td>
+      <td class="num">\${costCell}</td>
       <td class="num">\${s.output}</td>
-      <td class="num">\${(s.efficiency * 100).toFixed(1)}</td>
+      <td class="num">\${effCell}</td>
     </tr>\`;
   }).join('');
   document.querySelector('#tbl tbody').innerHTML = html;
@@ -298,9 +352,9 @@ function renderCatTable() {
 
 function renderScatter() {
   const W = 720, H = 380, M = { l: 50, r: 16, t: 10, b: 36 };
-  const data = DATA.filter(s => s.toolCalls > 0);
+  const data = DATA.filter(s => costVal(s) > 0);
   if (data.length === 0) { document.getElementById('scatter').innerHTML = '<p class="muted">No data.</p>'; return; }
-  const maxCost = Math.max(50,  ...data.map(s => s.toolCalls));
+  const maxCost = Math.max(50,  ...data.map(s => costVal(s)));
   const maxOut  = Math.max(5,   ...data.map(s => s.output));
   const x = v => M.l + (Math.log10(v + 1) / Math.log10(maxCost + 1)) * (W - M.l - M.r);
   const y = v => H - M.b - (Math.log10(v + 1) / Math.log10(maxOut + 1)) * (H - M.t - M.b);
@@ -310,11 +364,12 @@ function renderScatter() {
   };
   const xticks = [1, 10, 100, 1000, 10000].filter(v => v <= maxCost * 1.5);
   const yticks = [0, 1, 5, 10, 50, 100, 500].filter(v => v <= maxOut * 1.5);
+  const xLabel = COST_MODE === 'money' ? 'AI credits (log) →' : 'Tool calls (log) →';
 
   const dots = data.map(s => {
     const r = 3 + Math.min(7, Math.sqrt(s.userTurns || 1));
     const col = colors[s.category] || '#888';
-    return \`<circle cx="\${x(s.toolCalls).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r.toFixed(1)}"
+    return \`<circle cx="\${x(costVal(s)).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r.toFixed(1)}"
               fill="\${col}" stroke="rgba(0,0,0,0.55)" stroke-width="1" data-i="\${esc(JSON.stringify(s))}"/>\`;
   }).join('');
   const gridX = xticks.map(v =>
@@ -326,7 +381,7 @@ function renderScatter() {
 
   const svg = \`<svg viewBox="0 0 \${W} \${H}" width="100%" height="\${H}" class="axis" preserveAspectRatio="xMidYMid meet">
     \${gridX}\${gridY}
-    <text class="axis-label" x="\${W/2}" y="\${H-4}" text-anchor="middle">Tool calls (log) →</text>
+    <text class="axis-label" x="\${W/2}" y="\${H-4}" text-anchor="middle">\${xLabel}</text>
     <text class="axis-label" x="14" y="\${H/2}" text-anchor="middle" transform="rotate(-90 14 \${H/2})">Output score (log) →</text>
     \${dots}
   </svg>\`;
@@ -339,11 +394,14 @@ function renderScatter() {
       const prsHtml = s.topPrs.length
         ? s.topPrs.map(p => '#' + p.number).join(' ')
         : '—';
+      const costLine = COST_MODE === 'money'
+        ? \`\${s.aiCredits > 0 ? s.aiCredits + ' AI credits' : s.toolCalls + ' tool calls (no credit data)'}\`
+        : \`\${s.toolCalls} tool calls\`;
       tip.innerHTML = \`<strong>\${esc(s.repo)}</strong> · <code>\${esc(s.branch)}</code><br>
         <span class="cat cat-\${s.category}">\${s.category}</span>
-        · \${s.toolCalls} tool calls · \${s.userTurns} user turns<br>
+        · \${costLine} · \${s.userTurns} user turns<br>
         PRs: \${prsHtml} · \${s.commitCount} commit(s) · \${s.filesEdited} file(s) edited<br>
-        eff×100 = \${(s.efficiency*100).toFixed(2)}<br>
+        eff×100 = \${(effVal(s)*100).toFixed(2)}<br>
         <em>\${esc(s.summary || s.firstUserMsg).slice(0, 200)}</em>\`;
       tip.style.display = 'block';
     });
