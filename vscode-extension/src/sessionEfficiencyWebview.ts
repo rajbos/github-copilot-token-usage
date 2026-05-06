@@ -47,6 +47,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
 		updatedAt: s.updatedAt,
 		topPrs: s.prRefs
 			.filter(r => r.confidence >= 2)
+			.filter((r, i, arr) => arr.findIndex(x => x.number === r.number) === i)
 			.slice(0, 5)
 			.map(r => ({ repo: r.repo, number: r.number })),
 	}));
@@ -167,7 +168,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
       <span class="muted">— top-left = efficient · bottom-right = heavy with no on-disk output</span>
       <div id="scatter"></div>
     </div>
-    <div class="panel" style="flex: 1 1 260px">
+    <div class="panel" style="flex: 1 1 182px">
       <strong>Sessions by category</strong>
       <table id="cattable"><tbody></tbody></table>
     </div>
@@ -211,6 +212,12 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/[<&>"']/g, c => ({ '<':'&lt;','&':'&amp;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Format a token count already in thousands (k). Shows "1.2M" above 1000k.
+function fmtTok(k) {
+  if (k >= 1000) return (k / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) + 'M';
+  return k + 'k';
+}
+
 function init() {
   document.getElementById('meta').textContent =
     \`\${DATA.length} session(s) scanned from ~/.copilot/session-state/\`;
@@ -243,7 +250,7 @@ function init() {
   renderTable();
 
   ['q','cat','repo','onlyOutput'].forEach(id =>
-    document.getElementById(id).addEventListener('input', renderTable));
+    document.getElementById(id).addEventListener('input', () => { renderTable(); if (id === 'cat') renderCatTable(); }));
   document.querySelectorAll('th[data-k]').forEach(th =>
     th.addEventListener('click', () => {
       const k = th.dataset.k;
@@ -347,13 +354,28 @@ function renderCatTable() {
   for (const s of DATA) counts[s.category] = (counts[s.category] || 0) + 1;
   const order = LEGEND.map(c => c.id);
   const total = DATA.length;
+  const activeCat = document.getElementById('cat').value;
   document.querySelector('#cattable tbody').innerHTML = order
     .filter(c => counts[c])
-    .map(c => \`<tr>
-      <td><span class="cat cat-\${c}" title="\${esc((LEGEND.find(x=>x.id===c)||{}).desc)}">\${c}</span></td>
-      <td class="num">\${counts[c]}</td>
-      <td class="num muted">\${Math.round(counts[c]*100/total)}%</td>
-    </tr>\`).join('');
+    .map(c => {
+      const isActive = activeCat === c;
+      return \`<tr style="cursor:pointer\${isActive ? ';background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)' : ''}" data-cat="\${esc(c)}">
+        <td><span class="cat cat-\${c}" title="\${esc((LEGEND.find(x=>x.id===c)||{}).desc)}">\${c}</span></td>
+        <td class="num">\${counts[c]}</td>
+        <td class="num muted">\${Math.round(counts[c]*100/total)}%</td>
+      </tr>\`;
+    }).join('');
+
+  document.querySelectorAll('#cattable tr').forEach(row => {
+    row.addEventListener('click', () => {
+      const sel = document.getElementById('cat');
+      const clickedCat = row.dataset.cat;
+      document.getElementById('q').value = '';
+      sel.value = sel.value === clickedCat ? '' : clickedCat;
+      renderTable();
+      renderCatTable();
+    });
+  });
 }
 
 function renderScatter() {
@@ -405,7 +427,7 @@ function renderScatter() {
         : \`\${s.toolCalls} tool calls\`;
       const modelsHtml = s.modelSummary && s.modelSummary.length
         ? s.modelSummary.map(m =>
-            \`<code>\${esc(m.model)}</code>: \${m.inK}k in / \${m.outK}k out / \${m.cacheK}k cached — \$\${m.costUsd.toFixed(2)}\`
+            \`<code>\${esc(m.model)}</code>: \${fmtTok(m.inK)} in / \${fmtTok(m.outK)} out / \${fmtTok(m.cacheK)} cached — \$\${m.costUsd.toFixed(2)}\`
           ).join('<br>')
         : '';
       tip.innerHTML = \`<strong>\${esc(s.repo)}</strong> · <code>\${esc(s.branch)}</code><br>
@@ -421,6 +443,15 @@ function renderScatter() {
       tip.style.top  = (e.clientY + 14) + 'px';
     });
     c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+    c.addEventListener('click', () => {
+      const s = JSON.parse(c.dataset.i);
+      tip.style.display = 'none';
+      document.getElementById('cat').value = '';
+      document.getElementById('q').value = s.id;
+      renderTable();
+      renderCatTable();
+      document.getElementById('tbl').scrollIntoView({ behavior: 'smooth' });
+    });
   });
 }
 

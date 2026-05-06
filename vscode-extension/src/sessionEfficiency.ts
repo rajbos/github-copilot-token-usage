@@ -174,7 +174,7 @@ function harvestFromEventsFile(file: string): HarvestResult {
 	let editCount = 0;
 	let commitCount = 0;
 	let subagentCount = 0;
-	const modelMetrics: ModelMetricSummary[] = [];
+	const modelMetricsMap = new Map<string, ModelMetricSummary>();
 	let firstUserMsg: string | null = null;
 	let firstTs: string | null = null;
 	let lastTs: string | null = null;
@@ -206,17 +206,27 @@ function harvestFromEventsFile(file: string): HarvestResult {
 		if (t === 'session.start') {model = d.selectedModel || model;}
 		if (t === 'session.shutdown') {
 			// Extract per-model token usage and compute dollar cost from the shutdown summary.
+			// Multiple shutdown events (checkpoints/resumes) are aggregated per model.
 			const metrics = d.modelMetrics;
 			if (metrics && typeof metrics === 'object') {
 				for (const key of Object.keys(metrics)) {
 					const mu = metrics[key];
 					const u = mu?.usage || {};
-					const inTok  = typeof u.inputTokens     === 'number' ? u.inputTokens     : 0;
-					const outTok = typeof u.outputTokens    === 'number' ? u.outputTokens    : 0;
-					const cache  = typeof u.cacheReadTokens === 'number' ? u.cacheReadTokens : 0;
+					const inTok  = typeof u.inputTokens      === 'number' ? u.inputTokens      : 0;
+					const outTok = typeof u.outputTokens     === 'number' ? u.outputTokens     : 0;
+					const cache  = typeof u.cacheReadTokens  === 'number' ? u.cacheReadTokens  : 0;
 					const cacheW = typeof u.cacheWriteTokens === 'number' ? u.cacheWriteTokens : 0;
 					const costUsd = calcModelCostUsd(key, inTok, outTok, cache, cacheW);
-					modelMetrics.push({ model: key, inputTokens: inTok, outputTokens: outTok, cacheReadTokens: cache, cacheWriteTokens: cacheW, costUsd });
+					const existing = modelMetricsMap.get(key);
+					if (existing) {
+						existing.inputTokens     += inTok;
+						existing.outputTokens    += outTok;
+						existing.cacheReadTokens += cache;
+						existing.cacheWriteTokens += cacheW;
+						existing.costUsd         += costUsd;
+					} else {
+						modelMetricsMap.set(key, { model: key, inputTokens: inTok, outputTokens: outTok, cacheReadTokens: cache, cacheWriteTokens: cacheW, costUsd });
+					}
 				}
 			}
 		}
@@ -308,7 +318,7 @@ function harvestFromEventsFile(file: string): HarvestResult {
 			commitCount,
 			filesEdited: editedFiles.size,
 			subagentCount,
-			modelMetrics,
+			modelMetrics: [...modelMetricsMap.values()],
 			firstUserMsg,
 			firstTs,
 			lastTs,
