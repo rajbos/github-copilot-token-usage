@@ -110,12 +110,18 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   a { color: var(--vscode-textLink-foreground); }
   code { font-size: 12px; background: rgba(127,127,127,0.15); padding: 0 4px; border-radius: 2px; }
   .empty { padding: 36px; text-align: center; color: var(--vscode-descriptionForeground); }
-  .nav-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-  .nav-btn { padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px;
-             background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.15));
-             color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-             border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; }
-  .nav-btn:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.25)); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start;
+             flex-wrap: wrap; gap: 12px; margin-bottom: 14px; padding-bottom: 4px; }
+  .header-left { display: flex; align-items: center; gap: 8px; }
+  .header-icon { font-size: 20px; }
+  .header-title { font-size: 16px; font-weight: 700;
+                  color: var(--vscode-editor-foreground); letter-spacing: 0.2px; }
+  .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .nav-btn { padding: 4px 11px; cursor: pointer; font: inherit; font-size: 13px;
+             background: var(--vscode-button-background, #0078d4);
+             color: var(--vscode-button-foreground, #ffffff);
+             border: none; border-radius: 2px; white-space: nowrap; }
+  .nav-btn:hover { background: var(--vscode-button-hoverBackground, #026ec1); }
   .mode-toggle { display: flex; border: 1px solid var(--vscode-button-border, rgba(127,127,127,0.3)); border-radius: 3px; overflow: hidden; }
   .mode-btn { padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; border: none; border-radius: 0;
               background: transparent; color: var(--vscode-descriptionForeground); }
@@ -123,14 +129,20 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   .mode-btn:hover:not(.active) { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.15)); }
 </style>
 </head><body>
-<h1>Session Efficiency</h1>
-<div class="nav-buttons">
-  <button class="nav-btn" id="nav-details">🤖 Details</button>
-  <button class="nav-btn" id="nav-chart">📈 Chart</button>
-  <button class="nav-btn" id="nav-usage">📊 Usage Analysis</button>
-  <button class="nav-btn" id="nav-environmental">🌿 Environmental Impact</button>
-  <button class="nav-btn" id="nav-diagnostics">🔍 Diagnostics</button>
-  <button class="nav-btn" id="nav-maturity">🎯 Fluency Score</button>
+<div class="header">
+  <div class="header-left">
+    <span class="header-icon">📈</span>
+    <span class="header-title">Session Efficiency</span>
+  </div>
+  <div class="button-row">
+    <button class="nav-btn" id="nav-refresh">🔄 Refresh</button>
+    <button class="nav-btn" id="nav-details">🤖 Details</button>
+    <button class="nav-btn" id="nav-chart">📈 Chart</button>
+    <button class="nav-btn" id="nav-usage">📊 Usage Analysis</button>
+    <button class="nav-btn" id="nav-environmental">🌿 Environmental Impact</button>
+    <button class="nav-btn" id="nav-diagnostics">🔍 Diagnostics</button>
+    <button class="nav-btn" id="nav-maturity">🎯 Fluency Score</button>
+  </div>
 </div>
 <p class="muted" id="meta"></p>
 
@@ -458,6 +470,7 @@ function renderScatter() {
 init();
 
 const vscode = acquireVsCodeApi();
+document.getElementById('nav-refresh')?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
 document.getElementById('nav-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
 document.getElementById('nav-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
 document.getElementById('nav-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));

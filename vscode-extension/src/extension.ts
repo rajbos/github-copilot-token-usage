@@ -5616,6 +5616,15 @@ ${hashtag}`;
     );
     this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyHtml(sessions);
     this.sessionEfficiencyPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message.command === 'refresh') {
+        try {
+          const fresh = loadSessionEfficiency();
+          this.sessionEfficiencyPanel!.webview.html = renderSessionEfficiencyHtml(fresh);
+        } catch (err) {
+          this.warn(`Session Efficiency refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        return;
+      }
       await this.dispatchSharedCommand(message.command);
     });
     this.sessionEfficiencyPanel.onDidDispose(() => {
