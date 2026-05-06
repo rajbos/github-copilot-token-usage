@@ -214,7 +214,7 @@ ${SHARED_HEADER_HTML}
 
   <div class="row">
     <div class="panel" style="flex: 2 1 600px">
-      <strong>Cost vs Output</strong>
+      <strong><span id="chart-cost-label">Tool calls</span> vs Output</strong>
       <span class="muted">— top-left = efficient · bottom-right = heavy with no on-disk output</span>
       <div id="scatter"></div>
     </div>
@@ -320,6 +320,8 @@ function setCostMode(mode) {
   // Update table header labels
   const thCost = document.querySelector('th[data-k="toolCalls"]');
   const thEff  = document.querySelector('th[data-k="efficiency"]');
+  const chartLabel = document.getElementById('chart-cost-label');
+  if (chartLabel) chartLabel.textContent = mode === 'effort' ? 'Tool calls' : 'Cost ($)';
   if (thCost) { thCost.dataset.label = mode === 'effort' ? 'Tool calls' : 'Cost ($)'; }
   if (thEff)  { thEff.dataset.label = mode === 'effort' ? 'Eff×100' : 'Eff/$'; thEff.title = mode === 'effort' ? 'Output ÷ tool calls × 100' : 'Output ÷ cost in dollars × 100'; }
   renderScatter();
@@ -429,7 +431,7 @@ function renderCatTable() {
 }
 
 function renderScatter() {
-  const W = 720, H = 380, M = { l: 50, r: 16, t: 10, b: 36 };
+  const W = 720, H = 380, M = { l: 50, r: 20, t: 16, b: 36 };
   const data = DATA.filter(s => costVal(s) > 0);
   if (data.length === 0) { document.getElementById('scatter').innerHTML = '<p class="muted">No data.</p>'; return; }
   const maxCost = Math.max(50,  ...data.map(s => costVal(s)));
