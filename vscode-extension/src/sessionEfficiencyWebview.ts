@@ -66,9 +66,10 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   th, td { border-bottom: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.2));
            padding: 5px 7px; text-align: left; vertical-align: top; }
   th { background: var(--vscode-editorWidget-background, rgba(127,127,127,0.08));
-       cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; font-weight: 600; }
-  th .sort-icon { margin-left: 4px; opacity: 0.5; font-size: 10px; }
-  th.sorted .sort-icon { opacity: 1; }
+       cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; font-weight: 600;
+       white-space: nowrap; }
+  th .sort-icon { margin-left: 3px; opacity: 0.35; font-size: 9px; vertical-align: middle; }
+  th.sorted .sort-icon { opacity: 1; color: var(--vscode-textLink-foreground); }
   tr:hover td { background: var(--vscode-list-hoverBackground); }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .cat { display: inline-block; padding: 1px 7px; border-radius: 10px;
@@ -256,7 +257,7 @@ function renderTable() {
     th.classList.toggle('sorted', isSorted);
     let icon = th.querySelector('.sort-icon');
     if (!icon) { icon = document.createElement('span'); icon.className = 'sort-icon'; th.appendChild(icon); }
-    icon.textContent = isSorted ? (SORT.dir === 1 ? ' ▲' : ' ▼') : ' ⬍';
+    icon.textContent = isSorted ? (SORT.dir === 1 ? '▲' : '▼') : '⇅';
   });
   document.getElementById('rowcount').textContent = \`\${r.length} match(es)\`;
   const top = r.slice(0, 500);
