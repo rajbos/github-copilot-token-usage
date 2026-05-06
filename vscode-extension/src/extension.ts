@@ -269,6 +269,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// In-flight command tracker — prevents concurrent execution of the same webview command
 	private readonly _inFlightCommands = new Set<string>();
 
+	// In-flight updateTokenStats promise — coalesces concurrent callers onto the same run
+	private _updateTokenStatsInFlight: Promise<DetailedStats | undefined> | undefined;
+
 	// Cache mapping workspaceStorageId -> resolved workspace folder path (or undefined if not resolvable)
 	private _workspaceIdToFolderCache: Map<string, string | undefined> = new Map();
 
@@ -1428,6 +1431,22 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
+		// Coalesce concurrent callers onto the same in-flight run to prevent
+		// multiple executions from racing to update the status bar simultaneously.
+		if (this._updateTokenStatsInFlight) {
+			this.log('updateTokenStats already in progress, coalescing onto existing run');
+			return this._updateTokenStatsInFlight;
+		}
+
+		this._updateTokenStatsInFlight = this._runUpdateTokenStats(silent);
+		try {
+			return await this._updateTokenStatsInFlight;
+		} finally {
+			this._updateTokenStatsInFlight = undefined;
+		}
+	}
+
+	private async _runUpdateTokenStats(silent: boolean): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
 			const { stats: detailedStats, dailyStats } = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
