@@ -117,5 +117,10 @@
   "ide-get_diagnostics",
   "plan",
   "signal_plan_ready",
-  "update_plan_progress"
+  "update_plan_progress",
+
+  "stop_agent",
+
+  "mcp_reload",
+  "mcp_validate"
 ]
