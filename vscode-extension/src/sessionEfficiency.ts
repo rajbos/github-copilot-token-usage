@@ -13,6 +13,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getCopilotCliSessionStateDir } from './adapters/copilotCliAdapter';
+import modelPricingData from './modelPricing.json';
+import type { ModelPricing } from './types';
+
+const PRICING: Record<string, ModelPricing> = modelPricingData.pricing as Record<string, ModelPricing>;
 
 const PR_URL_RE = /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/g;
 const CREATED_PR_RE = /Created pull request #(\d+) in ([\w.-]+\/[\w.-]+)/g;
@@ -32,6 +36,16 @@ export interface PrRef {
 	number: number;
 	source: string;
 	confidence: 1 | 2 | 3;
+}
+
+/** Per-model token usage and calculated cost from a session.shutdown event. */
+export interface ModelMetricSummary {
+	model: string;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	costUsd: number;
 }
 
 export interface SessionEfficiency {
@@ -57,8 +71,9 @@ export interface SessionEfficiency {
 	issuesCreated: number;
 
 	output: number;       // composite output score
-	efficiency: number;   // output / cost
-	aiCredits: number;    // AI credits used (from session.shutdown modelMetrics); 0 if not available
+	efficiency: number;   // output / cost (tool calls)
+	estimatedCostUsd: number;  // token-based dollar cost from session.shutdown metrics; 0 if unavailable
+	modelMetrics: ModelMetricSummary[];  // per-model breakdown for tooltip
 	category: EfficiencyCategory;
 	firstUserMsg: string | null;
 }
@@ -74,7 +89,7 @@ interface HarvestResult {
 		commitCount: number;
 		filesEdited: number;
 		subagentCount: number;
-		aiCredits: number;
+		modelMetrics: ModelMetricSummary[];
 		firstUserMsg: string | null;
 		firstTs: string | null;
 		lastTs: string | null;
@@ -127,6 +142,27 @@ function* iterLines(file: string): IterableIterator<string> {
 	}
 }
 
+/**
+ * Calculate dollar cost for one model's token usage using Copilot pricing rates.
+ * Falls back to provider rates when copilotPricing is absent.
+ */
+function calcModelCostUsd(
+	modelKey: string,
+	inputTokens: number,
+	outputTokens: number,
+	cacheReadTokens: number,
+	cacheWriteTokens: number,
+): number {
+	const base = PRICING[modelKey];
+	if (!base) {return 0;}
+	const p = base.copilotPricing ?? base;
+	const uncached = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens);
+	return (uncached / 1_000_000) * p.inputCostPerMillion
+		+ (cacheReadTokens / 1_000_000) * (p.cachedInputCostPerMillion ?? p.inputCostPerMillion)
+		+ (cacheWriteTokens / 1_000_000) * (p.cacheCreationCostPerMillion ?? p.inputCostPerMillion)
+		+ (outputTokens / 1_000_000) * p.outputCostPerMillion;
+}
+
 function harvestFromEventsFile(file: string): HarvestResult {
 	const refs = new Map<string, PrRef>();
 	const issueRefs = new Map<string, PrRef>();
@@ -138,7 +174,7 @@ function harvestFromEventsFile(file: string): HarvestResult {
 	let editCount = 0;
 	let commitCount = 0;
 	let subagentCount = 0;
-	let aiCredits = 0;
+	const modelMetrics: ModelMetricSummary[] = [];
 	let firstUserMsg: string | null = null;
 	let firstTs: string | null = null;
 	let lastTs: string | null = null;
@@ -169,12 +205,18 @@ function harvestFromEventsFile(file: string): HarvestResult {
 
 		if (t === 'session.start') {model = d.selectedModel || model;}
 		if (t === 'session.shutdown') {
-			// Sum AI credits used across all models from the shutdown summary.
+			// Extract per-model token usage and compute dollar cost from the shutdown summary.
 			const metrics = d.modelMetrics;
 			if (metrics && typeof metrics === 'object') {
 				for (const key of Object.keys(metrics)) {
-					const cost = metrics[key]?.requests?.cost;
-					if (typeof cost === 'number') {aiCredits += cost;}
+					const mu = metrics[key];
+					const u = mu?.usage || {};
+					const inTok  = typeof u.inputTokens     === 'number' ? u.inputTokens     : 0;
+					const outTok = typeof u.outputTokens    === 'number' ? u.outputTokens    : 0;
+					const cache  = typeof u.cacheReadTokens === 'number' ? u.cacheReadTokens : 0;
+					const cacheW = typeof u.cacheWriteTokens === 'number' ? u.cacheWriteTokens : 0;
+					const costUsd = calcModelCostUsd(key, inTok, outTok, cache, cacheW);
+					modelMetrics.push({ model: key, inputTokens: inTok, outputTokens: outTok, cacheReadTokens: cache, cacheWriteTokens: cacheW, costUsd });
 				}
 			}
 		}
@@ -266,7 +308,7 @@ function harvestFromEventsFile(file: string): HarvestResult {
 			commitCount,
 			filesEdited: editedFiles.size,
 			subagentCount,
-			aiCredits,
+			modelMetrics,
 			firstUserMsg,
 			firstTs,
 			lastTs,
@@ -323,7 +365,8 @@ function buildSession(dir: string, info: HarvestResult, ws: any): SessionEfficie
 		issuesCreated,
 		output,
 		efficiency,
-		aiCredits: stats.aiCredits,
+		estimatedCostUsd: stats.modelMetrics.reduce((s, m) => s + m.costUsd, 0),
+		modelMetrics: stats.modelMetrics,
 		category,
 		firstUserMsg: stats.firstUserMsg,
 	};
@@ -355,7 +398,7 @@ export function loadSessionEfficiency(rootDir?: string): SessionEfficiency[] {
 			issueRefs: [],
 			stats: {
 				userTurns: 0, assistantTurns: 0, toolCalls: 0,
-				editCount: 0, commitCount: 0, filesEdited: 0, subagentCount: 0, aiCredits: 0,
+				editCount: 0, commitCount: 0, filesEdited: 0, subagentCount: 0, modelMetrics: [],
 				firstUserMsg: null, firstTs: null, lastTs: null, model: null,
 			},
 		};

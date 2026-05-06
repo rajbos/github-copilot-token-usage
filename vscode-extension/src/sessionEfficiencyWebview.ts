@@ -35,7 +35,14 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
 		issuesCreated: s.issuesCreated,
 		output: s.output,
 		efficiency: s.efficiency,
-		aiCredits: s.aiCredits,
+		estimatedCostUsd: s.estimatedCostUsd,
+		modelSummary: s.modelMetrics.map(m => ({
+			model: m.model,
+			inK: Math.round(m.inputTokens / 1000),
+			outK: Math.round(m.outputTokens / 1000),
+			cacheK: Math.round(m.cacheReadTokens / 1000),
+			costUsd: m.costUsd,
+		})),
 		model: s.model || '',
 		updatedAt: s.updatedAt,
 		topPrs: s.prRefs
@@ -141,7 +148,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
       <span class="muted" style="font-size:12px">Cost basis:</span>
       <div class="mode-toggle">
         <button class="mode-btn active" id="mode-effort" title="Use tool-call count as the cost metric">⚙ Effort (tool calls)</button>
-        <button class="mode-btn" id="mode-money" title="Use AI credits consumed as the cost metric (available for ~80% of sessions)">💳 Cost (AI credits)</button>
+        <button class="mode-btn" id="mode-money" title="Use token-based dollar cost (from session.shutdown metrics, ~80% of sessions)">💲 Cost ($)</button>
       </div>
     </div>
     <p class="muted" style="margin:8px 0 4px; font-size:12px; line-height:1.5; max-width:860px">
@@ -186,8 +193,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
         <th data-k="userTurns" class="num">Turns</th>
         <th data-k="toolCalls" class="num" data-label="Tool calls">Tool calls</th>
         <th data-k="output" class="num">Output</th>
-        <th data-k="efficiency" class="num" data-label="Eff×100" title="Output ÷ tool calls × 100">Eff×100</th>
-      </tr></thead>
+        <th data-k="efficiency" class="num" data-label="Eff×100" title="Output ÷ tool calls × 100">Eff×100</th>      </tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -257,15 +263,15 @@ function setCostMode(mode) {
   // Update table header labels
   const thCost = document.querySelector('th[data-k="toolCalls"]');
   const thEff  = document.querySelector('th[data-k="efficiency"]');
-  if (thCost) { thCost.dataset.label = mode === 'effort' ? 'Tool calls' : 'AI credits'; }
-  if (thEff)  { thEff.dataset.label = mode === 'effort' ? 'Eff×100' : 'Eff/cr'; thEff.title = mode === 'effort' ? 'Output ÷ tool calls × 100' : 'Output ÷ AI credits × 100'; }
+  if (thCost) { thCost.dataset.label = mode === 'effort' ? 'Tool calls' : 'Cost ($)'; }
+  if (thEff)  { thEff.dataset.label = mode === 'effort' ? 'Eff×100' : 'Eff/$'; thEff.title = mode === 'effort' ? 'Output ÷ tool calls × 100' : 'Output ÷ cost in dollars × 100'; }
   renderScatter();
   renderTable();
 }
 
 // Returns the "cost" value to use for a session in the current COST_MODE.
-// Money mode falls back to tool calls when aiCredits = 0.
-function costVal(s) { return COST_MODE === 'money' && s.aiCredits > 0 ? s.aiCredits : s.toolCalls; }
+// Money mode falls back to tool calls when estimatedCostUsd = 0.
+function costVal(s) { return COST_MODE === 'money' && s.estimatedCostUsd > 0 ? s.estimatedCostUsd : s.toolCalls; }
 function effVal(s)  { const c = costVal(s); return c > 0 ? s.output / c : 0; }
 
 function filtered() {
@@ -316,7 +322,7 @@ function renderTable() {
       ? s.topPrs.map(p => \`<a href="https://github.com/\${p.repo}/pull/\${p.number}">#\${p.number}</a>\`).join(' ')
       : (s.prsCreated || '');
     const costCell = COST_MODE === 'money'
-      ? (s.aiCredits > 0 ? s.aiCredits : \`<span class="muted" title="No shutdown data">\${s.toolCalls}*</span>\`)
+      ? (s.estimatedCostUsd > 0 ? '$' + s.estimatedCostUsd.toFixed(2) : \`<span class="muted" title="No shutdown data">\${s.toolCalls}*</span>\`)
       : s.toolCalls;
     const effCell = (effVal(s) * 100).toFixed(1);
     return \`<tr>
@@ -364,7 +370,7 @@ function renderScatter() {
   };
   const xticks = [1, 10, 100, 1000, 10000].filter(v => v <= maxCost * 1.5);
   const yticks = [0, 1, 5, 10, 50, 100, 500].filter(v => v <= maxOut * 1.5);
-  const xLabel = COST_MODE === 'money' ? 'AI credits (log) →' : 'Tool calls (log) →';
+  const xLabel = COST_MODE === 'money' ? 'Cost in $ (log) →' : 'Tool calls (log) →';
 
   const dots = data.map(s => {
     const r = 3 + Math.min(7, Math.sqrt(s.userTurns || 1));
@@ -395,14 +401,19 @@ function renderScatter() {
         ? s.topPrs.map(p => '#' + p.number).join(' ')
         : '—';
       const costLine = COST_MODE === 'money'
-        ? \`\${s.aiCredits > 0 ? s.aiCredits + ' AI credits' : s.toolCalls + ' tool calls (no credit data)'}\`
+        ? (s.estimatedCostUsd > 0 ? '$' + s.estimatedCostUsd.toFixed(2) : s.toolCalls + ' tool calls (no cost data)')
         : \`\${s.toolCalls} tool calls\`;
+      const modelsHtml = s.modelSummary && s.modelSummary.length
+        ? s.modelSummary.map(m =>
+            \`<code>\${esc(m.model)}</code>: \${m.inK}k in / \${m.outK}k out / \${m.cacheK}k cached — \$\${m.costUsd.toFixed(2)}\`
+          ).join('<br>')
+        : '';
       tip.innerHTML = \`<strong>\${esc(s.repo)}</strong> · <code>\${esc(s.branch)}</code><br>
         <span class="cat cat-\${s.category}">\${s.category}</span>
         · \${costLine} · \${s.userTurns} user turns<br>
         PRs: \${prsHtml} · \${s.commitCount} commit(s) · \${s.filesEdited} file(s) edited<br>
         eff×100 = \${(effVal(s)*100).toFixed(2)}<br>
-        <em>\${esc(s.summary || s.firstUserMsg).slice(0, 200)}</em>\`;
+        \${modelsHtml ? modelsHtml + '<br>' : ''}<em>\${esc(s.summary || s.firstUserMsg).slice(0, 200)}</em>\`;
       tip.style.display = 'block';
     });
     c.addEventListener('mousemove', e => {
