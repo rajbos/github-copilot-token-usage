@@ -82,12 +82,13 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
                   border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
   .legend span { margin-right: 8px; cursor: help; }
   svg { background: var(--vscode-editor-background); display: block;
-        border: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.25)); border-radius: 4px; }
+        border: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.25)); border-radius: 4px;
+        shape-rendering: geometricPrecision; }
   .gridline { stroke: var(--vscode-panel-border, rgba(127,127,127,0.18)); }
   .axis text { fill: var(--vscode-descriptionForeground); font-size: 10px; }
   .axis-label { fill: var(--vscode-descriptionForeground); font-size: 11px; }
-  circle { cursor: pointer; opacity: 0.7; }
-  circle:hover { opacity: 1; stroke: var(--vscode-foreground); stroke-width: 1.4; }
+  circle { cursor: pointer; opacity: 0.65; }
+  circle:hover { opacity: 1; stroke-width: 1.5; }
   #tooltip { position: fixed; pointer-events: none;
              background: var(--vscode-editorHoverWidget-background, #222);
              color: var(--vscode-editorHoverWidget-foreground, #fff);
@@ -300,9 +301,10 @@ function renderScatter() {
   const yticks = [0, 1, 5, 10, 50, 100, 500].filter(v => v <= maxOut * 1.5);
 
   const dots = data.map(s => {
-    const r = 3 + Math.min(7, Math.sqrt(s.userTurns || 1));
-    return \`<circle cx="\${x(s.toolCalls).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r.toFixed(1)}"
-              fill="\${colors[s.category] || '#888'}" data-i="\${esc(JSON.stringify(s))}"/>\`;
+    const r = 4.5;
+    const col = colors[s.category] || '#888';
+    return \`<circle cx="\${x(s.toolCalls).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r}"
+              fill="\${col}" stroke="\${col}" stroke-width="0.5" stroke-opacity="0.4" data-i="\${esc(JSON.stringify(s))}"/>\`;
   }).join('');
   const gridX = xticks.map(v =>
     \`<line class="gridline" x1="\${x(v)}" y1="\${M.t}" x2="\${x(v)}" y2="\${H-M.b}"/>
