@@ -97,9 +97,23 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   a { color: var(--vscode-textLink-foreground); }
   code { font-size: 12px; background: rgba(127,127,127,0.15); padding: 0 4px; border-radius: 2px; }
   .empty { padding: 36px; text-align: center; color: var(--vscode-descriptionForeground); }
+  .nav-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .nav-btn { padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px;
+             background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.15));
+             color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+             border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; }
+  .nav-btn:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.25)); }
 </style>
 </head><body>
 <h1>Session Efficiency</h1>
+<div class="nav-buttons">
+  <button class="nav-btn" id="nav-details">🤖 Details</button>
+  <button class="nav-btn" id="nav-chart">📈 Chart</button>
+  <button class="nav-btn" id="nav-usage">📊 Usage Analysis</button>
+  <button class="nav-btn" id="nav-environmental">🌿 Environmental Impact</button>
+  <button class="nav-btn" id="nav-diagnostics">🔍 Diagnostics</button>
+  <button class="nav-btn" id="nav-maturity">🎯 Fluency Score</button>
+</div>
 <p class="muted" id="meta"></p>
 
 <div id="empty" class="empty" style="display:none">
@@ -329,6 +343,14 @@ function renderScatter() {
 }
 
 init();
+
+const vscode = acquireVsCodeApi();
+document.getElementById('nav-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+document.getElementById('nav-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
+document.getElementById('nav-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
+document.getElementById('nav-environmental')?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
+document.getElementById('nav-diagnostics')?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+document.getElementById('nav-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 </script>
 </body></html>`;
 }

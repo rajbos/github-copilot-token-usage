@@ -404,6 +404,7 @@ function renderLayout(data: MaturityData): void {
 					${buttonHtml('btn-usage')}
 					${buttonHtml('btn-environmental')}
 					${buttonHtml('btn-diagnostics')}
+					${buttonHtml('btn-session-efficiency')}
 					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}
 				</div>
 			</div>
@@ -565,6 +566,9 @@ function renderLayout(data: MaturityData): void {
 	});
 	document.getElementById('btn-environmental')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showEnvironmental' });
+	});
+	document.getElementById('btn-session-efficiency')?.addEventListener('click', () => {
+		vscode.postMessage({ command: 'showSessionEfficiency' });
 	});
 
 	// Wire up share to issue button

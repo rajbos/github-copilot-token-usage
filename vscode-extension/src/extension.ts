@@ -445,6 +445,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			showDashboard:          () => this.showDashboard(),
 			showEnvironmental:      () => this.showEnvironmental(),
 			showFluencyLevelViewer: () => this.showFluencyLevelViewer(),
+			showSessionEfficiency:  () => this.showSessionEfficiency(),
 		};
 		const handler = handlers[command];
 		if (!handler) { return false; }
@@ -5614,6 +5615,9 @@ ${hashtag}`;
       { enableScripts: true, retainContextWhenHidden: true },
     );
     this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyHtml(sessions);
+    this.sessionEfficiencyPanel.webview.onDidReceiveMessage(async (message) => {
+      await this.dispatchSharedCommand(message.command);
+    });
     this.sessionEfficiencyPanel.onDidDispose(() => {
       this.log("📈 Session Efficiency closed");
       this.sessionEfficiencyPanel = undefined;
@@ -8538,14 +8542,8 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
 
-  // Register the show session efficiency command
-  const showSessionEfficiencyCommand = vscode.commands.registerCommand(
-    "aiEngineeringFluency.showSessionEfficiency",
-    async () => {
-      tokenTracker.log("Show session efficiency command called");
-      await tokenTracker.showSessionEfficiency();
-    },
-  );
+  // Register the show session efficiency command was removed — the view is
+  // now only reachable via the nav button row in all other panels (no palette entry).
 
   const runLocalViewRegressionCommand = vscode.commands.registerCommand(
     "aiEngineeringFluency.runLocalViewRegression",
@@ -8599,7 +8597,6 @@ export async function activate(context: vscode.ExtensionContext) {
     showUsageAnalysisCommand,
     showMaturityCommand,
     showFluencyLevelViewerCommand,
-    showSessionEfficiencyCommand,
     runLocalViewRegressionCommand,
     showDashboardCommand,
     showEnvironmentalCommand,

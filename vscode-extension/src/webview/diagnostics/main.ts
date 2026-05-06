@@ -1361,6 +1361,7 @@ function renderLayout(data: DiagnosticsData): void {
 					${buttonHtml("btn-usage")}
 					${buttonHtml("btn-environmental")}
 					${buttonHtml("btn-maturity")}
+					${buttonHtml("btn-session-efficiency")}
 					${data?.backendConfigured ? buttonHtml("btn-dashboard") : ""}
 				</div>
 			</div>
@@ -2330,6 +2331,11 @@ function renderLayout(data: DiagnosticsData): void {
     .getElementById("btn-environmental")
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showEnvironmental" }),
+    );
+  document
+    .getElementById("btn-session-efficiency")
+    ?.addEventListener("click", () =>
+      vscode.postMessage({ command: "showSessionEfficiency" }),
     );
 
   setupSortHandlers();
