@@ -203,13 +203,6 @@ ${SHARED_HEADER_HTML}
     <strong>Output score</strong> = <code>10·PRs + 4·commits + 3·issues + filesEdited</code>.
     <strong>Cost</strong> = total tool calls (proxy for effort) <em>or</em> AI credits used.
     <strong>Efficiency</strong> = output ÷ cost.
-    <div style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-      <span class="muted" style="font-size:12px">Cost basis:</span>
-      <div class="mode-toggle">
-        <button class="mode-btn active" id="mode-effort" title="Use tool-call count as the cost metric">⚙ Effort (tool calls)</button>
-        <button class="mode-btn" id="mode-money" title="Use token-based dollar cost (from session.shutdown metrics, ~80% of sessions)">💲 Cost ($)</button>
-      </div>
-    </div>
     <p class="muted" style="margin:8px 0 4px; font-size:12px; line-height:1.5; max-width:860px">
       <strong>Note:</strong> The output score only reflects what is visible in the session log.
       A session can create real value in ways that don't appear here — for example:
@@ -228,6 +221,13 @@ ${SHARED_HEADER_HTML}
     <div class="panel" style="flex: 1 1 182px">
       <strong>Sessions by category</strong>
       <table id="cattable"><tbody></tbody></table>
+      <div style="margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span class="muted" style="font-size:12px">Cost basis:</span>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="mode-effort" title="Use tool-call count as the cost metric">⚙ Effort (tool calls)</button>
+          <button class="mode-btn" id="mode-money" title="Use token-based dollar cost (from session.shutdown metrics, ~80% of sessions)">💲 Cost ($)</button>
+        </div>
+      </div>
     </div>
   </div>
 
