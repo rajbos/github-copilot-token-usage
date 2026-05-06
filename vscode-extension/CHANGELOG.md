@@ -6,6 +6,26 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-06
+
+### Features
+- Added Session Efficiency view — scatter chart of sessions by token usage and tool calls, with sortable table, model/PR filters, and async load with spinner
+- Added cost-mode toggle (AI credits vs. dollar cost) and explainer to Session Efficiency view
+- Added Session Efficiency nav button to all views; removed palette command
+- Cost basis toggle moved into Sessions by category panel; chart title updates to reflect active mode
+- Added sort indicator to active column header in session table
+
+### Improvements
+- Added Mistral AI model pricing and token estimators (#796)
+- Added missing friendly names for 17 additional tools (TaskCreate, TaskUpdate, dismiss_deployment_notifications, Claude in Chrome MCP, and 13 others)
+- Scatter chart: dark border on dots for readability, crisp rendering, variable circle size restored
+- Compact token format in Session Efficiency table; dedup models/PRs; clear filters on click
+- Session Efficiency header/buttons match styling of other views
+
+### Bug Fixes
+- Fixed duplicate loading sessions appearing in the status bar
+- Fixed sort indicator wrapping to new line in session table headers
+
 ## [0.4.4] - 2026-05-05
 
 ### Bug Fixes
