@@ -52,6 +52,24 @@
     "o1-mini": 0.25,
     "o3-mini": 0.25,
     "o4-mini": 0.25,
-    "gpt-5.5": 0.25
+    "gpt-5.5": 0.25,
+    "mistral-large-latest": 0.25,
+    "mistral-large-2512": 0.25,
+    "mistral-large-2411": 0.25,
+    "magistral-medium-latest": 0.25,
+    "mistral-medium-latest": 0.25,
+    "mistral-medium-3-5": 0.25,
+    "mistral-medium-2505": 0.25,
+    "mistral-small-latest": 0.25,
+    "mistral-small-2503": 0.25,
+    "mistral-small-2603": 0.25,
+    "codestral-latest": 0.25,
+    "codestral-2501": 0.25,
+    "open-mistral-nemo": 0.25,
+    "ministral-3b-2410": 0.25,
+    "ministral-8b-2410": 0.25,
+    "magistral-small-latest": 0.25,
+    "devstral-medium-2507": 0.25,
+    "pixtral-large-2411": 0.25
   }
 }

@@ -109,6 +109,9 @@ Before updating these files, ensure you have:
    - Anthropic: https://www.anthropic.com/pricing (also https://platform.claude.com/docs/en/about-claude/pricing)
    - Google Gemini: https://ai.google.dev/gemini-api/docs/pricing
    - xAI Grok: https://x.ai/api
+   - **Mistral AI**: https://pricepertoken.com/pricing-page/provider/mistral-ai (aggregator, updated ~daily)
+     - Cross-reference with https://openrouter.ai/mistralai and https://ai-pricing.info/mistral
+     - Note: Mistral does not publish a single stable pricing page; use aggregators
    - GitHub Copilot Models: https://docs.github.com/en/copilot/reference/ai-models/supported-models
    - GitHub Copilot Premium Requests: https://docs.github.com/en/copilot/managing-copilot/monitoring-usage-and-entitlements/about-premium-requests
    - OpenRouter (cross-provider verification): https://openrouter.ai
