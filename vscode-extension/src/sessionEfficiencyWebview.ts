@@ -67,6 +67,8 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
            padding: 5px 7px; text-align: left; vertical-align: top; }
   th { background: var(--vscode-editorWidget-background, rgba(127,127,127,0.08));
        cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; font-weight: 600; }
+  th .sort-icon { margin-left: 4px; opacity: 0.5; font-size: 10px; }
+  th.sorted .sort-icon { opacity: 1; }
   tr:hover td { background: var(--vscode-list-hoverBackground); }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .cat { display: inline-block; padding: 1px 7px; border-radius: 10px;
@@ -247,6 +249,14 @@ function renderTable() {
     const av = a[k], bv = b[k];
     if (typeof av === 'string') return SORT.dir * av.localeCompare(bv);
     return SORT.dir * (((av || 0) - (bv || 0)) || 0);
+  });
+  // Update sort indicators on column headers
+  document.querySelectorAll('th[data-k]').forEach(th => {
+    const isSorted = th.dataset.k === SORT.k;
+    th.classList.toggle('sorted', isSorted);
+    let icon = th.querySelector('.sort-icon');
+    if (!icon) { icon = document.createElement('span'); icon.className = 'sort-icon'; th.appendChild(icon); }
+    icon.textContent = isSorted ? (SORT.dir === 1 ? ' ▲' : ' ▼') : ' ⬍';
   });
   document.getElementById('rowcount').textContent = \`\${r.length} match(es)\`;
   const top = r.slice(0, 500);
