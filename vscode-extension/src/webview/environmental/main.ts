@@ -151,7 +151,8 @@ function render(stats: EnvironmentalStats): void {
 		createButton(BUTTONS['btn-chart']),
 		createButton(BUTTONS['btn-usage']),
 		createButton(BUTTONS['btn-diagnostics']),
-		createButton(BUTTONS['btn-maturity'])
+		createButton(BUTTONS['btn-maturity']),
+		createButton(BUTTONS['btn-session-efficiency'])
 	);
 	if (stats.backendConfigured) {
 		buttonRow.append(createButton(BUTTONS['btn-dashboard']));
@@ -298,6 +299,7 @@ function wireButtons(): void {
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
 	document.getElementById('btn-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => vscode.postMessage({ command: 'showDashboard' }));
+	document.getElementById('btn-session-efficiency')?.addEventListener('click', () => vscode.postMessage({ command: 'showSessionEfficiency' }));
 }
 
 window.addEventListener('message', (event: MessageEvent) => {

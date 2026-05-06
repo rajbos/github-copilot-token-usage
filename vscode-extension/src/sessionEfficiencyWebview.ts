@@ -1,0 +1,522 @@
+/**
+ * Webview HTML for the Session Efficiency view.
+ *
+ * The webview ships the full session list as a JSON blob inlined into the
+ * page (no external fetch — VS Code webviews don't have file:// access by
+ * default). All rendering happens client-side so filtering and sorting feel
+ * snappy.
+ */
+
+import type { SessionEfficiency } from './sessionEfficiency';
+
+const CATEGORY_LEGEND = [
+	{ id: 'shipped',     label: 'shipped',     desc: 'Created at least one PR' },
+	{ id: 'committed',   label: 'committed',   desc: 'Committed but no PR opened' },
+	{ id: 'issue',       label: 'issue',       desc: 'Created or opened an issue' },
+	{ id: 'edited',      label: 'edited',      desc: 'Edited files but no commit' },
+	{ id: 'exploratory', label: 'exploratory', desc: 'Few tool calls, no edits — research/Q&A' },
+	{ id: 'no-pr',       label: 'no-pr',       desc: 'Heavy session (≥50 tool calls), no PR opened — work may have been pasted elsewhere or used in another session' },
+];
+
+const SHARED_HEAD_CSS = `
+  body { font: 13px/1.45 var(--vscode-font-family, system-ui, sans-serif);
+         color: var(--vscode-foreground); background: var(--vscode-editor-background);
+         margin: 0; padding: 14px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start;
+             flex-wrap: wrap; gap: 12px; margin-bottom: 14px; padding-bottom: 4px; }
+  .header-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .header-icon { font-size: 20px; }
+  .header-title { font-size: 16px; font-weight: 700;
+                  color: var(--vscode-editor-foreground); letter-spacing: 0.2px; }
+  .header-meta { font-size: 12px; color: var(--vscode-descriptionForeground);
+                 margin-left: 4px; font-weight: 400; }
+  .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .nav-btn { padding: 4px 11px; cursor: pointer; font: inherit; font-size: 13px;
+             background: var(--vscode-button-background, #0078d4);
+             color: var(--vscode-button-foreground, #ffffff);
+             border: none; border-radius: 2px; white-space: nowrap; }
+  .nav-btn:hover { background: var(--vscode-button-hoverBackground, #026ec1); }
+`;
+
+const SHARED_HEADER_HTML = `
+<div class="header">
+  <div class="header-left">
+    <span class="header-icon">📈</span>
+    <span class="header-title">Session Efficiency</span>
+    <span class="header-meta" id="header-meta"></span>
+  </div>
+  <div class="button-row">
+    <button class="nav-btn" id="nav-refresh">🔄 Refresh</button>
+    <button class="nav-btn" id="nav-details">🤖 Details</button>
+    <button class="nav-btn" id="nav-chart">📈 Chart</button>
+    <button class="nav-btn" id="nav-usage">📊 Usage Analysis</button>
+    <button class="nav-btn" id="nav-environmental">🌿 Environmental Impact</button>
+    <button class="nav-btn" id="nav-diagnostics">🔍 Diagnostics</button>
+    <button class="nav-btn" id="nav-maturity">🎯 Fluency Score</button>
+  </div>
+</div>`;
+
+/**
+ * Returns a lightweight loading screen shown immediately while sessions are scanned.
+ * The extension replaces this with the full view once the scan completes.
+ */
+export function renderSessionEfficiencyLoadingHtml(): string {
+	return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<title>Session Efficiency</title>
+<style>
+${SHARED_HEAD_CSS}
+  .spinner-wrap { display: flex; flex-direction: column; align-items: center;
+                  justify-content: center; height: 60vh; gap: 18px;
+                  color: var(--vscode-descriptionForeground); }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--vscode-panel-border, rgba(127,127,127,0.3));
+             border-top-color: var(--vscode-button-background, #0078d4);
+             border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head><body>
+${SHARED_HEADER_HTML}
+<div class="spinner-wrap">
+  <div class="spinner"></div>
+  <span>Scanning sessions…</span>
+</div>
+<script>
+const vscode = acquireVsCodeApi();
+document.getElementById('nav-refresh')?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+document.getElementById('nav-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+document.getElementById('nav-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
+document.getElementById('nav-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
+document.getElementById('nav-environmental')?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
+document.getElementById('nav-diagnostics')?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+document.getElementById('nav-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
+</script>
+</body></html>`;
+}
+
+export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): string {
+	const slim = sessions.map(s => ({
+		id: s.id,
+		repo: s.repository || '',
+		branch: s.branch || '',
+		summary: s.summary || '',
+		firstUserMsg: s.firstUserMsg || '',
+		category: s.category,
+		userTurns: s.userTurns,
+		toolCalls: s.toolCalls,
+		commitCount: s.commitCount,
+		filesEdited: s.filesEdited,
+		prsCreated: s.prsCreated,
+		issuesCreated: s.issuesCreated,
+		output: s.output,
+		efficiency: s.efficiency,
+		estimatedCostUsd: s.estimatedCostUsd,
+		modelSummary: s.modelMetrics.map(m => ({
+			model: m.model,
+			inK: Math.round(m.inputTokens / 1000),
+			outK: Math.round(m.outputTokens / 1000),
+			cacheK: Math.round(m.cacheReadTokens / 1000),
+			costUsd: m.costUsd,
+		})),
+		model: s.model || '',
+		updatedAt: s.updatedAt,
+		topPrs: s.prRefs
+			.filter(r => r.confidence >= 2)
+			.filter((r, i, arr) => arr.findIndex(x => x.number === r.number) === i)
+			.slice(0, 5)
+			.map(r => ({ repo: r.repo, number: r.number })),
+	}));
+
+	const dataJson = JSON.stringify(slim).replace(/</g, '\\u003c');
+	const sessionCount = sessions.length;
+
+	return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<title>Session Efficiency</title>
+<style>
+${SHARED_HEAD_CSS}
+  .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
+  .panel { background: var(--vscode-editorWidget-background, rgba(127,127,127,0.06));
+           border: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.25));
+           border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > .panel { flex: 1 1 320px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.2));
+           padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: var(--vscode-editorWidget-background, rgba(127,127,127,0.08));
+       cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; font-weight: 600;
+       white-space: nowrap; }
+  th .sort-icon { margin-left: 3px; opacity: 0.35; font-size: 9px; vertical-align: middle; }
+  th.sorted .sort-icon { opacity: 1; color: var(--vscode-textLink-foreground); }
+  tr:hover td { background: var(--vscode-list-hoverBackground); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .cat { display: inline-block; padding: 1px 7px; border-radius: 10px;
+         font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .cat-shipped     { background: rgba( 16,128, 64,0.20); color: #2faa64; }
+  .cat-committed   { background: rgba( 28, 71,179,0.20); color: #6c8df0; }
+  .cat-issue       { background: rgba(204,138,  0,0.22); color: #e2b249; }
+  .cat-edited      { background: rgba(127,127,127,0.22); color: var(--vscode-foreground); }
+  .cat-exploratory { background: rgba(122, 63,184,0.22); color: #b889e6; }
+  .cat-no-pr       { background: rgba(201,122, 20,0.22); color: #ff9d4a; }
+  input, select { padding: 4px 6px; font: inherit; margin-right: 6px;
+                  background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+                  border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
+  svg { background: var(--vscode-editor-background); display: block;
+        border: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.25)); border-radius: 4px;
+        shape-rendering: geometricPrecision; }
+  .gridline { stroke: var(--vscode-panel-border, rgba(127,127,127,0.18)); }
+  .axis text { fill: var(--vscode-descriptionForeground); font-size: 10px; }
+  .axis-label { fill: var(--vscode-descriptionForeground); font-size: 11px; }
+  circle { cursor: pointer; opacity: 0.85; }
+  circle:hover { opacity: 1; stroke: rgba(255,255,255,0.9) !important; stroke-width: 1.5; }
+  #tooltip { position: fixed; pointer-events: none;
+             background: var(--vscode-editorHoverWidget-background, #222);
+             color: var(--vscode-editorHoverWidget-foreground, #fff);
+             border: 1px solid var(--vscode-editorHoverWidget-border, transparent);
+             padding: 6px 8px; border-radius: 3px; font-size: 12px;
+             max-width: 360px; display: none; z-index: 10; }
+  a { color: var(--vscode-textLink-foreground); }
+  code { font-size: 12px; background: rgba(127,127,127,0.15); padding: 0 4px; border-radius: 2px; }
+  .empty { padding: 36px; text-align: center; color: var(--vscode-descriptionForeground); }
+  .mode-toggle { display: flex; border: 1px solid var(--vscode-button-border, rgba(127,127,127,0.3)); border-radius: 3px; overflow: hidden; }
+  .mode-btn { padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; border: none; border-radius: 0;
+              background: transparent; color: var(--vscode-descriptionForeground); }
+  .mode-btn.active { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); }
+  .mode-btn:hover:not(.active) { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.15)); }
+</style>
+</head><body>
+${SHARED_HEADER_HTML}
+
+<div id="empty" class="empty" style="display:none">
+  <strong>No Copilot CLI sessions found.</strong><br>
+  Looked in <code>~/.copilot/session-state/</code>. This view reads
+  <code>events.jsonl</code> from each session directory.
+</div>
+
+<div id="root">
+  <div class="panel">
+    <strong>Output score</strong> = <code>10·PRs + 4·commits + 3·issues + filesEdited</code>.
+    <strong>Cost</strong> = total tool calls (proxy for effort) <em>or</em> AI credits used.
+    <strong>Efficiency</strong> = output ÷ cost.
+    <p class="muted" style="margin:8px 0 4px; font-size:12px; line-height:1.5; max-width:860px">
+      <strong>Note:</strong> The output score only reflects what is visible in the session log.
+      A session can create real value in ways that don't appear here — for example:
+      researching a topic before acting on it elsewhere, testing multiple hypotheses to settle on the right approach,
+      or producing work that was continued, copy-pasted, or applied outside this editor.
+      Use this view as a signal to spot patterns, not as a verdict on individual sessions.
+    </p>
+  </div>
+
+  <div class="row">
+    <div class="panel" style="flex: 2 1 600px">
+      <strong><span id="chart-cost-label">Tool calls</span> vs Output</strong>
+      <span class="muted">— top-left = efficient · bottom-right = heavy with no on-disk output</span>
+      <div id="scatter"></div>
+    </div>
+    <div class="panel" style="flex: 1 1 182px">
+      <strong>Sessions by category</strong>
+      <table id="cattable"><tbody></tbody></table>
+      <div style="margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span class="muted" style="font-size:12px">Cost basis:</span>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="mode-effort" title="Use tool-call count as the cost metric">⚙ Effort (tool calls)</button>
+          <button class="mode-btn" id="mode-money" title="Use token-based dollar cost (from session.shutdown metrics, ~80% of sessions)">💲 Cost ($)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <input id="q" placeholder="Filter (repo, branch, summary…)" size="36">
+    <select id="cat"><option value="">All categories</option></select>
+    <select id="repo"><option value="">All repos</option></select>
+    <label style="font-size:12px"><input type="checkbox" id="onlyOutput"> Only sessions with output</label>
+    <span class="muted" id="rowcount" style="margin-left:8px"></span>
+  </div>
+
+  <div class="panel" style="padding:0">
+    <table id="tbl">
+      <thead><tr>
+        <th data-k="category">Cat</th>
+        <th data-k="repo">Repo</th>
+        <th>Branch / summary</th>
+        <th data-k="prsCreated" class="num">PRs</th>
+        <th data-k="commitCount" class="num">Commits</th>
+        <th data-k="filesEdited" class="num">Files</th>
+        <th data-k="userTurns" class="num">Turns</th>
+        <th data-k="toolCalls" class="num" data-label="Tool calls">Tool calls</th>
+        <th data-k="output" class="num">Output</th>
+        <th data-k="efficiency" class="num" data-label="Eff×100" title="Output ÷ tool calls × 100">Eff×100</th>      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+const DATA = ${dataJson};
+const LEGEND = ${JSON.stringify(CATEGORY_LEGEND)};
+let SORT = { k: 'efficiency', dir: -1 };
+let COST_MODE = 'effort'; // 'effort' | 'money'
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[<&>"']/g, c => ({ '<':'&lt;','&':'&amp;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Format a token count already in thousands (k). Shows "1.2M" above 1000k.
+function fmtTok(k) {
+  if (k >= 1000) return (k / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) + 'M';
+  return k + 'k';
+}
+
+function init() {
+  document.getElementById('header-meta').textContent = \`— \${DATA.length} session(s)\`;
+
+  if (DATA.length === 0) {
+    document.getElementById('root').style.display = 'none';
+    document.getElementById('empty').style.display = 'block';
+    return;
+  }
+
+  // Category filter options (legend chips removed — see "Sessions by category" panel)
+  const catSel = document.getElementById('cat');
+  for (const c of LEGEND) {
+    catSel.appendChild(new Option(c.label, c.id));
+  }
+
+  // Repo filter options
+  const repos = [...new Set(DATA.map(s => s.repo).filter(Boolean))].sort();
+  const repoSel = document.getElementById('repo');
+  for (const r of repos) repoSel.appendChild(new Option(r, r));
+
+  renderCatTable();
+  renderScatter();
+  renderTable();
+
+  ['q','cat','repo','onlyOutput'].forEach(id =>
+    document.getElementById(id).addEventListener('input', () => { renderTable(); if (id === 'cat') renderCatTable(); }));
+  document.querySelectorAll('th[data-k]').forEach(th =>
+    th.addEventListener('click', () => {
+      const k = th.dataset.k;
+      if (SORT.k === k) SORT.dir = -SORT.dir;
+      else { SORT.k = k; SORT.dir = (k === 'repo' || k === 'category') ? 1 : -1; }
+      renderTable();
+    }));
+
+  document.getElementById('mode-effort').addEventListener('click', () => setCostMode('effort'));
+  document.getElementById('mode-money').addEventListener('click', () => setCostMode('money'));
+}
+
+function setCostMode(mode) {
+  COST_MODE = mode;
+  document.getElementById('mode-effort').classList.toggle('active', mode === 'effort');
+  document.getElementById('mode-money').classList.toggle('active', mode === 'money');
+  // Update table header labels
+  const thCost = document.querySelector('th[data-k="toolCalls"]');
+  const thEff  = document.querySelector('th[data-k="efficiency"]');
+  const chartLabel = document.getElementById('chart-cost-label');
+  if (chartLabel) chartLabel.textContent = mode === 'effort' ? 'Tool calls' : 'Cost ($)';
+  if (thCost) { thCost.dataset.label = mode === 'effort' ? 'Tool calls' : 'Cost ($)'; }
+  if (thEff)  { thEff.dataset.label = mode === 'effort' ? 'Eff×100' : 'Eff/$'; thEff.title = mode === 'effort' ? 'Output ÷ tool calls × 100' : 'Output ÷ cost in dollars × 100'; }
+  renderScatter();
+  renderTable();
+}
+
+// Returns the "cost" value to use for a session in the current COST_MODE.
+// Money mode falls back to tool calls when estimatedCostUsd = 0.
+function costVal(s) { return COST_MODE === 'money' && s.estimatedCostUsd > 0 ? s.estimatedCostUsd : s.toolCalls; }
+function effVal(s)  { const c = costVal(s); return c > 0 ? s.output / c : 0; }
+
+function filtered() {
+  const q = document.getElementById('q').value.toLowerCase();
+  const cat = document.getElementById('cat').value;
+  const rp = document.getElementById('repo').value;
+  const only = document.getElementById('onlyOutput').checked;
+  return DATA.filter(s => {
+    if (cat && s.category !== cat) return false;
+    if (rp && s.repo !== rp) return false;
+    if (only && s.output === 0) return false;
+    if (q) {
+      const blob = (s.repo + ' ' + s.branch + ' ' + s.summary + ' ' + s.firstUserMsg + ' ' + s.id).toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTable() {
+  const r = filtered().slice();
+  r.sort((a, b) => {
+    const k = SORT.k;
+    // For sort keys that depend on mode, use computed values
+    const va = k === 'toolCalls' ? costVal(a) : k === 'efficiency' ? effVal(a) : a[k];
+    const vb = k === 'toolCalls' ? costVal(b) : k === 'efficiency' ? effVal(b) : b[k];
+    if (typeof va === 'string') return SORT.dir * va.localeCompare(vb);
+    return SORT.dir * (((va || 0) - (vb || 0)) || 0);
+  });
+  // Update sort indicators on column headers
+  document.querySelectorAll('th[data-k]').forEach(th => {
+    const isSorted = th.dataset.k === SORT.k;
+    th.classList.toggle('sorted', isSorted);
+    let icon = th.querySelector('.sort-icon');
+    if (!icon) { icon = document.createElement('span'); icon.className = 'sort-icon'; th.appendChild(icon); }
+    // Update label text (may have changed with mode toggle) keeping icon separate
+    const label = th.dataset.label;
+    if (label) {
+      const textNode = [...th.childNodes].find(n => n.nodeType === 3); // TEXT_NODE
+      if (textNode) textNode.textContent = label + ' ';
+    }
+    icon.textContent = isSorted ? (SORT.dir === 1 ? '▲' : '▼') : '⇅';
+  });
+  document.getElementById('rowcount').textContent = \`\${r.length} match(es)\`;
+  const top = r.slice(0, 500);
+  const html = top.map(s => {
+    const prCells = s.topPrs.length
+      ? s.topPrs.map(p => \`<a href="https://github.com/\${p.repo}/pull/\${p.number}">#\${p.number}</a>\`).join(' ')
+      : (s.prsCreated || '');
+    const costCell = COST_MODE === 'money'
+      ? (s.estimatedCostUsd > 0 ? '$' + s.estimatedCostUsd.toFixed(2) : \`<span class="muted" title="No shutdown data">\${s.toolCalls}*</span>\`)
+      : s.toolCalls;
+    const effCell = (effVal(s) * 100).toFixed(1);
+    return \`<tr>
+      <td><span class="cat cat-\${s.category}">\${s.category}</span></td>
+      <td>\${esc(s.repo)}</td>
+      <td><code>\${esc(s.id).slice(0,8)}</code> · <code>\${esc(s.branch)}</code><br>
+          <span class="muted">\${esc(s.summary || s.firstUserMsg).slice(0, 140)}</span></td>
+      <td class="num">\${prCells}</td>
+      <td class="num">\${s.commitCount || ''}</td>
+      <td class="num">\${s.filesEdited || ''}</td>
+      <td class="num">\${s.userTurns}</td>
+      <td class="num">\${costCell}</td>
+      <td class="num">\${s.output}</td>
+      <td class="num">\${effCell}</td>
+    </tr>\`;
+  }).join('');
+  document.querySelector('#tbl tbody').innerHTML = html;
+}
+
+function renderCatTable() {
+  const counts = {};
+  for (const s of DATA) counts[s.category] = (counts[s.category] || 0) + 1;
+  const order = LEGEND.map(c => c.id);
+  const total = DATA.length;
+  const activeCat = document.getElementById('cat').value;
+  document.querySelector('#cattable tbody').innerHTML = order
+    .filter(c => counts[c])
+    .map(c => {
+      const isActive = activeCat === c;
+      return \`<tr style="cursor:pointer\${isActive ? ';background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)' : ''}" data-cat="\${esc(c)}">
+        <td><span class="cat cat-\${c}" title="\${esc((LEGEND.find(x=>x.id===c)||{}).desc)}">\${c}</span></td>
+        <td class="num">\${counts[c]}</td>
+        <td class="num muted">\${Math.round(counts[c]*100/total)}%</td>
+      </tr>\`;
+    }).join('');
+
+  document.querySelectorAll('#cattable tr').forEach(row => {
+    row.addEventListener('click', () => {
+      const sel = document.getElementById('cat');
+      const clickedCat = row.dataset.cat;
+      document.getElementById('q').value = '';
+      sel.value = sel.value === clickedCat ? '' : clickedCat;
+      renderTable();
+      renderCatTable();
+    });
+  });
+}
+
+function renderScatter() {
+  const W = 720, H = 380, M = { l: 50, r: 20, t: 16, b: 36 };
+  const data = DATA.filter(s => costVal(s) > 0);
+  if (data.length === 0) { document.getElementById('scatter').innerHTML = '<p class="muted">No data.</p>'; return; }
+  const maxCost = Math.max(50,  ...data.map(s => costVal(s)));
+  const maxOut  = Math.max(5,   ...data.map(s => s.output));
+  const x = v => M.l + (Math.log10(v + 1) / Math.log10(maxCost + 1)) * (W - M.l - M.r);
+  const y = v => H - M.b - (Math.log10(v + 1) / Math.log10(maxOut + 1)) * (H - M.t - M.b);
+  const colors = {
+    shipped:'#2faa64', committed:'#6c8df0', issue:'#e2b249',
+    edited:'#888', exploratory:'#b889e6', 'no-pr':'#ff9d4a',
+  };
+  const xticks = [1, 10, 100, 1000, 10000].filter(v => v <= maxCost * 1.5);
+  const yticks = [0, 1, 5, 10, 50, 100, 500].filter(v => v <= maxOut * 1.5);
+  const xLabel = COST_MODE === 'money' ? 'Cost in $ (log) →' : 'Tool calls (log) →';
+
+  const dots = data.map(s => {
+    const r = 3 + Math.min(7, Math.sqrt(s.userTurns || 1));
+    const col = colors[s.category] || '#888';
+    return \`<circle cx="\${x(costVal(s)).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r.toFixed(1)}"
+              fill="\${col}" stroke="rgba(0,0,0,0.55)" stroke-width="1" data-i="\${esc(JSON.stringify(s))}"/>\`;
+  }).join('');
+  const gridX = xticks.map(v =>
+    \`<line class="gridline" x1="\${x(v)}" y1="\${M.t}" x2="\${x(v)}" y2="\${H-M.b}"/>
+     <text x="\${x(v)}" y="\${H-M.b+13}" text-anchor="middle">\${v}</text>\`).join('');
+  const gridY = yticks.map(v =>
+    \`<line class="gridline" x1="\${M.l}" y1="\${y(v)}" x2="\${W-M.r}" y2="\${y(v)}"/>
+     <text x="\${M.l-6}" y="\${y(v)+4}" text-anchor="end">\${v}</text>\`).join('');
+
+  const svg = \`<svg viewBox="0 0 \${W} \${H}" width="100%" height="\${H}" class="axis" preserveAspectRatio="xMidYMid meet">
+    \${gridX}\${gridY}
+    <text class="axis-label" x="\${W/2}" y="\${H-4}" text-anchor="middle">\${xLabel}</text>
+    <text class="axis-label" x="14" y="\${H/2}" text-anchor="middle" transform="rotate(-90 14 \${H/2})">Output score (log) →</text>
+    \${dots}
+  </svg>\`;
+  const wrap = document.getElementById('scatter');
+  wrap.innerHTML = svg;
+  const tip = document.getElementById('tooltip');
+  wrap.querySelectorAll('circle').forEach(c => {
+    c.addEventListener('mouseenter', () => {
+      const s = JSON.parse(c.dataset.i);
+      const prsHtml = s.topPrs.length
+        ? s.topPrs.map(p => '#' + p.number).join(' ')
+        : '—';
+      const costLine = COST_MODE === 'money'
+        ? (s.estimatedCostUsd > 0 ? '$' + s.estimatedCostUsd.toFixed(2) : s.toolCalls + ' tool calls (no cost data)')
+        : \`\${s.toolCalls} tool calls\`;
+      const modelsHtml = s.modelSummary && s.modelSummary.length
+        ? s.modelSummary.map(m =>
+            \`<code>\${esc(m.model)}</code>: \${fmtTok(m.inK)} in / \${fmtTok(m.outK)} out / \${fmtTok(m.cacheK)} cached — \$\${m.costUsd.toFixed(2)}\`
+          ).join('<br>')
+        : '';
+      tip.innerHTML = \`<strong>\${esc(s.repo)}</strong> · <code>\${esc(s.branch)}</code><br>
+        <span class="cat cat-\${s.category}">\${s.category}</span>
+        · \${costLine} · \${s.userTurns} user turns<br>
+        PRs: \${prsHtml} · \${s.commitCount} commit(s) · \${s.filesEdited} file(s) edited<br>
+        eff×100 = \${(effVal(s)*100).toFixed(2)}<br>
+        \${modelsHtml ? modelsHtml + '<br>' : ''}<em>\${esc(s.summary || s.firstUserMsg).slice(0, 200)}</em>\`;
+      tip.style.display = 'block';
+    });
+    c.addEventListener('mousemove', e => {
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top  = (e.clientY + 14) + 'px';
+    });
+    c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+    c.addEventListener('click', () => {
+      const s = JSON.parse(c.dataset.i);
+      tip.style.display = 'none';
+      document.getElementById('cat').value = '';
+      document.getElementById('q').value = s.id;
+      renderTable();
+      renderCatTable();
+      document.getElementById('tbl').scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+}
+
+init();
+
+const vscode = acquireVsCodeApi();
+document.getElementById('nav-refresh')?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+document.getElementById('nav-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+document.getElementById('nav-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
+document.getElementById('nav-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
+document.getElementById('nav-environmental')?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
+document.getElementById('nav-diagnostics')?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+document.getElementById('nav-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
+</script>
+</body></html>`;
+}

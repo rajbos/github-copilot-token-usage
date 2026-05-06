@@ -15,6 +15,8 @@ import { TeamServerConfigPanel } from './backend/teamServerConfigPanel';
 import * as packageJson from '../package.json';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { ConfirmationMessages } from "./backend/ui/messages";
+import { loadSessionEfficiency } from './sessionEfficiency';
+import { renderSessionEfficiencyHtml, renderSessionEfficiencyLoadingHtml } from './sessionEfficiencyWebview';
 import {
 	detectAiType,
 	discoverGitHubRepos,
@@ -247,6 +249,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private dashboardPanel: vscode.WebviewPanel | undefined;
 	private fluencyLevelViewerPanel: vscode.WebviewPanel | undefined;
 	private environmentalPanel: vscode.WebviewPanel | undefined;
+	private sessionEfficiencyPanel: vscode.WebviewPanel | undefined;
 	private outputChannel: vscode.OutputChannel;
 	private lastDetailedStats: DetailedStats | undefined;
 	private lastDailyStats: DailyTokenStats[] | undefined;
@@ -445,6 +448,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			showDashboard:          () => this.showDashboard(),
 			showEnvironmental:      () => this.showEnvironmental(),
 			showFluencyLevelViewer: () => this.showFluencyLevelViewer(),
+			showSessionEfficiency:  () => this.showSessionEfficiency(),
 		};
 		const handler = handlers[command];
 		if (!handler) { return false; }
@@ -5593,6 +5597,65 @@ ${hashtag}`;
     this.log("✅ Scoring Guide refreshed");
   }
 
+  /**
+   * Open the Session Efficiency view: scans `~/.copilot/session-state/` for
+   * Copilot CLI sessions, classifies them by what was produced (PR, commit,
+   * edit, …) and shows a cost-vs-output scatter so the user can see which
+   * sessions converted tool calls into tangible output and which didn't.
+   */
+  public async showSessionEfficiency(): Promise<void> {
+    this.log("📈 Opening Session Efficiency");
+    if (this.sessionEfficiencyPanel) {
+      this.sessionEfficiencyPanel.reveal(vscode.ViewColumn.One);
+      await this.refreshSessionEfficiencyPanel();
+      return;
+    }
+
+    this.sessionEfficiencyPanel = vscode.window.createWebviewPanel(
+      "copilotSessionEfficiency",
+      "Session Efficiency",
+      { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    // Show spinner immediately so the panel appears right away.
+    this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyLoadingHtml();
+
+    this.sessionEfficiencyPanel.webview.onDidReceiveMessage(async (message) => {
+      if (message.command === 'refresh') {
+        await this.refreshSessionEfficiencyPanel();
+        return;
+      }
+      await this.dispatchSharedCommand(message.command);
+    });
+    this.sessionEfficiencyPanel.onDidDispose(() => {
+      this.log("📈 Session Efficiency closed");
+      this.sessionEfficiencyPanel = undefined;
+    });
+
+    // Scan sessions in background so the UI isn't blocked.
+    await this.refreshSessionEfficiencyPanel();
+  }
+
+  private async refreshSessionEfficiencyPanel(): Promise<void> {
+    if (!this.sessionEfficiencyPanel) { return; }
+    this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyLoadingHtml();
+    try {
+      const sessions = await new Promise<ReturnType<typeof loadSessionEfficiency>>((resolve, reject) => {
+        setImmediate(() => {
+          try { resolve(loadSessionEfficiency()); }
+          catch (e) { reject(e); }
+        });
+      });
+      this.log(`📈 Session Efficiency: scanned ${sessions.length} session(s)`);
+      if (this.sessionEfficiencyPanel) {
+        this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyHtml(sessions);
+      }
+    } catch (err) {
+      this.warn(`Session Efficiency scan failed: ${err instanceof Error ? err.message : String(err)}`);
+      vscode.window.showErrorMessage(`Session Efficiency: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
 		return _getFluencyLevelData(isDebugMode);
   }
@@ -8510,6 +8573,9 @@ export async function activate(context: vscode.ExtensionContext) {
       await tokenTracker.showFluencyLevelViewer();
     },
   );
+
+  // Register the show session efficiency command was removed — the view is
+  // now only reachable via the nav button row in all other panels (no palette entry).
 
   const runLocalViewRegressionCommand = vscode.commands.registerCommand(
     "aiEngineeringFluency.runLocalViewRegression",
