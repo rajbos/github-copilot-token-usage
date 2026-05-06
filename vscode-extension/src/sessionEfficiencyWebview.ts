@@ -18,8 +18,84 @@ const CATEGORY_LEGEND = [
 	{ id: 'no-pr',       label: 'no-pr',       desc: 'Heavy session (≥50 tool calls), no PR opened — work may have been pasted elsewhere or used in another session' },
 ];
 
+const SHARED_HEAD_CSS = `
+  body { font: 13px/1.45 var(--vscode-font-family, system-ui, sans-serif);
+         color: var(--vscode-foreground); background: var(--vscode-editor-background);
+         margin: 0; padding: 14px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start;
+             flex-wrap: wrap; gap: 12px; margin-bottom: 14px; padding-bottom: 4px; }
+  .header-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .header-icon { font-size: 20px; }
+  .header-title { font-size: 16px; font-weight: 700;
+                  color: var(--vscode-editor-foreground); letter-spacing: 0.2px; }
+  .header-meta { font-size: 12px; color: var(--vscode-descriptionForeground);
+                 margin-left: 4px; font-weight: 400; }
+  .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .nav-btn { padding: 4px 11px; cursor: pointer; font: inherit; font-size: 13px;
+             background: var(--vscode-button-background, #0078d4);
+             color: var(--vscode-button-foreground, #ffffff);
+             border: none; border-radius: 2px; white-space: nowrap; }
+  .nav-btn:hover { background: var(--vscode-button-hoverBackground, #026ec1); }
+`;
+
+const SHARED_HEADER_HTML = `
+<div class="header">
+  <div class="header-left">
+    <span class="header-icon">📈</span>
+    <span class="header-title">Session Efficiency</span>
+    <span class="header-meta" id="header-meta"></span>
+  </div>
+  <div class="button-row">
+    <button class="nav-btn" id="nav-refresh">🔄 Refresh</button>
+    <button class="nav-btn" id="nav-details">🤖 Details</button>
+    <button class="nav-btn" id="nav-chart">📈 Chart</button>
+    <button class="nav-btn" id="nav-usage">📊 Usage Analysis</button>
+    <button class="nav-btn" id="nav-environmental">🌿 Environmental Impact</button>
+    <button class="nav-btn" id="nav-diagnostics">🔍 Diagnostics</button>
+    <button class="nav-btn" id="nav-maturity">🎯 Fluency Score</button>
+  </div>
+</div>`;
+
+/**
+ * Returns a lightweight loading screen shown immediately while sessions are scanned.
+ * The extension replaces this with the full view once the scan completes.
+ */
+export function renderSessionEfficiencyLoadingHtml(): string {
+	return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<title>Session Efficiency</title>
+<style>
+${SHARED_HEAD_CSS}
+  .spinner-wrap { display: flex; flex-direction: column; align-items: center;
+                  justify-content: center; height: 60vh; gap: 18px;
+                  color: var(--vscode-descriptionForeground); }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--vscode-panel-border, rgba(127,127,127,0.3));
+             border-top-color: var(--vscode-button-background, #0078d4);
+             border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head><body>
+${SHARED_HEADER_HTML}
+<div class="spinner-wrap">
+  <div class="spinner"></div>
+  <span>Scanning sessions…</span>
+</div>
+<script>
+const vscode = acquireVsCodeApi();
+document.getElementById('nav-refresh')?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+document.getElementById('nav-details')?.addEventListener('click', () => vscode.postMessage({ command: 'showDetails' }));
+document.getElementById('nav-chart')?.addEventListener('click', () => vscode.postMessage({ command: 'showChart' }));
+document.getElementById('nav-usage')?.addEventListener('click', () => vscode.postMessage({ command: 'showUsageAnalysis' }));
+document.getElementById('nav-environmental')?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
+document.getElementById('nav-diagnostics')?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
+document.getElementById('nav-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
+</script>
+</body></html>`;
+}
+
 export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): string {
-	// Pre-compress: drop verbose ref objects we don't render.
 	const slim = sessions.map(s => ({
 		id: s.id,
 		repo: s.repository || '',
@@ -53,6 +129,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
 	}));
 
 	const dataJson = JSON.stringify(slim).replace(/</g, '\\u003c');
+	const sessionCount = sessions.length;
 
 	return `<!DOCTYPE html>
 <html lang="en"><head>
@@ -61,10 +138,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <title>Session Efficiency</title>
 <style>
-  body { font: 13px/1.45 var(--vscode-font-family, system-ui, sans-serif);
-         color: var(--vscode-foreground); background: var(--vscode-editor-background);
-         margin: 0; padding: 14px; }
-  h1 { margin: 0 0 6px 0; font-size: 20px; }
+${SHARED_HEAD_CSS}
   .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
   .panel { background: var(--vscode-editorWidget-background, rgba(127,127,127,0.06));
            border: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.25));
@@ -92,7 +166,6 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   input, select { padding: 4px 6px; font: inherit; margin-right: 6px;
                   background: var(--vscode-input-background); color: var(--vscode-input-foreground);
                   border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
-  .legend span { margin-right: 8px; cursor: help; }
   svg { background: var(--vscode-editor-background); display: block;
         border: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.25)); border-radius: 4px;
         shape-rendering: geometricPrecision; }
@@ -110,18 +183,6 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   a { color: var(--vscode-textLink-foreground); }
   code { font-size: 12px; background: rgba(127,127,127,0.15); padding: 0 4px; border-radius: 2px; }
   .empty { padding: 36px; text-align: center; color: var(--vscode-descriptionForeground); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start;
-             flex-wrap: wrap; gap: 12px; margin-bottom: 14px; padding-bottom: 4px; }
-  .header-left { display: flex; align-items: center; gap: 8px; }
-  .header-icon { font-size: 20px; }
-  .header-title { font-size: 16px; font-weight: 700;
-                  color: var(--vscode-editor-foreground); letter-spacing: 0.2px; }
-  .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
-  .nav-btn { padding: 4px 11px; cursor: pointer; font: inherit; font-size: 13px;
-             background: var(--vscode-button-background, #0078d4);
-             color: var(--vscode-button-foreground, #ffffff);
-             border: none; border-radius: 2px; white-space: nowrap; }
-  .nav-btn:hover { background: var(--vscode-button-hoverBackground, #026ec1); }
   .mode-toggle { display: flex; border: 1px solid var(--vscode-button-border, rgba(127,127,127,0.3)); border-radius: 3px; overflow: hidden; }
   .mode-btn { padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; border: none; border-radius: 0;
               background: transparent; color: var(--vscode-descriptionForeground); }
@@ -129,22 +190,7 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
   .mode-btn:hover:not(.active) { background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.15)); }
 </style>
 </head><body>
-<div class="header">
-  <div class="header-left">
-    <span class="header-icon">📈</span>
-    <span class="header-title">Session Efficiency</span>
-  </div>
-  <div class="button-row">
-    <button class="nav-btn" id="nav-refresh">🔄 Refresh</button>
-    <button class="nav-btn" id="nav-details">🤖 Details</button>
-    <button class="nav-btn" id="nav-chart">📈 Chart</button>
-    <button class="nav-btn" id="nav-usage">📊 Usage Analysis</button>
-    <button class="nav-btn" id="nav-environmental">🌿 Environmental Impact</button>
-    <button class="nav-btn" id="nav-diagnostics">🔍 Diagnostics</button>
-    <button class="nav-btn" id="nav-maturity">🎯 Fluency Score</button>
-  </div>
-</div>
-<p class="muted" id="meta"></p>
+${SHARED_HEADER_HTML}
 
 <div id="empty" class="empty" style="display:none">
   <strong>No Copilot CLI sessions found.</strong><br>
@@ -171,7 +217,6 @@ export function renderSessionEfficiencyHtml(sessions: SessionEfficiency[]): stri
       or producing work that was continued, copy-pasted, or applied outside this editor.
       Use this view as a signal to spot patterns, not as a verdict on individual sessions.
     </p>
-    <div class="legend" style="margin-top:6px" id="legend"></div>
   </div>
 
   <div class="row">
@@ -231,8 +276,7 @@ function fmtTok(k) {
 }
 
 function init() {
-  document.getElementById('meta').textContent =
-    \`\${DATA.length} session(s) scanned from ~/.copilot/session-state/\`;
+  document.getElementById('header-meta').textContent = \`— \${DATA.length} session(s)\`;
 
   if (DATA.length === 0) {
     document.getElementById('root').style.display = 'none';
@@ -240,15 +284,9 @@ function init() {
     return;
   }
 
-  // Legend chips + category filter options
-  const legendEl = document.getElementById('legend');
+  // Category filter options (legend chips removed — see "Sessions by category" panel)
   const catSel = document.getElementById('cat');
   for (const c of LEGEND) {
-    const span = document.createElement('span');
-    span.className = 'cat cat-' + c.id;
-    span.textContent = c.label;
-    span.title = c.desc;
-    legendEl.appendChild(span);
     catSel.appendChild(new Option(c.label, c.id));
   }
 

@@ -16,7 +16,7 @@ import * as packageJson from '../package.json';
 import { getModelDisplayName } from './webview/shared/modelUtils';
 import { ConfirmationMessages } from "./backend/ui/messages";
 import { loadSessionEfficiency } from './sessionEfficiency';
-import { renderSessionEfficiencyHtml } from './sessionEfficiencyWebview';
+import { renderSessionEfficiencyHtml, renderSessionEfficiencyLoadingHtml } from './sessionEfficiencyWebview';
 import {
 	detectAiType,
 	discoverGitHubRepos,
@@ -5588,25 +5588,9 @@ ${hashtag}`;
     this.log("📈 Opening Session Efficiency");
     if (this.sessionEfficiencyPanel) {
       this.sessionEfficiencyPanel.reveal(vscode.ViewColumn.One);
-      // Refresh content with the latest scan when re-opening.
-      try {
-        const fresh = loadSessionEfficiency();
-        this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyHtml(fresh);
-      } catch (err) {
-        this.warn(`Session Efficiency refresh failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      await this.refreshSessionEfficiencyPanel();
       return;
     }
-
-    let sessions;
-    try {
-      sessions = loadSessionEfficiency();
-    } catch (err) {
-      this.error(`Session Efficiency scan failed: ${err instanceof Error ? err.message : String(err)}`);
-      vscode.window.showErrorMessage(`Session Efficiency: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-    this.log(`📈 Session Efficiency: scanned ${sessions.length} session(s)`);
 
     this.sessionEfficiencyPanel = vscode.window.createWebviewPanel(
       "copilotSessionEfficiency",
@@ -5614,15 +5598,12 @@ ${hashtag}`;
       { viewColumn: vscode.ViewColumn.One, preserveFocus: true },
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyHtml(sessions);
+    // Show spinner immediately so the panel appears right away.
+    this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyLoadingHtml();
+
     this.sessionEfficiencyPanel.webview.onDidReceiveMessage(async (message) => {
       if (message.command === 'refresh') {
-        try {
-          const fresh = loadSessionEfficiency();
-          this.sessionEfficiencyPanel!.webview.html = renderSessionEfficiencyHtml(fresh);
-        } catch (err) {
-          this.warn(`Session Efficiency refresh failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
+        await this.refreshSessionEfficiencyPanel();
         return;
       }
       await this.dispatchSharedCommand(message.command);
@@ -5631,6 +5612,29 @@ ${hashtag}`;
       this.log("📈 Session Efficiency closed");
       this.sessionEfficiencyPanel = undefined;
     });
+
+    // Scan sessions in background so the UI isn't blocked.
+    await this.refreshSessionEfficiencyPanel();
+  }
+
+  private async refreshSessionEfficiencyPanel(): Promise<void> {
+    if (!this.sessionEfficiencyPanel) { return; }
+    this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyLoadingHtml();
+    try {
+      const sessions = await new Promise<ReturnType<typeof loadSessionEfficiency>>((resolve, reject) => {
+        setImmediate(() => {
+          try { resolve(loadSessionEfficiency()); }
+          catch (e) { reject(e); }
+        });
+      });
+      this.log(`📈 Session Efficiency: scanned ${sessions.length} session(s)`);
+      if (this.sessionEfficiencyPanel) {
+        this.sessionEfficiencyPanel.webview.html = renderSessionEfficiencyHtml(sessions);
+      }
+    } catch (err) {
+      this.warn(`Session Efficiency scan failed: ${err instanceof Error ? err.message : String(err)}`);
+      vscode.window.showErrorMessage(`Session Efficiency: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
