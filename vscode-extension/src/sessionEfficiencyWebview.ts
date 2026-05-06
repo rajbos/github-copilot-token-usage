@@ -301,9 +301,9 @@ function renderScatter() {
   const yticks = [0, 1, 5, 10, 50, 100, 500].filter(v => v <= maxOut * 1.5);
 
   const dots = data.map(s => {
-    const r = 4.5;
+    const r = 3 + Math.min(7, Math.sqrt(s.userTurns || 1));
     const col = colors[s.category] || '#888';
-    return \`<circle cx="\${x(s.toolCalls).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r}"
+    return \`<circle cx="\${x(s.toolCalls).toFixed(1)}" cy="\${y(s.output).toFixed(1)}" r="\${r.toFixed(1)}"
               fill="\${col}" stroke="rgba(0,0,0,0.55)" stroke-width="1" data-i="\${esc(JSON.stringify(s))}"/>\`;
   }).join('');
   const gridX = xticks.map(v =>
