@@ -7,18 +7,15 @@
 # Use this script only when you need to manually publish a pre-built VSIX
 # (e.g., re-publishing after a marketplace upload failure).
 #
-# The extension is published under two IDs (dual-publish):
-#   - RobBos.ai-engineering-fluency  (new/primary ID)
-#   - RobBos.copilot-token-tracker   (legacy ID – kept for existing users)
+# The extension is published under a single ID:
+#   - RobBos.ai-engineering-fluency  (primary ID)
 #
 # Usage:
 #   .\publish.ps1 -VsixPath ".\ai-engineering-fluency-0.3.0.vsix"
-#   .\publish.ps1 -LegacyVsixPath ".\copilot-token-tracker-0.3.0.vsix"
-#   .\publish.ps1  # auto-detect both VSIXs in the current directory
+#   .\publish.ps1  # auto-detect VSIX in the current directory
 
 param(
-    [string]$VsixPath,        # Path to the primary (ai-engineering-fluency) .vsix
-    [string]$LegacyVsixPath   # Path to the legacy (copilot-token-tracker) .vsix
+    [string]$VsixPath        # Path to the primary (ai-engineering-fluency) .vsix
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,17 +36,6 @@ if ([string]::IsNullOrWhiteSpace($VsixPath)) {
         Write-Host "Found primary VSIX: $VsixPath" -ForegroundColor Green
     } else {
         $VsixPath = Read-Host "Enter path to the primary (ai-engineering-fluency) .vsix"
-    }
-}
-
-# ── Resolve legacy VSIX path (optional) ──────────────────────────────────────
-if ([string]::IsNullOrWhiteSpace($LegacyVsixPath)) {
-    $defaultLegacy = ".\copilot-token-tracker-$version.vsix"
-    if (Test-Path $defaultLegacy) {
-        $LegacyVsixPath = $defaultLegacy
-        Write-Host "Found legacy VSIX:  $LegacyVsixPath" -ForegroundColor Green
-    } else {
-        Write-Host "⚠️  Legacy VSIX not found at $defaultLegacy — will only publish primary ID." -ForegroundColor Yellow
     }
 }
 
@@ -144,19 +130,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "✅ Primary extension published successfully!" -ForegroundColor Green
-
-# ── Step 5: Publish the legacy VSIX (copilot-token-tracker) ──────────────────
-if (-not [string]::IsNullOrWhiteSpace($LegacyVsixPath) -and (Test-Path $LegacyVsixPath)) {
-    Write-Host "`nPublishing $LegacyVsixPath to the VS Code Marketplace (legacy ID)..." -ForegroundColor Cyan
-    npx vsce publish --packagePath $LegacyVsixPath --pat $pat
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Legacy extension published successfully!" -ForegroundColor Green
-    } else {
-        Write-Host "⚠️  Legacy VSIX publish failed — primary was already published. Check errors above." -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "⚠️  Skipping legacy VSIX publish (not found)." -ForegroundColor Yellow
-}
 
 Write-Host ""
 Write-Host "It may take a few minutes to appear in the marketplace." -ForegroundColor Gray
