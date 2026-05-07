@@ -62,6 +62,8 @@ type SessionLogData = {
 	usageAnalysis?: SessionUsageAnalysis;
 	/** Session-level actual token count from LLM API (e.g. CLI session.shutdown). 0 when unavailable. */
 	actualTokens?: number;
+	/** Cache-read token count from session.shutdown modelMetrics (CLI sessions only). Absent when unavailable. */
+	cachedTokens?: number;
 	/** Number of subagent sessions started (CLI format only). */
 	subAgentsStarted?: number;
 	compactNumbers?: boolean;
@@ -694,18 +696,25 @@ function renderLayout(data: SessionLogData): void {
 					<div class="summary-sub">${data.editorName === 'JetBrains' ? 'User + assistant text only (no API counts, no thinking)' : 'Input + Output estimated from text'}</div>
 				</div>
 				${hasAnyActualUsage ? `
-				<div class="summary-card actual-usage-card">
-					<div class="summary-label">✅ Actual Tokens</div>
-					<div class="summary-value">${formatCompact(actualTotal)}</div>
-					<div class="summary-sub">↑${formatCompact(actualPromptTotal)} prompt, ↓${formatCompact(actualCompletionTotal)} completion</div>
-				</div>
-				` : hasSessionActualOnly ? `
-				<div class="summary-card actual-usage-card">
-					<div class="summary-label">✅ Actual Tokens</div>
-					<div class="summary-value">${formatCompact(sessionActualTokens)}</div>
-							<div class="summary-sub">${data.editorName === 'Mistral Vibe' ? 'From session data' : 'Total from session shutdown event'}</div>
-				</div>
-				` : ''}
+			<div class="summary-card actual-usage-card">
+				<div class="summary-label">✅ Actual Tokens</div>
+				<div class="summary-value">${formatCompact(actualTotal)}</div>
+				<div class="summary-sub">↑${formatCompact(actualPromptTotal)} prompt, ↓${formatCompact(actualCompletionTotal)} completion</div>
+			</div>
+			` : hasSessionActualOnly ? `
+			<div class="summary-card actual-usage-card">
+				<div class="summary-label">✅ Actual Tokens</div>
+				<div class="summary-value">${formatCompact(sessionActualTokens)}</div>
+						<div class="summary-sub">${data.editorName === 'Mistral Vibe' ? 'From session data' : 'Total from session shutdown event'}</div>
+			</div>
+			` : ''}
+			${(data.cachedTokens ?? 0) > 0 ? `
+			<div class="summary-card actual-usage-card" title="Tokens served from the provider's prompt cache. Cached tokens are billed at a lower rate and reduce latency. Source: session.shutdown modelMetrics.">
+				<div class="summary-label">💾 Cached Input</div>
+				<div class="summary-value">${formatCompact(data.cachedTokens!)}</div>
+				<div class="summary-sub">Prompt tokens served from cache</div>
+			</div>
+			` : ''}
 				${totalThinkingTokens > 0 ? `<div class="summary-card">
 					<div class="summary-label">🧠 Thinking Tokens</div>
 					<div class="summary-value">${formatCompact(totalThinkingTokens)}</div>

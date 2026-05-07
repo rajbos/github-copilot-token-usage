@@ -173,6 +173,7 @@ export interface SessionFileCache {
   workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
   thinkingTokens?: number; // Estimated thinking/reasoning tokens
   actualTokens?: number; // Actual token count from LLM API usage data (when available)
+  cacheReadTokens?: number; // Cache-read token count from session.shutdown modelMetrics (CLI sessions only)
   /** Per-UTC-day token/interaction breakdown (keyed by YYYY-MM-DD UTC). Used for consistent daily stats. */
   dailyRollups?: { [utcDayKey: string]: DailyRollupEntry };
 }
@@ -446,6 +447,8 @@ export interface SessionLogData {
   usageAnalysis?: SessionUsageAnalysis;
   /** Session-level actual token count from LLM API (e.g. session.shutdown in CLI format). 0 when unavailable. */
   actualTokens?: number;
+  /** Cache-read token count from session.shutdown modelMetrics (CLI sessions only). Absent when unavailable. */
+  cachedTokens?: number;
   /** Number of distinct subagent sessions started (CLI format only, from subagent.started events). */
   subAgentsStarted?: number;
 }
