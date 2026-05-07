@@ -8308,20 +8308,24 @@ async function checkForLegacyExtensionConflict(context: vscode.ExtensionContext)
   if (!legacyExt) {
     return;
   }
-  const key = 'conflict.legacyExtensionPresent.v1.dismissed';
+  // v2: reworded to clarify which extension to keep vs. remove (v1 was ambiguous due to similar names)
+  const key = 'conflict.legacyExtensionPresent.v2.dismissed';
   if (context.globalState.get<boolean>(key, false)) {
     return;
   }
   const choice = await vscode.window.showWarningMessage(
-    'The deprecated "AI Engineering Fluency (Deprecated)" extension is also installed. It has been prevented from running, but you should uninstall it to keep things clean.',
-    'Uninstall Deprecated',
+    'Cleanup needed: the old "copilot-token-tracker" extension is still installed alongside this one. ' +
+    'Keep "AI Engineering Fluency" (this extension) and remove the old one — it has been disabled automatically.',
+    'Remove Old Extension',
     'Dismiss'
   );
-  if (choice === 'Uninstall Deprecated') {
+  if (choice === 'Remove Old Extension') {
     try {
       await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', LEGACY_EXTENSION_ID);
     } catch {
-      vscode.window.showInformationMessage('Please manually uninstall "AI Engineering Fluency (Deprecated)" from the Extensions view.');
+      vscode.window.showInformationMessage(
+        'To finish cleanup: open Extensions (Ctrl+Shift+X), search for "copilot-token-tracker", and uninstall it. Keep "AI Engineering Fluency".'
+      );
     }
   } else if (choice === 'Dismiss') {
     // Only suppress on explicit Dismiss — closing with ✕ shows again next startup.
