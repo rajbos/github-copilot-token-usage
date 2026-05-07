@@ -450,7 +450,7 @@ Or trigger the **Sync Release Notes** workflow from the Actions tab.
 If you need to re-publish manually (e.g., after a marketplace upload failure):
 
 ```powershell
-.\publish.ps1 -VsixPath ".\copilot-token-tracker-0.0.19.vsix"
+.\publish.ps1 -VsixPath ".\ai-engineering-fluency-0.0.19.vsix"
 ```
 
 ## Submitting Changes
