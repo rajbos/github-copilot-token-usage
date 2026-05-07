@@ -29,6 +29,7 @@
   "copilot_searchCodebase",
   "code_search",
   "copilot_getSearchResults",
+  "copilot_githubTextSearch",
   "get_search_view_results",
   "search_workspace_symbols",
   "copilot_searchWorkspaceSymbols",
@@ -67,6 +68,7 @@
 
   "memory",
   "copilot_memory",
+  "copilot_resolveMemoryFileUri",
   "detect_memories",
   "todo",
 
