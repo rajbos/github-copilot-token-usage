@@ -17,6 +17,7 @@ import { getModelDisplayName } from './webview/shared/modelUtils';
 import { ConfirmationMessages } from "./backend/ui/messages";
 import { loadSessionEfficiency } from './sessionEfficiency';
 import { renderSessionEfficiencyHtml, renderSessionEfficiencyLoadingHtml } from './sessionEfficiencyWebview';
+import { registerCapability, unregisterCapability, hasCapability, EFFICIENCY_CAPABILITY_UUID } from './capabilities';
 import {
 	detectAiType,
 	discoverGitHubRepos,
@@ -4250,6 +4251,7 @@ usageAnalysis: undefined
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Environmental Impact</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -5608,6 +5610,7 @@ ${hashtag}`;
    * sessions converted tool calls into tangible output and which didn't.
    */
   public async showSessionEfficiency(): Promise<void> {
+    if (!hasCapability(EFFICIENCY_CAPABILITY_UUID)) { return; }
     this.log("📈 Opening Session Efficiency");
     if (this.sessionEfficiencyPanel) {
       this.sessionEfficiencyPanel.reveal(vscode.ViewColumn.One);
@@ -5715,6 +5718,7 @@ ${hashtag}`;
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta http-equiv="Content-Security-Policy" content="${csp}" />
 		<title>Scoring Guide</title>
+		${this.efficiencyHideStyle()}
 	</head>
 	<body>
 		<div id="root"></div>
@@ -5783,6 +5787,7 @@ ${hashtag}`;
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>AI Engineering Fluency Score</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -6554,6 +6559,7 @@ ${hashtag}`;
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Team Dashboard</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -6571,6 +6577,17 @@ ${hashtag}`;
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+  }
+
+  /**
+   * Returns a `<style>` tag that hides the Session Efficiency button when the
+   * capability has not been granted by a companion extension. Returns an empty
+   * string when the capability is granted so the button renders normally.
+   */
+  private efficiencyHideStyle(): string {
+    return hasCapability(EFFICIENCY_CAPABILITY_UUID)
+      ? ''
+      : '<style>#btn-session-efficiency{display:none!important}</style>';
   }
 
   /**
@@ -6624,6 +6641,7 @@ ${hashtag}`;
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>AI Engineering Fluency</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -7839,6 +7857,7 @@ ${hashtag}`;
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Diagnostic Report</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -8119,6 +8138,7 @@ ${hashtag}`;
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>AI Engineering Fluency — Chart</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -8188,6 +8208,7 @@ ${hashtag}`;
 			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 			<meta http-equiv="Content-Security-Policy" content="${csp}" />
 			<title>Usage Analysis</title>
+			${this.efficiencyHideStyle()}
 		</head>
 		<body>
 			<div id="root"></div>
@@ -8575,6 +8596,8 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   tokenTracker.log("Extension activation complete");
+
+  return { registerCapability, unregisterCapability };
 }
 
 export function deactivate() {
