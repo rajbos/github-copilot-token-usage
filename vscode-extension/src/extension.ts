@@ -2899,6 +2899,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction: sessionMeta.lastInteraction,
 			thinkingTokens: tokenResult.thinkingTokens,
 			actualTokens: tokenResult.actualTokens,
+			...(tokenResult.cacheReadTokens ? { cacheReadTokens: tokenResult.cacheReadTokens } : {}),
 			dailyRollups: Object.keys(dailyRollups).length > 0 ? dailyRollups : undefined,
 		};
 
@@ -3060,6 +3061,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const resolvedActualTokens = tokenResult?.actualTokens ?? existingCache?.actualTokens;
 		const resolvedTokens = tokenResult?.tokens ?? existingCache?.tokens ?? 0;
 		const resolvedThinkingTokens = tokenResult?.thinkingTokens ?? existingCache?.thinkingTokens;
+		const resolvedCacheReadTokens = (tokenResult as any)?.cacheReadTokens ?? existingCache?.cacheReadTokens;
 		details.tokens = resolvedActualTokens || resolvedTokens || 0;
 
 		// Create or update cache entry
@@ -3071,6 +3073,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			size: stat.size,
 			actualTokens: resolvedActualTokens,
 			thinkingTokens: resolvedThinkingTokens,
+			...(resolvedCacheReadTokens ? { cacheReadTokens: resolvedCacheReadTokens } : {}),
 			// Preserve existing dailyRollups so this partial update does not discard
 			// the per-day breakdown computed by getSessionFileDataCached().
 			dailyRollups: existingCache?.dailyRollups,
@@ -3899,6 +3902,7 @@ usageAnalysis: undefined
 			turns,
 			usageAnalysis,
 			actualTokens: sessionCache?.actualTokens || 0,
+			...(sessionCache?.cacheReadTokens ? { cachedTokens: sessionCache.cacheReadTokens } : {}),
 			...(subAgentsStarted !== undefined ? { subAgentsStarted } : {})
 		};
 	}
@@ -3988,7 +3992,7 @@ usageAnalysis: undefined
 
 
 
-	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number }> {
+	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number; cacheReadTokens?: number }> {
 		try {
 			const eco = this.findEcosystem(sessionFilePath);
 			if (eco) { return eco.getTokens(sessionFilePath); }
@@ -4070,7 +4074,7 @@ usageAnalysis: undefined
 		}
 	}
 
-	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number } {
+	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; cacheReadTokens: number } {
 		return _estimateTokensFromJsonlSession(fileContent);
 	}
 

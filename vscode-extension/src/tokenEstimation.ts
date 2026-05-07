@@ -70,7 +70,7 @@ export function extractSubAgentData(item: unknown): { prompt: string; result: st
  * Estimate tokens from a JSONL session file (used by Copilot CLI/Agent mode and VS Code incremental format)
  * Each line is a separate JSON object representing an event in the session
  */
-export function estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; modelUsage: ModelUsage; dailyActualTokens: Record<string, number> } {
+export function estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; cacheReadTokens: number; modelUsage: ModelUsage; dailyActualTokens: Record<string, number> } {
 	let totalTokens = 0;
 	let totalThinkingTokens = 0;
 	const lines = fileContent.trim().split('\n');
@@ -83,6 +83,8 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 	let parseFailedLines = 0;
 	// For CLI (non-delta) format: accumulate actual token totals from session.shutdown
 	let cliActualTokens = 0;
+	// Total cache-read tokens from CLI session.shutdown events (across all models)
+	let cliCacheReadTokens = 0;
 	// Per-model breakdown from CLI session.shutdown events
 	let cliShutdownModelUsage: ModelUsage | null = null;
 	// Per-UTC-day actual token breakdown from shutdown event timestamps
@@ -109,7 +111,9 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 					if (usage) {
 						const input = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 						const output = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
+						const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
 						cliActualTokens += input + output;
+						cliCacheReadTokens += cacheRead;
 						shutdownTotal += input + output;
 						if (!cliShutdownModelUsage[modelName]) {
 							cliShutdownModelUsage[modelName] = { inputTokens: 0, outputTokens: 0 };
@@ -244,7 +248,7 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 		}
 	}
 
-	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, modelUsage: cliShutdownModelUsage ?? {}, dailyActualTokens };
+	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, cacheReadTokens: cliCacheReadTokens, modelUsage: cliShutdownModelUsage ?? {}, dailyActualTokens };
 }
 
 /**
