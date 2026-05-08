@@ -9,6 +9,8 @@ export interface ButtonConfig {
 	id: ButtonId;
 	label: string;
 	appearance?: 'primary' | 'secondary';
+	/** When true, the button is not rendered in the UI (code is preserved for re-enabling later). */
+	hidden?: boolean;
 }
 
 /**
@@ -54,7 +56,8 @@ export const BUTTONS: Record<ButtonId, ButtonConfig> = {
 	},
 	'btn-session-efficiency': {
 		id: 'btn-session-efficiency',
-		label: '📈 Session Efficiency'
+		label: '📈 Session Efficiency',
+		hidden: true
 	}
 };
 
@@ -71,6 +74,7 @@ export function getButton(id: ButtonId): ButtonConfig {
  */
 export function buttonHtml(id: ButtonId): string {
 	const config = BUTTONS[id];
+	if (config.hidden) { return ''; }
 	const appearance = config.appearance ? ` appearance="${config.appearance}"` : '';
 	return `<vscode-button id="${config.id}"${appearance}>${config.label}</vscode-button>`;
 }
