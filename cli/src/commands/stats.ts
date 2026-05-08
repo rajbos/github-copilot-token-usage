@@ -8,11 +8,14 @@ import { discoverSessionFiles, processSessionFile, effectiveTokens, getDiagnosti
 export const statsCommand = new Command('stats')
 	.description('Show overview of discovered session files, sessions, chat turns, and tokens')
 	.option('-v, --verbose', 'Show detailed per-folder breakdown')
+	.option('--json', 'Output raw JSON (for machine consumption)')
 	.action(async (options) => {
-		console.log(chalk.bold.cyan('\n🔍 Copilot Token Tracker - Session Statistics\n'));
+		if (!options.json) {
+			console.log(chalk.bold.cyan('\n🔍 Copilot Token Tracker - Session Statistics\n'));
+		}
 
 		// Show search paths if verbose
-		if (options.verbose) {
+		if (options.verbose && !options.json) {
 			const paths = getDiagnosticPaths();
 			console.log(chalk.dim('Search paths:'));
 			for (const p of paths) {
@@ -23,17 +26,23 @@ export const statsCommand = new Command('stats')
 		}
 
 		// Discover session files
-		process.stdout.write(chalk.dim('Scanning for session files...'));
+		if (!options.json) { process.stdout.write(chalk.dim('Scanning for session files...')); }
 		const files = await discoverSessionFiles();
-		process.stdout.write('\r' + ' '.repeat(50) + '\r'); // Clear line
+		if (!options.json) { process.stdout.write('\r' + ' '.repeat(50) + '\r'); }
 
 		if (files.length === 0) {
-			console.log(chalk.yellow('⚠️  No session files found.'));
-			console.log(chalk.dim('Have you used GitHub Copilot Chat in VS Code yet?'));
+			if (options.json) {
+				process.stdout.write('{}');
+			} else {
+				console.log(chalk.yellow('⚠️  No session files found.'));
+				console.log(chalk.dim('Have you used GitHub Copilot Chat in VS Code yet?'));
+			}
 			return;
 		}
 
-		console.log(chalk.green(`📂 Found ${chalk.bold(fmt(files.length))} session file(s)\n`));
+		if (!options.json) {
+			console.log(chalk.green(`📂 Found ${chalk.bold(fmt(files.length))} session file(s)\n`));
+		}
 
 		// Process files and gather stats
 		let totalTokens = 0;
@@ -75,12 +84,28 @@ export const statsCommand = new Command('stats')
 				folderCounts[folder].tokens += effectiveTokens(data);
 			}
 
-			// Progress indicator
-			if ((i + 1) % 50 === 0 || i === files.length - 1) {
+			// Progress indicator (human-readable only)
+			if (!options.json && ((i + 1) % 50 === 0 || i === files.length - 1)) {
 				process.stdout.write(`\r${chalk.dim(`Processing: ${i + 1}/${files.length}`)}`);
 			}
 		}
-		process.stdout.write('\r' + ' '.repeat(50) + '\r'); // Clear progress line
+		if (!options.json) { process.stdout.write('\r' + ' '.repeat(50) + '\r'); }
+
+		if (options.json) {
+			// Machine-readable output: emit pure JSON to stdout and exit
+			const payload = {
+				totalFiles: files.length,
+				processedFiles: processedCount,
+				emptyFiles: emptyCount,
+				totalTokens,
+				totalThinkingTokens,
+				totalInteractions,
+				byEditor: editorCounts,
+				lastUpdated: new Date().toISOString(),
+			};
+			process.stdout.write(JSON.stringify(payload));
+			return;
+		}
 
 		// Summary table
 		console.log(chalk.bold('📊 Summary'));
