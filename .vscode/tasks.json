@@ -34,17 +34,17 @@
       "problemMatcher": []
     },
     {
-      "label": "compile-companion",
-      "type": "shell",
-      "command": "npm run compile",
+      "type": "npm",
+      "script": "compile",
       "options": {
         "cwd": "${workspaceFolder}/../ai-engineering-fluency-xebia-extension"
       },
       "group": "build",
+      "label": "compile-companion",
       "presentation": {
         "reveal": "silent"
       },
-      "problemMatcher": []
+      "problemMatcher": ["$tsc"]
     },
     {
       "label": "build-all",
