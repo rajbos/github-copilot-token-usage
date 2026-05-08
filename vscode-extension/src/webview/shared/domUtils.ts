@@ -30,6 +30,7 @@ export function createButton(configOrId: ButtonConfig | string, label?: string, 
 		button.id = config.id;
 		button.textContent = config.label;
 		if (config.appearance) { button.setAttribute('appearance', config.appearance); }
+		if (config.hidden) { button.hidden = true; }
 	}
 	
 	return button;
