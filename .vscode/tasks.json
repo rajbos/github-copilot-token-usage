@@ -34,17 +34,22 @@
       "problemMatcher": []
     },
     {
-      "type": "npm",
-      "script": "compile",
+      "type": "process",
+      "label": "compile-companion",
+      "command": "node",
+      "args": [
+        "./node_modules/typescript/bin/tsc",
+        "--project",
+        "./tsconfig.json"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/../ai-engineering-fluency-xebia-extension"
       },
       "group": "build",
-      "label": "compile-companion",
       "presentation": {
         "reveal": "silent"
       },
-      "problemMatcher": ["$tsc"]
+      "problemMatcher": []
     },
     {
       "label": "build-all",
