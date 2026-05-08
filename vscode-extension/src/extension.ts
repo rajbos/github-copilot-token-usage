@@ -5598,12 +5598,6 @@ ${hashtag}`;
     this.log("✅ Scoring Guide refreshed");
   }
 
-  /**
-   * Open the Session Efficiency view: scans `~/.copilot/session-state/` for
-   * Copilot CLI sessions, classifies them by what was produced (PR, commit,
-   * edit, …) and shows a cost-vs-output scatter so the user can see which
-   * sessions converted tool calls into tangible output and which didn't.
-   */
   private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
 		return _getFluencyLevelData(isDebugMode);
   }
@@ -8452,9 +8446,6 @@ export async function activate(context: vscode.ExtensionContext) {
       await tokenTracker.showFluencyLevelViewer();
     },
   );
-
-  // Register the show session efficiency command was removed — the view is
-  // now only reachable via the nav button row in all other panels (no palette entry).
 
   const runLocalViewRegressionCommand = vscode.commands.registerCommand(
     "aiEngineeringFluency.runLocalViewRegression",
