@@ -34,34 +34,6 @@
       "problemMatcher": []
     },
     {
-      "type": "process",
-      "label": "compile-companion",
-      "command": "node",
-      "args": [
-        "./node_modules/typescript/bin/tsc",
-        "--project",
-        "./tsconfig.json"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}/../ai-engineering-fluency-xebia-extension"
-      },
-      "group": "build",
-      "presentation": {
-        "reveal": "silent"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "build-all",
-      "dependsOn": ["esbuild", "compile-companion"],
-      "dependsOrder": "parallel",
-      "group": "build",
-      "presentation": {
-        "reveal": "silent"
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "watch",
       "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
       "presentation": {

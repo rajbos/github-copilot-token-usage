@@ -151,7 +151,6 @@ function renderShell(
 		createButton(BUTTONS['btn-environmental']),
 		createButton(BUTTONS['btn-diagnostics']),
 		createButton(BUTTONS['btn-maturity']),
-		createButton(BUTTONS['btn-session-efficiency'])
 	);
 	if (stats.backendConfigured) {
 		buttonRow.append(createButton(BUTTONS['btn-dashboard']));
@@ -840,9 +839,6 @@ function wireButtons(): void {
 
 	const environmental = document.getElementById('btn-environmental');
 	environmental?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
-
-	const sessionEfficiency = document.getElementById('btn-session-efficiency');
-	sessionEfficiency?.addEventListener('click', () => vscode.postMessage({ command: 'showSessionEfficiency' }));
 }
 
 async function bootstrap(): Promise<void> {

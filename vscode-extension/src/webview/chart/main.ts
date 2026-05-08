@@ -148,7 +148,6 @@ function renderLayout(data: InitialChartData): void {
 		createButton(BUTTONS['btn-environmental']),
 		createButton(BUTTONS['btn-diagnostics']),
 		createButton(BUTTONS['btn-maturity']),
-		createButton(BUTTONS['btn-session-efficiency'])
 	);
 	if (data.backendConfigured) {
 		buttons.append(createButton(BUTTONS['btn-dashboard']));
@@ -322,9 +321,6 @@ function wireInteractions(data: InitialChartData): void {
 
 	const environmental = document.getElementById('btn-environmental');
 	environmental?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
-
-	const sessionEfficiency = document.getElementById('btn-session-efficiency');
-	sessionEfficiency?.addEventListener('click', () => vscode.postMessage({ command: 'showSessionEfficiency' }));
 
 	// Period toggle buttons
 	const periodButtons: Array<{ id: string; period: ChartPeriod }> = [

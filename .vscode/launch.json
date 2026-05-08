@@ -5,18 +5,16 @@
 			"name": "Run Extension",
 			"type": "extensionHost",
 			"request": "launch",
-			"preLaunchTask": "build-all",
+			"preLaunchTask": "esbuild",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension",
-				"--extensionDevelopmentPath=${workspaceFolder}/../ai-engineering-fluency-xebia-extension",
 				"--disable-extension",
 				"RobBos.ai-engineering-fluency",
 				"--disable-extension",
 				"RobBos.copilot-token-tracker"
 			],
 			"outFiles": [
-				"${workspaceFolder}/vscode-extension/dist/**/*.js",
-				"${workspaceFolder}/../ai-engineering-fluency-xebia-extension/dist/**/*.js"
+				"${workspaceFolder}/vscode-extension/dist/**/*.js"
 			]
 		}
 	]

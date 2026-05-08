@@ -1099,7 +1099,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				${buttonHtml('btn-environmental')}
 				${buttonHtml('btn-diagnostics')}
 				${buttonHtml('btn-maturity')}
-				${buttonHtml('btn-session-efficiency')}
 				${stats.backendConfigured ? buttonHtml('btn-dashboard') : ''}
 				</div>
 			</div>
@@ -1427,9 +1426,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	});
 	document.getElementById('btn-environmental')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showEnvironmental' });
-	});
-	document.getElementById('btn-session-efficiency')?.addEventListener('click', () => {
-		vscode.postMessage({ command: 'showSessionEfficiency' });
 	});
 	
 	// Repository analysis buttons

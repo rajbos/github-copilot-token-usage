@@ -154,7 +154,6 @@ function renderLayout(data: FluencyLevelData): void {
 					${buttonHtml('btn-chart')}
 					${buttonHtml('btn-usage')}
 					${buttonHtml('btn-diagnostics')}
-					${buttonHtml('btn-session-efficiency')}
 					${data.backendConfigured ? buttonHtml('btn-dashboard') : ''}
 				</div>
 			</div>
@@ -203,9 +202,6 @@ function renderLayout(data: FluencyLevelData): void {
 	});
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
-	});
-	document.getElementById('btn-session-efficiency')?.addEventListener('click', () => {
-		vscode.postMessage({ command: 'showSessionEfficiency' });
 	});
 
 	// Wire up category selection buttons
