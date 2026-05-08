@@ -110,6 +110,9 @@
   "generate_findings",
   "generate_topics",
 
+  "list_bash",
+  "read_bash",
+  "stop_bash",
   "list_powershell",
   "read_powershell"
 ,
