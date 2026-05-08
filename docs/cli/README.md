@@ -28,6 +28,7 @@ Show discovered session files, sessions, chat turns, and token counts.
 ```bash
 ai-engineering-fluency stats
 ai-engineering-fluency stats --verbose  # Show per-folder breakdown
+ai-engineering-fluency stats --json     # Machine-readable JSON output
 ```
 
 ```
@@ -41,6 +42,25 @@ Editor Breakdown:
 
 ──────────────────────────────────────────────────────────────────────────────
 Total                     53 files   │  397 sessions  │  5,917 turns  │  2.6M tokens
+```
+
+With `--json`, outputs a machine-readable payload suitable for scripting:
+
+```json
+{
+  "totalFiles": 53,
+  "processedFiles": 50,
+  "emptyFiles": 3,
+  "totalTokens": 2600000,
+  "totalThinkingTokens": 0,
+  "totalInteractions": 5917,
+  "byEditor": {
+    "vscode":          { "files": 42, "tokens": 2100000, "interactions": 4821 },
+    "vscode-insiders": { "files":  8, "tokens":  401000, "interactions":  892 },
+    "opencode":        { "files":  3, "tokens":   87000, "interactions":  204 }
+  },
+  "lastUpdated": "2025-01-15T10:30:00.000Z"
+}
 ```
 
 ---
