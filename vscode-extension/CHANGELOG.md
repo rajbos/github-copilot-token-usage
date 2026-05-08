@@ -6,6 +6,18 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-08
+
+### Features
+- Show cached input tokens in log viewer summary bar — a "Cached Input" card now appears for Copilot CLI sessions that have `cacheReadTokens` data (#807)
+
+### Improvements
+- Added friendly display names for additional tools: ADO MCP, MSSQL, Copilot search/memory tools, `mcp_git_git_log`, `mcp_git_git_show`, and Claude in Chrome MCP tools
+- Cleaned up publish script and removed legacy deprecation popup (#809)
+
+### Bug Fixes
+- Hidden Session Efficiency navigation buttons from all webview panels until the feature is stable (#815)
+
 ## [0.5.0] - 2026-05-06
 
 ### Features
