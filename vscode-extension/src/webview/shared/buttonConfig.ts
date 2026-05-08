@@ -53,11 +53,6 @@ export const BUTTONS: Record<ButtonId, ButtonConfig> = {
 	'btn-environmental': {
 		id: 'btn-environmental',
 		label: '🌿 Environmental Impact'
-	},
-	'btn-session-efficiency': {
-		id: 'btn-session-efficiency',
-		label: '📈 Session Efficiency',
-		hidden: true
 	}
 };
 
