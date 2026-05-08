@@ -2,7 +2,7 @@
   "name": "ai-engineering-fluency",
   "displayName": "AI Engineering Fluency",
   "description": "Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and AI fluency insights in VS Code.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "RobBos",
   "icon": "assets/logo.png",
   "engines": {
