@@ -6,6 +6,16 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-09
+
+### Security
+- Bumped `fast-uri` to ≥3.1.2 to fix GHSA-v39h-62p7-jpjc and GHSA-q3j6-qgpj-74h6
+
+### Improvements
+- Added friendly display names for `list_bash`, `read_bash`, and `stop_bash` tools (#822)
+- Bumped `fast-xml-builder` dependency (#819)
+- Cleaned up legacy code references (#821)
+
 ## [0.5.1] - 2026-05-08
 
 ### Features

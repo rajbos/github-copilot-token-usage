@@ -6,6 +6,14 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-09
+
+### ✨ Features & Improvements
+- Added `--json` output option to the `stats` command (#818)
+
+### 🔧 Maintenance
+- Bumped @types/node from 25.6.0 to 25.6.2
+
 ## [0.1.0] - 2026-05-04
 
 ### ✨ Features & Improvements
