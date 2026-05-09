@@ -1455,6 +1455,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.setStatusBarText(`$(loading~spin) Analyzing Logs: ${percentage}%`);
 			});
 			this.lastDailyStats = dailyStats;
+			// Keep lastFullDailyStats fresh: replace the recent 30-day entries so the chart
+			// shows the same data as the toolbar/details panel on every background refresh.
+			if (this.lastFullDailyStats) {
+				const fullMap = new Map(this.lastFullDailyStats.map(d => [d.date, d]));
+				for (const day of dailyStats) {
+					fullMap.set(day.date, day);
+				}
+				this.lastFullDailyStats = Array.from(fullMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+			}
 
 			if (detailedStats.today.sessions === 0 && detailedStats.last30Days.sessions === 0) {
 				this.setStatusBarText('$(symbol-numeric) No session data yet');
