@@ -160,25 +160,32 @@ jobs:
     # absent or scoped differently outside main.
 
     - name: Authenticate GitHub CLI
+      id: auth
       if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         if [ -z "$GH_TOKEN" ]; then
-          echo "❌ GH_PAT secret is not set; cannot run Copilot CLI step."
-          exit 1
+          echo "⚠️ GH_PAT secret is not set; skipping Copilot CLI steps."
+          echo "auth_ok=false" >> "$GITHUB_OUTPUT"
+          exit 0
         fi
-        gh auth status
+        if gh auth status 2>&1; then
+          echo "auth_ok=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "⚠️ GH_PAT token is invalid or expired; skipping Copilot CLI steps."
+          echo "auth_ok=false" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Check Copilot CLI version
-      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && steps.auth.outputs.auth_ok == 'true'
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
         COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       run: npx @github/copilot --version
 
     - name: Run Copilot CLI to draft mutation improvement issue
-      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      if: steps.gate.outputs.should_run == 'true' && steps.mutation.outcome == 'success' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && steps.auth.outputs.auth_ok == 'true'
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
         COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
