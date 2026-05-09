@@ -1,5 +1,6 @@
 // Diagnostics Report webview with tabbed interface
 import { buttonHtml } from "../shared/buttonConfig";
+import { wireExtensionPointButtons } from "../shared/extensionPoints";
 // CSS imported as text via esbuild
 import themeStyles from "../shared/theme.css";
 import styles from "./styles.css";
@@ -2331,6 +2332,7 @@ function renderLayout(data: DiagnosticsData): void {
     ?.addEventListener("click", () =>
       vscode.postMessage({ command: "showEnvironmental" }),
     );
+  wireExtensionPointButtons(vscode);
 
   setupSortHandlers();
   setupEditorFilterHandlers();

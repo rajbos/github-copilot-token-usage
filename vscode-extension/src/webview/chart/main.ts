@@ -2,6 +2,7 @@
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
+import { wireExtensionPointButtons } from '../shared/extensionPoints';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -321,6 +322,8 @@ function wireInteractions(data: InitialChartData): void {
 
 	const environmental = document.getElementById('btn-environmental');
 	environmental?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
+
+	wireExtensionPointButtons(vscode);
 
 	// Period toggle buttons
 	const periodButtons: Array<{ id: string; period: ChartPeriod }> = [

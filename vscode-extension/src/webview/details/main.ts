@@ -3,6 +3,7 @@ import { getModelDisplayName } from '../shared/modelUtils';
 import { getEditorIcon, getCharsPerToken, formatFixed, formatPercent, formatNumber, formatCost, formatCompact, setCompactNumbers } from '../shared/formatUtils';
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
+import { wireExtensionPointButtons } from '../shared/extensionPoints';
 // Token estimators loaded from JSON
 // @ts-ignore
 import tokenEstimatorsJson from '../../tokenEstimators.json';
@@ -839,6 +840,8 @@ function wireButtons(): void {
 
 	const environmental = document.getElementById('btn-environmental');
 	environmental?.addEventListener('click', () => vscode.postMessage({ command: 'showEnvironmental' }));
+
+	wireExtensionPointButtons(vscode);
 }
 
 async function bootstrap(): Promise<void> {

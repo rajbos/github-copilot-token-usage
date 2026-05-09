@@ -3,6 +3,7 @@ import { el } from '../shared/domUtils';
 import { buttonHtml } from '../shared/buttonConfig';
 import { ContextReferenceUsage, getTotalContextRefs } from '../shared/contextRefUtils';
 import { formatFixed, formatNumber, formatPercent, setFormatLocale } from '../shared/formatUtils';
+import { wireExtensionPointButtons } from '../shared/extensionPoints';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -1427,6 +1428,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	document.getElementById('btn-environmental')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showEnvironmental' });
 	});
+	wireExtensionPointButtons(vscode);
 	
 	// Repository analysis buttons
 	document.getElementById('btn-analyse-repo')?.addEventListener('click', () => {
