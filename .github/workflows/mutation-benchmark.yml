@@ -167,6 +167,7 @@ jobs:
       run: |
         if [ -z "$GH_TOKEN" ]; then
           echo "⚠️ GH_PAT secret is not set; skipping Copilot CLI steps."
+          printf '> [!WARNING]\n> **GH_PAT secret is not set.** The Copilot CLI follow-up step was skipped.\n> Renew the PAT and add it as a repository secret named `GH_PAT` to re-enable issue creation.\n' >> "$GITHUB_STEP_SUMMARY"
           echo "auth_ok=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
@@ -174,6 +175,7 @@ jobs:
           echo "auth_ok=true" >> "$GITHUB_OUTPUT"
         else
           echo "⚠️ GH_PAT token is invalid or expired; skipping Copilot CLI steps."
+          printf '> [!WARNING]\n> **GH_PAT token is invalid or expired.** The Copilot CLI follow-up step was skipped.\n> Renew the PAT and update the repository secret named `GH_PAT` to re-enable issue creation.\n' >> "$GITHUB_STEP_SUMMARY"
           echo "auth_ok=false" >> "$GITHUB_OUTPUT"
         fi
 
