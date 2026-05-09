@@ -125,11 +125,11 @@ jobs:
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' }}
-        run: NODE_AUTH_TOKEN="" npm publish
+        run: npm publish --provenance --access public
 
       - name: Dry run publish
         if: ${{ inputs.dry_run }}
-        run: NODE_AUTH_TOKEN="" npm publish public --dry-run
+        run: npm publish --provenance --access public --dry-run
 
       - name: Commit version bump and create PR
         if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag != 'true' }}
