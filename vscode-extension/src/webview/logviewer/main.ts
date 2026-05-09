@@ -1,6 +1,7 @@
 ﻿// Log Viewer webview - displays session file details and chat turns
 import { ContextReferenceUsage, getTotalContextRefs, getImplicitContextRefs, getExplicitContextRefs, getContextRefsSummary } from '../shared/contextRefUtils';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
+import { getModelDisplayName } from '../shared/modelUtils';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -298,7 +299,7 @@ function renderTurnModelBadge(model: string): string {
 		const family = escapeHtml(model);
 		return `<span class="turn-model" title="JetBrains session logs only record the model family (inferred from the tool call ID prefix). Specific version isn't persisted.">🎯 ${family}</span>`;
 	}
-	return `<span class="turn-model">🎯 ${escapeHtml(model)}</span>`;
+	return `<span class="turn-model">🎯 ${escapeHtml(getModelDisplayName(model))}</span>`;
 }
 
 function renderTurnCard(turn: ChatTurn, isJetBrains = false): string {
@@ -490,7 +491,7 @@ function renderTurnCard(turn: ChatTurn, isJetBrains = false): string {
 								<tr class="tool-row${tc.isSubAgent ? ' sub-agent-row' : ''}" data-tool-name="${tc.isSubAgent ? '__subagent__' : escapeHtml(lookupToolName(tc.toolName))}">
 									<td class="tool-name-cell">
 										<span class="tool-name tool-call-link" data-turn="${turn.turnNumber}" data-toolcall="${idx}" title="${escapeHtml(tc.toolName)}" style="cursor:pointer;">${escapeHtml(tc.isSubAgent ? ({'task':'🤖 Sub-Agent','read_agent':'🤖 Sub-Agent (read)','write_agent':'🤖 Sub-Agent (write)','list_agents':'🤖 Sub-Agent (list)'}[tc.toolName] || `🤖 ${tc.toolName}`) : lookupToolName(tc.toolName))}</span>
-										${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(tc.subAgentModel)}</span>` : ''}
+										${tc.isSubAgent && tc.subAgentModel ? `<span class="sub-agent-model-badge">${escapeHtml(getModelDisplayName(tc.subAgentModel))}</span>` : ''}
 										${tc.isSubAgent && tc.subAgentTokens ? `<span class="sub-agent-tokens">↑${tc.subAgentTokens.input.toLocaleString()} ↓${tc.subAgentTokens.output.toLocaleString()} tokens</span>` : ''}
 										${tc.arguments && !tc.isSubAgent ? `<details class="tool-details"><summary>Arguments</summary><pre>${escapeHtml(tc.arguments)}</pre></details>` : ''}
 										${tc.result && !tc.isSubAgent ? `<details class="tool-details"><summary>Result</summary><pre>${escapeHtml(truncateText(tc.result, 500))}</pre></details>` : ''}
