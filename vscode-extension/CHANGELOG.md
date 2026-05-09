@@ -6,6 +6,36 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.5.2]
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Changes
+* Add friendly names for Claude in Chrome MCP browser tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/804
+* feat: show cached input tokens in log viewer summary bar by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/807
+* chore: remove legacy deprecation popup and clean up publish script by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/809
+* Add friendly names for mcp_git_git_log and mcp_git_git_show by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/810
+* Add friendly display names for ADO MCP, MSSQL, and Copilot search/memory tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/813
+* Hide session efficiency navigation buttons by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/815
+* chore: bump VS Code extension to v0.5.1 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/816
+* feat(cli): add --json output option to stats command by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/818
+* feat: cleanup old code refs by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/821
+* Add friendly names for list_bash, read_bash, stop_bash tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/822
+* chore: remove Session Efficiency references from CHANGELOG by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/823
+* fix(deps): bump fast-uri to >=3.1.2 (closes Dependabot alerts #81 and #82) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/824
+* chore: bump versions for release (vscode-extension v0.5.2, cli v0.1.1) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/825
+### 📦 Other Dependencies
+* chore(deps): Bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/802
+* chore(deps): Bump puppeteer from 24.42.0 to 24.43.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/805
+* chore(deps): Bump hono from 4.12.14 to 4.12.18 in /sharing-server in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/812
+* chore(deps-dev): Bump @types/node from 25.6.0 to 25.6.2 in /cli by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/814
+* chore(deps): Bump fast-xml-builder from 1.1.5 to 1.2.0 in /.github/skills/azure-storage-loader in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/820
+* chore(deps): Bump fast-xml-builder from 1.1.5 to 1.2.0 in /vscode-extension in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/819
+
+
+**Full Changelog**: https://github.com/rajbos/ai-engineering-fluency/compare/vscode/v0.5.0...vscode/v0.5.2
+
 ## [0.5.2] - 2026-05-09
 
 ### Security
