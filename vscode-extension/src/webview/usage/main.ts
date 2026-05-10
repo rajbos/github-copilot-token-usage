@@ -187,6 +187,8 @@ type RepoPrStatsResult = {
 type AgentRepoSummary = {
   owner: string;
   repo: string;
+  /** Pre-validated safe https URL for this repo. */
+  repoUrl: string;
   totalTasks: number;
   totalSessions: number;
   totalCredits: number;
@@ -695,6 +697,38 @@ function renderReposPrContent(data: RepoPrStatsResult): string {
 		</div>`;
 }
 
+/** Sanitize agent sessions data received from the extension host — escapes all string fields at
+ *  the trust boundary so render functions can interpolate them directly into innerHTML safely. */
+function sanitizeAgentSessionsData(input: unknown): AgentSessionsResult {
+	const src = (input && typeof input === 'object') ? (input as Record<string, unknown>) : {};
+	const repos = Array.isArray(src.repos) ? src.repos : [];
+	return {
+		authenticated: Boolean(src.authenticated),
+		since: typeof src.since === 'string' ? escapeHtml(src.since) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+		fetchedAt: typeof src.fetchedAt === 'string' ? src.fetchedAt : '',
+		totalTasks: toSafeNumber(src.totalTasks),
+		totalSessions: toSafeNumber(src.totalSessions),
+		totalCredits: toSafeNumber(src.totalCredits),
+		repos: repos.map((repo) => {
+			const r = (repo && typeof repo === 'object') ? (repo as Record<string, unknown>) : {};
+			const owner = escapeHtml(typeof r.owner === 'string' ? r.owner : '');
+			const repoName = escapeHtml(typeof r.repo === 'string' ? r.repo : '');
+			return {
+				owner,
+				repo: repoName,
+				repoUrl: toSafeHttpUrl(`https://github.com/${owner}/${repoName}`),
+				totalTasks: toSafeNumber(r.totalTasks),
+				totalSessions: toSafeNumber(r.totalSessions),
+				totalCredits: toSafeNumber(r.totalCredits),
+				tasksScanned: toSafeNumber(r.tasksScanned),
+				tasksTotal: toSafeNumber(r.tasksTotal),
+				partial: Boolean(r.partial),
+				error: typeof r.error === 'string' ? escapeHtml(r.error) : undefined,
+			};
+		}),
+	};
+}
+
 function updateReposPrPanel(data: RepoPrStatsResult): void {
 	const container = document.querySelector('#repos-pr-content');
 	if (!container) { return; }
@@ -728,7 +762,7 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 			</div>`;
 	}
 
-	const sinceDate = escapeHtml(new Date(data.since).toLocaleDateString());
+	const sinceDate = new Date(data.since).toLocaleDateString();
 	const cell = 'padding: 6px 8px; border-bottom: 1px solid var(--border-subtle);';
 	const cellCenter = `${cell} text-align: center;`;
 
@@ -744,11 +778,12 @@ function renderAgentSessionsContent(data: AgentSessionsResult): string {
 	const hasPartial = data.repos.some(r => r.partial && !r.error);
 
 	const rows = data.repos.map((r) => {
-		const repoLink = `<a href="${escapeHtml(`https://github.com/${r.owner}/${r.repo}`)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
+		// r.owner, r.repo, r.repoUrl and r.error are pre-sanitized by sanitizeAgentSessionsData
+		const repoLink = `<a href="${r.repoUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${r.owner}/${r.repo}</a>`;
 		if (r.error) {
 			return `<tr>
 				<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}</td>
-				<td colspan="3" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</td>
+				<td colspan="3" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${r.error}</td>
 			</tr>`;
 		}
 		const partialNote = r.partial
@@ -1757,7 +1792,7 @@ window.addEventListener('message', (event) => {
 		case 'agentSessionsLoaded': {
 			const raw = message.data;
 			if (raw && typeof raw === 'object') {
-				agentSessionsData = raw as AgentSessionsResult;
+				agentSessionsData = sanitizeAgentSessionsData(raw);
 				if (!agentSessionsData.authenticated) {
 					// Reset loaded flag so re-authenticating and revisiting the tab triggers a fresh fetch
 					agentSessionsLoaded = false;
