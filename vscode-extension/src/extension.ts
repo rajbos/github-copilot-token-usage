@@ -27,6 +27,7 @@ import {
 	type RepoPrInfo,
 	type RepoPrStatsResult,
 } from './githubPrService';
+import { fetchAgentSessionsForRepo } from './agentSessionsService';
 
 import type {
   TokenUsageStats,
@@ -63,7 +64,8 @@ import type {
   ActualUsage,
   ChatTurn,
   SessionLogData,
-  WorkspaceCustomizationSummary
+  WorkspaceCustomizationSummary,
+  AgentSessionsResult,
 } from './types';
 import { OpenCodeDataAccess } from './opencode';
 import { CrushDataAccess } from './crush';
@@ -305,6 +307,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 	// Cached PR stats result for the repos tab
 	private _lastRepoPrStats?: RepoPrStatsResult;
+
+	// Cached cloud agent sessions result for the cloud agent tab
+	private _lastAgentSessionsData?: AgentSessionsResult;
 
 	// Tool name mapping - loaded from toolNames.json for friendly display names
 	private toolNameMap: { [key: string]: string } = toolNamesData as { [key: string]: string };
@@ -1234,6 +1239,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const result: RepoPrStatsResult = { repos: [], authenticated: false, since: since.toISOString() };
 				this._lastRepoPrStats = result;
 				this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+				const agentResult: AgentSessionsResult = { repos: [], totalTasks: 0, totalSessions: 0, totalCredits: 0, authenticated: false, since: since.toISOString(), fetchedAt: new Date().toISOString() };
+				this._lastAgentSessionsData = agentResult;
+				this.analysisPanel.webview.postMessage({ command: 'agentSessionsLoaded', data: agentResult });
 			}
 		} catch (error) {
 			this.error('Failed to sign out from GitHub:', error);
@@ -1357,6 +1365,63 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const result: RepoPrStatsResult = { repos: results, authenticated: true, since: since.toISOString() };
 		this._lastRepoPrStats = result;
 		this.analysisPanel.webview.postMessage({ command: 'repoPrStatsLoaded', data: result });
+	}
+
+	/**
+	 * Load Copilot cloud agent session stats for all discovered GitHub repos and send to the analysis panel.
+	 * Only cloud-agent sessions are counted — CLI/remote sessions that share the same task API are excluded
+	 * so they are not double-counted with the chat-session data already shown in "My Activity".
+	 */
+	private async loadAgentSessions(): Promise<void> {
+		if (!this.analysisPanel) { return; }
+
+		const since = new Date();
+		since.setDate(since.getDate() - 30);
+
+		if (this._githubSignedOutByUser) {
+			const result: AgentSessionsResult = { repos: [], totalTasks: 0, totalSessions: 0, totalCredits: 0, authenticated: false, since: since.toISOString(), fetchedAt: new Date().toISOString() };
+			this._lastAgentSessionsData = result;
+			this.analysisPanel.webview.postMessage({ command: 'agentSessionsLoaded', data: result });
+			return;
+		}
+
+		const session = await vscode.authentication.getSession('github', ['read:user'], { createIfNone: false });
+		if (!session) {
+			const result: AgentSessionsResult = { repos: [], totalTasks: 0, totalSessions: 0, totalCredits: 0, authenticated: false, since: since.toISOString(), fetchedAt: new Date().toISOString() };
+			this._lastAgentSessionsData = result;
+			this.analysisPanel.webview.postMessage({ command: 'agentSessionsLoaded', data: result });
+			return;
+		}
+
+		if (!this.githubSession) {
+			this.githubSession = session;
+			await this.context.globalState.update('github.authenticated', true);
+			await this.context.globalState.update('github.username', session.account.label);
+		}
+
+		const workspacePaths = this._buildWorkspacePaths();
+		const repos = discoverGitHubRepos(workspacePaths);
+		this.analysisPanel.webview.postMessage({ command: 'agentSessionsProgress', total: repos.length, done: 0 });
+
+		const repoResults = [];
+		for (let i = 0; i < repos.length; i++) {
+			const { owner, repo } = repos[i];
+			const summary = await fetchAgentSessionsForRepo(owner, repo, session.accessToken, since);
+			repoResults.push(summary);
+			this.analysisPanel.webview.postMessage({ command: 'agentSessionsProgress', total: repos.length, done: i + 1 });
+		}
+
+		const result: AgentSessionsResult = {
+			repos: repoResults,
+			totalTasks: repoResults.reduce((s, r) => s + r.totalTasks, 0),
+			totalSessions: repoResults.reduce((s, r) => s + r.totalSessions, 0),
+			totalCredits: repoResults.reduce((s, r) => s + r.totalCredits, 0),
+			authenticated: true,
+			since: since.toISOString(),
+			fetchedAt: new Date().toISOString(),
+		};
+		this._lastAgentSessionsData = result;
+		this.analysisPanel.webview.postMessage({ command: 'agentSessionsLoaded', data: result });
 	}
 
 	/** Collect workspace paths from the customization matrix and currently open VS Code workspace folders. */
@@ -4424,6 +4489,9 @@ usageAnalysis: undefined
 				}
 				case 'loadRepoPrStats':
 					await this.dispatch('loadRepoPrStats', () => this.loadRepoPrStats());
+					break;
+				case 'loadAgentSessions':
+					await this.dispatch('loadAgentSessions', () => this.loadAgentSessions());
 					break;
 			}
 		});

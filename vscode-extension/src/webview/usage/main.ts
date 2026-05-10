@@ -155,6 +155,10 @@ function showLoadError(message: string): void {
 let repoPrStatsLoaded = false;
 let repoPrStatsData: RepoPrStatsResult | null = null;
 
+// State for the Cloud Agent tab
+let agentSessionsLoaded = false;
+let agentSessionsData: AgentSessionsResult | null = null;
+
 type RepoPrDetail = {
   number: number;
   title: string;
@@ -178,6 +182,28 @@ type RepoPrStatsResult = {
   repos: RepoPrInfo[];
   authenticated: boolean;
   since: string;
+};
+
+type AgentRepoSummary = {
+  owner: string;
+  repo: string;
+  totalTasks: number;
+  totalSessions: number;
+  totalCredits: number;
+  tasksScanned: number;
+  tasksTotal: number;
+  partial: boolean;
+  error?: string;
+};
+
+type AgentSessionsResult = {
+  repos: AgentRepoSummary[];
+  totalTasks: number;
+  totalSessions: number;
+  totalCredits: number;
+  authenticated: boolean;
+  since: string;
+  fetchedAt: string;
 };
 
 function escapeHtml(text: string): string {
@@ -521,6 +547,11 @@ function setupTabs(): void {
 				repoPrStatsLoaded = true;
 				vscode.postMessage({ command: 'loadRepoPrStats' });
 			}
+			// Lazy-load cloud agent sessions on first visit to the tab
+			if (tab === 'agent' && !agentSessionsLoaded) {
+				agentSessionsLoaded = true;
+				vscode.postMessage({ command: 'loadAgentSessions' });
+			}
 		});
 	});
 }
@@ -675,6 +706,111 @@ function updateReposPrPanel(data: RepoPrStatsResult): void {
 			or had an AI agent requested as a reviewer.
 		</div>
 		${renderReposPrContent(data)}
+	`;
+}
+
+// ---------------------------------------------------------------------------
+// Cloud Agent Sessions tab
+// ---------------------------------------------------------------------------
+
+function renderAgentSessionsContent(data: AgentSessionsResult): string {
+	if (!data.authenticated) {
+		return `
+			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
+				<strong>🔒 GitHub authentication required</strong><br/>
+				Sign in with GitHub (via the Diagnostics tab) to see Copilot cloud agent session data.
+			</div>`;
+	}
+	if (data.repos.length === 0) {
+		return `
+			<div style="margin-top:12px; font-size:12px; color:var(--text-secondary);">
+				No GitHub repositories detected in your workspace folders.
+			</div>`;
+	}
+
+	const sinceDate = escapeHtml(new Date(data.since).toLocaleDateString());
+	const cell = 'padding: 6px 8px; border-bottom: 1px solid var(--border-subtle);';
+	const cellCenter = `${cell} text-align: center;`;
+
+	const summaryTotals = data.repos.reduce((acc, r) => {
+		if (!r.error) {
+			acc.tasks += r.totalTasks;
+			acc.sessions += r.totalSessions;
+			acc.credits += r.totalCredits;
+		}
+		return acc;
+	}, { tasks: 0, sessions: 0, credits: 0 });
+
+	const hasPartial = data.repos.some(r => r.partial && !r.error);
+
+	const rows = data.repos.map((r) => {
+		const repoLink = `<a href="${escapeHtml(`https://github.com/${r.owner}/${r.repo}`)}" target="_blank" rel="noopener noreferrer" style="color:var(--link-color); font-family:'Courier New',monospace; font-size:12px;">${escapeHtml(r.owner)}/${escapeHtml(r.repo)}</a>`;
+		if (r.error) {
+			return `<tr>
+				<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}</td>
+				<td colspan="3" style="${cell} color:var(--text-secondary); font-style:italic; font-size:12px;">${escapeHtml(r.error)}</td>
+			</tr>`;
+		}
+		const partialNote = r.partial
+			? ` <span title="Showing ${r.tasksScanned} of ${r.tasksTotal} tasks — capped to limit API usage" style="color:var(--text-muted); font-size:10px;">(${r.tasksScanned}/${r.tasksTotal} tasks scanned)</span>`
+			: '';
+		return `<tr>
+			<td style="${cell} font-family:'Courier New',monospace; font-size:12px;">${repoLink}${partialNote}</td>
+			<td style="${cellCenter} font-weight:600;">${r.totalTasks}</td>
+			<td style="${cellCenter} font-weight:600;">${r.totalSessions}</td>
+			<td style="${cellCenter}">${r.totalCredits > 0 ? r.totalCredits.toFixed(1) : '—'}</td>
+		</tr>`;
+	}).join('');
+
+	return `
+		<div style="margin-bottom:12px; display:flex; gap:24px; flex-wrap:wrap;">
+			<div style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; padding:12px 20px; text-align:center; min-width:80px;">
+				<div style="font-size:22px; font-weight:700; color:var(--text-primary);">${summaryTotals.tasks}</div>
+				<div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Tasks</div>
+			</div>
+			<div style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; padding:12px 20px; text-align:center; min-width:80px;">
+				<div style="font-size:22px; font-weight:700; color:var(--text-primary);">${summaryTotals.sessions}</div>
+				<div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Sessions</div>
+			</div>
+			<div style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; padding:12px 20px; text-align:center; min-width:80px;">
+				<div style="font-size:22px; font-weight:700; color:var(--text-primary);">${summaryTotals.credits > 0 ? summaryTotals.credits.toFixed(1) : '—'}</div>
+				<div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">AI Credits</div>
+			</div>
+		</div>
+		<div style="font-size:11px; color:var(--text-secondary); margin-bottom:12px;">
+			Showing cloud-agent sessions from ${sinceDate} to now.
+			${hasPartial ? '<strong>Note:</strong> Some repos were capped at 50 tasks — totals may be lower bounds. ' : ''}
+		</div>
+		<div class="customization-matrix-container">
+			<table class="customization-matrix" style="width:100%; border-collapse:collapse;">
+				<thead>
+					<tr>
+						<th style="text-align:left; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;">📂 Repository</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Number of Copilot cloud agent tasks (each task = one user prompt to the agent)">Tasks</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="Number of agent sessions (each session = one autonomous coding run)">Sessions</th>
+						<th style="text-align:center; padding:8px; border-bottom:2px solid var(--border-color); font-size:12px; color:var(--text-secondary); opacity:0.9;" title="AI credits consumed (1 credit = $0.01). Only available when the API reports usage data.">AI Credits</th>
+					</tr>
+				</thead>
+				<tbody>${rows}</tbody>
+			</table>
+		</div>
+		<div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid var(--border-subtle); padding-top:8px;">
+			ℹ️ <strong>No double-counting:</strong> These are cloud agent sessions only. CLI/remote sessions and local IDE chat sessions (shown in "My Activity") are excluded.<br/>
+			ℹ️ <strong>Action minutes</strong> (GitHub Actions compute used by the agent) are not shown here — they require additional per-branch API calls.
+		</div>`;
+}
+
+function updateAgentSessionsPanel(data: AgentSessionsResult): void {
+	const container = document.querySelector('#agent-sessions-content');
+	if (!container) { return; }
+	container.innerHTML = `
+		<div class="section-title"><span>🤖</span><span>Copilot Cloud Agent Sessions</span></div>
+		<div class="section-subtitle">
+			Cloud agent tasks and sessions from the last 30 days. Each <strong>task</strong> is a user request to the agent;
+			each <strong>session</strong> is an autonomous coding run within that task.
+			<strong>CLI/remote sessions are excluded</strong> — they are separate from these cloud agent sessions.
+		</div>
+		${renderAgentSessionsContent(data)}
 	`;
 }
 
@@ -1118,6 +1254,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				<button class="tab-button ${activeTab === 'tools' ? 'active' : ''}" data-tab="tools">🔧 Tools &amp; Integrations</button>
 				<button class="tab-button ${activeTab === 'health' ? 'active' : ''}" data-tab="health">🏗️ Workspace Health</button>
 				<button class="tab-button ${activeTab === 'repos' ? 'active' : ''}" data-tab="repos">🤖 Repository PRs</button>
+				<button class="tab-button ${activeTab === 'agent' ? 'active' : ''}" data-tab="agent">🤖 Cloud Agent</button>
 			</div>
 
 			<div id="tab-panel-activity" class="tab-panel"${activeTab !== 'activity' ? ' style="display:none"' : ''}>
@@ -1398,6 +1535,16 @@ function renderLayout(stats: UsageAnalysisStats): void {
 				</div>
 			</div>
 
+			<div id="tab-panel-agent" class="tab-panel"${activeTab !== 'agent' ? ' style="display:none"' : ''}>
+				<div class="section" id="agent-sessions-content">
+					<div class="section-title"><span>🤖</span><span>Copilot Cloud Agent Sessions</span></div>
+					<div class="section-subtitle">Cloud agent tasks and sessions from the last 30 days, fetched from the GitHub API.</div>
+					<div style="margin-top:12px; color: var(--text-secondary); font-size:12px;">
+						Loading… (sign in with GitHub to see data)
+					</div>
+				</div>
+			</div>
+
 			<div class="footer">
 				Last updated: ${escapeHtml(new Date(stats.lastUpdated).toLocaleString())} · Updates every 5 minutes
 			</div>
@@ -1535,6 +1682,10 @@ window.addEventListener('message', (event) => {
 					if (repoPrStatsData) {
 						updateReposPrPanel(repoPrStatsData);
 					}
+					// Restore cloud agent tab if we already fetched data
+					if (agentSessionsData) {
+						updateAgentSessionsPanel(agentSessionsData);
+					}
 				} else {
 					showLoadError('Received invalid data from the extension. Try refreshing.');
 				}
@@ -1599,6 +1750,43 @@ window.addEventListener('message', (event) => {
 					div.style.cssText = 'margin-top:8px; font-size:12px; color:var(--text-secondary);';
 					div.textContent = `Fetching PRs… ${done}/${total} repos (${pct}%)`;
 					container.appendChild(div);
+				}
+			}
+			break;
+		}
+		case 'agentSessionsLoaded': {
+			const raw = message.data;
+			if (raw && typeof raw === 'object') {
+				agentSessionsData = raw as AgentSessionsResult;
+				if (!agentSessionsData.authenticated) {
+					// Reset loaded flag so re-authenticating and revisiting the tab triggers a fresh fetch
+					agentSessionsLoaded = false;
+				}
+				updateAgentSessionsPanel(agentSessionsData);
+			}
+			break;
+		}
+		case 'agentSessionsProgress': {
+			const agentContainer = document.querySelector('#agent-sessions-content');
+			if (agentContainer) {
+				const done = message.done as number;
+				const total = message.total as number;
+				const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+				const progEl = agentContainer.querySelector('.agent-sessions-progress');
+				if (progEl) {
+					progEl.textContent = `Fetching agent sessions… ${done}/${total} repos (${pct}%)`;
+				} else {
+					Array.from(agentContainer.children).forEach(child => {
+						const el = child as HTMLElement;
+						if (!el.classList.contains('section-title') && !el.classList.contains('section-subtitle')) {
+							el.remove();
+						}
+					});
+					const div = document.createElement('div');
+					div.className = 'agent-sessions-progress';
+					div.style.cssText = 'margin-top:8px; font-size:12px; color:var(--text-secondary);';
+					div.textContent = `Fetching agent sessions… ${done}/${total} repos (${pct}%)`;
+					agentContainer.appendChild(div);
 				}
 			}
 			break;
