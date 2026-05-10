@@ -2,6 +2,7 @@
 import { el, createButton } from '../shared/domUtils';
 import { BUTTONS } from '../shared/buttonConfig';
 import { formatFixed, formatNumber, formatCompact, setCompactNumbers } from '../shared/formatUtils';
+import { wireExtensionPointButtons } from '../shared/extensionPoints';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -298,6 +299,7 @@ function wireButtons(): void {
 	document.getElementById('btn-diagnostics')?.addEventListener('click', () => vscode.postMessage({ command: 'showDiagnostics' }));
 	document.getElementById('btn-maturity')?.addEventListener('click', () => vscode.postMessage({ command: 'showMaturity' }));
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => vscode.postMessage({ command: 'showDashboard' }));
+	wireExtensionPointButtons(vscode);
 }
 
 window.addEventListener('message', (event: MessageEvent) => {

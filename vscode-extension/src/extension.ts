@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { AiFluencyExtensionApi, ExtensionPointButton } from './extensionPoints';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -239,6 +240,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/**
 	 * Scan a workspace folder for customization files according to `customizationPatterns.json`.
 	 */
+	/** Buttons registered by companion extensions via the extension points API. */
+	private readonly _extensionPointButtons = new Map<string, { config: ExtensionPointButton; handler: () => void | Promise<void> }>();
+
 	private _disposed = false;
 	private updateInterval: NodeJS.Timeout | undefined;
 	private detailsPanel: vscode.WebviewPanel | undefined;
@@ -432,11 +436,35 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	public registerExtensionPointButton(button: ExtensionPointButton, handler: () => void | Promise<void>): { dispose(): void } {
+		this._extensionPointButtons.set(button.id, { config: button, handler });
+		return {
+			dispose: () => {
+				this._extensionPointButtons.delete(button.id);
+			},
+		};
+	}
+
+	private extensionPointButtonsScript(nonce: string): string {
+		const data = [...this._extensionPointButtons.values()].map(e => ({ id: e.config.id, label: e.config.label }));
+		return `<script nonce="${nonce}">window.__EXTENSION_POINT_BUTTONS__ = ${JSON.stringify(data)};</script>`;
+	}
+
+	private async handleExtensionPointAction(buttonId: string): Promise<boolean> {
+		const entry = this._extensionPointButtons.get(buttonId);
+		if (!entry) { return false; }
+		await this.dispatch(`extensionPoint:${buttonId}`, () => entry.handler());
+		return true;
+	}
+
 	/**
 	 * Dispatch a shared navigation command that is common across all webview panels.
 	 * Returns true if the command was recognised and dispatched, false if it is panel-specific.
 	 */
-	private async dispatchSharedCommand(command: string): Promise<boolean> {
+	private async dispatchSharedCommand(message: { command: string; [key: string]: any }): Promise<boolean> {
+		if (message.command === 'extensionPointAction' && typeof message.buttonId === 'string') {
+			return this.handleExtensionPointAction(message.buttonId);
+		}
 		const handlers: Record<string, () => unknown> = {
 			showDetails:            () => this.showDetails(),
 			showChart:              () => this.showChart(),
@@ -447,9 +475,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			showEnvironmental:      () => this.showEnvironmental(),
 			showFluencyLevelViewer: () => this.showFluencyLevelViewer(),
 		};
-		const handler = handlers[command];
+		const handler = handlers[message.command];
 		if (!handler) { return false; }
-		await this.dispatch(command, handler);
+		await this.dispatch(message.command, handler);
 		return true;
 	}
 
@@ -4156,7 +4184,7 @@ usageAnalysis: undefined
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
 			if (this.handleLocalViewRegressionMessage(message)) { return; }
-			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (await this.dispatchSharedCommand(message)) { return; }
 			switch (message.command) {
 				case 'refresh':
 					await this.dispatch('refresh:details', () => this.refreshDetailsPanel());
@@ -4209,7 +4237,7 @@ usageAnalysis: undefined
 
 		this.environmentalPanel.webview.onDidReceiveMessage(async (message) => {
 			if (this.handleLocalViewRegressionMessage(message)) { return; }
-			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (await this.dispatchSharedCommand(message)) { return; }
 			if (message.command === 'refresh') {
 				await this.dispatch('refresh:environmental', async () => {
 					const refreshed = await this.updateTokenStats();
@@ -4260,6 +4288,7 @@ usageAnalysis: undefined
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_ENVIRONMENTAL__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			${this.getLocalViewRegressionProbeScript('environmental', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
@@ -4301,7 +4330,7 @@ usageAnalysis: undefined
 		// Handle messages from the webview
 		this.chartPanel.webview.onDidReceiveMessage(async (message) => {
 			if (this.handleLocalViewRegressionMessage(message)) { return; }
-			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (await this.dispatchSharedCommand(message)) { return; }
 			if (message.command === 'refresh') {
 				await this.dispatch('refresh:chart', () => this.refreshChartPanel());
 			}
@@ -4364,7 +4393,7 @@ usageAnalysis: undefined
 		// Handle messages from the webview
 		this.analysisPanel.webview.onDidReceiveMessage(async (message) => {
 			if (this.handleLocalViewRegressionMessage(message)) { return; }
-			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (await this.dispatchSharedCommand(message)) { return; }
 			switch (message.command) {
 				case 'refresh':
 					await this.dispatch('refresh:analysis', () => this.refreshAnalysisPanel());
@@ -4762,7 +4791,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 
 		// Handle messages from the webview
 		this.logViewerPanel.webview.onDidReceiveMessage(async (message) => {
-			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (await this.dispatchSharedCommand(message)) { return; }
 			switch (message.command) {
 					case 'openRawFile':
 						await this.dispatch('openRawFile:logviewer', async () => {
@@ -4990,6 +5019,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_LOGDATA__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -5082,7 +5112,7 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 		const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
 		this.maturityPanel.webview.onDidReceiveMessage(async (message) => {
 			if (this.handleLocalViewRegressionMessage(message)) { return; }
-			if (await this.dispatchSharedCommand(message.command)) { return; }
+			if (await this.dispatchSharedCommand(message)) { return; }
 			switch (message.command) {
 				case 'refresh':
 					await this.dispatch('refresh:maturity', () => this.refreshMaturityPanel());
@@ -5574,7 +5604,7 @@ ${hashtag}`;
     this.fluencyLevelViewerPanel.webview.onDidReceiveMessage(
       async (message) => {
         if (this.handleLocalViewRegressionMessage(message)) { return; }
-        if (await this.dispatchSharedCommand(message.command)) { return; }
+        if (await this.dispatchSharedCommand(message)) { return; }
         if (message.command === "refresh") {
           await this.dispatch('refresh:fluencyLevelViewer', () => this.refreshFluencyLevelViewerPanel());
         }
@@ -5606,6 +5636,8 @@ ${hashtag}`;
     );
     this.log("✅ Scoring Guide refreshed");
   }
+
+
 
   private getFluencyLevelData(isDebugMode: boolean): ReturnType<typeof _getFluencyLevelData> {
 		return _getFluencyLevelData(isDebugMode);
@@ -5666,6 +5698,7 @@ ${hashtag}`;
 	<body>
 		<div id="root"></div>
 		<script nonce="${nonce}">window.__INITIAL_FLUENCY_LEVEL_DATA__ = ${initialData};</script>
+		${this.extensionPointButtonsScript(nonce)}
 		${this.getLocalViewRegressionProbeScript('fluency-level-viewer', nonce)}
 		<script nonce="${nonce}" src="${scriptUri}"></script>
 	</body>
@@ -5734,6 +5767,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_MATURITY__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			${this.getLocalViewRegressionProbeScript('maturity', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
@@ -5789,7 +5823,7 @@ ${hashtag}`;
     );
 
     this.dashboardPanel.webview.onDidReceiveMessage(async (message) => {
-      if (await this.dispatchSharedCommand(message.command)) { return; }
+      if (await this.dispatchSharedCommand(message)) { return; }
       switch (message.command) {
         case "refresh":
           await this.dispatch('refresh:dashboard', () => this.refreshDashboardPanel());
@@ -6505,6 +6539,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			${initialDataScript}
+			${this.extensionPointButtonsScript(nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
 		</html>`;
@@ -6575,6 +6610,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_DETAILS__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			${this.getLocalViewRegressionProbeScript('details', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
@@ -6888,7 +6924,7 @@ ${hashtag}`;
     // Handle messages from the webview
     this.diagnosticsPanel.webview.onDidReceiveMessage(async (message) => {
       if (this.handleLocalViewRegressionMessage(message)) { return; }
-      if (await this.dispatchSharedCommand(message.command)) { return; }
+      if (await this.dispatchSharedCommand(message)) { return; }
       switch (message.command) {
         case "copyReport":
           await this.dispatch('copyReport:diagnostics', async () => {
@@ -7790,6 +7826,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_DIAGNOSTICS__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			${this.getLocalViewRegressionProbeScript('diagnostics', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
@@ -8070,6 +8107,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_CHART__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			${this.getLocalViewRegressionProbeScript('chart', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
@@ -8139,6 +8177,7 @@ ${hashtag}`;
 		<body>
 			<div id="root"></div>
 			<script nonce="${nonce}">window.__INITIAL_USAGE__ = ${initialData};</script>
+			${this.extensionPointButtonsScript(nonce)}
 			${this.getLocalViewRegressionProbeScript('usage', nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
@@ -8280,7 +8319,7 @@ async function checkForLegacyExtensionConflict(context: vscode.ExtensionContext)
   }
 }
 
-export async function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<AiFluencyExtensionApi> {
   // Create the token tracker
   const tokenTracker = new CopilotTokenTracker(context.extensionUri, context);
 
@@ -8520,7 +8559,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   tokenTracker.log("Extension activation complete");
 
-  return {};
+  return {
+    registerButton: (button: ExtensionPointButton, handler: () => void | Promise<void>) =>
+      tokenTracker.registerExtensionPointButton(button, handler),
+  };
 }
 
 export function deactivate() {

@@ -1,5 +1,6 @@
 // Fluency Level Viewer webview
 import { buttonHtml } from '../shared/buttonConfig';
+import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import styles from './styles.css';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -203,6 +204,7 @@ function renderLayout(data: FluencyLevelData): void {
 	document.getElementById('btn-dashboard')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showDashboard' });
 	});
+	wireExtensionPointButtons(vscode);
 
 	// Wire up category selection buttons
 	document.querySelectorAll('.category-btn').forEach(btn => {

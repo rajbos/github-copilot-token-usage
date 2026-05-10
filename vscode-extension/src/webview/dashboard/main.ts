@@ -3,6 +3,7 @@ import { BUTTONS } from "../shared/buttonConfig";
 import { createButton, el } from "../shared/domUtils";
 import { formatCost, formatNumber, formatCompact, setCompactNumbers } from "../shared/formatUtils";
 import { getModelDisplayName } from "../shared/modelUtils";
+import { wireExtensionPointButtons } from "../shared/extensionPoints";
 import themeStyles from "../shared/theme.css";
 import styles from "./styles.css";
 
@@ -612,6 +613,7 @@ function wireButtons(): void {
   });
 
   // Note: No dashboard button handler - users are already on the dashboard
+  wireExtensionPointButtons(vscode);
 }
 
 // Listen for messages from the extension

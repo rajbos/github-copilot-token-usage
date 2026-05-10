@@ -1,6 +1,7 @@
 // Maturity Score webview
 import { buttonHtml } from '../shared/buttonConfig';
 import type { ContextReferenceUsage } from '../shared/contextRefUtils';
+import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 
@@ -566,6 +567,7 @@ function renderLayout(data: MaturityData): void {
 	document.getElementById('btn-environmental')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'showEnvironmental' });
 	});
+	wireExtensionPointButtons(vscode);
 
 	// Wire up share to issue button
 	document.getElementById('btn-share-issue')?.addEventListener('click', () => {
