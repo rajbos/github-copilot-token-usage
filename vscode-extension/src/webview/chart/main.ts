@@ -91,6 +91,33 @@ let currentPeriod: ChartPeriod = 'day';
 let pendingView: typeof currentView | null = null;
 let pendingPeriod: ChartPeriod | null = null;
 
+type DisplayMode = 'actual' | 'rolling';
+let currentDisplayMode: DisplayMode = 'actual';
+const ROLLING_WINDOW: Record<ChartPeriod, number> = { day: 7, week: 4, month: 3 };
+
+function computeRollingAverage(data: number[], window: number): number[] {
+	return data.map((_, i) => {
+		const start = Math.max(0, i - window + 1);
+		const slice = data.slice(start, i + 1);
+		return Math.round(slice.reduce((a, b) => a + b, 0) / slice.length);
+	});
+}
+
+function getRollingLabel(): string {
+	const w = ROLLING_WINDOW[currentPeriod];
+	const unit = currentPeriod === 'day' ? 'day' : currentPeriod === 'week' ? 'week' : 'month';
+	return `${w}-${unit} rolling avg`;
+}
+
+function getChartTitle(): string {
+	const periodMeta = PERIOD_LABELS[currentPeriod];
+	let titleText = currentView === 'cost' ? periodMeta.costTitle : periodMeta.title;
+	if (currentDisplayMode === 'rolling' && (currentView === 'total' || currentView === 'cost')) {
+		titleText += ` (${getRollingLabel()})`;
+	}
+	return titleText;
+}
+
 /** Returns period data for the current period, falling back to legacy flat fields. */
 function getActivePeriodData(data: InitialChartData): ChartPeriodData {
 	if (data.periods) {
@@ -138,7 +165,7 @@ function renderLayout(data: InitialChartData): void {
 	const header = el('div', 'header');
 	const headerLeft = el('div', 'header-left');
 	const icon = el('span', 'header-icon', '📈');
-	const title = el('span', 'header-title', currentView === 'cost' ? PERIOD_LABELS[currentPeriod].costTitle : PERIOD_LABELS[currentPeriod].title);
+	const title = el('span', 'header-title', getChartTitle());
 	title.id = 'chart-title';
 	headerLeft.append(icon, title);
 	const buttons = el('div', 'button-row');
@@ -215,7 +242,10 @@ function renderLayout(data: InitialChartData): void {
 	repoBtn.id = 'view-repository';
 	const costBtn = el('button', `toggle${currentView === 'cost' ? ' active' : ''}`, '💰 Est. Cost');
 	costBtn.id = 'view-cost';
-	toggles.append(totalBtn, modelBtn, editorBtn, repoBtn, costBtn);
+	const rollingApplicableNow = currentView === 'total' || currentView === 'cost';
+	const rollingBtn = el('button', `toggle rolling-toggle${currentDisplayMode === 'rolling' ? ' active' : ''}${rollingApplicableNow ? '' : ' hidden'}`, '📈 Rolling Avg');
+	rollingBtn.id = 'view-rolling';
+	toggles.append(totalBtn, modelBtn, editorBtn, repoBtn, costBtn, rollingBtn);
 
 	const canvasWrap = el('div', 'canvas-wrap');
 	const canvas = document.createElement('canvas');
@@ -293,7 +323,7 @@ function updateSummaryCards(data: InitialChartData): void {
 	updateCard('card-total-sessions', null, periodData.totalSessions.toLocaleString());
 
 	const title = document.getElementById('chart-title');
-	if (title) { title.textContent = currentView === 'cost' ? periodMeta.costTitle : periodMeta.title; }
+	if (title) { title.textContent = getChartTitle(); }
 
 	const footer = document.getElementById('chart-footer');
 	if (footer) {
@@ -348,6 +378,9 @@ function wireInteractions(data: InitialChartData): void {
 		const btn = document.getElementById(id);
 		btn?.addEventListener('click', () => { void switchView(view, data); });
 	});
+
+	const rollingToggle = document.getElementById('view-rolling');
+	rollingToggle?.addEventListener('click', () => { void switchDisplayMode(data); });
 }
 
 async function setupChart(canvas: HTMLCanvasElement, data: InitialChartData): Promise<void> {
@@ -405,8 +438,17 @@ async function switchView(view: 'total' | 'model' | 'editor' | 'repository' | 'c
 	if (currentView === view) {
 		return;
 	}
+	const rollingApplicable = view === 'total' || view === 'cost';
+	if (!rollingApplicable) {
+		currentDisplayMode = 'actual';
+	}
 	currentView = view;
 	setActiveView(view);
+	const rollingBtnEl = document.getElementById('view-rolling');
+	if (rollingBtnEl) {
+		rollingBtnEl.classList.toggle('hidden', !rollingApplicable);
+		rollingBtnEl.classList.toggle('active', rollingApplicable && currentDisplayMode === 'rolling');
+	}
 	updateSummaryCards(data);
 	if (!chart) {
 		return;
@@ -445,6 +487,27 @@ function setActiveView(view: 'total' | 'model' | 'editor' | 'repository' | 'cost
 	});
 }
 
+function setActiveDisplayMode(mode: DisplayMode): void {
+	const btn = document.getElementById('view-rolling');
+	if (!btn) { return; }
+	btn.classList.toggle('active', mode === 'rolling');
+}
+
+async function switchDisplayMode(data: InitialChartData): Promise<void> {
+	currentDisplayMode = currentDisplayMode === 'actual' ? 'rolling' : 'actual';
+	setActiveDisplayMode(currentDisplayMode);
+	updateSummaryCards(data);
+	if (!chart) { return; }
+	const canvas = chart.canvas as HTMLCanvasElement | null;
+	chart.destroy();
+	if (!canvas) { return; }
+	const ctx = canvas.getContext('2d');
+	if (!ctx) { return; }
+	await loadChartModule();
+	if (!Chart) { return; }
+	chart = new Chart(ctx, createConfig(currentView, data));
+}
+
 function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost', data: InitialChartData): ChartConfig {
 	const period = getActivePeriodData(data);
 
@@ -480,17 +543,23 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 	};
 
 	if (view === 'total') {
+		const isRolling = currentDisplayMode === 'rolling';
+		const rollingLabel = getRollingLabel();
+		const tokenData = isRolling ? computeRollingAverage(period.tokensData, ROLLING_WINDOW[currentPeriod]) : period.tokensData;
 		return {
 			type: 'bar' as const,
 			data: {
 				labels: period.labels,
 				datasets: [
 					{
-						label: 'Tokens',
-						data: period.tokensData,
-						backgroundColor: 'rgba(54, 162, 235, 0.6)',
+						label: isRolling ? rollingLabel : 'Tokens',
+						data: tokenData,
+						backgroundColor: isRolling ? 'rgba(54, 162, 235, 0.15)' : 'rgba(54, 162, 235, 0.6)',
 						borderColor: 'rgba(54, 162, 235, 1)',
-						borderWidth: 1,
+						borderWidth: isRolling ? 2 : 1,
+						type: isRolling ? 'line' as const : undefined,
+						tension: isRolling ? 0.4 : undefined,
+						fill: isRolling ? false : undefined,
 						yAxisID: 'y'
 					},
 					{
@@ -532,17 +601,23 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 	const datasets = view === 'model' ? period.modelDatasets : view === 'repository' ? period.repositoryDatasets : period.editorDatasets;
 
 	if (view === 'cost') {
+		const isRolling = currentDisplayMode === 'rolling';
+		const rollingLabel = getRollingLabel();
+		const costData = isRolling ? computeRollingAverage(period.costData, ROLLING_WINDOW[currentPeriod]) : period.costData;
 		return {
 			type: 'bar' as const,
 			data: {
 				labels: period.labels,
 				datasets: [
 					{
-						label: 'Est. Cost (TBB)',
-						data: period.costData,
-						backgroundColor: 'rgba(34, 197, 94, 0.6)',
+						label: isRolling ? `${rollingLabel} (TBB)` : 'Est. Cost (TBB)',
+						data: costData,
+						backgroundColor: isRolling ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.6)',
 						borderColor: 'rgba(34, 197, 94, 1)',
-						borderWidth: 1,
+						borderWidth: isRolling ? 2 : 1,
+						type: isRolling ? 'line' as const : undefined,
+						tension: isRolling ? 0.4 : undefined,
+						fill: isRolling ? false : undefined,
 						yAxisID: 'y'
 					}
 				]
