@@ -123,6 +123,8 @@
   "plan",
   "signal_plan_ready",
   "update_plan_progress",
+  "EnterPlanMode",
+  "ExitPlanMode",
 
   "stop_agent",
 

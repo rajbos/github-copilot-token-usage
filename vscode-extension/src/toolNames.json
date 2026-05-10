@@ -513,6 +513,8 @@
   ,"plan": "Plan"
   ,"signal_plan_ready": "Signal Plan Ready"
   ,"update_plan_progress": "Update Plan Progress"
+  ,"EnterPlanMode": "Enter Plan Mode"
+  ,"ExitPlanMode": "Exit Plan Mode"
   ,"mcp_reload": "MCP: Reload"
   ,"mcp_validate": "MCP: Validate"
   ,"stop_agent": "Stop Agent"
