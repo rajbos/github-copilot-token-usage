@@ -453,6 +453,40 @@ export interface SessionLogData {
   subAgentsStarted?: number;
 }
 
+// ---------------------------------------------------------------------------
+// GitHub Copilot Cloud Agent session stats
+// ---------------------------------------------------------------------------
+
+export type AgentSessionSource = 'cloud-agent' | 'cli-remote' | 'unknown';
+
+export interface AgentRepoSummary {
+  owner: string;
+  repo: string;
+  /** Number of tasks that contained at least one cloud-agent session. */
+  totalTasks: number;
+  /** Total cloud-agent sessions across all scanned tasks. */
+  totalSessions: number;
+  /** Sum of usage.credits for all cloud-agent sessions (0 when unavailable). */
+  totalCredits: number;
+  /** How many tasks we fetched full session details for. */
+  tasksScanned: number;
+  /** Total tasks found in the list API response (before the detail-fetch cap). */
+  tasksTotal: number;
+  /** True when the detail-fetch cap was reached — totals are conservative lower bounds. */
+  partial: boolean;
+  error?: string;
+}
+
+export interface AgentSessionsResult {
+  repos: AgentRepoSummary[];
+  totalTasks: number;
+  totalSessions: number;
+  totalCredits: number;
+  authenticated: boolean;
+  since: string;
+  fetchedAt: string;
+}
+
 // Local summary type for customization files (mirrors webview/shared/contextRefUtils.ts)
 export interface WorkspaceCustomizationSummary {
   workspaces: {

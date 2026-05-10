@@ -26,6 +26,8 @@ jobs:
       # you'll need the `contents: read` permission. If you don't clone the repository in your setup steps, 
       # Copilot will do this for you automatically after the steps complete.
       contents: read
+      # Required to read and write the GitHub Actions cache for agent-sessions data
+      actions: write
 
     # You can define any steps you want, and they will run before the agent starts.
     # If you do not check out your code, Copilot will do this for you.
@@ -180,3 +182,32 @@ jobs:
           else
             echo "⚠️ No aggregated usage data file created"
           fi
+
+      # Fetch Copilot cloud-agent session statistics (cached daily to limit API calls)
+      - name: Set agent sessions cache date key
+        id: cache-date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore agent sessions cache
+        id: restore-agent-sessions-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ./usage-data/agent-sessions.json
+          key: agent-sessions-${{ github.repository }}-${{ steps.cache-date.outputs.date }}
+          restore-keys: agent-sessions-${{ github.repository }}-
+
+      - name: Fetch Copilot agent sessions
+        if: steps.restore-agent-sessions-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "🤖 Fetching Copilot cloud-agent session data (not cached yet for today)..."
+          node scripts/fetch-agent-sessions.js
+
+      - name: Save agent sessions cache
+        if: steps.restore-agent-sessions-cache.outputs.cache-hit != 'true' && hashFiles('./usage-data/agent-sessions.json') != ''
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ./usage-data/agent-sessions.json
+          key: agent-sessions-${{ github.repository }}-${{ steps.cache-date.outputs.date }}
