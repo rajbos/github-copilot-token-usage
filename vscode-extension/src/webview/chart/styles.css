@@ -190,3 +190,11 @@ body {
 .footer em {
 	color: var(--text-secondary);
 }
+
+.hidden {
+	display: none !important;
+}
+
+.rolling-toggle {
+	margin-left: 12px;
+}
