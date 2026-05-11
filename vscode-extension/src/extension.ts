@@ -4229,6 +4229,9 @@ usageAnalysis: undefined
 			}
 		}
 
+		// Log environment context to help diagnose blank-panel issues
+		this.log(`📊 Creating Details panel (uiKind=${vscode.env.uiKind === vscode.UIKind.Desktop ? 'Desktop' : 'Web'}, remote=${vscode.env.remoteName || 'none'})`);
+
 		// Create a small webview panel
 		this.detailsPanel = vscode.window.createWebviewPanel(
 			'copilotTokenDetails',
@@ -4245,6 +4248,11 @@ usageAnalysis: undefined
 		);
 
 		this.log('✅ Details panel created successfully');
+
+		// Track when the panel becomes active or inactive
+		this.detailsPanel.onDidChangeViewState((e) => {
+			this.log(`📊 Details panel view state changed: active=${e.webviewPanel.active}, visible=${e.webviewPanel.visible}`);
+		});
 
 		// Handle messages from the webview
 		this.detailsPanel.webview.onDidReceiveMessage(async (message) => {
@@ -4263,7 +4271,12 @@ usageAnalysis: undefined
 		});
 
 		// Set the HTML content
-		this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+		try {
+			this.detailsPanel.webview.html = this.getDetailsHtml(this.detailsPanel.webview, stats);
+			this.log('✅ Details panel HTML set successfully');
+		} catch (err) {
+			this.error('❌ Failed to set Details panel HTML', err);
+		}
 
 		// Handle panel disposal
 		this.detailsPanel.onDidDispose(() => {
