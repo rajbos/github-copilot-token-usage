@@ -139,6 +139,7 @@ export class CacheManager {
 			const fd = await fs.promises.open(lockPath, 'wx');
 			await fd.writeFile(JSON.stringify({
 				sessionId: vscode.env.sessionId,
+				pid: process.pid,
 				timestamp: Date.now()
 			}));
 			await fd.close();
@@ -150,20 +151,40 @@ export class CacheManager {
 				return false;
 			}
 
-			// Lock file exists — check if it's stale (owner crashed)
+			// Lock file exists — check if the owning process is still alive or if the lock is stale
 			try {
 				const content = await fs.promises.readFile(lockPath, 'utf-8');
 				const lock = JSON.parse(content);
 				const staleThreshold = 5 * 60 * 1000; // 5 minutes (matches update interval)
 
-				if (Date.now() - lock.timestamp > staleThreshold) {
-					// Stale lock — break it and retry once
-					this.deps.log('Breaking stale cache lock');
+				// PID-based liveness check: if the owning process is gone, break immediately
+				let ownerAlive = true;
+				if (typeof lock.pid === 'number') {
+					try {
+						process.kill(lock.pid, 0); // Signal 0 checks existence without signalling
+					} catch (killErr: any) {
+						if (killErr.code === 'ESRCH') {
+							ownerAlive = false; // Process no longer exists
+						}
+						// EPERM means process exists but is owned by another user — treat as alive
+					}
+				}
+
+				const isTimestampStale = Date.now() - lock.timestamp > staleThreshold;
+
+				if (!ownerAlive || isTimestampStale) {
+					// Lock owner is dead or lock is old — break it and retry once
+					this.deps.log(
+						ownerAlive
+							? 'Breaking stale cache lock'
+							: 'Breaking stale cache lock (owner process no longer running)'
+					);
 					await fs.promises.unlink(lockPath);
 					try {
 						const fd = await fs.promises.open(lockPath, 'wx');
 						await fd.writeFile(JSON.stringify({
 							sessionId: vscode.env.sessionId,
+							pid: process.pid,
 							timestamp: Date.now()
 						}));
 						await fd.close();
