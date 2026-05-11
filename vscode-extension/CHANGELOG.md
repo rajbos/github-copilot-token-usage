@@ -6,6 +6,17 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-11
+
+### Features
+- Add diagnostic logging to Details panel creation to aid blank-panel diagnosis (#)
+
+### Bug Fixes
+- Fix PID-based liveness check to break stale cache lock after force-kill
+
+### Improvements
+- Exclude `stryker.config.mjs` and `vs-session-sample.json` from VSIX package
+
 ## [0.7.0] - 2026-05-28
 
 ### Features
