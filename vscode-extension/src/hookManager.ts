@@ -143,6 +143,9 @@ Write-Output '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalC
 };
 
 export class HookManager {
+	// Serializes concurrent install/uninstall to prevent globalState race conditions
+	private opMutex: Promise<void> = Promise.resolve();
+
 	constructor(
 		private readonly globalState: vscode.Memento,
 		private readonly log: (message: string) => void,
@@ -157,50 +160,63 @@ export class HookManager {
 	}
 
 	public async installHook(hookId: string): Promise<void> {
-		const def = HOOK_DEFINITIONS[hookId];
-		if (!def) {
-			throw new Error(`Unknown hook ID: ${hookId}`);
-		}
+		const result = this.opMutex.then(async () => {
+			const def = HOOK_DEFINITIONS[hookId];
+			if (!def) {
+				throw new Error(`Unknown hook ID: ${hookId}`);
+			}
 
-		const hooksDir = this.getHooksDirectory();
-		await fs.promises.mkdir(hooksDir, { recursive: true });
+			const hooksDir = this.getHooksDirectory();
+			await fs.promises.mkdir(hooksDir, { recursive: true });
 
-		const bashPath = path.join(hooksDir, `${hookId}.sh`);
-		const ps1Path = path.join(hooksDir, `${hookId}.ps1`);
+			const bashPath = path.join(hooksDir, `${hookId}.sh`);
+			const ps1Path = path.join(hooksDir, `${hookId}.ps1`);
 
-		// Write scripts to disk first
-		await fs.promises.writeFile(bashPath, def.bashScript, { encoding: 'utf8', mode: 0o755 });
-		await fs.promises.writeFile(ps1Path, def.ps1Script, 'utf8');
+			// Write scripts to disk first
+			await fs.promises.writeFile(bashPath, def.bashScript, { encoding: 'utf8', mode: 0o755 });
+			await fs.promises.writeFile(ps1Path, def.ps1Script, 'utf8');
 
-		// Rebuild hooks config on disk
-		const installed = [...new Set([...this.getInstalledHooks(), hookId])];
-		await this.writeHooksConfig(installed, hooksDir);
+			// Rebuild hooks config on disk
+			const installed = [...new Set([...this.getInstalledHooks(), hookId])];
+			await this.writeHooksConfig(installed, hooksDir);
 
-		// Update globalState only after all disk writes succeed
-		await this.globalState.update('installedCopilotHooks', installed);
-		this.log(`Installed Copilot hook: ${hookId}`);
+			// Update globalState only after all disk writes succeed
+			await this.globalState.update('installedCopilotHooks', installed);
+			this.log(`Installed Copilot hook: ${hookId}`);
+		});
+		this.opMutex = result.catch(() => undefined);
+		return result;
 	}
 
 	public async uninstallHook(hookId: string): Promise<void> {
-		const hooksDir = this.getHooksDirectory();
-
-		const bashPath = path.join(hooksDir, `${hookId}.sh`);
-		const ps1Path = path.join(hooksDir, `${hookId}.ps1`);
-
-		for (const filePath of [bashPath, ps1Path]) {
-			try {
-				await fs.promises.unlink(filePath);
-			} catch {
-				// Ignore missing files
+		const result = this.opMutex.then(async () => {
+			const def = HOOK_DEFINITIONS[hookId];
+			if (!def) {
+				throw new Error(`Unknown hook ID: ${hookId}`);
 			}
-		}
 
-		const installed = this.getInstalledHooks().filter(id => id !== hookId);
-		await this.writeHooksConfig(installed, hooksDir);
+			const hooksDir = this.getHooksDirectory();
 
-		// Update globalState only after all disk writes succeed
-		await this.globalState.update('installedCopilotHooks', installed);
-		this.log(`Uninstalled Copilot hook: ${hookId}`);
+			const bashPath = path.join(hooksDir, `${hookId}.sh`);
+			const ps1Path = path.join(hooksDir, `${hookId}.ps1`);
+
+			for (const filePath of [bashPath, ps1Path]) {
+				try {
+					await fs.promises.unlink(filePath);
+				} catch {
+					// Ignore missing files
+				}
+			}
+
+			const installed = this.getInstalledHooks().filter(id => id !== hookId);
+			await this.writeHooksConfig(installed, hooksDir);
+
+			// Update globalState only after all disk writes succeed
+			await this.globalState.update('installedCopilotHooks', installed);
+			this.log(`Uninstalled Copilot hook: ${hookId}`);
+		});
+		this.opMutex = result.catch(() => undefined);
+		return result;
 	}
 
 	private async writeHooksConfig(installed: string[], hooksDir: string): Promise<void> {
