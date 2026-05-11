@@ -113,6 +113,7 @@ function attachMock(target: any): void {
 	};
 
 	target.ConfigurationTarget = target.ConfigurationTarget ?? { Global: 1 };
+	target.ExtensionMode = target.ExtensionMode ?? { Production: 1, Development: 2, Test: 3 };
 	target.ProgressLocation = target.ProgressLocation ?? { Notification: 15 };
 	target.ViewColumn = target.ViewColumn ?? { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3 };
 
