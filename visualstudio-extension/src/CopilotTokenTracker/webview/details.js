@@ -20357,7 +20357,7 @@
     const projectedSessions = Math.round(calculateProjection(stats.last30Days.sessions));
     const projectedCo2 = calculateProjection(stats.last30Days.co2);
     const projectedWater = calculateProjection(stats.last30Days.waterUsage);
-    const projectedCost = calculateProjection(stats.last30Days.estimatedCost);
+    const projectedCost = calculateProjection(stats.last30Days.estimatedCostCopilot ?? 0);
     const projectedTrees = calculateProjection(stats.last30Days.treesEquivalent);
     renderShell(root, stats, {
       projectedTokens,
@@ -20438,7 +20438,7 @@
       { label: "Tokens (user estimated)", icon: "\u{1F4DD}", color: "#b39ddb", today: formatNumber(stats.today.estimatedTokens), last30Days: formatNumber(stats.last30Days.estimatedTokens), lastMonth: formatNumber(stats.lastMonth.estimatedTokens), projected: "\u2014" },
       { label: "Service overhead %", icon: "\u2601\uFE0F", color: "#90a4ae", today: (stats.today.actualTokens || 0) > 0 ? formatPercent((stats.today.tokens - stats.today.estimatedTokens) / stats.today.tokens * 100) : "\u2014", last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatPercent((stats.last30Days.tokens - stats.last30Days.estimatedTokens) / stats.last30Days.tokens * 100) : "\u2014", lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatPercent((stats.lastMonth.tokens - stats.lastMonth.estimatedTokens) / stats.lastMonth.tokens * 100) : "\u2014", projected: "\u2014" },
       { label: "Thinking tokens", icon: "\u{1F9E0}", color: "#a78bfa", today: formatNumber(stats.today.thinkingTokens || 0), last30Days: formatNumber(stats.last30Days.thinkingTokens || 0), lastMonth: formatNumber(stats.lastMonth.thinkingTokens || 0), projected: "\u2014" },
-      { label: "Estimated cost", icon: "\u{1FA99}", color: "#ffd166", today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost) },
+      { label: "Cost (UBB)", icon: "\u{1F7E2}", color: "#7ce38b", today: formatCost(stats.today.estimatedCostCopilot ?? 0), last30Days: formatCost(stats.last30Days.estimatedCostCopilot ?? 0), lastMonth: formatCost(stats.lastMonth.estimatedCostCopilot ?? 0), projected: formatCost(projections.projectedCost) },
       { label: "Sessions", icon: "\u{1F4C5}", color: "#66aaff", today: formatNumber(stats.today.sessions), last30Days: formatNumber(stats.last30Days.sessions), lastMonth: formatNumber(stats.lastMonth.sessions), projected: formatNumber(projections.projectedSessions) },
       { label: "Average interactions/session", icon: "\u{1F4AC}", color: "#8ce0ff", today: formatNumber(stats.today.avgInteractionsPerSession), last30Days: formatNumber(stats.last30Days.avgInteractionsPerSession), lastMonth: formatNumber(stats.lastMonth.avgInteractionsPerSession), projected: "\u2014" },
       { label: "Average tokens/session", icon: "\u{1F522}", color: "#7ce38b", today: formatNumber(stats.today.avgTokensPerSession), last30Days: formatNumber(stats.last30Days.avgTokensPerSession), lastMonth: formatNumber(stats.lastMonth.avgTokensPerSession), projected: "\u2014" }

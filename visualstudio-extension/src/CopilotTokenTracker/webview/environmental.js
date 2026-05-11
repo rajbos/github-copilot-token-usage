@@ -20450,7 +20450,7 @@
     const notes = document.createElement("ul");
     notes.className = "notes";
     const items = [
-      "Cost estimate uses public API pricing with input/output token counts; GitHub Copilot billing may differ from direct API usage.",
+      "Cost (UBB) uses GitHub Copilot AI Credit rates (1 credit = $0.01) under Usage Based Billing.",
       "Estimated CO\u2082 is based on ~0.2 g CO\u2082e per 1,000 tokens (average data center energy mix and PUE).",
       "Estimated water usage is based on ~0.3 L per 1,000 tokens (data center cooling estimates).",
       "Tree equivalent represents the fraction of a single mature tree's annual CO\u2082 absorption (~21 kg/year).",
