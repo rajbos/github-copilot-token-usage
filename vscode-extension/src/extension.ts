@@ -1574,8 +1574,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📅 Today  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.today.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.today.estimatedCost.toFixed(2)} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.today.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (UBB) :       | $ ${(detailedStats.today.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.today.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.today.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.today.sessions} |\n`);
@@ -1588,8 +1587,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`📊 Last 30 Days  \n`);
 			tooltip.appendMarkdown(`|                 |  |\n|-----------------------|-------|\n`);
 			tooltip.appendMarkdown(`| Tokens :                | ${detailedStats.last30Days.tokens.toLocaleString()} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (est.) :      | $ ${detailedStats.last30Days.estimatedCost.toFixed(2)} |\n`);
-			tooltip.appendMarkdown(`| Estimated cost (TBB) :       | $ ${(detailedStats.last30Days.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
+			tooltip.appendMarkdown(`| Estimated cost (UBB) :       | $ ${(detailedStats.last30Days.estimatedCostCopilot ?? 0).toFixed(2)} |\n`);
 			tooltip.appendMarkdown(`| CO₂ estimated :              | ${detailedStats.last30Days.co2.toFixed(2)} grams |\n`);
 			tooltip.appendMarkdown(`| Water estimated :           | ${detailedStats.last30Days.waterUsage.toFixed(3)} liters |\n`);
 			tooltip.appendMarkdown(`| Sessions :             | ${detailedStats.last30Days.sessions} |\n`);
@@ -1597,9 +1595,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			tooltip.appendMarkdown(`| Average tokens/session :            | ${detailedStats.last30Days.avgTokensPerSession.toLocaleString()} |\n`);
 			// Footer
 			tooltip.appendMarkdown('\n---\n');
-			tooltip.appendMarkdown('*Cost estimates based on actual input/output token ratios.*  \n');
-			tooltip.appendMarkdown('*(est.) = provider API market rates, for reference only.*  \n');
-			tooltip.appendMarkdown('*(TBB) = Copilot AI Credit rates — what Copilot will bill you.*  \n');
+			tooltip.appendMarkdown('*(UBB) = Copilot AI Credit rates — what Copilot will bill you under Usage Based Billing.*  \n');
 			tooltip.appendMarkdown('*Updates automatically every 5 minutes.*');
 
 			this.statusBarItem.tooltip = tooltip;
