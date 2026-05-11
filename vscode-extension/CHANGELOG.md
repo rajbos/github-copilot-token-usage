@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-28
+
+### Features
+- Add rolling average toggle for Total Tokens and Est. Cost chart views (#836)
+- Add Copilot Cloud Agent sessions view (#835)
+
 ## [0.5.2] - 2026-05-09
 
 ### Security
