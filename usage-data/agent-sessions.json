@@ -1,0 +1,20 @@
+{
+  "repos": [
+    {
+      "owner": "rajbos",
+      "repo": "ai-engineering-fluency",
+      "totalTasks": 0,
+      "totalSessions": 0,
+      "totalCredits": 0,
+      "tasksScanned": 0,
+      "tasksTotal": 0,
+      "partial": false
+    }
+  ],
+  "totalTasks": 0,
+  "totalSessions": 0,
+  "totalCredits": 0,
+  "authenticated": true,
+  "since": "2026-04-11T07:14:27.189Z",
+  "fetchedAt": "2026-05-11T07:14:27.980Z"
+}
