@@ -39,6 +39,10 @@ publish.ps1
 docs/logFilesSchema
 docs/logFilesSchema/**
 
+# Mutation testing config and sample files
+stryker.config.mjs
+vs-session-sample.json
+
 # Lock and config files
 package-lock.json
 pnpm-lock.yaml
