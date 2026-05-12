@@ -462,6 +462,7 @@
   ,"rename_branch": "Rename Branch"
   ,"report_intent": "Report Intent"
   ,"create_pull_request": "Create Pull Request"
+  ,"update_pull_request": "Update Pull Request"
   ,"powershell": "PowerShell"
   ,"ask_user": "Ask User"
   ,"sql": "SQL"
