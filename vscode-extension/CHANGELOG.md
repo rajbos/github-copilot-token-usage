@@ -6,16 +6,24 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
-## [0.7.1] - 2026-05-11
+## [0.8.0] - 2026-05-12
 
 ### Features
-- Add diagnostic logging to Details panel creation to aid blank-panel diagnosis (#)
+- Team dashboard now supports both Azure and Team Server backends (#854)
+- Surface cached tokens from all providers in Details view (#851)
+- Extract cached tokens from Copilot Chat debug logs (#851)
+- Remove cost estimate row and rename TBB to UBB (#847)
+- Add diagnostic logging to Details panel creation to aid blank-panel diagnosis (#845)
 
 ### Bug Fixes
-- Fix PID-based liveness check to break stale cache lock after force-kill
+- Replace team server iframe with launch card (#854)
+- Use PID-based liveness check to break stale cache lock after force-kill (#844)
 
 ### Improvements
-- Exclude `stryker.config.mjs` and `vs-session-sample.json` from VSIX package
+- Move action buttons to top and reduce report height in diagnostics view (#853)
+- Sync latest model data (#852)
+- Address npm audit warning
+- Exclude `stryker.config.mjs` and `vs-session-sample.json` from VSIX package (#843)
 
 ## [0.7.0] - 2026-05-28
 
