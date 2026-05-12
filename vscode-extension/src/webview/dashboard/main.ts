@@ -64,9 +64,16 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 
 type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
+interface DashboardConfig {
+  azureConfigured: boolean;
+  teamServerConfigured: boolean;
+  teamServerUrl: string;
+}
+
 declare global {
   interface Window {
     __INITIAL_DASHBOARD__?: DashboardStats;
+    __DASHBOARD_CONFIG__?: DashboardConfig;
   }
 }
 
@@ -74,6 +81,9 @@ const vscode: VSCodeApi = acquireVsCodeApi();
 const initialData = window.__INITIAL_DASHBOARD__;
 console.log("[CopilotTokenTracker] dashboard webview loaded");
 console.log("[CopilotTokenTracker] initialData:", initialData);
+
+/** Active backend config, set once from __DASHBOARD_CONFIG__ during bootstrap. */
+let currentConfig: DashboardConfig | null = null;
 
 /** Reference to the loading text element so backfillProgress messages can update it in place. */
 let loadingTextEl: HTMLElement | null = null;
@@ -150,6 +160,7 @@ function render(stats: DashboardStats): void {
 
 function renderShell(root: HTMLElement, stats: DashboardStats): void {
   const lastUpdated = new Date(stats.lastUpdated);
+  const hasBothBackends = !!(currentConfig?.azureConfigured && currentConfig?.teamServerConfigured);
 
   root.replaceChildren();
 
@@ -189,7 +200,17 @@ function renderShell(root: HTMLElement, stats: DashboardStats): void {
   sections.append(buildPersonalSection(stats.personal, stats.lookbackDays ?? 30));
   sections.append(buildTeamSection(stats));
 
-  container.append(header, sections, footer);
+  if (hasBothBackends) {
+    const tabNav = buildTabNav();
+    const teamServerPanel = buildTeamServerPanel(currentConfig!.teamServerUrl);
+    teamServerPanel.style.display = "none";
+
+    container.append(header, tabNav, sections, footer, teamServerPanel);
+    wireTabNav(tabNav, sections, footer, teamServerPanel);
+  } else {
+    container.append(header, sections, footer);
+  }
+
   root.append(themeStyle, style, container);
 }
 
@@ -584,6 +605,103 @@ function renderTipHtml(tip: string): string {
 	return lines.map(line => markdownToHtml(line)).join('<br>');
 }
 
+/** Builds the tab navigation bar shown when both Azure and Team Server are configured. */
+function buildTabNav(): HTMLElement {
+  const nav = el("div", "tab-nav");
+
+  const azureTab = el("button", "tab-btn tab-btn-active", "☁️ Azure Dashboard") as HTMLButtonElement;
+  azureTab.dataset.tab = "azure";
+
+  const teamServerTab = el("button", "tab-btn", "🖥️ Team Server") as HTMLButtonElement;
+  teamServerTab.dataset.tab = "teamServer";
+
+  nav.append(azureTab, teamServerTab);
+  return nav;
+}
+
+/** Wires tab click handlers to show/hide the Azure and Team Server panels. */
+function wireTabNav(
+  tabNav: HTMLElement,
+  azureContent: HTMLElement,
+  footer: HTMLElement,
+  teamServerPanel: HTMLElement,
+): void {
+  const tabs = tabNav.querySelectorAll<HTMLButtonElement>(".tab-btn");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("tab-btn-active"));
+      tab.classList.add("tab-btn-active");
+      const isTeamServer = tab.dataset.tab === "teamServer";
+      azureContent.style.display = isTeamServer ? "none" : "";
+      footer.style.display = isTeamServer ? "none" : "";
+      teamServerPanel.style.display = isTeamServer ? "" : "none";
+    });
+  });
+}
+
+/** Builds the team server launch card (no iframe -- VS Code webviews don't share
+ *  browser cookie/session state, so OAuth-gated pages cannot be embedded). */
+function buildTeamServerPanel(url: string): HTMLElement {
+  const panel = el("div", "team-server-panel");
+
+  const card = el("div", "team-server-card");
+
+  const icon = el("div", "team-server-card-icon", "🖥️");
+  const heading = el("div", "team-server-card-heading", "Team Server Dashboard");
+  const urlEl = el("div", "team-server-card-url", url);
+
+  const openBtn = el("button", "team-server-open-btn", "↗ Open Team Server in Browser") as HTMLButtonElement;
+  openBtn.addEventListener("click", () => {
+    vscode.postMessage({ command: "openExternal", url });
+  });
+
+  const note = el(
+    "p",
+    "team-server-card-note",
+    "The team server dashboard uses GitHub OAuth for authentication. " +
+    "VS Code webviews run in an isolated sandbox that cannot share browser sessions, " +
+    "so the dashboard opens in your default browser instead.",
+  );
+
+  card.append(icon, heading, urlEl, openBtn, note);
+  panel.append(card);
+  return panel;
+}
+
+/** Shows the team-server-only full view (when Azure is not configured). */
+function showTeamServerView(url: string): void {
+  loadingTextEl = null;
+  const root = document.getElementById("root");
+  if (!root) { return; }
+
+  root.replaceChildren();
+
+  const themeStyle = document.createElement("style");
+  themeStyle.textContent = themeStyles;
+  const style = document.createElement("style");
+  style.textContent = styles;
+
+  const container = el("div", "container");
+  const header = el("div", "header");
+  const title = el("div", "title", "📊 Team Dashboard");
+  const buttonRow = el("div", "button-row");
+  buttonRow.append(
+    createButton(BUTTONS["btn-details"]),
+    createButton(BUTTONS["btn-chart"]),
+    createButton(BUTTONS["btn-usage"]),
+    createButton(BUTTONS["btn-environmental"]),
+    createButton(BUTTONS["btn-diagnostics"]),
+    createButton(BUTTONS["btn-maturity"]),
+  );
+  header.append(title, buttonRow);
+
+  const panel = buildTeamServerPanel(url);
+
+  container.append(header, panel);
+  root.append(themeStyle, style, container);
+  wireButtons();
+}
+
 function wireButtons(): void {
   document.getElementById("btn-refresh")?.addEventListener("click", () => {
     vscode.postMessage({ command: "refresh" });
@@ -633,6 +751,10 @@ window.addEventListener("message", (event) => {
     case "dashboardError":
       showError(message.message);
       break;
+    case "dashboardTeamServerReload": {
+      // No-op: team server is now a launch card, not an iframe
+      break;
+    }
     case "backfillProgress": {
       const progressText = message.text ?? "Backfill in progress...";
       if (!loadingTextEl) {
@@ -653,8 +775,13 @@ async function bootstrap(): Promise<void> {
     await import("@vscode/webview-ui-toolkit");
   provideVSCodeDesignSystem().register(vsCodeButton());
 
+  currentConfig = window.__DASHBOARD_CONFIG__ ?? null;
+
   if (initialData) {
     render(initialData);
+  } else if (currentConfig?.teamServerConfigured && !currentConfig.azureConfigured) {
+    // Team server only — show iframe immediately, no Azure data needed
+    showTeamServerView(currentConfig.teamServerUrl);
   } else {
     showLoading();
   }

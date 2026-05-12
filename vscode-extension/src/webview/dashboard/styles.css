@@ -461,3 +461,107 @@
 	padding-top: 8px;
 	border-top: 1px solid #2a2a30;
 }
+
+/* Tab navigation (shown when both Azure and Team Server are configured) */
+.tab-nav {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 20px;
+	border-bottom: 2px solid var(--vscode-panel-border);
+	padding-bottom: 0;
+}
+
+.tab-btn {
+	background: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -2px;
+	padding: 8px 16px;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	border-radius: 4px 4px 0 0;
+	transition: color 0.15s, background-color 0.15s;
+}
+
+.tab-btn:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.tab-btn-active {
+	color: var(--vscode-foreground);
+	border-bottom-color: var(--vscode-textLink-foreground);
+	font-weight: 600;
+}
+
+/* Team server panel (launch card, no iframe -- OAuth sessions don't carry over) */
+.team-server-panel {
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+	padding: 40px 20px;
+}
+
+.team-server-card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	padding: 40px 48px;
+	background-color: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 8px;
+	max-width: 480px;
+	width: 100%;
+	text-align: center;
+}
+
+.team-server-card-icon {
+	font-size: 40px;
+	line-height: 1;
+}
+
+.team-server-card-heading {
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+}
+
+.team-server-card-url {
+	font-size: 12px;
+	font-family: var(--vscode-editor-font-family);
+	color: var(--vscode-textLink-foreground);
+	word-break: break-all;
+	padding: 4px 8px;
+	background: var(--vscode-list-hoverBackground);
+	border-radius: 4px;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.team-server-open-btn {
+	margin-top: 4px;
+	padding: 8px 24px;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 4px;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background-color 0.15s;
+}
+
+.team-server-open-btn:hover {
+	background-color: var(--vscode-button-hoverBackground);
+}
+
+.team-server-card-note {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.5;
+	margin: 4px 0 0;
+	opacity: 0.8;
+}

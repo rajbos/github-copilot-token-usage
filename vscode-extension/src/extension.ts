@@ -5938,16 +5938,8 @@ ${hashtag}`;
   public async showDashboard(): Promise<void> {
     this.log("📊 Opening Team Dashboard");
 
-    // Check if backend is configured
-    if (!this.backend) {
-      vscode.window.showWarningMessage(
-        "Team Dashboard requires backend sync to be configured. Please configure backend settings first.",
-      );
-      return;
-    }
-
-    const settings = this.backend.getSettings();
-    if (!this.backend.isConfigured(settings)) {
+    // Check if either backend is configured
+    if (!this.isBackendConfigured()) {
       vscode.window.showWarningMessage(
         "Team Dashboard requires backend sync to be configured. Please configure backend settings first.",
       );
@@ -5960,6 +5952,8 @@ ${hashtag}`;
       this.log("📊 Team Dashboard revealed (already exists)");
       return;
     }
+
+    const backendConfig = this.getDashboardBackendConfig();
 
     // Show panel immediately with loading state
     this.dashboardPanel = vscode.window.createWebviewPanel(
@@ -5992,6 +5986,11 @@ ${hashtag}`;
         case "backfillHistoricalData":
           await this.dispatch('backfillHistoricalData', () => this.handleBackfillHistoricalData());
           break;
+        case "openExternal":
+          if (typeof message.url === 'string') {
+            await vscode.env.openExternal(vscode.Uri.parse(message.url));
+          }
+          break;
       }
     });
 
@@ -6000,38 +5999,49 @@ ${hashtag}`;
       this.dashboardPanel = undefined;
     });
 
-    // If we have cached data, show it immediately so the panel renders fast
-    if (this.lastDashboardData) {
-      this.log("📊 Sending cached dashboard data immediately");
-      this.dashboardPanel.webview.postMessage({
-        command: "dashboardData",
-        data: this.lastDashboardData,
-      });
-    }
-
-    // Load (or refresh) data asynchronously and send to webview
-    try {
-      const dashboardData = await this.getDashboardData();
-      this.lastDashboardData = dashboardData;
-      this.dashboardPanel?.webview.postMessage({
-        command: "dashboardData",
-        data: dashboardData,
-      });
-    } catch (error) {
-      this.error("Failed to load dashboard data:", error);
-      // Only show error state when there's no cached data to fall back on
-      if (!this.lastDashboardData) {
-        this.dashboardPanel?.webview.postMessage({
-          command: "dashboardError",
-          message:
-            "Failed to load dashboard data. Please check backend configuration and try again.",
+    // Only load Azure data when Azure Storage is configured
+    if (backendConfig.azureConfigured) {
+      // If we have cached data, show it immediately so the panel renders fast
+      if (this.lastDashboardData) {
+        this.log("📊 Sending cached dashboard data immediately");
+        this.dashboardPanel.webview.postMessage({
+          command: "dashboardData",
+          data: this.lastDashboardData,
         });
       }
+
+      // Load (or refresh) data asynchronously and send to webview
+      try {
+        const dashboardData = await this.getDashboardData();
+        this.lastDashboardData = dashboardData;
+        this.dashboardPanel?.webview.postMessage({
+          command: "dashboardData",
+          data: dashboardData,
+        });
+      } catch (error) {
+        this.error("Failed to load dashboard data:", error);
+        // Only show error state when there's no cached data to fall back on
+        if (!this.lastDashboardData) {
+          this.dashboardPanel?.webview.postMessage({
+            command: "dashboardError",
+            message:
+              "Failed to load dashboard data. Please check backend configuration and try again.",
+          });
+        }
+      }
     }
+    // When only team server is configured, the webview renders the iframe
+    // immediately via __DASHBOARD_CONFIG__ injected in getDashboardHtml().
   }
 
   private async refreshDashboardPanel(): Promise<void> {
     if (!this.dashboardPanel) {
+      return;
+    }
+
+    const { azureConfigured } = this.getDashboardBackendConfig();
+    if (!azureConfigured) {
+      // Team server only -- nothing to refresh (the panel is a launch card)
       return;
     }
 
@@ -6671,6 +6681,8 @@ ${hashtag}`;
       vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "dashboard.js"),
     );
 
+    const backendConfig = this.getDashboardBackendConfig();
+
     const csp = [
       `default-src 'none'`,
       `img-src ${webview.cspSource} https: data:`,
@@ -6685,6 +6697,7 @@ ${hashtag}`;
     const initialDataScript = dataWithBackend
       ? `<script nonce="${nonce}">window.__INITIAL_DASHBOARD__ = ${JSON.stringify(dataWithBackend).replace(/</g, "\\u003c")};</script>`
       : "";
+    const configScript = `<script nonce="${nonce}">window.__DASHBOARD_CONFIG__ = ${JSON.stringify(backendConfig).replace(/</g, "\\u003c")};</script>`;
 
     return `<!DOCTYPE html>
 		<html lang="en">
@@ -6696,6 +6709,7 @@ ${hashtag}`;
 		</head>
 		<body>
 			<div id="root"></div>
+			${configScript}
 			${initialDataScript}
 			${this.extensionPointButtonsScript(nonce)}
 			<script nonce="${nonce}" src="${scriptUri}"></script>
@@ -6714,14 +6728,37 @@ ${hashtag}`;
   }
 
   /**
-   * Check if backend sync is configured for Team Dashboard access.
+   * Check if either Azure Storage or Team Server backend is configured for Team Dashboard access.
    */
   private isBackendConfigured(): boolean {
-    if (!this.backend) {
-      return false;
+    const { azureConfigured, teamServerConfigured } = this.getDashboardBackendConfig();
+    return azureConfigured || teamServerConfigured;
+  }
+
+  /**
+   * Returns which backends are configured and the validated team server URL.
+   * Azure is considered configured when all required Azure Storage fields are filled.
+   * Team Server is configured when enabled with a valid http/https URL.
+   */
+  private getDashboardBackendConfig(): { azureConfigured: boolean; teamServerConfigured: boolean; teamServerUrl: string } {
+    const settings = this.backend?.getSettings();
+    const azureConfigured = !!(
+      settings?.subscriptionId &&
+      settings?.resourceGroup &&
+      settings?.storageAccount &&
+      settings?.aggTable
+    );
+    const rawUrl = (settings?.sharingServerEnabled && settings?.sharingServerEndpointUrl) ? settings.sharingServerEndpointUrl : '';
+    let teamServerUrl = '';
+    if (rawUrl) {
+      try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          teamServerUrl = rawUrl;
+        }
+      } catch { /* invalid URL — leave empty */ }
     }
-    const settings = this.backend.getSettings();
-    return this.backend.isConfigured(settings);
+    return { azureConfigured, teamServerConfigured: !!teamServerUrl, teamServerUrl };
   }
 
   private getDetailsHtml(
