@@ -1,4 +1,4 @@
-// Diagnostics Report webview with tabbed interface
+﻿// Diagnostics Report webview with tabbed interface
 import { buttonHtml } from "../shared/buttonConfig";
 import { wireExtensionPointButtons } from "../shared/extensionPoints";
 // CSS imported as text via esbuild
@@ -1386,13 +1386,13 @@ function renderLayout(data: DiagnosticsData): void {
 						code or conversation content. You can safely share this report when reporting issues.
 					</div>
 				</div>
-				<div class="report-content">${escapedReport}</div>
-				${sessionFilesHtml}
-				<div class="button-group">
+				<div class="button-group" style="margin-bottom: 12px;">
 					<button class="button" id="btn-copy"><span>📋</span><span>Copy to Clipboard</span></button>
 					<button class="button secondary" id="btn-issue"><span>🐛</span><span>Open GitHub Issue</span></button>
 					<button class="button secondary" id="btn-clear-cache"><span>🗑️</span><span>Clear Cache</span></button>
 				</div>
+				<div class="report-content">${escapedReport}</div>
+				${sessionFilesHtml}
 			</div>
 
 			<div id="tab-sessions" class="tab-content">
