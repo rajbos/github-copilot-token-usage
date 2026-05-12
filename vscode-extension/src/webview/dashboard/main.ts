@@ -639,26 +639,32 @@ function wireTabNav(
   });
 }
 
-/** Builds the team server panel containing an info bar and embedded iframe. */
+/** Builds the team server launch card (no iframe -- VS Code webviews don't share
+ *  browser cookie/session state, so OAuth-gated pages cannot be embedded). */
 function buildTeamServerPanel(url: string): HTMLElement {
   const panel = el("div", "team-server-panel");
 
-  const infoBar = el("div", "team-server-info");
-  const urlLabel = el("span", "team-server-url-label", `🖥️ ${url}`);
+  const card = el("div", "team-server-card");
 
-  const openBtn = el("button", "team-server-open-btn", "↗ Open in Browser") as HTMLButtonElement;
+  const icon = el("div", "team-server-card-icon", "🖥️");
+  const heading = el("div", "team-server-card-heading", "Team Server Dashboard");
+  const urlEl = el("div", "team-server-card-url", url);
+
+  const openBtn = el("button", "team-server-open-btn", "↗ Open Team Server in Browser") as HTMLButtonElement;
   openBtn.addEventListener("click", () => {
     vscode.postMessage({ command: "openExternal", url });
   });
 
-  infoBar.append(urlLabel, openBtn);
+  const note = el(
+    "p",
+    "team-server-card-note",
+    "The team server dashboard uses GitHub OAuth for authentication. " +
+    "VS Code webviews run in an isolated sandbox that cannot share browser sessions, " +
+    "so the dashboard opens in your default browser instead.",
+  );
 
-  const iframe = document.createElement("iframe");
-  iframe.src = url;
-  iframe.className = "team-server-iframe";
-  iframe.title = "Team Server Dashboard";
-
-  panel.append(infoBar, iframe);
+  card.append(icon, heading, urlEl, openBtn, note);
+  panel.append(card);
   return panel;
 }
 
@@ -679,7 +685,14 @@ function showTeamServerView(url: string): void {
   const header = el("div", "header");
   const title = el("div", "title", "📊 Team Dashboard");
   const buttonRow = el("div", "button-row");
-  buttonRow.append(createButton(BUTTONS["btn-refresh"]));
+  buttonRow.append(
+    createButton(BUTTONS["btn-details"]),
+    createButton(BUTTONS["btn-chart"]),
+    createButton(BUTTONS["btn-usage"]),
+    createButton(BUTTONS["btn-environmental"]),
+    createButton(BUTTONS["btn-diagnostics"]),
+    createButton(BUTTONS["btn-maturity"]),
+  );
   header.append(title, buttonRow);
 
   const panel = buildTeamServerPanel(url);
@@ -739,8 +752,7 @@ window.addEventListener("message", (event) => {
       showError(message.message);
       break;
     case "dashboardTeamServerReload": {
-      const iframe = document.querySelector<HTMLIFrameElement>(".team-server-iframe");
-      if (iframe) { iframe.src = iframe.src; }
+      // No-op: team server is now a launch card, not an iframe
       break;
     }
     case "backfillProgress": {

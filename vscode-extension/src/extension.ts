@@ -6040,10 +6040,8 @@ ${hashtag}`;
     }
 
     const { azureConfigured } = this.getDashboardBackendConfig();
-
     if (!azureConfigured) {
-      // Team server only — signal the webview to reload its iframe
-      this.dashboardPanel.webview.postMessage({ command: "dashboardTeamServerReload" });
+      // Team server only -- nothing to refresh (the panel is a launch card)
       return;
     }
 
@@ -6684,10 +6682,6 @@ ${hashtag}`;
     );
 
     const backendConfig = this.getDashboardBackendConfig();
-    // Allow iframe embedding of the team server URL (scoped to its origin)
-    const frameSrc = backendConfig.teamServerUrl
-      ? (() => { try { return new URL(backendConfig.teamServerUrl).origin; } catch { return null; } })()
-      : null;
 
     const csp = [
       `default-src 'none'`,
@@ -6695,7 +6689,6 @@ ${hashtag}`;
       `style-src 'unsafe-inline' ${webview.cspSource}`,
       `font-src ${webview.cspSource} https: data:`,
       `script-src 'nonce-${nonce}'`,
-      ...(frameSrc ? [`frame-src ${frameSrc}`] : []),
     ].join("; ");
 
     const dataWithBackend = data

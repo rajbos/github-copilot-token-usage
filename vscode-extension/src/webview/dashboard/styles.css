@@ -496,57 +496,72 @@
 	font-weight: 600;
 }
 
-/* Team server panel */
+/* Team server panel (launch card, no iframe -- OAuth sessions don't carry over) */
 .team-server-panel {
 	display: flex;
-	flex-direction: column;
-	gap: 0;
-	flex: 1;
+	justify-content: center;
+	align-items: flex-start;
+	padding: 40px 20px;
 }
 
-.team-server-info {
+.team-server-card {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
-	justify-content: space-between;
 	gap: 12px;
-	padding: 8px 12px;
+	padding: 40px 48px;
 	background-color: var(--vscode-editor-background);
 	border: 1px solid var(--vscode-panel-border);
-	border-bottom: none;
-	border-radius: 6px 6px 0 0;
-	font-size: 12px;
+	border-radius: 8px;
+	max-width: 480px;
+	width: 100%;
+	text-align: center;
 }
 
-.team-server-url-label {
-	color: var(--vscode-descriptionForeground);
+.team-server-card-icon {
+	font-size: 40px;
+	line-height: 1;
+}
+
+.team-server-card-heading {
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+}
+
+.team-server-card-url {
+	font-size: 12px;
 	font-family: var(--vscode-editor-font-family);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	color: var(--vscode-textLink-foreground);
+	word-break: break-all;
+	padding: 4px 8px;
+	background: var(--vscode-list-hoverBackground);
+	border-radius: 4px;
+	width: 100%;
+	box-sizing: border-box;
 }
 
 .team-server-open-btn {
-	background: none;
-	border: 1px solid var(--vscode-button-border, transparent);
-	color: var(--vscode-textLink-foreground);
-	cursor: pointer;
-	font-size: 12px;
-	padding: 3px 10px;
+	margin-top: 4px;
+	padding: 8px 24px;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
 	border-radius: 4px;
-	white-space: nowrap;
-	flex-shrink: 0;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
 	transition: background-color 0.15s;
 }
 
 .team-server-open-btn:hover {
-	background-color: var(--vscode-list-hoverBackground);
+	background-color: var(--vscode-button-hoverBackground);
 }
 
-.team-server-iframe {
-	width: 100%;
-	height: calc(100vh - 160px);
-	min-height: 400px;
-	border: 1px solid var(--vscode-panel-border);
-	border-radius: 0 0 6px 6px;
-	background: var(--vscode-editor-background);
+.team-server-card-note {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.5;
+	margin: 4px 0 0;
+	opacity: 0.8;
 }
