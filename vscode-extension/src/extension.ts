@@ -1784,10 +1784,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// UTC-based date keys for consistent daily attribution (matching server-side)
 		const { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs } = computeUtcDateRanges(now);
 
-		let todayStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		let monthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		let lastMonthStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
-		let last30DaysStats = { tokens: 0, thinkingTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let todayStats = { tokens: 0, thinkingTokens: 0, cachedTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let monthStats = { tokens: 0, thinkingTokens: 0, cachedTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let lastMonthStats = { tokens: 0, thinkingTokens: 0, cachedTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
+		let last30DaysStats = { tokens: 0, thinkingTokens: 0, cachedTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 
 		// Daily stats map for the chart (populated by aggregatePeriodStats, finalized below)
 		let dailyStatsMap = new Map<string, DailyTokenStats>();
@@ -1923,7 +1923,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				treesEquivalent: todayCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: todayWater,
 				estimatedCost: todayCost,
-				estimatedCostCopilot: todayCostCopilot
+				estimatedCostCopilot: todayCostCopilot,
+				...(todayStats.cachedTokens > 0 ? { cachedTokens: todayStats.cachedTokens } : {})
 			},
 			month: {
 				tokens: monthStats.tokens,
@@ -1939,7 +1940,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				treesEquivalent: monthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: monthWater,
 				estimatedCost: monthCost,
-				estimatedCostCopilot: monthCostCopilot
+				estimatedCostCopilot: monthCostCopilot,
+				...(monthStats.cachedTokens > 0 ? { cachedTokens: monthStats.cachedTokens } : {})
 			},
 			lastMonth: {
 				tokens: lastMonthStats.tokens,
@@ -1955,7 +1957,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				treesEquivalent: lastMonthCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: lastMonthWater,
 				estimatedCost: lastMonthCost,
-				estimatedCostCopilot: lastMonthCostCopilot
+				estimatedCostCopilot: lastMonthCostCopilot,
+				...(lastMonthStats.cachedTokens > 0 ? { cachedTokens: lastMonthStats.cachedTokens } : {})
 			},
 			last30Days: {
 				tokens: last30DaysStats.tokens,
@@ -1971,7 +1974,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				treesEquivalent: last30DaysCo2 / this.co2AbsorptionPerTreePerYear,
 				waterUsage: last30DaysWater,
 				estimatedCost: last30DaysCost,
-				estimatedCostCopilot: last30DaysCostCopilot
+				estimatedCostCopilot: last30DaysCostCopilot,
+				...(last30DaysStats.cachedTokens > 0 ? { cachedTokens: last30DaysStats.cachedTokens } : {})
 			},
 			lastUpdated: now
 		};
@@ -2942,12 +2946,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 					dayModelUsage[model] = {
 						inputTokens: Math.round(usage.inputTokens * fraction),
 						outputTokens: Math.round(usage.outputTokens * fraction),
+						...(usage.cachedReadTokens !== undefined ? { cachedReadTokens: Math.round(usage.cachedReadTokens * fraction) } : {}),
+						...(usage.cacheCreationTokens !== undefined ? { cacheCreationTokens: Math.round(usage.cacheCreationTokens * fraction) } : {}),
 					};
 				}
 				dailyRollups[dayKey] = {
 					tokens: Math.round(tokenResult.tokens * fraction),
 					actualTokens: Math.round((tokenResult.actualTokens || 0) * fraction),
 					thinkingTokens: Math.round((tokenResult.thinkingTokens || 0) * fraction),
+					cachedReadTokens: 0, // filled in below after resolvedCacheReadTokens is known
 					interactions: dayInteractionCount,
 					modelUsage: dayModelUsage,
 				};
@@ -2970,12 +2977,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 						dayModelUsage[model] = {
 							inputTokens: usage.inputTokens,
 							outputTokens: usage.outputTokens,
+							...(usage.cachedReadTokens !== undefined ? { cachedReadTokens: usage.cachedReadTokens } : {}),
+							...(usage.cacheCreationTokens !== undefined ? { cacheCreationTokens: usage.cacheCreationTokens } : {}),
 						};
 					}
 					dailyRollups[dayKey] = {
 						tokens: tokenResult.tokens,
 						actualTokens: tokenResult.actualTokens || 0,
 						thinkingTokens: tokenResult.thinkingTokens || 0,
+						cachedReadTokens: 0, // filled in below after resolvedCacheReadTokens is known
 						interactions: Math.max(1, interactions),
 						modelUsage: dayModelUsage,
 					};
@@ -2992,6 +3002,35 @@ class CopilotTokenTracker implements vscode.Disposable {
 			: 0;
 		const resolvedCacheReadTokens = tokenResult.cacheReadTokens || debugLogCached || undefined;
 
+		// For ecosystem adapters (Claude Code, Claude Desktop, OpenCode, Gemini CLI),
+		// cached tokens are tracked per-model in modelUsage.cachedReadTokens.
+		// Sum them up as a session-level total when no other source provided the total.
+		const modelCachedTotal = !resolvedCacheReadTokens
+			? Object.values(modelUsage).reduce((sum, u) => sum + (u.cachedReadTokens ?? 0), 0)
+			: 0;
+		const finalCacheReadTokens = resolvedCacheReadTokens || (modelCachedTotal > 0 ? modelCachedTotal : undefined);
+
+		// Backfill cachedReadTokens into daily rollups now that we have the session total.
+		// Distribute proportionally so stats accumulation works correctly.
+		if (finalCacheReadTokens && Object.keys(dailyRollups).length > 0) {
+			const dayKeys = Object.keys(dailyRollups);
+			if (dayKeys.length === 1) {
+				dailyRollups[dayKeys[0]].cachedReadTokens = finalCacheReadTokens;
+			} else {
+				// Distribute proportionally based on the interactions share of each day.
+				const totalInteractionsForCache = dayKeys.reduce((s, k) => s + dailyRollups[k].interactions, 0);
+				let remaining = finalCacheReadTokens;
+				dayKeys.slice(0, -1).forEach(k => {
+					const allocated = totalInteractionsForCache > 0
+						? Math.round(finalCacheReadTokens * dailyRollups[k].interactions / totalInteractionsForCache)
+						: 0;
+					dailyRollups[k].cachedReadTokens = allocated;
+					remaining -= allocated;
+				});
+				dailyRollups[dayKeys[dayKeys.length - 1]].cachedReadTokens = Math.max(0, remaining);
+			}
+		}
+
 		const sessionData: SessionFileCache = {
 			tokens: tokenResult.tokens,
 			interactions,
@@ -3004,7 +3043,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction: sessionMeta.lastInteraction,
 			thinkingTokens: tokenResult.thinkingTokens,
 			actualTokens: tokenResult.actualTokens,
-			...(resolvedCacheReadTokens ? { cacheReadTokens: resolvedCacheReadTokens } : {}),
+			...(finalCacheReadTokens ? { cacheReadTokens: finalCacheReadTokens } : {}),
 			dailyRollups: Object.keys(dailyRollups).length > 0 ? dailyRollups : undefined,
 		};
 
