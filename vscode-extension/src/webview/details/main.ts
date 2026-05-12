@@ -31,6 +31,7 @@ type PeriodStats = {
 	waterUsage: number;
 	estimatedCost: number;
 	estimatedCostCopilot?: number;
+	cachedTokens?: number;
 };
 
 type DetailedStats = {
@@ -231,15 +232,12 @@ function buildMetricsSection(
 		{ label: 'Tokens (user estimated)', icon: '📝', color: '#b39ddb', today: formatCompact(stats.today.estimatedTokens), last30Days: formatCompact(stats.last30Days.estimatedTokens), lastMonth: formatCompact(stats.lastMonth.estimatedTokens), projected: '—' },
 		{ label: 'Service overhead %', icon: '☁️', color: '#90a4ae', today: (stats.today.actualTokens || 0) > 0 ? formatPercent(((stats.today.tokens - stats.today.estimatedTokens) / stats.today.tokens) * 100) : '—', last30Days: (stats.last30Days.actualTokens || 0) > 0 ? formatPercent(((stats.last30Days.tokens - stats.last30Days.estimatedTokens) / stats.last30Days.tokens) * 100) : '—', lastMonth: (stats.lastMonth.actualTokens || 0) > 0 ? formatPercent(((stats.lastMonth.tokens - stats.lastMonth.estimatedTokens) / stats.lastMonth.tokens) * 100) : '—', projected: '—' },
 		{ label: 'Thinking tokens', icon: '🧠', color: '#a78bfa', today: formatCompact(stats.today.thinkingTokens || 0), last30Days: formatCompact(stats.last30Days.thinkingTokens || 0), lastMonth: formatCompact(stats.lastMonth.thinkingTokens || 0), projected: '—' },
+		...((stats.today.cachedTokens || stats.last30Days.cachedTokens || stats.lastMonth.cachedTokens)
+			? [{ label: 'Cached tokens', icon: '⚡', color: '#34d399', today: formatCompact(stats.today.cachedTokens || 0), last30Days: formatCompact(stats.last30Days.cachedTokens || 0), lastMonth: formatCompact(stats.lastMonth.cachedTokens || 0), projected: '—' }]
+			: []),
 		{
-			label: 'Estimated cost (est.)',
-			labelTooltip: 'Based on public provider API rates — for comparison only. This is not what you are billed.',
-			icon: '🪙', color: '#ffd166',
-			today: formatCost(stats.today.estimatedCost), last30Days: formatCost(stats.last30Days.estimatedCost), lastMonth: formatCost(stats.lastMonth.estimatedCost), projected: formatCost(projections.projectedCost)
-		},
-		{
-			label: 'Estimated cost (TBB)',
-			labelTooltip: 'Based on GitHub Copilot AI Credit rates (1 credit = $0.01) — this is what Copilot will bill you. TBB = To Be Billed.',
+			label: 'Estimated cost (UBB)',
+			labelTooltip: 'Based on GitHub Copilot AI Credit rates (1 credit = $0.01) — this is what Copilot will bill you. UBB = Usage Based Billing.',
 			icon: '🟢', color: '#7ce38b',
 			today: formatCost(stats.today.estimatedCostCopilot ?? 0), last30Days: formatCost(stats.last30Days.estimatedCostCopilot ?? 0), lastMonth: formatCost(stats.lastMonth.estimatedCostCopilot ?? 0), projected: formatCost(projections.projectedCostCopilot ?? 0)
 		},
@@ -247,7 +245,7 @@ function buildMetricsSection(
 			const credits = stats.copilotPlan.monthlyAiCreditsUsd > 0 ? `$${stats.copilotPlan.monthlyAiCreditsUsd} credits/month` : 'no credits';
 			return [{
 				label: `${stats.copilotPlan.planName} (${credits})`,
-				labelTooltip: `Your active GitHub Copilot subscription plan (ID: ${stats.copilotPlan.planId}). Included AI credits cover token-based billing (1 AI credit = $0.01).`,
+				labelTooltip: `Your active GitHub Copilot subscription plan (ID: ${stats.copilotPlan.planId}). Included AI credits cover usage-based billing (1 AI credit = $0.01).`,
 				icon: '🏷️', color: '#60a5fa',
 				today: '—', last30Days: '—', lastMonth: '—', projected: '—'
 			}];
@@ -805,7 +803,7 @@ function buildEstimatesSection(): HTMLElement {
 	notes.className = 'notes';
 
 	const items = [
-		'Cost estimate uses public API pricing with input/output token counts; GitHub Copilot billing may differ from direct API usage.',
+		'Cost (UBB) uses GitHub Copilot AI Credit rates (1 credit = $0.01) — this is what you are billed under Usage Based Billing.',
 		'Estimated CO₂ is based on ~0.2 g CO₂e per 1,000 tokens.',
 		'Estimated water usage is based on ~0.3 L per 1,000 tokens.',
 		'Tree equivalent represents the fraction of a single mature tree\'s annual CO₂ absorption (~21 kg/year).'

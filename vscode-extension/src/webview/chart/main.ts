@@ -610,7 +610,7 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 				labels: period.labels,
 				datasets: [
 					{
-						label: isRolling ? `${rollingLabel} (TBB)` : 'Est. Cost (TBB)',
+						label: isRolling ? `${rollingLabel} (UBB)` : 'Est. Cost (UBB)',
 						data: costData,
 						backgroundColor: isRolling ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.6)',
 						borderColor: 'rgba(34, 197, 94, 1)',
@@ -641,7 +641,7 @@ function createConfig(view: 'total' | 'model' | 'editor' | 'repository' | 'cost'
 						position: 'left' as const,
 						grid: { color: gridColor },
 						ticks: { color: textColor, font: { size: 11 }, callback: (value: any) => `$${Number(value).toFixed(2)}` },
-						title: { display: true, text: 'Estimated Cost (TBB)', color: textColor, font: { size: 12, weight: 'bold' as const } }
+						title: { display: true, text: 'Estimated Cost (UBB)', color: textColor, font: { size: 12, weight: 'bold' as const } }
 					}
 				}
 			}
