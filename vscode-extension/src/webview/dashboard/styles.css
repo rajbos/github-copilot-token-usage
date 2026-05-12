@@ -461,3 +461,92 @@
 	padding-top: 8px;
 	border-top: 1px solid #2a2a30;
 }
+
+/* Tab navigation (shown when both Azure and Team Server are configured) */
+.tab-nav {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 20px;
+	border-bottom: 2px solid var(--vscode-panel-border);
+	padding-bottom: 0;
+}
+
+.tab-btn {
+	background: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -2px;
+	padding: 8px 16px;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	border-radius: 4px 4px 0 0;
+	transition: color 0.15s, background-color 0.15s;
+}
+
+.tab-btn:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.tab-btn-active {
+	color: var(--vscode-foreground);
+	border-bottom-color: var(--vscode-textLink-foreground);
+	font-weight: 600;
+}
+
+/* Team server panel */
+.team-server-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	flex: 1;
+}
+
+.team-server-info {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 8px 12px;
+	background-color: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-panel-border);
+	border-bottom: none;
+	border-radius: 6px 6px 0 0;
+	font-size: 12px;
+}
+
+.team-server-url-label {
+	color: var(--vscode-descriptionForeground);
+	font-family: var(--vscode-editor-font-family);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.team-server-open-btn {
+	background: none;
+	border: 1px solid var(--vscode-button-border, transparent);
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: 12px;
+	padding: 3px 10px;
+	border-radius: 4px;
+	white-space: nowrap;
+	flex-shrink: 0;
+	transition: background-color 0.15s;
+}
+
+.team-server-open-btn:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.team-server-iframe {
+	width: 100%;
+	height: calc(100vh - 160px);
+	min-height: 400px;
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 0 0 6px 6px;
+	background: var(--vscode-editor-background);
+}
