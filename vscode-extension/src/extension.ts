@@ -107,6 +107,7 @@ import {
   reconstructJsonlStateAsync as _reconstructJsonlStateAsync,
   extractSubAgentData as _extractSubAgentData,
   buildReasoningEffortTimeline as _buildReasoningEffortTimeline,
+  extractCachedTokensFromDebugLog as _extractCachedTokensFromDebugLog,
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
@@ -2982,6 +2983,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} catch { /* ignore date parsing errors */ }
 		}
 
+		// For VS Code Copilot Chat sessions, the debug log companion file exposes
+		// per-LLM-call cached token counts (attrs.cachedTokens) that the session
+		// JSONL itself does not record. Read the debug log when the session parser
+		// found no cache data (CLI-only path) and the session is a UUID-named file.
+		const debugLogCached = !tokenResult.cacheReadTokens
+			? await this.readCachedTokensFromDebugLog(sessionFilePath)
+			: 0;
+		const resolvedCacheReadTokens = tokenResult.cacheReadTokens || debugLogCached || undefined;
+
 		const sessionData: SessionFileCache = {
 			tokens: tokenResult.tokens,
 			interactions,
@@ -2994,7 +3004,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			lastInteraction: sessionMeta.lastInteraction,
 			thinkingTokens: tokenResult.thinkingTokens,
 			actualTokens: tokenResult.actualTokens,
-			...(tokenResult.cacheReadTokens ? { cacheReadTokens: tokenResult.cacheReadTokens } : {}),
+			...(resolvedCacheReadTokens ? { cacheReadTokens: resolvedCacheReadTokens } : {}),
 			dailyRollups: Object.keys(dailyRollups).length > 0 ? dailyRollups : undefined,
 		};
 
@@ -4171,6 +4181,38 @@ usageAnalysis: undefined
 
 	private estimateTokensFromJsonlSession(fileContent: string): { tokens: number; thinkingTokens: number; actualTokens: number; cacheReadTokens: number } {
 		return _estimateTokensFromJsonlSession(fileContent);
+	}
+
+	/**
+	 * Read cached-token counts from the Copilot Chat debug log companion file for
+	 * a given chat session. The debug log lives at:
+	 *   `{workspaceStorage}/{hash}/{extension}/debug-logs/{sessionId}/main.jsonl`
+	 * where `{extension}` is one of the GitHub.copilot-chat / GitHub.copilot variants.
+	 *
+	 * Returns 0 when no debug log is found or contains no cached-token data.
+	 */
+	private async readCachedTokensFromDebugLog(sessionFilePath: string): Promise<number> {
+		const norm = sessionFilePath.replace(/\\/g, '/');
+		const sessionId = path.basename(sessionFilePath, path.extname(sessionFilePath));
+		// Only process UUID-named session files (e.g. e84b3e82-c1fb-43de-8f52-367f4c74826a)
+		if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+			return 0;
+		}
+		// Derive the workspaceStorage/<hash> directory from the session file path
+		const wsHashMatch = norm.match(/^(.*\/workspaceStorage\/[^/]+)\//);
+		if (!wsHashMatch) { return 0; }
+		const workspaceHashDir = sessionFilePath.substring(0, wsHashMatch[1].length);
+
+		const extensionFolders = ['GitHub.copilot-chat', 'github.copilot-chat', 'GitHub.copilot', 'github.copilot'];
+		for (const extFolder of extensionFolders) {
+			const debugLogPath = path.join(workspaceHashDir, extFolder, 'debug-logs', sessionId, 'main.jsonl');
+			try {
+				const content = await fs.promises.readFile(debugLogPath, 'utf8');
+				const cached = _extractCachedTokensFromDebugLog(content);
+				if (cached > 0) { return cached; }
+			} catch { /* file doesn't exist or can't be read — try next variant */ }
+		}
+		return 0;
 	}
 
 	private extractPerRequestUsageFromRawLines(lines: string[]): Map<number, { promptTokens: number; outputTokens: number }> {

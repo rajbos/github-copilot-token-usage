@@ -279,6 +279,31 @@ export async function reconstructJsonlStateAsync(lines: string[], yieldInterval 
 }
 
 /**
+ * Extract total cached (prompt-cache-hit) tokens from a Copilot Chat debug log
+ * file (typically at `debug-logs/{sessionId}/main.jsonl`).
+ *
+ * Each `llm_request` telemetry event records the number of input tokens served
+ * from the provider's prompt cache in `attrs.cachedTokens`. Summing these across
+ * all LLM calls in the log gives the session-level cached-token count.
+ *
+ * Returns 0 when no cached-token data is found (e.g. debug logging disabled,
+ * non-Claude model, or file does not exist).
+ */
+export function extractCachedTokensFromDebugLog(content: string): number {
+	let total = 0;
+	for (const line of content.split(/\r?\n/)) {
+		if (!line.trim()) { continue; }
+		try {
+			const event = JSON.parse(line);
+			if (event.type === 'llm_request' && typeof event?.attrs?.cachedTokens === 'number') {
+				total += event.attrs.cachedTokens;
+			}
+		} catch { /* skip invalid lines */ }
+	}
+	return total;
+}
+
+/**
  * Build a map from requestId → reasoning effort level by scanning delta-based JSONL lines.
  *
  * The effort level is taken from `configurationSchema.properties.reasoningEffort.default`

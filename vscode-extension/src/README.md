@@ -114,11 +114,12 @@ the provider rates as a proxy — this means the Copilot cost is never
 *under-reported* due to a missing entry, it just won't reflect the (often
 identical) GitHub-published rate explicitly.
 
-> ℹ️ **Caching note.** Copilot Chat session logs do not (yet) expose a
-> cached-read / cache-creation token breakdown, so the Copilot cost falls back
-> to the full input rate for those sources. Adapters that *do* surface cache
-> tokens (Claude Desktop, Claude Code, OpenCode) automatically benefit from the
-> reduced cached-input rates in `copilotPricing`.
+> ℹ️ **Caching note.** VS Code Copilot Chat sessions expose cached-token counts
+> through the debug log companion file (`debug-logs/{sessionId}/main.jsonl`),
+> where each `llm_request` event records `attrs.cachedTokens`. The extension reads
+> this file automatically and applies the reduced `cachedInputCostPerMillion` rate.
+> Other sources without cache data (Continue.dev, Cursor, Visual Studio) still fall
+> back to the full input rate.
 
 **Cache pricing fields (optional):**
 
@@ -146,7 +147,7 @@ Cache-aware pricing only applies when the session source actually exposes how ma
 | **Claude Desktop** (`claudedesktop.ts`) | ✅ Yes | `usage.cache_creation_input_tokens`, `usage.cache_read_input_tokens` |
 | **Claude Code** (`claudecode.ts`) | ✅ Yes | same Anthropic API fields |
 | **OpenCode** (`opencode.ts`) | ✅ Yes (DB format) | `msg.tokens.cache.write`, `msg.tokens.cache.read` |
-| VS Code Copilot | ❌ Not exposed | Copilot API returns only aggregate `promptTokens` |
+| **VS Code Copilot Chat** | ✅ Yes (debug log) | `debug-logs/{sessionId}/main.jsonl` → `llm_request.attrs.cachedTokens` |
 | Continue.dev | ❌ No | Character-based estimation only |
 | Cursor (Crush) | ❌ No | DB prompt/completion totals only |
 | Visual Studio | ❌ No | Character-based estimation only |
