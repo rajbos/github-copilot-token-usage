@@ -428,7 +428,7 @@ background-position: center;
 	white-space: pre-wrap;
 	font-size: 13px;
 	overflow: auto;
-	max-height: 60vh;
+	max-height: 45vh;
 }
 
 .file-subpath {
