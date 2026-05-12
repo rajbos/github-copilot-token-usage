@@ -1060,16 +1060,6 @@ details[open] > summary .collapse-arrow {
 	background: linear-gradient(90deg, #0ea5e9, #38bdf8);
 }
 
-/* Actual usage summary card highlight */
-.actual-usage-card {
-	border-color: #2a5a6a;
-	background: var(--bg-secondary);
-}
-
-.actual-usage-card .summary-value {
-	color: #38bdf8;
-}
-
 /* Session-level actual usage panel */
 .session-actual-usage {
 	background: var(--bg-secondary);
