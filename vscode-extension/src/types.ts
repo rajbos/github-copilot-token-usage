@@ -78,6 +78,8 @@ export interface PeriodStats {
    * Falls back to provider/API pricing for models without `copilotPricing`.
    */
   estimatedCostCopilot?: number;
+  /** Sum of cache-read tokens across all interactions in this period (when available). */
+  cachedTokens?: number;
 }
 
 export interface DetailedStats {
@@ -155,6 +157,7 @@ export interface DailyRollupEntry {
   tokens: number;
   actualTokens: number;
   thinkingTokens: number;
+  cachedReadTokens?: number;
   interactions: number;
   modelUsage: ModelUsage;
 }
@@ -173,7 +176,7 @@ export interface SessionFileCache {
   workspaceFolderPath?: string; // Full local path to the workspace folder (optional)
   thinkingTokens?: number; // Estimated thinking/reasoning tokens
   actualTokens?: number; // Actual token count from LLM API usage data (when available)
-  cacheReadTokens?: number; // Cache-read token count from session.shutdown modelMetrics (CLI sessions only)
+  cacheReadTokens?: number; // Cache-read token count from session.shutdown modelMetrics or ecosystem adapter API usage
   /** Per-UTC-day token/interaction breakdown (keyed by YYYY-MM-DD UTC). Used for consistent daily stats. */
   dailyRollups?: { [utcDayKey: string]: DailyRollupEntry };
 }
@@ -498,3 +501,6 @@ export interface WorkspaceCustomizationSummary {
   totalFiles: number;
   staleFiles: number;
 }
+
+
+

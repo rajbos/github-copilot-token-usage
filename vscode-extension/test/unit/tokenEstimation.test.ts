@@ -520,3 +520,61 @@ test('estimateTokensFromJsonlSession: session.shutdown handles non-numeric usage
         // inputTokens is non-numeric → defaults to 0; outputTokens = 50
         assert.equal(result.actualTokens, 50);
 });
+
+// ── extractCachedTokensFromDebugLog ──────────────────────────────────────
+
+import { extractCachedTokensFromDebugLog } from '../../src/tokenEstimation';
+
+test('extractCachedTokensFromDebugLog: sums cachedTokens from llm_request events', () => {
+        const lines = [
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 5000 } }),
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 3000 } }),
+        ].join('\n');
+        assert.equal(extractCachedTokensFromDebugLog(lines), 8000);
+});
+
+test('extractCachedTokensFromDebugLog: returns 0 for empty content', () => {
+        assert.equal(extractCachedTokensFromDebugLog(''), 0);
+});
+
+test('extractCachedTokensFromDebugLog: ignores non-llm_request events', () => {
+        const lines = [
+                JSON.stringify({ type: 'request_start', attrs: { cachedTokens: 9999 } }),
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 100 } }),
+                JSON.stringify({ type: 'request_end', attrs: {} }),
+        ].join('\n');
+        assert.equal(extractCachedTokensFromDebugLog(lines), 100);
+});
+
+test('extractCachedTokensFromDebugLog: ignores llm_request events without cachedTokens', () => {
+        const lines = [
+                JSON.stringify({ type: 'llm_request', attrs: { inputTokens: 1000, outputTokens: 200 } }),
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 50 } }),
+        ].join('\n');
+        assert.equal(extractCachedTokensFromDebugLog(lines), 50);
+});
+
+test('extractCachedTokensFromDebugLog: skips invalid JSON lines without crashing', () => {
+        const lines = [
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 200 } }),
+                'not valid json {{{',
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 300 } }),
+        ].join('\n');
+        assert.equal(extractCachedTokensFromDebugLog(lines), 500);
+});
+
+test('extractCachedTokensFromDebugLog: handles CRLF line endings', () => {
+        const lines = [
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 1000 } }),
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 2000 } }),
+        ].join('\r\n');
+        assert.equal(extractCachedTokensFromDebugLog(lines), 3000);
+});
+
+test('extractCachedTokensFromDebugLog: ignores non-numeric cachedTokens values', () => {
+        const lines = [
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 'lots' } }),
+                JSON.stringify({ type: 'llm_request', attrs: { cachedTokens: 100 } }),
+        ].join('\n');
+        assert.equal(extractCachedTokensFromDebugLog(lines), 100);
+});

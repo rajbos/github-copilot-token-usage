@@ -105,6 +105,7 @@ lastInteraction?: string | null;
 export interface PeriodAccumulator {
 tokens: number;
 thinkingTokens: number;
+cachedTokens: number;
 estimatedTokens: number;
 actualTokens: number;
 sessions: number;
@@ -128,6 +129,7 @@ function makePeriodAccumulator(): PeriodAccumulator {
 return {
 tokens: 0,
 thinkingTokens: 0,
+cachedTokens: 0,
 estimatedTokens: 0,
 actualTokens: 0,
 sessions: 0,
@@ -215,6 +217,7 @@ last30DaysStats.tokens += dayTokens;
 last30DaysStats.estimatedTokens += dayRollup.tokens;
 last30DaysStats.actualTokens += dayRollup.actualTokens;
 last30DaysStats.thinkingTokens += dayRollup.thinkingTokens;
+last30DaysStats.cachedTokens += dayRollup.cachedReadTokens ?? 0;
 last30DaysStats.interactions += dayInteractions;
 if (!addedToLast30Days) { last30DaysStats.sessions += 1; addedToLast30Days = true; }
 addEditorUsage(last30DaysStats.editorUsage, editorType, dayTokens);
@@ -226,6 +229,7 @@ monthStats.tokens += dayTokens;
 monthStats.estimatedTokens += dayRollup.tokens;
 monthStats.actualTokens += dayRollup.actualTokens;
 monthStats.thinkingTokens += dayRollup.thinkingTokens;
+monthStats.cachedTokens += dayRollup.cachedReadTokens ?? 0;
 monthStats.interactions += dayInteractions;
 if (!addedToMonth) { monthStats.sessions += 1; addedToMonth = true; }
 addEditorUsage(monthStats.editorUsage, editorType, dayTokens);
@@ -236,6 +240,7 @@ todayStats.tokens += dayTokens;
 todayStats.estimatedTokens += dayRollup.tokens;
 todayStats.actualTokens += dayRollup.actualTokens;
 todayStats.thinkingTokens += dayRollup.thinkingTokens;
+todayStats.cachedTokens += dayRollup.cachedReadTokens ?? 0;
 todayStats.interactions += dayInteractions;
 if (!addedToToday) { todayStats.sessions += 1; addedToToday = true; }
 addEditorUsage(todayStats.editorUsage, editorType, dayTokens);
@@ -247,6 +252,7 @@ lastMonthStats.tokens += dayTokens;
 lastMonthStats.estimatedTokens += dayRollup.tokens;
 lastMonthStats.actualTokens += dayRollup.actualTokens;
 lastMonthStats.thinkingTokens += dayRollup.thinkingTokens;
+lastMonthStats.cachedTokens += dayRollup.cachedReadTokens ?? 0;
 lastMonthStats.interactions += dayInteractions;
 if (!addedToLastMonth) { lastMonthStats.sessions += 1; addedToLastMonth = true; }
 addEditorUsage(lastMonthStats.editorUsage, editorType, dayTokens);
@@ -299,6 +305,7 @@ last30DaysStats.tokens += tokens;
 last30DaysStats.estimatedTokens += estimatedTokens;
 last30DaysStats.actualTokens += actualTokens;
 last30DaysStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+last30DaysStats.cachedTokens += (sessionData.cacheReadTokens || 0);
 last30DaysStats.sessions += 1;
 last30DaysStats.interactions += interactions;
 addEditorUsage(last30DaysStats.editorUsage, editorType, tokens);
@@ -309,6 +316,7 @@ monthStats.tokens += tokens;
 monthStats.estimatedTokens += estimatedTokens;
 monthStats.actualTokens += actualTokens;
 monthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+monthStats.cachedTokens += (sessionData.cacheReadTokens || 0);
 monthStats.sessions += 1;
 monthStats.interactions += interactions;
 addEditorUsage(monthStats.editorUsage, editorType, tokens);
@@ -319,6 +327,7 @@ todayStats.tokens += tokens;
 todayStats.estimatedTokens += estimatedTokens;
 todayStats.actualTokens += actualTokens;
 todayStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+todayStats.cachedTokens += (sessionData.cacheReadTokens || 0);
 todayStats.sessions += 1;
 todayStats.interactions += interactions;
 addEditorUsage(todayStats.editorUsage, editorType, tokens);
@@ -329,6 +338,7 @@ lastMonthStats.tokens += tokens;
 lastMonthStats.estimatedTokens += estimatedTokens;
 lastMonthStats.actualTokens += actualTokens;
 lastMonthStats.thinkingTokens += (sessionData.thinkingTokens || 0);
+lastMonthStats.cachedTokens += (sessionData.cacheReadTokens || 0);
 lastMonthStats.sessions += 1;
 lastMonthStats.interactions += interactions;
 addEditorUsage(lastMonthStats.editorUsage, editorType, tokens);
