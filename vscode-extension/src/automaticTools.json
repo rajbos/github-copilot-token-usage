@@ -129,5 +129,9 @@
   "stop_agent",
 
   "mcp_reload",
-  "mcp_validate"
+  "mcp_validate",
+
+  "add_loaded_assembly",
+  "analyze_symbol",
+  "search_decompiled_symbols"
 ]
