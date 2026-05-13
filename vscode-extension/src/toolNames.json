@@ -549,4 +549,8 @@
   ,"mcp_gitnexus_list_repos": "GitNexus MCP: List Repos"
   ,"mcp_gitnexus_query": "GitNexus MCP: Query"
   ,"slidev_getSlideContent": "Slidev: Get Slide Content"
+  ,"mcp__GitLab__get_mcp_server_version": "GitLab MCP: Get MCP Server Version"
+  ,"mcp__plugin_figma_figma__get_design_context": "Figma MCP: Get Design Context"
+  ,"mcp__plugin_figma_figma__get_metadata": "Figma MCP: Get Metadata"
+  ,"mcp__plugin_figma_figma__get_screenshot": "Figma MCP: Get Screenshot"
 }
