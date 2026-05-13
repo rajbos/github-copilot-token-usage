@@ -51,6 +51,10 @@ last30DaysUtcStartKey: string;
 /** Unix timestamp (ms) for the start of the rolling 30-day window.
  *  Session files with mtime < this value are outside the 30-day window. */
 last30DaysStartMs: number;
+/** Unix timestamp (ms) for the first day of the previous calendar month (UTC midnight).
+ *  Used as the file-load cutoff for "Previous Month" stats so April 1–12 sessions
+ *  are not excluded when today falls in the first half of the following month. */
+lastMonthStartMs: number;
 }
 
 /**
@@ -72,6 +76,8 @@ const last30DaysUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMon
 const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
 const last30DaysStartMs = last30DaysUtcStart.getTime();
 
+const lastMonthStartMs = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).getTime();
+
 return {
 todayUtcKey,
 monthUtcStartKey,
@@ -79,6 +85,7 @@ lastMonthUtcStartKey,
 lastMonthUtcEndKey,
 last30DaysUtcStartKey,
 last30DaysStartMs,
+lastMonthStartMs,
 };
 }
 

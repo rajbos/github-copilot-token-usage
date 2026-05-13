@@ -38,7 +38,8 @@ Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1),
 const last30DaysUtcStart = new Date(Date.UTC(year, month - 1, day - 30));
 const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
 const last30DaysStartMs = last30DaysUtcStart.getTime();
-return { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs };
+const lastMonthStartMs = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).getTime();
+return { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs, lastMonthStartMs };
 }
 
 // ── addModelUsage ────────────────────────────────────────────────────────────
@@ -257,6 +258,24 @@ const now = new Date('2024-05-15T12:00:00.000Z');
 const ranges = computeUtcDateRanges(now);
 const expectedMs = new Date(`${ranges.last30DaysUtcStartKey}T00:00:00.000Z`).getTime();
 assert.equal(ranges.last30DaysStartMs, expectedMs);
+});
+
+test('computeUtcDateRanges: lastMonthStartMs equals UTC midnight of lastMonthUtcStartKey', () => {
+const now = new Date('2026-05-13T10:00:00.000Z');
+const ranges = computeUtcDateRanges(now);
+// For May 13 2026, previous month = April, so lastMonthStartMs = 2026-04-01 00:00:00 UTC
+const expectedMs = new Date('2026-04-01T00:00:00.000Z').getTime();
+assert.equal(ranges.lastMonthStartMs, expectedMs);
+assert.equal(ranges.lastMonthUtcStartKey, '2026-04-01');
+});
+
+test('computeUtcDateRanges: lastMonthStartMs is earlier than last30DaysStartMs when today is May 13', () => {
+// On May 13, last30Days starts Apr 13 but previous month starts Apr 1.
+// The file-load cutoff should be Apr 1 (lastMonthStartMs < last30DaysStartMs).
+const now = new Date('2026-05-13T00:00:00.000Z');
+const ranges = computeUtcDateRanges(now);
+assert.ok(ranges.lastMonthStartMs < ranges.last30DaysStartMs,
+'lastMonthStartMs should be before last30DaysStartMs when today is in the first half of the month');
 });
 
 // ── aggregatePeriodStats – rollup path ───────────────────────────────────────
