@@ -569,6 +569,38 @@ test('estimateTokensFromJsonlSession: multi-shutdown accumulates cache tokens pe
 	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cacheCreationTokens, 300, 'cacheCreationTokens must accumulate across shutdowns');
 });
 
+test('estimateTokensFromJsonlSession: no shutdown uses assistant.message outputTokens as fallback', () => {
+	const events = [
+		JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'abc' } }),
+		JSON.stringify({ type: 'assistant.message', data: { outputTokens: 120, content: 'hello' } }),
+		JSON.stringify({ type: 'assistant.message', data: { outputTokens: 80, content: 'world' } })
+	].join('\n');
+	const result = estimateTokensFromJsonlSession(events);
+	assert.ok(result.modelUsage['claude-sonnet-4.6'], 'model entry must exist');
+	assert.equal(result.modelUsage['claude-sonnet-4.6'].outputTokens, 200, 'output tokens must sum from assistant.message events');
+	assert.equal(result.modelUsage['claude-sonnet-4.6'].inputTokens, 0, 'input tokens must be 0 (unavailable for crashed session)');
+});
+
+test('estimateTokensFromJsonlSession: crashed tail adds delta to shutdown data', () => {
+	// Segment 1 completed normally (100 output), segment 2 crashed (50 more output, no shutdown)
+	const events = [
+		JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'abc' } }),
+		JSON.stringify({ type: 'assistant.message', data: { outputTokens: 100 } }),
+		JSON.stringify({
+			type: 'session.shutdown',
+			data: { modelMetrics: { 'claude-sonnet-4.6': { usage: { inputTokens: 500, outputTokens: 100, cacheReadTokens: 400, cacheWriteTokens: 0 } } } }
+		}),
+		// resumed segment — another session.start then crash (no shutdown)
+		JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'def' } }),
+		JSON.stringify({ type: 'assistant.message', data: { outputTokens: 50 } })
+	].join('\n');
+	const result = estimateTokensFromJsonlSession(events);
+	// Shutdown had 100 output; fallback has 150 total → delta = 50
+	assert.equal(result.modelUsage['claude-sonnet-4.6'].outputTokens, 150, 'crashed tail output must be added to shutdown totals');
+	assert.equal(result.modelUsage['claude-sonnet-4.6'].inputTokens, 500, 'input tokens from shutdown must be preserved');
+	assert.equal(result.modelUsage['claude-sonnet-4.6'].cachedReadTokens, 400, 'cache tokens from shutdown must be preserved');
+});
+
 // ── extractCachedTokensFromDebugLog ──────────────────────────────────────
 
 import { extractCachedTokensFromDebugLog } from '../../src/tokenEstimation';

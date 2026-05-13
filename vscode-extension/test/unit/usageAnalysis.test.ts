@@ -933,3 +933,57 @@ test('getModelUsageFromSession: CLI session.shutdown without cache fields leaves
     assert.equal(result['gpt-4o'].cachedReadTokens, undefined, 'cachedReadTokens should remain undefined when not present in session data');
 });
 
+test('getModelUsageFromSession: CLI session without shutdown uses exact assistant.message outputTokens', async () => {
+    const events = [
+        JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'abc' } }),
+        JSON.stringify({ type: 'assistant.message', data: { outputTokens: 300, content: 'response 1' } }),
+        JSON.stringify({ type: 'assistant.message', data: { outputTokens: 150, content: 'response 2' } }),
+    ].join('\n');
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, events);
+    assert.ok(result['claude-sonnet-4.6'], 'model entry must exist');
+    assert.equal(result['claude-sonnet-4.6'].outputTokens, 450, 'output must be exact sum from assistant.message events');
+});
+
+test('getModelUsageFromSession: CLI shutdown present uses shutdown data including cache tokens', async () => {
+    // When session completes normally, assistant.message output sum == shutdown output.
+    // Shutdown data (with cache fields) should be used as the authoritative result.
+    const events = [
+        JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'abc' } }),
+        JSON.stringify({ type: 'assistant.message', data: { outputTokens: 200, content: 'x' } }),
+        JSON.stringify({
+            type: 'session.shutdown',
+            data: {
+                modelMetrics: {
+                    'claude-sonnet-4.6': { usage: { inputTokens: 5000, outputTokens: 200, cacheReadTokens: 4500, cacheWriteTokens: 0 } }
+                }
+            }
+        }),
+    ].join('\n');
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, events);
+    // assistant.message and shutdown both say 200 output → delta=0, shutdown wins
+    assert.equal(result['claude-sonnet-4.6'].outputTokens, 200, 'shutdown output must be used');
+    assert.equal(result['claude-sonnet-4.6'].inputTokens, 5000, 'shutdown input must be used');
+    assert.equal(result['claude-sonnet-4.6'].cachedReadTokens, 4500, 'shutdown cache read must be used');
+});
+
+test('getModelUsageFromSession: CLI crashed tail adds delta output to shutdown totals', async () => {
+    // Segment 1 completed (shutdown); segment 2 crashed (no shutdown, 80 extra output)
+    const events = [
+        JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'abc' } }),
+        JSON.stringify({ type: 'assistant.message', data: { outputTokens: 100 } }),
+        JSON.stringify({
+            type: 'session.shutdown',
+            data: { modelMetrics: { 'claude-sonnet-4.6': { usage: { inputTokens: 2000, outputTokens: 100, cacheReadTokens: 1800, cacheWriteTokens: 0 } } } }
+        }),
+        JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6', sessionId: 'def' } }),
+        JSON.stringify({ type: 'assistant.message', data: { outputTokens: 80 } }),
+    ].join('\n');
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, events);
+    assert.equal(result['claude-sonnet-4.6'].outputTokens, 180, 'crashed tail output delta must be added');
+    assert.equal(result['claude-sonnet-4.6'].inputTokens, 2000, 'shutdown input must be preserved');
+    assert.equal(result['claude-sonnet-4.6'].cachedReadTokens, 1800, 'shutdown cache tokens must be preserved');
+});
+
