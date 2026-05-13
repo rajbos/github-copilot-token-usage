@@ -101,6 +101,7 @@
   ,"mcp_gitkraken_gitlens_commit_composer": "GitKraken MCP: GitLens Commit Composer"
   ,"mcp_git_git_log": "Git MCP: Git Log"
   ,"mcp_git_git_show": "Git MCP: Git Show"
+  ,"mcp_git_git_diff_staged": "Git MCP: Git Diff Staged"
   ,"mcp_pencil_batch_design": "Pencil MCP: Batch Design"
   ,"mcp_pencil_get_editor_state": "Pencil MCP: Get Editor State"
   ,"mcp_pencil_get_guidelines": "Pencil MCP: Get Guidelines"
