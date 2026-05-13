@@ -68,6 +68,8 @@
   ,"mcp_gitkraken_git_checkout": "GitKraken MCP: Git Checkout"
   ,"mcp_gitkraken_git_log_or_diff": "GitKraken MCP: Git Log or Diff"
   ,"mcp_gitkraken_gitkraken_workspace_list": "GitKraken MCP: List Workspaces"
+  ,"mcp_gitkraken_git_push": "GitKraken MCP: Git Push"
+  ,"mcp_gitkraken_gitlens_commit_composer": "GitKraken MCP: GitLens Commit Composer"
   ,"mcp_git_git_log": "Git MCP: Git Log"
   ,"mcp_git_git_show": "Git MCP: Git Show"
   ,"mcp_pencil_batch_design": "Pencil MCP: Batch Design"
@@ -534,4 +536,7 @@
   ,"mcp_ado-remote-mc_wit_work_item_link_write": "Azure DevOps MCP: Work Item Link Write"
   ,"mcp_ado-remote-mc_wit_work_item_write": "Azure DevOps MCP: Work Item Write"
   ,"mssql_list_servers": "MSSQL: List Servers"
+  ,"add_loaded_assembly": "Add Loaded Assembly"
+  ,"analyze_symbol": "Analyze Symbol"
+  ,"search_decompiled_symbols": "Search Decompiled Symbols"
 }
