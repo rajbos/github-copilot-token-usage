@@ -25,6 +25,7 @@
   ,"mcp_io_github_git_list_commits": "GitHub MCP (Local): List Commits"
   ,"mcp_io_github_git_list_code_scanning_alerts": "GitHub MCP (Local): List Code Scanning Alerts"
   ,"mcp_io_github_git_get_repository_tree": "GitHub MCP (Local): Get Repository Tree"
+  ,"mcp_io_github_git_get_job_logs": "GitHub MCP (Local): Get Job Logs"
   ,"mcp_io_github_git_list_tags": "GitHub MCP (Local): List Tags"
   ,"mcp_io_github_git_search_repositories": "GitHub MCP (Local): Search Repositories"
   ,"mcp_io_github_git_create_repository": "GitHub MCP (Local): Create Repository"
