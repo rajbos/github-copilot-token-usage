@@ -112,6 +112,7 @@
 
   "list_bash",
   "read_bash",
+  "write_bash",
   "stop_bash",
   "list_powershell",
   "read_powershell"
