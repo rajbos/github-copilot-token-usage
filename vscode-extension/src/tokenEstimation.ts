@@ -120,6 +120,13 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						}
 						cliShutdownModelUsage[modelName].inputTokens += input;
 						cliShutdownModelUsage[modelName].outputTokens += output;
+						if (cacheRead > 0) {
+							cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + cacheRead;
+						}
+						const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
+						if (cacheWrite > 0) {
+							cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + cacheWrite;
+						}
 					}
 				}
 				// Attribute this shutdown's tokens to its UTC day

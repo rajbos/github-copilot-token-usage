@@ -1544,6 +1544,12 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 									}
 									cliShutdownModelUsage[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 									cliShutdownModelUsage[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
+									if (typeof usage.cacheReadTokens === 'number' && usage.cacheReadTokens > 0) {
+										cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + usage.cacheReadTokens;
+									}
+									if (typeof usage.cacheWriteTokens === 'number' && usage.cacheWriteTokens > 0) {
+										cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + usage.cacheWriteTokens;
+									}
 								}
 							}
 						} else if (event.type === 'user.message' && event.data?.content) {

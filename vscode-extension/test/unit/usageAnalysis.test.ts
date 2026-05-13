@@ -842,3 +842,94 @@ test('analyzeSessionUsage: empty requests array returns empty analysis', async (
     assert.equal(result.toolCalls.total, 0);
 });
 
+// ---------------------------------------------------------------------------
+// getModelUsageFromSession — CLI session.shutdown cache token parsing
+// ---------------------------------------------------------------------------
+
+const FAKE_JSONL_PATH = '/tmp/test-session.jsonl';
+
+test('getModelUsageFromSession: CLI session.shutdown populates cachedReadTokens from cacheReadTokens', async () => {
+    const shutdownEvent = {
+        type: 'session.shutdown',
+        data: {
+            modelMetrics: {
+                'claude-sonnet-4.6': {
+                    requests: { count: 10, cost: 1 },
+                    usage: { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 800, cacheWriteTokens: 0, reasoningTokens: 0 },
+                },
+            },
+        },
+    };
+    const content = [
+        JSON.stringify({ type: 'session.start', data: { selectedModel: 'claude-sonnet-4.6' } }),
+        JSON.stringify(shutdownEvent),
+    ].join('\n');
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, content);
+    assert.equal(result['claude-sonnet-4.6'].inputTokens, 1000);
+    assert.equal(result['claude-sonnet-4.6'].outputTokens, 50);
+    assert.equal(result['claude-sonnet-4.6'].cachedReadTokens, 800, 'cachedReadTokens should be populated from cacheReadTokens');
+    assert.equal(result['claude-sonnet-4.6'].cacheCreationTokens ?? 0, 0, 'cacheCreationTokens should be 0 when cacheWriteTokens is 0');
+});
+
+test('getModelUsageFromSession: CLI session.shutdown populates cacheCreationTokens from cacheWriteTokens', async () => {
+    const shutdownEvent = {
+        type: 'session.shutdown',
+        data: {
+            modelMetrics: {
+                'claude-opus-4.7': {
+                    requests: { count: 5, cost: 2 },
+                    usage: { inputTokens: 500, outputTokens: 30, cacheReadTokens: 0, cacheWriteTokens: 200, reasoningTokens: 0 },
+                },
+            },
+        },
+    };
+    const content = JSON.stringify(shutdownEvent);
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, content);
+    assert.equal(result['claude-opus-4.7'].cacheCreationTokens, 200, 'cacheCreationTokens should be populated from cacheWriteTokens');
+    assert.equal(result['claude-opus-4.7'].cachedReadTokens ?? 0, 0, 'cachedReadTokens should be 0 when cacheReadTokens is 0');
+});
+
+test('getModelUsageFromSession: CLI session.shutdown accumulates cache tokens across multiple shutdown events', async () => {
+    const makeShutdown = (input: number, output: number, cacheRead: number) => JSON.stringify({
+        type: 'session.shutdown',
+        data: {
+            modelMetrics: {
+                'claude-sonnet-4.6': {
+                    requests: { count: 5, cost: 1 },
+                    usage: { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: 0, reasoningTokens: 0 },
+                },
+            },
+        },
+    });
+    const content = [
+        makeShutdown(1000, 50, 800),
+        makeShutdown(600, 30, 500),
+    ].join('\n');
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, content);
+    assert.equal(result['claude-sonnet-4.6'].inputTokens, 1600);
+    assert.equal(result['claude-sonnet-4.6'].outputTokens, 80);
+    assert.equal(result['claude-sonnet-4.6'].cachedReadTokens, 1300, 'cachedReadTokens should accumulate across shutdown events');
+});
+
+test('getModelUsageFromSession: CLI session.shutdown without cache fields leaves cachedReadTokens undefined', async () => {
+    const shutdownEvent = {
+        type: 'session.shutdown',
+        data: {
+            modelMetrics: {
+                'gpt-4o': {
+                    requests: { count: 3, cost: 0 },
+                    usage: { inputTokens: 300, outputTokens: 20 },
+                },
+            },
+        },
+    };
+    const content = JSON.stringify(shutdownEvent);
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, FAKE_JSONL_PATH, content);
+    assert.equal(result['gpt-4o'].inputTokens, 300);
+    assert.equal(result['gpt-4o'].cachedReadTokens, undefined, 'cachedReadTokens should remain undefined when not present in session data');
+});
+

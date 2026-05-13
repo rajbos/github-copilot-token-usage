@@ -521,6 +521,54 @@ test('estimateTokensFromJsonlSession: session.shutdown handles non-numeric usage
         assert.equal(result.actualTokens, 50);
 });
 
+test('estimateTokensFromJsonlSession: session.shutdown populates cachedReadTokens on modelUsage', () => {
+	const events = [
+		JSON.stringify({
+			type: 'session.shutdown',
+			data: {
+				modelMetrics: {
+					'claude-sonnet-4.6': { usage: { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 0 } }
+				}
+			}
+		})
+	].join('\n');
+	const result = estimateTokensFromJsonlSession(events);
+	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cachedReadTokens, 900, 'cachedReadTokens must be populated');
+	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cacheCreationTokens, undefined, 'cacheCreationTokens should be absent when cacheWriteTokens is 0');
+});
+
+test('estimateTokensFromJsonlSession: session.shutdown populates cacheCreationTokens on modelUsage', () => {
+	const events = [
+		JSON.stringify({
+			type: 'session.shutdown',
+			data: {
+				modelMetrics: {
+					'claude-sonnet-4.6': { usage: { inputTokens: 2000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 500 } }
+				}
+			}
+		})
+	].join('\n');
+	const result = estimateTokensFromJsonlSession(events);
+	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cacheCreationTokens, 500, 'cacheCreationTokens must be populated');
+	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cachedReadTokens, undefined, 'cachedReadTokens should be absent when cacheReadTokens is 0');
+});
+
+test('estimateTokensFromJsonlSession: multi-shutdown accumulates cache tokens per model', () => {
+	const events = [
+		JSON.stringify({
+			type: 'session.shutdown',
+			data: { modelMetrics: { 'claude-sonnet-4.6': { usage: { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 800, cacheWriteTokens: 200 } } } }
+		}),
+		JSON.stringify({
+			type: 'session.shutdown',
+			data: { modelMetrics: { 'claude-sonnet-4.6': { usage: { inputTokens: 500, outputTokens: 25, cacheReadTokens: 400, cacheWriteTokens: 100 } } } }
+		})
+	].join('\n');
+	const result = estimateTokensFromJsonlSession(events);
+	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cachedReadTokens, 1200, 'cachedReadTokens must accumulate across shutdowns');
+	assert.equal(result.modelUsage['claude-sonnet-4.6']?.cacheCreationTokens, 300, 'cacheCreationTokens must accumulate across shutdowns');
+});
+
 // ── extractCachedTokensFromDebugLog ──────────────────────────────────────
 
 import { extractCachedTokensFromDebugLog } from '../../src/tokenEstimation';
