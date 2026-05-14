@@ -284,7 +284,7 @@
   ,"mcp_microsoft_pla_browser_tabs": "Playwright MCP: Browser Tabs"
   ,"mcp_microsoft_pla_browser_take_screenshot": "Playwright MCP: Browser Take Screenshot"
   ,"mcp_microsoft_pla_browser_type": "Playwright MCP: Browser Type"
-  ,"mcp_microsoft_pla_browser_console_messages": "Mcp Microsoft Pla Browser Console Messages"
+  ,"mcp_microsoft_pla_browser_console_messages": "MCP Microsoft Playwright Browser Console Messages"
   ,"mcp_microsoft_pla_browser_wait_for": "Mcp Microsoft Pla Browser Wait For"
   ,"mcp_playwright_browser_click": "Playwright MCP: Browser Click"
   ,"mcp_playwright_browser_navigate": "Playwright MCP: Browser Navigate"
