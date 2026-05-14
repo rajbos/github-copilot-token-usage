@@ -1544,6 +1544,16 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 									}
 									cliShutdownModelUsage[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 									cliShutdownModelUsage[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
+									// Cache breakdown — inputTokens is the total (uncached + reads + writes).
+									// Populate these so calculateEstimatedCost can apply the correct discount rates.
+									const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
+									const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
+									if (cacheRead > 0) {
+										cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + cacheRead;
+									}
+									if (cacheWrite > 0) {
+										cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + cacheWrite;
+									}
 								}
 							}
 						} else if (event.type === 'user.message' && event.data?.content) {

@@ -181,7 +181,7 @@ type LocalViewRegressionCase = {
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
-	private static readonly CACHE_VERSION = 45; // Fix Cowork token double-counting: deduplicate by requestId in buildTurns
+	private static readonly CACHE_VERSION = 46; // Restore CLI cache token propagation in tokenEstimation + usageAnalysis (was reverted in 7d9def8)
 	// Maximum length for displaying workspace IDs in diagnostics/customization matrix
 	private static readonly WORKSPACE_ID_DISPLAY_LENGTH = 8;
 
@@ -1782,7 +1782,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<{ stats: DetailedStats; dailyStats: DailyTokenStats[] }> {
 		const now = new Date();
 		// UTC-based date keys for consistent daily attribution (matching server-side)
-		const { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs } = computeUtcDateRanges(now);
+		const { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs, lastMonthStartMs } = computeUtcDateRanges(now);
+		// The file-load cutoff covers both the rolling 30-day window AND the full previous
+		// calendar month, so April 1–12 sessions are not skipped on May 13.
+		const fileLoadCutoffMs = Math.min(last30DaysStartMs, lastMonthStartMs);
 
 		let todayStats = { tokens: 0, thinkingTokens: 0, cachedTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
 		let monthStats = { tokens: 0, thinkingTokens: 0, cachedTokens: 0, estimatedTokens: 0, actualTokens: 0, sessions: 0, interactions: 0, modelUsage: {} as ModelUsage, editorUsage: {} as EditorUsage };
@@ -1814,7 +1817,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const fileStats = await this.statSessionFile(sessionFile);
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
-				if (mtime < last30DaysStartMs) { return null; }
+				if (mtime < fileLoadCutoffMs) { return null; }
 				const cachedData = this.getCachedSessionData(sessionFile);
 				const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
@@ -1848,6 +1851,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				lastMonthUtcEndKey,
 				last30DaysUtcStartKey,
 				last30DaysStartMs,
+				lastMonthStartMs,
 			});
 			todayStats = aggregated.todayStats;
 			monthStats = aggregated.monthStats;
@@ -2170,10 +2174,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		const now = new Date();
 		// UTC-based day keys for consistent period boundaries (matching server-side)
-		const todayUtcKey = now.toISOString().slice(0, 10);
-		const last30DaysUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30)).toISOString().slice(0, 10);
-		const monthUtcStartKey = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
-		const last30DaysStartMs = new Date(last30DaysUtcStartKey).getTime();
+		const { todayUtcKey, last30DaysUtcStartKey, monthUtcStartKey, last30DaysStartMs, lastMonthStartMs } = computeUtcDateRanges(now);
+		const usageAnalysisFileLoadCutoffMs = Math.min(last30DaysStartMs, lastMonthStartMs);
 
 		this.log('🔍 [Usage Analysis] Starting calculation...');
 		this._cacheHits = 0; // Reset cache hit counter
@@ -2286,7 +2288,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const fileStats = await this.statSessionFile(sessionFile);
 				const mtime = fileStats.mtime.getTime();
 				const fileSize = fileStats.size;
-				if (mtime < last30DaysStartMs) { return null; }
+				if (mtime < usageAnalysisFileLoadCutoffMs) { return null; }
 				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
 				return { sessionFile, sessionData, mtime };
 			});

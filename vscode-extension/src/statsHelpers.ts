@@ -51,6 +51,10 @@ last30DaysUtcStartKey: string;
 /** Unix timestamp (ms) for the start of the rolling 30-day window.
  *  Session files with mtime < this value are outside the 30-day window. */
 last30DaysStartMs: number;
+/** Unix timestamp (ms) for the first day of the previous calendar month (UTC midnight).
+ *  Used as the file-load cutoff for "Previous Month" stats so April 1–12 sessions
+ *  are not excluded when today falls in the first half of the following month. */
+lastMonthStartMs: number;
 }
 
 /**
@@ -72,6 +76,8 @@ const last30DaysUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMon
 const last30DaysUtcStartKey = last30DaysUtcStart.toISOString().slice(0, 10);
 const last30DaysStartMs = last30DaysUtcStart.getTime();
 
+const lastMonthStartMs = new Date(Date.UTC(lastMonthLastDay.getUTCFullYear(), lastMonthLastDay.getUTCMonth(), 1)).getTime();
+
 return {
 todayUtcKey,
 monthUtcStartKey,
@@ -79,6 +85,7 @@ lastMonthUtcStartKey,
 lastMonthUtcEndKey,
 last30DaysUtcStartKey,
 last30DaysStartMs,
+lastMonthStartMs,
 };
 }
 
@@ -183,12 +190,16 @@ let addedToLastMonth = false;
 let addedToToday = false;
 
 for (const [dayKey, dayRollup] of Object.entries(sessionData.dailyRollups)) {
-if (dayKey < last30DaysUtcStartKey) { continue; }
+const inLast30Days = dayKey >= last30DaysUtcStartKey;
+const inLastMonth = dayKey >= lastMonthUtcStartKey && dayKey <= lastMonthUtcEndKey;
+// Skip days outside both the rolling 30-day window and the previous calendar month.
+if (!inLast30Days && !inLastMonth) { continue; }
 
 const dayTokens = dayRollup.actualTokens > 0 ? dayRollup.actualTokens : dayRollup.tokens;
 const dayInteractions = dayRollup.interactions;
 
-// Daily chart accumulation
+if (inLast30Days) {
+// Daily chart accumulation (only for last 30 days)
 if (!dailyStatsMap.has(dayKey)) {
 dailyStatsMap.set(dayKey, {
 date: dayKey,
@@ -222,6 +233,7 @@ last30DaysStats.interactions += dayInteractions;
 if (!addedToLast30Days) { last30DaysStats.sessions += 1; addedToLast30Days = true; }
 addEditorUsage(last30DaysStats.editorUsage, editorType, dayTokens);
 addModelUsage(last30DaysStats.modelUsage, dayRollup.modelUsage);
+}
 
 if (dayKey >= monthUtcStartKey) {
 // This calendar month
@@ -246,7 +258,7 @@ if (!addedToToday) { todayStats.sessions += 1; addedToToday = true; }
 addEditorUsage(todayStats.editorUsage, editorType, dayTokens);
 addModelUsage(todayStats.modelUsage, dayRollup.modelUsage);
 }
-} else if (dayKey >= lastMonthUtcStartKey && dayKey <= lastMonthUtcEndKey) {
+} else if (inLastMonth) {
 // Previous calendar month
 lastMonthStats.tokens += dayTokens;
 lastMonthStats.estimatedTokens += dayRollup.tokens;
@@ -260,7 +272,8 @@ addModelUsage(lastMonthStats.modelUsage, dayRollup.modelUsage);
 }
 }
 
-if (!addedToLast30Days) { skippedCount++; }
+// Only count as skipped if the session contributed to neither relevant window.
+if (!addedToLast30Days && !addedToLastMonth) { skippedCount++; }
 } else {
 // ── Fallback: session-level attribution using UTC boundaries ─────
 // Used when the session cache has no per-day rollup data.
@@ -274,9 +287,13 @@ const lastInteractionStr = lastInteraction || null;
 const lastActivity = lastInteractionStr ? new Date(lastInteractionStr) : new Date(mtime);
 const lastActivityUtcKey = lastActivity.toISOString().slice(0, 10);
 
-if (lastActivityUtcKey < last30DaysUtcStartKey) { skippedCount++; continue; }
+const inLast30Days = lastActivityUtcKey >= last30DaysUtcStartKey;
+const inLastMonth = lastActivityUtcKey >= lastMonthUtcStartKey && lastActivityUtcKey <= lastMonthUtcEndKey;
+// Skip sessions outside both the rolling 30-day window and the previous calendar month.
+if (!inLast30Days && !inLastMonth) { skippedCount++; continue; }
 
-// Daily chart accumulation
+if (inLast30Days) {
+// Daily chart accumulation (only for last 30 days)
 if (!dailyStatsMap.has(lastActivityUtcKey)) {
 dailyStatsMap.set(lastActivityUtcKey, {
 date: lastActivityUtcKey,
@@ -310,6 +327,7 @@ last30DaysStats.sessions += 1;
 last30DaysStats.interactions += interactions;
 addEditorUsage(last30DaysStats.editorUsage, editorType, tokens);
 addModelUsage(last30DaysStats.modelUsage, modelUsage);
+}
 
 if (lastActivityUtcKey >= monthUtcStartKey) {
 monthStats.tokens += tokens;
@@ -333,7 +351,7 @@ todayStats.interactions += interactions;
 addEditorUsage(todayStats.editorUsage, editorType, tokens);
 addModelUsage(todayStats.modelUsage, modelUsage);
 }
-} else if (lastActivityUtcKey >= lastMonthUtcStartKey && lastActivityUtcKey <= lastMonthUtcEndKey) {
+} else if (inLastMonth) {
 lastMonthStats.tokens += tokens;
 lastMonthStats.estimatedTokens += estimatedTokens;
 lastMonthStats.actualTokens += actualTokens;
