@@ -315,29 +315,31 @@ jobs:
           )
           tool_ids_json = json.dumps(missing_tools, indent=2)
 
-          prompt = f"""Convert each tool ID in the INPUT array to a friendly display name.
-
-RULES:
-- Replace _, -, . with spaces; split camelCase (readFile -> read File)
-- Title Case all words
-- Keep ALL CAPS: MCP, GITHUB, API, URL, JSON, HTTP, HTTPS, CLI, UI, IO, ID, VSCODE
-- MCP prefix mappings (strip prefix, format action, combine):
-  mcp_io_github_git_ -> "GitHub MCP (Local): <action>"
-  mcp_github_github_ -> "GitHub MCP (Remote): <action>"
-  mcp_microsoft_pla_ -> "Playwright MCP: <action>"
-  mcp_oraios_serena_ -> "Serena: <action>"
-  mcp_gitkraken_ -> "GitKraken MCP: <action>"
-  mcp_io_github_ups_ -> "Context7 MCP: <action>"
-  mcp_microsoftdocs_microsoft_ -> "Microsoft Docs MCP: <action>"
-  other mcp_* -> derive server name from identifier
-
-EXISTING MAPPINGS (follow these patterns):
-{sample_lines}
-
-INPUT:
-{tool_ids_json}
-
-OUTPUT: JSON object only, no explanation."""
+          prompt = "\n".join([
+              "Convert each tool ID in the INPUT array to a friendly display name.",
+              "",
+              "RULES:",
+              "- Replace _, -, . with spaces; split camelCase (readFile -> read File)",
+              "- Title Case all words",
+              "- Keep ALL CAPS: MCP, GITHUB, API, URL, JSON, HTTP, HTTPS, CLI, UI, IO, ID, VSCODE",
+              "- MCP prefix mappings (strip prefix, format action, combine):",
+              '  mcp_io_github_git_ -> "GitHub MCP (Local): <action>"',
+              '  mcp_github_github_ -> "GitHub MCP (Remote): <action>"',
+              '  mcp_microsoft_pla_ -> "Playwright MCP: <action>"',
+              '  mcp_oraios_serena_ -> "Serena: <action>"',
+              '  mcp_gitkraken_ -> "GitKraken MCP: <action>"',
+              '  mcp_io_github_ups_ -> "Context7 MCP: <action>"',
+              '  mcp_microsoftdocs_microsoft_ -> "Microsoft Docs MCP: <action>"',
+              "  other mcp_ prefix -> derive server name from identifier",
+              "",
+              "EXISTING MAPPINGS (follow these patterns):",
+              sample_lines,
+              "",
+              "INPUT:",
+              tool_ids_json,
+              "",
+              "OUTPUT: JSON object only, no explanation.",
+          ])
 
           payload = {{
               "model": "qwen2.5:1.5b",
