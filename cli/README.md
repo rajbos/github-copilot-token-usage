@@ -17,6 +17,18 @@ npm run cli:environmental   # Run environmental command
 npm run cli:fluency         # Run fluency command
 npm run cli:diagnostics     # Run diagnostics command
 npm run cli -- --help       # Run any CLI command
+npm run cli -- segment      # Output compact token string for oh-my-posh
+```
+
+### oh-my-posh segment
+
+The `segment` command outputs a compact token usage string designed for use in shell prompts.
+See [`../omp-segment/README.md`](../omp-segment/README.md) for full setup instructions.
+
+```bash
+node dist/cli.js segment            # Use 15-minute cache (default)
+node dist/cli.js segment --refresh  # Force refresh, bypass cache
+node dist/cli.js segment --hide-zero  # Output nothing when both counts are zero
 ```
 
 ## Requirements

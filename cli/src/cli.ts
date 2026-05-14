@@ -13,6 +13,7 @@ import { diagnosticsCommand } from './commands/diagnostics';
 import { chartCommand } from './commands/chart';
 import { usageAnalysisCommand } from './commands/usage-analysis';
 import { allCommand } from './commands/all';
+import { segmentCommand } from './commands/segment';
 import { loadCache, saveCache, disableCache } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -46,5 +47,6 @@ program.addCommand(diagnosticsCommand);
 program.addCommand(chartCommand);
 program.addCommand(usageAnalysisCommand);
 program.addCommand(allCommand);
+program.addCommand(segmentCommand);
 
 program.parse();
