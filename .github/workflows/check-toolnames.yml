@@ -379,6 +379,20 @@ jobs:
                       friendly = s.title()
                   validated[tool] = friendly
 
+              # Post-process: deterministically fix acronyms the 1.5B model often
+              # title-cases (e.g. "Mcp" -> "MCP", "Github" -> "GitHub").
+              # This is more reliable than asking the model to remember the list.
+              ACRONYMS = {
+                  "mcp": "MCP", "github": "GitHub", "api": "API",
+                  "url": "URL", "http": "HTTP", "https": "HTTPS",
+                  "cli": "CLI", "ui": "UI", "io": "IO", "id": "ID",
+                  "vscode": "VSCode", "json": "JSON", "html": "HTML",
+                  "css": "CSS", "sql": "SQL", "git": "Git",
+              }
+              def fix_acronyms(name):
+                  return re.sub(r'\b\w+\b', lambda m: ACRONYMS.get(m.group(0).lower(), m.group(0)), name)
+              validated = {k: fix_acronyms(v) for k, v in validated.items()}
+
               print("=== Validated names ===", file=sys.stderr)
               for k, v in validated.items():
                   print(f"  {k!r} -> {v!r}", file=sys.stderr)
