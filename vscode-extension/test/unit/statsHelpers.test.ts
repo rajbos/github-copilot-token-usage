@@ -349,8 +349,8 @@ assert.equal(result.monthStats.tokens, 300, 'first day of month belongs to this 
 assert.equal(result.lastMonthStats.tokens, 0);
 });
 
-test('aggregatePeriodStats: rollup path – days before 30-day window are excluded', () => {
-const ranges = makeRanges('2025-03-15'); // last30DaysStart = 2025-02-13
+test('aggregatePeriodStats: rollup path – days before 30-day window but in previous month are included in lastMonthStats', () => {
+const ranges = makeRanges('2025-03-15'); // last30DaysStart = 2025-02-13, lastMonth = Feb 2025
 const input: SessionAggregateInput = {
 editorType: 'vscode',
 mtime: new Date('2025-02-10T10:00:00.000Z').getTime(),
@@ -361,8 +361,10 @@ dailyRollups: {
 }),
 };
 const result = aggregatePeriodStats([input], ranges);
-assert.equal(result.last30DaysStats.tokens, 0);
-assert.equal(result.skippedCount, 1);
+assert.equal(result.last30DaysStats.tokens, 0, 'not in last 30 days');
+assert.equal(result.lastMonthStats.tokens, 500, 'Feb 10 is in previous month (Feb)');
+assert.equal(result.skippedCount, 0, 'session counts because it contributed to lastMonth');
+assert.ok(!result.dailyStatsMap.has('2025-02-10'), 'not in daily chart (outside 30-day window)');
 });
 
 test('aggregatePeriodStats: rollup path – partial session straddles 30-day boundary', () => {
@@ -444,8 +446,8 @@ const result = aggregatePeriodStats([input], ranges);
 assert.equal(result.todayStats.tokens, 180, 'actualTokens preferred over estimated');
 });
 
-test('aggregatePeriodStats: fallback – session older than 30 days is skipped', () => {
-const ranges = makeRanges('2025-03-15'); // last30DaysStart = 2025-02-13
+test('aggregatePeriodStats: fallback – session older than 30 days but in previous month is included in lastMonthStats', () => {
+const ranges = makeRanges('2025-03-15'); // last30DaysStart = 2025-02-13, lastMonth = Feb 2025
 const input: SessionAggregateInput = {
 editorType: 'vscode',
 mtime: new Date('2025-02-01T10:00:00.000Z').getTime(),
@@ -453,8 +455,24 @@ lastInteraction: '2025-02-01T10:00:00.000Z',
 sessionData: makeSession({ tokens: 999, interactions: 10 }),
 };
 const result = aggregatePeriodStats([input], ranges);
+assert.equal(result.last30DaysStats.tokens, 0, 'not in last 30 days');
+assert.equal(result.lastMonthStats.tokens, 999, 'Feb 1 is in previous month (Feb)');
+assert.equal(result.skippedCount, 0, 'session counts because it contributed to lastMonth');
+assert.ok(!result.dailyStatsMap.has('2025-02-01'), 'not in daily chart (outside 30-day window)');
+});
+
+test('aggregatePeriodStats: fallback – session from two months ago is skipped entirely', () => {
+const ranges = makeRanges('2025-03-15'); // lastMonth = Feb 2025
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-01-15T10:00:00.000Z').getTime(),
+lastInteraction: '2025-01-15T10:00:00.000Z',
+sessionData: makeSession({ tokens: 999, interactions: 10 }),
+};
+const result = aggregatePeriodStats([input], ranges);
 assert.equal(result.last30DaysStats.tokens, 0);
-assert.equal(result.skippedCount, 1);
+assert.equal(result.lastMonthStats.tokens, 0);
+assert.equal(result.skippedCount, 1, 'Jan session is outside both windows');
 });
 
 // ── UTC midnight boundary ────────────────────────────────────────────────────
@@ -636,4 +654,82 @@ sessionData: makeSession({ tokens: 77, dailyRollups: {} }),
 };
 const result = aggregatePeriodStats([input], ranges);
 assert.equal(result.todayStats.tokens, 77, 'fallback used when dailyRollups is empty');
+});
+
+// ── April 1-12 regression (May-13 scenario) ───────────────────────────────────
+
+test('aggregatePeriodStats: rollup – April 1 day is in lastMonthStats when today is May 13', () => {
+// Regression: previously the early `dayKey < last30DaysUtcStartKey` guard skipped April 1-12.
+const ranges = makeRanges('2026-05-13'); // last30DaysStart = 2026-04-13, lastMonth = April 2026
+const input: SessionAggregateInput = {
+editorType: 'copilot-cli',
+mtime: new Date('2026-04-01T12:00:00.000Z').getTime(),
+sessionData: makeSession({
+dailyRollups: {
+'2026-04-01': { tokens: 1000, actualTokens: 1200, thinkingTokens: 0, interactions: 5, modelUsage: {} },
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+assert.equal(result.lastMonthStats.tokens, 1200, 'April 1 is in previous month (April)');
+assert.equal(result.last30DaysStats.tokens, 0, 'April 1 is before the 30-day window (Apr 13)');
+assert.ok(!result.dailyStatsMap.has('2026-04-01'), 'not in daily chart');
+assert.equal(result.lastMonthStats.sessions, 1);
+assert.equal(result.skippedCount, 0);
+});
+
+test('aggregatePeriodStats: rollup – mixed rollup spanning April 1-12 and April 13-30', () => {
+// Session with activity both in "lastMonth only" and "both windows" ranges.
+const ranges = makeRanges('2026-05-13'); // last30DaysStart = 2026-04-13, lastMonth = April 2026
+const input: SessionAggregateInput = {
+editorType: 'copilot-cli',
+mtime: new Date('2026-04-25T12:00:00.000Z').getTime(),
+sessionData: makeSession({
+dailyRollups: {
+'2026-04-05': { tokens: 300, actualTokens: 0, thinkingTokens: 0, interactions: 3, modelUsage: {} }, // lastMonth only
+'2026-04-20': { tokens: 500, actualTokens: 0, thinkingTokens: 0, interactions: 5, modelUsage: {} }, // both windows
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+assert.equal(result.lastMonthStats.tokens, 800, 'both April 5 and April 20 count toward last month');
+assert.equal(result.last30DaysStats.tokens, 500, 'only April 20 is within last 30 days');
+assert.ok(result.dailyStatsMap.has('2026-04-20'), 'April 20 in daily chart');
+assert.ok(!result.dailyStatsMap.has('2026-04-05'), 'April 5 not in daily chart');
+assert.equal(result.lastMonthStats.sessions, 1, 'counted once in lastMonth');
+assert.equal(result.last30DaysStats.sessions, 1, 'counted once in last30Days');
+assert.equal(result.skippedCount, 0);
+});
+
+test('aggregatePeriodStats: rollup – session with only two-months-ago data is fully skipped', () => {
+const ranges = makeRanges('2026-05-13'); // lastMonth = April 2026
+const input: SessionAggregateInput = {
+editorType: 'copilot-cli',
+mtime: new Date('2026-03-15T12:00:00.000Z').getTime(),
+sessionData: makeSession({
+dailyRollups: {
+'2026-03-15': { tokens: 999, actualTokens: 0, thinkingTokens: 0, interactions: 1, modelUsage: {} },
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+assert.equal(result.lastMonthStats.tokens, 0, 'March data not in April lastMonth');
+assert.equal(result.last30DaysStats.tokens, 0);
+assert.equal(result.skippedCount, 1);
+});
+
+test('aggregatePeriodStats: fallback – April 5 session is in lastMonthStats when today is May 13', () => {
+// Regression for fallback path: previously skipped when lastActivityUtcKey < last30DaysUtcStartKey.
+const ranges = makeRanges('2026-05-13'); // last30DaysStart = 2026-04-13, lastMonth = April 2026
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2026-04-05T10:00:00.000Z').getTime(),
+lastInteraction: '2026-04-05T10:00:00.000Z',
+sessionData: makeSession({ tokens: 750, actualTokens: 800, interactions: 8 }),
+};
+const result = aggregatePeriodStats([input], ranges);
+assert.equal(result.lastMonthStats.tokens, 800, 'April 5 is in previous month (April)');
+assert.equal(result.last30DaysStats.tokens, 0, 'April 5 is before the 30-day window');
+assert.ok(!result.dailyStatsMap.has('2026-04-05'), 'not in daily chart');
+assert.equal(result.skippedCount, 0);
 });
