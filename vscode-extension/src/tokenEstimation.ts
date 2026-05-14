@@ -112,6 +112,7 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						const input = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 						const output = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
 						const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
+						const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
 						cliActualTokens += input + output;
 						cliCacheReadTokens += cacheRead;
 						shutdownTotal += input + output;
@@ -120,6 +121,14 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						}
 						cliShutdownModelUsage[modelName].inputTokens += input;
 						cliShutdownModelUsage[modelName].outputTokens += output;
+						// Cache breakdown — inputTokens is the total (uncached + reads + writes).
+						// Populate these so calculateEstimatedCost can apply the correct discount rates.
+						if (cacheRead > 0) {
+							cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + cacheRead;
+						}
+						if (cacheWrite > 0) {
+							cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + cacheWrite;
+						}
 					}
 				}
 				// Attribute this shutdown's tokens to its UTC day

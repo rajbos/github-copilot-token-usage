@@ -521,6 +521,50 @@ test('estimateTokensFromJsonlSession: session.shutdown handles non-numeric usage
         assert.equal(result.actualTokens, 50);
 });
 
+test('estimateTokensFromJsonlSession: session.shutdown propagates cacheReadTokens/cacheWriteTokens to per-model usage', () => {
+        // Real CLI sessions report inputTokens as the TOTAL (uncached + reads + writes).
+        // The cache breakdown must propagate so calculateEstimatedCost can apply discount rates;
+        // otherwise every token is charged at full input rate, vastly overstating Claude costs.
+        const events = JSON.stringify({
+                type: 'session.shutdown',
+                data: {
+                        modelMetrics: {
+                                'claude-sonnet-4.6': {
+                                        usage: {
+                                                inputTokens: 1_000_000,
+                                                outputTokens: 5_000,
+                                                cacheReadTokens: 900_000,
+                                                cacheWriteTokens: 50_000,
+                                        },
+                                },
+                        },
+                },
+        });
+        const result = estimateTokensFromJsonlSession(events);
+        const usage = result.modelUsage['claude-sonnet-4.6'];
+        assert.ok(usage, 'claude-sonnet-4.6 modelUsage entry should exist');
+        assert.equal(usage.inputTokens, 1_000_000);
+        assert.equal(usage.outputTokens, 5_000);
+        assert.equal(usage.cachedReadTokens, 900_000);
+        assert.equal(usage.cacheCreationTokens, 50_000);
+});
+
+test('estimateTokensFromJsonlSession: session.shutdown without cache fields leaves cache breakdown undefined', () => {
+        const events = JSON.stringify({
+                type: 'session.shutdown',
+                data: {
+                        modelMetrics: {
+                                'gpt-5.4': { usage: { inputTokens: 100, outputTokens: 50 } },
+                        },
+                },
+        });
+        const result = estimateTokensFromJsonlSession(events);
+        const usage = result.modelUsage['gpt-5.4'];
+        assert.ok(usage);
+        assert.equal(usage.cachedReadTokens, undefined);
+        assert.equal(usage.cacheCreationTokens, undefined);
+});
+
 // ── extractCachedTokensFromDebugLog ──────────────────────────────────────
 
 import { extractCachedTokensFromDebugLog } from '../../src/tokenEstimation';
