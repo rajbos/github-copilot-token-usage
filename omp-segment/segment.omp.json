@@ -1,0 +1,16 @@
+{
+  "_comment": "Paste this segment object into a 'segments' array inside a block in your oh-my-posh theme file.",
+  "_comment2": "Requires: ai-engineering-fluency CLI installed globally (npm install -g @rajbos/ai-engineering-fluency)",
+  "_comment3": "The Copilot icon (\\uec1e) requires a Nerd Font. Remove it if you do not use one.",
+  "type": "text",
+  "style": "diamond",
+  "leading_diamond": "\ue0b6",
+  "trailing_diamond": "\ue0b4",
+  "foreground": "#ffffff",
+  "background": "#005ca5",
+  "cache": {
+    "duration": "5m",
+    "strategy": "session"
+  },
+  "template": " \uec1e {{ cmd \"ai-engineering-fluency\" \"segment\" }} "
+}
