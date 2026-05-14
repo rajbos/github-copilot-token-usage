@@ -341,35 +341,35 @@ jobs:
               "OUTPUT: JSON object only, no explanation.",
           ])
 
-          payload = {{
+          payload = {
               "model": "qwen2.5:1.5b",
               "prompt": prompt,
               "format": "json",
               "stream": False,
-              "options": {{"temperature": 0, "seed": 42}}
-          }}
+              "options": {"temperature": 0, "seed": 42}
+          }
 
           print("=== Calling Ollama API ===", file=sys.stderr)
           req = urllib.request.Request(
               "http://localhost:11434/api/generate",
               data=json.dumps(payload).encode(),
-              headers={{"Content-Type": "application/json"}}
+              headers={"Content-Type": "application/json"}
           )
 
           try:
               with urllib.request.urlopen(req, timeout=180) as resp:
                   data = json.loads(resp.read())
-              raw_response = data.get("response", "{{}}")
-              print(f"=== SLM response ===\n{{raw_response}}", file=sys.stderr)
+              raw_response = data.get("response", "{}")
+              print(f"=== SLM response ===\n{raw_response}", file=sys.stderr)
 
               try:
                   generated = json.loads(raw_response)
               except json.JSONDecodeError:
-                  m = re.search(r'\{{[^{{}}]*\}}', raw_response, re.DOTALL)
-                  generated = json.loads(m.group(0)) if m else {{}}
+                  m = re.search(r'\{[^{}]*\}', raw_response, re.DOTALL)
+                  generated = json.loads(m.group(0)) if m else {}
 
               # Only keep entries for the tool IDs we asked about; sanitize values.
-              validated = {{}}
+              validated = {}
               for tool in missing_tools:
                   friendly = str(generated.get(tool, "")).strip()
                   if not friendly or len(friendly) > 200:
@@ -381,14 +381,14 @@ jobs:
 
               print("=== Validated names ===", file=sys.stderr)
               for k, v in validated.items():
-                  print(f"  {{k!r}} -> {{v!r}}", file=sys.stderr)
+                  print(f"  {k!r} -> {v!r}", file=sys.stderr)
 
               with open("/tmp/slm-names.json", "w") as f:
                   json.dump(validated, f, indent=2)
               print("✅ SLM generation complete", file=sys.stderr)
 
           except Exception as e:
-              print(f"❌ SLM error: {{e}}", file=sys.stderr)
+              print(f"❌ SLM error: {e}", file=sys.stderr)
               import traceback; traceback.print_exc(file=sys.stderr)
               sys.exit(1)
           PYEOF
