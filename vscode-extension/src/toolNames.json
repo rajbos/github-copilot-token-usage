@@ -45,7 +45,7 @@
   ,"mcp_github_list_issues": "GitHub MCP (Remote): List Issues"
   ,"mcp_github_create_pull_request": "GitHub MCP (Remote): Create Pull Request"
   ,"mcp_github_pull_request_read": "GitHub MCP (Remote): Pull Request Read"
-  ,"mcp_github_list_branches": "Mcp Github List Branches"
+  ,"mcp_github_list_branches": "MCP GitHub List Branches"
   ,"mcp_github_update_pull_request": "MCP GitHub Update Pull Request"
   ,"github-mcp-server-get_file_contents": "GitHub MCP: Get File Contents"
   ,"github-mcp-server-get_job_logs": "GitHub MCP: Get Job Logs"
