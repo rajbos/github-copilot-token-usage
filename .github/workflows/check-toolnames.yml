@@ -256,7 +256,14 @@ jobs:
 
       - name: Install Ollama
         if: steps.extract.outputs.has_missing == 'true'
-        run: curl -fsSL https://ollama.com/install.sh | sh
+        env:
+          OLLAMA_VERSION: "v0.23.4"
+          OLLAMA_SHA256: "c0822ce85413647f8502862c7179740311f271fcff8f21d61c6d352729f4c28d"
+        run: |
+          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst" -o ollama-linux-amd64.tar.zst
+          echo "${OLLAMA_SHA256}  ollama-linux-amd64.tar.zst" | sha256sum -c
+          sudo tar -I zstd -xf ollama-linux-amd64.tar.zst -C /usr
+          rm ollama-linux-amd64.tar.zst
 
       - name: Start Ollama and ensure model is available
         if: steps.extract.outputs.has_missing == 'true'
