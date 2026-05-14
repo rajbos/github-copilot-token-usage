@@ -6,6 +6,84 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.9.0]
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Changes
+* Add friendly names for Claude in Chrome MCP browser tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/804
+* feat: show cached input tokens in log viewer summary bar by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/807
+* chore: remove legacy deprecation popup and clean up publish script by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/809
+* Add friendly names for mcp_git_git_log and mcp_git_git_show by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/810
+* Add friendly display names for ADO MCP, MSSQL, and Copilot search/memory tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/813
+* Hide session efficiency navigation buttons by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/815
+* chore: bump VS Code extension to v0.5.1 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/816
+* feat(cli): add --json output option to stats command by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/818
+* feat: cleanup old code refs by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/821
+* Add friendly names for list_bash, read_bash, stop_bash tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/822
+* chore: remove Session Efficiency references from CHANGELOG by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/823
+* fix(deps): bump fast-uri to >=3.1.2 (closes Dependabot alerts #81 and #82) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/824
+* chore: bump versions for release (vscode-extension v0.5.2, cli v0.1.1) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/825
+* fix(ci): use OIDC provenance for npm publish by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/826
+* fix: always show friendly model names in all display locations by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/828
+* fix(mutation-benchmark): gracefully handle invalid/expired GH_PAT by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/829
+* chore(cli): bump version to v0.1.2 by @github-actions[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/827
+* fix: keep chart in sync with toolbar on background stat refreshes by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/830
+* Add friendly names for EnterPlanMode and ExitPlanMode tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/832
+* feat: add extension points API for companion extension button registration by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/833
+* chore: bump version to 0.6.0 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/834
+* feat: add Copilot Cloud Agent sessions view by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/835
+* feat(chart): add rolling average toggle for Total Tokens and Est. Cost views by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/836
+* chore: bump VS Code extension version to 0.7.0 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/842
+* Copilot/fix vscode extension error by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/844
+* chore: exclude stryker.config.mjs and vs-session-sample.json from VSIX by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/843
+* Add diagnostic logging to Details panel creation by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/845
+* chore: release VS Code extension v0.7.1 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/846
+* feat: remove cost estimate row and rename TBB to UBB by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/847
+* feat(vscode): extract cached tokens from Copilot Chat debug logs by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/851
+* diagnostics: move action buttons to top and reduce report height by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/853
+* chore: sync model data from rajbos/github-copilot-model-notifier by @github-actions[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/852
+* feat: team dashboard supports both Azure Storage and Team Server backends by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/854
+* Add friendly display name for `update_pull_request` tool by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/856
+* chore: bump VS Code extension to v0.8.0 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/857
+* refactor: simplify summary card styles by removing actual usage card class by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/859
+* Add missing friendly names for tools (fixes #858) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/864
+* Add 10 missing friendly names for tools by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/865
+* Add missing friendly names for tools (fixes #862) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/866
+* Add friendly name for mcp_io_github_git_get_job_logs tool by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/867
+* Add missing friendly display names for 32 tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/868
+* Add friendly names for Azure MCP Server tools by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/872
+* Add friendly name for `mcp_git_git_diff_staged` by @Copilot in https://github.com/rajbos/ai-engineering-fluency/pull/873
+* feat: add SLM-powered job to generate friendly tool names from issues by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/875
+* Add .github/github-app.yml with session setup scripts by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/878
+* fix: correct Python dict syntax in add-toolnames-with-slm generate step by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/877
+* fix: populate cache tokens from CLI session.shutdown events by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/869
+* feat: add oh-my-posh segment command and Copilot CLI statusline support by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/876
+* feat: add 14 friendly tool name(s) from issue #874 by @github-actions[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/879
+* feat: post-process SLM output to fix acronym capitalization (MCP, GitHub, etc.) by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/880
+* fix: pin Ollama install to versioned GitHub release with SHA256 verification by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/881
+* chore: bump VS Code extension version to 0.9.0 by @rajbos in https://github.com/rajbos/ai-engineering-fluency/pull/883
+* chore(cli): bump version to v0.1.3 by @github-actions[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/882
+### 📦 GitHub Actions Dependencies
+* github-actions(deps): Bump github/codeql-action from 4.35.3 to 4.35.4 in the minor-and-patch-updates group by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/837
+* github-actions(deps): Bump actions/download-artifact from 4.3.0 to 8.0.1 by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/838
+* github-actions(deps): Bump actions/dependency-review-action from 4.9.0 to 5.0.0 by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/840
+* github-actions(deps): Bump actions/cache from 4.2.3 to 5.0.5 by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/841
+* github-actions(deps): Bump gradle/actions from 4.3.1 to 6.1.0 by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/839
+### 📦 Other Dependencies
+* chore(deps): Bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/802
+* chore(deps): Bump puppeteer from 24.42.0 to 24.43.0 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/805
+* chore(deps): Bump hono from 4.12.14 to 4.12.18 in /sharing-server in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/812
+* chore(deps-dev): Bump @types/node from 25.6.0 to 25.6.2 in /cli by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/814
+* chore(deps): Bump fast-xml-builder from 1.1.5 to 1.2.0 in /.github/skills/azure-storage-loader in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/820
+* chore(deps): Bump fast-xml-builder from 1.1.5 to 1.2.0 in /vscode-extension in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/819
+* chore(deps): Bump puppeteer from 24.43.0 to 24.43.1 in /.github/scripts by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/849
+* chore(deps-dev): Bump @types/node from 25.6.2 to 25.7.0 in /cli by @dependabot[bot] in https://github.com/rajbos/ai-engineering-fluency/pull/850
+
+
+**Full Changelog**: https://github.com/rajbos/ai-engineering-fluency/compare/vscode/v0.5.0...vscode/v0.9.0
+
 ## [0.9.0] - 2026-05-14
 
 ### Features
