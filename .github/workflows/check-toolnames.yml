@@ -176,6 +176,13 @@ jobs:
       issues: write
       contents: write
       pull-requests: write
+    services:
+      ollama:
+        image: ollama/ollama:0.23.4
+        ports:
+          - 11434:11434
+        volumes:
+          - /home/runner/.ollama:/root/.ollama
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
@@ -254,23 +261,10 @@ jobs:
           key: ollama-${{ runner.os }}-qwen2.5-1.5b-v1
           restore-keys: ollama-${{ runner.os }}-qwen2.5-1.5b-
 
-      - name: Install Ollama
-        if: steps.extract.outputs.has_missing == 'true'
-        env:
-          OLLAMA_VERSION: "v0.23.4"
-          OLLAMA_SHA256: "c0822ce85413647f8502862c7179740311f271fcff8f21d61c6d352729f4c28d"
-        run: |
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst" -o ollama-linux-amd64.tar.zst
-          echo "${OLLAMA_SHA256}  ollama-linux-amd64.tar.zst" | sha256sum -c
-          sudo tar -I zstd -xf ollama-linux-amd64.tar.zst -C /usr
-          rm ollama-linux-amd64.tar.zst
-
-      - name: Start Ollama and ensure model is available
+      - name: Ensure Ollama model is available
         if: steps.extract.outputs.has_missing == 'true'
         run: |
-          export OLLAMA_MODELS="$HOME/.ollama/models"
-          ollama serve &
-          echo "Waiting for Ollama to be ready..."
+          echo "Waiting for Ollama service to be ready..."
           for i in {1..30}; do
             if curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1; then
               echo "Ollama is ready (attempt $i)"
@@ -279,11 +273,16 @@ jobs:
             sleep 2
           done
           curl -fsS http://localhost:11434/api/tags >/dev/null
-          if ! ollama list 2>/dev/null | grep -q "qwen2.5:1.5b"; then
-            echo "Pulling qwen2.5:1.5b model..."
-            ollama pull qwen2.5:1.5b
-          else
+          if curl -fsS http://localhost:11434/api/tags | \
+              python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if any('qwen2.5:1.5b' in m['name'] for m in d.get('models',[])) else 1)" \
+              2>/dev/null; then
             echo "Model qwen2.5:1.5b already available in cache"
+          else
+            echo "Pulling qwen2.5:1.5b model..."
+            curl -X POST http://localhost:11434/api/pull \
+              -H "Content-Type: application/json" \
+              -d '{"name":"qwen2.5:1.5b","stream":false}' \
+              --max-time 600
           fi
 
       - name: Generate friendly names with SLM
