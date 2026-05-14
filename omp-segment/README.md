@@ -272,6 +272,131 @@ If you'd like to contribute this as a **native Go segment** to the oh-my-posh pr
 
 ---
 
+## GitHub Copilot CLI Statusline (Experimental)
+
+GitHub Copilot CLI has an experimental `STATUS_LINE` feature that calls a local command and renders its output at the bottom of the Copilot terminal UI. This folder includes ready-to-use scripts that combine the standard Copilot session data (context tokens, session duration, line changes) with your total daily / 30-day token usage from `ai-engineering-fluency`.
+
+> **Credit:** Setup pattern from [Scott Hanselman's gist](https://gist.github.com/shanselman/9623ac74888a07ba82f63f5310fda11b).
+
+Example statusline:
+
+```
+main +2/-1 > ctx 123.5k/200.0k > ######.... > 00:12:34 > +42/-8 > 12.9M today · 1443.5M 30d
+```
+
+### Files
+
+| File | Purpose |
+|---|---|
+| [`statusline.cmd`](./statusline.cmd) | Windows wrapper — points `statusLine.command` at the PowerShell script |
+| [`statusline.ps1`](./statusline.ps1) | Reads Copilot's JSON stdin, sets env vars, calls `ai-engineering-fluency segment`, renders via oh-my-posh |
+| [`statusline.omp.json`](./statusline.omp.json) | Compact oh-my-posh theme — git, context gauge, duration, changes, token totals |
+
+### Requirements
+
+In addition to the [prerequisites above](#prerequisites):
+
+- **GitHub Copilot CLI** with the experimental `STATUS_LINE` feature flag
+- **oh-my-posh** available on `PATH` (`oh-my-posh version` should return output)
+
+### Setup
+
+#### Step 1 — Copy the files to your Copilot folder
+
+```powershell
+$dest = "$env:USERPROFILE\.copilot"
+New-Item -ItemType Directory -Force $dest | Out-Null
+
+# Adjust the source path to match where you cloned this repo
+$src = "path\to\ai-engineering-fluency\omp-segment"
+Copy-Item "$src\statusline.cmd"      $dest
+Copy-Item "$src\statusline.ps1"      $dest
+Copy-Item "$src\statusline.omp.json" $dest
+```
+
+#### Step 2 — Edit `%USERPROFILE%\.copilot\settings.json`
+
+Create or update the file (replace `YOURUSER` with your Windows username):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:\\Users\\YOURUSER\\.copilot\\statusline.cmd",
+    "padding": 1
+  },
+  "feature_flags": {
+    "enabled": ["STATUS_LINE"]
+  },
+  "experimental": true
+}
+```
+
+If you already have a `feature_flags.enabled` array, **add** `"STATUS_LINE"` to it instead of replacing the array.
+
+#### Step 3 — Restart Copilot CLI
+
+```
+/restart
+```
+
+### Test Without Copilot
+
+Pipe a sample JSON payload directly to the command to verify output before wiring it into Copilot:
+
+```powershell
+@'
+{
+  "cwd": "C:\\src\\my-repo",
+  "context_window": {
+    "current_context_tokens": 123456,
+    "displayed_context_limit": 200000,
+    "current_context_used_percentage": 61.7
+  },
+  "cost": {
+    "total_duration_ms": 754000,
+    "total_lines_added": 42,
+    "total_lines_removed": 8
+  }
+}
+'@ | & "$env:USERPROFILE\.copilot\statusline.cmd"
+```
+
+Expected output (appearance depends on your Nerd Font):
+
+```
+main +2/-1 > ctx 123.5k/200.0k > ######.... > 00:12:34 > +42/-8 > 12.9M today · 1443.5M 30d
+```
+
+### Customising the Theme
+
+Open `%USERPROFILE%\.copilot\statusline.omp.json` to adjust colours, icons, or segments.
+
+To use Nerd Font glyphs instead of plain ASCII separators, replace the diamond and powerline values:
+
+```json
+"leading_diamond": "\ue0b6",
+"trailing_diamond": "\ue0b0",
+"powerline_symbol": "\ue0b0"
+```
+
+> **Keep the theme small.** The statusline must render quickly — remove any segment that makes network calls or scans large directories.
+
+### How the Token Cache Works Here
+
+In the standard shell prompt setup, oh-my-posh's segment-level `cache` block prevents calling the CLI on every keystroke. That OMP cache **does not apply** in the Copilot CLI statusline context — each Copilot status refresh calls the script fresh.
+
+What does help is the CLI's own segment cache (`~/.copilot-token-tracker/omp-segment-cache.json`, default 15-minute TTL). After the first call, subsequent statusline renders return the cached value in ~150 ms instead of the full ~7 s cold parse.
+
+Tune the TTL with the `--ttl` flag inside `statusline.ps1` if you want more or less freshness:
+
+```powershell
+# Inside statusline.ps1 — change the ai-engineering-fluency segment call:
+$tokenOutput = & ai-engineering-fluency segment --ttl 5 2>$null   # refresh every 5 min
+```
+
+---
+
 ## Related
 
 - [AI Engineering Fluency CLI docs](../docs/cli/README.md)

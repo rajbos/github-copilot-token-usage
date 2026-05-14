@@ -1,0 +1,66 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json",
+  "version": 3,
+  "final_space": false,
+  "blocks": [
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "type": "git",
+          "style": "diamond",
+          "leading_diamond": "<",
+          "trailing_diamond": ">",
+          "foreground": "#193549",
+          "background": "#FFA500",
+          "template": " {{ .HEAD }}{{ if .Working.Changed }} +{{ .Working.String }}{{ end }} ",
+          "properties": {
+            "fetch_status": true,
+            "fetch_upstream_icon": true
+          }
+        },
+        {
+          "type": "text",
+          "style": "powerline",
+          "powerline_symbol": ">",
+          "foreground": "#193549",
+          "background": "#FFA500",
+          "template": " ctx {{ .Env.COPILOT_STATUS_CONTEXT }} "
+        },
+        {
+          "type": "text",
+          "style": "powerline",
+          "powerline_symbol": ">",
+          "foreground": "#ffffff",
+          "background": "#6CA35E",
+          "template": " {{ .Env.COPILOT_STATUS_GAUGE }} "
+        },
+        {
+          "type": "text",
+          "style": "powerline",
+          "powerline_symbol": ">",
+          "foreground": "#ffffff",
+          "background": "#0184bc",
+          "template": " {{ .Env.COPILOT_STATUS_DURATION }} "
+        },
+        {
+          "type": "text",
+          "style": "powerline",
+          "powerline_symbol": ">",
+          "foreground": "#ffffff",
+          "background": "#a1108c",
+          "template": "{{ if .Env.COPILOT_STATUS_CHANGES }} {{ .Env.COPILOT_STATUS_CHANGES }} {{ end }}"
+        },
+        {
+          "type": "text",
+          "style": "diamond",
+          "trailing_diamond": ">",
+          "foreground": "#ffffff",
+          "background": "#005ca5",
+          "template": "{{ if .Env.COPILOT_TOKEN_USAGE }}  {{ .Env.COPILOT_TOKEN_USAGE }} {{ end }}"
+        }
+      ]
+    }
+  ]
+}
