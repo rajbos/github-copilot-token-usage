@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Usage analysis functions for session data processing.
  * Analysis and aggregation functions extracted from CopilotTokenTracker.
  */
@@ -1484,9 +1484,6 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 			let isDeltaBased = false;
 			// For CLI (non-delta) sessions: capture exact per-model usage from session.shutdown
 			let cliShutdownModelUsage: ModelUsage | null = null;
-			// Crash-recovery: exact per-model output tokens from assistant.message events.
-			// Used when session.shutdown is missing, or to recover a crashed tail segment.
-			const fallbackMessageOutputTokens: { [model: string]: number } = {};
 
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
@@ -1547,24 +1544,12 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 									}
 									cliShutdownModelUsage[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 									cliShutdownModelUsage[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
-									if (typeof usage.cacheReadTokens === 'number' && usage.cacheReadTokens > 0) {
-										cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + usage.cacheReadTokens;
-									}
-									if (typeof usage.cacheWriteTokens === 'number' && usage.cacheWriteTokens > 0) {
-										cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + usage.cacheWriteTokens;
-									}
 								}
 							}
 						} else if (event.type === 'user.message' && event.data?.content) {
 							modelUsage[model].inputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
-						} else if (event.type === 'assistant.message') {
-							if (typeof event.data?.outputTokens === 'number') {
-								// Use exact API-reported output tokens (always present in CLI sessions)
-								modelUsage[model].outputTokens += event.data.outputTokens;
-								fallbackMessageOutputTokens[model] = (fallbackMessageOutputTokens[model] ?? 0) + event.data.outputTokens;
-							} else if (event.data?.content) {
-								modelUsage[model].outputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
-							}
+						} else if (event.type === 'assistant.message' && event.data?.content) {
+							modelUsage[model].outputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
 						} else if (event.type === 'tool.result' && event.data?.output) {
 							// Tool outputs are typically input context
 							modelUsage[model].inputTokens += estimateTokensFromText(event.data.output, model, deps.tokenEstimators);
@@ -1575,27 +1560,9 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 				}
 			}
 
-			// If CLI session.shutdown provided exact per-model data, use it instead of estimates.
-			// Also recover any crashed tail: if assistant.message output exceeds shutdown output
-			// for a model, that delta came from a final segment that never wrote a shutdown event.
+			// If CLI session.shutdown provided exact per-model data, use it instead of estimates
 			if (!isDeltaBased && cliShutdownModelUsage) {
-				for (const [model, fallbackOutput] of Object.entries(fallbackMessageOutputTokens)) {
-					const shutdownOutput = cliShutdownModelUsage[model]?.outputTokens ?? 0;
-					const delta = fallbackOutput - shutdownOutput;
-					if (delta > 0) {
-						if (!cliShutdownModelUsage[model]) {
-							cliShutdownModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-						}
-						cliShutdownModelUsage[model] = { ...cliShutdownModelUsage[model], outputTokens: cliShutdownModelUsage[model].outputTokens + delta };
-					}
-				}
 				return cliShutdownModelUsage;
-			}
-
-			// No shutdown and not delta: return best-effort estimates.
-			// Output tokens come from exact API-reported values (when available); input from text estimates.
-			if (!isDeltaBased) {
-				return modelUsage;
 			}
 
 			// For delta-based formats, extract actual usage from reconstructed state

@@ -137,12 +137,13 @@ test('getTokensFromClaudeCodeSession: counts actual API tokens', () => {
 	}
 });
 
-test('getTokensFromClaudeCodeSession: de-duplicates by requestId', () => {
+test('getTokensFromClaudeCodeSession: de-duplicates streaming fragments by message.id (last-wins)', () => {
 	const events = [
 		{
 			type: 'assistant',
 			requestId: 'req_001',
 			message: {
+				id: 'msg_001',
 				model: 'claude-sonnet-4-6',
 				content: [{ type: 'text', text: 'streaming...' }],
 				stop_reason: null,
@@ -154,6 +155,7 @@ test('getTokensFromClaudeCodeSession: de-duplicates by requestId', () => {
 			type: 'assistant',
 			requestId: 'req_001',
 			message: {
+				id: 'msg_001',
 				model: 'claude-sonnet-4-6',
 				content: [{ type: 'text', text: 'complete response' }],
 				stop_reason: 'end_turn',
@@ -166,7 +168,7 @@ test('getTokensFromClaudeCodeSession: de-duplicates by requestId', () => {
 	const filePath = createTempSession(events);
 	try {
 		const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
-		// Only the final event (stop_reason: 'end_turn') should be counted: 20 + 100 = 120
+		// Last-wins on message.id: final event (20+100=120) supersedes streaming fragment
 		assert.equal(result.tokens, 120);
 	} finally {
 		cleanup(filePath);
@@ -380,12 +382,13 @@ test('getTokensFromClaudeCodeSession: handles missing usage object', () => {
         }
 });
 
-test('getTokensFromClaudeCodeSession: skips streaming fragments without stop_reason', () => {
+test('getTokensFromClaudeCodeSession: last-wins on message.id correctly handles streaming fragments', () => {
         const events = [
                 {
                         type: 'assistant',
                         requestId: 'req_001',
                         message: {
+                                id: 'msg_001',
                                 model: 'claude-sonnet-4-6',
                                 stop_reason: null,
                                 usage: { input_tokens: 5, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
@@ -395,6 +398,7 @@ test('getTokensFromClaudeCodeSession: skips streaming fragments without stop_rea
                         type: 'assistant',
                         requestId: 'req_001',
                         message: {
+                                id: 'msg_001',
                                 model: 'claude-sonnet-4-6',
                                 stop_reason: undefined,
                                 usage: { input_tokens: 8, output_tokens: 15, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
@@ -404,6 +408,7 @@ test('getTokensFromClaudeCodeSession: skips streaming fragments without stop_rea
                         type: 'assistant',
                         requestId: 'req_001',
                         message: {
+                                id: 'msg_001',
                                 model: 'claude-sonnet-4-6',
                                 stop_reason: 'end_turn',
                                 usage: { input_tokens: 20, output_tokens: 100, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
@@ -414,7 +419,7 @@ test('getTokensFromClaudeCodeSession: skips streaming fragments without stop_rea
         const filePath = createTempSession(events);
         try {
                 const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
-                // Only the final event with stop_reason='end_turn' should count
+                // Last-wins: final event (stop_reason='end_turn', 20+100=120) supersedes earlier fragments
                 assert.equal(result.tokens, 120);
         } finally {
                 cleanup(filePath);
@@ -607,6 +612,121 @@ test('getClaudeCodeSessionMeta: extracts timestamps without ai-title', () => {
                 assert.equal(meta!.title, undefined);
                 assert.equal(meta!.firstInteraction, '2026-03-27T22:47:31.000Z');
                 assert.equal(meta!.lastInteraction, '2026-03-27T22:48:00.000Z');
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+// ── message.id dedup — crashed sessions and no-requestId duplicates ──────
+
+test('getTokensFromClaudeCodeSession: crashed session uses partial tokens from last known event', () => {
+        // Session crashed before stop_reason was written — only streaming fragments available.
+        // last-wins on message.id means we use the last fragment's token counts (partial but better than 0).
+        const events = [
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_crash',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: null,
+                                usage: { input_tokens: 5, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                },
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_crash',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: null,
+                                usage: { input_tokens: 15, output_tokens: 40, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
+                // Last event wins: 15+40=55 (not 5+10+15+40=70)
+                assert.equal(result.tokens, 55);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getTokensFromClaudeCodeSession: de-duplicates no-requestId events sharing a message.id', () => {
+        // Events without requestId can still have duplicate message.ids (Claude Code write-on-append).
+        // Previously these were double-counted because only requestId-based dedup existed.
+        const events = [
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_dup',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn',
+                                usage: { input_tokens: 10, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                },
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_dup',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn',
+                                usage: { input_tokens: 10, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                },
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_unique',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: 'end_turn',
+                                usage: { input_tokens: 5, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const result = claudeCode.getTokensFromClaudeCodeSession(filePath);
+                // msg_dup deduplicated to 60, msg_unique adds 25 → total 85 (not 60+60+25=145)
+                assert.equal(result.tokens, 85);
+        } finally {
+                cleanup(filePath);
+        }
+});
+
+test('getClaudeCodeModelUsage: crashed session contributes partial tokens per model', () => {
+        const events = [
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_crash',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: null,
+                                usage: { input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 5, cache_read_input_tokens: 100 }
+                        }
+                },
+                {
+                        type: 'assistant',
+                        message: {
+                                id: 'msg_crash',
+                                model: 'claude-sonnet-4-6',
+                                stop_reason: null,
+                                usage: { input_tokens: 15, output_tokens: 30, cache_creation_input_tokens: 5, cache_read_input_tokens: 200 }
+                        }
+                }
+        ];
+
+        const filePath = createTempSession(events);
+        try {
+                const modelUsage = claudeCode.getClaudeCodeModelUsage(filePath);
+                // Last event wins: input=15+5+200=220, output=30, cacheCreation=5, cachedRead=200
+                assert.ok(modelUsage['claude-sonnet-4.6']);
+                assert.equal(modelUsage['claude-sonnet-4.6'].inputTokens, 220);
+                assert.equal(modelUsage['claude-sonnet-4.6'].outputTokens, 30);
+                assert.equal(modelUsage['claude-sonnet-4.6'].cacheCreationTokens, 5);
+                assert.equal(modelUsage['claude-sonnet-4.6'].cachedReadTokens, 200);
         } finally {
                 cleanup(filePath);
         }

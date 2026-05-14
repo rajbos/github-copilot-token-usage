@@ -551,12 +551,6 @@ function aggregateIntoPeriod(period: PeriodStats, data: SessionData, fraction: n
 		}
 		period.modelUsage[model].inputTokens += Math.round(usage.inputTokens * fraction);
 		period.modelUsage[model].outputTokens += Math.round(usage.outputTokens * fraction);
-		if (usage.cachedReadTokens) {
-			period.modelUsage[model].cachedReadTokens = (period.modelUsage[model].cachedReadTokens ?? 0) + Math.round(usage.cachedReadTokens * fraction);
-		}
-		if (usage.cacheCreationTokens) {
-			period.modelUsage[model].cacheCreationTokens = (period.modelUsage[model].cacheCreationTokens ?? 0) + Math.round(usage.cacheCreationTokens * fraction);
-		}
 	}
 
 	// Track interactions proportionally for the running average
@@ -744,8 +738,6 @@ export async function calculateDailyStats(sessionFiles: string[]): Promise<{
 					}
 					dailyEntry.modelUsage[model].inputTokens += Math.round(usage.inputTokens * fraction);
 					dailyEntry.modelUsage[model].outputTokens += Math.round(usage.outputTokens * fraction);
-					if (usage.cachedReadTokens) { dailyEntry.modelUsage[model].cachedReadTokens = (dailyEntry.modelUsage[model].cachedReadTokens ?? 0) + Math.round(usage.cachedReadTokens * fraction); }
-					if (usage.cacheCreationTokens) { dailyEntry.modelUsage[model].cacheCreationTokens = (dailyEntry.modelUsage[model].cacheCreationTokens ?? 0) + Math.round(usage.cacheCreationTokens * fraction); }
 				}
 				const editor = data.editorSource;
 				if (!dailyEntry.editorUsage[editor]) {
@@ -768,8 +760,6 @@ export async function calculateDailyStats(sessionFiles: string[]): Promise<{
 				}
 				allEntry.modelUsage[model].inputTokens += Math.round(usage.inputTokens * fraction);
 				allEntry.modelUsage[model].outputTokens += Math.round(usage.outputTokens * fraction);
-				if (usage.cachedReadTokens) { allEntry.modelUsage[model].cachedReadTokens = (allEntry.modelUsage[model].cachedReadTokens ?? 0) + Math.round(usage.cachedReadTokens * fraction); }
-				if (usage.cacheCreationTokens) { allEntry.modelUsage[model].cacheCreationTokens = (allEntry.modelUsage[model].cacheCreationTokens ?? 0) + Math.round(usage.cacheCreationTokens * fraction); }
 			}
 			const editor = data.editorSource;
 			if (!allEntry.editorUsage[editor]) {
@@ -839,8 +829,6 @@ export function buildChartPayload(labels: string[], days: DailyEntry[], allDaysM
 			if (!target.modelUsage[m]) { target.modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
 			target.modelUsage[m].inputTokens += u.inputTokens;
 			target.modelUsage[m].outputTokens += u.outputTokens;
-			if (u.cachedReadTokens) { target.modelUsage[m].cachedReadTokens = (target.modelUsage[m].cachedReadTokens ?? 0) + u.cachedReadTokens; }
-			if (u.cacheCreationTokens) { target.modelUsage[m].cacheCreationTokens = (target.modelUsage[m].cacheCreationTokens ?? 0) + u.cacheCreationTokens; }
 		}
 		for (const [e, u] of Object.entries(src.editorUsage)) {
 			if (!target.editorUsage[e]) { target.editorUsage[e] = { tokens: 0, sessions: 0 }; }

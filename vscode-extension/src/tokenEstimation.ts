@@ -89,11 +89,6 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 	let cliShutdownModelUsage: ModelUsage | null = null;
 	// Per-UTC-day actual token breakdown from shutdown event timestamps
 	const dailyActualTokens: Record<string, number> = {};
-	// Crash-recovery fallback: exact per-model output tokens from assistant.message events.
-	// Used when session.shutdown is missing (killed/crashed process) or to detect a crashed
-	// tail segment when some (but not all) session segments completed normally.
-	let fallbackDefaultModel = 'gpt-4o';
-	const fallbackMessageOutputTokens: { [model: string]: number } = {};
 
 	for (const line of lines) {
 		if (!line.trim()) { continue; }
@@ -125,13 +120,6 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						}
 						cliShutdownModelUsage[modelName].inputTokens += input;
 						cliShutdownModelUsage[modelName].outputTokens += output;
-						if (cacheRead > 0) {
-							cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + cacheRead;
-						}
-						const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
-						if (cacheWrite > 0) {
-							cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + cacheWrite;
-						}
 					}
 				}
 				// Attribute this shutdown's tokens to its UTC day
@@ -141,14 +129,6 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						dailyActualTokens[dayKey] = (dailyActualTokens[dayKey] || 0) + shutdownTotal;
 					}
 				}
-			}
-
-			// Track model and output tokens for crash-recovery fallback (non-delta only)
-			if (event.type === 'session.start' && typeof event.data?.selectedModel === 'string') {
-				fallbackDefaultModel = event.data.selectedModel;
-			}
-			if (!isDeltaBased && event.type === 'assistant.message' && typeof event.data?.outputTokens === 'number') {
-				fallbackMessageOutputTokens[fallbackDefaultModel] = (fallbackMessageOutputTokens[fallbackDefaultModel] ?? 0) + event.data.outputTokens;
 			}
 
 			// Handle Copilot CLI / JetBrains event types
@@ -268,34 +248,7 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 		}
 	}
 
-	// Resolve final modelUsage: prefer shutdown data, then handle crashed/killed sessions.
-	let resolvedModelUsage: ModelUsage;
-	if (cliShutdownModelUsage) {
-		resolvedModelUsage = cliShutdownModelUsage;
-		// For multi-segment sessions: if the last segment crashed, assistant.message output
-		// will exceed shutdown output for that model. Add the positive delta to recover it.
-		for (const [model, fallbackOutput] of Object.entries(fallbackMessageOutputTokens)) {
-			const shutdownOutput = resolvedModelUsage[model]?.outputTokens ?? 0;
-			const delta = fallbackOutput - shutdownOutput;
-			if (delta > 0) {
-				if (!resolvedModelUsage[model]) {
-					resolvedModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-				}
-				resolvedModelUsage[model] = { ...resolvedModelUsage[model], outputTokens: resolvedModelUsage[model].outputTokens + delta };
-			}
-		}
-	} else if (!isDeltaBased && Object.keys(fallbackMessageOutputTokens).length > 0) {
-		// No shutdown at all (session was killed/crashed). Use exact output tokens only;
-		// input and cache data are unavailable for crashed sessions.
-		resolvedModelUsage = {};
-		for (const [model, outputTokens] of Object.entries(fallbackMessageOutputTokens)) {
-			resolvedModelUsage[model] = { inputTokens: 0, outputTokens };
-		}
-	} else {
-		resolvedModelUsage = {};
-	}
-
-	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, cacheReadTokens: cliCacheReadTokens, modelUsage: resolvedModelUsage, dailyActualTokens };
+	return { tokens: totalTokens + totalThinkingTokens, thinkingTokens: totalThinkingTokens, actualTokens: finalActualTokens, cacheReadTokens: cliCacheReadTokens, modelUsage: cliShutdownModelUsage ?? {}, dailyActualTokens };
 }
 
 /**
