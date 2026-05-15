@@ -180,6 +180,15 @@ type LocalViewRegressionCase = {
   open: () => Promise<void>;
 };
 
+/** Pre-loaded session file data shared across both analysis passes (detailed + usage analysis). */
+type SessionFilePreload = {
+	sessionFile: string;
+	mtime: number;
+	fileSize: number;
+	sessionData: SessionFileCache;
+	wasCached: boolean;
+};
+
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation
 	private static readonly CACHE_VERSION = 46; // Restore CLI cache token propagation in tokenEstimation + usageAnalysis (was reverted in 7d9def8)
@@ -360,13 +369,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
-	 * Run async tasks over session files with bounded concurrency (default: 20).
+	 * Run async tasks over session files with bounded concurrency (default: 10).
 	 * Prevents I/O saturation when processing hundreds of session files in parallel.
 	 */
 	private async runWithConcurrency<R>(
 		files: string[],
 		fn: (file: string, index: number) => Promise<R>,
-		limit = 20
+		limit = 10
 	): Promise<(R | undefined)[]> {
 		if (files.length === 0) { return []; }
 		const results: (R | undefined)[] = new Array(files.length);
@@ -1018,7 +1027,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		// Update every 5 minutes (cache is saved automatically after each update)
 		this.updateInterval = setInterval(() => {
-			this.updateTokenStats(true); // Silent update from timer
+			this.updateTokenStats(true, true); // Silent background update — skip if a run is already in progress
 		}, 5 * 60 * 1000);
 	}
 
@@ -1526,10 +1535,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	public async updateTokenStats(silent: boolean = false): Promise<DetailedStats | undefined> {
+	public async updateTokenStats(silent: boolean = false, skipIfBusy = false): Promise<DetailedStats | undefined> {
 		// Coalesce concurrent callers onto the same in-flight run to prevent
 		// multiple executions from racing to update the status bar simultaneously.
+		// Background/timer callers pass skipIfBusy=true to drop the call rather than queue.
 		if (this._updateTokenStatsInFlight) {
+			if (skipIfBusy) {
+				this.log('updateTokenStats already in progress, skipping background refresh');
+				return undefined;
+			}
 			this.log('updateTokenStats already in progress, coalescing onto existing run');
 			return this._updateTokenStatsInFlight;
 		}
@@ -1542,13 +1556,61 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
+	/**
+	 * Discover all session files, stat them, and load (or cache-hit) their parsed data.
+	 * Returns a `SessionFilePreload[]` that both calculateDetailedStats and
+	 * calculateUsageAnalysisStats can consume, eliminating a second filesystem scan.
+	 */
+	private async _preloadSessionFiles(
+		cutoffMs: number,
+		progressCallback?: (completed: number, total: number) => void
+	): Promise<{ sessionFiles: string[]; preloaded: SessionFilePreload[] }> {
+		this.cacheManager.clearExpiredCache();
+		const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+		this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
+
+		if (sessionFiles.length === 0) {
+			this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
+			return { sessionFiles, preloaded: [] };
+		}
+
+		const results = await this.runWithConcurrency(sessionFiles, async (sessionFile, i) => {
+			if (progressCallback) { progressCallback(i + 1, sessionFiles.length); }
+			const fileStats = await this.statSessionFile(sessionFile);
+			const mtime = fileStats.mtime.getTime();
+			const fileSize = fileStats.size;
+			if (mtime < cutoffMs) { return null; }
+			const cachedData = this.getCachedSessionData(sessionFile);
+			const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
+			const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+			return { sessionFile, mtime, fileSize, sessionData, wasCached } as SessionFilePreload;
+		});
+
+		const preloaded = results.filter((r): r is SessionFilePreload => r !== null && r !== undefined);
+		this.log(`📦 Preloaded ${preloaded.length}/${sessionFiles.length} session file(s) within date range`);
+		return { sessionFiles, preloaded };
+	}
+
 	private async _runUpdateTokenStats(silent: boolean): Promise<DetailedStats | undefined> {
 		try {
 			this.log('Updating token stats...');
-			const { stats: detailedStats, dailyStats } = await this.calculateDetailedStats(silent ? undefined : (completed, total) => {
+
+			// Compute the date-range cutoff used by both analysis methods so we can do a
+			// single filesystem scan + file-load pass and share the results.
+			const { last30DaysStartMs, lastMonthStartMs } = computeUtcDateRanges(new Date());
+			const fileLoadCutoffMs = Math.min(last30DaysStartMs, lastMonthStartMs);
+
+			const progressCallback = silent ? undefined : (completed: number, total: number) => {
 				const percentage = Math.round((completed / total) * 100);
 				this.setStatusBarText(`$(loading~spin) Analyzing Logs: ${percentage}%`);
-			});
+			};
+
+			// Single preload pass: discover all session files, stat, and parse/cache each one.
+			// Both calculateDetailedStats and calculateUsageAnalysisStats reuse this result,
+			// eliminating duplicate filesystem scans and stat() calls.
+			const { preloaded } = await this._preloadSessionFiles(fileLoadCutoffMs, progressCallback);
+
+			const { stats: detailedStats, dailyStats } = await this.calculateDetailedStats(undefined, preloaded);
 			this.lastDailyStats = dailyStats;
 			// Keep lastFullDailyStats fresh: replace the recent 30-day entries so the chart
 			// shows the same data as the toolbar/details panel on every background refresh.
@@ -1636,7 +1698,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 			// If the analysis panel is open, update its content via postMessage to preserve repo hygiene results
 			if (this.analysisPanel) {
-				const analysisStats = await this.calculateUsageAnalysisStats(false); // Force recalculation on refresh
+				const analysisStats = await this.calculateUsageAnalysisStats(false, preloaded); // Force recalculation on refresh — use preloaded data
 				if (silent) {
 					// Background update: send data via postMessage so repo analysis results are preserved.
 					// The webview re-renders stats but repoAnalysisState (module-level) restores analysis results.
@@ -1780,7 +1842,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		};
 	}
 
-	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void): Promise<{ stats: DetailedStats; dailyStats: DailyTokenStats[] }> {
+	private async calculateDetailedStats(progressCallback?: (completed: number, total: number) => void, preloaded?: SessionFilePreload[]): Promise<{ stats: DetailedStats; dailyStats: DailyTokenStats[] }> {
 		const now = new Date();
 		// UTC-based date keys for consistent daily attribution (matching server-side)
 		const { todayUtcKey, monthUtcStartKey, lastMonthUtcStartKey, lastMonthUtcEndKey, last30DaysUtcStartKey, last30DaysStartMs, lastMonthStartMs } = computeUtcDateRanges(now);
@@ -1797,35 +1859,49 @@ class CopilotTokenTracker implements vscode.Disposable {
 		let dailyStatsMap = new Map<string, DailyTokenStats>();
 
 		try {
-			// Clean expired cache entries
-			this.cacheManager.clearExpiredCache();
-
-			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
-			this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
-
-			if (sessionFiles.length === 0) {
-				this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
-			}
-
 			let cacheHits = 0;
 			let cacheMisses = 0;
 			let skippedFiles = 0;
 
-			// Gather per-file data (stat + cache lookup + details) in parallel with bounded concurrency,
-			// then aggregate results sequentially. This avoids serialising hundreds of cheap cache hits.
-			const sessionDataResults = await this.runWithConcurrency(sessionFiles, async (sessionFile, i) => {
-				if (progressCallback) { progressCallback(i + 1, sessionFiles.length); }
-				const fileStats = await this.statSessionFile(sessionFile);
-				const mtime = fileStats.mtime.getTime();
-				const fileSize = fileStats.size;
-				if (mtime < fileLoadCutoffMs) { return null; }
-				const cachedData = this.getCachedSessionData(sessionFile);
-				const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
-				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-				if (sessionData.interactions === 0) { return null; }
-				const details = await this.getSessionFileDetails(sessionFile);
-				return { sessionFile, sessionData, details, mtime, wasCached };
-			});
+			let sessionDataResults: ({ sessionFile: string; sessionData: SessionFileCache; details: SessionFileDetails; mtime: number; wasCached: boolean } | null | undefined)[];
+
+			if (preloaded) {
+				// Single-pass path: reuse pre-loaded data; only fetch details (cache-backed, fast).
+				// clearExpiredCache and discovery were already handled by _preloadSessionFiles.
+				sessionDataResults = await this.runWithConcurrency(preloaded.map(p => p.sessionFile), async (sessionFile, i) => {
+					const p = preloaded[i];
+					if (p.sessionData.interactions === 0) { return null; }
+					const details = await this.getSessionFileDetails(sessionFile);
+					return { sessionFile, sessionData: p.sessionData, details, mtime: p.mtime, wasCached: p.wasCached };
+				});
+			} else {
+				// Standalone path: discover, stat, load, and get details independently.
+				// Clean expired cache entries
+				this.cacheManager.clearExpiredCache();
+
+				const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+				this.log(`📊 Analyzing ${sessionFiles.length} session file(s)...`);
+
+				if (sessionFiles.length === 0) {
+					this.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
+				}
+
+				// Gather per-file data (stat + cache lookup + details) in parallel with bounded concurrency,
+				// then aggregate results sequentially. This avoids serialising hundreds of cheap cache hits.
+				sessionDataResults = await this.runWithConcurrency(sessionFiles, async (sessionFile, i) => {
+					if (progressCallback) { progressCallback(i + 1, sessionFiles.length); }
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
+					if (mtime < fileLoadCutoffMs) { return null; }
+					const cachedData = this.getCachedSessionData(sessionFile);
+					const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
+					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+					if (sessionData.interactions === 0) { return null; }
+					const details = await this.getSessionFileDetails(sessionFile);
+					return { sessionFile, sessionData, details, mtime, wasCached };
+				});
+			}
 
 			// Build pure-function inputs: map non-null results and track cache stats
 			const aggregateInputs: SessionAggregateInput[] = [];
@@ -2170,7 +2246,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * Calculate usage analysis statistics for today and last 30 days
 	 * @param useCache If true, return cached stats if available. If false, force recalculation.
 	 */
-	private async calculateUsageAnalysisStats(useCache = true): Promise<UsageAnalysisStats> {
+	private async calculateUsageAnalysisStats(useCache = true, preloaded?: SessionFilePreload[]): Promise<UsageAnalysisStats> {
 		// Return cached stats if available and cache is allowed
 		if (useCache && this.lastUsageAnalysisStats) {
 			this.log('🔍 [Usage Analysis] Using cached stats');
@@ -2281,30 +2357,41 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this._customizationFilesCache.clear();
 
 		try {
-			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
-			this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
+			let totalFiles: number;
+			let usageResults: ({ sessionFile: string; sessionData: SessionFileCache; mtime: number } | null | undefined)[];
+
+			if (preloaded) {
+				// Single-pass path: reuse pre-loaded data — no filesystem re-scan needed.
+				this.log(`🔍 [Usage Analysis] Processing ${preloaded.length} preloaded session files`);
+				totalFiles = preloaded.length;
+				usageResults = preloaded.map(p => ({ sessionFile: p.sessionFile, sessionData: p.sessionData, mtime: p.mtime }));
+			} else {
+				const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+				this.log(`🔍 [Usage Analysis] Processing ${sessionFiles.length} session files`);
+				totalFiles = sessionFiles.length;
+
+				// Gather stat + session data in parallel, then aggregate sequentially.
+				// The workspace/customization-cache mutations below are not async, so they are safe
+				// to run in the sequential aggregation pass even after parallel data fetch.
+				usageResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
+					const fileStats = await this.statSessionFile(sessionFile);
+					const mtime = fileStats.mtime.getTime();
+					const fileSize = fileStats.size;
+					if (mtime < usageAnalysisFileLoadCutoffMs) { return null; }
+					const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
+					return { sessionFile, sessionData, mtime };
+				});
+			}
 
 			let processed = 0;
-			const progressInterval = Math.max(1, Math.floor(sessionFiles.length / 20)); // Log every 5%
-
-			// Gather stat + session data in parallel, then aggregate sequentially.
-			// The workspace/customization-cache mutations below are not async, so they are safe
-			// to run in the sequential aggregation pass even after parallel data fetch.
-			const usageResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
-				const fileStats = await this.statSessionFile(sessionFile);
-				const mtime = fileStats.mtime.getTime();
-				const fileSize = fileStats.size;
-				if (mtime < usageAnalysisFileLoadCutoffMs) { return null; }
-				const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-				return { sessionFile, sessionData, mtime };
-			});
+			const progressInterval = Math.max(1, Math.floor(totalFiles / 20)); // Log every 5%
 
 			for (const r of usageResults) {
 				try {
 					if (!r) {
 						processed++;
 						if (processed % progressInterval === 0) {
-							this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
+							this.log(`🔍 [Usage Analysis] Progress: ${processed}/${totalFiles} files (${Math.round(processed / totalFiles * 100)}%)`);
 						}
 						continue;
 					}
@@ -2354,7 +2441,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							// Skip counting this session as it contains no user interactions
 							processed++;
 							if (processed % progressInterval === 0) {
-								this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
+								this.log(`🔍 [Usage Analysis] Progress: ${processed}/${totalFiles} files (${Math.round(processed / totalFiles * 100)}%)`);
 							}
 							continue;
 						}
@@ -2448,7 +2535,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 					processed++;
 					if (processed % progressInterval === 0) {
-						this.log(`🔍 [Usage Analysis] Progress: ${processed}/${sessionFiles.length} files (${Math.round(processed / sessionFiles.length * 100)}%)`);
+						this.log(`🔍 [Usage Analysis] Progress: ${processed}/${totalFiles} files (${Math.round(processed / totalFiles * 100)}%)`);
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file for usage analysis: ${fileError}`);
