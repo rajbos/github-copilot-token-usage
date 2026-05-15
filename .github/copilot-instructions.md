@@ -49,6 +49,19 @@ cd vscode-extension && npm run compile   # VS Code extension
 cd cli && npm run build                   # CLI
 ```
 
+## Documentation
+
+The `docs/` folder contains all project documentation. Start with the index:
+
+📖 **[docs/README.md](docs/README.md)** — Full categorized index of all documentation
+
+Key categories:
+- **Core Reference** — fluency scoring rules, data schemas, trackable metrics
+- **Component Docs** — per-component guides (`cli/`, `vscode-extension/`, `visual-studio/`, `sharing-server/`, `specs/`)
+- **Log File Schemas** — session log formats for all supported editors (`docs/logFilesSchema/`)
+- **Feature Docs** — per-feature documentation (`docs/features/`)
+- **ADRs** — implementation notes and architectural decisions (`docs/adr/`)
+
 ## Development Guidelines
 
 - **Minimal Changes**: Only modify files directly needed for the task. Avoid touching unrelated files.
