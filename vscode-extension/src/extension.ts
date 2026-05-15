@@ -2431,6 +2431,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							}
 							todaySessionsList.push({
 								title: sessionData.title || null,
+								filePath: sessionFile,
 								interactions,
 								toolCalls: analysis.toolCalls.total,
 								inputTokens: inputTok,
@@ -4637,6 +4638,17 @@ usageAnalysis: undefined
 					break;
 				case 'loadAgentSessions':
 					await this.dispatch('loadAgentSessions', () => this.loadAgentSessions());
+					break;
+				case 'openSessionFile':
+					if (message.file) {
+						await this.dispatch('openSessionFile:analysis', async () => {
+							try {
+								await this.showLogViewer(message.file);
+							} catch (err) {
+								vscode.window.showErrorMessage('Could not open log viewer: ' + message.file);
+							}
+						});
+					}
 					break;
 			}
 		});

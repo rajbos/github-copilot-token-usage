@@ -45,6 +45,7 @@ type UsageAnalysisPeriod = {
 
 type TodaySessionSummary = {
 	title: string | null;
+	filePath: string;
 	interactions: number;
 	toolCalls: number;
 	inputTokens: number;
@@ -449,13 +450,14 @@ function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
 	const sorted = sortTodaySessions(sessions);
 	const rows = sorted.map((s, idx) => {
 		const title = escapeHtml(s.title || 'Untitled session');
+		const filePath = escapeHtml(s.filePath || '');
 		const models = s.models.map(m => escapeHtml(m)).join(', ') || '—';
 		const editor = escapeHtml(s.editor || 'unknown');
 		const cost = s.estimatedCost > 0 ? `$${s.estimatedCost.toFixed(4)}` : '—';
 		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24HourTime }) : '—';
 		return `<tr>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary);">${idx + 1}</td>
-			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${title}">${title}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${title}"><a href="#" class="session-title-link" data-file="${filePath}" style="color:var(--link-color, #4fc1ff); text-decoration:none; cursor:pointer;">${title}</a></td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.interactions)}</td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.toolCalls)}</td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.inputTokens)}</td>
@@ -501,6 +503,17 @@ function setupSessionsTableSort(): void {
 	const container = document.getElementById('sessions-table-container');
 	if (!container) { return; }
 	container.addEventListener('click', (e) => {
+		// Handle session title link clicks → open in log viewer
+		const link = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.session-title-link');
+		if (link) {
+			e.preventDefault();
+			const file = link.getAttribute('data-file');
+			if (file) {
+				vscode.postMessage({ command: 'openSessionFile', file });
+			}
+			return;
+		}
+		// Handle sortable column header clicks
 		const th = (e.target as HTMLElement).closest<HTMLElement>('th.sortable');
 		if (!th) { return; }
 		const col = th.getAttribute('data-sort') as SessionSortColumn;

@@ -336,6 +336,7 @@ nonCopilotFiles: CustomizationFileEntry[];
 /** Summary of a single session for the "Today's Sessions" tab. */
 export interface TodaySessionSummary {
   title: string | null;
+  filePath: string;
   interactions: number;
   toolCalls: number;
   inputTokens: number;
