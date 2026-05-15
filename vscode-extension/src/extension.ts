@@ -2010,6 +2010,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.compactNumbers', true);
 	}
 
+	private getUse24HourTimeSetting(): boolean {
+		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.use24HourTime', true);
+	}
+
 	private refreshOpenPanelsForSettingChange(): void {
 		const stats = this.lastDetailedStats;
 		if (!stats) { return; }
@@ -8388,6 +8392,7 @@ ${hashtag}`;
       currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
       suppressedUnknownTools,
       todaySessions: stats.todaySessions || [],
+      use24HourTime: this.getUse24HourTimeSetting(),
     }).replace(/</g, "\\u003c") : 'null';
 
     return `<!DOCTYPE html>

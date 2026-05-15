@@ -70,6 +70,7 @@ type UsageAnalysisStats = {
 	currentWorkspacePaths?: string[];
 	suppressedUnknownTools?: string[];
 	todaySessions?: TodaySessionSummary[];
+	use24HourTime?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -408,6 +409,7 @@ type SessionSortColumn = 'title' | 'interactions' | 'toolCalls' | 'inputTokens' 
 let sessionSortColumn: SessionSortColumn = 'interactions';
 let sessionSortDirection: 'asc' | 'desc' = 'desc';
 let cachedTodaySessions: TodaySessionSummary[] = [];
+let use24HourTime = true;
 
 function getSessionSortIndicator(column: SessionSortColumn): string {
 	if (sessionSortColumn !== column) { return ''; }
@@ -450,7 +452,7 @@ function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
 		const models = s.models.map(m => escapeHtml(m)).join(', ') || '—';
 		const editor = escapeHtml(s.editor || 'unknown');
 		const cost = s.estimatedCost > 0 ? `$${s.estimatedCost.toFixed(4)}` : '—';
-		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24HourTime }) : '—';
 		return `<tr>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary);">${idx + 1}</td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${title}">${title}</td>
@@ -1848,6 +1850,9 @@ window.addEventListener('message', (event) => {
 			if (message.data?.locale) {
 				setFormatLocale(message.data.locale);
 			}
+			if (typeof message.data?.use24HourTime === 'boolean') {
+				use24HourTime = message.data.use24HourTime;
+			}
 			{
 				const sanitized = sanitizeStats(message.data);
 				if (sanitized) {
@@ -2480,6 +2485,7 @@ async function bootstrap(): Promise<void> {
 	console.log('[Usage Analysis] Received locale from extension:', initialData.locale);
 	console.log('[Usage Analysis] Test format 1234567.89 with received locale:', new Intl.NumberFormat(initialData.locale).format(1234567.89));
 	setFormatLocale(initialData.locale);
+	use24HourTime = initialData.use24HourTime !== false;
 	renderLayout(initialData);
 	setupSessionsTableSort();
 
