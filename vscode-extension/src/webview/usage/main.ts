@@ -466,7 +466,7 @@ function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${cost}</td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px;">${editor}</td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:11px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${models}">${models}</td>
-			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; white-space:nowrap;">${time}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; white-space:nowrap; text-align:right;">${time}</td>
 		</tr>`;
 	}).join('');
 
@@ -487,7 +487,7 @@ function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
 					<th class="sortable" data-sort="estimatedCost" style="padding:6px 8px; text-align:right;">Cost${getSessionSortIndicator('estimatedCost')}</th>
 					<th class="sortable" data-sort="editor" style="padding:6px 8px;">Editor${getSessionSortIndicator('editor')}</th>
 					<th style="padding:6px 8px;">Models</th>
-					<th class="sortable" data-sort="lastActivity" style="padding:6px 8px;">Last Active${getSessionSortIndicator('lastActivity')}</th>
+					<th class="sortable" data-sort="lastActivity" style="padding:6px 8px; text-align:right;">Last Active${getSessionSortIndicator('lastActivity')}</th>
 				</tr>
 			</thead>
 			<tbody>
