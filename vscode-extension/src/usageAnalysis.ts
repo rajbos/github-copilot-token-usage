@@ -1499,6 +1499,9 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 			let isDeltaBased = false;
 			// For CLI (non-delta) sessions: capture exact per-model usage from session.shutdown
 			let cliShutdownModelUsage: ModelUsage | null = null;
+			// Real outputTokens from assistant.message events (used when session.shutdown is absent)
+			let cliRealOutputByModel: { [model: string]: number } | null = null;
+			let totalCliToolCalls = 0;
 
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
@@ -1579,11 +1582,20 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 							}
 						} else if (event.type === 'user.message' && event.data?.content) {
 							modelUsage[model].inputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
-						} else if (event.type === 'assistant.message' && event.data?.content) {
-							modelUsage[model].outputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
-						} else if (event.type === 'tool.result' && event.data?.output) {
-							// Tool outputs are typically input context
-							modelUsage[model].inputTokens += estimateTokensFromText(event.data.output, model, deps.tokenEstimators);
+						} else if (event.type === 'assistant.message') {
+							const realOutput = typeof event.data?.outputTokens === 'number' ? event.data.outputTokens : 0;
+							if (realOutput > 0) {
+								if (!cliRealOutputByModel) { cliRealOutputByModel = {}; }
+								cliRealOutputByModel[model] = (cliRealOutputByModel[model] ?? 0) + realOutput;
+							} else if (event.data?.content) {
+								modelUsage[model].outputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
+							}
+						} else if (event.type === 'tool.execution_start') {
+							totalCliToolCalls++;
+						} else if (event.type === 'tool.execution_complete' && (event.data?.result?.content || event.data?.result?.detailedContent)) {
+							// Tool outputs are fed back as input context in the next turn
+							const toolContent = event.data.result.content || event.data.result.detailedContent;
+							modelUsage[model].inputTokens += estimateTokensFromText(String(toolContent), model, deps.tokenEstimators);
 						}
 					}
 				} catch (e) {
@@ -1594,6 +1606,24 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 			// If CLI session.shutdown provided exact per-model data, use it instead of estimates
 			if (!isDeltaBased && cliShutdownModelUsage) {
 				return cliShutdownModelUsage;
+			}
+
+			// No session.shutdown: assistant.message events carry real per-response outputTokens from the API.
+			// Estimate input using observed ratio from completed agent sessions (~130x output for heavy
+			// agent sessions with >20 tool calls, ~50x for moderate, ~10x for light/chat-only).
+			// Cache reads empirically equal ~input tokens (prompt caching caches the full context).
+			if (!isDeltaBased && cliRealOutputByModel) {
+				const inputOutputRatio = totalCliToolCalls > 20 ? 130 : totalCliToolCalls > 5 ? 50 : 10;
+				const estimatedUsage: ModelUsage = {};
+				for (const [m, realOutput] of Object.entries(cliRealOutputByModel)) {
+					const estimatedInput = Math.round(realOutput * inputOutputRatio);
+					estimatedUsage[m] = {
+						inputTokens: estimatedInput,
+						outputTokens: realOutput,
+						cachedReadTokens: estimatedInput,
+					};
+				}
+				return estimatedUsage;
 			}
 
 			// For delta-based formats, extract actual usage from reconstructed state
