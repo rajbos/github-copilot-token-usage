@@ -55,6 +55,7 @@ import type {
   ModelSwitchingAnalysis,
   MissedPotentialWorkspace,
   UsageAnalysisStats,
+  TodaySessionSummary,
   CustomizationTypeStatus,
   WorkspaceCustomizationRow,
   WorkspaceCustomizationMatrix,
@@ -2260,6 +2261,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayStats = emptyPeriod();
 		const last30DaysStats = emptyPeriod();
 		const monthStats = emptyPeriod();
+		const todaySessionsList: TodaySessionSummary[] = [];
 
 		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
 		const workspaceSessionCounts = new Map<string, number>();
@@ -2414,6 +2416,29 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (lastActivityUtcKey === todayUtcKey) {
 							todayStats.sessions++;
 							this.mergeUsageAnalysis(todayStats, analysis);
+
+							// Collect per-session summary for "Today's Sessions" tab
+							const modelUsage = sessionData.modelUsage || {};
+							let inputTok = 0, outputTok = 0, cachedTok = 0;
+							for (const usage of Object.values(modelUsage)) {
+								inputTok += usage.inputTokens || 0;
+								outputTok += usage.outputTokens || 0;
+								cachedTok += usage.cachedReadTokens || 0;
+							}
+							todaySessionsList.push({
+								title: sessionData.title || null,
+								interactions,
+								toolCalls: analysis.toolCalls.total,
+								inputTokens: inputTok,
+								outputTokens: outputTok,
+								thinkingTokens: sessionData.thinkingTokens || 0,
+								cachedTokens: cachedTok,
+								totalTokens: sessionData.actualTokens || sessionData.tokens || 0,
+								estimatedCost: this.calculateEstimatedCost(modelUsage),
+								editor: this.detectEditorSource(sessionFile),
+								models: Object.keys(modelUsage),
+								lastActivity: sessionData.lastInteraction || new Date(mtime).toISOString(),
+							});
 						}
 
 					processed++;
@@ -2621,7 +2646,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			locale: Intl.DateTimeFormat().resolvedOptions().locale,
 			lastUpdated: now,
 			customizationMatrix: this._lastCustomizationMatrix,
-			missedPotential: this._lastMissedPotential || []
+			missedPotential: this._lastMissedPotential || [],
+			todaySessions: todaySessionsList.sort((a, b) => b.interactions - a.interactions)
 		};
 
 		// Cache the result for future use
@@ -8361,6 +8387,7 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
       suppressedUnknownTools,
+      todaySessions: stats.todaySessions || [],
     }).replace(/</g, "\\u003c") : 'null';
 
     return `<!DOCTYPE html>

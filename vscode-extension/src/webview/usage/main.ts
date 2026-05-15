@@ -43,6 +43,21 @@ type UsageAnalysisPeriod = {
 	};
 };
 
+type TodaySessionSummary = {
+	title: string | null;
+	interactions: number;
+	toolCalls: number;
+	inputTokens: number;
+	outputTokens: number;
+	thinkingTokens: number;
+	cachedTokens: number;
+	totalTokens: number;
+	estimatedCost: number;
+	editor: string;
+	models: string[];
+	lastActivity: string;
+};
+
 type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
@@ -54,6 +69,7 @@ type UsageAnalysisStats = {
 	backendConfigured?: boolean;
 	currentWorkspacePaths?: string[];
 	suppressedUnknownTools?: string[];
+	todaySessions?: TodaySessionSummary[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -387,10 +403,60 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 		</table>`;
 }
 
-/**
- * Return a copy of `map` with every key from `keys` present (defaulting to 0).
- * Used to build cross-period tables where every item found in any period is shown in all.
- */
+function renderTodaySessionsTable(sessions: TodaySessionSummary[]): string {
+	if (!sessions || sessions.length === 0) {
+		return '<div style="color: var(--text-secondary); font-size: 13px; padding: 16px;">No sessions recorded today yet.</div>';
+	}
+
+	const rows = sessions.map((s, idx) => {
+		const title = escapeHtml(s.title || 'Untitled session');
+		const models = s.models.map(m => escapeHtml(m)).join(', ') || '—';
+		const editor = escapeHtml(s.editor || 'unknown');
+		const cost = s.estimatedCost > 0 ? `$${s.estimatedCost.toFixed(4)}` : '—';
+		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString() : '—';
+		return `<tr>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary);">${idx + 1}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${title}">${title}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.interactions)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.toolCalls)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.inputTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.outputTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.thinkingTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.cachedTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.totalTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${cost}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px;">${editor}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:11px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${models}">${models}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; white-space:nowrap;">${time}</td>
+		</tr>`;
+	}).join('');
+
+	return `
+		<div style="overflow-x:auto;">
+		<table style="width:100%; border-collapse:collapse; min-width:900px;">
+			<thead>
+				<tr style="color:var(--text-secondary); font-size:11px; text-align:left;">
+					<th style="padding:6px 8px;">#</th>
+					<th style="padding:6px 8px;">Title</th>
+					<th style="padding:6px 8px; text-align:right;">Turns</th>
+					<th style="padding:6px 8px; text-align:right;">Tools</th>
+					<th style="padding:6px 8px; text-align:right;">Input</th>
+					<th style="padding:6px 8px; text-align:right;">Output</th>
+					<th style="padding:6px 8px; text-align:right;">Thinking</th>
+					<th style="padding:6px 8px; text-align:right;">Cached</th>
+					<th style="padding:6px 8px; text-align:right;">Total</th>
+					<th style="padding:6px 8px; text-align:right;">Cost</th>
+					<th style="padding:6px 8px;">Editor</th>
+					<th style="padding:6px 8px;">Models</th>
+					<th style="padding:6px 8px;">Last Active</th>
+				</tr>
+			</thead>
+			<tbody>
+				${rows}
+			</tbody>
+		</table>
+		</div>`;
+}
 function unionFill(map: { [key: string]: number }, keys: string[]): { [key: string]: number } {
 	const result: { [key: string]: number } = { ...map };
 	for (const k of keys) {
@@ -523,6 +589,13 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 			sanitized.missedPotential = raw.missedPotential.filter(
 				(w: any) => w && typeof w === 'object' && typeof w.workspacePath === 'string'
 			) as MissedPotentialWorkspace[];
+		}
+
+		// Pass-through todaySessions (array of session summary objects)
+		if (Array.isArray(raw.todaySessions)) {
+			sanitized.todaySessions = raw.todaySessions.filter(
+				(s: any) => s && typeof s === 'object' && typeof s.interactions === 'number'
+			) as TodaySessionSummary[];
 		}
 
 		return sanitized;
@@ -1286,10 +1359,21 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 			<div class="tab-bar">
 				<button class="tab-button ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity">📊 My Activity</button>
+				<button class="tab-button ${activeTab === 'sessions' ? 'active' : ''}" data-tab="sessions">📋 Today's Sessions</button>
 				<button class="tab-button ${activeTab === 'tools' ? 'active' : ''}" data-tab="tools">🔧 Tools &amp; Integrations</button>
 				<button class="tab-button ${activeTab === 'health' ? 'active' : ''}" data-tab="health">🏗️ Workspace Health</button>
 				<button class="tab-button ${activeTab === 'repos' ? 'active' : ''}" data-tab="repos">🤖 Repository PRs</button>
 				<button class="tab-button ${activeTab === 'agent' ? 'active' : ''}" data-tab="agent">🤖 Cloud Agent</button>
+			</div>
+
+			<div id="tab-panel-sessions" class="tab-panel"${activeTab !== 'sessions' ? ' style="display:none"' : ''}>
+				<div class="section">
+					<div class="section-title"><span>📋</span><span>Today's Sessions</span></div>
+					<div class="section-subtitle">Individual session breakdown for today — sorted by number of interactions (most active first).</div>
+					<div style="margin-top: 12px;">
+						${renderTodaySessionsTable(stats.todaySessions || [])}
+					</div>
+				</div>
 			</div>
 
 			<div id="tab-panel-activity" class="tab-panel"${activeTab !== 'activity' ? ' style="display:none"' : ''}>

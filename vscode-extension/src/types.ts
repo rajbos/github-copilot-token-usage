@@ -333,6 +333,22 @@ nonCopilotFiles: CustomizationFileEntry[];
 }
 
 
+/** Summary of a single session for the "Today's Sessions" tab. */
+export interface TodaySessionSummary {
+  title: string | null;
+  interactions: number;
+  toolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  editor: string;
+  models: string[];
+  lastActivity: string;
+}
+
 export interface UsageAnalysisStats {
 today: UsageAnalysisPeriod;
 last30Days: UsageAnalysisPeriod;
@@ -341,6 +357,7 @@ locale?: string;
 lastUpdated: Date;
 customizationMatrix?: WorkspaceCustomizationMatrix;
 missedPotential?: MissedPotentialWorkspace[];
+todaySessions?: TodaySessionSummary[];
 }
 
 /** Matrix types used for Usage Analysis customization matrix */
