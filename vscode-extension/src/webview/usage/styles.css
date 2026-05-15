@@ -368,3 +368,19 @@ background: var(--bg-tertiary);
 	vertical-align: middle;
 	line-height: 1.4;
 }
+
+/* Sortable table headers */
+.sessions-table th.sortable {
+	cursor: pointer;
+	user-select: none;
+	transition: background 0.1s ease, color 0.1s ease;
+}
+
+.sessions-table th.sortable:hover {
+	background: var(--list-hover-bg);
+	color: var(--link-color);
+}
+
+.sessions-table tr:hover td {
+	background: var(--list-hover-bg);
+}

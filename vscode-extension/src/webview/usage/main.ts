@@ -450,7 +450,7 @@ function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
 		const models = s.models.map(m => escapeHtml(m)).join(', ') || '—';
 		const editor = escapeHtml(s.editor || 'unknown');
 		const cost = s.estimatedCost > 0 ? `$${s.estimatedCost.toFixed(4)}` : '—';
-		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
 		return `<tr>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary);">${idx + 1}</td>
 			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${title}">${title}</td>
@@ -1852,6 +1852,7 @@ window.addEventListener('message', (event) => {
 				const sanitized = sanitizeStats(message.data);
 				if (sanitized) {
 					renderLayout(sanitized);
+					setupSessionsTableSort();
 					renderRepositoryHygienePanels();
 					// Restore repos PR tab if we already fetched data (renderLayout resets the DOM)
 					if (repoPrStatsData) {
@@ -2480,6 +2481,7 @@ async function bootstrap(): Promise<void> {
 	console.log('[Usage Analysis] Test format 1234567.89 with received locale:', new Intl.NumberFormat(initialData.locale).format(1234567.89));
 	setFormatLocale(initialData.locale);
 	renderLayout(initialData);
+	setupSessionsTableSort();
 
 	// Event delegation for suppress-tool buttons (rendered dynamically in the tools section)
 	document.addEventListener('click', (event) => {
