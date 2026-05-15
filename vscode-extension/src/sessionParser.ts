@@ -207,7 +207,7 @@ export function parseSessionFileContent(
 
 	let sessionJson: any | undefined;
 
-	const defaultModel = 'gpt-4o';
+	let defaultModel = 'unknown';
 
 	const ensureModel = (m?: string) => (typeof m === 'string' && m ? m : defaultModel);
 
@@ -269,16 +269,22 @@ export function parseSessionFileContent(
 						continue;
 					}
 					// Per-request model (user can select different model for each request)
-					const requestModel = normalizeModelId(
-						(request as any).modelId ?? (request as any).selectedModel?.identifier ?? (request as any).model,
-						defaultModel
-					);
+					const rawRequestModel = (request as any).modelId ?? (request as any).selectedModel?.identifier ?? (request as any).model;
+					const requestModel = normalizeModelId(rawRequestModel, defaultModel);
 
 					// Delta-based format is authoritative for per-request model selection.
-					// Only allow callback override if it returns a non-default, non-empty model.
-					const callbackModelRaw = getModelFromRequest ? getModelFromRequest(request as any) : undefined;
-					const callbackModel = normalizeModelId(callbackModelRaw, '');
-					const model = callbackModel && callbackModel !== defaultModel ? callbackModel : requestModel;
+					// Only allow callback override when the request has no explicit model
+					// (i.e., requestModel fell through to the session default).
+					let model: string;
+					if (typeof rawRequestModel === 'string' && rawRequestModel.trim()) {
+						// Request has its own model — authoritative, ignore callback
+						model = requestModel;
+					} else {
+						// No per-request model; check callback
+						const callbackModelRaw = getModelFromRequest ? getModelFromRequest(request as any) : undefined;
+						const callbackModel = normalizeModelId(callbackModelRaw, '');
+						model = callbackModel || requestModel;
+					}
 					
 					// Extract user message text
 					const message = (request as any).message;

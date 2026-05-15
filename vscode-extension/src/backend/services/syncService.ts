@@ -436,7 +436,7 @@ export class SyncService {
 				// Track the session-level defaultModel from kind:0 and kind:2/selectedModel events so
 				// that requests without an explicit modelId still resolve to the correct model key
 				// (matching what getModelUsageFromSession stores in cachedData.modelUsage).
-				let defaultModel = 'gpt-4o';
+				let defaultModel = 'unknown';
 				const seenRequestIds = new Set<string>();
 				const lines = content.trim().split('\n');
 				for (const line of lines) {
@@ -975,7 +975,7 @@ export class SyncService {
 			}
 			// JSONL (Copilot CLI or VS Code chat .json/.jsonl with delta-based content)
 			if (sessionFile.endsWith('.jsonl') || isJsonlContent(content)) {
-				let defaultModel = 'gpt-4o';
+				let defaultModel = 'unknown';
 				// Delta-based format can come from .json or .jsonl files; detect by first-line kind property
 				let isVsCodeFormat = false;
 				const firstJsonlLine = content.trim().split('\n')[0]?.trim();
@@ -1051,13 +1051,20 @@ export class SyncService {
 							continue; // processed as VS Code delta event; skip CLI logic below
 						}
 						// Copilot CLI non-delta format below
+						// Track model changes from session.start and session.model_change
+						if (event.type === 'session.start' && typeof event.data?.selectedModel === 'string') {
+							defaultModel = event.data.selectedModel;
+						}
+						if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+							defaultModel = event.data.newModel;
+						}
 						const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
 						const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
 						if (!eventMs || eventMs < startMs) {
 							continue;
 						}
 						const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
-						const model = (event.model || defaultModel).toString();
+						const model = (event.data?.model || event.model || defaultModel).toString();
 
 						let inputTokens = 0;
 						let outputTokens = 0;

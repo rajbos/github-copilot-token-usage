@@ -3782,7 +3782,7 @@ usageAnalysis: undefined
 			const jetBrainsModelHint: string | null = isJetBrainsFile
 				? detectJetBrainsModelHintFromContent(fileContent)
 				: null;
-			let cliSessionModel = isJetBrainsFile ? (jetBrainsModelHint || 'unknown') : 'gpt-4o';
+			let cliSessionModel = isJetBrainsFile ? (jetBrainsModelHint || 'unknown') : 'unknown';
 			let cliSessionEffort: string | undefined;
 
 			// JetBrains partition files (~/.copilot/jb/{uuid}/partition-{n}.jsonl) share
@@ -3791,7 +3791,9 @@ usageAnalysis: undefined
 
 			// Pre-scan for model and effort:
 			// 1. session.start.data.selectedModel (older CLI format)
-			// 2. First tool.execution_complete.data.model (newer CLI format — session.start has no selectedModel)
+			// 2. session.model_change.data.newModel (current CLI format)
+			// 3. First assistant.message.data.model (per-turn model)
+			// 4. First tool.execution_complete.data.model (newer CLI format — session.start has no selectedModel)
 			let cliModelFound = false;
 			for (const line of lines) {
 				try {
@@ -3803,7 +3805,19 @@ usageAnalysis: undefined
 						}
 						if (typeof ev.data.reasoningEffort === 'string') { cliSessionEffort = ev.data.reasoningEffort; }
 						if (cliModelFound) { break; }
-						// No model in session.start — continue scanning for tool.execution_complete
+						// No model in session.start — continue scanning
+					}
+					// Current CLI format: model change event
+					if (ev.type === 'session.model_change' && typeof ev.data?.newModel === 'string') {
+						cliSessionModel = ev.data.newModel;
+						cliModelFound = true;
+						break;
+					}
+					// Per-turn model from assistant.message
+					if (ev.type === 'assistant.message' && typeof ev.data?.model === 'string') {
+						cliSessionModel = ev.data.model;
+						cliModelFound = true;
+						break;
 					}
 					// Newer format: model stored per tool call result
 					if (ev.type === 'tool.execution_complete' && typeof ev.data?.model === 'string') {
@@ -3829,6 +3843,11 @@ usageAnalysis: undefined
 			for (const line of lines) {
 				try {
 					const event = JSON.parse(line);
+
+					// Track model changes so subsequent turns use the correct model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						cliSessionModel = event.data.newModel;
+					}
 
 					// Handle Copilot CLI format (type: 'user.message')
 					if (event.type === 'user.message' && event.data?.content) {
@@ -3882,8 +3901,12 @@ usageAnalysis: undefined
 							subAgentOutputTokenMap.set(event.data.parentToolCallId, prev + this.estimateTokensFromText(event.data.content, cliSessionModel));
 						} else if (turns.length > 0) {
 							const lastTurn = turns[turns.length - 1];
+							// Update turn model from per-event model if available
+							if (typeof event.data.model === 'string') {
+								lastTurn.model = event.data.model;
+							}
 							lastTurn.assistantResponse += event.data.content;
-							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || cliSessionModel);
 						}
 					}
 

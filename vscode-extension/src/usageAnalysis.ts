@@ -664,7 +664,7 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
 			// Count user messages as requests (type === 'user.message' or kind: 2 with requests)
 			const lines = fileContent.trim().split('\n');
 			const tierCounts = { standard: 0, premium: 0, unknown: 0 };
-			let defaultModel = 'gpt-4o';
+			let defaultModel = 'unknown';
 
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
@@ -686,6 +686,16 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
 						if (modelId) {
 							defaultModel = modelId.replace(/^copilot\//, '');
 						}
+					}
+
+					// Copilot CLI: session.start carries the selected model
+					if (event.type === 'session.start' && typeof event.data?.selectedModel === 'string') {
+						defaultModel = event.data.selectedModel;
+					}
+
+					// Copilot CLI: session.model_change carries the currently active model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						defaultModel = event.data.newModel;
 					}
 
 					// Count user messages (requests)
@@ -1155,7 +1165,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 
 			// Non-delta JSONL (Copilot CLI format) - process line-by-line
 			let sessionMode = 'ask';
-			let cliDefaultModel = 'gpt-4o';
+			let cliDefaultModel = 'unknown';
 			let cliDefaultEffort: string | null = null;
 			let cliRequestCount = 0;
 			const cliEffortByRequest: { [effort: string]: number } = {};
@@ -1181,6 +1191,11 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 						if (typeof event.data.reasoningEffort === 'string') {
 							cliDefaultEffort = event.data.reasoningEffort;
 						}
+					}
+
+					// Copilot CLI: session.model_change carries the currently active model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						cliDefaultModel = event.data.newModel;
 					}
 
 					// Count user.message requests and accumulate effort counts
@@ -1476,8 +1491,8 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 		// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 		if (isJsonl) {
 			const lines = fileContent.trim().split('\n');
-			// Default model for CLI sessions - they may not specify the model per event
-			let defaultModel = 'gpt-4o';
+			// Default model for CLI sessions - 'unknown' when we can't determine the model
+			let defaultModel = 'unknown';
 
 			// For delta-based formats, reconstruct state to extract actual usage
 			let sessionState: any = {};
@@ -1501,6 +1516,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 						defaultModel = event.data.selectedModel;
 					}
 
+					// Copilot CLI: session.model_change carries the currently active model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						defaultModel = event.data.newModel;
+					}
+
 					// Handle VS Code incremental format - extract model from session header (kind: 0)
 					// The schema has v.selectedModel.identifier or v.selectedModel.metadata.id
 					if (event.kind === 0) {
@@ -1522,7 +1542,8 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 						}
 					}
 
-					const model = event.model || defaultModel;
+					// Resolve per-event model: assistant.message carries model in data.model
+					const model = event.data?.model || event.model || defaultModel;
 
 					if (!modelUsage[model]) {
 						modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
