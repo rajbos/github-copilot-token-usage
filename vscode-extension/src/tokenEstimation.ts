@@ -163,6 +163,19 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 				totalTokens += estimateTokensFromText(event.content);
 			}
 
+			// Copilot CLI / JetBrains: extract thinking tokens from assistant.message events
+			if (event.type === 'assistant.message') {
+				const reasoningText = event.data?.reasoningText;
+				if (typeof reasoningText === 'string' && reasoningText) {
+					totalThinkingTokens += estimateTokensFromText(reasoningText);
+				}
+				// JetBrains format uses event.data.thinking.text
+				const thinkingText = event.data?.thinking?.text;
+				if (typeof thinkingText === 'string' && thinkingText) {
+					totalThinkingTokens += estimateTokensFromText(thinkingText);
+				}
+			}
+
 			// Handle VS Code incremental format (kind: 2 with requests or response)
 			if (event.kind === 2 && event.k?.[0] === 'requests' && Array.isArray(event.v)) {
 				for (const request of event.v) {

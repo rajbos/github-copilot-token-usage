@@ -55,6 +55,7 @@ import type {
   ModelSwitchingAnalysis,
   MissedPotentialWorkspace,
   UsageAnalysisStats,
+  TodaySessionSummary,
   CustomizationTypeStatus,
   WorkspaceCustomizationRow,
   WorkspaceCustomizationMatrix,
@@ -2009,6 +2010,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.compactNumbers', true);
 	}
 
+	private getUse24HourTimeSetting(): boolean {
+		return vscode.workspace.getConfiguration('aiEngineeringFluency').get<boolean>('display.use24HourTime', true);
+	}
+
 	private refreshOpenPanelsForSettingChange(): void {
 		const stats = this.lastDetailedStats;
 		if (!stats) { return; }
@@ -2260,6 +2265,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const todayStats = emptyPeriod();
 		const last30DaysStats = emptyPeriod();
 		const monthStats = emptyPeriod();
+		const todaySessionsList: TodaySessionSummary[] = [];
 
 		// Track session counts per resolved workspace (workspaces with activity in last 30 days)
 		const workspaceSessionCounts = new Map<string, number>();
@@ -2414,6 +2420,30 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (lastActivityUtcKey === todayUtcKey) {
 							todayStats.sessions++;
 							this.mergeUsageAnalysis(todayStats, analysis);
+
+							// Collect per-session summary for "Today's Sessions" tab
+							const modelUsage = sessionData.modelUsage || {};
+							let inputTok = 0, outputTok = 0, cachedTok = 0;
+							for (const usage of Object.values(modelUsage)) {
+								inputTok += usage.inputTokens || 0;
+								outputTok += usage.outputTokens || 0;
+								cachedTok += usage.cachedReadTokens || 0;
+							}
+							todaySessionsList.push({
+								title: sessionData.title || null,
+								filePath: sessionFile,
+								interactions,
+								toolCalls: analysis.toolCalls.total,
+								inputTokens: inputTok,
+								outputTokens: outputTok,
+								thinkingTokens: sessionData.thinkingTokens || 0,
+								cachedTokens: cachedTok,
+								totalTokens: sessionData.actualTokens || sessionData.tokens || 0,
+								estimatedCost: this.calculateEstimatedCost(modelUsage),
+								editor: this.detectEditorSource(sessionFile),
+								models: Object.keys(modelUsage),
+								lastActivity: sessionData.lastInteraction || new Date(mtime).toISOString(),
+							});
 						}
 
 					processed++;
@@ -2621,7 +2651,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 			locale: Intl.DateTimeFormat().resolvedOptions().locale,
 			lastUpdated: now,
 			customizationMatrix: this._lastCustomizationMatrix,
-			missedPotential: this._lastMissedPotential || []
+			missedPotential: this._lastMissedPotential || [],
+			todaySessions: todaySessionsList.sort((a, b) => b.interactions - a.interactions)
 		};
 
 		// Cache the result for future use
@@ -3752,7 +3783,7 @@ usageAnalysis: undefined
 			const jetBrainsModelHint: string | null = isJetBrainsFile
 				? detectJetBrainsModelHintFromContent(fileContent)
 				: null;
-			let cliSessionModel = isJetBrainsFile ? (jetBrainsModelHint || 'unknown') : 'gpt-4o';
+			let cliSessionModel = isJetBrainsFile ? (jetBrainsModelHint || 'unknown') : 'unknown';
 			let cliSessionEffort: string | undefined;
 
 			// JetBrains partition files (~/.copilot/jb/{uuid}/partition-{n}.jsonl) share
@@ -3761,7 +3792,9 @@ usageAnalysis: undefined
 
 			// Pre-scan for model and effort:
 			// 1. session.start.data.selectedModel (older CLI format)
-			// 2. First tool.execution_complete.data.model (newer CLI format — session.start has no selectedModel)
+			// 2. session.model_change.data.newModel (current CLI format)
+			// 3. First assistant.message.data.model (per-turn model)
+			// 4. First tool.execution_complete.data.model (newer CLI format — session.start has no selectedModel)
 			let cliModelFound = false;
 			for (const line of lines) {
 				try {
@@ -3773,7 +3806,19 @@ usageAnalysis: undefined
 						}
 						if (typeof ev.data.reasoningEffort === 'string') { cliSessionEffort = ev.data.reasoningEffort; }
 						if (cliModelFound) { break; }
-						// No model in session.start — continue scanning for tool.execution_complete
+						// No model in session.start — continue scanning
+					}
+					// Current CLI format: model change event
+					if (ev.type === 'session.model_change' && typeof ev.data?.newModel === 'string') {
+						cliSessionModel = ev.data.newModel;
+						cliModelFound = true;
+						break;
+					}
+					// Per-turn model from assistant.message
+					if (ev.type === 'assistant.message' && typeof ev.data?.model === 'string') {
+						cliSessionModel = ev.data.model;
+						cliModelFound = true;
+						break;
 					}
 					// Newer format: model stored per tool call result
 					if (ev.type === 'tool.execution_complete' && typeof ev.data?.model === 'string') {
@@ -3799,6 +3844,11 @@ usageAnalysis: undefined
 			for (const line of lines) {
 				try {
 					const event = JSON.parse(line);
+
+					// Track model changes so subsequent turns use the correct model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						cliSessionModel = event.data.newModel;
+					}
 
 					// Handle Copilot CLI format (type: 'user.message')
 					if (event.type === 'user.message' && event.data?.content) {
@@ -3852,8 +3902,12 @@ usageAnalysis: undefined
 							subAgentOutputTokenMap.set(event.data.parentToolCallId, prev + this.estimateTokensFromText(event.data.content, cliSessionModel));
 						} else if (turns.length > 0) {
 							const lastTurn = turns[turns.length - 1];
+							// Update turn model from per-event model if available
+							if (typeof event.data.model === 'string') {
+								lastTurn.model = event.data.model;
+							}
 							lastTurn.assistantResponse += event.data.content;
-							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || 'gpt-4o');
+							lastTurn.outputTokensEstimate = this.estimateTokensFromText(lastTurn.assistantResponse, lastTurn.model || cliSessionModel);
 						}
 					}
 
@@ -4584,6 +4638,17 @@ usageAnalysis: undefined
 					break;
 				case 'loadAgentSessions':
 					await this.dispatch('loadAgentSessions', () => this.loadAgentSessions());
+					break;
+				case 'openSessionFile':
+					if (message.file) {
+						await this.dispatch('openSessionFile:analysis', async () => {
+							try {
+								await this.showLogViewer(message.file);
+							} catch (err) {
+								vscode.window.showErrorMessage('Could not open log viewer: ' + message.file);
+							}
+						});
+					}
 					break;
 			}
 		});
@@ -8361,6 +8426,8 @@ ${hashtag}`;
       backendConfigured: this.isBackendConfigured(),
       currentWorkspacePaths: vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [],
       suppressedUnknownTools,
+      todaySessions: stats.todaySessions || [],
+      use24HourTime: this.getUse24HourTimeSetting(),
     }).replace(/</g, "\\u003c") : 'null';
 
     return `<!DOCTYPE html>
