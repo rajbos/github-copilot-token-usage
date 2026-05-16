@@ -187,6 +187,8 @@ type SessionFilePreload = {
 	fileSize: number;
 	sessionData: SessionFileCache;
 	wasCached: boolean;
+	/** Only populated for files with interactions > 0 (avoids fetching details for empty sessions). */
+	details?: SessionFileDetails;
 };
 
 class CopilotTokenTracker implements vscode.Disposable {
@@ -1583,7 +1585,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const cachedData = this.getCachedSessionData(sessionFile);
 			const wasCached = cachedData !== undefined && cachedData.mtime === mtime && cachedData.size === fileSize;
 			const sessionData = await this.getSessionFileDataCached(sessionFile, mtime, fileSize);
-			return { sessionFile, mtime, fileSize, sessionData, wasCached } as SessionFilePreload;
+			// Fetch details (lastInteraction etc.) only for non-empty sessions — avoids extra I/O for empty files.
+			const details = sessionData.interactions > 0 ? await this.getSessionFileDetails(sessionFile) : undefined;
+			return { sessionFile, mtime, fileSize, sessionData, wasCached, details } as SessionFilePreload;
 		});
 
 		const preloaded = results.filter((r): r is SessionFilePreload => r !== null && r !== undefined);
@@ -1866,13 +1870,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let sessionDataResults: ({ sessionFile: string; sessionData: SessionFileCache; details: SessionFileDetails; mtime: number; wasCached: boolean } | null | undefined)[];
 
 			if (preloaded) {
-				// Single-pass path: reuse pre-loaded data; only fetch details (cache-backed, fast).
+				// Single-pass path: reuse pre-loaded data including details — no extra I/O needed.
 				// clearExpiredCache and discovery were already handled by _preloadSessionFiles.
-				sessionDataResults = await this.runWithConcurrency(preloaded.map(p => p.sessionFile), async (sessionFile, i) => {
-					const p = preloaded[i];
-					if (p.sessionData.interactions === 0) { return null; }
-					const details = await this.getSessionFileDetails(sessionFile);
-					return { sessionFile, sessionData: p.sessionData, details, mtime: p.mtime, wasCached: p.wasCached };
+				sessionDataResults = preloaded.map(p => {
+					if (p.sessionData.interactions === 0 || !p.details) { return null; }
+					return { sessionFile: p.sessionFile, sessionData: p.sessionData, details: p.details, mtime: p.mtime, wasCached: p.wasCached };
 				});
 			} else {
 				// Standalone path: discover, stat, load, and get details independently.
