@@ -77,6 +77,7 @@ import { ClaudeDesktopCoworkDataAccess } from './claudedesktop';
 import { MistralVibeDataAccess } from './mistralvibe';
 import { GeminiCliDataAccess } from './geminicli';
 import type { IEcosystemAdapter } from './ecosystemAdapter';
+import { getEcosystemDisplayName } from './ecosystemAdapter';
 import {
 	OpenCodeAdapter,
 	CrushAdapter,
@@ -3242,7 +3243,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const eco = this.findEcosystem(sessionFile);
 		if (eco) {
 			details.editorRoot = eco.getEditorRoot(sessionFile);
-			details.editorName = eco.displayName;
+			details.editorName = getEcosystemDisplayName(eco, sessionFile);
 			return;
 		}
 		try {
@@ -3438,7 +3439,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				details.lastInteraction = meta.lastInteraction;
 				details.interactions = interactionCount;
 				details.editorRoot = eco.getEditorRoot(sessionFile);
-				details.editorName = eco.displayName;
+				details.editorName = getEcosystemDisplayName(eco, sessionFile);
 				if (meta.workspacePath) {
 					details.repository = path.basename(meta.workspacePath);
 				}
@@ -3704,7 +3705,7 @@ return {
 file: details.file,
 title: details.title || null,
 editorSource: details.editorSource,
-editorName: details.editorName || eco.displayName,
+editorName: details.editorName || getEcosystemDisplayName(eco, sessionFile),
 size: details.size,
 modified: details.modified,
 interactions: details.interactions,
@@ -7675,7 +7676,7 @@ ${hashtag}`;
         if (eco) {
           const editorRoot = eco.getEditorRoot(file);
           dirCounts.set(editorRoot, (dirCounts.get(editorRoot) || 0) + 1);
-          dirEditorNames.set(editorRoot, eco.displayName);
+          dirEditorNames.set(editorRoot, getEcosystemDisplayName(eco, file));
           continue;
         }
         const parts = file.split(/[\\\/]/);

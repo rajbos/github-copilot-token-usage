@@ -160,6 +160,31 @@ test('GeminiCliAdapter.handles: rejects unrelated paths', () => {
     assert.ok(!geminiCliAdapter.handles(path.join(os.homedir(), '.gemini', 'logs.json')));
 });
 
+test('VisualStudioAdapter.handles: recognises VS .vs session paths', () => {
+    const p = 'C:\\repos\\MyProject\\.vs\\MyProject\\copilot-chat\\ca1642fb\\sessions\\7bb52dc2-4109-42b8-a24e-c5fb65fcce62';
+    assert.ok(visualStudioAdapter.handles(p));
+});
+
+test('VisualStudioAdapter.handles: recognises SSMS SSMSGitHubCopilot session paths', () => {
+    const p = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\SSMS\\22.0_82a729ff\\SSMSGitHubCopilot\\copilot-chat\\ca1642fb\\sessions\\7bb52dc2-4109-42b8-a24e-c5fb65fcce62';
+    assert.ok(visualStudioAdapter.handles(p));
+});
+
+test('VisualStudioAdapter.handles: rejects unrelated paths', () => {
+    assert.ok(!visualStudioAdapter.handles(path.join(os.homedir(), '.claude', 'projects', 'hash', 'abc.jsonl')));
+    assert.ok(!visualStudioAdapter.handles(path.join(os.homedir(), 'AppData', 'Roaming', 'Code', 'User', 'workspaceStorage', 'abc', 'chatSessions', 'session.json')));
+});
+
+test('VisualStudioAdapter.getDisplayName: returns "Visual Studio" for VS .vs paths', () => {
+    const p = 'C:\\repos\\MyProject\\.vs\\MyProject\\copilot-chat\\ca1642fb\\sessions\\7bb52dc2-4109-42b8-a24e-c5fb65fcce62';
+    assert.equal(visualStudioAdapter.getDisplayName(p), 'Visual Studio');
+});
+
+test('VisualStudioAdapter.getDisplayName: returns "SSMS" for SSMSGitHubCopilot paths', () => {
+    const p = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\SSMS\\22.0_82a729ff\\SSMSGitHubCopilot\\copilot-chat\\ca1642fb\\sessions\\7bb52dc2-4109-42b8-a24e-c5fb65fcce62';
+    assert.equal(visualStudioAdapter.getDisplayName(p), 'SSMS');
+});
+
 // ---------------------------------------------------------------------------
 // getCandidatePaths() — structure validation
 // ---------------------------------------------------------------------------
@@ -218,6 +243,14 @@ test('GeminiCliAdapter.getCandidatePaths: returns Gemini session and index paths
     assert.ok(paths.some(p => p.source === 'Gemini CLI (sessions)'));
     assert.ok(paths.some(p => p.source === 'Gemini CLI (projects.json)'));
     assert.ok(paths.some(p => p.source === 'Gemini CLI (logs.json)'));
+});
+
+test('VisualStudioAdapter.getCandidatePaths: returns VS log dir and SSMS sessions dir', () => {
+    const paths = visualStudioAdapter.getCandidatePaths();
+    assert.equal(paths.length, 2);
+    assert.ok(paths.some(p => p.source === 'Visual Studio (log dir)'), 'Should include VS log dir');
+    assert.ok(paths.some(p => p.source === 'SSMS (sessions dir)'), 'Should include SSMS sessions dir');
+    assert.ok(paths.every(p => p.path.length > 0), 'All paths should be non-empty');
 });
 
 // ---------------------------------------------------------------------------

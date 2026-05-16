@@ -20,6 +20,11 @@ export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcos
 		return this.visualStudio.isVSSessionFile(sessionFile);
 	}
 
+	getDisplayName(sessionFile: string): string {
+		const n = sessionFile.replace(/\\/g, '/').toLowerCase();
+		return n.includes('/ssmsgithubcopilot/') ? 'SSMS' : 'Visual Studio';
+	}
+
 	getBackingPath(sessionFile: string): string {
 		return sessionFile;
 	}
@@ -79,7 +84,10 @@ export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcos
 	}
 
 	getCandidatePaths(): CandidatePath[] {
-		return [{ path: this.visualStudio.getLogDir(), source: 'Visual Studio (log dir)' }];
+		return [
+			{ path: this.visualStudio.getLogDir(), source: 'Visual Studio (log dir)' },
+			{ path: this.visualStudio.getSsmsSessionsDir(), source: 'SSMS (sessions dir)' },
+		];
 	}
 
 	getRawFileContent(sessionFile: string): string {
