@@ -40,8 +40,10 @@ export class VisualStudioDataAccess {
  * Detection: normalised path contains `/.vs/`, `/copilot-chat/`, and `/sessions/`.
  */
 isVSSessionFile(filePath: string): boolean {
-const n = filePath.replace(/\\/g, '/');
-return n.includes('/.vs/') && n.includes('/copilot-chat/') && n.includes('/sessions/');
+	const n = filePath.replace(/\\/g, '/').toLowerCase();
+	const isVS = n.includes('/.vs/') && n.includes('/copilot-chat/') && n.includes('/sessions/');
+	const isSsms = n.includes('/ssmsgithubcopilot/') && n.includes('/copilot-chat/') && n.includes('/sessions/');
+	return isVS || isSsms;
 }
 
 /**
