@@ -81,6 +81,12 @@ for (const file of results) {
   totalWarnings += file.warningCount;
 }
 
+// Extract the complexity number from an ESLint message for ranking
+function extractComplexityValue(msg) {
+  const m = msg.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 let md = '## 📊 Complexity Analysis\n\n';
 
 // Summary row
@@ -91,21 +97,35 @@ md += `| ${totalErrors} | ${totalWarnings} | ${violations.length} |\n\n`;
 if (violations.length === 0) {
   md += '✅ No complexity violations found.\n';
 } else {
-  // Sort by rule type, then file, then line number
-  violations.sort(
-    (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.line - b.line
-  );
+  // Top 10 worst violations sorted by complexity value descending
+  const top10 = [...violations]
+    .sort((a, b) => extractComplexityValue(b.message) - extractComplexityValue(a.message))
+    .slice(0, 10);
 
+  md += '### 🔝 Top 10 most complex\n\n';
   md += '| Type | File | Line | Details |\n';
   md += '|------|------|:----:|---------|\n';
-
-  for (const v of violations) {
+  for (const v of top10) {
     const label = RULE_LABELS[v.rule] ?? v.rule;
     const icon  = v.severity === 2 ? '❌' : '⚠️';
     md += `| ${icon} ${label} | \`${v.file}\` | ${v.line} | ${v.message} |\n`;
   }
-
   md += '\n';
+
+  // Full list in a collapsible block
+  const sorted = [...violations].sort(
+    (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.line - b.line
+  );
+
+  md += '<details>\n<summary>All violations</summary>\n\n';
+  md += '| Type | File | Line | Details |\n';
+  md += '|------|------|:----:|---------|\n';
+  for (const v of sorted) {
+    const label = RULE_LABELS[v.rule] ?? v.rule;
+    const icon  = v.severity === 2 ? '❌' : '⚠️';
+    md += `| ${icon} ${label} | \`${v.file}\` | ${v.line} | ${v.message} |\n`;
+  }
+  md += '\n</details>\n';
 }
 
 process.stdout.write(md);
