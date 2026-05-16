@@ -1612,7 +1612,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Single preload pass: discover all session files, stat, and parse/cache each one.
 			// Both calculateDetailedStats and calculateUsageAnalysisStats reuse this result,
 			// eliminating duplicate filesystem scans and stat() calls.
-			const { preloaded } = await this._preloadSessionFiles(fileLoadCutoffMs, progressCallback);
+			const { sessionFiles, preloaded } = await this._preloadSessionFiles(fileLoadCutoffMs, progressCallback);
 
 			const { stats: detailedStats, dailyStats } = await this.calculateDetailedStats(undefined, preloaded);
 			this.lastDailyStats = dailyStats;
@@ -1734,7 +1734,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// During background (silent) updates, skip to preserve demo panel state and user overrides.
 			// Always compute a fresh score so it can be reused for the sharing server upload below.
 			const freshMaturityData = (!silent || this.maturityPanel)
-				? await this.calculateMaturityScores(false)
+				? await this.calculateMaturityScores(false, preloaded)
 				: undefined;
 			if (this.maturityPanel && !silent && freshMaturityData) {
 				this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, freshMaturityData);
@@ -1798,7 +1798,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// Pre-warm full-year chart data in background so the chart opens without delay.
 			// Only kick off when not already computed and the chart panel isn't open (showChart handles that case).
 			if (!this.lastFullDailyStats && !this.chartPanel) {
-				void this.calculateDailyStats();
+				void this.calculateDailyStats(365, sessionFiles);
 			}
 
 			return detailedStats;
@@ -2112,7 +2112,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 *  (actualTokens > estimatedTokens) and UTC date assignment as calculateDetailedStats
 	 *  so all chart period views are consistent. Stores the result in
 	 *  `lastFullDailyStats` and returns it. Zero-fill is handled per-period in buildChartData. */
-	private async calculateDailyStats(daysBack = 365): Promise<DailyTokenStats[]> {
+	private async calculateDailyStats(daysBack = 365, knownSessionFiles?: string[]): Promise<DailyTokenStats[]> {
 		const now = new Date();
 		const cutoffUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysBack));
 		const cutoffUtcStartKey = cutoffUtcStart.toISOString().slice(0, 10);
@@ -2121,7 +2121,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		const dailyStatsMap = new Map<string, DailyTokenStats>();
 
 		try {
-			const sessionFiles = await this.sessionDiscovery.getCopilotSessionFiles();
+			const sessionFiles = knownSessionFiles ?? await this.sessionDiscovery.getCopilotSessionFiles();
 			this.log(`📈 Preparing chart data (${daysBack}d) from ${sessionFiles.length} session file(s)...`);
 
 			const dailyResults = await this.runWithConcurrency(sessionFiles, async (sessionFile) => {
@@ -5388,14 +5388,14 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 	 * Overall stage = median of the 6 category scores.
 	 * @param useCache If true, use cached usage stats. If false, force recalculation.
 	 */
-	private async calculateMaturityScores(useCache = true): Promise<{
+	private async calculateMaturityScores(useCache = true, preloaded?: SessionFilePreload[]): Promise<{
 		overallStage: number;
 		overallLabel: string;
 		categories: { category: string; icon: string; stage: number; evidence: string[]; tips: string[] }[];
 		period: UsageAnalysisPeriod;
 		lastUpdated: string;
 	}> {
-		return _calculateMaturityScores(this._lastCustomizationMatrix, (useCache) => this.calculateUsageAnalysisStats(useCache), useCache);
+		return _calculateMaturityScores(this._lastCustomizationMatrix, (useCache) => this.calculateUsageAnalysisStats(useCache, preloaded), useCache);
 	}
 
 	public async showMaturity(): Promise<void> {
