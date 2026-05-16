@@ -47,9 +47,11 @@ ai-engineering-fluency segment
 
 ---
 
-## Method 1: Using `{{ cmd }}` — Recommended
+## Method 1: Using `{{ cmd }}`
 
-This is the cleanest approach. Add the segment config to your oh-my-posh theme file.
+> **Note:** The `{{ cmd }}` template function is not available in all oh-my-posh builds. If you see `invalid template text` in your prompt, your version does not support it — use [Method 2](#method-2-powershell-pre-prompt-hook) instead.
+
+This is the cleanest approach if your OMP version supports it. Add the segment config to your oh-my-posh theme file.
 
 ### Step 1: Find your theme file
 
@@ -94,9 +96,9 @@ Open your theme JSON (or YAML/TOML) and add the following to a `segments` array 
 
 ---
 
-## Method 2: PowerShell Pre-Prompt Hook
+## Method 2: PowerShell Pre-Prompt Hook — Recommended
 
-Use this if you cannot use `{{ cmd }}` or want more control over the output.
+Use this if `{{ cmd }}` is not supported in your OMP version, or if you want more control over the output.
 
 ### Step 1: Add the hook to your PowerShell profile
 
@@ -107,7 +109,18 @@ Copy the function from [`posh-hook.ps1`](./posh-hook.ps1) into your `$PROFILE`:
 notepad $PROFILE
 ```
 
-Paste the `Set-PoshContext` function at the end of the file and save.
+Paste the `Set-PoshContext` function at the end of the file, then add a call to it immediately after the function definition:
+
+```powershell
+# ... Set-PoshContext function above ...
+
+# Pre-populate token env vars so the first prompt render shows values
+Set-PoshContext
+```
+
+Without this, the segment shows empty values on the first prompt after every new terminal or profile reload (OMP reads env vars before the hook fires on the very first render).
+
+Save the file.
 
 ### Step 2: Add the environment-variable segment to your theme
 
@@ -254,21 +267,12 @@ oh-my-posh init pwsh --config "$env:TEMP\test.omp.json" | Invoke-Expression
 |---|---|---|
 | Command not found: `ai-engineering-fluency` | CLI not installed globally | `npm install -g @rajbos/ai-engineering-fluency` |
 | Segment shows `0 today · 0 30d` | No session files found | Run `ai-engineering-fluency diagnostics` to check paths |
+| Segment shows `invalid template text` | `{{ cmd }}` not supported in your OMP version | Switch to [Method 2](#method-2-powershell-pre-prompt-hook--recommended) |
+| Segment shows `today · 30d` without values | `Set-PoshContext` not called before first render | Add `Set-PoshContext` call at end of `$PROFILE` after the function definition |
 | Segment never updates | OMP cache too long | Set `cache.duration` to `"1m"` or use `--hide-zero` |
 | Stale numbers | CLI cache still valid | Run `ai-engineering-fluency segment --refresh` |
 | Icon shows as a box / `?` | Not using a Nerd Font | Replace `\uec1e` with `🤖` or remove the icon |
 | Prompt slows down | OMP cache not set | Add `"cache": {"duration": "5m", "strategy": "session"}` to the segment |
-
----
-
-## Publishing / Sharing
-
-The oh-my-posh **theme marketplace is closed** to new submissions, but you can share your setup:
-
-- Post in [oh-my-posh Discussions → Themes](https://github.com/JanDeDobbeleer/oh-my-posh/discussions/categories/themes)
-- Share in the [oh-my-posh Discord](https://discord.com/channels/1023597603331526656/1055533233309233252) `#themes` channel
-
-If you'd like to contribute this as a **native Go segment** to the oh-my-posh project (so it appears in the official docs), the contribution guide is at [ohmyposh.dev/docs/contributing/segment](https://ohmyposh.dev/docs/contributing/segment). A native Go segment would call `exec.Command("ai-engineering-fluency", "segment")` and parse its output, making it available as a first-class `"type": "copilot-tokens"` (or similar) segment.
 
 ---
 
