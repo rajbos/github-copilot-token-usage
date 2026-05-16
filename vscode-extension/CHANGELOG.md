@@ -6,6 +6,20 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-14
+
+### Features
+- Add oh-my-posh segment command and Copilot CLI statusline support (#876)
+- Post-process SLM output to fix acronym capitalization (MCP, GitHub, etc.) (#880)
+- Add SLM-powered job to generate friendly tool names from issues (#875)
+
+### Bug Fixes
+- Populate cache tokens from CLI session.shutdown events (#869)
+- Pin Ollama install to versioned GitHub release with SHA256 verification (#881)
+
+### Improvements
+- Add friendly display names for 50+ tools (#862, #864, #865, #866, #867, #868, #872, #873, #874, #879)
+
 ## [0.8.0] - 2026-05-12
 
 ### Features

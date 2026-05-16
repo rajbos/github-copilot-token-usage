@@ -87,6 +87,9 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 	let cliCacheReadTokens = 0;
 	// Per-model breakdown from CLI session.shutdown events
 	let cliShutdownModelUsage: ModelUsage | null = null;
+	// Real outputTokens from assistant.message events (used when session.shutdown is absent)
+	let cliRealOutputByModel: { [model: string]: number } | null = null;
+	let totalEstToolCalls = 0;
 	// Per-UTC-day actual token breakdown from shutdown event timestamps
 	const dailyActualTokens: Record<string, number> = {};
 
@@ -112,6 +115,7 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						const input = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 						const output = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
 						const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
+						const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
 						cliActualTokens += input + output;
 						cliCacheReadTokens += cacheRead;
 						shutdownTotal += input + output;
@@ -120,6 +124,14 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 						}
 						cliShutdownModelUsage[modelName].inputTokens += input;
 						cliShutdownModelUsage[modelName].outputTokens += output;
+						// Cache breakdown — inputTokens is the total (uncached + reads + writes).
+						// Populate these so calculateEstimatedCost can apply the correct discount rates.
+						if (cacheRead > 0) {
+							cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + cacheRead;
+						}
+						if (cacheWrite > 0) {
+							cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + cacheWrite;
+						}
 					}
 				}
 				// Attribute this shutdown's tokens to its UTC day
@@ -141,8 +153,18 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 				// the rendered version subsumes the bare message, so any double-count is minor
 				// as user.message is typically short compared to the full rendered content.)
 				totalTokens += estimateTokensFromText(event.data.renderedMessage);
-			} else if (event.type === 'assistant.message' && event.data?.content) {
-				totalTokens += estimateTokensFromText(event.data.content);
+			} else if (event.type === 'assistant.message') {
+				const realOut = typeof event.data?.outputTokens === 'number' ? event.data.outputTokens : 0;
+				if (realOut > 0) {
+					// Real API-reported output tokens — accumulate for ratio-based total estimation
+					if (!cliRealOutputByModel) { cliRealOutputByModel = {}; }
+					const m = event.data?.model || 'unknown';
+					cliRealOutputByModel[m] = (cliRealOutputByModel[m] ?? 0) + realOut;
+				} else if (event.data?.content) {
+					totalTokens += estimateTokensFromText(event.data.content);
+				}
+			} else if (event.type === 'tool.execution_start') {
+				totalEstToolCalls++;
 			} else if (event.type === 'tool.execution_complete' && event.data?.result) {
 				const result = event.data.result;
 				// Prefer detailedContent (captures full subagent prompt for task launches)
@@ -152,6 +174,19 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 			} else if (event.content) {
 				// Fallback for other formats that might have content
 				totalTokens += estimateTokensFromText(event.content);
+			}
+
+			// Copilot CLI / JetBrains: extract thinking tokens from assistant.message events
+			if (event.type === 'assistant.message') {
+				const reasoningText = event.data?.reasoningText;
+				if (typeof reasoningText === 'string' && reasoningText) {
+					totalThinkingTokens += estimateTokensFromText(reasoningText);
+				}
+				// JetBrains format uses event.data.thinking.text
+				const thinkingText = event.data?.thinking?.text;
+				if (typeof thinkingText === 'string' && thinkingText) {
+					totalThinkingTokens += estimateTokensFromText(thinkingText);
+				}
 			}
 
 			// Handle VS Code incremental format (kind: 2 with requests or response)
@@ -183,6 +218,17 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 		} catch (e) {
 			// Track parse failures for regex fallback
 			parseFailedLines++;
+		}
+	}
+
+	// No session.shutdown: use real outputTokens from assistant.message + observed input:output ratios.
+	// Heavy agent sessions show ~130x ratio; cache reads ≈ input (50% of total from completed sessions).
+	if (!isDeltaBased && !cliActualTokens && cliRealOutputByModel) {
+		const inputOutputRatio = totalEstToolCalls > 20 ? 130 : totalEstToolCalls > 5 ? 50 : 10;
+		for (const realOutput of Object.values(cliRealOutputByModel)) {
+			const estimatedInput = Math.round(realOutput * inputOutputRatio);
+			cliActualTokens += estimatedInput + realOutput;  // input + output (cache is a subset of input)
+			cliCacheReadTokens += estimatedInput;            // cache ≈ input from empirical data
 		}
 	}
 

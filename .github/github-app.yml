@@ -1,0 +1,16 @@
+scripts:
+- name: Install VS Code extension dependencies
+  command: cd vscode-extension && npm ci
+  triggers:
+  - session.create
+- name: Compile VS Code extension
+  command: cd vscode-extension && npm run compile
+  triggers:
+  - session.create
+- name: Open in VS Code
+  command: code .
+  triggers:
+  - session.create
+automation:
+  auto_issue_session: true
+  remote_control: true

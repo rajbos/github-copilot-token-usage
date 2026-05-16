@@ -70,9 +70,9 @@ test('integration: session-01-today.json has 5 interactions and multi-model usag
 // ── Verify model detection WITHOUT callback ─────────────────────────────
 // The JSON parsing path reads `request.model`, NOT `request.modelId`.
 // Sample files use `modelId`, so without a callback, all requests default
-// to gpt-4o.  This test documents that behavior gap.
+// to 'unknown'.  This test documents that behavior gap.
 
-test('integration: session-01-today.json WITHOUT getModelFromRequest callback defaults all to gpt-4o', () => {
+test('integration: session-01-today.json WITHOUT getModelFromRequest callback defaults all to unknown', () => {
 	const filePath = path.join(SAMPLES_DIR, 'session-01-today.json');
 	if (!fs.existsSync(filePath)) {
 		return;
@@ -81,10 +81,10 @@ test('integration: session-01-today.json WITHOUT getModelFromRequest callback de
 	// No callback — the parser only reads request.model, not request.modelId
 	const result = parseSessionFileContent(filePath, content, estimateTokensByLength);
 
-	// All usage should be lumped under gpt-4o (the default) because the
+	// All usage should be lumped under 'unknown' (the default) because the
 	// sample files use `modelId` which the JSON path doesn't read
 	const models = Object.keys(result.modelUsage);
-	assert.deepEqual(models, ['gpt-4o'], 'without callback, JSON path only reads request.model — all requests default to gpt-4o');
+	assert.deepEqual(models, ['unknown'], 'without callback, JSON path only reads request.model — all requests default to unknown');
 });
 
 // ── Verify message.parts parsing ────────────────────────────────────────

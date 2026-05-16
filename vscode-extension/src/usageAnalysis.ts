@@ -664,7 +664,7 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
 			// Count user messages as requests (type === 'user.message' or kind: 2 with requests)
 			const lines = fileContent.trim().split('\n');
 			const tierCounts = { standard: 0, premium: 0, unknown: 0 };
-			let defaultModel = 'gpt-4o';
+			let defaultModel = 'unknown';
 
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
@@ -686,6 +686,16 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
 						if (modelId) {
 							defaultModel = modelId.replace(/^copilot\//, '');
 						}
+					}
+
+					// Copilot CLI: session.start carries the selected model
+					if (event.type === 'session.start' && typeof event.data?.selectedModel === 'string') {
+						defaultModel = event.data.selectedModel;
+					}
+
+					// Copilot CLI: session.model_change carries the currently active model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						defaultModel = event.data.newModel;
 					}
 
 					// Count user messages (requests)
@@ -1155,7 +1165,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 
 			// Non-delta JSONL (Copilot CLI format) - process line-by-line
 			let sessionMode = 'ask';
-			let cliDefaultModel = 'gpt-4o';
+			let cliDefaultModel = 'unknown';
 			let cliDefaultEffort: string | null = null;
 			let cliRequestCount = 0;
 			const cliEffortByRequest: { [effort: string]: number } = {};
@@ -1181,6 +1191,11 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 						if (typeof event.data.reasoningEffort === 'string') {
 							cliDefaultEffort = event.data.reasoningEffort;
 						}
+					}
+
+					// Copilot CLI: session.model_change carries the currently active model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						cliDefaultModel = event.data.newModel;
 					}
 
 					// Count user.message requests and accumulate effort counts
@@ -1476,14 +1491,17 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 		// Handle .jsonl files OR .json files with JSONL content (Copilot CLI format and VS Code incremental format)
 		if (isJsonl) {
 			const lines = fileContent.trim().split('\n');
-			// Default model for CLI sessions - they may not specify the model per event
-			let defaultModel = 'gpt-4o';
+			// Default model for CLI sessions - 'unknown' when we can't determine the model
+			let defaultModel = 'unknown';
 
 			// For delta-based formats, reconstruct state to extract actual usage
 			let sessionState: any = {};
 			let isDeltaBased = false;
 			// For CLI (non-delta) sessions: capture exact per-model usage from session.shutdown
 			let cliShutdownModelUsage: ModelUsage | null = null;
+			// Real outputTokens from assistant.message events (used when session.shutdown is absent)
+			let cliRealOutputByModel: { [model: string]: number } | null = null;
+			let totalCliToolCalls = 0;
 
 			for (const line of lines) {
 				if (!line.trim()) { continue; }
@@ -1499,6 +1517,11 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 					// Copilot CLI session.start carries the selected model
 					if (event.type === 'session.start' && typeof event.data?.selectedModel === 'string') {
 						defaultModel = event.data.selectedModel;
+					}
+
+					// Copilot CLI: session.model_change carries the currently active model
+					if (event.type === 'session.model_change' && typeof event.data?.newModel === 'string') {
+						defaultModel = event.data.newModel;
 					}
 
 					// Handle VS Code incremental format - extract model from session header (kind: 0)
@@ -1522,7 +1545,8 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 						}
 					}
 
-					const model = event.model || defaultModel;
+					// Resolve per-event model: assistant.message carries model in data.model
+					const model = event.data?.model || event.model || defaultModel;
 
 					if (!modelUsage[model]) {
 						modelUsage[model] = { inputTokens: 0, outputTokens: 0 };
@@ -1544,15 +1568,34 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 									}
 									cliShutdownModelUsage[modelName].inputTokens += typeof usage.inputTokens === 'number' ? usage.inputTokens : 0;
 									cliShutdownModelUsage[modelName].outputTokens += typeof usage.outputTokens === 'number' ? usage.outputTokens : 0;
+									// Cache breakdown — inputTokens is the total (uncached + reads + writes).
+									// Populate these so calculateEstimatedCost can apply the correct discount rates.
+									const cacheRead = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0;
+									const cacheWrite = typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : 0;
+									if (cacheRead > 0) {
+										cliShutdownModelUsage[modelName].cachedReadTokens = (cliShutdownModelUsage[modelName].cachedReadTokens ?? 0) + cacheRead;
+									}
+									if (cacheWrite > 0) {
+										cliShutdownModelUsage[modelName].cacheCreationTokens = (cliShutdownModelUsage[modelName].cacheCreationTokens ?? 0) + cacheWrite;
+									}
 								}
 							}
 						} else if (event.type === 'user.message' && event.data?.content) {
 							modelUsage[model].inputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
-						} else if (event.type === 'assistant.message' && event.data?.content) {
-							modelUsage[model].outputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
-						} else if (event.type === 'tool.result' && event.data?.output) {
-							// Tool outputs are typically input context
-							modelUsage[model].inputTokens += estimateTokensFromText(event.data.output, model, deps.tokenEstimators);
+						} else if (event.type === 'assistant.message') {
+							const realOutput = typeof event.data?.outputTokens === 'number' ? event.data.outputTokens : 0;
+							if (realOutput > 0) {
+								if (!cliRealOutputByModel) { cliRealOutputByModel = {}; }
+								cliRealOutputByModel[model] = (cliRealOutputByModel[model] ?? 0) + realOutput;
+							} else if (event.data?.content) {
+								modelUsage[model].outputTokens += estimateTokensFromText(event.data.content, model, deps.tokenEstimators);
+							}
+						} else if (event.type === 'tool.execution_start') {
+							totalCliToolCalls++;
+						} else if (event.type === 'tool.execution_complete' && (event.data?.result?.content || event.data?.result?.detailedContent)) {
+							// Tool outputs are fed back as input context in the next turn
+							const toolContent = event.data.result.content || event.data.result.detailedContent;
+							modelUsage[model].inputTokens += estimateTokensFromText(String(toolContent), model, deps.tokenEstimators);
 						}
 					}
 				} catch (e) {
@@ -1563,6 +1606,24 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 			// If CLI session.shutdown provided exact per-model data, use it instead of estimates
 			if (!isDeltaBased && cliShutdownModelUsage) {
 				return cliShutdownModelUsage;
+			}
+
+			// No session.shutdown: assistant.message events carry real per-response outputTokens from the API.
+			// Estimate input using observed ratio from completed agent sessions (~130x output for heavy
+			// agent sessions with >20 tool calls, ~50x for moderate, ~10x for light/chat-only).
+			// Cache reads empirically equal ~input tokens (prompt caching caches the full context).
+			if (!isDeltaBased && cliRealOutputByModel) {
+				const inputOutputRatio = totalCliToolCalls > 20 ? 130 : totalCliToolCalls > 5 ? 50 : 10;
+				const estimatedUsage: ModelUsage = {};
+				for (const [m, realOutput] of Object.entries(cliRealOutputByModel)) {
+					const estimatedInput = Math.round(realOutput * inputOutputRatio);
+					estimatedUsage[m] = {
+						inputTokens: estimatedInput,
+						outputTokens: realOutput,
+						cachedReadTokens: estimatedInput,
+					};
+				}
+				return estimatedUsage;
 			}
 
 			// For delta-based formats, extract actual usage from reconstructed state

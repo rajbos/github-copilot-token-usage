@@ -125,39 +125,50 @@ export class ClaudeCodeDataAccess {
 	}
 
 	/**
+	 * Deduplicate assistant events using Anthropic's message.id (last-wins).
+	 *
+	 * Claude Code writes multiple JSONL entries per API request:
+	 *   - Streaming fragments (stop_reason=null) during streaming
+	 *   - The final complete event (non-null stop_reason, complete token counts)
+	 *   - Sometimes the same complete event is written multiple times identically
+	 *
+	 * Using message.id last-wins handles all cases correctly:
+	 *   - Normal request:  last event has complete output_tokens and non-null stop_reason ✓
+	 *   - Crashed request: last known event has partial tokens — better than zero ✓
+	 *   - Duplicate write: identical content, last-wins is a no-op ✓
+	 *   - No requestId:    message.id (100% present) catches what requestId (87%) misses ✓
+	 */
+	private deduplicateAssistantEvents(events: any[]): any[] {
+		const byMessageId = new Map<string, any>();
+		const noMessageId: any[] = [];
+		for (const event of events) {
+			if (event.type !== 'assistant' || !event.message?.usage) { continue; }
+			const msgId: string | undefined = event.message?.id;
+			if (msgId) {
+				byMessageId.set(msgId, event); // last-wins
+			} else {
+				noMessageId.push(event);
+			}
+		}
+		return [...byMessageId.values(), ...noMessageId];
+	}
+
+	/**
 	 * Get token counts from a Claude Code session.
 	 * Uses ACTUAL Anthropic API token counts from assistant event message.usage.
-	 * De-duplicates by requestId, using only events with stop_reason != null.
+	 * De-duplicates by message.id (last-wins) — see deduplicateAssistantEvents.
 	 */
 	getTokensFromClaudeCodeSession(sessionFilePath: string): { tokens: number; thinkingTokens: number } {
 		const events = this.readSessionEvents(sessionFilePath);
 		let totalInputTokens = 0;
 		let totalOutputTokens = 0;
-		// We track requestIds to de-duplicate streaming fragments
-		const seenRequestIds = new Set<string>();
 
-		for (const event of events) {
-			if (event.type !== 'assistant') { continue; }
-			const usage = event.message?.usage;
-			if (!usage) { continue; }
-
-			// De-duplicate: only count the final event per requestId
-			const requestId = event.requestId;
-			if (requestId) {
-				if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) {
-					// Streaming fragment — skip if we haven't seen this ID yet (will get final)
-					continue;
-				}
-				if (seenRequestIds.has(requestId)) { continue; }
-				seenRequestIds.add(requestId);
-			}
-
-			// Actual API token counts
+		for (const event of this.deduplicateAssistantEvents(events)) {
+			const usage = event.message.usage;
 			const inputTokens = (typeof usage.input_tokens === 'number' ? usage.input_tokens : 0)
 				+ (typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0)
 				+ (typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0);
 			const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-
 			totalInputTokens += inputTokens;
 			totalOutputTokens += outputTokens;
 		}
@@ -194,27 +205,14 @@ export class ClaudeCodeDataAccess {
 	/**
 	 * Get per-model token usage from a Claude Code session.
 	 * Uses the model field from assistant event message objects.
+	 * De-duplicates by message.id (last-wins) — see deduplicateAssistantEvents.
 	 */
 	getClaudeCodeModelUsage(sessionFilePath: string): ModelUsage {
 		const events = this.readSessionEvents(sessionFilePath);
 		const modelUsage: ModelUsage = {};
-		const seenRequestIds = new Set<string>();
 
-		for (const event of events) {
-			if (event.type !== 'assistant') { continue; }
-			const usage = event.message?.usage;
-			if (!usage) { continue; }
-
-			// De-duplicate by requestId
-			const requestId = event.requestId;
-			if (requestId) {
-				if (event.message?.stop_reason === null || event.message?.stop_reason === undefined) {
-					continue;
-				}
-				if (seenRequestIds.has(requestId)) { continue; }
-				seenRequestIds.add(requestId);
-			}
-
+		for (const event of this.deduplicateAssistantEvents(events)) {
+			const usage = event.message.usage;
 			const model = normalizeClaudeModelId(event.message?.model || 'unknown');
 
 			if (!modelUsage[model]) {

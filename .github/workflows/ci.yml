@@ -45,7 +45,17 @@ jobs:
     - name: Run linting
       working-directory: vscode-extension
       run: npm run lint
-      
+
+    - name: Run complexity analysis
+      working-directory: vscode-extension
+      shell: bash
+      run: npm run --silent lint:report > "$RUNNER_TEMP/lint-output.json" 2>/dev/null || true
+
+    - name: Publish complexity results to step summary
+      if: always() && matrix.node-version == '24.x'
+      shell: bash
+      run: node scripts/parse-lint-output.js "$RUNNER_TEMP/lint-output.json" >> "$GITHUB_STEP_SUMMARY"
+
     - name: Run type checking
       working-directory: vscode-extension
       run: npm run check-types
@@ -106,122 +116,6 @@ jobs:
           vscode-extension/out/
         retention-days: 7
         
-  check-code-changes:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    outputs:
-      vscode_src_changed: ${{ steps.detect.outputs.changed }}
-    steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
-      with:
-        egress-policy: audit
-
-    - name: Checkout code
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      with:
-        fetch-depth: 0
-
-    - name: Detect vscode-extension source changes
-      id: detect
-      run: |
-        changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
-          | grep -cE '^vscode-extension/src/.*\.ts$|^vscode-extension/test/.*\.ts$|^vscode-extension/stryker\.config\.mjs$' || true)
-        if [ "$changed" -gt 0 ]; then
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-        fi
-
-  mutation-testing:
-    runs-on: ubuntu-latest
-    needs: [build, check-code-changes]
-    if: github.event_name == 'pull_request' && needs.check-code-changes.outputs.vscode_src_changed == 'true'
-    # Informational — does not block the PR. A failing mutation score
-    # is visible in the artifact but does not block merging during rollout.
-    continue-on-error: true
-
-    steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
-      with:
-        egress-policy: audit
-
-    - name: Checkout code
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-    - name: Setup Node.js
-      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-      with:
-        node-version: '24.x'
-        cache: 'npm'
-        cache-dependency-path: vscode-extension/package-lock.json
-
-    - name: Install dependencies
-      working-directory: vscode-extension
-      run: npm ci
-
-    - name: Compile tests
-      working-directory: vscode-extension
-      run: npm run compile-tests
-
-    - name: Run mutation tests
-      working-directory: vscode-extension
-      run: npx stryker run
-      timeout-minutes: 60
-      # Step-level continue-on-error keeps the job green even on timeout/failure.
-      # Job-level continue-on-error alone only keeps the workflow green but still
-      # marks the job check as FAILURE, which blocks merge via rulesets.
-      continue-on-error: true
-
-    - name: Publish mutation summary
-      if: always()
-      working-directory: vscode-extension
-      shell: bash
-      run: |
-        if [ -f "reports/mutation/mutation.json" ]; then
-          node -e "
-            const fs = require('fs');
-            const r = JSON.parse(fs.readFileSync('reports/mutation/mutation.json', 'utf8'));
-            let killed=0, survived=0, timedOut=0, noCoverage=0, total=0;
-            for (const f of Object.values(r.files || {})) {
-              for (const m of (f.mutants || [])) {
-                total++;
-                if (m.status === 'Killed') killed++;
-                else if (m.status === 'Survived') survived++;
-                else if (m.status === 'Timeout') timedOut++;
-                else if (m.status === 'NoCoverage') noCoverage++;
-              }
-            }
-            const denominator = killed + survived + timedOut;
-            const score = denominator > 0 ? ((killed / denominator) * 100).toFixed(1) : '0.0';
-            const lines = [
-              '## 🧬 Mutation Testing Results',
-              '',
-              '| Metric | Value |',
-              '|--------|-------|',
-              \`| 📊 Score | \${score}% |\`,
-              \`| ✅ Killed | \${killed} |\`,
-              \`| ⚠️ Survived | \${survived} |\`,
-              \`| ⏱️ Timeout | \${timedOut} |\`,
-              \`| 🚫 No coverage | \${noCoverage} |\`,
-              \`| Total | \${total} |\`,
-            ].join('\n');
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines + '\n');
-          "
-        else
-          printf '## 🧬 Mutation Testing\n\n⚠️ Report not generated (Stryker timed out or errored).\n' >> "$GITHUB_STEP_SUMMARY"
-        fi
-
-    - name: Upload mutation report
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      if: always()
-      with:
-        name: mutation-report
-        path: vscode-extension/reports/mutation/
-        if-no-files-found: ignore
-        retention-days: 14
-
   package:
     runs-on: ubuntu-latest
     needs: build

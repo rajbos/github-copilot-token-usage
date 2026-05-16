@@ -28,17 +28,19 @@ if (!content.trim()) {
 }
 
 // ── TAP summary ───────────────────────────────────────────────────────────────
-// Node.js test runner emits summary lines like "# tests 284" at the end of TAP output.
+// Node.js v20 and earlier emit "# tests 284" (TAP-style diagnostic prefix).
+// Node.js v22+ spec reporter switched to "ℹ tests 284" (U+2139 info icon).
+// Support both forms so the parser works across all active Node.js versions.
 function tapNum(pattern) {
   const m = content.match(pattern);
   return m ? parseInt(m[1], 10) : 0;
 }
 
-const total      = tapNum(/^# tests (\d+)/m);
-const passed     = tapNum(/^# pass (\d+)/m);
-const failed     = tapNum(/^# fail (\d+)/m);
-const skipped    = tapNum(/^# skipped (\d+)/m);
-const durationMs = tapNum(/^# duration_ms (\d+)/m);
+const total      = tapNum(/^[#ℹ] tests (\d+)/mu);
+const passed     = tapNum(/^[#ℹ] pass (\d+)/mu);
+const failed     = tapNum(/^[#ℹ] fail (\d+)/mu);
+const skipped    = tapNum(/^[#ℹ] skipped (\d+)/mu);
+const durationMs = tapNum(/^[#ℹ] duration_ms ([\d.]+)/mu);
 
 // ── Coverage table ────────────────────────────────────────────────────────────
 // The Node.js text coverage reporter appends a table after the TAP output:

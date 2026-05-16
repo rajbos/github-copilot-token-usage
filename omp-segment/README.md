@@ -276,6 +276,14 @@ oh-my-posh init pwsh --config "$env:TEMP\test.omp.json" | Invoke-Expression
 
 ---
 
+## Publishing / Sharing
+
+The oh-my-posh **theme marketplace is closed** to new submissions, but you can share your setup:
+
+- Post in [oh-my-posh Discussions → Themes](https://github.com/JanDeDobbeleer/oh-my-posh/discussions/categories/themes)
+- Share in the [oh-my-posh Discord](https://discord.com/channels/1023597603331526656/1055533233309233252) `#themes` channel
+
+If you'd like to contribute this as a **native Go segment** to the oh-my-posh project (so it appears in the official docs), the contribution guide is at [ohmyposh.dev/docs/contributing/segment](https://ohmyposh.dev/docs/contributing/segment). A native Go segment would call `exec.Command("ai-engineering-fluency", "segment")` and parse its output, making it available as a first-class `"type": "copilot-tokens"` (or similar) segment.
 ## GitHub Copilot CLI Statusline (Experimental)
 
 GitHub Copilot CLI has an experimental `STATUS_LINE` feature that calls a local command and renders its output at the bottom of the Copilot terminal UI. This folder includes ready-to-use scripts that combine the standard Copilot session data (context tokens, session duration, line changes) with your total daily / 30-day token usage from `ai-engineering-fluency`.

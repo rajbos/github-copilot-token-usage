@@ -2,7 +2,7 @@
   "name": "ai-engineering-fluency",
   "displayName": "AI Engineering Fluency",
   "description": "Track your AI Engineering Fluency — daily and monthly token usage, cost estimates, and AI fluency insights in VS Code.",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "RobBos",
   "icon": "assets/logo.png",
   "engines": {
@@ -334,6 +334,11 @@
           "default": true,
           "description": "Show token counts in compact format using K/M suffixes (e.g. 1.5K, 1.2M). When disabled, full numbers are shown (e.g. 1,500, 1,200,000)."
         },
+        "aiEngineeringFluency.display.use24HourTime": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show times in 24-hour format (e.g. 14:30). When disabled, 12-hour AM/PM format is used (e.g. 2:30 PM)."
+        },
         "aiEngineeringFluency.backend.enabled": {
           "type": "boolean",
           "default": false,
@@ -515,6 +520,7 @@
     "pretest": "tsc --noEmit && eslint src && node esbuild.js && node ../scripts/prepare-test-output.js && tsc -p tsconfig.tests.json",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
+    "lint:report": "eslint src --format json",
     "lint:css": "stylelint \"src/webview/**/*.css\"",
     "lint:json": "node ../scripts/validate-json.js",
     "test": "vscode-test",
@@ -547,6 +553,7 @@
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.28.0",
     "eslint": "^10.1.0",
+    "eslint-plugin-sonarjs": "4.0.3",
     "npm-run-all": "^4.1.5",
     "ovsx": "0.10.11",
     "stylelint": "^17.5.0",

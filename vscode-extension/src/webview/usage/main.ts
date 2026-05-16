@@ -43,6 +43,22 @@ type UsageAnalysisPeriod = {
 	};
 };
 
+type TodaySessionSummary = {
+	title: string | null;
+	filePath: string;
+	interactions: number;
+	toolCalls: number;
+	inputTokens: number;
+	outputTokens: number;
+	thinkingTokens: number;
+	cachedTokens: number;
+	totalTokens: number;
+	estimatedCost: number;
+	editor: string;
+	models: string[];
+	lastActivity: string;
+};
+
 type UsageAnalysisStats = {
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
@@ -54,6 +70,8 @@ type UsageAnalysisStats = {
 	backendConfigured?: boolean;
 	currentWorkspacePaths?: string[];
 	suppressedUnknownTools?: string[];
+	todaySessions?: TodaySessionSummary[];
+	use24HourTime?: boolean;
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -387,10 +405,129 @@ function renderToolsTable(byTool: { [key: string]: number }, limit = 10, nameRes
 		</table>`;
 }
 
-/**
- * Return a copy of `map` with every key from `keys` present (defaulting to 0).
- * Used to build cross-period tables where every item found in any period is shown in all.
- */
+// --- Today's Sessions table with sortable columns ---
+type SessionSortColumn = 'title' | 'interactions' | 'toolCalls' | 'inputTokens' | 'outputTokens' | 'thinkingTokens' | 'cachedTokens' | 'totalTokens' | 'estimatedCost' | 'editor' | 'lastActivity';
+let sessionSortColumn: SessionSortColumn = 'interactions';
+let sessionSortDirection: 'asc' | 'desc' = 'desc';
+let cachedTodaySessions: TodaySessionSummary[] = [];
+let use24HourTime = true;
+
+function getSessionSortIndicator(column: SessionSortColumn): string {
+	if (sessionSortColumn !== column) { return ''; }
+	return sessionSortDirection === 'desc' ? ' ▼' : ' ▲';
+}
+
+function sortTodaySessions(sessions: TodaySessionSummary[]): TodaySessionSummary[] {
+	return [...sessions].sort((a, b) => {
+		let cmp = 0;
+		switch (sessionSortColumn) {
+			case 'title':
+				cmp = (a.title || '').localeCompare(b.title || '');
+				break;
+			case 'editor':
+				cmp = (a.editor || '').localeCompare(b.editor || '');
+				break;
+			case 'lastActivity':
+				cmp = (a.lastActivity || '').localeCompare(b.lastActivity || '');
+				break;
+			default:
+				cmp = (a[sessionSortColumn] as number) - (b[sessionSortColumn] as number);
+				break;
+		}
+		return sessionSortDirection === 'desc' ? -cmp : cmp;
+	});
+}
+
+function renderTodaySessionsTable(sessions: TodaySessionSummary[]): string {
+	cachedTodaySessions = sessions;
+	if (!sessions || sessions.length === 0) {
+		return '<div style="color: var(--text-secondary); font-size: 13px; padding: 16px;">No sessions recorded today yet.</div>';
+	}
+	return `<div id="sessions-table-container">${buildSessionsTableHtml(sessions)}</div>`;
+}
+
+function buildSessionsTableHtml(sessions: TodaySessionSummary[]): string {
+	const sorted = sortTodaySessions(sessions);
+	const rows = sorted.map((s, idx) => {
+		const title = escapeHtml(s.title || 'Untitled session');
+		const filePath = escapeHtml(s.filePath || '');
+		const models = s.models.map(m => escapeHtml(m)).join(', ') || '—';
+		const editor = escapeHtml(s.editor || 'unknown');
+		const cost = s.estimatedCost > 0 ? `$${s.estimatedCost.toFixed(4)}` : '—';
+		const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24HourTime }) : '—';
+		return `<tr>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary);">${idx + 1}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Open viewer for session &quot;${title}&quot;"><a href="#" class="session-title-link" data-file="${filePath}" style="color:var(--link-color, #4fc1ff); text-decoration:none; cursor:pointer;">${title}</a></td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.interactions)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.toolCalls)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.inputTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.outputTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.thinkingTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.cachedTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${formatNumber(s.totalTokens)}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); text-align:right; font-size:12px;">${cost}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px;">${editor}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:11px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${models}">${models}</td>
+			<td style="padding:6px 8px; border-bottom:1px solid var(--border-subtle); font-size:12px; white-space:nowrap; text-align:right;">${time}</td>
+		</tr>`;
+	}).join('');
+
+	return `
+		<div style="overflow-x:auto;">
+		<table class="sessions-table" style="width:100%; border-collapse:collapse; min-width:900px;">
+			<thead>
+				<tr style="color:var(--text-secondary); font-size:11px; text-align:left;">
+					<th style="padding:6px 8px;">#</th>
+					<th class="sortable" data-sort="title" style="padding:6px 8px;">Title${getSessionSortIndicator('title')}</th>
+					<th class="sortable" data-sort="interactions" style="padding:6px 8px; text-align:right;">Turns${getSessionSortIndicator('interactions')}</th>
+					<th class="sortable" data-sort="toolCalls" style="padding:6px 8px; text-align:right;">Tools${getSessionSortIndicator('toolCalls')}</th>
+					<th class="sortable" data-sort="inputTokens" style="padding:6px 8px; text-align:right;">Input${getSessionSortIndicator('inputTokens')}</th>
+					<th class="sortable" data-sort="outputTokens" style="padding:6px 8px; text-align:right;">Output${getSessionSortIndicator('outputTokens')}</th>
+					<th class="sortable" data-sort="thinkingTokens" style="padding:6px 8px; text-align:right;">Thinking${getSessionSortIndicator('thinkingTokens')}</th>
+					<th class="sortable" data-sort="cachedTokens" style="padding:6px 8px; text-align:right;">Cached${getSessionSortIndicator('cachedTokens')}</th>
+					<th class="sortable" data-sort="totalTokens" style="padding:6px 8px; text-align:right;">Total${getSessionSortIndicator('totalTokens')}</th>
+					<th class="sortable" data-sort="estimatedCost" style="padding:6px 8px; text-align:right;">Cost${getSessionSortIndicator('estimatedCost')}</th>
+					<th class="sortable" data-sort="editor" style="padding:6px 8px;">Editor${getSessionSortIndicator('editor')}</th>
+					<th style="padding:6px 8px;">Models</th>
+					<th class="sortable" data-sort="lastActivity" style="padding:6px 8px; text-align:right;">Last Active${getSessionSortIndicator('lastActivity')}</th>
+				</tr>
+			</thead>
+			<tbody>
+				${rows}
+			</tbody>
+		</table>
+		</div>`;
+}
+
+function setupSessionsTableSort(): void {
+	const container = document.getElementById('sessions-table-container');
+	if (!container) { return; }
+	container.addEventListener('click', (e) => {
+		// Handle session title link clicks → open in log viewer
+		const link = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.session-title-link');
+		if (link) {
+			e.preventDefault();
+			const file = link.getAttribute('data-file');
+			if (file) {
+				vscode.postMessage({ command: 'openSessionFile', file });
+			}
+			return;
+		}
+		// Handle sortable column header clicks
+		const th = (e.target as HTMLElement).closest<HTMLElement>('th.sortable');
+		if (!th) { return; }
+		const col = th.getAttribute('data-sort') as SessionSortColumn;
+		if (!col) { return; }
+		if (sessionSortColumn === col) {
+			sessionSortDirection = sessionSortDirection === 'desc' ? 'asc' : 'desc';
+		} else {
+			sessionSortColumn = col;
+			sessionSortDirection = 'desc';
+		}
+		container.innerHTML = buildSessionsTableHtml(cachedTodaySessions);
+	});
+}
+
 function unionFill(map: { [key: string]: number }, keys: string[]): { [key: string]: number } {
 	const result: { [key: string]: number } = { ...map };
 	for (const k of keys) {
@@ -523,6 +660,13 @@ function sanitizeStats(raw: any): UsageAnalysisStats | null {
 			sanitized.missedPotential = raw.missedPotential.filter(
 				(w: any) => w && typeof w === 'object' && typeof w.workspacePath === 'string'
 			) as MissedPotentialWorkspace[];
+		}
+
+		// Pass-through todaySessions (array of session summary objects)
+		if (Array.isArray(raw.todaySessions)) {
+			sanitized.todaySessions = raw.todaySessions.filter(
+				(s: any) => s && typeof s === 'object' && typeof s.interactions === 'number'
+			) as TodaySessionSummary[];
 		}
 
 		return sanitized;
@@ -1286,10 +1430,21 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 			<div class="tab-bar">
 				<button class="tab-button ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity">📊 My Activity</button>
+				<button class="tab-button ${activeTab === 'sessions' ? 'active' : ''}" data-tab="sessions">📋 Today's Sessions</button>
 				<button class="tab-button ${activeTab === 'tools' ? 'active' : ''}" data-tab="tools">🔧 Tools &amp; Integrations</button>
 				<button class="tab-button ${activeTab === 'health' ? 'active' : ''}" data-tab="health">🏗️ Workspace Health</button>
 				<button class="tab-button ${activeTab === 'repos' ? 'active' : ''}" data-tab="repos">🤖 Repository PRs</button>
 				<button class="tab-button ${activeTab === 'agent' ? 'active' : ''}" data-tab="agent">🤖 Cloud Agent</button>
+			</div>
+
+			<div id="tab-panel-sessions" class="tab-panel"${activeTab !== 'sessions' ? ' style="display:none"' : ''}>
+				<div class="section">
+					<div class="section-title"><span>📋</span><span>Today's Sessions</span></div>
+					<div class="section-subtitle">Individual session breakdown for today — sorted by number of interactions (most active first).</div>
+					<div style="margin-top: 12px;">
+						${renderTodaySessionsTable(stats.todaySessions || [])}
+					</div>
+				</div>
 			</div>
 
 			<div id="tab-panel-activity" class="tab-panel"${activeTab !== 'activity' ? ' style="display:none"' : ''}>
@@ -1708,10 +1863,14 @@ window.addEventListener('message', (event) => {
 			if (message.data?.locale) {
 				setFormatLocale(message.data.locale);
 			}
+			if (typeof message.data?.use24HourTime === 'boolean') {
+				use24HourTime = message.data.use24HourTime;
+			}
 			{
 				const sanitized = sanitizeStats(message.data);
 				if (sanitized) {
 					renderLayout(sanitized);
+					setupSessionsTableSort();
 					renderRepositoryHygienePanels();
 					// Restore repos PR tab if we already fetched data (renderLayout resets the DOM)
 					if (repoPrStatsData) {
@@ -2339,7 +2498,9 @@ async function bootstrap(): Promise<void> {
 	console.log('[Usage Analysis] Received locale from extension:', initialData.locale);
 	console.log('[Usage Analysis] Test format 1234567.89 with received locale:', new Intl.NumberFormat(initialData.locale).format(1234567.89));
 	setFormatLocale(initialData.locale);
+	use24HourTime = initialData.use24HourTime !== false;
 	renderLayout(initialData);
+	setupSessionsTableSort();
 
 	// Event delegation for suppress-tool buttons (rendered dynamically in the tools section)
 	document.addEventListener('click', (event) => {

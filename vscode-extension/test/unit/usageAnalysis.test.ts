@@ -619,6 +619,65 @@ test('getModelUsageFromSession: delegates to openCode adapter for openCode sessi
     assert.equal(result['gpt-4o'].inputTokens, 99);
 });
 
+test('getModelUsageFromSession: CLI session.shutdown populates cachedReadTokens and cacheCreationTokens', async () => {
+    // Simulates a real Copilot CLI session.shutdown event where inputTokens is the TOTAL
+    // (uncached + cacheRead + cacheWrite) and both cache fields are reported separately.
+    // Without reading these fields, the extension charges full input rate for everything.
+    const shutdownEvent = JSON.stringify({
+        type: 'session.shutdown',
+        data: {
+            shutdownType: 'routine',
+            modelMetrics: {
+                'claude-sonnet-4.6': {
+                    requests: { count: 10, cost: 1 },
+                    usage: {
+                        inputTokens: 1000000,
+                        outputTokens: 5000,
+                        cacheReadTokens: 900000,
+                        cacheWriteTokens: 50000,
+                        reasoningTokens: 0,
+                    },
+                },
+            },
+        },
+        timestamp: '2026-05-13T10:00:00.000Z',
+    });
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, 'fake/path/events.jsonl', shutdownEvent + '\n');
+    const usage = result['claude-sonnet-4.6'];
+    assert.ok(usage, 'claude-sonnet-4.6 key should exist');
+    // inputTokens = total (1,000,000 = 900,000 read + 50,000 write + 50,000 uncached)
+    assert.equal(usage.inputTokens, 1000000);
+    assert.equal(usage.outputTokens, 5000);
+    // Cache fields must be populated so calculateEstimatedCost can apply the discount
+    assert.equal(usage.cachedReadTokens, 900000);
+    assert.equal(usage.cacheCreationTokens, 50000);
+});
+
+test('getModelUsageFromSession: CLI session without cache fields leaves cachedReadTokens undefined', async () => {
+    const shutdownEvent = JSON.stringify({
+        type: 'session.shutdown',
+        data: {
+            shutdownType: 'routine',
+            modelMetrics: {
+                'claude-sonnet-4.6': {
+                    usage: { inputTokens: 100000, outputTokens: 2000 },
+                    // no cacheReadTokens / cacheWriteTokens
+                },
+            },
+        },
+        timestamp: '2026-05-13T10:00:00.000Z',
+    });
+    const deps = makeMockDeps();
+    const result = await getModelUsageFromSession(deps, 'fake/path/events.jsonl', shutdownEvent + '\n');
+    const usage = result['claude-sonnet-4.6'];
+    assert.ok(usage);
+    assert.equal(usage.inputTokens, 100000);
+    // No cache fields → undefined (not 0), so calculateEstimatedCost falls back to full price correctly
+    assert.equal(usage.cachedReadTokens, undefined);
+    assert.equal(usage.cacheCreationTokens, undefined);
+});
+
 // ---------------------------------------------------------------------------
 // calculateModelSwitching
 // ---------------------------------------------------------------------------
