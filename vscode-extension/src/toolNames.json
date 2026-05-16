@@ -120,6 +120,8 @@
   ,"mcp_azure_mcp_group_list": "Azure MCP: Group List"
   ,"mcp_azure_mcp_storage": "Azure MCP: Storage"
   ,"mcp_azure_mcp_subscription_list": "Azure MCP: Subscription List"
+  ,"mcp_azure_mcp_pricing": "Azure MCP: Pricing"
+  ,"mcp_azure_mcp_get_azure_bestpractices": "Azure MCP: Get Azure Best Practices"
   ,"azure-mcp-azureterraformbestpractices": "Azure MCP: Azure Terraform Best Practices"
   ,"azure-mcp-documentation": "Azure MCP: Documentation"
   ,"azure-mcp-extension_cli_generate": "Azure MCP: Extension CLI Generate"
@@ -556,6 +558,7 @@
   ,"clarify_requirements": "Clarify Requirements"
   ,"get_tests": "Get Tests"
   ,"ide-get_diagnostics": "IDE: Get Diagnostics"
+  ,"ide-get_selection": "IDE: Get Selection"
   ,"plan": "Plan"
   ,"signal_plan_ready": "Signal Plan Ready"
   ,"update_plan_progress": "Update Plan Progress"
@@ -605,4 +608,6 @@
   ,"handle_dialog": "Handle Dialog"
   ,"run_subagent": "Run Subagent"
   ,"testFailure": "Test Failure"
+  ,"mcp_angular-cli_get_best_practices": "Angular MCP: Get Best Practices"
+  ,"mcp_angular-cli_list_projects": "Angular MCP: Get Project List"
 }
