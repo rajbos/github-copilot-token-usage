@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 function Format-TokenCount {
     param([Nullable[double]]$Value)
     if ($null -eq $Value) { return '?' }
+    if ($Value -ge 1000000000) { return ('{0:0.0}b' -f ($Value / 1000000000)) }
     if ($Value -ge 1000000) { return ('{0:0.0}m' -f ($Value / 1000000)) }
     if ($Value -ge 1000) { return ('{0:0.0}k' -f ($Value / 1000)) }
     return ([int]$Value).ToString()

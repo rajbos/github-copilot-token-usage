@@ -217,6 +217,7 @@ function sanitizeNumber(value: number | undefined | null): string {
 function formatTokenCount(value: number | undefined | null): string {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n) || n === 0) { return "0"; }
+  if (n >= 1_000_000_000) { return `${(n / 1_000_000_000).toFixed(1)}B`; }
   if (n >= 1_000_000) { return `${(n / 1_000_000).toFixed(1)}M`; }
   if (n >= 1_000) { return `${(n / 1_000).toFixed(1)}K`; }
   return Math.floor(n).toString();

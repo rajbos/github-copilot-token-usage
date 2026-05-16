@@ -931,6 +931,9 @@ export function fmt(n: number): string {
 
 /** Format token counts for display */
 export function formatTokens(tokens: number): string {
+	if (tokens >= 1_000_000_000) {
+		return `${(tokens / 1_000_000_000).toFixed(1)}B`;
+	}
 	if (tokens >= 1_000_000) {
 		return `${(tokens / 1_000_000).toFixed(1)}M`;
 	}
