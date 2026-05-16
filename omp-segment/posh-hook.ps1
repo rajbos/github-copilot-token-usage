@@ -32,9 +32,10 @@ function Set-PoshContext {
         $today  = [int]$data.today.tokens
         $days30 = [int]$data.last30Days.tokens
 
-        function Format-Tokens([int]$n) {
-            if ($n -ge 1000000) { return "{0:N1}M" -f ($n / 1000000) }
-            if ($n -ge 1000)    { return "{0:N1}K" -f ($n / 1000) }
+        function Format-Tokens([long]$n) {
+            if ($n -ge 1000000000) { return "{0:N1}B" -f ($n / 1000000000) }
+            if ($n -ge 1000000)    { return "{0:N1}M" -f ($n / 1000000) }
+            if ($n -ge 1000)       { return "{0:N1}K" -f ($n / 1000) }
             return "$n"
         }
 
