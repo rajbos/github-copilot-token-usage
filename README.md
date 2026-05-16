@@ -123,6 +123,64 @@ npx @rajbos/ai-engineering-fluency stats
 
 ---
 
+### 🐚 Oh-My-Posh Segment
+
+Display today's and 30-day token usage directly in your terminal prompt, powered by the CLI npm package.
+
+```
+ 󱊤 1.2K today · 45.3K 30d 
+```
+
+```powershell
+# Install the CLI globally first
+npm install -g @rajbos/ai-engineering-fluency
+```
+
+Then add the segment to your oh-my-posh theme:
+
+```json
+{
+  "type": "text",
+  "style": "diamond",
+  "leading_diamond": "\ue0b6",
+  "trailing_diamond": "\ue0b4",
+  "foreground": "#ffffff",
+  "background": "#005ca5",
+  "cache": { "duration": "5m", "strategy": "session" },
+  "template": " \uec1e {{ cmd \"ai-engineering-fluency\" \"segment\" }} "
+}
+```
+
+📖 [Full Oh-My-Posh segment setup & options](omp-segment/README.md)
+
+---
+
+### 💬 GitHub Copilot CLI Statusline (Experimental)
+
+Show token usage in the GitHub Copilot CLI status bar via the experimental `STATUS_LINE` feature. Combines context tokens, session duration, line changes, and daily/30-day totals in one compact line.
+
+```
+main +2/-1 > ctx 123.5k/200.0k > ######.... > 00:12:34 > +42/-8 > 12.9M today · 1443.5M 30d
+```
+
+Configure `%USERPROFILE%\.copilot\settings.json` to point at the included scripts:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:\\Users\\YOURUSER\\.copilot\\statusline.cmd",
+    "padding": 1
+  },
+  "feature_flags": { "enabled": ["STATUS_LINE"] },
+  "experimental": true
+}
+```
+
+📖 [Full Copilot CLI statusline setup](omp-segment/README.md#github-copilot-cli-statusline-experimental)
+
+---
+
 ### 🔗 Self-Hosted Sharing Server
 
 Share usage data with your team without an Azure account. Run a lightweight API server
