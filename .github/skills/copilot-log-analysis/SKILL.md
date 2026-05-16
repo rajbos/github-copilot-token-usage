@@ -179,14 +179,18 @@ See the **Executable Scripts** section for available utilities:
 ```jsonl
 {"type": "user.message", "data": {"content": "..."}, "model": "gpt-4o"}
 {"type": "assistant.message", "data": {"content": "..."}}
-{"type": "tool.result", "data": {"output": "..."}}
+{"type": "tool.execution_start", "data": {"toolCallId": "...", "toolName": "...", "arguments": {}}}
+{"type": "tool.execution_complete", "data": {"toolCallId": "...", "success": true, "result": {"content": "...", "detailedContent": "..."}}}
+{"type": "session.shutdown", "data": {"modelMetrics": {"claude-opus-4.6": {"usage": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0}}}}}
 ```
 
 **Key fields:**
 - Event type: `type`
 - User input: `data.content` (when `type: 'user.message'`)
 - Assistant output: `data.content` (when `type: 'assistant.message'`)
-- Tool output: `data.output` (when `type: 'tool.result'`)
+- Tool output: `data.result.content` or `data.result.detailedContent` (when `type: 'tool.execution_complete'`)
+- Tool name for counting: `data.toolName` (when `type: 'tool.execution_start'`)
+- API-accurate token counts: `data.modelMetrics[model].usage` (when `type: 'session.shutdown'`) — always prefer these over estimates when available
 - Model: `model` (optional, defaults to `gpt-4o`)
 
 ## JSONL File Structure (JetBrains IDE)

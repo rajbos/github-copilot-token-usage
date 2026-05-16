@@ -87,6 +87,9 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 	let cliCacheReadTokens = 0;
 	// Per-model breakdown from CLI session.shutdown events
 	let cliShutdownModelUsage: ModelUsage | null = null;
+	// Real outputTokens from assistant.message events (used when session.shutdown is absent)
+	let cliRealOutputByModel: { [model: string]: number } | null = null;
+	let totalEstToolCalls = 0;
 	// Per-UTC-day actual token breakdown from shutdown event timestamps
 	const dailyActualTokens: Record<string, number> = {};
 
@@ -150,8 +153,18 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 				// the rendered version subsumes the bare message, so any double-count is minor
 				// as user.message is typically short compared to the full rendered content.)
 				totalTokens += estimateTokensFromText(event.data.renderedMessage);
-			} else if (event.type === 'assistant.message' && event.data?.content) {
-				totalTokens += estimateTokensFromText(event.data.content);
+			} else if (event.type === 'assistant.message') {
+				const realOut = typeof event.data?.outputTokens === 'number' ? event.data.outputTokens : 0;
+				if (realOut > 0) {
+					// Real API-reported output tokens — accumulate for ratio-based total estimation
+					if (!cliRealOutputByModel) { cliRealOutputByModel = {}; }
+					const m = event.data?.model || 'unknown';
+					cliRealOutputByModel[m] = (cliRealOutputByModel[m] ?? 0) + realOut;
+				} else if (event.data?.content) {
+					totalTokens += estimateTokensFromText(event.data.content);
+				}
+			} else if (event.type === 'tool.execution_start') {
+				totalEstToolCalls++;
 			} else if (event.type === 'tool.execution_complete' && event.data?.result) {
 				const result = event.data.result;
 				// Prefer detailedContent (captures full subagent prompt for task launches)
@@ -205,6 +218,17 @@ export function estimateTokensFromJsonlSession(fileContent: string): { tokens: n
 		} catch (e) {
 			// Track parse failures for regex fallback
 			parseFailedLines++;
+		}
+	}
+
+	// No session.shutdown: use real outputTokens from assistant.message + observed input:output ratios.
+	// Heavy agent sessions show ~130x ratio; cache reads ≈ input (50% of total from completed sessions).
+	if (!isDeltaBased && !cliActualTokens && cliRealOutputByModel) {
+		const inputOutputRatio = totalEstToolCalls > 20 ? 130 : totalEstToolCalls > 5 ? 50 : 10;
+		for (const realOutput of Object.values(cliRealOutputByModel)) {
+			const estimatedInput = Math.round(realOutput * inputOutputRatio);
+			cliActualTokens += estimatedInput + realOutput;  // input + output (cache is a subset of input)
+			cliCacheReadTokens += estimatedInput;            // cache ≈ input from empirical data
 		}
 	}
 

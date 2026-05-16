@@ -147,7 +147,7 @@ function getCopilotSessionFiles() {
     }
 
     // OpenCode session files (XDG data directory)
-    const xdgDataHome = (platform === 'win32')
+    const xdgDataHome = (os.platform() === 'win32')
         ? path.join(homedir, '.local', 'share')
         : (process.env.XDG_DATA_HOME || path.join(homedir, '.local', 'share'));
     const openCodeSessionDir = path.join(xdgDataHome, 'opencode', 'storage', 'session');
