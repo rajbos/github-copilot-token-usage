@@ -175,6 +175,16 @@ test('VisualStudioAdapter.handles: rejects unrelated paths', () => {
     assert.ok(!visualStudioAdapter.handles(path.join(os.homedir(), 'AppData', 'Roaming', 'Code', 'User', 'workspaceStorage', 'abc', 'chatSessions', 'session.json')));
 });
 
+test('VisualStudioAdapter.getDisplayName: returns "Visual Studio" for VS .vs paths', () => {
+    const p = 'C:\\repos\\MyProject\\.vs\\MyProject\\copilot-chat\\ca1642fb\\sessions\\7bb52dc2-4109-42b8-a24e-c5fb65fcce62';
+    assert.equal(visualStudioAdapter.getDisplayName(p), 'Visual Studio');
+});
+
+test('VisualStudioAdapter.getDisplayName: returns "SSMS" for SSMSGitHubCopilot paths', () => {
+    const p = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\SSMS\\22.0_82a729ff\\SSMSGitHubCopilot\\copilot-chat\\ca1642fb\\sessions\\7bb52dc2-4109-42b8-a24e-c5fb65fcce62';
+    assert.equal(visualStudioAdapter.getDisplayName(p), 'SSMS');
+});
+
 // ---------------------------------------------------------------------------
 // getCandidatePaths() — structure validation
 // ---------------------------------------------------------------------------

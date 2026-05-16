@@ -18,6 +18,12 @@ export interface IEcosystemAdapter {
 	/** Human-readable display name, e.g. 'OpenCode', 'Crush', 'Continue'. */
 	readonly displayName: string;
 	/**
+	 * Returns the human-readable display name for a specific session file.
+	 * Defaults to `displayName` for adapters that handle only one editor.
+	 * Override when a single adapter covers multiple tools (e.g. Visual Studio + SSMS).
+	 */
+	getDisplayName?(sessionFile: string): string;
+	/**
 	 * When true, backend sync is skipped for sessions handled by this adapter
 	 * (e.g. Visual Studio binary MessagePack sessions cannot be synced).
 	 */
@@ -148,6 +154,15 @@ export interface IDiscoverableEcosystem {
 /** Type guard: check whether an adapter also implements IDiscoverableEcosystem. */
 export function isDiscoverable(adapter: IEcosystemAdapter): adapter is IEcosystemAdapter & IDiscoverableEcosystem {
 	return typeof (adapter as any).discover === 'function';
+}
+
+/**
+ * Returns the display name for a session file from its adapter.
+ * Uses `getDisplayName(sessionFile)` when the adapter provides it (e.g. Visual Studio
+ * vs SSMS distinction); falls back to the static `displayName` otherwise.
+ */
+export function getEcosystemDisplayName(adapter: IEcosystemAdapter, sessionFile: string): string {
+	return adapter.getDisplayName ? adapter.getDisplayName(sessionFile) : adapter.displayName;
 }
 
 // ---------------------------------------------------------------------------

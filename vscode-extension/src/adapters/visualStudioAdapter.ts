@@ -20,6 +20,11 @@ export class VisualStudioAdapter implements IEcosystemAdapter, IDiscoverableEcos
 		return this.visualStudio.isVSSessionFile(sessionFile);
 	}
 
+	getDisplayName(sessionFile: string): string {
+		const n = sessionFile.replace(/\\/g, '/').toLowerCase();
+		return n.includes('/ssmsgithubcopilot/') ? 'SSMS' : 'Visual Studio';
+	}
+
 	getBackingPath(sessionFile: string): string {
 		return sessionFile;
 	}
