@@ -45,7 +45,17 @@ jobs:
     - name: Run linting
       working-directory: vscode-extension
       run: npm run lint
-      
+
+    - name: Run complexity analysis
+      working-directory: vscode-extension
+      shell: bash
+      run: npm run --silent lint:report > "$RUNNER_TEMP/lint-output.json" 2>/dev/null || true
+
+    - name: Publish complexity results to step summary
+      if: always() && matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
+      shell: bash
+      run: node scripts/parse-lint-output.js "$RUNNER_TEMP/lint-output.json" >> "$GITHUB_STEP_SUMMARY"
+
     - name: Run type checking
       working-directory: vscode-extension
       run: npm run check-types
