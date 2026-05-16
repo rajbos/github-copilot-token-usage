@@ -104,83 +104,13 @@ export function upsertDailyRollup(
 		existing.value.inputTokens += value.inputTokens;
 		existing.value.outputTokens += value.outputTokens;
 		existing.value.interactions += value.interactions;
-		
-		// Merge fluency metrics if provided
+
 		if (value.fluencyMetrics) {
 			if (!existing.value.fluencyMetrics) {
 				existing.value.fluencyMetrics = {};
 			}
-			const ex = existing.value.fluencyMetrics;
-			const val = value.fluencyMetrics;
-			
-			// Add numeric counts
-			if (val.askModeCount !== undefined) {
-				ex.askModeCount = (ex.askModeCount || 0) + val.askModeCount;
-			}
-			if (val.editModeCount !== undefined) {
-				ex.editModeCount = (ex.editModeCount || 0) + val.editModeCount;
-			}
-			if (val.agentModeCount !== undefined) {
-				ex.agentModeCount = (ex.agentModeCount || 0) + val.agentModeCount;
-			}
-			if (val.planModeCount !== undefined) {
-				ex.planModeCount = (ex.planModeCount || 0) + val.planModeCount;
-			}
-			if (val.customAgentModeCount !== undefined) {
-				ex.customAgentModeCount = (ex.customAgentModeCount || 0) + val.customAgentModeCount;
-			}
-			if (val.cliModeCount !== undefined) {
-				ex.cliModeCount = (ex.cliModeCount || 0) + val.cliModeCount;
-			}
-			if (val.multiTurnSessions !== undefined) {
-				ex.multiTurnSessions = (ex.multiTurnSessions || 0) + val.multiTurnSessions;
-			}
-			if (val.multiFileEdits !== undefined) {
-				ex.multiFileEdits = (ex.multiFileEdits || 0) + val.multiFileEdits;
-			}
-			if (val.sessionCount !== undefined) {
-				ex.sessionCount = (ex.sessionCount || 0) + val.sessionCount;
-			}
-			
-			// Merge JSON objects (parse, merge, serialize)
-			if (val.toolCallsJson) {
-				ex.toolCallsJson = mergeJsonMetrics(ex.toolCallsJson, val.toolCallsJson);
-			}
-			if (val.contextRefsJson) {
-				ex.contextRefsJson = mergeJsonMetrics(ex.contextRefsJson, val.contextRefsJson);
-			}
-			if (val.mcpToolsJson) {
-				ex.mcpToolsJson = mergeJsonMetrics(ex.mcpToolsJson, val.mcpToolsJson);
-			}
-			if (val.modelSwitchingJson) {
-				ex.modelSwitchingJson = mergeJsonMetrics(ex.modelSwitchingJson, val.modelSwitchingJson);
-			}
-			if (val.editScopeJson) {
-				ex.editScopeJson = mergeJsonMetrics(ex.editScopeJson, val.editScopeJson);
-			}
-			if (val.agentTypesJson) {
-				ex.agentTypesJson = mergeJsonMetrics(ex.agentTypesJson, val.agentTypesJson);
-			}
-			if (val.repositoriesJson) {
-				// For repositories, merge arrays and deduplicate
-				ex.repositoriesJson = mergeRepositoriesJson(ex.repositoriesJson, val.repositoriesJson);
-			}
-			if (val.applyUsageJson) {
-				ex.applyUsageJson = mergeJsonMetrics(ex.applyUsageJson, val.applyUsageJson);
-			}
-			if (val.sessionDurationJson) {
-				ex.sessionDurationJson = mergeJsonMetrics(ex.sessionDurationJson, val.sessionDurationJson);
-			}
-			
-			// Re-calculate averages and rates from totals
-			if (ex.sessionCount && ex.sessionCount > 0) {
-				if (ex.multiTurnSessions !== undefined) {
-					// avgTurnsPerSession will be recalculated from aggregated data
-				}
-				if (ex.multiFileEdits !== undefined) {
-					// avgFilesPerEdit will be recalculated from aggregated data
-				}
-			}
+			_mergeNumericFluencyMetrics(existing.value.fluencyMetrics, value.fluencyMetrics);
+			_mergeJsonFluencyMetrics(existing.value.fluencyMetrics, value.fluencyMetrics);
 		}
 	} else {
 		map.set(mapKey, {
@@ -193,6 +123,40 @@ export function upsertDailyRollup(
 			}
 		});
 	}
+}
+
+function _addCount(existing: number | undefined, delta: number): number {
+	return (existing || 0) + delta;
+}
+
+function _mergeNumericFluencyMetrics(
+	ex: NonNullable<DailyRollupValue['fluencyMetrics']>,
+	val: NonNullable<DailyRollupValue['fluencyMetrics']>
+): void {
+	if (val.askModeCount !== undefined) { ex.askModeCount = _addCount(ex.askModeCount, val.askModeCount); }
+	if (val.editModeCount !== undefined) { ex.editModeCount = _addCount(ex.editModeCount, val.editModeCount); }
+	if (val.agentModeCount !== undefined) { ex.agentModeCount = _addCount(ex.agentModeCount, val.agentModeCount); }
+	if (val.planModeCount !== undefined) { ex.planModeCount = _addCount(ex.planModeCount, val.planModeCount); }
+	if (val.customAgentModeCount !== undefined) { ex.customAgentModeCount = _addCount(ex.customAgentModeCount, val.customAgentModeCount); }
+	if (val.cliModeCount !== undefined) { ex.cliModeCount = _addCount(ex.cliModeCount, val.cliModeCount); }
+	if (val.multiTurnSessions !== undefined) { ex.multiTurnSessions = _addCount(ex.multiTurnSessions, val.multiTurnSessions); }
+	if (val.multiFileEdits !== undefined) { ex.multiFileEdits = _addCount(ex.multiFileEdits, val.multiFileEdits); }
+	if (val.sessionCount !== undefined) { ex.sessionCount = _addCount(ex.sessionCount, val.sessionCount); }
+}
+
+function _mergeJsonFluencyMetrics(
+	ex: NonNullable<DailyRollupValue['fluencyMetrics']>,
+	val: NonNullable<DailyRollupValue['fluencyMetrics']>
+): void {
+	if (val.toolCallsJson) { ex.toolCallsJson = mergeJsonMetrics(ex.toolCallsJson, val.toolCallsJson); }
+	if (val.contextRefsJson) { ex.contextRefsJson = mergeJsonMetrics(ex.contextRefsJson, val.contextRefsJson); }
+	if (val.mcpToolsJson) { ex.mcpToolsJson = mergeJsonMetrics(ex.mcpToolsJson, val.mcpToolsJson); }
+	if (val.modelSwitchingJson) { ex.modelSwitchingJson = mergeJsonMetrics(ex.modelSwitchingJson, val.modelSwitchingJson); }
+	if (val.editScopeJson) { ex.editScopeJson = mergeJsonMetrics(ex.editScopeJson, val.editScopeJson); }
+	if (val.agentTypesJson) { ex.agentTypesJson = mergeJsonMetrics(ex.agentTypesJson, val.agentTypesJson); }
+	if (val.repositoriesJson) { ex.repositoriesJson = mergeRepositoriesJson(ex.repositoriesJson, val.repositoriesJson); }
+	if (val.applyUsageJson) { ex.applyUsageJson = mergeJsonMetrics(ex.applyUsageJson, val.applyUsageJson); }
+	if (val.sessionDurationJson) { ex.sessionDurationJson = mergeJsonMetrics(ex.sessionDurationJson, val.sessionDurationJson); }
 }
 
 /**
