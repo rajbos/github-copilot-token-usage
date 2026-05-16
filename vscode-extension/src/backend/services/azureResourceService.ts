@@ -14,6 +14,27 @@ import { validateTeamAlias, type BackendUserIdentityMode } from '../identity';
 import { CredentialService } from './credentialService';
 import { DataPlaneService } from './dataPlaneService';
 
+interface ResourceGroupResult {
+	resourceGroup: string;
+	location: string;
+}
+
+interface TableConfig {
+	aggTable: string;
+	createEvents: string;
+	datasetId: string;
+}
+
+interface SharingProfileResult {
+	sharingProfile: 'soloFull' | 'teamAnonymized' | 'teamPseudonymous' | 'teamIdentified';
+	shareWithTeam: boolean;
+	shareConsentAt: string;
+	userIdentityMode: BackendUserIdentityMode;
+	userId: string;
+	userIdMode: 'alias' | 'custom';
+	shareWorkspaceMachineNames: boolean;
+}
+
 export interface AzureResourceServiceDeps {
 	log: (message: string) => void;
 	updateTokenStats?: () => Promise<void>;
@@ -40,17 +61,44 @@ export class AzureResourceService {
 		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		const credential = this.credentialService.createAzureCredential();
 
-		// Sanity check that we can get a token (common failure is "not logged in")
+		if (!await this._verifyAzureAuth(credential)) { return; }
+
+		const subscriptionId = await this._pickSubscription(credential);
+		if (!subscriptionId) { return; }
+
+		const rgResult = await this._pickOrCreateResourceGroup(credential, subscriptionId);
+		if (!rgResult) { return; }
+
+		const authMode = await this._pickAuthMode();
+		if (!authMode) { return; }
+
+		const storageAccount = await this._pickOrCreateStorageAccount(
+			credential, subscriptionId, rgResult.resourceGroup, rgResult.location, authMode
+		);
+		if (!storageAccount) { return; }
+
+		const tableConfig = await this._configureTableSettings(config);
+		if (!tableConfig) { return; }
+
+		const profile = await this._configureSharingProfile(config, authMode);
+		if (!profile) { return; }
+
+		await this._saveConfigAndActivate(config, subscriptionId, rgResult, storageAccount, tableConfig, authMode, profile);
+	}
+
+	private async _verifyAzureAuth(credential: any): Promise<boolean> {
 		try {
 			await credential.getToken('https://management.azure.com/.default');
+			return true;
 		} catch (e: any) {
 			vscode.window.showErrorMessage(
 				`Azure authentication failed. Sign in using Azure CLI (az login) or VS Code Azure Account, then retry. Details: ${e?.message ?? e}`
 			);
-			return;
+			return false;
 		}
+	}
 
-		// 1) Choose subscription
+	private async _pickSubscription(credential: any): Promise<string | null> {
 		const subscriptionClient = new SubscriptionClient(credential);
 		const subs: Array<{ id: string; name: string }> = [];
 		for await (const s of subscriptionClient.subscriptions.list()) {
@@ -60,24 +108,20 @@ export class AzureResourceService {
 		}
 		if (subs.length === 0) {
 			vscode.window.showErrorMessage('No Azure subscriptions found for the current identity.');
-			return;
+			return null;
 		}
 		const pickedSub = await vscode.window.showQuickPick(
 			subs.map(s => ({ label: s.name, description: s.id, subscriptionId: s.id })),
 			{ title: 'Step 1 of 7: Select Azure Subscription' }
 		);
-		if (!pickedSub) {
-			return;
-		}
-		const subscriptionId = pickedSub.subscriptionId;
+		return pickedSub?.subscriptionId ?? null;
+	}
 
-		// 2) Choose or create resource group
+	private async _pickOrCreateResourceGroup(credential: any, subscriptionId: string): Promise<ResourceGroupResult | null> {
 		const resourceClient = new ResourceManagementClient(credential, subscriptionId);
 		const rgNames: string[] = [];
 		for await (const rg of resourceClient.resourceGroups.list()) {
-			if (rg.name) {
-				rgNames.push(rg.name);
-			}
+			if (rg.name) { rgNames.push(rg.name); }
 		}
 		rgNames.sort();
 		const rgPick = await vscode.window.showQuickPick(
@@ -87,53 +131,49 @@ export class AzureResourceService {
 			],
 			{ title: 'Step 2 of 7: Choose Resource Group' }
 		);
-		if (!rgPick) {
-			return;
+		if (!rgPick) { return null; }
+
+		if (rgPick.label.includes('Create new resource group')) {
+			return this._createNewResourceGroup(resourceClient);
 		}
 
-		let resourceGroup = rgPick.label;
+		// Fetch location for existing RG
 		let location = 'eastus';
-		if (resourceGroup.includes('Create new resource group')) {
-			const name = await vscode.window.showInputBox({
-				title: 'Step 3 of 7: New Resource Group Name',
-				placeHolder: 'copilot-tokens-rg',
-				validateInput: (v) => (v && v.length >= 1 ? undefined : 'Resource group name is required')
-			});
-			if (!name) {
-				return;
-			}
-			resourceGroup = name;
-
-			const loc = await vscode.window.showQuickPick(
-				['eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
-				{ title: 'Step 4 of 7: Choose Location for Resource Group' }
-			);
-			if (!loc) {
-				return;
-			}
-			location = loc;
-
-			try {
-				await resourceClient.resourceGroups.createOrUpdate(resourceGroup, { location });
-			} catch (e: any) {
-				vscode.window.showErrorMessage(
-					`Failed to create resource group. You may need 'Contributor' on the subscription or appropriate RG permissions. Details: ${e?.message ?? e}`
-				);
-				return;
-			}
-		} else {
-			// Fetch location for existing RG
-			try {
-				const rg = await resourceClient.resourceGroups.get(resourceGroup);
-				if (rg.location) {
-					location = rg.location;
-				}
-			} catch (e) {
-				// Use default location if fetch fails (non-critical)
-				this.deps.log(`Could not fetch resource group location, using default: ${e}`);
-			}
+		try {
+			const rg = await resourceClient.resourceGroups.get(rgPick.label);
+			if (rg.location) { location = rg.location; }
+		} catch (e) {
+			this.deps.log(`Could not fetch resource group location, using default: ${e}`);
 		}
+		return { resourceGroup: rgPick.label, location };
+	}
 
+	private async _createNewResourceGroup(resourceClient: ResourceManagementClient): Promise<ResourceGroupResult | null> {
+		const name = await vscode.window.showInputBox({
+			title: 'Step 3 of 7: New Resource Group Name',
+			placeHolder: 'copilot-tokens-rg',
+			validateInput: (v) => (v && v.length >= 1 ? undefined : 'Resource group name is required')
+		});
+		if (!name) { return null; }
+
+		const loc = await vscode.window.showQuickPick(
+			['eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
+			{ title: 'Step 4 of 7: Choose Location for Resource Group' }
+		);
+		if (!loc) { return null; }
+
+		try {
+			await resourceClient.resourceGroups.createOrUpdate(name, { location: loc });
+		} catch (e: any) {
+			vscode.window.showErrorMessage(
+				`Failed to create resource group. You may need 'Contributor' on the subscription or appropriate RG permissions. Details: ${e?.message ?? e}`
+			);
+			return null;
+		}
+		return { resourceGroup: name, location: loc };
+	}
+
+	private async _pickAuthMode(): Promise<BackendAuthMode | null> {
 		const authPick = await vscode.window.showQuickPick(
 			[
 				{
@@ -148,24 +188,22 @@ export class AzureResourceService {
 					authMode: 'sharedKey' as BackendAuthMode
 				}
 			],
-			{
-				title: 'Step 5 of 7: Choose Authentication Mode',
-				ignoreFocusOut: true,
-				placeHolder: 'Entra ID recommended'
-			}
+			{ title: 'Step 5 of 7: Choose Authentication Mode', ignoreFocusOut: true, placeHolder: 'Entra ID recommended' }
 		);
-		if (!authPick) {
-			return;
-		}
-		const authMode = authPick.authMode;
+		return authPick?.authMode ?? null;
+	}
 
-		// 3) Choose or create storage account
+	private async _pickOrCreateStorageAccount(
+		credential: any,
+		subscriptionId: string,
+		resourceGroup: string,
+		location: string,
+		authMode: BackendAuthMode
+	): Promise<string | null> {
 		const storageMgmt = new StorageManagementClient(credential, subscriptionId);
 		const saNames: string[] = [];
 		for await (const sa of storageMgmt.storageAccounts.listByResourceGroup(resourceGroup)) {
-			if (sa.name) {
-				saNames.push(sa.name);
-			}
+			if (sa.name) { saNames.push(sa.name); }
 		}
 		saNames.sort();
 		const saPick = await vscode.window.showQuickPick(
@@ -175,279 +213,223 @@ export class AzureResourceService {
 			],
 			{ title: 'Step 6 of 7: Choose Storage Account' }
 		);
-		if (!saPick) {
-			return;
-		}
+		if (!saPick) { return null; }
+		if (!saPick.label.includes('Create new storage account')) { return saPick.label; }
 
 		const RESERVED_NAMES = ['microsoft', 'azure', 'windows', 'test', 'prod', 'admin'];
-		
-		let storageAccount = saPick.label;
-		if (storageAccount.includes('Create new storage account')) {
-			const name = await vscode.window.showInputBox({
-				title: 'Step 6 of 7: New Storage Account Name',
-				placeHolder: 'copilottokensrg',
-				validateInput: (v) => {
-					if (!v) {
-						return 'Storage account name is required';
-					}
-					const lower = v.toLowerCase();
-					if (!/^[a-z0-9]{3,24}$/.test(lower)) {
-						return 'Must be 3-24 chars, lowercase letters and numbers only';
-					}
-					if (RESERVED_NAMES.includes(lower)) {
-						return `"${lower}" is a reserved name. Choose a different name.`;
-					}
-					return undefined;
-				}
-			});
-			if (!name) {
-				return;
+		const name = await vscode.window.showInputBox({
+			title: 'Step 6 of 7: New Storage Account Name',
+			placeHolder: 'copilottokensrg',
+			validateInput: (v) => {
+				if (!v) { return 'Storage account name is required'; }
+				const lower = v.toLowerCase();
+				if (!/^[a-z0-9]{3,24}$/.test(lower)) { return 'Must be 3-24 chars, lowercase letters and numbers only'; }
+				if (RESERVED_NAMES.includes(lower)) { return `"${lower}" is a reserved name. Choose a different name.`; }
+				return undefined;
 			}
-			storageAccount = name;
+		});
+		if (!name) { return null; }
 
-			const loc = await vscode.window.showQuickPick(
-				[location, 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
-				{ title: 'Step 6 of 7: Choose Location for Storage Account' }
+		const loc = await vscode.window.showQuickPick(
+			[location, 'eastus', 'eastus2', 'westus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast', 'japaneast', 'southeastasia'],
+			{ title: 'Step 6 of 7: Choose Location for Storage Account' }
+		);
+		if (!loc) { return null; }
+
+		const createStorageAccountParams = {
+			location: loc,
+			sku: { name: 'Standard_LRS' },
+			kind: 'StorageV2',
+			enableHttpsTrafficOnly: true,
+			minimumTlsVersion: 'TLS1_2',
+			// Respect the chosen auth mode: disable Shared Key when Entra ID is selected.
+			allowSharedKeyAccess: authMode === 'sharedKey',
+			defaultToOAuthAuthentication: authMode === 'entraId',
+			// Low-risk hardening: disallow public access to blobs/containers.
+			allowBlobPublicAccess: false
+		} as const;
+
+		try {
+			await storageMgmt.storageAccounts.beginCreateAndWait(resourceGroup, name, createStorageAccountParams as any);
+			return name;
+		} catch (e: any) {
+			if (isAzurePolicyDisallowedError(e) || isStorageLocalAuthDisallowedByPolicyError(e)) {
+				return this._handlePolicyBlockedStorageCreation(e, saNames, resourceGroup);
+			}
+			vscode.window.showErrorMessage(
+				`Failed to create storage account. You may need 'Storage Account Contributor' (or 'Contributor') on the resource group. Details: ${e?.message ?? e}`
 			);
-			if (!loc) {
-				return;
-			}
-			location = loc;
-
-			const createStorageAccountParams = {
-				location,
-				sku: { name: 'Standard_LRS' },
-				kind: 'StorageV2',
-				enableHttpsTrafficOnly: true,
-				minimumTlsVersion: 'TLS1_2',
-				// Respect the chosen auth mode: disable Shared Key when Entra ID is selected.
-				allowSharedKeyAccess: authMode === 'sharedKey',
-				defaultToOAuthAuthentication: authMode === 'entraId',
-				// Low-risk hardening: disallow public access to blobs/containers.
-				allowBlobPublicAccess: false
-			} as const;
-
-			try {
-				await storageMgmt.storageAccounts.beginCreateAndWait(resourceGroup, storageAccount, createStorageAccountParams as any);
-			} catch (e: any) {
-				if (isAzurePolicyDisallowedError(e) || isStorageLocalAuthDisallowedByPolicyError(e)) {
-					const extra = isStorageLocalAuthDisallowedByPolicyError(e)
-						? '\n\nThis policy typically requires disabling local authentication (Shared Key). Select Entra ID auth (Shared Key disabled) or create a storage account externally that meets your org policies.'
-						: '';
-					const choice = await vscode.window.showWarningMessage(
-						`Storage account creation was blocked by Azure Policy (RequestDisallowedByPolicy).${extra}\n\nTo continue, select an existing compliant Storage account in this resource group (or create one externally that meets your org policies), then re-run the wizard if needed.`,
-						{ modal: true },
-						'Choose existing Storage account'
-					);
-					if (choice === 'Choose existing Storage account') {
-						if (saNames.length === 0) {
-							vscode.window.showErrorMessage(
-								`No existing Storage accounts were found in resource group '${resourceGroup}'. Create one externally that complies with your org policies (including Shared Key disabled), then re-run the wizard.`
-							);
-							return;
-						}
-						const existingPick = await vscode.window.showQuickPick(
-							saNames.map(name => ({ label: name, description: 'Existing storage account' })),
-							{ title: 'Select an existing Storage account for backend sync' }
-						);
-						if (!existingPick) {
-							return;
-						}
-						storageAccount = existingPick.label;
-					} else {
-						return;
-					}
-				} else {
-					vscode.window.showErrorMessage(
-						`Failed to create storage account. You may need 'Storage Account Contributor' (or 'Contributor') on the resource group. Details: ${e?.message ?? e}`
-					);
-					return;
-				}
-			}
+			return null;
 		}
+	}
 
-		// 4) Ensure tables exist (+ optional containers)
+	private async _handlePolicyBlockedStorageCreation(e: any, saNames: string[], resourceGroup: string): Promise<string | null> {
+		const extra = isStorageLocalAuthDisallowedByPolicyError(e)
+			? '\n\nThis policy typically requires disabling local authentication (Shared Key). Select Entra ID auth (Shared Key disabled) or create a storage account externally that meets your org policies.'
+			: '';
+		const choice = await vscode.window.showWarningMessage(
+			`Storage account creation was blocked by Azure Policy (RequestDisallowedByPolicy).${extra}\n\nTo continue, select an existing compliant Storage account in this resource group (or create one externally that meets your org policies), then re-run the wizard if needed.`,
+			{ modal: true },
+			'Choose existing Storage account'
+		);
+		if (choice !== 'Choose existing Storage account') { return null; }
+
+		if (saNames.length === 0) {
+			vscode.window.showErrorMessage(
+				`No existing Storage accounts were found in resource group '${resourceGroup}'. Create one externally that complies with your org policies (including Shared Key disabled), then re-run the wizard.`
+			);
+			return null;
+		}
+		const existingPick = await vscode.window.showQuickPick(
+			saNames.map(name => ({ label: name, description: 'Existing storage account' })),
+			{ title: 'Select an existing Storage account for backend sync' }
+		);
+		return existingPick?.label ?? null;
+	}
+
+	private async _configureTableSettings(config: vscode.WorkspaceConfiguration): Promise<TableConfig | null> {
 		const aggTable = await vscode.window.showInputBox({
 			title: 'Aggregate Table Name',
 			value: config.get<string>('backend.aggTable', 'usageAggDaily'),
 			placeHolder: 'usageAggDaily',
 			validateInput: (v) => (v ? undefined : 'Table name is required')
 		});
-		if (!aggTable) {
-			return;
-		}
+		if (!aggTable) { return null; }
 
 		const createEvents = await vscode.window.showQuickPick(
 			['No (recommended)', 'Yes (create usageEvents table)'],
 			{ title: 'Create Optional Events Table?', placeHolder: 'Most users should select No' }
 		);
-		if (!createEvents) {
-			return;
-		}
+		if (!createEvents) { return null; }
 
 		const datasetId = (await vscode.window.showInputBox({
 			title: 'Step 6 of 7: Dataset ID',
 			value: config.get<string>('backend.datasetId', 'default'),
 			placeHolder: 'my-team-copilot'
 		}))?.trim();
-		if (!datasetId) {
-			return;
-		}
+		if (!datasetId) { return null; }
+
+		return { aggTable, createEvents, datasetId };
+	}
+
+	private async _configureSharingProfile(config: vscode.WorkspaceConfiguration, authMode: BackendAuthMode): Promise<SharingProfileResult | null> {
 		const profilePick = await vscode.window.showQuickPick(
 			[
-				{
-					label: 'Solo / Full Fidelity (personal dataset)',
-					description: 'Your private storage with real workspace and machine names',
-					profile: 'soloFull' as const
-				},
-				{
-					label: 'Team / Anonymized (recommended)',
-					description: 'Hashed IDs only, no user identifier, no workspace/machine names',
-					profile: 'teamAnonymized' as const
-				},
-				{
-					label: 'Team / Pseudonymous',
-					description: 'Derived user key (privacy-preserving hash), hashed IDs, no workspace/machine names by default',
-					profile: 'teamPseudonymous' as const
-				},
-				{
-					label: 'Team / Identified (explicit)',
-					description: 'Visible user identity (your alias or Entra ID), hashed IDs, no workspace/machine names by default',
-					profile: 'teamIdentified' as const
-				}
+				{ label: 'Solo / Full Fidelity (personal dataset)', description: 'Your private storage with real workspace and machine names', profile: 'soloFull' as const },
+				{ label: 'Team / Anonymized (recommended)', description: 'Hashed IDs only, no user identifier, no workspace/machine names', profile: 'teamAnonymized' as const },
+				{ label: 'Team / Pseudonymous', description: 'Derived user key (privacy-preserving hash), hashed IDs, no workspace/machine names by default', profile: 'teamPseudonymous' as const },
+				{ label: 'Team / Identified (explicit)', description: 'Visible user identity (your alias or Entra ID), hashed IDs, no workspace/machine names by default', profile: 'teamIdentified' as const }
 			],
 			{ title: 'Step 7 of 7: Choose Sharing Profile', ignoreFocusOut: true }
 		);
-		if (!profilePick) {
-			return;
-		}
+		if (!profilePick) { return null; }
 
 		const sharingProfile = profilePick.profile;
 		const shareWithTeam = sharingProfile === 'teamPseudonymous' || sharingProfile === 'teamIdentified';
 		let shareConsentAt = '';
 		let userIdentityMode = config.get<BackendUserIdentityMode>('backend.userIdentityMode', 'pseudonymous');
 		let userId = '';
-		let userIdMode: 'alias' | 'custom';
+		let userIdMode: 'alias' | 'custom' = 'alias';
 		let shareWorkspaceMachineNames: boolean;
 
 		if (sharingProfile === 'soloFull') {
-			// Personal dataset: include workspace/machine names by default.
-			userId = '';
-			userIdMode = 'alias';
 			shareWorkspaceMachineNames = true;
 		} else if (sharingProfile === 'teamAnonymized') {
-			// Strongest team posture: no user identifier and no names.
-			userId = '';
-			userIdMode = 'alias';
 			shareWorkspaceMachineNames = false;
 		} else if (sharingProfile === 'teamPseudonymous') {
 			shareConsentAt = new Date().toISOString();
 			userIdentityMode = 'pseudonymous';
 			if (authMode !== 'entraId') {
 				vscode.window.showErrorMessage('Team / Pseudonymous requires Entra ID (RBAC) auth mode. Re-run the wizard and choose Entra ID.');
-				return;
+				return null;
 			}
-			userId = '';
-			userIdMode = 'alias';
 			shareWorkspaceMachineNames = false;
 		} else {
 			// teamIdentified
 			shareConsentAt = new Date().toISOString();
-			const modePick = await vscode.window.showQuickPick(
-				[
-					{
-						label: 'Team alias (recommended)',
-						description: 'Non-identifying handle like alex-dev',
-						mode: 'teamAlias' as const
-					},
-					{
-						label: 'Entra object ID (advanced)',
-						description: 'Unique GUID identifier (sensitive)',
-						mode: 'entraObjectId' as const
-					}
-				],
-				{ title: 'Step 7 of 7: Choose Identity Mode', ignoreFocusOut: true }
-			);
-			if (!modePick) {
-				return;
-			}
-			userIdentityMode = modePick.mode;
-
-			if (userIdentityMode === 'teamAlias') {
-				const userIdInput = await vscode.window.showInputBox({
-					title: 'Step 7 of 7: Team Alias',
-					prompt: 'Enter a short, non-PII alias (lowercase letters/digits/dash only). Do not use email or real names.',
-					value: config.get<string>('backend.userId', ''),
-					placeHolder: 'alex-dev',
-					ignoreFocusOut: true,
-					validateInput: (v) => {
-						const res = validateTeamAlias(v);
-						return res.valid ? undefined : res.error;
-					}
-				});
-				if (userIdInput === undefined) {
-					return;
-				}
-				userId = userIdInput.trim();
-				userIdMode = 'alias';
-			} else {
-				const objectIdInput = await vscode.window.showInputBox({
-					title: 'Step 7 of 7: Entra Object ID',
-					prompt: 'Enter your Entra object ID (GUID). WARNING: uniquely identifies you. Only enable if your team requires it.',
-					value: config.get<string>('backend.userId', ''),
-					placeHolder: '00000000-0000-0000-0000-000000000000',
-					ignoreFocusOut: true,
-					validateInput: (v) => {
-						const trimmed = (v ?? '').trim();
-						return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(trimmed)
-							? undefined
-							: 'Must be a GUID (Entra object ID).';
-					}
-				});
-				if (objectIdInput === undefined) {
-					return;
-				}
-				userId = objectIdInput.trim();
-				userIdMode = 'custom';
-			}
+			const identityResult = await this._pickTeamIdentity(config);
+			if (!identityResult) { return null; }
+			userIdentityMode = identityResult.userIdentityMode;
+			userId = identityResult.userId;
+			userIdMode = identityResult.userIdMode;
 			shareWorkspaceMachineNames = false;
 		}
 
 		if (sharingProfile === 'teamPseudonymous' || sharingProfile === 'teamIdentified') {
 			const namesPick = await vscode.window.showQuickPick(
 				[
-					{
-						label: 'No (recommended)',
-						description: 'Keep workspace/machine names private; store only opaque IDs.',
-						shareNames: false as const
-					},
-					{
-						label: 'Yes (store workspace & machine names)',
-						description: 'May contain sensitive info (project names, hostname).',
-						shareNames: true as const
-					}
+					{ label: 'No (recommended)', description: 'Keep workspace/machine names private; store only opaque IDs.', shareNames: false as const },
+					{ label: 'Yes (store workspace & machine names)', description: 'May contain sensitive info (project names, hostname).', shareNames: true as const }
 				],
 				{ title: 'Also store workspace and machine names?', ignoreFocusOut: true }
 			);
-			if (!namesPick) {
-				return;
-			}
+			if (!namesPick) { return null; }
 			shareWorkspaceMachineNames = namesPick.shareNames;
 		}
 
-		// Save config now (so subsequent calls have correct values)
+		return { sharingProfile, shareWithTeam, shareConsentAt, userIdentityMode, userId, userIdMode, shareWorkspaceMachineNames };
+	}
+
+	private async _pickTeamIdentity(config: vscode.WorkspaceConfiguration): Promise<{ userIdentityMode: BackendUserIdentityMode; userId: string; userIdMode: 'alias' | 'custom' } | null> {
+		const modePick = await vscode.window.showQuickPick(
+			[
+				{ label: 'Team alias (recommended)', description: 'Non-identifying handle like alex-dev', mode: 'teamAlias' as const },
+				{ label: 'Entra object ID (advanced)', description: 'Unique GUID identifier (sensitive)', mode: 'entraObjectId' as const }
+			],
+			{ title: 'Step 7 of 7: Choose Identity Mode', ignoreFocusOut: true }
+		);
+		if (!modePick) { return null; }
+
+		if (modePick.mode === 'teamAlias') {
+			const userIdInput = await vscode.window.showInputBox({
+				title: 'Step 7 of 7: Team Alias',
+				prompt: 'Enter a short, non-PII alias (lowercase letters/digits/dash only). Do not use email or real names.',
+				value: config.get<string>('backend.userId', ''),
+				placeHolder: 'alex-dev',
+				ignoreFocusOut: true,
+				validateInput: (v) => { const res = validateTeamAlias(v); return res.valid ? undefined : res.error; }
+			});
+			if (userIdInput === undefined) { return null; }
+			return { userIdentityMode: 'teamAlias', userId: userIdInput.trim(), userIdMode: 'alias' };
+		} else {
+			const objectIdInput = await vscode.window.showInputBox({
+				title: 'Step 7 of 7: Entra Object ID',
+				prompt: 'Enter your Entra object ID (GUID). WARNING: uniquely identifies you. Only enable if your team requires it.',
+				value: config.get<string>('backend.userId', ''),
+				placeHolder: '00000000-0000-0000-0000-000000000000',
+				ignoreFocusOut: true,
+				validateInput: (v) => {
+					const trimmed = (v ?? '').trim();
+					return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(trimmed)
+						? undefined : 'Must be a GUID (Entra object ID).';
+				}
+			});
+			if (objectIdInput === undefined) { return null; }
+			return { userIdentityMode: 'entraObjectId', userId: objectIdInput.trim(), userIdMode: 'custom' };
+		}
+	}
+
+	private async _saveConfigAndActivate(
+		config: vscode.WorkspaceConfiguration,
+		subscriptionId: string,
+		rgResult: ResourceGroupResult,
+		storageAccount: string,
+		tableConfig: TableConfig,
+		authMode: BackendAuthMode,
+		profile: SharingProfileResult
+	): Promise<void> {
 		await config.update('backend.subscriptionId', subscriptionId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.resourceGroup', resourceGroup, vscode.ConfigurationTarget.Global);
+		await config.update('backend.resourceGroup', rgResult.resourceGroup, vscode.ConfigurationTarget.Global);
 		await config.update('backend.storageAccount', storageAccount, vscode.ConfigurationTarget.Global);
-		await config.update('backend.aggTable', aggTable, vscode.ConfigurationTarget.Global);
-		await config.update('backend.datasetId', datasetId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.sharingProfile', sharingProfile, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userId', userId, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userIdMode', userIdMode, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareWithTeam', shareWithTeam, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareWorkspaceMachineNames', shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
-		await config.update('backend.shareConsentAt', shareConsentAt, vscode.ConfigurationTarget.Global);
-		await config.update('backend.userIdentityMode', userIdentityMode, vscode.ConfigurationTarget.Global);
+		await config.update('backend.aggTable', tableConfig.aggTable, vscode.ConfigurationTarget.Global);
+		await config.update('backend.datasetId', tableConfig.datasetId, vscode.ConfigurationTarget.Global);
+		await config.update('backend.sharingProfile', profile.sharingProfile, vscode.ConfigurationTarget.Global);
+		await config.update('backend.userId', profile.userId, vscode.ConfigurationTarget.Global);
+		await config.update('backend.userIdMode', profile.userIdMode, vscode.ConfigurationTarget.Global);
+		await config.update('backend.shareWithTeam', profile.shareWithTeam, vscode.ConfigurationTarget.Global);
+		await config.update('backend.shareWorkspaceMachineNames', profile.shareWorkspaceMachineNames, vscode.ConfigurationTarget.Global);
+		await config.update('backend.shareConsentAt', profile.shareConsentAt, vscode.ConfigurationTarget.Global);
+		await config.update('backend.userIdentityMode', profile.userIdentityMode, vscode.ConfigurationTarget.Global);
 		await config.update('backend.authMode', authMode, vscode.ConfigurationTarget.Global);
 		await config.update('backend.enabled', true, vscode.ConfigurationTarget.Global);
 
@@ -469,12 +451,10 @@ export class AzureResourceService {
 			return;
 		}
 
-		if (createEvents.startsWith('Yes')) {
+		if (tableConfig.createEvents.startsWith('Yes')) {
 			try {
 				const creds = await this.credentialService.getBackendDataPlaneCredentials(finalSettings);
-				if (!creds) {
-					// User chose sharedKey but no key. Skip optional resources.
-				} else {
+				if (creds) {
 					const endpoint = `https://${finalSettings.storageAccount}.table.core.windows.net`;
 					const serviceClient = new TableServiceClient(endpoint, creds.tableCredential as any);
 					await serviceClient.createTable(finalSettings.eventsTable);
