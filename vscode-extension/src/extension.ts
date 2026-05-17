@@ -1579,6 +1579,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return { sessionFiles, preloaded: [] };
 		}
 
+		const analyzeStartMs = Date.now();
 		const results = await this.runWithConcurrency(sessionFiles, async (sessionFile, i) => {
 			if (progressCallback) { progressCallback(i + 1, sessionFiles.length); }
 			const fileStats = await this.statSessionFile(sessionFile);
@@ -1594,7 +1595,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 
 		const preloaded = results.filter((r): r is SessionFilePreload => r !== null && r !== undefined);
-		this.log(`📦 Preloaded ${preloaded.length}/${sessionFiles.length} session file(s) within date range`);
+		this.log(`📦 Preloaded ${preloaded.length}/${sessionFiles.length} session file(s) within date range in ${((Date.now() - analyzeStartMs) / 1000).toFixed(1)}s`);
 		return { sessionFiles, preloaded };
 	}
 
@@ -1869,6 +1870,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let cacheHits = 0;
 			let cacheMisses = 0;
 			let skippedFiles = 0;
+			const analysisStartMs = Date.now();
 
 			let sessionDataResults: ({ sessionFile: string; sessionData: SessionFileCache; details: SessionFileDetails; mtime: number; wasCached: boolean } | null | undefined)[];
 
@@ -1942,7 +1944,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			dailyStatsMap = aggregated.dailyStatsMap;
 			skippedFiles += aggregated.skippedCount;
 
-			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
+			const analysisElapsedMs = Date.now() - analysisStartMs;
+			const analysisElapsedSec = (analysisElapsedMs / 1000).toFixed(1);
+			this.log(`✅ Analysis complete in ${analysisElapsedSec}s: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
 				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
 			}
@@ -2772,7 +2776,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		return _mergeUsageAnalysis(period, analysis);
 	}
 
-	private async countInteractionsInSession(sessionFile: string, preloadedContent?: string): Promise<number> {
+	private async countInteractionsInSession(sessionFile: string, preloadedContent?: string, preloadedParsedJson?: any): Promise<number> {
 		try {
 			const eco = this.findEcosystem(sessionFile);
 			if (eco) { return eco.countInteractions(sessionFile); }
@@ -2813,7 +2817,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			}
 
 			// Handle regular .json files
-			const sessionContent = JSON.parse(fileContent);
+			const sessionContent = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 
 			// Count the number of requests as interactions
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
@@ -2914,7 +2918,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 
-	private async extractSessionMetadata(sessionFile: string, preloadedContent?: string): Promise<{
+	private async extractSessionMetadata(sessionFile: string, preloadedContent?: string, preloadedParsedJson?: any): Promise<{
 		title: string | undefined;
 		firstInteraction: string | null;
 		lastInteraction: string | null;
@@ -3002,7 +3006,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			} else {
 				// JSON format - try to parse
 				try {
-					const parsed = JSON.parse(fileContent);
+					const parsed = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 					if (parsed.customTitle) { title = parsed.customTitle; }
 					// creationDate is session creation, not a request — only add to timestamps
 					if (parsed.creationDate) { timestamps.push(parsed.creationDate); }
@@ -3054,21 +3058,34 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		this._cacheMisses++;
 
-		// Pre-read file content once for regular Copilot Chat files to avoid 5 redundant reads
+		// Pre-read file content once for regular Copilot Chat files to avoid redundant reads
 		let preloadedContent: string | undefined;
 		const isSpecialSession = this.findEcosystem(sessionFilePath) !== null;
 		if (!isSpecialSession) {
 			preloadedContent = await fs.promises.readFile(sessionFilePath, 'utf8');
 		}
 
-		// Cache miss - process the file (using pre-read content when available)
-		const tokenResult = await this.estimateTokensFromSession(sessionFilePath, preloadedContent);
-		const interactions = await this.countInteractionsInSession(sessionFilePath, preloadedContent);
-		const modelUsage = await _getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath, preloadedContent);
-		const usageAnalysis = await _analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath, preloadedContent);
+		// Pre-parse JSON content once for non-JSONL files to avoid multiple redundant JSON.parse calls.
+		// Each analysis function independently parses the same content; sharing the parsed object
+		// eliminates up to 7 redundant JSON.parse operations per cache miss for large session files.
+		let preloadedParsedJson: any | undefined;
+		if (preloadedContent
+			&& !sessionFilePath.endsWith('.jsonl')
+			&& !_isJsonlContent(preloadedContent)
+			&& !_isUuidPointerFile(preloadedContent)
+		) {
+			try { preloadedParsedJson = JSON.parse(preloadedContent); } catch { /* each function handles parse errors individually */ }
+		}
 
-		// Extract title and timestamps from the session file
-		const sessionMeta = await this.extractSessionMetadata(sessionFilePath, preloadedContent);
+		// Cache miss - process the file using pre-read content and pre-parsed JSON when available.
+		// Use Promise.all so ecosystem-session I/O (eco.getTokens etc.) can overlap across calls.
+		const [tokenResult, interactions, modelUsage, usageAnalysis, sessionMeta] = await Promise.all([
+			this.estimateTokensFromSession(sessionFilePath, preloadedContent, preloadedParsedJson),
+			this.countInteractionsInSession(sessionFilePath, preloadedContent, preloadedParsedJson),
+			_getModelUsageFromSession(this.usageAnalysisDeps, sessionFilePath, preloadedContent, preloadedParsedJson),
+			_analyzeSessionUsage(this.usageAnalysisDeps, sessionFilePath, preloadedContent, preloadedParsedJson),
+			this.extractSessionMetadata(sessionFilePath, preloadedContent, preloadedParsedJson),
+		]);
 
 		// Compute per-UTC-day rollups by distributing cached totals proportionally across days
 		// (same approach as syncService.processCachedSessionFile)
@@ -4296,7 +4313,7 @@ usageAnalysis: undefined
 
 
 
-	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number; cacheReadTokens?: number }> {
+	private async estimateTokensFromSession(sessionFilePath: string, preloadedContent?: string, preloadedParsedJson?: any): Promise<{ tokens: number; thinkingTokens: number; actualTokens: number; cacheReadTokens?: number }> {
 		try {
 			const eco = this.findEcosystem(sessionFilePath);
 			if (eco) { return eco.getTokens(sessionFilePath); }
@@ -4315,7 +4332,7 @@ usageAnalysis: undefined
 			}
 
 			// Handle regular .json files
-			const sessionContent = JSON.parse(fileContent);
+			const sessionContent = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 			let totalInputTokens = 0;
 			let totalOutputTokens = 0;
 			let totalThinkingTokens = 0;
