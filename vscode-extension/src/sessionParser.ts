@@ -227,7 +227,7 @@ totalOutputTokens += t;
 
 // Process a single request (used by both JSON and reconstructed delta flows)
 const processRequest = (request: any) => {
-if (!isObject(request)) { return; }
+if (request == null || typeof request !== 'object') { return; }
 
 const rawRequestModel = request.modelId ?? request.selectedModel?.identifier ?? request.model;
 const requestModel = normalizeModelId(rawRequestModel, defaultModel);
@@ -250,12 +250,14 @@ if (typeof part?.text === 'string' && part.text) { addInput(model, part.text); }
 addInput(model, request.message.text);
 }
 
-// Responses (separate thinking)
+// Extract output and thinking text via extractResponseAndThinkingText, which handles
+// both plain .value and delta-format content.value shapes.
 const { responseText, thinkingText } = extractResponseAndThinkingText(request.response);
 if (responseText) { addOutput(model, responseText); }
 if (thinkingText) { totalThinkingTokens += estimateTokensFromText(thinkingText, model); }
 
-// Sub-agents and detailed response items
+// Loop only for sub-agents and message.parts — skip .value and thinking items
+// because extractResponseAndThinkingText already counted them above.
 const responseItems = Array.isArray(request.response) ? request.response : (Array.isArray(request.responses) ? request.responses : []);
 for (const responseItem of responseItems) {
 const subAgent = extractSubAgentData(responseItem);
@@ -265,13 +267,11 @@ if (subAgent.prompt) { addInput(saModel, subAgent.prompt); }
 if (subAgent.result) { addOutput(saModel, subAgent.result); }
 continue;
 }
+// .value (including thinking) already handled — skip to avoid double-counting
+if (responseItem?.kind === 'thinking') { continue; }
+if (typeof responseItem?.value === 'string') { continue; }
 
-if (responseItem?.kind === 'thinking' && typeof responseItem?.value === 'string' && responseItem.value) {
-totalThinkingTokens += estimateTokensFromText(responseItem.value, model);
-continue;
-}
-
-if (typeof responseItem?.value === 'string' && responseItem.value) { addOutput(model, responseItem.value); }
+// message.parts is not covered by extractResponseAndThinkingText
 if (responseItem?.message?.parts) {
 for (const p of responseItem.message.parts) {
 if (typeof p?.text === 'string' && p.text) { addOutput(model, p.text); }
