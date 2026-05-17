@@ -583,11 +583,11 @@ export function applyModelTierClassification(
  * Calculate model switching statistics for a session file.
  * This method updates the analysis.modelSwitching field in place.
  */
-export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'tokenEstimators' | 'ecosystems'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string): Promise<void> {
+export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'warn' | 'modelPricing' | 'tokenEstimators' | 'ecosystems'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string, preloadedParsedJson?: any): Promise<void> {
 	try {
 		// Use non-cached method to avoid circular dependency
 		// (getSessionFileDataCached -> analyzeSessionUsage -> getModelUsageFromSessionCached -> getSessionFileDataCached)
-		const modelUsage = await getModelUsageFromSession(deps, sessionFile, preloadedContent);
+		const modelUsage = await getModelUsageFromSession(deps, sessionFile, preloadedContent, preloadedParsedJson);
 		const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
 
 		// Skip if modelUsage is undefined or empty (not a valid session file)
@@ -627,7 +627,7 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
 		}
 		const isJsonl = sessionFile.endsWith('.jsonl') || isJsonlContent(fileContent);
 		if (!isJsonl) {
-			const sessionContent = JSON.parse(fileContent);
+			const sessionContent = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 			if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 				let previousModel: string | null = null;
 				let switchCount = 0;
@@ -756,7 +756,7 @@ export async function calculateModelSwitching(deps: Pick<UsageAnalysisDeps, 'war
  * - Conversation patterns (multi-turn sessions)
  * - Agent type usage
  */
-export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string): Promise<void> {
+export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>, sessionFile: string, analysis: SessionUsageAnalysis, preloadedContent?: string, preloadedParsedJson?: any): Promise<void> {
 	try {
 		const fileContent = preloadedContent ?? await fs.promises.readFile(sessionFile, 'utf8');
 
@@ -865,7 +865,7 @@ export async function trackEnhancedMetrics(deps: Pick<UsageAnalysisDeps, 'warn'>
 			}
 		} else {
 			// Handle regular JSON files
-			const sessionContent = JSON.parse(fileContent);
+			const sessionContent = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 			
 			// Extract timestamps
 			if (sessionContent.creationDate) { timestamps.push(sessionContent.creationDate); }
@@ -996,7 +996,7 @@ export function createEmptySessionUsageAnalysis(): SessionUsageAnalysis {
 /**
  * Analyze a session file for usage patterns (tool calls, modes, context references, MCP tools)
  */
-export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: string, preloadedContent?: string): Promise<SessionUsageAnalysis> {
+export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: string, preloadedContent?: string, preloadedParsedJson?: any): Promise<SessionUsageAnalysis> {
 	const analysis: SessionUsageAnalysis = createEmptySessionUsageAnalysis();
 
 	try {
@@ -1370,7 +1370,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 		}
 
 		// Handle regular .json files
-		const sessionContent = JSON.parse(fileContent);
+		const sessionContent = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 
 		// Detect session mode and count interactions per request
 		if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
@@ -1455,10 +1455,10 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 		}
 
 		// Calculate model switching statistics from session (pass preloaded content to avoid re-reading)
-		await calculateModelSwitching(deps, sessionFile, analysis, fileContent);
+		await calculateModelSwitching(deps, sessionFile, analysis, fileContent, preloadedParsedJson);
 
 		// Track new metrics: edit scope, apply usage, session duration, conversation patterns, agent types
-		await trackEnhancedMetrics(deps, sessionFile, analysis, fileContent);
+		await trackEnhancedMetrics(deps, sessionFile, analysis, fileContent, preloadedParsedJson);
 	} catch (error) {
 		deps.warn(`Error analyzing session usage from ${sessionFile}: ${error}`);
 	}
@@ -1466,7 +1466,7 @@ export async function analyzeSessionUsage(deps: UsageAnalysisDeps, sessionFile: 
 	return analysis;
 }
 
-export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'tokenEstimators' | 'modelPricing' | 'ecosystems'>, sessionFile: string, preloadedContent?: string): Promise<ModelUsage> {
+export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'warn' | 'tokenEstimators' | 'modelPricing' | 'ecosystems'>, sessionFile: string, preloadedContent?: string, preloadedParsedJson?: any): Promise<ModelUsage> {
 	const modelUsage: ModelUsage = {};
 
 	// Dispatch to ecosystem adapter when available
@@ -1706,7 +1706,7 @@ export async function getModelUsageFromSession(deps: Pick<UsageAnalysisDeps, 'wa
 		}
 
 		// Handle regular .json files
-		const sessionContent = JSON.parse(fileContent);
+		const sessionContent = preloadedParsedJson !== undefined ? preloadedParsedJson : JSON.parse(fileContent);
 
 		if (sessionContent.requests && Array.isArray(sessionContent.requests)) {
 			for (const request of sessionContent.requests) {
