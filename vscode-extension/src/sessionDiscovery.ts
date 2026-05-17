@@ -172,6 +172,7 @@ export class SessionDiscovery {
 
 		const sessionFiles: string[] = [];
 		try {
+			const discoveryStartMs = Date.now();
 			this.deps.log(`🔍 Searching for session files via ${this.deps.ecosystems.filter(isDiscoverable).length} discoverable ecosystem adapter(s)`);
 			for (const eco of this.deps.ecosystems) {
 				if (!isDiscoverable(eco)) { continue; }
@@ -201,7 +202,7 @@ export class SessionDiscovery {
 				this.deps.log(`🧹 Deduplicated ${dupCount} duplicate session path(s)`);
 			}
 
-			this.deps.log(`✨ Total: ${deduped.length} session file(s) discovered`);
+			this.deps.log(`✨ Total: ${deduped.length} session file(s) discovered in ${((Date.now() - discoveryStartMs) / 1000).toFixed(1)}s`);
 			if (deduped.length === 0) {
 				this.deps.warn('⚠️ No session files found - Have you used GitHub Copilot Chat yet?');
 			}

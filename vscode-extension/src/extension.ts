@@ -1577,6 +1577,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			return { sessionFiles, preloaded: [] };
 		}
 
+		const analyzeStartMs = Date.now();
 		const results = await this.runWithConcurrency(sessionFiles, async (sessionFile, i) => {
 			if (progressCallback) { progressCallback(i + 1, sessionFiles.length); }
 			const fileStats = await this.statSessionFile(sessionFile);
@@ -1592,7 +1593,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		});
 
 		const preloaded = results.filter((r): r is SessionFilePreload => r !== null && r !== undefined);
-		this.log(`📦 Preloaded ${preloaded.length}/${sessionFiles.length} session file(s) within date range`);
+		this.log(`📦 Preloaded ${preloaded.length}/${sessionFiles.length} session file(s) within date range in ${((Date.now() - analyzeStartMs) / 1000).toFixed(1)}s`);
 		return { sessionFiles, preloaded };
 	}
 
