@@ -106,6 +106,36 @@ Prefer VS Code's debugger with breakpoints rather than adding log statements:
 2. Set breakpoints in `vscode-extension/src/extension.ts`
 3. Use the Debug Console to inspect variables
 
+## Parallel Model Usage Aggregation Paths
+
+Multiple places in `extension.ts` accumulate per-model token counts into a `ModelUsage` map. Historically these were written as inline `for` loops, which caused bugs when new token fields were added (e.g. cache tokens) because not all copies were updated.
+
+**The shared helper** — `addModelUsage(target: ModelUsage, source: ModelUsage): void` — lives in `vscode-extension/src/statsHelpers.ts` and handles all four token fields:
+- `inputTokens`
+- `outputTokens`
+- `cachedReadTokens` (optional)
+- `cacheCreationTokens` (optional)
+
+All accumulation sites must call this helper. The current locations are:
+
+| Location | Call |
+|---|---|
+| `calculateDailyStats()` — per-UTC-day rollup path | `addModelUsage(dailyEntry.modelUsage, dayRollup.modelUsage)` |
+| `calculateDailyStats()` — session-level fallback path | `addModelUsage(dailyEntry.modelUsage, modelUsage)` |
+| `buildChartData()` — `mergeInto()` local helper | `addModelUsage(target.modelUsage, src.modelUsage)` |
+| Backend sharing-server aggregation | `addModelUsage(personalModelUsage, { [model]: { inputTokens, outputTokens } })` |
+
+`aggregatePeriodStats()` in `statsHelpers.ts` also uses `addModelUsage` internally.
+
+**Rule**: Any new token type added to the `ModelUsage` interface **must** be handled inside `addModelUsage`. This ensures all accumulation sites are covered automatically.
+
+To find all accumulation sites, grep for:
+```
+modelUsage\[model\]\.inputTokens \+=
+```
+
+If you find any match outside of `addModelUsage` itself, convert it to use the helper.
+
 ## Key Files & Conventions
 
 - **`vscode-extension/src/extension.ts`**: The single source file containing all logic.
