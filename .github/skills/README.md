@@ -77,6 +77,21 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Cost estimation using model pricing data
 - Data availability checks
 
+### refactor-large-function
+
+**Purpose**: Pick one large function flagged by ESLint `max-lines-per-function` and refactor it into smaller, focused private helpers without breaking tests.
+
+**Use this skill when:**
+- An ESLint `max-lines-per-function` warning needs to be resolved
+- A function has grown too long and needs to be decomposed
+- You want to improve code readability and maintainability in the VS Code extension
+
+**Contents:**
+- Step-by-step workflow: identify target → baseline tests → refactor → lint → full build → commit → PR
+- Rules for private helper extraction (naming, return types, API preservation)
+- ESLint commands to identify violation candidates
+- Commit message and PR description templates
+
 ### load-cache-data
 
 **Purpose**: Load and inspect the last 10 rows from the local session file cache to iterate with real data.
