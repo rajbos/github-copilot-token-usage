@@ -4,6 +4,7 @@ import { BUTTONS } from '../shared/buttonConfig';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { getCurrentPeriodFraction, computeProjectionExtra } from './projectionUtils';
+import { createViewStateManager } from '../shared/viewState';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -102,8 +103,14 @@ type ChartWebviewState = {
 	displayMode: DisplayMode;
 };
 
+const chartState = createViewStateManager<ChartWebviewState>(vscode, {
+	period: 'day',
+	view: 'total',
+	displayMode: 'actual',
+});
+
 function saveWebviewState(): void {
-	vscode.setState<ChartWebviewState>({ period: currentPeriod, view: currentView, displayMode: currentDisplayMode });
+	chartState.save({ period: currentPeriod, view: currentView, displayMode: currentDisplayMode });
 }
 const ROLLING_WINDOW: Record<ChartPeriod, number> = { day: 7, week: 4, month: 3 };
 
@@ -788,11 +795,13 @@ async function bootstrap(): Promise<void> {
 	}
 
 	// Restore view state — vscode.getState() survives context destruction (retainContextWhenHidden: false)
-	const saved = vscode.getState<ChartWebviewState>();
-	if (saved) {
-		if (saved.period) { currentPeriod = saved.period; }
-		if (saved.view) { currentView = saved.view; }
-		if (saved.displayMode) { currentDisplayMode = saved.displayMode; }
+	const saved = chartState.restore();
+	// chartState.restore() merges defaults, so only override if the saved value differs from default
+	const hasSaved = !!vscode.getState();
+	if (hasSaved) {
+		currentPeriod = saved.period;
+		currentView = saved.view;
+		currentDisplayMode = saved.displayMode;
 	} else {
 		// Fall back to server-supplied initial values (e.g., panel closed and reopened)
 		if (initialData.initialPeriod) { currentPeriod = initialData.initialPeriod; }

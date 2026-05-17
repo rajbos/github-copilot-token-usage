@@ -148,6 +148,81 @@ To maintain a consistent, VS Code-native look across all webview panels (Details
   - Run `npm run compile` and verify TypeScript and ESLint pass.
   - Visually compare the header with the Details and other panels to confirm parity.
 
+## Webview State Persistence
+
+Webview panels are created with `retainContextWhenHidden: false`. When the user switches to a different tab (e.g. navigates from Chart to Details), VS Code **destroys the webview's JavaScript context**. When they switch back, the JS module re-executes with all variables reset to their defaults.
+
+`vscode.setState()` / `vscode.getState()` survive this cycle (and VS Code restarts). They are the correct mechanism for preserving user UI selections.
+
+### Standard pattern — `createViewStateManager`
+
+Use the shared factory from `vscode-extension/src/webview/shared/viewState.ts`:
+
+```ts
+import { createViewStateManager } from '../shared/viewState';
+
+// 1. Declare the state shape and its defaults (module-level, after acquireVsCodeApi())
+type MyViewState = {
+  activeTab: string;
+  sortDir: 'asc' | 'desc';
+};
+
+const viewState = createViewStateManager<MyViewState>(vscode, {
+  activeTab: 'report',
+  sortDir: 'asc',
+});
+
+// 2. In bootstrap() — restore before rendering:
+const { activeTab, sortDir } = viewState.restore();
+
+// 3. When the user changes a single field (safe partial update):
+viewState.patch({ activeTab: newTab });
+
+// 4. When saving the full state at once:
+viewState.save({ activeTab: currentTab, sortDir: currentSort });
+```
+
+**`restore()`** merges saved state with defaults, so adding new fields to the state type never breaks older persisted values.
+
+**`patch()`** does a read-modify-write atomically — no need to spread `vscode.getState()` manually. Always prefer `patch()` over raw `vscode.setState()` calls.
+
+### Two-layer persistence (for critical preferences)
+
+Some preferences (e.g. chart period, chart view) are also stored in the extension backend so they survive panel close/reopen:
+
+1. **Webview → extension**: post a `setXxxPreference` message when the value changes.
+2. **Extension**: handle the message and store it in a `lastXxx` field (e.g. `lastChartPeriod`, `lastChartView`).
+3. **Extension → webview**: inject the saved value into `__INITIAL_DATA__` as `initialXxx` when the panel is created.
+4. **Webview `bootstrap()`**: use `viewState.restore()` first (for tab-switch navigation); fall back to `initialData.initialXxx` when no saved state exists (fresh panel).
+
+Only add the backend layer for preferences the user would expect to persist across sessions. Tab selections and sort orders within a panel usually only need the `vscode.setState()` layer.
+
+### What state to save
+
+| ✅ Save | ❌ Don't save |
+|--------|--------------|
+| Active tab / subtab selection | Loading flags (`isLoading`, `isFetching`) |
+| Selected view / period | Cached API responses |
+| Sort column & direction | DOM element references |
+| Filter values | `setTimeout` / interval IDs |
+| Toggle states (e.g. rolling avg, demo mode) | Transient error messages |
+
+### Webview status
+
+| Webview | State manager | Notes |
+|---------|--------------|-------|
+| `chart/main.ts` | ✅ `createViewStateManager` | period, view, displayMode; also backend-persisted |
+| `diagnostics/main.ts` | ✅ `createViewStateManager` | activeTab, activeSubtab |
+| `usage/main.ts` | ⬜ Not yet wired | activeTab, selectedRepo, sort prefs |
+| `details/main.ts` | ⬜ Not yet wired | sort column/dir, expansion state |
+| `maturity/main.ts` | ⬜ Not yet wired | demo mode, stage overrides |
+| `fluency-level-viewer/main.ts` | ⬜ Not yet wired | selectedCategoryIndex |
+| `environmental/main.ts` | N/A | Stateless — data-driven view |
+| `logviewer/main.ts` | N/A | Ephemeral session-specific view |
+| `dashboard/main.ts` | N/A | Always re-fetches live backend data |
+
+When adding state to an unwired view, use `createViewStateManager` — do not call `vscode.setState` directly.
+
 ## Adding a New Editor / Data Source
 
 When adding support for a new editor or data source, you must wire it into **both** this extension (`vscode-extension/src/`) **and** the CLI (`cli/src/`). See `.github/instructions/cli.instructions.md` for the CLI integration checklist.
