@@ -7,31 +7,31 @@ import { extractSubAgentData } from './tokenEstimation';
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
-	return typeof value === 'object' && value !== null;
+return typeof value === 'object' && value !== null;
 }
 
 function isSafePathSegment(seg: string): boolean {
-	// Prevent prototype pollution and other surprising behavior.
-	if (typeof seg !== 'string') {
-		return false;
-	}
-	const forbidden = ['__proto__', 'prototype', 'constructor', 'hasOwnProperty'];
-	return !forbidden.includes(seg) && !seg.startsWith('__');
+// Prevent prototype pollution and other surprising behavior.
+if (typeof seg !== 'string') {
+return false;
+}
+const forbidden = ['__proto__', 'prototype', 'constructor', 'hasOwnProperty'];
+return !forbidden.includes(seg) && !seg.startsWith('__');
 }
 
 function isArrayIndexSegment(seg: string): boolean {
-	return /^\d+$/.test(seg);
+return /^\d+$/.test(seg);
 }
 
 function normalizeModelId(model: unknown, defaultModel: string): string {
-	if (typeof model !== 'string') {
-		return defaultModel;
-	}
-	const trimmed = model.trim();
-	if (!trimmed) {
-		return defaultModel;
-	}
-	return trimmed.startsWith('copilot/') ? trimmed.substring('copilot/'.length) : trimmed;
+if (typeof model !== 'string') {
+return defaultModel;
+}
+const trimmed = model.trim();
+if (!trimmed) {
+return defaultModel;
+}
+return trimmed.startsWith('copilot/') ? trimmed.substring('copilot/'.length) : trimmed;
 }
 
 /**
@@ -44,379 +44,301 @@ function normalizeModelId(model: unknown, defaultModel: string): string {
  * - v = value
  */
 function applyDelta(state: unknown, delta: unknown): unknown {
-	if (!isObject(delta)) {
-		return state;
-	}
+if (!isObject(delta)) {
+return state;
+}
 
-	const kind = (delta as any).kind;
-	const k = (delta as any).k;
-	const v = (delta as any).v;
+const kind = (delta as any).kind;
+const k = (delta as any).k;
+const v = (delta as any).v;
 
-	if (kind === 0) {
-		// Initial state - full replacement
-		return v;
-	}
+if (kind === 0) {
+// Initial state - full replacement
+return v;
+}
 
-	if (!Array.isArray(k) || k.length === 0) {
-		return state;
-	}
+if (!Array.isArray(k) || k.length === 0) {
+return state;
+}
 
-	const path = k.map(String);
-	for (const seg of path) {
-		if (!isSafePathSegment(seg)) {
-			return state;
-		}
-	}
+const path = k.map(String);
+for (const seg of path) {
+if (!isSafePathSegment(seg)) {
+return state;
+}
+}
 
-	let root: any = isObject(state) ? state : Object.create(null);
-	let current: any = root;
+let root: any = isObject(state) ? state : Object.create(null);
+let current: any = root;
 
-	const ensureChildContainer = (parent: any, key: string, nextSeg: string): any => {
-		const wantsArray = isArrayIndexSegment(nextSeg);
-		let existing = parent[key];
-		if (!isObject(existing)) {
-			existing = wantsArray ? [] : Object.create(null);
-			parent[key] = existing;
-		}
-		return existing;
-	};
+const ensureChildContainer = (parent: any, key: string, nextSeg: string): any => {
+const wantsArray = isArrayIndexSegment(nextSeg);
+let existing = parent[key];
+if (!isObject(existing)) {
+existing = wantsArray ? [] : Object.create(null);
+parent[key] = existing;
+}
+return existing;
+};
 
-	// Traverse to the parent of the target location
-	for (let i = 0; i < path.length - 1; i++) {
-		const seg = path[i];
-		const nextSeg = path[i + 1];
+// Traverse to the parent of the target location
+for (let i = 0; i < path.length - 1; i++) {
+const seg = path[i];
+const nextSeg = path[i + 1];
 
-		if (Array.isArray(current) && isArrayIndexSegment(seg)) {
-			const idx = Number(seg);
-			let existing = current[idx];
-			if (!isObject(existing)) {
-				existing = isArrayIndexSegment(nextSeg) ? [] : Object.create(null);
-				current[idx] = existing;
-			}
-			current = existing;
-			continue;
-		}
+if (Array.isArray(current) && isArrayIndexSegment(seg)) {
+const idx = Number(seg);
+let existing = current[idx];
+if (!isObject(existing)) {
+existing = isArrayIndexSegment(nextSeg) ? [] : Object.create(null);
+current[idx] = existing;
+}
+current = existing;
+continue;
+}
 
-		if (!isObject(current)) {
-			return root;
-		}
-		current = ensureChildContainer(current, seg, nextSeg);
-	}
+if (!isObject(current)) {
+return root;
+}
+current = ensureChildContainer(current, seg, nextSeg);
+}
 
-	const lastSeg = path[path.length - 1];
-	if (kind === 1) {
-		// Set value at key path
-		if (Array.isArray(current) && isArrayIndexSegment(lastSeg)) {
-			current[Number(lastSeg)] = v;
-			return root;
-		}
-		if (isObject(current)) {
-			// Use Object.defineProperty for safe assignment, preventing prototype pollution
-			Object.defineProperty(current, lastSeg, {
-				value: v,
-				writable: true,
-				enumerable: true,
-				configurable: true
-			});
-		}
-		return root;
-	}
+const lastSeg = path[path.length - 1];
+if (kind === 1) {
+// Set value at key path
+if (Array.isArray(current) && isArrayIndexSegment(lastSeg)) {
+current[Number(lastSeg)] = v;
+return root;
+}
+if (isObject(current)) {
+// Use Object.defineProperty for safe assignment, preventing prototype pollution
+Object.defineProperty(current, lastSeg, {
+value: v,
+writable: true,
+enumerable: true,
+configurable: true
+});
+}
+return root;
+}
 
-	if (kind === 2) {
-		// Append value(s) to array at key path
-		let target: any;
-		if (Array.isArray(current) && isArrayIndexSegment(lastSeg)) {
-			const idx = Number(lastSeg);
-			if (!Array.isArray(current[idx])) {
-				current[idx] = [];
-			}
-			target = current[idx];
-		} else if (isObject(current)) {
-			if (!Array.isArray((current as any)[lastSeg])) {
-				// Use Object.defineProperty for safe assignment
-				Object.defineProperty(current, lastSeg, {
-					value: [],
-					writable: true,
-					enumerable: true,
-					configurable: true
-				});
-			}
-			target = (current as any)[lastSeg];
-		}
+if (kind === 2) {
+// Append value(s) to array at key path
+let target: any;
+if (Array.isArray(current) && isArrayIndexSegment(lastSeg)) {
+const idx = Number(lastSeg);
+if (!Array.isArray(current[idx])) {
+current[idx] = [];
+}
+target = current[idx];
+} else if (isObject(current)) {
+if (!Array.isArray((current as any)[lastSeg])) {
+// Use Object.defineProperty for safe assignment
+Object.defineProperty(current, lastSeg, {
+value: [],
+writable: true,
+enumerable: true,
+configurable: true
+});
+}
+target = (current as any)[lastSeg];
+}
 
-		if (Array.isArray(target)) {
-			if (Array.isArray(v)) {
-				target.push(...v);
-			} else {
-				target.push(v);
-			}
-		}
-		return root;
-	}
+if (Array.isArray(target)) {
+if (Array.isArray(v)) {
+target.push(...v);
+} else {
+target.push(v);
+}
+}
+return root;
+}
 
-	return root;
+return root;
 }
 
 /**
  * Extract text content from response items, separating thinking text.
  */
 function extractResponseAndThinkingText(response: unknown): { responseText: string; thinkingText: string } {
-	if (!Array.isArray(response)) {
-		return { responseText: '', thinkingText: '' };
-	}
-	let responseText = '';
-	let thinkingText = '';
-	for (const item of response) {
-		if (!isObject(item)) {
-			continue;
-		}
-		// Separate thinking items from regular response text
-		if ((item as any).kind === 'thinking') {
-			const value = (item as any).value;
-			if (typeof value === 'string' && value) {
-				thinkingText += value;
-			}
-			continue;
-		}
-		const contentValue = isObject((item as any).content) ? (item as any).content.value : undefined;
-		const value = (item as any).value;
-		// Prefer content.value when present to avoid double-counting wrapper text.
-		if (typeof contentValue === 'string' && contentValue) {
-			responseText += contentValue;
-			continue;
-		}
-		if (typeof value === 'string' && value) {
-			responseText += value;
-		}
-	}
-	return { responseText, thinkingText };
+if (!Array.isArray(response)) {
+return { responseText: '', thinkingText: '' };
+}
+let responseText = '';
+let thinkingText = '';
+for (const item of response) {
+if (!isObject(item)) {
+continue;
+}
+// Separate thinking items from regular response text
+if ((item as any).kind === 'thinking') {
+const value = (item as any).value;
+if (typeof value === 'string' && value) {
+thinkingText += value;
+}
+continue;
+}
+const contentValue = isObject((item as any).content) ? (item as any).content.value : undefined;
+const value = (item as any).value;
+// Prefer content.value when present to avoid double-counting wrapper text.
+if (typeof contentValue === 'string' && contentValue) {
+responseText += contentValue;
+continue;
+}
+if (typeof value === 'string' && value) {
+responseText += value;
+}
+}
+return { responseText, thinkingText };
 }
 
 export function parseSessionFileContent(
-	sessionFilePath: string,
-	fileContent: string,
-	estimateTokensFromText: (text: string, model?: string) => number,
-	getModelFromRequest?: (req: any) => string
+sessionFilePath: string,
+fileContent: string,
+estimateTokensFromText: (text: string, model?: string) => number,
+getModelFromRequest?: (req: any) => string
 ) {
-	const modelUsage: ModelUsage = {};
-	let interactions = 0;
-	let totalInputTokens = 0;
-	let totalOutputTokens = 0;
-	let totalThinkingTokens = 0;
-	let totalActualTokens = 0;
+// Aggregates and helpers are declared up front; the heavy lifting is delegated
+const modelUsage: ModelUsage = {};
+let interactions = 0;
+let totalInputTokens = 0;
+let totalOutputTokens = 0;
+let totalThinkingTokens = 0;
+let totalActualTokens = 0;
 
-	let sessionJson: any | undefined;
+let sessionJson: any | undefined;
+let defaultModel = 'unknown';
 
-	let defaultModel = 'unknown';
+const ensureModel = (m?: string) => (typeof m === 'string' && m ? m : defaultModel);
+const addInput = (model: string, text: string) => {
+const m = ensureModel(model);
+if (!modelUsage[m]) { modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
+const t = estimateTokensFromText(text, m);
+modelUsage[m].inputTokens += t;
+totalInputTokens += t;
+};
+const addOutput = (model: string, text: string) => {
+const m = ensureModel(model);
+if (!modelUsage[m]) { modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
+const t = estimateTokensFromText(text, m);
+modelUsage[m].outputTokens += t;
+totalOutputTokens += t;
+};
 
-	const ensureModel = (m?: string) => (typeof m === 'string' && m ? m : defaultModel);
+// Process a single request (used by both JSON and reconstructed delta flows)
+const processRequest = (request: any) => {
+if (!isObject(request)) { return; }
 
-	const addInput = (model: string, text: string) => {
-		const m = ensureModel(model);
-		if (!modelUsage[m]) {modelUsage[m] = { inputTokens: 0, outputTokens: 0 };}
-		const t = estimateTokensFromText(text, m);
-		modelUsage[m].inputTokens += t;
-		totalInputTokens += t;
-	};
+const rawRequestModel = request.modelId ?? request.selectedModel?.identifier ?? request.model;
+const requestModel = normalizeModelId(rawRequestModel, defaultModel);
 
-	const addOutput = (model: string, text: string) => {
-		const m = ensureModel(model);
-		if (!modelUsage[m]) {modelUsage[m] = { inputTokens: 0, outputTokens: 0 };}
-		const t = estimateTokensFromText(text, m);
-		modelUsage[m].outputTokens += t;
-		totalOutputTokens += t;
-	};
+let model: string;
+if (typeof rawRequestModel === 'string' && rawRequestModel.trim()) {
+model = requestModel;
+} else {
+const callbackModelRaw = getModelFromRequest ? getModelFromRequest(request) : undefined;
+const callbackModel = normalizeModelId(callbackModelRaw, '');
+model = callbackModel || requestModel;
+}
 
-	// Handle delta-based JSONL format (VS Code Insiders)
-	if (sessionFilePath.endsWith('.jsonl')) {
-		const lines = fileContent.split(/\r?\n/).filter(l => l.trim());
-		
-		// Check if this is delta-based format (has "kind" field)
-		let isDeltaBased = false;
-		if (lines.length > 0) {
-			try {
-				const first = JSON.parse(lines[0]);
-				if (first && typeof first.kind === 'number') {
-					isDeltaBased = true;
-				}
-			} catch {
-				// Not delta format
-			}
-		}
+// Input parts
+if (request?.message?.parts) {
+for (const part of request.message.parts) {
+if (typeof part?.text === 'string' && part.text) { addInput(model, part.text); }
+}
+} else if (typeof request?.message?.text === 'string') {
+addInput(model, request.message.text);
+}
 
-		if (isDeltaBased) {
-			// Reconstruct session state from deltas
-			let sessionState: unknown = Object.create(null);
-			for (const line of lines) {
-				try {
-					const delta = JSON.parse(line);
-					sessionState = applyDelta(sessionState, delta);
-				} catch {
-					// Skip invalid lines
-				}
-			}
+// Responses (separate thinking)
+const { responseText, thinkingText } = extractResponseAndThinkingText(request.response);
+if (responseText) { addOutput(model, responseText); }
+if (thinkingText) { totalThinkingTokens += estimateTokensFromText(thinkingText, model); }
 
-			// Now process the reconstructed session state
-			const requests = isObject(sessionState) && Array.isArray((sessionState as any).requests)
-				? ((sessionState as any).requests as unknown[])
-				: [];
-			if (requests.length > 0) {
-				// Count only requests that look like user interactions.
-				interactions = requests.filter((r) => isObject(r) && isObject((r as any).message) && typeof (r as any).message.text === 'string' && (r as any).message.text.trim()).length;
-				
-				for (const request of requests) {
-					if (!isObject(request)) {
-						continue;
-					}
-					// Per-request model (user can select different model for each request)
-					const rawRequestModel = (request as any).modelId ?? (request as any).selectedModel?.identifier ?? (request as any).model;
-					const requestModel = normalizeModelId(rawRequestModel, defaultModel);
+// Sub-agents and detailed response items
+const responseItems = Array.isArray(request.response) ? request.response : (Array.isArray(request.responses) ? request.responses : []);
+for (const responseItem of responseItems) {
+const subAgent = extractSubAgentData(responseItem);
+if (subAgent) {
+const saModel = subAgent.modelName || model;
+if (subAgent.prompt) { addInput(saModel, subAgent.prompt); }
+if (subAgent.result) { addOutput(saModel, subAgent.result); }
+continue;
+}
 
-					// Delta-based format is authoritative for per-request model selection.
-					// Only allow callback override when the request has no explicit model
-					// (i.e., requestModel fell through to the session default).
-					let model: string;
-					if (typeof rawRequestModel === 'string' && rawRequestModel.trim()) {
-						// Request has its own model — authoritative, ignore callback
-						model = requestModel;
-					} else {
-						// No per-request model; check callback
-						const callbackModelRaw = getModelFromRequest ? getModelFromRequest(request as any) : undefined;
-						const callbackModel = normalizeModelId(callbackModelRaw, '');
-						model = callbackModel || requestModel;
-					}
-					
-					// Extract user message text
-					const message = (request as any).message;
-					if (isObject(message) && typeof (message as any).text === 'string') {
-						addInput(model, (message as any).text);
-					}
+if (responseItem?.kind === 'thinking' && typeof responseItem?.value === 'string' && responseItem.value) {
+totalThinkingTokens += estimateTokensFromText(responseItem.value, model);
+continue;
+}
 
-					// Extract response text (separating thinking text)
-					const { responseText, thinkingText } = extractResponseAndThinkingText((request as any).response);
-					if (responseText) {
-						addOutput(model, responseText);
-					}
-					if (thinkingText) {
-						totalThinkingTokens += estimateTokensFromText(thinkingText, model);
-					}
+if (typeof responseItem?.value === 'string' && responseItem.value) { addOutput(model, responseItem.value); }
+if (responseItem?.message?.parts) {
+for (const p of responseItem.message.parts) {
+if (typeof p?.text === 'string' && p.text) { addOutput(model, p.text); }
+}
+}
+}
 
-					// Also count sub-agent invocations (tracked under the sub-agent's own model)
-					const responseItems = (request as any).response;
-					if (Array.isArray(responseItems)) {
-						for (const responseItem of responseItems) {
-							const subAgent = extractSubAgentData(responseItem);
-							if (subAgent) {
-								const saModel = subAgent.modelName || model;
-								if (subAgent.prompt) { addInput(saModel, subAgent.prompt); }
-								if (subAgent.result) { addOutput(saModel, subAgent.result); }
-							}
-						}
-					}
-				}
-			}
+// Actual token counts if present
+if (request?.result?.usage) {
+const u = request.result.usage;
+const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
+const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
+totalActualTokens += prompt + completion;
+} else if (typeof request?.result?.promptTokens === 'number' && typeof request?.result?.outputTokens === 'number') {
+totalActualTokens += request.result.promptTokens + request.result.outputTokens;
+} else if (request?.result?.metadata && typeof request?.result?.metadata?.promptTokens === 'number' && typeof request?.result?.metadata?.outputTokens === 'number') {
+totalActualTokens += request.result.metadata.promptTokens + request.result.metadata.outputTokens;
+}
+};
 
-			return {
-				tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
-				interactions,
-				modelUsage,
-				thinkingTokens: totalThinkingTokens,
-				actualTokens: 0, // delta-based JSONL: no result.usage fields to read
-			};
-		}
+// Handle delta-based JSONL format (VS Code Insiders)
+if (sessionFilePath.endsWith('.jsonl')) {
+const lines = fileContent.split(/\r?\n/).filter(l => l.trim());
+let isDeltaBased = false;
+if (lines.length > 0) {
+try { const first = JSON.parse(lines[0]); if (first && typeof first.kind === 'number') { isDeltaBased = true; } } catch {}
+}
 
-		// Not delta-based JSONL. Best-effort: sometimes files are JSON objects with a .jsonl extension.
-		try {
-			sessionJson = JSON.parse(fileContent.trim());
-		} catch {
-			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0, actualTokens: 0 };
-		}
-	}
+if (isDeltaBased) {
+let sessionState: unknown = Object.create(null);
+for (const line of lines) {
+try { const delta = JSON.parse(line); sessionState = applyDelta(sessionState, delta); } catch { }
+}
 
-	// Non-jsonl (JSON file) - try to parse full JSON
-	if (!sessionJson) {
-		try {
-			sessionJson = JSON.parse(fileContent);
-		} catch {
-			return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0, actualTokens: 0 };
-		}
-	}
+const requests = isObject(sessionState) && Array.isArray((sessionState as any).requests) ? ((sessionState as any).requests as unknown[]) : [];
+// Count only requests that look like user interactions
+interactions = requests.filter((r) => isObject(r) && isObject((r as any).message) && typeof (r as any).message.text === 'string' && (r as any).message.text.trim()).length;
+for (const r of requests) { processRequest(r); }
+return {
+tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
+interactions,
+modelUsage,
+thinkingTokens: totalThinkingTokens,
+actualTokens: 0,
+};
+}
 
-	const requests = Array.isArray(sessionJson.requests) ? sessionJson.requests : (Array.isArray(sessionJson.history) ? sessionJson.history : []);
-	interactions = requests.length;
-	for (const request of requests) {
-		const modelRaw = getModelFromRequest ? getModelFromRequest(request) : (request?.model || defaultModel);
-		const model = normalizeModelId(modelRaw, defaultModel);
-		if (!modelUsage[model]) {modelUsage[model] = { inputTokens: 0, outputTokens: 0 };}
+// Fallback: sometimes .jsonl contains a single JSON object
+try { sessionJson = JSON.parse(fileContent.trim()); } catch { return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0, actualTokens: 0 }; }
+}
 
-		if (request?.message?.parts) {
-			for (const part of request.message.parts) {
-				if (typeof part?.text === 'string' && part.text) {
-					const t = estimateTokensFromText(part.text, model);
-					modelUsage[model].inputTokens += t;
-					totalInputTokens += t;
-				}
-			}
-		} else if (typeof request?.message?.text === 'string') {
-			const t = estimateTokensFromText(request.message.text, model);
-			modelUsage[model].inputTokens += t;
-			totalInputTokens += t;
-		}
+// Non-jsonl (JSON file) - try to parse full JSON
+if (!sessionJson) {
+try { sessionJson = JSON.parse(fileContent); } catch { return { tokens: 0, interactions: 0, modelUsage: {}, thinkingTokens: 0, actualTokens: 0 }; }
+}
 
-		const responses = Array.isArray(request?.response) ? request.response : (Array.isArray(request?.responses) ? request.responses : []);
-		for (const responseItem of responses) {
-			// Separate thinking tokens
-			if (responseItem?.kind === 'thinking' && typeof responseItem?.value === 'string' && responseItem.value) {
-				totalThinkingTokens += estimateTokensFromText(responseItem.value, model);
-				continue;
-			}
-			// Sub-agent invocations: count prompt (input) + result (output) under sub-agent model
-			const subAgent = extractSubAgentData(responseItem);
-			if (subAgent) {
-				const saModel = subAgent.modelName || model;
-				if (subAgent.prompt) { addInput(saModel, subAgent.prompt); }
-				if (subAgent.result) { addOutput(saModel, subAgent.result); }
-				continue;
-			}
-			if (typeof responseItem?.value === 'string' && responseItem.value) {
-				const t = estimateTokensFromText(responseItem.value, model);
-				modelUsage[model].outputTokens += t;
-				totalOutputTokens += t;
-			}
-			if (responseItem?.message?.parts) {
-				for (const p of responseItem.message.parts) {
-					if (typeof p?.text === 'string' && p.text) {
-						const t = estimateTokensFromText(p.text, model);
-						modelUsage[model].outputTokens += t;
-						totalOutputTokens += t;
-					}
-				}
-			}
-		}
+const requests = Array.isArray(sessionJson.requests) ? sessionJson.requests : (Array.isArray(sessionJson.history) ? sessionJson.history : []);
+interactions = requests.length;
+for (const request of requests) { processRequest(request); }
 
-		// Extract actual token counts from LLM API usage data (mirrors extension's estimateTokensFromSession logic)
-		if (request?.result?.usage) {
-			// OLD FORMAT (pre-Feb 2026)
-			const u = request.result.usage;
-			const prompt = typeof u.promptTokens === 'number' ? u.promptTokens : 0;
-			const completion = typeof u.completionTokens === 'number' ? u.completionTokens : 0;
-			totalActualTokens += prompt + completion;
-		} else if (typeof request?.result?.promptTokens === 'number' && typeof request?.result?.outputTokens === 'number') {
-			// NEW FORMAT (Feb 2026+)
-			totalActualTokens += request.result.promptTokens + request.result.outputTokens;
-		} else if (request?.result?.metadata && typeof request?.result?.metadata?.promptTokens === 'number' && typeof request?.result?.metadata?.outputTokens === 'number') {
-			// INSIDERS FORMAT (Feb 2026+): Tokens nested under result.metadata
-			totalActualTokens += request.result.metadata.promptTokens + request.result.metadata.outputTokens;
-		}
-	}
-
-	return {
-		tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
-		interactions,
-		modelUsage,
-		thinkingTokens: totalThinkingTokens,
-		actualTokens: totalActualTokens,
-	};
+return {
+tokens: totalInputTokens + totalOutputTokens + totalThinkingTokens,
+interactions,
+modelUsage,
+thinkingTokens: totalThinkingTokens,
+actualTokens: totalActualTokens,
+};
 }
 
 export default { parseSessionFileContent };
