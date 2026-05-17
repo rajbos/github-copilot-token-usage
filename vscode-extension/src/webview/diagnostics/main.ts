@@ -1,6 +1,7 @@
 ﻿// Diagnostics Report webview with tabbed interface
 import { buttonHtml } from "../shared/buttonConfig";
 import { wireExtensionPointButtons } from "../shared/extensionPoints";
+import { createViewStateManager } from "../shared/viewState";
 // CSS imported as text via esbuild
 import themeStyles from "../shared/theme.css";
 import styles from "./styles.css";
@@ -126,6 +127,11 @@ declare global {
 
 const vscode = acquireVsCodeApi<DiagnosticsViewState>();
 const initialData = window.__INITIAL_DIAGNOSTICS__;
+
+const diagState = createViewStateManager<DiagnosticsViewState>(vscode, {
+  activeTab: undefined,
+  activeSubtab: undefined,
+});
 
 // Sorting and filtering state
 let currentSortColumn: "lastInteraction" | "size" | "tokens" | "interactions" | "contextRefs" = "lastInteraction";
@@ -1532,7 +1538,7 @@ function renderLayout(data: DiagnosticsData): void {
           // Capture active subtab before re-rendering so we can restore it
           const activeSubtabEl = backendTabContent.querySelector(".subtab.active") as HTMLElement | null;
           const previousSubtab = activeSubtabEl?.getAttribute("data-subtab")
-            ?? vscode.getState()?.activeSubtab;
+            ?? diagState.restore().activeSubtab;
 
           backendTabContent.innerHTML = renderBackendStoragePanel(
             currentBackendInfo,
@@ -1545,8 +1551,7 @@ function renderLayout(data: DiagnosticsData): void {
           // Restore previously-active subtab (or default to first)
           if (previousSubtab) {
             activateSubtab(previousSubtab);
-            const currentState = vscode.getState() ?? {};
-            vscode.setState({ ...currentState, activeSubtab: previousSubtab });
+            diagState.patch({ activeSubtab: previousSubtab });
           }
         }
       } else {
@@ -1942,7 +1947,7 @@ function renderLayout(data: DiagnosticsData): void {
 
       if (tabId && activateTab(tabId)) {
         // Save the active tab state
-        vscode.setState({ activeTab: tabId });
+        diagState.patch({ activeTab: tabId });
       }
     });
   });
@@ -2029,8 +2034,7 @@ function renderLayout(data: DiagnosticsData): void {
       ?.addEventListener("click", () => {
         // Pre-save the teamserver subtab so the diagnostics panel restores to it
         // after the settings change triggers a panel refresh
-        const currentState = vscode.getState() ?? {};
-        vscode.setState({ ...currentState, activeTab: "backend", activeSubtab: "backend-teamserver" });
+        diagState.patch({ activeTab: "backend", activeSubtab: "backend-teamserver" });
         vscode.postMessage({ command: "configureTeamServer" });
       });
 
@@ -2069,8 +2073,7 @@ function renderLayout(data: DiagnosticsData): void {
         subtab.classList.add("active");
         document.getElementById(`subtab-${subtabId}`)?.classList.add("active");
         // Persist active subtab so it can be restored after a data refresh
-        const currentState = vscode.getState() ?? {};
-        vscode.setState({ ...currentState, activeSubtab: subtabId });
+        diagState.patch({ activeSubtab: subtabId });
       });
     });
   }
@@ -2347,7 +2350,7 @@ function renderLayout(data: DiagnosticsData): void {
   setupFolderAnalyzerHandlers();
 
   // Restore active tab from saved state, with fallback to default
-  const savedState = vscode.getState();
+  const savedState = diagState.restore();
   if (savedState?.activeTab && !activateTab(savedState.activeTab)) {
     // If saved tab doesn't exist (e.g., structure changed), activate default "report" tab
     activateTab("report");

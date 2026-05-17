@@ -4,6 +4,7 @@ import { BUTTONS } from '../shared/buttonConfig';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { getCurrentPeriodFraction, computeProjectionExtra } from './projectionUtils';
+import { createViewStateManager } from '../shared/viewState';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
@@ -53,6 +54,7 @@ type InitialChartData = {
 	compactNumbers?: boolean;
 	periodsReady?: boolean;
 	initialPeriod?: ChartPeriod;
+	initialView?: 'total' | 'model' | 'editor' | 'repository' | 'cost';
 	periods?: {
 		day: ChartPeriodData;
 		week: ChartPeriodData;
@@ -94,6 +96,22 @@ let pendingPeriod: ChartPeriod | null = null;
 
 type DisplayMode = 'actual' | 'rolling';
 let currentDisplayMode: DisplayMode = 'actual';
+
+type ChartWebviewState = {
+	period: ChartPeriod;
+	view: 'total' | 'model' | 'editor' | 'repository' | 'cost';
+	displayMode: DisplayMode;
+};
+
+const chartState = createViewStateManager<ChartWebviewState>(vscode, {
+	period: 'day',
+	view: 'total',
+	displayMode: 'actual',
+});
+
+function saveWebviewState(): void {
+	chartState.save({ period: currentPeriod, view: currentView, displayMode: currentDisplayMode });
+}
 const ROLLING_WINDOW: Record<ChartPeriod, number> = { day: 7, week: 4, month: 3 };
 
 function computeRollingAverage(data: number[], window: number): number[] {
@@ -414,6 +432,7 @@ async function switchPeriod(period: ChartPeriod, data: InitialChartData): Promis
 	}
 	currentPeriod = period;
 	vscode.postMessage({ command: 'setPeriodPreference', period });
+	saveWebviewState();
 	setActivePeriod(period);
 	updateSummaryCards(data);
 	if (!chart) {
@@ -444,6 +463,8 @@ async function switchView(view: 'total' | 'model' | 'editor' | 'repository' | 'c
 		currentDisplayMode = 'actual';
 	}
 	currentView = view;
+	vscode.postMessage({ command: 'setViewPreference', view });
+	saveWebviewState();
 	setActiveView(view);
 	const rollingBtnEl = document.getElementById('view-rolling');
 	if (rollingBtnEl) {
@@ -497,6 +518,7 @@ function setActiveDisplayMode(mode: DisplayMode): void {
 async function switchDisplayMode(data: InitialChartData): Promise<void> {
 	currentDisplayMode = currentDisplayMode === 'actual' ? 'rolling' : 'actual';
 	setActiveDisplayMode(currentDisplayMode);
+	saveWebviewState();
 	updateSummaryCards(data);
 	if (!chart) { return; }
 	const canvas = chart.canvas as HTMLCanvasElement | null;
@@ -771,9 +793,21 @@ async function bootstrap(): Promise<void> {
 		}
 		return;
 	}
-	if (initialData.initialPeriod) {
-		currentPeriod = initialData.initialPeriod;
+
+	// Restore view state — vscode.getState() survives context destruction (retainContextWhenHidden: false)
+	const saved = chartState.restore();
+	// chartState.restore() merges defaults, so only override if the saved value differs from default
+	const hasSaved = !!vscode.getState();
+	if (hasSaved) {
+		currentPeriod = saved.period;
+		currentView = saved.view;
+		currentDisplayMode = saved.displayMode;
+	} else {
+		// Fall back to server-supplied initial values (e.g., panel closed and reopened)
+		if (initialData.initialPeriod) { currentPeriod = initialData.initialPeriod; }
+		if (initialData.initialView) { currentView = initialData.initialView; }
 	}
+
 	renderLayout(initialData);
 }
 
