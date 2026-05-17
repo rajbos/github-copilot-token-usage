@@ -275,6 +275,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private lastFullDailyStats: DailyTokenStats[] | undefined;
 	/** Last period selected by the user in the chart view; restored on next open. */
 	private lastChartPeriod: 'day' | 'week' | 'month' = 'day';
+	/** Last view selected by the user in the chart view; restored on next open. */
+	private lastChartView: 'total' | 'model' | 'editor' | 'repository' | 'cost' = 'total';
 	private lastUsageAnalysisStats: UsageAnalysisStats | undefined;
 	private lastDashboardData: any | undefined;
 	private tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
@@ -4641,6 +4643,12 @@ usageAnalysis: undefined
 					this.lastChartPeriod = p;
 				}
 			}
+			if (message.command === 'setViewPreference') {
+				const v = message.view;
+				if (v === 'total' || v === 'model' || v === 'editor' || v === 'repository' || v === 'cost') {
+					this.lastChartView = v;
+				}
+			}
 		});
 
 		// Render immediately; Week/Month buttons are shown as loading if full-year data isn't ready
@@ -8444,7 +8452,7 @@ ${hashtag}`;
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
-    const chartData = { ...this.buildChartData(dailyStats), periodsReady, initialPeriod: this.lastChartPeriod };
+    const chartData = { ...this.buildChartData(dailyStats), periodsReady, initialPeriod: this.lastChartPeriod, initialView: this.lastChartView };
 
     const initialData = JSON.stringify(chartData).replace(/</g, "\\u003c");
 
