@@ -63,11 +63,15 @@ test('CopilotCliAdapter.getEditorRoot: returns ~/.copilot/session-state', () => 
     assert.equal(adapter.getEditorRoot('/anything'), getCopilotCliSessionStateDir());
 });
 
-test('CopilotCliAdapter.getCandidatePaths: returns single Copilot CLI entry', () => {
+test('CopilotCliAdapter.getCandidatePaths: returns session-state dir and session-store.db entries', () => {
     const paths = adapter.getCandidatePaths();
-    assert.equal(paths.length, 1);
+    assert.equal(paths.length, 2);
+    // First entry: session-state directory
     assert.equal(paths[0].source, 'Copilot CLI');
     assert.ok(paths[0].path.replace(/\\/g, '/').endsWith('/.copilot/session-state'));
+    // Second entry: session-store.db for chat-only sessions
+    assert.equal(paths[1].source, 'Copilot CLI (session-store.db)');
+    assert.ok(paths[1].path.replace(/\\/g, '/').endsWith('/.copilot/session-store.db'));
 });
 
 // ---------------------------------------------------------------------------
@@ -133,10 +137,25 @@ test('CopilotCliAdapter.discover: finds flat .json/.jsonl AND uuid subdir events
     assert.equal(result.sessionFiles.filter(f => f.includes('b2c3d4e5')).length, 0);
 });
 
-test('CopilotCliAdapter.discover: returns empty result when session-state dir does not exist', async () => {
-    // The real adapter points at the user's homedir; if that dir doesn't
-    // exist (e.g. in CI), discover() must return cleanly with empty results.
-    const result = await adapter.discover(() => { /* noop */ });
+test('CopilotCliAdapter.discover: returns empty result when session-state dir does not exist', async (t) => {
+    // Redirect HOME to an empty tmpdir so neither session-state/ nor session-store.db
+    // exist. This avoids loading sql.js WASM (which causes a Windows UV handle assertion
+    // on forced process exit) while still verifying that discover() handles missing dirs.
+    const tmpHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cli-home-empty-'));
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = tmpHome;
+    process.env.USERPROFILE = tmpHome;
+
+    t.after(async () => {
+        if (originalHome === undefined) { delete process.env.HOME; } else { process.env.HOME = originalHome; }
+        if (originalUserProfile === undefined) { delete process.env.USERPROFILE; } else { process.env.USERPROFILE = originalUserProfile; }
+        await fs.promises.rm(tmpHome, { recursive: true, force: true });
+    });
+
+    const fresh = new CopilotCliAdapter();
+    const result = await fresh.discover(() => { /* noop */ });
     assert.ok(Array.isArray(result.sessionFiles));
     assert.ok(Array.isArray(result.candidatePaths));
+    assert.equal(result.sessionFiles.length, 0);
 });
