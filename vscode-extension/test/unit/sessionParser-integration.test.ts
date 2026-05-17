@@ -68,23 +68,22 @@ test('integration: session-01-today.json has 5 interactions and multi-model usag
 });
 
 // ── Verify model detection WITHOUT callback ─────────────────────────────
-// The JSON parsing path reads `request.model`, NOT `request.modelId`.
-// Sample files use `modelId`, so without a callback, all requests default
-// to 'unknown'.  This test documents that behavior gap.
+// The unified processRequest helper reads request.modelId, request.selectedModel.identifier,
+// and request.model — so real models are resolved even without a callback.
 
-test('integration: session-01-today.json WITHOUT getModelFromRequest callback defaults all to unknown', () => {
+test('integration: session-01-today.json WITHOUT getModelFromRequest callback resolves models from modelId', () => {
 	const filePath = path.join(SAMPLES_DIR, 'session-01-today.json');
 	if (!fs.existsSync(filePath)) {
 		return;
 	}
 	const content = fs.readFileSync(filePath, 'utf-8');
-	// No callback — the parser only reads request.model, not request.modelId
+	// No callback — the parser now reads request.modelId directly
 	const result = parseSessionFileContent(filePath, content, estimateTokensByLength);
 
-	// All usage should be lumped under 'unknown' (the default) because the
-	// sample files use `modelId` which the JSON path doesn't read
+	// Real model names should be present because processRequest reads request.modelId
 	const models = Object.keys(result.modelUsage);
-	assert.deepEqual(models, ['unknown'], 'without callback, JSON path only reads request.model — all requests default to unknown');
+	assert.ok(!models.includes('unknown') || models.length > 1, 'without callback, modelId is still read — real models should appear');
+	assert.ok(result.tokens > 0, 'tokens should be non-zero');
 });
 
 // ── Verify message.parts parsing ────────────────────────────────────────
@@ -121,14 +120,10 @@ test('integration: session files with message.parts have input tokens counted fr
 });
 
 // ── Verify response content.value extraction ────────────────────────────
-// BUG FOUND: The JSON parsing path in sessionParser.ts only reads
-// `responseItem.value` (top-level), NOT `responseItem.content.value`.
-// The sample session files use `{ kind: "markdownContent", content: { value: "..." } }`
-// which means output tokens are ZERO when parsing these files via the JSON path.
-// The delta-based JSONL path handles this correctly via extractResponseAndThinkingText().
-// This test documents the bug so it can be fixed.
+// The unified processRequest now calls extractResponseAndThinkingText for both
+// the JSON and delta paths, so content.value responses are correctly extracted.
 
-test('integration: JSON path does NOT extract output from response content.value pattern (known gap)', () => {
+test('integration: JSON path extracts output from response content.value pattern', () => {
 	const filePath = path.join(SAMPLES_DIR, 'session-01-today.json');
 	if (!fs.existsSync(filePath)) {
 		return;
@@ -141,8 +136,6 @@ test('integration: JSON path does NOT extract output from response content.value
 		totalOutputTokens += usage.outputTokens;
 	}
 
-	// This SHOULD be > 0 (the responses contain text), but the JSON path
-	// doesn't look inside content.value — only at top-level value.
-	// When this bug is fixed, change assert to: assert.ok(totalOutputTokens > 0)
-	assert.equal(totalOutputTokens, 0, 'JSON path misses response content.value — output tokens are zero (bug)');
+	// The refactored path uses extractResponseAndThinkingText which handles content.value
+	assert.ok(totalOutputTokens > 0, 'JSON path should extract output from response content.value');
 });
