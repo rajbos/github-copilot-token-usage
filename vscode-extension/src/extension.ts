@@ -1867,6 +1867,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			let cacheHits = 0;
 			let cacheMisses = 0;
 			let skippedFiles = 0;
+			const analysisStartMs = Date.now();
 
 			let sessionDataResults: ({ sessionFile: string; sessionData: SessionFileCache; details: SessionFileDetails; mtime: number; wasCached: boolean } | null | undefined)[];
 
@@ -1940,7 +1941,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 			dailyStatsMap = aggregated.dailyStatsMap;
 			skippedFiles += aggregated.skippedCount;
 
-			this.log(`✅ Analysis complete: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
+			const analysisElapsedMs = Date.now() - analysisStartMs;
+			const analysisElapsedSec = (analysisElapsedMs / 1000).toFixed(1);
+			this.log(`✅ Analysis complete in ${analysisElapsedSec}s: Today ${todayStats.sessions} sessions, Month ${monthStats.sessions} sessions, Last 30 Days ${last30DaysStats.sessions} sessions, Previous Month ${lastMonthStats.sessions} sessions`);
 			if (skippedFiles > 0) {
 				this.log(`⏭️ Skipped ${skippedFiles} session file(s) (empty or no activity in recent months)`);
 			}
