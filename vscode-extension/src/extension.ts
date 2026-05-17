@@ -2160,17 +2160,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 							dailyEntry.repositoryUsage[repository].tokens += dayTokens;
 							dailyEntry.repositoryUsage[repository].sessions += 1;
-							for (const [model, usage] of Object.entries(dayRollup.modelUsage)) {
-								if (!dailyEntry.modelUsage[model]) { dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
-								dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
-								dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
-								if (usage.cachedReadTokens !== undefined) {
-									dailyEntry.modelUsage[model].cachedReadTokens = (dailyEntry.modelUsage[model].cachedReadTokens ?? 0) + usage.cachedReadTokens;
-								}
-								if (usage.cacheCreationTokens !== undefined) {
-									dailyEntry.modelUsage[model].cacheCreationTokens = (dailyEntry.modelUsage[model].cacheCreationTokens ?? 0) + usage.cacheCreationTokens;
-								}
-							}
+							addModelUsage(dailyEntry.modelUsage, dayRollup.modelUsage);
 						}
 					} else {
 						// Fallback: session-level attribution
@@ -2199,17 +2189,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 						if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 						dailyEntry.repositoryUsage[repository].tokens += tokens;
 						dailyEntry.repositoryUsage[repository].sessions += 1;
-						for (const [model, usage] of Object.entries(modelUsage)) {
-							if (!dailyEntry.modelUsage[model]) { dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
-							dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
-							dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
-							if (usage.cachedReadTokens !== undefined) {
-								dailyEntry.modelUsage[model].cachedReadTokens = (dailyEntry.modelUsage[model].cachedReadTokens ?? 0) + usage.cachedReadTokens;
-							}
-							if (usage.cacheCreationTokens !== undefined) {
-								dailyEntry.modelUsage[model].cacheCreationTokens = (dailyEntry.modelUsage[model].cacheCreationTokens ?? 0) + usage.cacheCreationTokens;
-							}
-						}
+						addModelUsage(dailyEntry.modelUsage, modelUsage);
 					}
 				} catch (fileError) {
 					this.warn(`Error processing session file ${sessionFile} for daily stats: ${fileError}`);
@@ -6516,11 +6496,7 @@ ${hashtag}`;
         personalDevices.add(machineId);
         personalWorkspaces.add(workspaceId);
 
-        if (!personalModelUsage[model]) {
-          personalModelUsage[model] = { inputTokens: 0, outputTokens: 0 };
-        }
-        personalModelUsage[model].inputTokens += inputTokens;
-        personalModelUsage[model].outputTokens += outputTokens;
+        addModelUsage(personalModelUsage, { [model]: { inputTokens, outputTokens } });
       }
 
       // Team data aggregation - use userId|datasetId as key to track users across datasets.
@@ -8223,17 +8199,7 @@ ${hashtag}`;
       target.tokens += src.tokens;
       target.sessions += src.sessions;
       target.interactions += src.interactions;
-      for (const [m, u] of Object.entries(src.modelUsage)) {
-        if (!target.modelUsage[m]) { target.modelUsage[m] = { inputTokens: 0, outputTokens: 0 }; }
-        target.modelUsage[m].inputTokens += u.inputTokens;
-        target.modelUsage[m].outputTokens += u.outputTokens;
-        if (u.cachedReadTokens !== undefined) {
-          target.modelUsage[m].cachedReadTokens = (target.modelUsage[m].cachedReadTokens ?? 0) + u.cachedReadTokens;
-        }
-        if (u.cacheCreationTokens !== undefined) {
-          target.modelUsage[m].cacheCreationTokens = (target.modelUsage[m].cacheCreationTokens ?? 0) + u.cacheCreationTokens;
-        }
-      }
+      addModelUsage(target.modelUsage, src.modelUsage);
       for (const [e, u] of Object.entries(src.editorUsage)) {
         if (!target.editorUsage[e]) { target.editorUsage[e] = { tokens: 0, sessions: 0 }; }
         target.editorUsage[e].tokens += u.tokens;
