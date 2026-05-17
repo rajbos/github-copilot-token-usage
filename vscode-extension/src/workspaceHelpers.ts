@@ -711,6 +711,9 @@ export function getEditorTypeFromPath(filePath: string, isOpenCodeSessionFile?: 
 	if (normalizedPath.includes('/.copilot/jb/')) {
 		return 'JetBrains';
 	}
+	if (normalizedPath.includes('/.copilot/session-store.db#')) {
+		return 'Copilot CLI';
+	}
 	if (normalizedPath.includes('/.copilot/session-state/')) {
 		return 'Copilot CLI';
 	}
