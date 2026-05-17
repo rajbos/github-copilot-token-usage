@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import type { AiFluencyExtensionApi, ExtensionPointButton } from './extensionPoints';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -2164,6 +2164,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 								if (!dailyEntry.modelUsage[model]) { dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
 								dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
 								dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
+								if (usage.cachedReadTokens !== undefined) {
+									dailyEntry.modelUsage[model].cachedReadTokens = (dailyEntry.modelUsage[model].cachedReadTokens ?? 0) + usage.cachedReadTokens;
+								}
+								if (usage.cacheCreationTokens !== undefined) {
+									dailyEntry.modelUsage[model].cacheCreationTokens = (dailyEntry.modelUsage[model].cacheCreationTokens ?? 0) + usage.cacheCreationTokens;
+								}
 							}
 						}
 					} else {
@@ -2197,6 +2203,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 							if (!dailyEntry.modelUsage[model]) { dailyEntry.modelUsage[model] = { inputTokens: 0, outputTokens: 0 }; }
 							dailyEntry.modelUsage[model].inputTokens += usage.inputTokens;
 							dailyEntry.modelUsage[model].outputTokens += usage.outputTokens;
+							if (usage.cachedReadTokens !== undefined) {
+								dailyEntry.modelUsage[model].cachedReadTokens = (dailyEntry.modelUsage[model].cachedReadTokens ?? 0) + usage.cachedReadTokens;
+							}
+							if (usage.cacheCreationTokens !== undefined) {
+								dailyEntry.modelUsage[model].cacheCreationTokens = (dailyEntry.modelUsage[model].cacheCreationTokens ?? 0) + usage.cacheCreationTokens;
+							}
 						}
 					}
 				} catch (fileError) {
