@@ -11,6 +11,7 @@ import type { ModelUsage } from './types';
 
 export class OpenCodeDataAccess {
 	private _sqlJsModule: any = null;
+	private _dbCache: { db: any; mtime: number; path: string } | null = null;
 	private readonly extensionUri: vscode.Uri;
 
 	constructor(extensionUri: vscode.Uri) {
@@ -66,33 +67,54 @@ export class OpenCodeDataAccess {
 	}
 
 	/**
-	 * Read session metadata from the OpenCode SQLite database.
+	 * Returns a cached SQL.Database instance for opencode.db, re-opening only when
+	 * the file's mtime changes. This avoids reading and parsing the entire DB file
+	 * on every query (which was the primary cause of ~700ms-per-call latency).
 	 */
-	async readOpenCodeDbSession(sessionId: string): Promise<any | null> {
+	private async getOpenCodeDb(): Promise<any | null> {
 		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
 		if (!fs.existsSync(dbPath)) { return null; }
 		try {
+			const mtime = fs.statSync(dbPath).mtimeMs;
+			if (this._dbCache && this._dbCache.path === dbPath && this._dbCache.mtime === mtime) {
+				return this._dbCache.db;
+			}
+			// Cache miss or stale — close old instance and re-open
+			if (this._dbCache) {
+				try { this._dbCache.db.close(); } catch { /* ignore */ }
+				this._dbCache = null;
+			}
 			const SQL = await this.initSqlJs();
 			const buffer = fs.readFileSync(dbPath);
 			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id, slug, title, time_created, time_updated, project_id, directory FROM session WHERE id = ?', [sessionId]);
-				if (result.length === 0 || result[0].values.length === 0) { return null; }
-				const row = result[0].values[0];
-				const cols = result[0].columns;
-				const obj: any = {};
-				for (let i = 0; i < cols.length; i++) { obj[cols[i]] = row[i]; }
-				return {
-					id: obj.id,
-					slug: obj.slug,
-					title: obj.title,
-					projectID: obj.project_id,
-					directory: obj.directory,
-					time: { created: obj.time_created, updated: obj.time_updated }
-				};
-			} finally {
-				db.close();
-			}
+			this._dbCache = { db, mtime, path: dbPath };
+			return db;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Read session metadata from the OpenCode SQLite database.
+	 */
+	async readOpenCodeDbSession(sessionId: string): Promise<any | null> {
+		const db = await this.getOpenCodeDb();
+		if (!db) { return null; }
+		try {
+			const result = db.exec('SELECT id, slug, title, time_created, time_updated, project_id, directory FROM session WHERE id = ?', [sessionId]);
+			if (result.length === 0 || result[0].values.length === 0) { return null; }
+			const row = result[0].values[0];
+			const cols = result[0].columns;
+			const obj: any = {};
+			for (let i = 0; i < cols.length; i++) { obj[cols[i]] = row[i]; }
+			return {
+				id: obj.id,
+				slug: obj.slug,
+				title: obj.title,
+				projectID: obj.project_id,
+				directory: obj.directory,
+				time: { created: obj.time_created, updated: obj.time_updated }
+			};
 		} catch {
 			return null;
 		}
@@ -102,25 +124,18 @@ export class OpenCodeDataAccess {
 	 * Read all OpenCode messages from the SQLite database for a given session.
 	 */
 	async readOpenCodeDbMessages(sessionId: string): Promise<any[]> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return []; }
+		const db = await this.getOpenCodeDb();
+		if (!db) { return []; }
 		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id, data, time_created FROM message WHERE session_id = ? ORDER BY time_created ASC', [sessionId]);
-				if (result.length === 0) { return []; }
-				return result[0].values.map((row: unknown[]) => {
-					const data = JSON.parse(row[1] as string);
-					data.id = row[0];
-					data.time = data.time || {};
-					data.time.created = data.time.created || row[2];
-					return data;
-				});
-			} finally {
-				db.close();
-			}
+			const result = db.exec('SELECT id, data, time_created FROM message WHERE session_id = ? ORDER BY time_created ASC', [sessionId]);
+			if (result.length === 0) { return []; }
+			return result[0].values.map((row: unknown[]) => {
+				const data = JSON.parse(row[1] as string);
+				data.id = row[0];
+				data.time = data.time || {};
+				data.time.created = data.time.created || row[2];
+				return data;
+			});
 		} catch {
 			return [];
 		}
@@ -130,25 +145,18 @@ export class OpenCodeDataAccess {
 	 * Read all OpenCode parts from the SQLite database for a given message.
 	 */
 	async readOpenCodeDbParts(messageId: string): Promise<any[]> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return []; }
+		const db = await this.getOpenCodeDb();
+		if (!db) { return []; }
 		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id, data, time_created FROM part WHERE message_id = ? ORDER BY time_created ASC', [messageId]);
-				if (result.length === 0) { return []; }
-				return result[0].values.map((row: unknown[]) => {
-					const data = JSON.parse(row[1] as string);
-					data.id = row[0];
-					data.time = data.time || {};
-					data.time.created = data.time.created || row[2];
-					return data;
-				});
-			} finally {
-				db.close();
-			}
+			const result = db.exec('SELECT id, data, time_created FROM part WHERE message_id = ? ORDER BY time_created ASC', [messageId]);
+			if (result.length === 0) { return []; }
+			return result[0].values.map((row: unknown[]) => {
+				const data = JSON.parse(row[1] as string);
+				data.id = row[0];
+				data.time = data.time || {};
+				data.time.created = data.time.created || row[2];
+				return data;
+			});
 		} catch {
 			return [];
 		}
@@ -158,19 +166,12 @@ export class OpenCodeDataAccess {
 	 * Discover all session IDs from the OpenCode SQLite database.
 	 */
 	async discoverOpenCodeDbSessions(): Promise<string[]> {
-		const dbPath = path.join(this.getOpenCodeDataDir(), 'opencode.db');
-		if (!fs.existsSync(dbPath)) { return []; }
+		const db = await this.getOpenCodeDb();
+		if (!db) { return []; }
 		try {
-			const SQL = await this.initSqlJs();
-			const buffer = fs.readFileSync(dbPath);
-			const db = new SQL.Database(buffer);
-			try {
-				const result = db.exec('SELECT id FROM session');
-				if (result.length === 0) { return []; }
-				return result[0].values.map((row: unknown[]) => row[0] as string);
-			} finally {
-				db.close();
-			}
+			const result = db.exec('SELECT id FROM session');
+			if (result.length === 0) { return []; }
+			return result[0].values.map((row: unknown[]) => row[0] as string);
 		} catch {
 			return [];
 		}
