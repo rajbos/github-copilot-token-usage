@@ -78,6 +78,7 @@ async function main() {
 	const wasmSrc = path.join(__dirname, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
 	const wasmDst = path.join(__dirname, 'dist', 'sql-wasm.wasm');
 	if (fs.existsSync(wasmSrc)) {
+		fs.mkdirSync(path.dirname(wasmDst), { recursive: true });
 		fs.copyFileSync(wasmSrc, wasmDst);
 	}
 
