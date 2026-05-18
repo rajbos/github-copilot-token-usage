@@ -19,7 +19,7 @@
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "eslint.enable": true,
-        "typescript.tsdk": "node_modules/typescript/lib",
+        "js/ts.tsdk.path": "node_modules/typescript/lib",
         "chat.tools.autoApprove": true
       }
     }
