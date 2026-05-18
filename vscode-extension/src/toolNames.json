@@ -610,4 +610,8 @@
   ,"testFailure": "Test Failure"
   ,"mcp_angular-cli_get_best_practices": "Angular MCP: Get Best Practices"
   ,"mcp_angular-cli_list_projects": "Angular MCP: Get Project List"
+  ,"mcp_azure_mcp_extension_cli_generate": "Azure MCP (Local): Generate"
+  ,"mcp_playwright_browser_console_messages": "Playwright MCP: Browser Console Messages"
+  ,"google_research": "Google Research"
+  ,"task_execution": "Task Execution"
 }
