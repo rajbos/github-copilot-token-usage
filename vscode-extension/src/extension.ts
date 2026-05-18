@@ -113,6 +113,7 @@ import {
 } from './tokenEstimation';
 import { SessionDiscovery } from './sessionDiscovery';
 import { CacheManager } from './cacheManager';
+import { HookManager } from './hookManager';
 import {
   mergeUsageAnalysis as _mergeUsageAnalysis,
   analyzeContextReferences as _analyzeContextReferences,
@@ -216,6 +217,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private geminiCli: GeminiCliDataAccess;
 	private readonly ecosystems: IEcosystemAdapter[];
 	private cacheManager: CacheManager;
+	private readonly hookManager: HookManager;
 
 	private get usageAnalysisDeps(): UsageAnalysisDeps {
 		return { warn: (m: string) => this.warn(m), tokenEstimators: this.tokenEstimators, modelPricing: this.modelPricing, toolNameMap: this.toolNameMap, ecosystems: this.ecosystems };
@@ -925,6 +927,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			new JetBrainsAdapter(),
 		];
 		this.cacheManager = new CacheManager(context, { log: (m: string) => this.log(m), warn: (m: string) => this.warn(m), error: (m: string) => this.error(m) }, CopilotTokenTracker.CACHE_VERSION);
+		this.hookManager = new HookManager(context.globalState, (msg) => this.log(msg));
 		this.sessionDiscovery = new SessionDiscovery({
 			log: (m) => this.log(m),
 			warn: (m) => this.warn(m),
@@ -5510,10 +5513,39 @@ Return ONLY the JSON object, no markdown formatting, no explanations.`;
 						await this.dispatch('exportPptx', () => this.exportFluencyScorePptx(message.data));
 					}
 					break;
+				case 'installHook': {
+					const hookId = message.hookId as string;
+					try {
+						await this.hookManager.installHook(hookId);
+						const hooksDir = this.hookManager.getHooksDirectory();
+						const choice = await vscode.window.showInformationMessage(
+							`✅ Session reminder installed. Hook scripts written to ${hooksDir} — they will activate in your next Copilot agent session.`,
+							'Open Hooks Folder'
+						);
+						if (choice === 'Open Hooks Folder') {
+							await vscode.env.openExternal(vscode.Uri.file(hooksDir));
+						}
+					} catch (err) {
+						vscode.window.showErrorMessage(`Failed to install hook: ${err instanceof Error ? err.message : String(err)}`);
+					}
+					await this.refreshMaturityPanel();
+					break;
+				}
+				case 'uninstallHook': {
+					const hookId = message.hookId as string;
+					try {
+						await this.hookManager.uninstallHook(hookId);
+						vscode.window.showInformationMessage(`Removed session reminder for "${hookId}".`);
+					} catch (err) {
+						vscode.window.showErrorMessage(`Failed to remove hook: ${err instanceof Error ? err.message : String(err)}`);
+					}
+					await this.refreshMaturityPanel();
+					break;
+				}
 			}
 		});
 
-		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
+		this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels, installedHooks: this.hookManager.getInstalledHooks() });
 
 	this.maturityPanel.onDidDispose(() => {
 		this.log('🎯 Copilot Fluency Score dashboard closed');
@@ -5531,7 +5563,7 @@ private async refreshMaturityPanel(): Promise<void> {
 	const dismissedTips = await this.getDismissedFluencyTips();
 	const isDebugMode = this.context.extensionMode === vscode.ExtensionMode.Development;
 	const fluencyLevels = isDebugMode ? this.getFluencyLevelData(isDebugMode).categories : undefined;
-	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels });
+	this.maturityPanel.webview.html = this.getMaturityHtml(this.maturityPanel.webview, { ...maturityData, dismissedTips, isDebugMode, fluencyLevels, installedHooks: this.hookManager.getInstalledHooks() });
 	this.log('✅ Copilot Fluency Score dashboard refreshed');
 }
 
@@ -6053,6 +6085,7 @@ ${hashtag}`;
       lastUpdated: string;
       dismissedTips?: string[];
       isDebugMode?: boolean;
+      installedHooks?: string[];
       fluencyLevels?: Array<{
         category: string;
         icon: string;

@@ -62,6 +62,7 @@ type MaturityData = {
 	isDebugMode?: boolean;
 	fluencyLevels?: CategoryLevelData[];
 	backendConfigured?: boolean;
+	installedHooks?: string[];
 };
 
 declare function acquireVsCodeApi<TState = unknown>(): {
@@ -289,6 +290,13 @@ function renderLayout(data: MaturityData): void {
 	if (!root) { return; }
 
 	const dismissedTips = data.dismissedTips || [];
+	const installedHooks = data.installedHooks ?? [];
+
+	const CATEGORY_HOOK_MAP: Record<string, string> = {
+		'Customization': 'missing-instructions',
+		'Context Engineering': 'no-context-refs',
+		'Tool Usage': 'no-mcp-config',
+	};
 	const useDemoCards = demoModeActive && data.fluencyLevels;
 
 	const categoryCards = data.categories.map((cat, catIdx) => {
@@ -359,13 +367,29 @@ function renderLayout(data: MaturityData): void {
 
 		// Check if tips are dismissed for this category
 		const tipsAreDismissed = dismissedTips.includes(cat.category);
-		
+
 		// Add MCP discovery button for Tool Usage category
 		const mcpButton = cat.category === 'Tool Usage' ? `
 			<div style="margin-top: 10px;">
 				<button class="mcp-discover-btn" data-action="searchMcp">🔍 Discover more MCP Servers in Marketplace</button>
 			</div>
 		` : '';
+
+		// Add hook reminder button if a hook is mapped for this category
+		const hookId = CATEGORY_HOOK_MAP[cat.category];
+		const hookButton = (hookId && cat.tips.length > 0) ? (() => {
+			const isInstalled = installedHooks.includes(hookId);
+			if (isInstalled) {
+				return `<div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+					<button class="hook-reminder-btn hook-reminder-active" data-hook-id="${escapeHtml(hookId)}" data-action="uninstallHook" title="Remove session reminder" style="font-size: 11px; padding: 3px 10px; background: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 4px; cursor: pointer;">✓ Reminder active</button>
+					<button class="hook-reminder-btn hook-reminder-remove" data-hook-id="${escapeHtml(hookId)}" data-action="uninstallHook" title="Remove session reminder" style="font-size: 10px; background: transparent; border: none; color: #666; cursor: pointer; text-decoration: underline;">remove</button>
+				</div>`;
+			} else {
+				return `<div style="margin-top: 8px;">
+					<button class="hook-reminder-btn" data-hook-id="${escapeHtml(hookId)}" data-action="installHook" title="Install a Copilot hook that reminds you in future sessions" style="font-size: 11px; padding: 3px 10px; background: transparent; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer;">🔔 Remind me in sessions</button>
+				</div>`;
+			}
+		})() : '';
 
 		return `
 			<div class="category-card">
@@ -386,7 +410,7 @@ function renderLayout(data: MaturityData): void {
 						</div>
 						${tipsHtml}
 					</div>
-				` : ''}${mcpButton}</div>`;
+				` : ''}${hookButton}${mcpButton}</div>`;
 	}).join('');
 
 	root.innerHTML = `
@@ -577,6 +601,18 @@ function renderLayout(data: MaturityData): void {
 	// Wire up MCP discovery button
 	document.querySelector('.mcp-discover-btn')?.addEventListener('click', () => {
 		vscode.postMessage({ command: 'searchMcpExtensions' });
+	});
+
+	// Wire up hook reminder buttons
+	document.querySelectorAll('.hook-reminder-btn').forEach(btn => {
+		btn.addEventListener('click', (e) => {
+			const target = e.currentTarget as HTMLElement;
+			const hookId = target.getAttribute('data-hook-id');
+			const action = target.getAttribute('data-action');
+			if (hookId && action) {
+				vscode.postMessage({ command: action, hookId });
+			}
+		});
 	});
 
 	// Wire up dismiss tips buttons
