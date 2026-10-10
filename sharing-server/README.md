@@ -255,7 +255,7 @@ including chart ticks and tooltips; Team Insights keeps exact values in its
 numeric tables and exports.
 The page footer shows the sharing-server package version alongside the
 deployment branch, commit and timestamp, so a deployed instance can be
-compared with the published pnpm version.
+compared with the published npm version.
 
 Download the selected period with cookie-authenticated
 `/team/export?days=N&format=csv` or `format=json` (N is 7, 30 or 90).
