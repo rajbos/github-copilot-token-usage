@@ -22,6 +22,7 @@ import copilotPlansData from './copilotPlans.json';
 import * as packageJson from '../package.json';
 import { getToolFamilies, DEFAULT_TOOL_FAMILIES } from './toolFamilies';
 import { getEditorIconByName } from '../../src/editorIcons';
+import { createWindsurfHost, createSessionDiscoveryHost } from './srcHostAdapters';
 import * as loadingHtml from '../../src/loadingHtml';
 
 // --- Core types ---
@@ -2712,7 +2713,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.claudeDesktop = dataAccess.claudeDesktop;
 		this.mistralVibe = dataAccess.mistralVibe;
 		this.geminiCli = dataAccess.geminiCli;
-		this.windsurf = new WindsurfDataAccess(extensionUri, (m) => this.log(m));
+		this.windsurf = new WindsurfDataAccess(extensionUri, (m) => this.log(m), createWindsurfHost());
 		this.hermes = dataAccess.hermes;
 		this.ecosystems = buildAdapterRegistry({
 			...dataAccess,
@@ -2783,6 +2784,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			ecosystems: this.ecosystems,
 			windsurf: this.windsurf,
 			sampleDataDirectoryOverride: () => this.localRegressionSampleDataDir,
+			...createSessionDiscoveryHost(),
 		});
 	}
 

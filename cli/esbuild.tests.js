@@ -3,9 +3,9 @@
  * be run with `node --test out/test`.
  *
  * Uses the exact same esbuild setup as the main CLI build (esbuild.js): the tests
- * import shared modules from ../src which reference the `vscode`
- * module (aliased to the CLI stub) and ESM-only packages like chalk — bundling
- * resolves both, matching how dist/cli.js is produced.
+ * import shared modules from ../src and ESM-only packages like chalk — bundling
+ * resolves them, matching how dist/cli.js is produced. The shared sources never
+ * import `vscode`, so the bundle needs no stub for it.
  */
 const esbuild = require("esbuild");
 const fs = require("fs");
@@ -32,13 +32,10 @@ async function main() {
     sourcemap: true,
     // The package's own `/session` subpath is loaded from the built dist/ at runtime by the
     // library smoke test, through the package.json `exports` map — never bundled.
-    external: ["vscode", "@rajbos/ai-engineering-fluency/session"],
+    external: ["@rajbos/ai-engineering-fluency/session"],
     // The tests bundle shared sources from ../src, so tell esbuild
     // to resolve package imports from the CLI's own node_modules as well.
     nodePaths: [path.join(__dirname, "node_modules")],
-    alias: {
-      vscode: path.join(__dirname, "src", "vscode-stub.ts"),
-    },
     loader: {
       ".json": "json",
     },

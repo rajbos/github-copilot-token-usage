@@ -8,11 +8,18 @@
  */
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
-import * as vscode from 'vscode';
 
-import { WindsurfDataAccess } from '../../../src/windsurf';
+import { WindsurfDataAccess, type WindsurfHost } from '../../../src/windsurf';
 
-const windsurf = new WindsurfDataAccess(vscode.Uri.file('/mock/ext') as any);
+const extUri = { fsPath: '/mock/ext', path: '/mock/ext', scheme: 'file' };
+// Mutable host double: tests flip `appName` to simulate running inside Windsurf / Devin / VS Code.
+const hostState = { appName: 'Visual Studio Code' };
+const host: WindsurfHost = {
+	getAppName: () => hostState.appName,
+	getExtension: () => undefined,
+	isEnabled: () => true,
+};
+const windsurf = new WindsurfDataAccess(extUri, undefined, host);
 
 const plannerStep = (meta: Record<string, string>) => ({
 	type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
@@ -108,7 +115,7 @@ test('countUserTurns: returns 0 when there are no user-input steps', () => {
 class PagingWindsurf extends WindsurfDataAccess {
 	requestedOffsets: number[] = [];
 	constructor(private pages: Array<Array<{ type: string }>>, private ignoreOffset = false) {
-		super(vscode.Uri.file('/mock/ext') as any);
+		super(extUri);
 	}
 	async getCascadeTrajectorySteps(_cascadeId: string, stepOffset = 0): Promise<any> {
 		this.requestedOffsets.push(stepOffset);
@@ -225,37 +232,35 @@ test('countToolCalls: returns an empty breakdown when there are no tool steps', 
 // and by the devin://trajectory/{id} virtual-path scheme used for live API sessions.
 
 test('isRunningInDevin: true only when appName contains "devin"', () => {
-	const originalAppName = (vscode.env as any).appName;
 	try {
-		(vscode.env as any).appName = 'Devin';
+		hostState.appName = 'Devin';
 		assert.equal(windsurf.isRunningInDevin(), true);
 		assert.equal(windsurf.isRunningInWindsurf(), false);
 
-		(vscode.env as any).appName = 'Windsurf';
+		hostState.appName = 'Windsurf';
 		assert.equal(windsurf.isRunningInDevin(), false);
 		assert.equal(windsurf.isRunningInWindsurf(), true);
 
-		(vscode.env as any).appName = 'Visual Studio Code';
+		hostState.appName = 'Visual Studio Code';
 		assert.equal(windsurf.isRunningInDevin(), false);
 		assert.equal(windsurf.isRunningInWindsurf(), false);
 	} finally {
-		(vscode.env as any).appName = originalAppName;
+		hostState.appName = 'Visual Studio Code';
 	}
 });
 
 test('isRunningInWindsurfFamily: true for either Windsurf or Devin, false otherwise', () => {
-	const originalAppName = (vscode.env as any).appName;
 	try {
-		(vscode.env as any).appName = 'Devin';
+		hostState.appName = 'Devin';
 		assert.equal(windsurf.isRunningInWindsurfFamily(), true);
 
-		(vscode.env as any).appName = 'Windsurf';
+		hostState.appName = 'Windsurf';
 		assert.equal(windsurf.isRunningInWindsurfFamily(), true);
 
-		(vscode.env as any).appName = 'Visual Studio Code';
+		hostState.appName = 'Visual Studio Code';
 		assert.equal(windsurf.isRunningInWindsurfFamily(), false);
 	} finally {
-		(vscode.env as any).appName = originalAppName;
+		hostState.appName = 'Visual Studio Code';
 	}
 });
 
