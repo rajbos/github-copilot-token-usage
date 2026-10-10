@@ -12,7 +12,7 @@
  * `vscode-extension/dist/webview/<name>.js`.
  *
  * The Visual Studio, JetBrains and desktop (Electron) hosts each load a *subset* of those compiled
- * bundles (currently 6 of 9). They deliberately do NOT ship every view. This
+ * bundles (run the script for current counts). They deliberately do NOT ship every view. This
  * script detects, per host, which views are TRACKED, which are NEW (present in
  * VS Code but not yet wired into the host), and which are ORPHAN (listed by
  * the host but no longer produced by VS Code).

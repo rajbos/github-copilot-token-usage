@@ -156,8 +156,13 @@ function selectorToken(selector) {
  * extension's collector scans a whole file and also counts the keys of any
  * `Record<string, …>` object; over main.ts that would let an unrelated map
  * (STATIC_MIME_TYPES, say) mark a posted command as handled.
+ *
+ * A branch that does nothing — `case 'x': break;` (after following
+ * fall-through) or `if (….command === 'x') {}` — is returned in `bare`, not
+ * `handled`: it looks like a handler but the message is still dropped, so it
+ * must be implemented or listed in unsupportedWebviewCommands.json.
  */
-function collectIpcHandledCommands(file = DESKTOP_MAIN) {
+function collectIpcDispatch(file = DESKTOP_MAIN) {
   const sourceFile = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
   let handlerFn;
   const findHandler = (node) => {
@@ -173,14 +178,22 @@ function collectIpcHandledCommands(file = DESKTOP_MAIN) {
   }
 
   const handled = new Set();
+  const bare = new Set();
   const isCommandAccess = (expr) => /\.command$/.test(expr.getText(sourceFile));
+  /** A body that does nothing: only `break;` / `;` statements (comments are not statements). */
+  const isNoOpStatements = (statements) =>
+    statements.every((st) => ts.isBreakStatement(st) || ts.isEmptyStatement(st) || (ts.isBlock(st) && isNoOpStatements(st.statements)));
   const visit = (node) => {
     if (ts.isSwitchStatement(node) && isCommandAccess(node.expression)) {
-      for (const clause of node.caseBlock.clauses) {
-        if (ts.isCaseClause(clause) && ts.isStringLiteralLike(clause.expression)) {
-          handled.add(clause.expression.text);
+      const clauses = node.caseBlock.clauses;
+      clauses.forEach((clause, i) => {
+        if (!ts.isCaseClause(clause) || !ts.isStringLiteralLike(clause.expression)) {
+          return;
         }
-      }
+        // Follow fall-through (`case 'a': case 'b': run();`) to the clause that has a body.
+        const body = clauses.slice(i).find((c) => c.statements.length > 0);
+        (body && !isNoOpStatements(body.statements) ? handled : bare).add(clause.expression.text);
+      });
     }
     if (
       ts.isBinaryExpression(node) &&
@@ -189,7 +202,8 @@ function collectIpcHandledCommands(file = DESKTOP_MAIN) {
       isCommandAccess(node.left) &&
       ts.isStringLiteralLike(node.right)
     ) {
-      handled.add(node.right.text);
+      const guarded = ts.isIfStatement(node.parent) && node.parent.expression === node ? node.parent.thenStatement : undefined;
+      (guarded && isNoOpStatements([guarded]) ? bare : handled).add(node.right.text);
     }
     ts.forEachChild(node, visit);
   };
@@ -197,13 +211,22 @@ function collectIpcHandledCommands(file = DESKTOP_MAIN) {
   if (handled.size === 0) {
     throw new ConfigError(`${IPC_HANDLER_FUNCTION} handles no commands — has its dispatch changed shape?`);
   }
-  return handled;
+  // A command with a real branch anywhere counts as handled.
+  for (const command of handled) {
+    bare.delete(command);
+  }
+  return { handled, bare };
+}
+
+/** Commands `registerIpcHandlers` actually acts on (bare `case 'x': break;` branches excluded). */
+function collectIpcHandledCommands(file = DESKTOP_MAIN) {
+  return collectIpcDispatch(file).handled;
 }
 
 function analyse() {
   const views = readDesktopViews();
   const unsupported = readUnsupported();
-  const handled = collectIpcHandledCommands();
+  const { handled, bare } = collectIpcDispatch();
 
   /** command -> { views: Set, locations: [] } */
   const posted = new Map();
@@ -245,7 +268,9 @@ function analyse() {
       command,
       locations,
       detail:
-        `posted by the ${[...postedBy].sort().join(', ')} view(s), but desktop/src/main.ts has no handler — ` +
+        `posted by the ${[...postedBy].sort().join(', ')} view(s), but desktop/src/main.ts has no handler` +
+        (bare.has(command) ? ' (only a branch that does nothing, such as a bare `case` with `break`)' : '') +
+        ' — ' +
         'the control does nothing in the desktop app. Handle it in registerIpcHandlers, or list it in ' +
         'desktop/src/unsupportedWebviewCommands.json with a status and reason.',
     });

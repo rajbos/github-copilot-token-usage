@@ -1058,9 +1058,6 @@ function registerIpcHandlers(): void {
                 showPanel('fluency-level-viewer');
                 break;
 
-            case 'saveSortSettings':
-                // Persist sort preferences — stored in memory for now
-                break;
 
             case 'openFile':
                 if (typeof message.path === 'string' && message.path) {

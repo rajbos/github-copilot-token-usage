@@ -83,14 +83,30 @@ test('desktop contract: only registerIpcHandlers counts as handling a command', 
 		function registerIpcHandlers(): void {
 			ipcMain.on('webview-message', (_e: unknown, message: { command: string }) => {
 				switch (message.command) {
-					case 'refresh': break;
-					case 'showDetails': break;
+					case 'refresh': run(); break;
+					// Fall-through shares the next clause's body.
+					case 'showMaturity':
+					case 'showDashboard':
+						run();
+						break;
+					// Looks like a handler, drops the message: not handled.
+					case 'saveSortSettings':
+						// stored in memory for now
+						break;
+					case 'emptyFallThrough':
+					default:
+						break;
 				}
-				if (message.command === 'copyText') { /* handled */ }
+				if (message.command === 'copyText') { run(); }
+				if (message.command === 'emptyIf') { /* nothing */ }
 			});
 		}
+		function run(): void { /* stub */ }
 	`);
-	assert.deepEqual([...desktopContract.collectIpcHandledCommands(file)].sort(), ['copyText', 'refresh', 'showDetails']);
+	assert.deepEqual(
+		[...desktopContract.collectIpcHandledCommands(file)].sort(),
+		['copyText', 'refresh', 'showDashboard', 'showMaturity'],
+	);
 });
 
 test('desktop contract: a hidden selector must not reach views that do not post its command', () => {
@@ -106,6 +122,19 @@ test('desktop contract: a hidden selector must not reach views that do not post 
 	assert.deepEqual(desktopContract.selectorOverreach('btn-share-card-linkedin', postedBy, viewOwnTexts), []);
 	// Whole-word match: an id that merely starts with the token is a different control.
 	assert.deepEqual(desktopContract.selectorOverreach('btn-share', postedBy, viewOwnTexts), []);
+});
+
+test('desktop-build.yml: push paths match the PR desktop-relevant filter', () => {
+	// A path only in the job filter is checked on PRs but never on pushes to main:
+	// the push trigger's own `paths:` decides whether the workflow starts at all.
+	const yml = fs.readFileSync(path.join(REPO_ROOT, '.github', 'workflows', 'desktop-build.yml'), 'utf8').replace(/\r\n/g, '\n');
+	const quotedPaths = (block: string) => [...block.matchAll(/^\s*- '([^']+)'/gm)].map(m => m[1]).sort();
+	const pushBlock = yml.slice(yml.indexOf('  push:'), yml.indexOf('  pull_request:'));
+	const filterStart = yml.indexOf('desktop-relevant:\n');
+	assert.ok(filterStart > 0, 'desktop-relevant filter not found in desktop-build.yml');
+	const filterBlock = yml.slice(filterStart, yml.indexOf('\n\n', filterStart));
+	assert.ok(quotedPaths(pushBlock).length > 0, 'no push paths found in desktop-build.yml');
+	assert.deepEqual(quotedPaths(pushBlock), quotedPaths(filterBlock));
 });
 
 test('webview shell: every --vscode-* token the webviews use is defined for the desktop app and harness', () => {

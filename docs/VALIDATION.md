@@ -311,7 +311,8 @@ or from the repo root, `./build.ps1 -Project desktop -Target test`.
 - **`check:contract`** (`scripts/validate-desktop-contract.js`) — for every view
   in `WEBVIEW_BUNDLES` (`desktop/esbuild.js`) it follows the view's imports from
   `vscode-extension/src/webview/<view>/main.ts`, collects every `command` the view
-  can post, and requires each one to be handled in `registerIpcHandlers` or listed
+  can post, and requires each one to be handled in `registerIpcHandlers` (a branch
+  that does nothing, such as a bare `case 'x': break;`, does not count) or listed
   in `desktop/src/unsupportedWebviewCommands.json` as `hidden` (with the CSS
   selectors that hide its controls — `main.ts` builds its hidden-controls CSS from
   this list), `gap` (still visible and dead; recorded, not decided) or `no-op`

@@ -142,6 +142,7 @@
     "setPeriodPreference": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
     "setTimeWindowPreference": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
     "setViewPreference": { "status": "no-op", "reason": "Preference the extension persists; the desktop keeps it in the view's own setState storage." },
+    "saveSortSettings": { "status": "no-op", "reason": "Details table sort works while the view is open, but the desktop does not persist it: it resets to name ascending when the view reloads." },
     "saveSessionColumnSettings": { "status": "no-op", "reason": "Preference the extension persists; the column choice is not kept across desktop restarts." },
     "surfaceNavReady": { "status": "no-op", "reason": "Readiness handshake for What's New \"Take me there\" reveals; the desktop has no What's New and never queues a reveal." },
     "surfaceRevealHandled": { "status": "no-op", "reason": "Acknowledges a What's New reveal request, which the desktop never sends." },

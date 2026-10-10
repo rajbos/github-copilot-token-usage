@@ -10,11 +10,25 @@ name: Desktop - Build & Validate
 on:
   push:
     branches: [main]
+    # Keep in step with the `desktop-relevant` filter in check-changes below: a
+    # path missing here means a push to main touching only it never runs this
+    # workflow at all, and the push short-circuit in that job cannot help.
     paths:
       - 'desktop/**'
       - 'src/**'
       - 'cli/**'
       - 'vscode-extension/src/**'
+      - 'vscode-extension/esbuild.js'
+      - 'vscode-extension/package.json'
+      - 'vscode-extension/package-lock.json'
+      - 'vscode-extension/package.nls*.json'
+      - 'scripts/validate-desktop-contract.js'
+      - 'scripts/validate-webview-contract.js'
+      - 'scripts/validate-webview-shell.js'
+      - '.github/skills/visual-view-diff/lib/theme-*.css'
+      - '.github/skills/sync-host-views/**'
+      - '.github/workflows/desktop-build.yml'
+      - '.nvmrc'
   pull_request:
     branches: [main]
 
