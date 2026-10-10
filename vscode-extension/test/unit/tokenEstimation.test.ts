@@ -1057,10 +1057,10 @@ test('EventJsonlTokenStrategy: attributes shutdown tokens to UTC day', () => {
 // CLIs wrote per-segment totals (a counter goes down / a model disappears), and
 // those segments still add up.
 
-function cliShutdown(timestamp: string, metrics: Record<string, [number, number, number?]>): string {
+function cliShutdown(timestamp: string, metrics: Record<string, [number, number, number?, number?]>): string {
         const modelMetrics: Record<string, unknown> = {};
-        for (const [model, [inputTokens, outputTokens, cacheReadTokens]] of Object.entries(metrics)) {
-                modelMetrics[model] = { usage: { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens ?? 0, cacheWriteTokens: 0 } };
+        for (const [model, [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]] of Object.entries(metrics)) {
+                modelMetrics[model] = { usage: { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens ?? 0, cacheWriteTokens: cacheWriteTokens ?? 0 } };
         }
         return JSON.stringify({ type: 'session.shutdown', timestamp, data: { modelMetrics } });
 }
@@ -1125,6 +1125,45 @@ test('EventJsonlTokenStrategy: older per-segment shutdowns (counter reset) are s
         assert.equal(result.modelUsage['claude-sonnet-4.6'].inputTokens, 1200);
         assert.equal(result.modelUsage['claude-sonnet-4.6'].outputTokens, 75);
         assert.deepEqual(result.dailyActualTokens, { '2026-05-22': 960, '2026-05-23': 315 });
+});
+
+test('EventJsonlTokenStrategy: a lower cache-read counter alone marks a new segment', () => {
+        // Input/output do not go down, so only the cache-read comparison can tell this is a fresh segment.
+        const lines = [
+                cliShutdown('2026-05-24T12:00:00.000Z', { 'claude-sonnet-4.6': [1000, 50, 800, 0] }),
+                cliShutdown('2026-05-25T12:00:00.000Z', { 'claude-sonnet-4.6': [1000, 60, 300, 0] }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        assert.equal(result.actualTokens, 2110);
+        assert.equal(result.cacheReadTokens, 1100);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].inputTokens, 2000);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].cachedReadTokens, 1100);
+        assert.deepEqual(result.dailyActualTokens, { '2026-05-24': 1050, '2026-05-25': 1060 });
+});
+
+test('EventJsonlTokenStrategy: a lower cache-write counter alone marks a new segment', () => {
+        // Input/output and cache reads do not go down; only cache writes reveal the reset.
+        const lines = [
+                cliShutdown('2026-05-24T12:00:00.000Z', { 'claude-sonnet-4.6': [1000, 50, 600, 200] }),
+                cliShutdown('2026-05-25T12:00:00.000Z', { 'claude-sonnet-4.6': [1200, 50, 600, 100] }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        assert.equal(result.actualTokens, 2300);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].inputTokens, 2200);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].cacheCreationTokens, 300);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].cachedReadTokens, 1200);
+        assert.deepEqual(result.dailyActualTokens, { '2026-05-24': 1050, '2026-05-25': 1250 });
+});
+
+test('EventJsonlTokenStrategy: growing cache counters with steady input/output stay cumulative', () => {
+        const lines = [
+                cliShutdown('2026-10-04T12:00:00.000Z', { 'gpt-5.6-sol': [1000, 50, 600, 100] }),
+                cliShutdown('2026-10-04T14:00:00.000Z', { 'gpt-5.6-sol': [1000, 50, 700, 150] }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        assert.equal(result.actualTokens, 1050);
+        assert.equal(result.modelUsage['gpt-5.6-sol'].cachedReadTokens, 700);
+        assert.equal(result.modelUsage['gpt-5.6-sol'].cacheCreationTokens, 150);
 });
 
 test('EventJsonlTokenStrategy: a model id named like an Object.prototype member is not treated as present', () => {
