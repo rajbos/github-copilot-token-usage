@@ -6,6 +6,7 @@ on:
     paths:
       - 'cli/**'
       - 'src/**'
+      - 'docs/cli/README.md'
       - '.github/workflows/cli-build.yml'
   pull_request:
     branches: [main]
@@ -35,6 +36,7 @@ jobs:
             cli-relevant:
               - 'cli/**'
               - 'src/**'
+              - 'docs/cli/README.md'
               - '.github/workflows/cli-build.yml'
 
   build-and-validate:
