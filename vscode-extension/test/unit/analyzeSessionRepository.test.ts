@@ -93,9 +93,18 @@ test('analyzeSessionFile scopes the remote to the session\'s workspace folder (w
 		fs.writeFileSync(sessionFile, session([lib.file, app.file]));
 		assert.equal((await analyze(sessionFile)).repository, 'https://github.com/acme/app.git');
 
-		// Only an outside reference: no remote rather than "lib".
+		// Only an outside reference: still the workspace's own remote, never "lib".
 		fs.writeFileSync(sessionFile, session([lib.file]));
-		assert.equal((await analyze(sessionFile)).repository, '');
+		assert.equal((await analyze(sessionFile)).repository, 'https://github.com/acme/app.git');
+
+		// A workspace folder in no repository: none found ('') rather than a referenced repository.
+		const loose = path.join(root, 'loose');
+		fs.mkdirSync(loose);
+		fs.writeFileSync(path.join(hashDir, 'workspace.json'), JSON.stringify({ folder: 'file:///' + loose.replace(/\\/g, '/') }));
+		fs.writeFileSync(sessionFile, session([lib.file]));
+		const none = await analyze(sessionFile);
+		assert.equal(none.repository, '');
+		assert.equal(none.repositoryResolved, true);
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}

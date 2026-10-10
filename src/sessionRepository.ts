@@ -7,9 +7,8 @@
  * (src/workspaceGrouping.ts). One definition of "what counts as a content reference" keeps the
  * two surfaces from drifting apart.
  */
-import * as path from 'path';
 import { isJsonlContent, isUuidPointerFile, reconstructJsonlStateAsync } from './tokenEstimation';
-import { extractRepositoryFromContentReferences } from './workspaceHelpers';
+import { extractRepositoryFromContentReferences, findRepositoryRemoteForFolder } from './workspaceHelpers';
 
 type ContentReferences = Parameters<typeof extractRepositoryFromContentReferences>[0];
 
@@ -63,78 +62,22 @@ export async function collectSessionContentReferences(content: string, parsedJso
 }
 
 /**
- * The remote URL of the repository a session's referenced files live in, or undefined.
- * Reads `.git/config` (or a worktree's main config) next to those files, like the extension.
+ * The remote of the repository a session worked in. When its workspace folder is known, that is
+ * the remote of the folder's own repository (`findRepositoryRemoteForFolder()`, walking up for a
+ * sub-folder workspace or an in-repo worktree) — authoritative, unlike referenced files, which can
+ * live in another repository or in a nested clone inside the workspace. Only when the workspace is
+ * unknown do the referenced files decide (the session is not attributed to a workspace then).
  */
 export async function extractRepositoryFromSessionContent(content: string, parsedJson?: unknown, workspacePath?: string): Promise<string | undefined> {
-	return extractWorkspaceRepository(await collectSessionContentReferences(content, parsedJson), workspacePath);
+	if (workspacePath) { return findRepositoryRemoteForFolder(workspacePath); }
+	return extractWorkspaceRepository(await collectSessionContentReferences(content, parsedJson));
 }
 
 /**
- * Comparable form of a path for containment checks: forward slashes, no `/C:` URI prefix,
- * `.` / `..` segments resolved (so `/app/../lib/x` is not inside `/app`), no trailing slash.
- * Case is folded only where the filesystem is case-insensitive: Windows-style paths (a drive
- * letter or UNC root) and macOS; POSIX paths elsewhere keep their case, as `/a/App` and `/a/app`
- * are different folders there.
- */
-function comparablePath(p: string, platform: string): string {
-	const slashed = p.replace(/\\/g, '/').replace(/^\/(?=[a-z]:)/i, '');
-	const isWindowsPath = /^[a-z]:\//i.test(slashed) || slashed.startsWith('//');
-	const unc = slashed.startsWith('//') ? '/' : '';
-	const normalized = (unc + path.posix.normalize(slashed)).replace(/\/+$/, '');
-	return isWindowsPath || platform === 'win32' || platform === 'darwin' ? normalized.toLowerCase() : normalized;
-}
-
-/** The file path a content reference points at, if any. */
-function referencePath(ref: ContentReferences[number]): string | undefined {
-	const data = ref.reference ?? ref.inlineReference;
-	const p = data?.fsPath ?? data?.path;
-	return typeof p === 'string' && p.length > 0 ? p : undefined;
-}
-
-/** References to files inside `workspacePath` (the folder itself or below it). */
-export function referencesWithinWorkspace(refs: ContentReferences, workspacePath: string, platform: string = process.platform): ContentReferences {
-	const root = comparablePath(workspacePath, platform);
-	return refs.filter(ref => {
-		const p = referencePath(ref);
-		if (!p) { return false; }
-		const candidate = comparablePath(p, platform);
-		return candidate === root || candidate.startsWith(`${root}/`);
-	});
-}
-
-/**
- * The remote of the repository a session worked in. Attachments and symbols can come from other
- * repositories, so when the session's workspace folder is known only references inside it count:
- * a repo-A session that also looked at repo B is never attributed to B. Without a known
- * workspace every reference counts (the session is not attributed to a workspace then).
+ * The same rule for references the caller already collected (the Details pass): the workspace's
+ * own remote when the workspace is known, else the remote of the referenced files.
  */
 export async function extractWorkspaceRepository(refs: ContentReferences, workspacePath?: string): Promise<string | undefined> {
-	const scoped = workspacePath ? referencesWithinWorkspace(resolveRelativeReferences(refs, workspacePath), workspacePath) : refs;
-	return scoped.length > 0 ? extractRepositoryFromContentReferences(scoped) : undefined;
-}
-
-/** Absolute on any platform: POSIX root, drive letter, UNC root, or a `/C:` URI-style path. */
-function isAbsoluteAnyPlatform(p: string): boolean {
-	return /^(?:[\\/]|[a-z]:[\\/])/i.test(p);
-}
-
-/**
- * Tools log cwd-relative paths (`src/a.ts`); resolve them against the workspace so they can count
- * as inside it and be looked up. The result keeps the workspace's separator style, with `.`/`..`
- * resolved, so the git-root walk sees a real path.
- */
-export function resolveRelativeReferences(refs: ContentReferences, workspacePath: string): ContentReferences {
-	const sep = workspacePath.includes('\\') && !workspacePath.startsWith('/') ? '\\' : '/';
-	const resolve = (relative: string): string => {
-		const joined = `${workspacePath.replace(/[\\/]+$/, '')}/${relative}`.replace(/\\/g, '/');
-		const unc = joined.startsWith('//') ? '/' : '';
-		const normalized = unc + path.posix.normalize(joined);
-		return sep === '\\' ? normalized.replace(/\//g, '\\') : normalized;
-	};
-	return refs.map(ref => {
-		const p = referencePath(ref);
-		if (!p || isAbsoluteAnyPlatform(p)) { return ref; }
-		return { kind: ref.kind ?? 'reference', reference: { fsPath: resolve(p) } };
-	});
+	if (workspacePath) { return findRepositoryRemoteForFolder(workspacePath); }
+	return refs.length > 0 ? extractRepositoryFromContentReferences(refs) : undefined;
 }

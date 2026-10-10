@@ -8,7 +8,7 @@ import * as os from 'os';
 import chalk from 'chalk';
 import { SessionDiscovery } from '../../src/sessionDiscovery';
 import { findWorkspacePathForDiscoveredPath, type IEcosystemAdapter } from '../../src/ecosystemAdapter';
-import { resolveExactWorkspacePath } from '../../src/workspaceHelpers';
+import { findRepositoryRemoteForFolder, resolveExactWorkspacePath } from '../../src/workspaceHelpers';
 import { resolveFileUri } from '../../src/workspacePathResolver';
 import { calculateEstimatedCost } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
@@ -20,7 +20,6 @@ import { withErrorRecovery, withErrorRecoverySync } from '../../src/utils/errors
 import { buildRecentSessionBuckets, type RecentSessionBucketItem } from '../../src/recentSessions';
 import { groupWorkspaces, groupFolders, detectArtefactWorkspaceNames, type WorkspaceGroupingProbes, type WorkspaceUsageEntry } from '../../src/workspaceGrouping';
 import { prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
-import { extractRepositoryFromSessionContent } from '../../src/sessionRepository';
 import { getTimeWindowStartDate } from '../../src/timeWindows';
 import { buildRepeatedTaskReport, type RepeatedTaskSessionSource } from '../../src/repeatedTasks';
 import { loadCache, saveCache, disableCache, getCached, setCached, getCacheStats } from './cliCache';
@@ -161,13 +160,13 @@ async function resolveSessionWorkspace(activity: SessionActivityLookup, claudeBa
 	const workspacePath = await findWorkspacePathForDiscoveredPath(getEcosystems(), activity.file)
 		?? await resolveSessionWorkspacePath(activity.file, claudeBasePath);
 	if (!workspacePath) { return undefined; }
-	// No adapter covers VS Code chatSessions files, so take the remote from the files the
-	// session referenced, the same shared derivation the extension's session details use.
+	// No adapter covers VS Code chatSessions files: the remote is the workspace folder's own
+	// repository (walking up for a sub-folder workspace), the same shared rule as the extension's
+	// analysis — never a referenced file, which can live in another or a nested repository.
 	const repository = meta?.repository ?? await withErrorRecovery(
-		// Only files inside this workspace count, so a cross-repository reference is not its remote.
-		async () => extractRepositoryFromSessionContent(await fs.promises.readFile(activity.file, 'utf-8'), undefined, workspacePath),
+		() => findRepositoryRemoteForFolder(workspacePath),
 		undefined,
-		`buildCustomizationMatrix repository(${activity.file})`
+		`buildCustomizationMatrix repository(${workspacePath})`
 	);
 	return { path: workspacePath, ...(repository ? { repository } : {}) };
 }

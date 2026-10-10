@@ -15,16 +15,20 @@ the CLI's Customization evidence counts repositories, not folders.
   the result) and the CLI's `buildCustomizationMatrix()` in `cli/src/helpers.ts`, which takes
   each session's folder and remote from the owning adapter's metadata first (Copilot CLI,
   OpenCode, Crush, …) and falls back to Claude Code JSONL and VS Code `chatSessions` paths.
-  For VS Code sessions, which no adapter covers, the remote comes from the files the session
-  referenced (`extractRepositoryFromSessionContent()` in `src/sessionRepository.ts`, the same
-  derivation the extension's session details use). Like the extension, it only counts sessions
+  For VS Code sessions, which no adapter covers, the remote is the workspace folder's own
+  repository (`findRepositoryRemoteForFolder()`, the same rule the extension uses). Like the
+  extension, it only counts sessions
   with at least one interaction in the last 30 days (the shared `getTimeWindowStartDate('last30')`
   window: 30 calendar dates including today), judged by a database-backed session's own last
   activity rather than its shared database file's mtime.
 - Session remotes: the extension resolves each session's remote during the normal (worker)
-  analysis — the owning adapter's recorded remote, else the remote of the files it referenced
-  (`extractRepositoryFromSessionContent()`), cached as `''` when there is none — so every
-  session carries its own remote and a reused folder reaches the grouping as conflicting.
+  analysis — the owning adapter's recorded remote, else the remote of the session's workspace
+  folder's own repository (`findRepositoryRemoteForFolder()` in `src/workspaceHelpers.ts`,
+  walking up so a sub-folder workspace or an in-repo worktree resolves to its repository), and
+  only when the workspace is unknown the remote of the files it referenced. Referenced files are
+  not trusted when the workspace is known: they can belong to another repository or to a nested
+  clone. `''` records "none found" — so every session carries its own remote and a reused
+  folder reaches the grouping as conflicting.
 - Tests: [`vscode-extension/test/unit/workspaceGrouping.test.ts`](../../vscode-extension/test/unit/workspaceGrouping.test.ts)
   and the parity tests in `cli/src/test/customizationMatrix.test.ts`.
 

@@ -888,14 +888,16 @@ export async function analyzeSessionFile(
  * The session's git remote, resolved during the normal analysis — on the worker thread — so
  * workspace grouping has its strongest signal on a cold cache too, not only after the Details
  * view happened to run. Precedence: the owning adapter's recorded remote; a previously found
- * (non-empty) remote; otherwise the remote of the files the session referenced (the same shared
- * derivation as the details pass), stored as '' when there is none.
+ * (non-empty) remote; the remote of the session's own workspace folder (walking up, so a
+ * sub-folder workspace or in-repo worktree resolves to its repository — referenced files are not
+ * trusted for this, as they can belong to another or a nested repository); and only when the
+ * workspace is unknown, the remote of the files the session referenced. '' records "none found".
  *
- * A previous '' is deliberately not carried over: this runs because the file changed, and a
- * session analysed before it referenced any file must get another look once it does.
- * `repositoryResolved` is set whenever extraction was attempted (including the '' result), so
- * the Details cache path does not re-parse just to find a repository; a failed extraction stays
- * unresolved and is retried.
+ * A previous '' is deliberately not carried over: this runs because the file changed. An
+ * adapter-handled session for which nothing was found stays unresolved, so the Details pass still
+ * applies its workspace-name fallback. `repositoryResolved` is otherwise set whenever extraction
+ * was attempted, so the Details cache path does not re-parse just to find a repository; a failed
+ * extraction stays unresolved and is retried.
  */
 async function resolveSessionRepository(
 	sessionMeta: SessionMeta,
@@ -906,13 +908,13 @@ async function resolveSessionRepository(
 ): Promise<Pick<SessionFileCache, 'repository' | 'repositoryResolved'>> {
 	if (sessionMeta.repository) { return { repository: sessionMeta.repository, repositoryResolved: true }; }
 	if (existing?.repository) { return { repository: existing.repository, repositoryResolved: true }; }
-	// Adapter-handled sessions have no file content to scan: their metadata is the whole answer.
-	if (content === undefined) { return { repositoryResolved: true }; }
 	try {
-		// Only references inside the session's own workspace count: a session in repo A that also
-		// looked at repo B must not be attributed to B (the remote is a strong grouping identity).
 		const workspace = resolveWorkspaceFolderWithFallback(sessionFilePath, new Map(), sessionMeta.workspacePath);
-		return { repository: (await extractRepositoryFromSessionContent(content, parsedJson, workspace)) ?? '', repositoryResolved: true };
+		// Adapter-handled sessions have no preloaded content to scan for references.
+		if (content === undefined && !workspace) { return {}; }
+		const remote = await extractRepositoryFromSessionContent(content ?? '', parsedJson, workspace);
+		if (remote) { return { repository: remote, repositoryResolved: true }; }
+		return content === undefined ? {} : { repository: '', repositoryResolved: true };
 	} catch {
 		return {};
 	}

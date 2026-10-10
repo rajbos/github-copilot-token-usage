@@ -814,6 +814,21 @@ async function tryReadWorktreeGitRemote(potentialRoot: string): Promise<string |
  * @param contentReferences Array of content reference objects from session data
  * @returns The repository remote URL if found, undefined otherwise
  */
+/**
+ * The remote of the git repository a folder belongs to: the folder's own `.git` (a checkout or a
+ * linked worktree's pointer), else the nearest ancestor's — so a workspace that is a sub-folder
+ * of a repository, or an in-repo worktree, resolves to that repository. Undefined when no
+ * repository is found (including when the folder no longer exists and no ancestor is one).
+ */
+export async function findRepositoryRemoteForFolder(folderPath: string): Promise<string | undefined> {
+	// buildPotentialGitRoots() lists a path's parents; a placeholder child makes the folder itself the first one.
+	for (const potentialRoot of buildPotentialGitRoots(`${folderPath.replace(/[\\/]+$/, '')}/_`)) {
+		const remoteUrl = await tryReadGitConfigRemote(potentialRoot) ?? await tryReadWorktreeGitRemote(potentialRoot);
+		if (remoteUrl) { return remoteUrl; }
+	}
+	return undefined;
+}
+
 export async function extractRepositoryFromContentReferences(contentReferences: ContentReferenceItem[]): Promise<string | undefined> {
 	if (!Array.isArray(contentReferences)) { return undefined; }
 
