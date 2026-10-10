@@ -5,7 +5,7 @@
 	"description": "Local, zero-cost release-video generator: What's New catalog -> screenshots -> narration -> FFmpeg/NVENC MP4.",
 	"license": "MIT",
 	"engines": {
-		"node": ">=20"
+		"node": ">=22.14.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
@@ -15,7 +15,7 @@
 		"test": "npm run build && node --test dist/test"
 	},
 	"devDependencies": {
-		"@types/node": "^20.14.0",
-		"typescript": "^5.5.0"
+		"@types/node": "^24.19.2",
+		"typescript": "^5.9.3"
 	}
 }
