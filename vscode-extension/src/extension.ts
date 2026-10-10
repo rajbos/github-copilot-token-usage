@@ -15669,6 +15669,24 @@ function setupBackend(context: vscode.ExtensionContext, tokenTracker: CopilotTok
 
     context.subscriptions.push(configureBackendCommand);
 
+    // Every backend command contributed in package.json must be registered here;
+    // test/unit/command-registration.test.ts fails if one is missing.
+    const backendCommandHandlers: Array<[string, () => Promise<void>]> = [
+      ["copyBackendConfig", () => backendHandler.handleCopyBackendConfig()],
+      ["exportCurrentView", () => backendHandler.handleExportCurrentView()],
+      ["setBackendSharedKey", () => backendHandler.handleSetBackendSharedKey()],
+      ["rotateBackendSharedKey", () => backendHandler.handleRotateBackendSharedKey()],
+      ["clearBackendSharedKey", () => backendHandler.handleClearBackendSharedKey()],
+      ["toggleBackendWorkspaceMachineNameSync", () => backendHandler.handleToggleBackendWorkspaceMachineNameSync()],
+      ["setSharingProfile", () => backendHandler.handleSetSharingProfile()],
+      ["clearAzureSettings", () => backendHandler.handleClearAzureSettings()],
+    ];
+    for (const [id, handler] of backendCommandHandlers) {
+      context.subscriptions.push(
+        vscode.commands.registerCommand(`aiEngineeringFluency.${id}`, handler),
+      );
+    }
+
     const configureTeamServerCommand = vscode.commands.registerCommand(
       "aiEngineeringFluency.configureTeamServer",
       async () => {
