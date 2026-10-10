@@ -117,7 +117,7 @@ let activeTab: TabId = 'trends';
 
 const TABS: { id: TabId; label: string }[] = [
 	{ id: 'trends', label: '📈 Trends' },
-	{ id: 'skills', label: '🛠️ Tools & Skills' },
+	{ id: 'skills', label: '🛠️ Skills' },
 	{ id: 'deltas', label: '🗓️ Month vs Month' },
 	{ id: 'attribution', label: '💸 Cost Attribution' },
 	{ id: 'cache', label: '⚡ Prompt Cache' },
