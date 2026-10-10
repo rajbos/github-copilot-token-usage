@@ -36,6 +36,20 @@ Requires **Node.js 22.14 or later**.
 
 Most commands accept `--json`. The global `--no-cache` option ignores the parsed-session cache and re-parses every file (`segment` keeps its own output cache; use `segment --refresh` to bypass it). Run `ai-engineering-fluency <command> --help` for all options, or see the [command reference](https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/cli/README.md#commands).
 
+## Programmatic use
+
+The package also works as a Node library (CommonJS and ESM, with types). Pass it one session file and get back its token usage and cost:
+
+```js
+const { analyzeSessionFile } = require('@rajbos/ai-engineering-fluency/session');
+
+const usage = await analyzeSessionFile('/home/me/.claude/projects/<project>/<session>.jsonl');
+// usage?.modelUsage, usage?.totalTokens, usage?.estimatedCostUsd.provider,
+// usage?.copilotCredits (exact Copilot billing, or null when not available)
+```
+
+It resolves to `null` for files it cannot parse, never writes to the console, and caches results in memory per file, so polling an unchanged file is cheap. Details: [Programmatic use](https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/cli/README.md#programmatic-use).
+
 ## Configuration
 
 There is no config file. The CLI finds sessions in each tool's default location and honours the same environment variables the tools do — `CODEX_HOME`, `HERMES_HOME`, `VIBE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `APPDATA` / `LOCALAPPDATA` — and, inside WSL, also searches the Windows-side VS Code folders. Parsed results are cached in `~/.copilot-token-tracker/`.

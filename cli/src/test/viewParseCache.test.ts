@@ -19,30 +19,48 @@ import { buildClassificationInputFromUsageAnalysis, classifySessionTask } from '
 
 type MockOptions = { changeDuringAnalysis?: boolean; failAnalysisRead?: boolean; content?: string };
 
+// Captured before any test mocks them; the mocks below delegate to these.
+const realOpen = fs.promises.open.bind(fs.promises);
+const realReadFile = fs.promises.readFile.bind(fs.promises) as (file: string, options?: unknown) => Promise<string | Buffer>;
+const realStat = fs.promises.stat.bind(fs.promises);
+
+/**
+ * A real session file (the base parse reads through the size-guarded reader, which opens a file
+ * handle), under the git-ignored build output rather than os.tmpdir(), which that reader refuses.
+ * Every read of it is counted; its mtime is controlled so a test can "change" the file mid-run.
+ */
 function mockSession(t: TestContext, id: string, changeDuringAnalysis: boolean | MockOptions): { filePath: string; mtimes: number[]; reads: () => number } {
 	const opts: MockOptions = typeof changeDuringAnalysis === 'boolean' ? { changeDuringAnalysis } : changeDuringAnalysis;
-	const filePath = path.join(__dirname, 'workspaceStorage', 'synthetic', 'chatSessions', `${id}.json`);
+	const root = fs.mkdtempSync(path.join(__dirname, 'view-cache-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const filePath = path.join(root, 'workspaceStorage', 'synthetic', 'chatSessions', `${id}.json`);
 	const content = opts.content ?? JSON.stringify({ requests: [{
 		requestId: 'r1', timestamp: Date.now(), modelId: 'copilot/gpt-4o',
 		message: { text: 'Write a test', parts: [{ text: 'Write a test' }] },
 		response: [], result: { promptTokens: 100, outputTokens: 20 },
 	}] });
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, content);
 	const first = new Date(); first.setMilliseconds(0);
 	let mtime = first.getTime();
 	const mtimes = [mtime];
 	let sessionReads = 0;
+	const onRead = () => {
+		// The second read is the view enrichment: simulate the editor appending meanwhile.
+		if (++sessionReads === 2 && opts.changeDuringAnalysis) { mtime += 5000; mtimes.push(mtime); }
+		if (sessionReads === 2 && opts.failAnalysisRead) { throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' }); }
+	};
 	t.mock.method(fs.promises, 'stat', async (file: string) => {
-		assert.equal(file, filePath);
-		return { mtime: new Date(mtime), mtimeMs: mtime, size: content.length, isFile: () => true } as unknown as fs.Stats;
+		if (file !== filePath) { return realStat(file); }
+		return { ...fs.statSync(filePath), mtime: new Date(mtime), mtimeMs: mtime, size: content.length, isFile: () => true } as unknown as fs.Stats;
 	});
-	t.mock.method(fs.promises, 'readFile', async (file: string) => {
-		if (file === filePath) {
-			// The second read is the usage analysis: simulate the editor appending meanwhile.
-			if (++sessionReads === 2 && opts.changeDuringAnalysis) { mtime += 5000; mtimes.push(mtime); }
-			if (sessionReads === 2 && opts.failAnalysisRead) { throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' }); }
-			return content;
-		}
-		throw Object.assign(new Error('no debug log'), { code: 'ENOENT' });
+	t.mock.method(fs.promises, 'open', async (file: string, ...rest: unknown[]) => {
+		if (file === filePath) { onRead(); }
+		return (realOpen as (...a: unknown[]) => Promise<unknown>)(file, ...rest);
+	});
+	t.mock.method(fs.promises, 'readFile', async (file: string, ...rest: unknown[]) => {
+		if (file === filePath) { onRead(); }
+		return realReadFile(file, ...(rest as [unknown]));
 	});
 	return { filePath, mtimes, reads: () => sessionReads };
 }
