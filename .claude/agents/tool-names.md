@@ -152,7 +152,7 @@ After editing `src/toolNames.json`:
 
 ## Upstream Sync Reference
 
-The `sync-toolnames` workflow (`.github/workflows/sync-toolnames.yml`) automatically syncs tool IDs from `microsoft/vscode-copilot-chat` using the prompt at `.github/workflows/prompts/sync-toolnames-prompt.md`. This covers VS Code built-in and Copilot tools. MCP tool names from user sessions are **not** covered by this sync and must be added manually via issues.
+The `sync-toolnames` workflow (`.github/workflows/sync-toolnames.yml`) automatically syncs tool IDs from `microsoft/vscode-copilot-chat` with the deterministic script `.github/scripts/sync_toolnames.py` (no AI agent reads the upstream repo). This covers VS Code built-in and Copilot tools. MCP tool names from user sessions are **not** covered by this sync and must be added manually via issues.
 
 ## Antigravity Tool Names
 
