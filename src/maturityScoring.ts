@@ -38,8 +38,9 @@ function promoteStage(current: Stage, next: Stage): Stage {
 }
 
 /**
- * How often the extension recomputes its stats (and therefore the Fluency Score panel).
- * Documented in docs/FLUENCY-LEVELS.md ("updates every 5 minutes") and shown in the panel footer.
+ * Interval of the extension's silent background stats refresh. It does not re-render an
+ * already-open Fluency Score panel (computeAndUploadFluencyScore only does so when !silent).
+ * See docs/FLUENCY-LEVELS.md, "Data Source".
  */
 export const STATS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 

@@ -166,4 +166,4 @@ For example, if your category scores are `[1, 2, 3, 3, 4, 4]`, the two middle va
 
 Scores are calculated from Copilot Chat session log files stored locally on your machine. Some Copilot features (e.g., inline suggestion acceptance rates) are not captured in these logs and therefore not reflected in the score.
 
-The dashboard updates every 5 minutes automatically. You can also refresh manually from the Fluency Score panel.
+The extension refreshes its usage stats in the background every 5 minutes. That silent background refresh does **not** re-render an already-open Fluency Score panel: the panel shows the score as of when it was opened or last refreshed. Use the refresh button in the panel (or reopen it) to see current numbers. (The panel footer's "Updates every 5 minutes" text is therefore slightly misleading; see the PR that introduced this note.)

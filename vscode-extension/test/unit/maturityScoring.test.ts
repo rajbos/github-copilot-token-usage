@@ -1710,12 +1710,15 @@ test('fluency window: "last 30 days" is 30 local calendar dates including today'
     assert.equal(computeUtcDateRanges(now).last30DaysUtcStartKey, '2024-04-16');
 });
 
-test('fluency refresh: STATS_REFRESH_INTERVAL_MS is 5 minutes and extension.ts schedules with it', () => {
+test('fluency refresh: STATS_REFRESH_INTERVAL_MS is 5 minutes and drives the silent background refresh timer', () => {
     assert.equal(STATS_REFRESH_INTERVAL_MS, 5 * 60 * 1000);
     // Compiled tests live under out/vscode-extension/test/unit; walk back to the package root.
     const src = fs.readFileSync(path.join(__dirname, '../../../../src/extension.ts'), 'utf8');
     assert.match(src, /setInterval\(\(\) => \{\s*this\.updateTokenStats\(true, true\);\s*\}, STATS_REFRESH_INTERVAL_MS\)/);
+    // The timer is silent (updateTokenStats(silent=true)), and the panel is only re-rendered when !silent,
+    // so the open Fluency panel is NOT refreshed by it. Pin that, plus the doc saying so.
+    assert.match(src, /if \(this\.maturityPanel && !silent && freshMaturityData\) \{\s*this\.maturityPanel\.webview\.html =/);
     const doc = fs.readFileSync(path.join(__dirname, '../../../../../docs/FLUENCY-LEVELS.md'), 'utf8');
-    assert.ok(doc.includes('every 5 minutes'), 'doc still states the 5-minute interval this constant implements');
+    assert.ok(doc.includes('every 5 minutes') && doc.includes('does **not** re-render an already-open Fluency Score panel'));
     assert.ok(doc.includes('last 30 days'), 'doc still states the 30-day window');
 });
