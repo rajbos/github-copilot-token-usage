@@ -1088,11 +1088,11 @@ interface WorktreeCleanupDiagnostics {
 /** How long a "take me there" request waits for its panel to finish loading before it is dropped. */
 const SURFACE_REVEAL_TTL_MS = 60_000;
 
-type UsageAnalysisTab = 'activity' | 'sessions' | 'tools' | 'health' | 'repos' | 'agent' | 'readiness' | 'worktrees' | 'insights' | 'corrections';
+type UsageAnalysisTab = 'activity' | 'sessions' | 'tools' | 'health' | 'repos' | 'agent' | 'billing' | 'readiness' | 'worktrees' | 'insights' | 'corrections';
 
 /** Narrows an arbitrary tab name (e.g. from the what's-new catalog) to one `showUsageAnalysisOnTab` accepts. */
 function isUsageAnalysisTab(tab: string): tab is UsageAnalysisTab {
-	return (['activity', 'sessions', 'tools', 'health', 'repos', 'agent', 'readiness', 'worktrees', 'insights', 'corrections'] as string[]).includes(tab);
+	return (['activity', 'sessions', 'tools', 'health', 'repos', 'agent', 'billing', 'readiness', 'worktrees', 'insights', 'corrections'] as string[]).includes(tab);
 }
 
 /**
@@ -10124,6 +10124,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	public async showUsageAnalysisOnReposTab(): Promise<void> {
 		await this.showUsageAnalysisOnTab('repos');
+	}
+
+	/** Opens the Usage Analysis panel and activates the GitHub › Billing tab (AI Billing Coverage). */
+	public async showUsageAnalysisOnBillingTab(): Promise<void> {
+		await this.showUsageAnalysisOnTab('billing');
 	}
 
 	public async showUsageAnalysisOnCorrectionsTab(): Promise<void> {

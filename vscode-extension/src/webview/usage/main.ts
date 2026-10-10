@@ -3818,7 +3818,6 @@ function wireInsightCardButtons(): void {
 function buildUsageRootHtml(
 	stats: UsageAnalysisStats,
 	customizationHtml: string,
-	multiModelHtml: string,
 	thinkingEffortHtml: string,
 	sessionsSummaryHtml: string,
 	todayTotalRefs: number,
@@ -3857,10 +3856,11 @@ function buildUsageRootHtml(
 			${buildTabStripHtml(usageTabStripInput(stats))}
 
 			${safeSectionHtml('Recent Sessions', () => buildSessionsTabPanelHtml(stats))}
-			${safeSectionHtml('My Activity', () => buildActivityTabPanelHtml(stats, multiModelHtml, thinkingEffortHtml, sessionsSummaryHtml, todayTotalRefs, last30DaysTotalRefs))}
+			${safeSectionHtml('My Activity', () => buildActivityTabPanelHtml(stats, thinkingEffortHtml, sessionsSummaryHtml, todayTotalRefs, last30DaysTotalRefs))}
 			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
 			${safeSectionHtml('Workspace Health', () => buildHealthTabPanelHtml(customizationHtml, stats))}
 			${safeSectionHtml('Repository PRs & Cloud Agent', () => buildReposAndAgentTabPanelsHtml())}
+			${safeSectionHtml('AI Billing', () => buildBillingTabPanelHtml(stats))}
 			${safeSectionHtml('AI Readiness', () => darkFactoryTab.panel(activeTab))}
 			${safeSectionHtml('Worktrees', () => buildWorktreesTabPanelHtml())}
 			${safeSectionHtml('Insights', () => buildInsightsTabPanelHtml(stats.insights ?? []))}
@@ -4469,6 +4469,24 @@ function billingSectionHasContent(stats: UsageAnalysisStats): boolean {
 	return !!stats.copilotApiBalance || shouldListAccountBudgets(stats.accountBudgets ?? [], !!stats.copilotApiBalance) || (!!groupCosts && Object.keys(groupCosts).length > 0);
 }
 
+/**
+ * The GitHub › Billing tab. The section holds GitHub API data (credit balance, per-account
+ * budgets), so like the Repository PRs and Cloud Agent tabs it shows a sign-in hint when there is
+ * nothing to display; the section itself stays gated on data presence.
+ */
+function buildBillingTabPanelHtml(stats: UsageAnalysisStats): string {
+	const sectionHtml = safeSectionHtml('AI Billing Coverage', () => buildBillingComparisonSectionHtml(stats));
+	const body = sectionHtml || `
+		<div class="section" id="section-billing-coverage">
+			<div class="section-title"><span>💳</span><span>AI Billing Coverage</span></div>
+			<div style="margin-top:12px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:6px; font-size:12px; color:var(--text-secondary);">
+				<strong>🔒 GitHub authentication required</strong><br/>
+				Sign in with GitHub (via the Diagnostics tab) to see your Copilot AI credit balance and budgets.
+			</div>
+		</div>`;
+	return `<div id="tab-panel-billing" class="tab-panel"${activeTab !== 'billing' ? ' style="display:none"' : ''}>${body}</div>`;
+}
+
 function buildBillingComparisonSectionHtml(stats: UsageAnalysisStats): string {
 	if (!billingSectionHasContent(stats)) { return ''; }
 	const api = stats.copilotApiBalance;
@@ -4518,7 +4536,6 @@ function sectionGroupHeadingHtml(icon: string, titleKey: string, subtitleKey: st
 
 function buildActivityTabPanelHtml(
 	stats: UsageAnalysisStats,
-	multiModelHtml: string,
 	thinkingEffortHtml: string,
 	sessionsSummaryHtml: string,
 	todayTotalRefs: number,
@@ -4528,7 +4545,6 @@ function buildActivityTabPanelHtml(
 	// shape it doesn't expect) renders an inline error card for that section only, instead of
 	// throwing out of this template literal and blanking the entire Activity tab.
 	const modelCostHtml = safeSectionHtml('Model Cost', () => buildModelCostSectionHtml(stats));
-	const billingComparisonHtml = safeSectionHtml('AI Billing Coverage', () => buildBillingComparisonSectionHtml(stats));
 	const modeUsageHtml = safeSectionHtml('Interaction Modes', () => `
 			<div class="section" id="section-interaction-modes">
 				<div class="section-title"><span>🎯</span><span>Interaction Modes</span></div>
@@ -4553,9 +4569,7 @@ function buildActivityTabPanelHtml(
 			${modeUsageHtml}
 
 			${sectionGroupHeadingHtml('💵', 'usage.band.spend.title', 'usage.band.spend.subtitle')}
-			${billingComparisonHtml}
 			${modelCostHtml}
-			${multiModelHtml}
 			${modelEfficiencyHtml}
 			${thinkingEffortHtml}
 
@@ -5405,7 +5419,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const rendered = assignUsageRootHtml(root, () => buildUsageRootHtml(
 		stats,
 		customizationHtml,
-		'',
 		thinkingEffortHtml,
 		sessionsSummaryHtml,
 		todayTotalRefs,

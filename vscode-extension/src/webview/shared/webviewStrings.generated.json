@@ -133,6 +133,7 @@
   "usage.tab.health": "Workspace Health",
   "usage.tab.repos": "Repository PRs",
   "usage.tab.agent": "Cloud Agent",
+  "usage.tab.billing": "Billing",
   "usage.tab.worktrees": "Worktrees",
   "usage.tab.insights": "Insights",
   "usage.tab.corrections": "Corrections",

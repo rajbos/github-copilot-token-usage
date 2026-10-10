@@ -313,6 +313,7 @@
   "usage.tab.health": "工作区健康度",
   "usage.tab.repos": "仓库 PR",
   "usage.tab.agent": "云端代理",
+  "usage.tab.billing": "计费",
   "usage.tab.worktrees": "工作树",
   "usage.tab.insights": "洞察",
   "usage.tab.corrections": "纠正",

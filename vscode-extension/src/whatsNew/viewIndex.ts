@@ -153,7 +153,6 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 						children: [
 							{ id: 'usage.activity.sessions-summary', title: 'Sessions Summary', description: 'Session counts for today, the last 30 days, this month and last month.', nav: { anchor: 'section-sessions-summary' } },
 							{ id: 'usage.activity.interaction-modes', title: 'Interaction Modes', description: 'How often you use Ask, Edit, Agent, Plan and CLI modes, today and over the last 30 days.', keywords: ['ask', 'edit', 'agent', 'plan'], nav: { anchor: 'section-interaction-modes' } },
-							{ id: 'usage.activity.billing-coverage', title: 'AI Billing Coverage', description: 'Copilot API credit balance against locally tracked cost, plus costs from other providers.', keywords: ['budget', 'credits', 'premium requests'], nav: { anchor: 'section-billing-coverage' }, condition: 'When billing data is available' },
 							{ id: 'usage.activity.model-cost', title: 'Model Cost Usage', description: 'Share of requests on low, medium and high cost models for three periods.', keywords: ['tier', 'expensive'], nav: { anchor: 'section-model-cost' } },
 							{ id: 'usage.activity.model-leaderboard', title: 'Local Model Leaderboard', description: 'Efficiency frontier and a per-model table: one-shot edit rate, cost, tokens and tool steps.', keywords: ['model efficiency', 'compare models'], nav: { anchor: 'section-model-efficiency' } },
 							{ id: 'usage.activity.thinking-effort', title: 'Thinking Effort (Reasoning)', description: 'Requests per reasoning-effort level for three periods.', keywords: ['reasoning'], nav: { anchor: 'section-thinking-effort' }, condition: 'When effort data exists' },
@@ -231,11 +230,12 @@ export const VIEW_INDEX: readonly ViewIndexView[] = [
 			{
 				id: 'usage.group.github',
 				title: 'GitHub',
-				description: 'AI activity on GitHub itself: pull requests and cloud agent sessions.',
+				description: 'AI activity on GitHub itself: pull requests, cloud agent sessions and AI billing.',
 				nav: { tab: 'repos' },
 				children: [
 					{ id: 'usage.repos', title: 'Repository PRs', description: 'Pull requests from the last 30 days that AI authored or was asked to review.', keywords: ['pull requests', 'review'], nav: { tab: 'repos' } },
 					{ id: 'usage.agent', title: 'Cloud Agent', description: 'Copilot cloud agent tasks and sessions from the last 30 days, with credits and premium requests.', keywords: ['coding agent', 'copilot agent'], nav: { tab: 'agent' } },
+					{ id: 'usage.billing', title: 'AI Billing Coverage', description: 'Copilot API credit balance against locally tracked cost, plus costs from other providers.', keywords: ['budget', 'credits', 'premium requests'], nav: { tab: 'billing' } },
 				],
 			},
 			{

@@ -31,7 +31,7 @@ export interface UsageTabGroup {
 export const USAGE_TAB_GROUPS: readonly UsageTabGroup[] = [
 	{ id: 'usage', labelKey: 'usage.group.usage', icon: 'graph', tabs: ['activity', 'sessions'] },
 	{ id: 'workspace', labelKey: 'usage.group.workspace', icon: 'folder-opened', tabs: ['tools', 'health', 'readiness', 'worktrees'] },
-	{ id: 'github', labelKey: 'usage.group.github', icon: 'github', tabs: ['repos', 'agent'] },
+	{ id: 'github', labelKey: 'usage.group.github', icon: 'github', tabs: ['repos', 'agent', 'billing'] },
 	{ id: 'coaching', labelKey: 'usage.group.coaching', icon: 'mortar-board', tabs: ['insights', 'corrections'] },
 ];
 
