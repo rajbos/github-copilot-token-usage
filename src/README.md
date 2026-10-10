@@ -2,6 +2,12 @@
 
 This directory contains the TypeScript sources and JSON configuration files shared between the VS Code extension (`vscode-extension/`) and the CLI npm package (`cli/`).
 
+## Boundary and tests
+
+`src/` is editor-neutral. It must not import `vscode`, nor anything from `vscode-extension/`, `cli/` or `desktop/` — the root `eslint.config.mjs` enforces this (`no-restricted-imports`). Host services (extension lookup, settings, app name, ...) are passed in through `deps` objects, e.g. `SessionDiscoveryDeps` and `WindsurfHost`; the VS Code implementations live in `vscode-extension/src/srcHostAdapters.ts`. See [docs/adr/SHARED-SRC-API-BOUNDARY.md](../docs/adr/SHARED-SRC-API-BOUNDARY.md).
+
+Unit tests for these modules live in `src/test/` and need no VS Code harness. Run them from `vscode-extension/` with `npm run test:src`; they also run as part of `npm run test:node`, `test:coverage` and CI through `vscode-extension/test/unit/sharedSrcTests.test.ts`.
+
 > Note: `copilotPlans.json` is only used by the VS Code extension and lives in `vscode-extension/src/copilotPlans.json`; it is documented here alongside the other data files.
 
 ## copilotPlans.json

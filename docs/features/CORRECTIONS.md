@@ -128,7 +128,7 @@ whichever model Copilot Chat is configured to use, the same as pasting them in y
 
 ## Tests
 
-- `vscode-extension/test/unit/correctionDetection.test.ts` — detection rules, counts, caps, and the
+- `src/test/correctionDetection.test.ts` — detection rules, counts, caps, and the
   improvement-prompt builder (example ranking, caps, prompt content).
 - `vscode-extension/test/unit/insightsEngine.test.ts` — the three correction insights (thresholds)
   and the `corrections-user-pushback` secondary action command.

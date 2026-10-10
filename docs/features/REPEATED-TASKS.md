@@ -66,7 +66,7 @@ task is the strongest signal that a workflow has stabilized enough to be capture
 
 ## Tests
 
-- `vscode-extension/test/unit/repeatedTasks.test.ts` — normalization, similarity, clustering,
+- `src/test/repeatedTasks.test.ts` — normalization, similarity, clustering,
   ordering, truncation, exclusions, example prompts, the skill location rule, the skill prompt, and
   the shared report builder (`buildRepeatedTaskReport`, `toRepeatedTaskInput`, `repoDisplayName`).
 - `vscode-extension/test/unit/webview-skillSuggestions.test.ts` — section rendering and escaping,

@@ -7,6 +7,9 @@ import base from './vscode-extension/eslint.config.mjs';
 
 export default [
     ...base,
+    // src/test holds unit tests (compiled and run via vscode-extension's test scripts); like
+    // vscode-extension/test/**, they are not part of the lint scope.
+    { ignores: ["src/test/**"] },
     {
         // Shared-source boundary (docs/adr/SHARED-SRC-API-BOUNDARY.md): src/ is consumed by the
         // VS Code extension, the CLI and the desktop app, so it must stay editor-neutral and must
