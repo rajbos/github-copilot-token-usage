@@ -135,8 +135,8 @@ ${themeLightCss}
  * scripts/validate-desktop-contract.js checks against the views' messages and
  * registerIpcHandlers — remove an entry there when its message gets a handler.
  */
-const HIDDEN_CONTROL_SELECTORS: string[] = Object.values(unsupportedWebviewCommands.commands)
-    .flatMap(entry => (entry as { hiddenBy?: string[] }).hiddenBy ?? []);
+const HIDDEN_CONTROL_SELECTORS: string[] = [...new Set(Object.values(unsupportedWebviewCommands.commands)
+    .flatMap(entry => (entry as { hiddenBy?: string[] }).hiddenBy ?? []))];
 
 const BASE_BODY_STYLE = `
 body {

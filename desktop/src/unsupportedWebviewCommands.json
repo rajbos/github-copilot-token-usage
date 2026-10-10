@@ -5,8 +5,12 @@
     "status 'hidden': the controls that post it are hidden; hiddenBy is the CSS that hides them, injected by main.ts.",
     "status 'gap':    the control is still visible and does nothing in the desktop app. A known gap, not a decision.",
     "status 'no-op':  a background notice (telemetry, preference, failure report) with no visible control; ignoring it is harmless.",
-    "Remove an entry when its command gets a handler in registerIpcHandlers: the check fails on stale entries."
+    "Remove an entry when its command gets a handler in registerIpcHandlers: the check fails on stale entries.",
+    "unresolvedComputedCommands: postMessage sites ('file#function:expression') whose command name is computed at runtime and cannot be resolved from data-* markup or a literal-union parameter; each needs a reason."
   ],
+  "unresolvedComputedCommands": {
+    "vscode-extension/src/webview/usage/main.ts#wireInsightCardButtons:command": "Insight 'execute' buttons post a VS Code command id taken from the insight data. The desktop sends insights: [], so no such button is rendered."
+  },
   "commands": {
     "showEfficiency": {
       "status": "hidden",
@@ -103,6 +107,26 @@
       "hiddenBy": ["#btn-export-toggle"],
       "reason": "Fluency Score: the export menu (PNG / PDF / PowerPoint) saves through VS Code."
     },
+    "exportPdf": {
+      "status": "hidden",
+      "hiddenBy": ["#export-dropdown"],
+      "reason": "Fluency Score: PDF export from the export menu saves through VS Code."
+    },
+    "exportPptx": {
+      "status": "hidden",
+      "hiddenBy": ["#export-dropdown"],
+      "reason": "Fluency Score: PowerPoint export from the export menu saves through VS Code."
+    },
+    "installHook": {
+      "status": "hidden",
+      "hiddenBy": [".hook-reminder-btn"],
+      "reason": "Fluency Score: session-reminder hooks are installed by the extension (command name read from the button's data-action)."
+    },
+    "uninstallHook": {
+      "status": "hidden",
+      "hiddenBy": [".hook-reminder-btn"],
+      "reason": "Fluency Score: session-reminder hooks are removed by the extension (command name read from the button's data-action)."
+    },
 
     "analyzeModelUsage": { "status": "gap", "reason": "Diagnostics: model-usage analysis action is visible and unhandled." },
     "analyzeTtft": { "status": "gap", "reason": "Diagnostics: TTFT analysis action is visible and unhandled." },
@@ -124,6 +148,7 @@
     "loadRecentSessions": { "status": "gap", "reason": "Usage Analysis: changing the sessions look-back period never loads." },
     "draftCopilotChatWithPrompt": { "status": "gap", "reason": "Usage Analysis: opens Copilot Chat, which only exists in VS Code." },
     "openCopilotChatWithPrompt": { "status": "gap", "reason": "Usage Analysis: opens Copilot Chat, which only exists in VS Code." },
+    "openToolPicker": { "status": "gap", "reason": "Usage Analysis: opens VS Code's tool selection menu (command name read from the button's data-command)." },
     "manageExtension": { "status": "gap", "reason": "Usage Analysis: opens the VS Code extensions view." },
     "openAgentPlugins": { "status": "gap", "reason": "Usage Analysis: opens a VS Code view." },
     "openFileFromList": { "status": "gap", "reason": "Usage Analysis: opening customization files is unhandled." },

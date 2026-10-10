@@ -29,6 +29,7 @@ const desktopContract = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validat
 	readDesktopViews: () => string[];
 	collectViewFiles: (entry: string) => string[];
 	collectIpcHandledCommands: (file: string) => Set<string>;
+	collectComputedPostedCommands: (files: string[]) => { posted: Map<string, unknown[]>; unresolved: { key: string }[] };
 	selectorOverreach: (token: string, postedBy: Set<string>, viewOwnTexts: Map<string, string>) => string[];
 	analyse: () => { views: string[]; findings: Finding[] };
 };
@@ -122,6 +123,35 @@ test('desktop contract: a hidden selector must not reach views that do not post 
 	assert.deepEqual(desktopContract.selectorOverreach('btn-share-card-linkedin', postedBy, viewOwnTexts), []);
 	// Whole-word match: an id that merely starts with the token is a different control.
 	assert.deepEqual(desktopContract.selectorOverreach('btn-share', postedBy, viewOwnTexts), []);
+});
+
+test('desktop contract: resolves commands whose name is computed at runtime', () => {
+	// The Fluency Score hook buttons post `{ command: action }` with `action` read
+	// from the clicked button's data-action: the literal scan sees no name at all.
+	const dir = makeTmpFixtureDir('desktop-computed-');
+	const file = path.join(dir, 'main.ts');
+	fs.writeFileSync(file, `
+		declare const vscode: { postMessage(m: unknown): void }; declare const items: { command: string }[];
+		const markup = \`
+			<button class="hook-reminder-btn active" data-action="uninstallHook">x</button>
+			<button class="hook-reminder-btn" data-action="installHook">y</button>
+			<button class="mcp-discover-btn" data-action="searchMcp">z</button>\`;
+		function wireHooks(): void {
+			document.querySelectorAll('.hook-reminder-btn').forEach(btn => {
+				btn.addEventListener('click', (e) => {
+					const action = (e.currentTarget as HTMLElement).getAttribute('data-action');
+					if (action) { vscode.postMessage({ command: action }); }
+				});
+			});
+		}
+		function exportAs(command: 'exportPdf' | 'exportPptx'): void { vscode.postMessage({ command, data: [] }); }
+		function runFromData(): void { for (const item of items) { vscode.postMessage({ command: item.command }); } }
+		vscode.postMessage({ command: 'literalIsNotOurs' });
+	`);
+	const { posted, unresolved } = desktopContract.collectComputedPostedCommands([file]);
+	// searchMcp is on another class, which the .hook-reminder-btn handler never sees.
+	assert.deepEqual([...posted.keys()].sort(), ['exportPdf', 'exportPptx', 'installHook', 'uninstallHook']);
+	assert.deepEqual(unresolved.map(u => u.key.replace(/^.*#/, '')), ['runFromData:item.command']);
 });
 
 test('desktop-build.yml: push paths match the PR desktop-relevant filter', () => {

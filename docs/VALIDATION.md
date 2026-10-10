@@ -318,7 +318,12 @@ or from the repo root, `./build.ps1 -Project desktop -Target test`.
   this list), `gap` (still visible and dead; recorded, not decided) or `no-op`
   (background notices such as telemetry or preferences). A new button in a shared
   view therefore fails the desktop check until someone decides what the desktop
-  does with it. Stale entries fail too: a command that is now handled or no longer
+  does with it. Commands whose name is computed at runtime are covered too: a
+  `{ command: x }` with `x` read from a `data-*` attribute is resolved from the
+  view's markup (scoped to the class the click handler is attached through), and
+  a parameter typed as a union of string literals resolves to those literals. A
+  computed name that resolves to neither fails unless it is listed under
+  `unresolvedComputedCommands` with a reason. Stale entries fail too: a command that is now handled or no longer
   posted, or a hidden selector whose id/class is gone from the views. A hidden
   selector must also be specific to its command: one whose id/class appears in
   another view that does not post that command fails, because the desktop CSS
