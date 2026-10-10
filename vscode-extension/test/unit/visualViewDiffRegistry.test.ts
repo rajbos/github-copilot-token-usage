@@ -39,6 +39,7 @@ const config = requireFromHere(path.join(SKILL_DIR, 'lib', 'config.js')) as {
 };
 
 const harness = requireFromHere(path.join(SKILL_DIR, 'lib', 'harness.js')) as {
+	resolveThemes: (arg?: string) => string[];
 	buildPageHtml: (options: { globalName: string; fixture: unknown; theme: string; bundlePath: string; repoRoot: string; extraGlobals?: Record<string, unknown> }) => string;
 };
 
@@ -72,6 +73,26 @@ test('the render harness injects additional panel globals without allowing scrip
 	assert.match(html, /window\["__DASHBOARD_CONFIG__"\]/);
 	assert.match(html, /\\u003c\/script>/);
 	assert.doesNotMatch(html, /<\/script><script>alert/);
+});
+
+test('the harness renders light and high-contrast themes with the kind VS Code sets', () => {
+	const kinds: Record<string, string> = {
+		dark: 'vscode-dark', light: 'vscode-light', hc: 'vscode-high-contrast', 'hc-light': 'vscode-high-contrast-light',
+	};
+	for (const [theme, kind] of Object.entries(kinds)) {
+		const html = harness.buildPageHtml({
+			globalName: '__INITIAL_X__', fixture: {}, theme,
+			bundlePath: path.join(SKILL_DIR, 'dist', 'x.js'), repoRoot: REPO_ROOT,
+		});
+		assert.ok(html.includes(`<body data-vscode-theme-kind="${kind}" class="${kind}">`), theme);
+	}
+	assert.match(harness.buildPageHtml({
+		globalName: '__INITIAL_X__', fixture: {}, theme: 'hc',
+		bundlePath: path.join(SKILL_DIR, 'dist', 'x.js'), repoRoot: REPO_ROOT,
+	}), /--vscode-contrastBorder: #6fc3df/, 'hc overlay is layered over the dark tokens');
+	assert.deepEqual(harness.resolveThemes('both'), ['dark', 'light']);
+	assert.equal(harness.resolveThemes('all').length, 4);
+	assert.throws(() => harness.resolveThemes('sepia'), /Unknown theme/);
 });
 
 test('validateRegistry refuses ids that could escape or collide as file names', () => {

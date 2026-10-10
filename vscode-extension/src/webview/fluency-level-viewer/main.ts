@@ -3,6 +3,7 @@ import { buttonHtml } from '../shared/buttonConfig';
 import { setHtml } from '../shared/domUtils';
 import { escapeHtml, markdownToHtml, STAGE_LABELS, STAGE_DESCRIPTIONS } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
+import themeStyles from '../shared/theme.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import type { CategoryLevelData } from '../shared/types';
@@ -113,7 +114,8 @@ function renderLayout(data: FluencyLevelData): void {
 	const selectedCategory = data.categories[selectedCategoryIndex];
 
 	setHtml(root, `
-		<style>${styles}</style>
+		<style>${themeStyles}
+${styles}</style>
 		<div class="container">
 			<div class="header">
 				<div class="header-left">

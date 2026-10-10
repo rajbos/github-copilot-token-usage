@@ -1,0 +1,40 @@
+/*
+ * VS Code "Dark High Contrast" overlay for the headless webview harness.
+ * Layered AFTER theme-dark.css (see THEMES in harness.js), so only the tokens
+ * high contrast changes are listed: stark black/white, visible contrast
+ * borders, no subtle greys. Values track VS Code's hc_black theme.
+ */
+:root {
+	--vscode-foreground: #ffffff;
+	--vscode-editor-background: #000000;
+	--vscode-editor-foreground: #ffffff;
+	--vscode-descriptionForeground: #ffffff;
+	--vscode-disabledForeground: #a5a5a5;
+	--vscode-sideBar-background: #000000;
+	--vscode-editorWidget-background: #0c141f;
+	--vscode-panel-border: #6fc3df;
+	--vscode-widget-border: #6fc3df;
+	--vscode-contrastBorder: #6fc3df;
+	--vscode-focusBorder: #f38518;
+	--vscode-button-background: #000000;
+	--vscode-button-foreground: #ffffff;
+	--vscode-button-hoverBackground: #000000;
+	--vscode-button-border: #6fc3df;
+	--vscode-button-secondaryBackground: #000000;
+	--vscode-button-secondaryForeground: #ffffff;
+	--vscode-button-secondaryHoverBackground: #000000;
+	--vscode-input-background: #000000;
+	--vscode-input-foreground: #ffffff;
+	--vscode-input-border: #6fc3df;
+	--vscode-dropdown-background: #000000;
+	--vscode-dropdown-foreground: #ffffff;
+	--vscode-badge-background: #000000;
+	--vscode-badge-foreground: #ffffff;
+	--vscode-list-hoverBackground: #000000;
+	--vscode-list-activeSelectionBackground: #000000;
+	--vscode-list-activeSelectionForeground: #ffffff;
+	--vscode-list-inactiveSelectionBackground: #000000;
+	--vscode-textLink-foreground: #3794ff;
+	--vscode-textLink-activeForeground: #21a6ff;
+	--vscode-textBlockQuote-background: #000000;
+}

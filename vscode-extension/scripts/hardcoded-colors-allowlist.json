@@ -1,0 +1,10 @@
+{
+  "//": "Colors that are legitimately fixed in webview CSS and are not counted by check-hardcoded-colors.mjs. Every entry needs a reason.",
+  "files": {
+    "vscode-extension/src/webview/shared/theme.css": "Defines the semantic palette (stage colors, shadows, high-contrast neon) that every other stylesheet consumes via var()."
+  },
+  "colors": {
+    "#fff": "Foreground on a saturated semantic fill (badges, filled buttons) where the fill itself is fixed.",
+    "#ffffff": "Foreground on a saturated semantic fill (badges, filled buttons) where the fill itself is fixed."
+  }
+}
