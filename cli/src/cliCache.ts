@@ -11,7 +11,7 @@ import type { SessionData } from './helpers';
 import { CliCachePolicy } from '../../src/cachePolicy';
 
 /** Bump this when the SessionData shape changes to force a full re-parse. */
-const CACHE_VERSION = 7; // Rebuild Mistral Vibe modelUsage so it carries cachedReadTokens
+const CACHE_VERSION = 8; // SessionData gains copilotNanoAiu (exact Copilot billing)
 
 /** Maximum number of entries to keep in the cache file. */
 const MAX_CACHE_ENTRIES = 2000;

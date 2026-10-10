@@ -86,6 +86,25 @@ jobs:
         with:
           path: ${{ matrix.skill }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
+      # Skill scripts' own unit tests (*.test.js next to the script). Skill-only
+      # changes are path-gated away from the main build, so this is the only
+      # place they run in CI.
+      - name: Run ${{ matrix.skill }} unit tests
+        env:
+          SKILL_DIR: ${{ matrix.skill }}
+        run: |
+          mapfile -t TESTS < <(find "$SKILL_DIR" -name '*.test.js' -not -path '*/node_modules/*' | sort)
+          if [ "${#TESTS[@]}" -eq 0 ]; then
+            echo "No unit tests in $SKILL_DIR"
+            exit 0
+          fi
+          node --test "${TESTS[@]}"
+
   # Skill security classification: every skill that ships scripts carries a
   # SECURITY.md or is declared exempt/pending in
   # .github/skills/skill-security-classification.json. Checks ALL skills, not

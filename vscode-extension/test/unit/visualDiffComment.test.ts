@@ -154,7 +154,7 @@ test('planAttachments refuses a changed row that has no diff image', () => {
 	}
 });
 
-test('planAttachments honours the budget and prefers the dark theme', () => {
+test('planAttachments honours the budget and selects light then dark by view', () => {
 	const { root, cleanup } = screenshotsRoot();
 	try {
 		const rows: Comparison[] = [];
@@ -166,7 +166,13 @@ test('planAttachments honours the budget and prefers the dark theme', () => {
 		const plan = publisher.planAttachments(rows, { root }, 48, new Map());
 		assert.equal(plan.attachments.length, 48, 'never more than the budget');
 		assert.equal(plan.inline.size, 16);
-		assert.ok([...plan.inline.keys()].every((k) => k.endsWith('.dark')), 'dark theme fills the budget first');
+		const selected = [...plan.inline.keys()];
+		assert.equal(selected.length % 2, 0, 'the budget includes complete light/dark view pairs');
+		for (let i = 0; i < selected.length; i += 2) {
+			assert.match(selected[i], /\.light$/, 'light is selected first for each view');
+			assert.equal(selected[i].replace(/\.light$/, ''), selected[i + 1].replace(/\.dark$/, ''));
+			assert.match(selected[i + 1], /\.dark$/, 'dark follows the matching light view');
+		}
 	} finally {
 		cleanup();
 	}
@@ -190,21 +196,20 @@ test('renderBody starts with the marker and never leaks unsafe text', () => {
 	}
 });
 
-test('renderBody shows only the diff inline and folds before/after into a closed section', () => {
+test('renderBody shows before, after and diff in a four-column table', () => {
 	const { root, cleanup } = screenshotsRoot();
 	try {
 		const row: Comparison = { view: 'usage', state: 'tools', theme: 'dark', status: 'changed', baseline: 'usage--tools.dark.png', current: 'usage--tools.dark.png', diff: 'usage--tools.dark.diff.png', changedPixels: 10, changedPercent: 1 };
 		const plan = publisher.planAttachments([row], { root }, 48, new Map());
 		const summary = { changed: 1, unchanged: 0, added: 0, removed: 0 };
 		const body = publisher.renderBody({ summary, comparisons: [row] }, OPTS, new Map(), plan, { withImages: true });
-		const fold = body.indexOf('<details><summary>Before and after');
-		assert.ok(fold > 0, 'before/after sit in a collapsed section');
-		assert.ok(!body.includes('<details open>'), 'nothing large is expanded by default');
-		const diff = plan.attachments.find((a) => a.kind === 'Diff');
-		assert.ok(diff, 'the plan attaches a diff');
-		const diffAt = body.indexOf(`](${diff.file})`);
-		assert.ok(diffAt > 0 && diffAt < fold, 'the diff is the inline image');
-		assert.ok(body.indexOf('![Before:') > fold && body.indexOf('![After:') > fold, 'before and after only appear inside the fold');
+		assert.ok(body.includes('| Name | Before | After | Diff |'));
+		const renderedRow = body.split('\n').find((line) => line.startsWith('| **usage › tools**'));
+		assert.ok(renderedRow, 'the changed view is rendered as a table row');
+		assert.ok(renderedRow.includes('![Before:'), 'the before image is in the table');
+		assert.ok(renderedRow.includes('![After:'), 'the after image is in the table');
+		assert.ok(renderedRow.includes('![Diff:'), 'the diff image is in the table');
+		assert.ok(!body.includes('<details>'), 'the image table is not collapsed');
 		for (const a of plan.attachments) {
 			assert.ok(body.includes(`](${a.file})`), `every attachment is referenced: ${a.kind}`);
 		}
@@ -219,7 +224,12 @@ test('renderBody survives a changed row with no pixel figures', () => {
 	const plan: Plan = { attachments: files, inline: new Map([['usage.dark', files]]) };
 	const summary = { changed: 1, unchanged: 0, added: 0, removed: 0 };
 	const body = publisher.renderBody({ summary, comparisons: [row] }, OPTS, new Map(), plan, { withImages: true });
-	assert.ok(body.includes('— changed'), 'a missing percentage renders as a dash, not a crash');
+	assert.ok(body.includes('| `usage` | initial | dark | 🎨 changed | — '), 'a missing percentage renders as a dash, not a crash');
+	const renderedRow = body.split('\n').find((line) => line.startsWith('| **usage**'));
+	assert.ok(renderedRow, 'the changed view still gets its image row');
+	for (const kind of ['Before', 'After', 'Diff']) {
+		assert.ok(renderedRow.includes(`![${kind}](visual-output/x/${kind}.png)`), `the ${kind} image is in the row`);
+	}
 });
 
 test('renderBody emits no image grid when no row has inline images', () => {

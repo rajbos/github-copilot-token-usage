@@ -17,7 +17,8 @@ import { readDebugLogTokensForSession } from '../helpers';
 const SESSION_ID = '0a1b2c3d-4e5f-6789-abcd-ef0123456789';
 
 function makeWorkspace(extFolder: string): { root: string; sessionFile: string } {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-debuglog-'));
+	// Under cli/out/, not os.tmpdir(): the guarded reader refuses files in the OS temp directory.
+	const root = fs.mkdtempSync(path.join(__dirname, '..', 'cli-debuglog-'));
 	const hashDir = path.join(root, 'workspaceStorage', 'abc123hash');
 	const chatDir = path.join(hashDir, 'chatSessions');
 	fs.mkdirSync(chatDir, { recursive: true });
@@ -56,7 +57,8 @@ test('finds the debug log under the lowercase extension folder variant', async (
 });
 
 test('returns null when no debug log exists', async (t) => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-debuglog-'));
+	// Under cli/out/, not os.tmpdir(): the guarded reader refuses files in the OS temp directory.
+	const root = fs.mkdtempSync(path.join(__dirname, '..', 'cli-debuglog-'));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const chatDir = path.join(root, 'workspaceStorage', 'abc123hash', 'chatSessions');
 	fs.mkdirSync(chatDir, { recursive: true });

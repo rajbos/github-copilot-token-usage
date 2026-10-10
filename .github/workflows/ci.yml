@@ -71,7 +71,7 @@ jobs:
               - '.github/workflows/dependencies/playwright/**'
               # The screenshot-comment publisher ui-checks runs; a change to
               # it must exercise the job that executes it.
-              - '.github/workflows/scripts/visual-diff-comment.js'
+              - '.github/workflows/scripts/visual-diff-comment*'
             # Gates test-coverage-check only: the production-source trees that
             # check-test-coverage.sh's is_source_file() recognises. cli/src is
             # here and NOT in ci-relevant, because the coverage guard must see
@@ -436,6 +436,9 @@ jobs:
         cache-dependency-path: |
           vscode-extension/package-lock.json
           .github/workflows/dependencies/playwright/package-lock.json
+
+    - name: Test screenshot comment rendering
+      run: node --test .github/workflows/scripts/visual-diff-comment.test.js
 
     - name: Install dependencies
       working-directory: vscode-extension

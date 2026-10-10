@@ -4,8 +4,14 @@ All notable changes to the CLI (@rajbos/ai-engineering-fluency) will be document
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-10
+
 ### Features
+- **Programmatic use:** the package now works as a Node library. `require('@rajbos/ai-engineering-fluency/session')` (or `import`) gives you `analyzeSessionFile()` and `analyzeSessionFiles()`, which return per-session token usage per model, an estimated USD cost at provider and Copilot rates, and the exact GitHub Copilot billed amount (`copilotNanoAiu`, `copilotCredits`) when the session records it. Results are cached in memory by file path, modification time and size, so polling a running session is cheap. Unknown files resolve to `null` instead of throwing, nothing is written to the console, and the CLI's on-disk cache is left alone. It ships with TypeScript types. See [Programmatic use](https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/cli/README.md#programmatic-use).
 - New `skill-suggestions` command: finds tasks you keep prompting for by hand (similar first prompts across sessions) as candidates for a reusable skill or prompt file — the same report as the VS Code extension's Skill Suggestions section, built by the same shared code. `--json` leaves prompt text, prompt-derived keywords and session titles out unless `--include-prompts` is passed. `usage-analysis --json --repeated-tasks` adds the report to the usage-analysis payload (#2288)
+
+### Bug Fixes
+- The exact Copilot billed amount for a Copilot CLI session is the latest `session.usage_checkpoint` or `session.shutdown` value. `totalNanoAiu` is a running total for the whole session, so the previous sum over shutdowns counted resumed sessions more than once. Sessions that are still running now get the amount from their latest checkpoint.
 
 ## [0.6.2] - 2026-10-02
 
