@@ -7,6 +7,7 @@ import { initializeWebviewLocalization } from '../../src/webview/shared/localiza
 import {
 	SKILL_SUGGESTIONS_LIST_ID,
 	SKILL_SUGGESTIONS_PAGE_SIZE,
+	COPY_FEEDBACK_MS,
 	setSkillSessionsPage,
 	setSkillSuggestionsPage,
 	buildSkillSuggestionsSectionHtml,
@@ -278,6 +279,51 @@ test('wireSkillSuggestions: Copy prompt without a clipboard API does not throw',
 		assert.deepEqual(errors, []);
 		assert.equal(button.textContent, label, 'label unchanged when nothing was copied');
 	} finally {
+		Object.defineProperty(globalThis, 'navigator', { value: previous.navigator, configurable: true, writable: true });
+		Object.assign(globals, { document: previous.document, Element: previous.Element, HTMLElement: previous.HTMLElement });
+	}
+});
+
+test('wireSkillSuggestions: a second Copy click while "Copied!" shows still restores the real label once', async (t) => {
+	resetPages();
+	const report = makeReport(1);
+	const dom = new JSDOM(`<div id="root">${buildSkillSuggestionsSectionHtml(report)}</div>`);
+	const globals = globalThis as unknown as Record<string, unknown>;
+	const previous = { document: globals.document, Element: globals.Element, HTMLElement: globals.HTMLElement, navigator: globals.navigator };
+	Object.assign(globals, { document: dom.window.document, Element: dom.window.Element, HTMLElement: dom.window.HTMLElement });
+	const copied: string[] = [];
+	Object.defineProperty(globalThis, 'navigator', {
+		value: { clipboard: { writeText: (text: string) => { copied.push(text); return Promise.resolve(); } } },
+		configurable: true,
+		writable: true,
+	});
+	t.mock.timers.enable({ apis: ['setTimeout'] });
+	const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+	try {
+		wireSkillSuggestions({ getReport: () => report, getWorkspacePaths: () => [], postMessage: () => undefined });
+		const button = dom.window.document.querySelector('button.skill-suggestion-copy') as HTMLElement;
+		const label = button.textContent;
+		assert.equal(label, '📋 Copy prompt');
+
+		button.click();
+		await settle();
+		assert.equal(button.textContent, '✅ Copied!');
+		t.mock.timers.tick(COPY_FEEDBACK_MS / 2);
+		button.click(); // second click while the success label is showing
+		await settle();
+		assert.equal(button.textContent, '✅ Copied!');
+		assert.equal(copied.length, 2);
+
+		// The first click's timer is cancelled: the label stays until the second one's elapses...
+		t.mock.timers.tick(COPY_FEEDBACK_MS / 2);
+		assert.equal(button.textContent, '✅ Copied!');
+		// ...and then it returns to the real label, not the transient one.
+		t.mock.timers.tick(COPY_FEEDBACK_MS / 2);
+		assert.equal(button.textContent, label);
+		t.mock.timers.tick(COPY_FEEDBACK_MS * 2);
+		assert.equal(button.textContent, label);
+	} finally {
+		t.mock.timers.reset();
 		Object.defineProperty(globalThis, 'navigator', { value: previous.navigator, configurable: true, writable: true });
 		Object.assign(globals, { document: previous.document, Element: previous.Element, HTMLElement: previous.HTMLElement });
 	}

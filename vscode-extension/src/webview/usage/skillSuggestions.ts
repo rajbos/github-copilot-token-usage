@@ -262,6 +262,9 @@ function announce(section: HTMLElement, text: string): void {
 	if (status) { status.textContent = text; }
 }
 
+export const COPY_FEEDBACK_MS = 2000;
+const copyResetTimers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>();
+
 function copyWithFeedback(section: HTMLElement, button: HTMLButtonElement, text: string): void {
 	// Guarded and wrapped: a missing clipboard API, or a writeText that throws
 	// synchronously, would otherwise escape the promise .catch() below.
@@ -273,10 +276,16 @@ function copyWithFeedback(section: HTMLElement, button: HTMLButtonElement, text:
 		return;
 	}
 	write.then(() => {
-		const original = button.textContent;
 		button.textContent = localize('usage.skillSuggestions.copied');
 		announce(section, localize('usage.skillSuggestions.copied'));
-		setTimeout(() => { button.textContent = original; }, 2000);
+		// Restore the real label, never whatever is showing now (a second click
+		// while "Copied!" is up would otherwise capture and restore that), and
+		// keep one pending restore per button so an older timer cannot fire late.
+		clearTimeout(copyResetTimers.get(button));
+		copyResetTimers.set(button, setTimeout(() => {
+			copyResetTimers.delete(button);
+			button.textContent = localize('usage.skillSuggestions.copyPrompt');
+		}, COPY_FEEDBACK_MS));
 	}).catch(() => { /* clipboard unavailable: leave the label unchanged */ });
 }
 
