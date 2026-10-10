@@ -61,7 +61,9 @@ or Claude and Copilot will start disagreeing.
 
 Read `pr-risk/changeset.md` first, then `pr-risk/changeset.diff`. Open the
 actual files when the diff alone does not tell you whether a change is safe —
-a two-line diff inside an auth check outranks a 500-line rename.
+a two-line diff inside an auth check outranks a 500-line rename. In CI the
+working tree is the PR's *base* commit; the PR's own version of each file is
+in `pr-risk/head/`. Read it there, and never run anything from it.
 
 The `baseline` in `changeset.json` is a **floor derived from paths and size
 only** — the worst of the size assessment and any single file's level. It knows
@@ -155,10 +157,12 @@ pull-request comment. It exits `1` if the verdict is missing or malformed, so
 run it before reporting success — if it fails, fix `verdict.json` and re-run
 rather than hand-writing the comment.
 
-The renderer, not you, owns the comment's shape. It strips HTML comments and
-tags, invisible and bidirectional characters, and neutralises `@mentions` and
-`#123` references, so nothing the diff smuggled into your summary can post as
-live markup or ping a person. Adding `--fallback` makes it degrade to the
+The renderer, not you, owns the comment's shape. It first removes invisible and
+bidirectional characters, then strips HTML comments, escapes tags, neutralises
+Markdown links and images, and wraps `@mentions` and `#123` references, so
+nothing the diff smuggled into your summary can post as live markup, an image
+or a disguised link, or ping a person. Write plain prose: links and images you
+add will show as literal text. Adding `--fallback` makes it degrade to the
 mechanical baseline with a visible warning instead of failing — CI uses that so
 a model outage still produces a label.
 
@@ -177,8 +181,11 @@ cat pr-risk/comment.md
 committed.
 
 In CI, `.github/workflows/pr-risk-review.yml` runs the same three steps: it
-gates on the PR author being a known contributor, runs this skill through the
-GitHub Copilot CLI, then applies one of the `risk: low` / `risk: medium` /
+gates on the PR author being a known contributor, runs the scripts from the
+PR's base commit (so a PR that edits them is judged by the reviewed versions;
+a PR that edits the workflow file itself is not covered, see `SECURITY.md`), runs this
+skill through the GitHub Copilot CLI with only file-reading tools and a write
+scoped to `pr-risk/verdict.json`, then applies one of the `risk: low` / `risk: medium` /
 `risk: high` labels and posts `comment.md` as a sticky comment. The workflow is
 advisory — it never blocks a merge.
 
@@ -188,4 +195,5 @@ advisory — it never blocks a merge.
 - **risk-signals.json** — Declarative path globs → risk weights, the single source of the heuristics
 - **collect-changeset.js** — Builds `changeset.json` / `.md` / `.diff` and the mechanical baseline
 - **render-comment.js** — Validates the verdict, sanitises it, renders the PR comment
+- **tests/** — Regression tests for the sanitiser and rename handling (`node --test .github/skills/pr-risk-review/tests/pr-risk-review.test.js`)
 - **README.md** — Short overview of the skill

@@ -117,6 +117,16 @@
           "expect": "#data-table-root-builtin"
         },
         {
+          "id": "tools-mcp-by-tool",
+          "title": "Workspace tools with the MCP Tools section switched to By Tool",
+          "steps": [
+            { "click": ".group-tab[data-group=\"workspace\"]" },
+            { "click": ".tab-button[data-tab=\"tools\"]" },
+            { "click": "button[data-mcp-view=\"tool\"]" }
+          ],
+          "expect": "#mcp-period-tool:not([hidden])"
+        },
+        {
           "id": "health",
           "title": "Workspace › Workspace Health tab",
           "steps": [{ "click": ".group-tab[data-group=\"workspace\"]" }, { "click": ".tab-button[data-tab=\"health\"]" }],
@@ -280,6 +290,18 @@
           "title": "Coaching › Corrections tab",
           "steps": [{ "click": ".group-tab[data-group=\"coaching\"]" }, { "click": ".tab-button[data-tab=\"corrections\"]" }],
           "expect": "#tab-panel-corrections"
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "Tools tab: MCP Tools By Server / By Tool toggle switches the table both ways",
+          "expect": "#tab-panel-tools",
+          "steps": [
+            { "click": ".group-tab[data-group=\"workspace\"]" },
+            { "click": ".tab-button[data-tab=\"tools\"]", "expect": "#mcp-period-server", "expectHidden": "#mcp-period-tool" },
+            { "click": "button[data-mcp-view=\"tool\"]", "expect": "#mcp-period-tool", "expectHidden": "#mcp-period-server" },
+            { "click": "button[data-mcp-view=\"server\"]", "expect": "#mcp-period-server", "expectHidden": "#mcp-period-tool" }
+          ]
         }
       ]
     },

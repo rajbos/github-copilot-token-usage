@@ -338,6 +338,21 @@ async function clickControl(page, control) {
   return { status: 'dead', posted, domChanged: false, quiet };
 }
 
+/** Checks a step's optional `expect` (showing) and `expectHidden` (not showing); returns a reason or null. */
+async function checkStepVisibility(page, step) {
+  const isShowing = (selector) => page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    return Boolean(el && window.__SMOKE_IS_VISIBLE__(el));
+  }, selector);
+  if (step.expect && !(await isShowing(step.expect))) {
+    return `'${step.expect}' is not showing after this step`;
+  }
+  if (step.expectHidden && (await isShowing(step.expectHidden))) {
+    return `'${step.expectHidden}' is still showing after this step`;
+  }
+  return null;
+}
+
 /** Replays one declared scenario on a fresh page and reports what each step did. */
 async function runScenario(page, view, scenario) {
   const steps = [];
@@ -412,6 +427,13 @@ async function runScenario(page, view, scenario) {
         });
         break;
       }
+    }
+    // A step's own `expect` / `expectHidden` assert what that step switched to,
+    // for toggles whose result does not hold after every other step.
+    const stepFinding = await checkStepVisibility(page, step);
+    if (stepFinding) {
+      findings.push({ view: view.id, kind: 'scenario-expectation-failed', control: label, detail: stepFinding });
+      break;
     }
     steps.push({ step: label, status: noop ? 'noop-single-option' : before === after ? 'no-dom-change' : 'ok' });
   }

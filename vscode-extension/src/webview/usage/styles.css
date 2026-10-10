@@ -649,6 +649,49 @@ body {
 	flex: 1;
 }
 
+/* Tools & Integrations: tool × period tables (toolPeriodTable.ts); the tables themselves are .data-table */
+.tool-period-id {
+	margin-left: 6px;
+	font-size: 11px;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.tool-period-toggle {
+	display: inline-flex;
+	gap: 2px;
+	margin-bottom: 8px;
+	border-bottom: 1px solid var(--border-color);
+}
+
+.tool-period-toggle-btn {
+	background: transparent;
+	border: none;
+	border-bottom: 3px solid transparent;
+	color: var(--text-secondary);
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	border-radius: 4px 4px 0 0;
+	margin-bottom: -1px;
+	font-family: inherit;
+}
+
+.tool-period-toggle-btn:hover {
+	color: var(--text-primary);
+	background: var(--list-hover-bg);
+}
+
+.tool-period-toggle-btn.active {
+	color: var(--text-primary);
+	border-bottom-color: var(--link-color);
+	background: var(--bg-tertiary);
+}
+
+.tool-period-view[hidden] {
+	display: none;
+}
+
 .info-box {
 	background: var(--bg-tertiary);
 	border: 1px solid var(--border-color);

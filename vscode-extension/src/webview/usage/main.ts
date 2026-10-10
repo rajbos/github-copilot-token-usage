@@ -7,6 +7,7 @@ import { buildFilterPillGroupHtml, type SessionFilterOption } from './sessionFil
 import { escapeHtml, formatCompact, formatCost, formatDurationShort, formatFileSize, formatFixed, formatNumber, formatPercent, getTimeSince, safeSectionHtml, setFormatLocale } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { localize, localizeFormat } from '../shared/localization';
+import { createViewStateManager } from '../shared/viewState';
 import { applyWebviewLocale } from '../shared/webviewLocale';
 import { RECENT_SESSION_PERIODS, sanitizeRecentSessionBuckets } from './recentSessionsSanitizer';
 import { renderCcrCheckButtonHtml, wireCcrActivityButtons, renderCcrActivityResult, replayCcrActivityResults } from './ccrActivity';
@@ -45,6 +46,7 @@ import { buildCustomizationSectionHtml } from './customizationMatrixSection';
 import { buildTabStripHtml, type UsageTabStripInput } from './tabStripHtml';
 import { formatToolEditors, sanitizeToolCallsByEditor } from './toolEditors';
 import { buildToolExecutionSectionsHtml } from './toolExecutionHtml';
+import { buildMcpPeriodTablesHtml, buildToolPeriodTableHtml, isMcpPeriodView, type McpPeriodView } from './toolPeriodTable';
 import { sanitizeToolOutcomeMaps, sanitizeMcpOutcomeMaps } from './toolOutcomeSanitizer';
 import { renderContextRefTable } from './contextRefTableHtml';
 import { shouldListAccountBudgets } from '../../githubAccountBudgets';
@@ -60,7 +62,7 @@ import { placeBubbleLabels, scaleBubbleRadius, type BubbleLabelPlacement } from 
 import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './readiness';
 import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml } from './serverMemories';
 import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
-import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, renderToolCountTable, type RepoHygieneListRow } from './usageListTables';
+import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
 
 type ModelSwitchingAnalysis = BaseModelSwitchingAnalysis & {
 	minModelsPerSession: number;
@@ -347,18 +349,24 @@ interface RepoAnalysisRecord {
 }
 
 /** Webview state persisted by VS Code across tab switches (survives the panel being hidden). */
-interface UsageWebviewState {
-	aboutCollapsed?: boolean;
-}
+type UsageWebviewState = {
+	aboutCollapsed: boolean;
+	mcpPeriodView: McpPeriodView;
+};
 
 const vscode = acquireVsCodeApi<UsageWebviewState>();
+const usageState = createViewStateManager<UsageWebviewState>(vscode, { aboutCollapsed: false, mcpPeriodView: 'server' });
+const restoredUsageState = usageState.restore();
 const notifyUsageWebviewReady = createUsageWebviewReadyNotifier(
 	(message) => vscode.postMessage(message),
 );
 const curationTraceOnceKeys = new Set<string>();
 
 /** Collapsed state of the "About This Dashboard" info box, restored from webview state. */
-let aboutCollapsed = vscode.getState()?.aboutCollapsed ?? false;
+let aboutCollapsed = restoredUsageState.aboutCollapsed === true;
+
+/** MCP Tools section By Server / By Tool toggle, restored from webview state. */
+let mcpPeriodView: McpPeriodView = isMcpPeriodView(restoredUsageState.mcpPeriodView) ? restoredUsageState.mcpPeriodView : 'server';
 
 function traceCuration(stage: string, details?: Record<string, unknown>): void {
 	try {
@@ -816,16 +824,19 @@ function getUnknownMcpTools(stats: UsageAnalysisStats): string[] {
 	Object.entries(stats.today.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.lastMonth.mcpTools.byTool).forEach(([tool]) => allTools.add(tool));
 	// Also collect MCP server names — the "By Server" tables render them through the
 	// same friendly-name lookup, so an unmapped server name (e.g. `ccd_session`)
 	// would otherwise show raw without ever being flagged as missing.
 	Object.keys(stats.today.mcpTools.byServer).forEach(server => allTools.add(server));
 	Object.keys(stats.last30Days.mcpTools.byServer).forEach(server => allTools.add(server));
 	Object.keys(stats.month.mcpTools.byServer).forEach(server => allTools.add(server));
+	Object.keys(stats.lastMonth.mcpTools.byServer).forEach(server => allTools.add(server));
 	// Also collect all general tool calls so non-MCP tools without friendly names are caught
 	Object.entries(stats.today.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.last30Days.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 	Object.entries(stats.month.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
+	Object.entries(stats.lastMonth.toolCalls.byTool).forEach(([tool]) => allTools.add(tool));
 
 	const suppressed = new Set<string>(stats.suppressedUnknownTools ?? []);
 	
@@ -1089,29 +1100,6 @@ function renderMissedPotential(stats: UsageAnalysisStats): string {
             ${renderMissedPotentialTable(missed)}
         </div>
     `;
-}
-
-function renderToolsTable(tableId: string, ariaLabel: string, byTool: { [key: string]: number }, limit = 10, nameResolver: (id: string) => string = lookupToolName, applyAutoFilter = false): string {
-	const entries = applyAutoFilter && hideAutomaticToolCalls
-		? Object.entries(byTool).filter(([tool]) => !AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase()))
-		: Object.entries(byTool);
-	const sortedTools = entries
-		.sort(([, a], [, b]) => b - a)
-		.slice(0, limit);
-
-	if (sortedTools.length === 0) {
-		return applyAutoFilter && hideAutomaticToolCalls
-			? '<div style="color: var(--text-muted);">No purposeful tools used yet (automatic tool calls are hidden)</div>'
-			: '<div style="color: var(--text-muted);">No tools used yet</div>';
-	}
-
-	return renderToolCountTable({
-		tableId,
-		ariaLabel,
-		entries: sortedTools,
-		nameResolver,
-		isAutomatic: tool => AUTOMATIC_TOOL_SET_WV.has(tool.toLowerCase()),
-	});
 }
 
 // --- Recent Sessions table with sortable, toggleable columns ---
@@ -1560,14 +1548,6 @@ function replaceRecentSessionsCache(raw: unknown): void {
 	for (const period of RECENT_SESSION_PERIODS) {
 		recentSessionsCache[period] = buckets[period] as TodaySessionSummary[];
 	}
-}
-
-function unionFill(map: { [key: string]: number }, keys: string[]): { [key: string]: number } {
-	const result: { [key: string]: number } = { ...map };
-	for (const k of keys) {
-		if (!(k in result)) { result[k] = 0; }
-	}
-	return result;
 }
 
 function coerceNumber(value: any): number {
@@ -2475,7 +2455,7 @@ function runTabFirstVisitEffects(tab: string): void {
 /**
  * The leaf tab each group was last left on, so re-opening a group returns the user to where they
  * were instead of resetting them to its first tab. Lives only in memory, like `activeTab` itself
- * — neither is written to `vscode.setState()` (`UsageWebviewState` holds only `aboutCollapsed`),
+ * — neither is written to `vscode.setState()` (`UsageWebviewState` holds only `aboutCollapsed` and `mcpPeriodView`),
  * so a panel that is disposed and recreated legitimately starts over at the default tab.
  */
 const lastTabPerGroup: Record<string, string> = {};
@@ -3036,9 +3016,6 @@ function renderEffortPeriodHtml(teu: { byEffort: { [effort: string]: number }; s
 }
 
 function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
-	allToolKeys: string[];
-	allMcpToolKeys: string[];
-	allMcpServerKeys: string[];
 	allStandardModels: string[];
 	allHighCostModels: string[];
 	allLowCostModels: string[];
@@ -3046,9 +3023,6 @@ function buildUsageAllKeysSets(stats: UsageAnalysisStats): {
 	allUnknownModels: string[];
 } {
 	return {
-		allToolKeys: [...new Set([...Object.keys(stats.today.toolCalls.byTool), ...Object.keys(stats.last30Days.toolCalls.byTool), ...Object.keys(stats.month.toolCalls.byTool)])].sort(),
-		allMcpToolKeys: [...new Set([...Object.keys(stats.today.mcpTools.byTool), ...Object.keys(stats.last30Days.mcpTools.byTool), ...Object.keys(stats.month.mcpTools.byTool)])].sort(),
-		allMcpServerKeys: [...new Set([...Object.keys(stats.today.mcpTools.byServer), ...Object.keys(stats.last30Days.mcpTools.byServer), ...Object.keys(stats.month.mcpTools.byServer)])].sort(),
 		allStandardModels: [...new Set([...stats.today.modelSwitching.standardModels, ...stats.last30Days.modelSwitching.standardModels, ...stats.month.modelSwitching.standardModels])].sort(),
 		allHighCostModels: [...new Set([...stats.today.modelSwitching.highCostModels, ...stats.last30Days.modelSwitching.highCostModels, ...stats.month.modelSwitching.highCostModels])].sort(),
 		allLowCostModels: [...new Set([...stats.today.modelSwitching.lowCostModels, ...stats.last30Days.modelSwitching.lowCostModels, ...stats.month.modelSwitching.lowCostModels])].sort(),
@@ -3091,69 +3065,21 @@ function buildHealthTabPanelHtml(customizationHtml: string, stats: UsageAnalysis
 		</div>`;
 }
 
-function buildMcpToolsSectionHtml(
-	stats: UsageAnalysisStats,
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
-): string {
+function buildMcpToolsSectionHtml(stats: UsageAnalysisStats): string {
 	return `
 		<!-- MCP Tools Section -->
 		<div class="section" id="section-mcp-tools">
 			<div class="section-title"><span>🔌</span><span>MCP Tools</span></div>
 			<div class="section-subtitle">Model Context Protocol (MCP) server and tool usage</div>
 			${buildUnknownMcpToolsBannerHtml(stats)}
-			<div class="three-column">
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.today.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-servers-today', 'By Server', unionFill(stats.today.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.last30Days.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-servers-last30', 'By Server', unionFill(stats.last30Days.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total MCP Calls: ${formatNumber(stats.month.mcpTools.total)}</div>
-						${allMcpServerKeys.length > 0 ? `
-							<div style="margin-top: 12px;"><strong>By Server:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-servers-month', 'By Server', unionFill(stats.month.mcpTools.byServer, allMcpServerKeys), 200)}</div></div>
-						` : '<div style="color: var(--text-muted); margin-top: 8px;">No MCP tools used yet</div>'}
-					</div>
-				</div>
-			</div>
-			<div class="three-column" style="margin-top: 12px;">
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-tools-today', 'By Tool', unionFill(stats.today.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-tools-last30', 'By Tool', unionFill(stats.last30Days.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-				<div>
-					${allMcpToolKeys.length > 0 ? `
-						<div class="list">
-							<div style="margin-top: 4px;"><strong>By Tool:</strong><div style="margin-top: 8px;">${renderToolsTable('mcp-tools-month', 'By Tool', unionFill(stats.month.mcpTools.byTool, allMcpToolKeys), 10, lookupMcpToolName)}</div></div>
-						</div>
-					` : ''}
-				</div>
-			</div>
+			${buildMcpPeriodTablesHtml({
+				byServer: { today: stats.today.mcpTools.byServer, last30Days: stats.last30Days.mcpTools.byServer, lastMonth: stats.lastMonth.mcpTools.byServer },
+				byTool: { today: stats.today.mcpTools.byTool, last30Days: stats.last30Days.mcpTools.byTool, lastMonth: stats.lastMonth.mcpTools.byTool },
+				totals: { today: stats.today.mcpTools.total, last30Days: stats.last30Days.mcpTools.total, lastMonth: stats.lastMonth.mcpTools.total },
+				nameResolver: lookupMcpToolName,
+				serverNameResolver: lookupToolName,
+				view: mcpPeriodView,
+			})}
 		</div>`;
 }
 
@@ -3897,9 +3823,6 @@ function buildUsageRootHtml(
 	sessionsSummaryHtml: string,
 	todayTotalRefs: number,
 	last30DaysTotalRefs: number,
-	allToolKeys: string[],
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
 	allHighCostModels: string[],
 	allLowCostModels: string[],
 	allMediumCostModels: string[],
@@ -3935,7 +3858,7 @@ function buildUsageRootHtml(
 
 			${safeSectionHtml('Recent Sessions', () => buildSessionsTabPanelHtml(stats))}
 			${safeSectionHtml('My Activity', () => buildActivityTabPanelHtml(stats, multiModelHtml, thinkingEffortHtml, sessionsSummaryHtml, todayTotalRefs, last30DaysTotalRefs))}
-			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allToolKeys, allMcpToolKeys, allMcpServerKeys, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
+			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
 			${safeSectionHtml('Workspace Health', () => buildHealthTabPanelHtml(customizationHtml, stats))}
 			${safeSectionHtml('Repository PRs & Cloud Agent', () => buildReposAndAgentTabPanelsHtml())}
 			${safeSectionHtml('AI Readiness', () => darkFactoryTab.panel(activeTab))}
@@ -4907,13 +4830,17 @@ function buildUnknownMcpToolsBannerHtml(stats: UsageAnalysisStats): string {
 	if (unknownTools.length === 0) { return ''; }
 	const issueUrl = createMcpToolIssueUrl(unknownTools, stats.toolCallsByEditor);
 	const toolListHtml = unknownTools.map(tool => {
-		const todayCount = (stats.today.toolCalls.byTool[tool] || 0) + (stats.today.mcpTools.byTool[tool] || 0);
-		const last30Count = (stats.last30Days.toolCalls.byTool[tool] || 0) + (stats.last30Days.mcpTools.byTool[tool] || 0);
-		const monthCount = (stats.month.toolCalls.byTool[tool] || 0) + (stats.month.mcpTools.byTool[tool] || 0);
+		// Server ids are collected alongside tool ids, so count them from byServer too.
+		const countIn = (p: UsageAnalysisPeriod): number => (p.toolCalls.byTool[tool] || 0) + (p.mcpTools.byTool[tool] || 0) + (p.mcpTools.byServer[tool] || 0);
+		const todayCount = countIn(stats.today);
+		const last30Count = countIn(stats.last30Days);
+		const monthCount = countIn(stats.month);
+		const lastMonthCount = countIn(stats.lastMonth);
 		const countParts: string[] = [];
 		if (todayCount > 0) { countParts.push(`${todayCount} today`); }
 		if (last30Count > todayCount) { countParts.push(`${last30Count} in the last 30d`); }
 		if (monthCount > last30Count) { countParts.push(`${monthCount} this month`); }
+		if (lastMonthCount > 0) { countParts.push(`${lastMonthCount} last month`); }
 		const editors = formatToolEditors(tool, stats.toolCallsByEditor);
 		if (editors) { countParts.push(editors); }
 		const countHtml = countParts.length > 0 ? `<span style="color:var(--text-muted);"> (${escapeHtml(countParts.join(' | '))})</span>` : '';
@@ -5341,9 +5268,6 @@ function setupModelEfficiencySection(): void {
 
 function buildToolsTabPanelHtml(
 	stats: UsageAnalysisStats,
-	allToolKeys: string[],
-	allMcpToolKeys: string[],
-	allMcpServerKeys: string[],
 	allHighCostModels: string[],
 	allLowCostModels: string[],
 	allMediumCostModels: string[],
@@ -5355,33 +5279,26 @@ function buildToolsTabPanelHtml(
 			<div class="section" id="section-tool-usage">
 				<div class="section-title"><span>🔧</span><span>Tool Usage</span></div>
 				<div class="section-subtitle">Functions and tools invoked by Copilot during interactions${hideAutomaticToolCalls ? ' (automatic tool calls hidden — disable "Hide Automatic Tool Calls" in settings to show them)' : ''}</div>
-				<div class="three-column">
-					<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Today</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.today.toolCalls.total)}</div>
-						${renderToolsTable('tools-today', 'Tool Usage', unionFill(stats.today.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-					</div>
-				</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📆 Last 30 Days</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.last30Days.toolCalls.total)}</div>
-							${renderToolsTable('tools-last30', 'Tool Usage', unionFill(stats.last30Days.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-						</div>
-					</div>
-				<div>
-					<h4 style="color: var(--text-primary); font-size: 13px; margin-bottom: 8px;">📅 Previous Month</h4>
-					<div class="list">
-						<div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Total Tool Calls: ${formatNumber(stats.month.toolCalls.total)}</div>
-							${renderToolsTable('tools-month', 'Tool Usage', unionFill(stats.month.toolCalls.byTool, allToolKeys), 10, lookupToolName, true)}
-						</div>
-					</div>
-				</div>
+				${buildToolPeriodTableHtml(
+					{ today: stats.today.toolCalls.byTool, last30Days: stats.last30Days.toolCalls.byTool, lastMonth: stats.lastMonth.toolCalls.byTool },
+					{ today: stats.today.toolCalls.total, last30Days: stats.last30Days.toolCalls.total, lastMonth: stats.lastMonth.toolCalls.total },
+					{
+						tableId: 'tool-usage-periods',
+						ariaLabelKey: 'usage.toolPeriod.ariaToolUsage',
+						limitPerPeriod: 10,
+						nameResolver: lookupToolName,
+						hiddenIds: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined,
+						autoIds: AUTOMATIC_TOOL_SET_WV,
+						firstColumnKey: 'usage.toolPeriod.colTool',
+						totalLabelKey: 'usage.toolPeriod.totalToolCalls',
+						emptyKey: 'usage.toolPeriod.emptyTools',
+						emptyHiddenKey: 'usage.toolPeriod.emptyToolsHidden',
+					},
+				)}
 			</div>
 
 			${safeSectionHtml(localize('usage.tab.tools'), () => buildToolExecutionSectionsHtml({ toolCalls: stats.last30Days.toolCalls, mcpTools: stats.last30Days.mcpTools, resolveToolName: lookupToolName, hiddenTools: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined }))}
-			${buildMcpToolsSectionHtml(stats, allMcpToolKeys, allMcpServerKeys)}
+			${buildMcpToolsSectionHtml(stats)}
 			${buildCurationSectionHtml(currentCurationAnalysis ?? stats.curationAnalysis)}
 			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
 			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
@@ -5493,9 +5410,6 @@ function renderLayout(stats: UsageAnalysisStats): void {
 		sessionsSummaryHtml,
 		todayTotalRefs,
 		last30DaysTotalRefs,
-		allKeys.allToolKeys,
-		allKeys.allMcpToolKeys,
-		allKeys.allMcpServerKeys,
 		allKeys.allHighCostModels,
 		allKeys.allLowCostModels,
 		allKeys.allMediumCostModels,
@@ -5505,6 +5419,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 
 	wireNavigationButtons();
 	wireAboutInfoToggle();
+	wireMcpPeriodToggle();
 	wireRepositoryButtons();
 	wireCurationButtons();
 	renderRepositoryHygienePanels();
@@ -5544,7 +5459,7 @@ function wireAboutInfoToggle(): void {
 		body.style.display = aboutCollapsed ? 'none' : '';
 		toggle.setAttribute('aria-expanded', String(!aboutCollapsed));
 		if (chevron) { chevron.textContent = aboutCollapsed ? '▸' : '▾'; }
-		vscode.setState({ ...(vscode.getState() ?? {}), aboutCollapsed });
+		usageState.patch({ aboutCollapsed });
 	};
 	toggle.addEventListener('click', applyToggle);
 	toggle.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -5553,6 +5468,26 @@ function wireAboutInfoToggle(): void {
 			applyToggle();
 		}
 	});
+}
+
+/** Wires the MCP Tools By Server / By Tool toggle: client-side only, selection persisted via webview state. */
+function wireMcpPeriodToggle(): void {
+	const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-mcp-view]'));
+	for (const button of buttons) {
+		button.addEventListener('click', () => {
+			const view = button.dataset.mcpView;
+			if (!isMcpPeriodView(view)) { return; }
+			mcpPeriodView = view;
+			for (const other of buttons) {
+				const active = other.dataset.mcpView === view;
+				other.classList.toggle('active', active);
+				other.setAttribute('aria-pressed', String(active));
+			}
+			document.getElementById('mcp-period-server')?.toggleAttribute('hidden', view !== 'server');
+			document.getElementById('mcp-period-tool')?.toggleAttribute('hidden', view !== 'tool');
+			usageState.patch({ mcpPeriodView: view });
+		});
+	}
 }
 
 /** Wires up top-level navigation toolbar buttons (refresh, details, chart, etc.). */

@@ -122,6 +122,40 @@ test('l10n: customization files table controls resolve in English and zh-cn', ()
 	}
 });
 
+test('l10n: tool × period table strings resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		['usage.toolPeriod.colTool', 'Tool', '工具'],
+		['usage.toolPeriod.colServer', 'Server', '服务器'],
+		['usage.toolPeriod.colToday', 'Today', '今天'],
+		['usage.toolPeriod.colLast30', 'Last 30 Days', '最近 30 天'],
+		['usage.toolPeriod.colPreviousMonth', 'Previous Month', '上月'],
+		['usage.toolPeriod.totalToolCalls', 'Total tool calls', '工具调用总数'],
+		['usage.toolPeriod.totalMcpCalls', 'Total MCP calls', 'MCP 调用总数'],
+		['usage.toolPeriod.byServer', 'By Server', '按服务器'],
+		['usage.toolPeriod.byTool', 'By Tool', '按工具'],
+		['usage.toolPeriod.mcpViewAria', 'MCP breakdown', 'MCP 细分'],
+		['usage.toolPeriod.emptyTools', 'No tools used yet', '尚未使用任何工具'],
+		['usage.toolPeriod.emptyToolsHidden', 'No purposeful tools used yet (automatic tool calls are hidden)', '尚未使用任何有目的的工具（已隐藏自动工具调用）'],
+		['usage.toolPeriod.emptyMcp', 'No MCP tools used yet', '尚未使用任何 MCP 工具'],
+		['usage.toolPeriod.autoBadge', 'auto', '自动'],
+		['usage.toolPeriod.ariaToolUsage', 'Tool usage by period', '按时间段的工具使用情况'],
+		['usage.toolPeriod.ariaMcpServers', 'MCP calls by server and period', '按服务器和时间段的 MCP 调用'],
+		['usage.toolPeriod.ariaMcpTools', 'MCP calls by tool and period', '按工具和时间段的 MCP 调用'],
+		['usage.toolPeriod.autoBadgeTitle', 'Automatic tool — Copilot uses this internally and it does not count toward fluency scoring', '自动工具 — Copilot 在内部使用，不计入熟练度评分'],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english, key);
+	}
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese, key);
+		}
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
 test('l10n: tool curation UI strings resolve in English and zh-cn', () => {
 	const translations: Array<[string, string, string]> = [
 		['usage.toolCuration.column.server', 'Server', '服务器'],

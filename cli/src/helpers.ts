@@ -7,30 +7,31 @@ import * as path from 'path';
 import * as os from 'os';
 import chalk from 'chalk';
 import { SessionDiscovery } from '../../src/sessionDiscovery';
-import { buildAdapterRegistry, createDataAccessInstances } from '../../src/adapters';
 import type { IEcosystemAdapter } from '../../src/ecosystemAdapter';
-import { isMcpTool, extractMcpServerName, resolveDebugLogCandidatePaths, resolveExactWorkspacePath } from '../../src/workspaceHelpers';
+import { resolveExactWorkspacePath } from '../../src/workspaceHelpers';
 import { resolveFileUri } from '../../src/workspacePathResolver';
-import { parseSessionFileContent } from '../../src/sessionParser';
-import { estimateTokensFromText, getModelFromRequest, isJsonlContent, estimateTokensFromJsonlSession, calculateEstimatedCost, extractAllTokensFromDebugLog } from '../../src/tokenEstimation';
-import { extractCopilotCliSessionId, getCopilotCliExactUsage } from '../../src/copilotCliOtel';
-import { extractDailyFractions } from '../../src/dailyAttribution';
+import { calculateEstimatedCost } from '../../src/tokenEstimation';
 import { toLocalDayKey } from '../../src/utils/dayKeys';
-import { isJetBrainsSessionPath } from '../../src/adapters/adapterPredicates';
-import { parseJetBrainsPartition } from '../../src/jetbrains';
-import type { DetailedStats, ModelUsage, UsageAnalysisStats, WorkspaceCustomizationMatrix, TodaySessionSummary } from '../../src/types';
-import { analyzeSessionUsage, mergeUsageAnalysis, getModelUsageFromSession } from '../../src/usageAnalysis';
-import { addModelUsage, scaleModelUsage, preserveAutoRouting, reconcileModelUsageToActualTokens } from '../../src/statsHelpers';
+import type { DetailedStats, UsageAnalysisStats, WorkspaceCustomizationMatrix, TodaySessionSummary } from '../../src/types';
+import { analyzeSessionUsage, mergeUsageAnalysis } from '../../src/usageAnalysis';
+import { addModelUsage, scaleModelUsage } from '../../src/statsHelpers';
 import { calculateEnvironmentalImpact } from '../../src/environmentalImpact';
 import { withErrorRecovery } from '../../src/utils/errors';
 import { buildRecentSessionBuckets, type RecentSessionBucketItem } from '../../src/recentSessions';
 import { buildRepeatedTaskReport, type RepeatedTaskSessionSource } from '../../src/repeatedTasks';
-import * as vscodeStub from './vscode-stub';
 import { loadCache, saveCache, disableCache, getCached, setCached, getCacheStats } from './cliCache';
+import {
+	getEcosystems,
+	modelPricing,
+	tokenEstimators,
+	statSessionFile,
+	getSessionBackingPath,
+	processSessionFile as processSessionFileWith,
+	type SessionDataCache,
+} from './sessionProcessing';
+export { readDebugLogTokensForSession, getSessionBackingPath } from './sessionProcessing';
 
 // Import JSON data files
-import tokenEstimatorsData from '../../src/tokenEstimators.json';
-import modelPricingData from '../../src/modelPricing.json';
 import toolNamesData from '../../src/toolNames.json';
 
 // Pure analysis helpers from analysis.ts
@@ -39,7 +40,6 @@ import {
 	type DailyEntry,
 	type PeriodStats,
 	effectiveTokens,
-	getEditorSourceFromPath,
 	runWithConcurrency,
 	createEmptyPeriodStats,
 	aggregateIntoPeriod,
@@ -51,8 +51,7 @@ import {
 export type { SessionData, DailyEntry } from './analysis';
 export { effectiveTokens, buildChartPayload, fmt, formatTokens } from './analysis';
 
-const tokenEstimators: { [key: string]: number } = tokenEstimatorsData.estimators;
-const modelPricing = modelPricingData.pricing as { [key: string]: any };
+const cliSessionCache: SessionDataCache = { get: getCached, set: setCached };
 const toolNameMap = toolNamesData as { [key: string]: string };
 
 /** Logging functions for the CLI context */
@@ -79,21 +78,6 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
 	}
 }
 
-/** Synchronous lazy-initialized ecosystem registry — created once on first use. */
-let _ecosystems: IEcosystemAdapter[] | null = null;
-
-/** Returns the shared ecosystem adapter registry, creating it on first call. */
-function getEcosystems(): IEcosystemAdapter[] {
-	if (_ecosystems) { return _ecosystems; }
-	const fakeUri = vscodeStub.Uri.file(__dirname);
-	_ecosystems = buildAdapterRegistry({
-		...createDataAccessInstances(fakeUri as any),
-		estimateTokens: (t, m) => estimateTokensFromText(t, m ?? 'gpt-4', tokenEstimators),
-		isMcpTool,
-		extractMcpServerName,
-	});
-	return _ecosystems;
-}
 /** Create session discovery instance for CLI */
 function createSessionDiscovery(): SessionDiscovery {
 	return new SessionDiscovery({ log, warn, error, ecosystems: getEcosystems() });
@@ -192,30 +176,6 @@ export function getDiagnosticPaths(): { path: string; exists: boolean; source: s
 	return discovery.getDiagnosticCandidatePaths();
 }
 
-/**
- * Token estimation wrapper that uses the shared tokenEstimators data.
- */
-function estimateTokens(text: string, model?: string): number {
-	return estimateTokensFromText(text, model || 'gpt-4', tokenEstimators);
-}
-
-/**
- * Model resolver wrapper.
- */
-function resolveModel(request: any): string {
-	return getModelFromRequest(request, modelPricing);
-}
-
-/**
- * The real file behind a discovered session path. DB-backed editors (OpenCode,
- * Crush, ...) report virtual paths like `opencode.db#<id>`, which do not exist
- * on disk; ordinary session files are returned unchanged.
- */
-export function getSessionBackingPath(filePath: string): string {
-	const eco = getEcosystems().find(e => e.handles(filePath));
-	return eco ? eco.getBackingPath(filePath) : filePath;
-}
-
 /** What an adapter knows about one session beyond its token counts. */
 export type SessionMeta = Awaited<ReturnType<IEcosystemAdapter['getMeta']>>;
 
@@ -250,53 +210,6 @@ export async function getSessionLastActivity(filePath: string): Promise<Date | n
 }
 
 /**
- * Stat a session file, handling DB virtual paths (OpenCode and Crush).
- * Virtual DB paths are resolved to the actual DB file.
- */
-async function statSessionFile(filePath: string): Promise<fs.Stats> {
-	const eco = getEcosystems().find(e => e.handles(filePath));
-	if (eco) { return eco.stat(filePath); }
-	return fs.promises.stat(filePath);
-}
-
-/**
- * Read token counts from a Copilot Chat debug log file for a given session file.
- *
- * Agent-mode sessions make multiple LLM API calls per user turn. Only the last
- * call's tokens are stored in the chat session file; the debug log records every
- * call. Using debug log data gives the true session total, matching VS Code's behavior.
- *
- * Returns null if no debug log exists or if no llm_request events are found.
- */
-export async function readDebugLogTokensForSession(sessionFilePath: string, verbose = false): Promise<{
-	inputTokens: number; outputTokens: number; cachedTokens: number;
-	modelBreakdown: Record<string, { inputTokens: number; outputTokens: number; cachedTokens: number }>;
-} | null> {
-	// Shared with the VS Code extension: returns undefined unless the file is UUID-named
-	// inside workspaceStorage/<hash>, and keeps the platform's native separators.
-	const candidatePaths = resolveDebugLogCandidatePaths(sessionFilePath);
-	if (!candidatePaths) { return null; }
-	const sessionId = path.basename(sessionFilePath, path.extname(sessionFilePath));
-
-	for (const debugLogPath of candidatePaths) {
-		try {
-			const content = await fs.promises.readFile(debugLogPath, 'utf8');
-			const result = extractAllTokensFromDebugLog(content);
-			if (result) {
-				if (verbose) {
-					console.error(`  ✓ Found debug log: ${sessionId} (tokens: ${result.inputTokens + result.outputTokens})`);
-				}
-				return result;
-			}
-		} catch { /* file doesn't exist — try next variant */ }
-	}
-	if (verbose) {
-		console.error(`  ✗ No debug log found: ${sessionId}`);
-	}
-	return null;
-}
-
-/**
  * Extract per-UTC-day fractions from session content using interaction timestamps.
  * Fractions sum to 1.0. Falls back to { [fallbackDateKey]: 1.0 } when no timestamps found.
  *
@@ -310,163 +223,12 @@ export async function readDebugLogTokensForSession(sessionFilePath: string, verb
  */
 
 /**
- * Process a single session file and extract its data.
+ * Process a single session file and extract its data, using the CLI's disk-backed cache.
+ * The parsing itself lives in sessionProcessing.ts so the library entry point can reuse it
+ * without the CLI's console/chalk dependencies.
  */
 export async function processSessionFile(filePath: string, verbose = false): Promise<SessionData | null> {
-	try {
-		const stats = await statSessionFile(filePath);
-
-		// Check the cache before doing any parsing
-		const cached = getCached(filePath, stats.mtimeMs, stats.size);
-		if (cached) {
-			return cached;
-		}
-
-		// Dispatch to ecosystem adapters (OpenCode, Crush, VS, Continue, ClaudeDesktop, ClaudeCode, MistralVibe)
-		const eco = getEcosystems().find(e => e.handles(filePath));
-		if (eco) {
-			const [tokenResult, interactions, modelUsage] = await Promise.all([
-				eco.getTokens(filePath),
-				eco.countInteractions(filePath),
-				eco.getModelUsage(filePath),
-			]);
-			const mtimeDateKey = toLocalDayKey(stats.mtime);
-			const ecoResult: SessionData = {
-				file: filePath,
-				tokens: tokenResult.actualTokens > 0 ? tokenResult.actualTokens : tokenResult.tokens,
-				thinkingTokens: tokenResult.thinkingTokens,
-				actualTokens: tokenResult.actualTokens,
-				interactions,
-				modelUsage,
-				lastModified: stats.mtime,
-				editorSource: getEditorSourceFromPath(filePath),
-				dailyFractions: (await eco.getDailyFractions?.(filePath)) ?? { [mtimeDateKey]: 1.0 },
-			};
-			setCached(filePath, stats.mtimeMs, stats.size, ecoResult);
-			return ecoResult;
-		}
-
-		const content = await fs.promises.readFile(filePath, 'utf-8');
-
-		if (!content.trim()) {
-			return null;
-		}
-
-		const isJsonl = filePath.endsWith('.jsonl') || isJsonlContent(content);
-
-		let tokens = 0;
-		let thinkingTokens = 0;
-		let actualTokens = 0;
-		let interactions = 0;
-		let fileModelUsage: ModelUsage = {};
-
-		if (isJsonl) {
-			const exactUsage = extractCopilotCliSessionId(filePath) ? await getCopilotCliExactUsage(filePath) : null;
-			const result = estimateTokensFromJsonlSession(content, exactUsage);
-			// Prefer actualTokens (from session.shutdown modelMetrics) over estimated tokens,
-			// matching VS Code's logic: actualTokens > 0 ? actualTokens : estimatedTokens
-			tokens = result.actualTokens > 0 ? result.actualTokens : result.tokens;
-			thinkingTokens = result.thinkingTokens;
-			actualTokens = result.actualTokens;
-
-			// Always derive model attribution via getModelUsageFromSession — the single shared
-			// entry point that handles all JSONL formats (event-format CLI sessions, delta-format
-			// VS Code Chat sessions). This mirrors VS Code's getSessionFileDataCached, which calls
-			// getModelUsageFromSession in parallel with estimateTokensFromSession rather than
-			// relying on estimateTokensFromJsonlSession.modelUsage (which is empty for delta-format).
-			fileModelUsage = await getModelUsageFromSession(
-				{ warn, tokenEstimators, modelPricing, ecosystems: getEcosystems() },
-				filePath,
-				content
-			);
-
-			// JetBrains partition files use a proprietary format not handled by getModelUsageFromSession.
-			// Fall back to the JetBrains-specific parser which reads model names from
-			// assistant.turn_start events. When no model hint is detectable (ask-mode without
-			// tool calls), attribute to 'unknown' — calculateEstimatedCost falls back to
-			// gpt-4o-mini pricing for unrecognised model names.
-			if (Object.keys(fileModelUsage).length === 0 && isJetBrainsSessionPath(filePath)) {
-				const jbResult = parseJetBrainsPartition(content);
-				if (Object.keys(jbResult.modelUsage).length > 0) {
-					fileModelUsage = jbResult.modelUsage;
-				} else if (jbResult.tokens > 0) {
-					const modelKey = jbResult.modelHint && jbResult.modelHint !== 'unknown' ? jbResult.modelHint : 'unknown';
-					fileModelUsage = { [modelKey]: { inputTokens: jbResult.tokens, outputTokens: 0, sessions: 0 } };
-				}
-			}
-
-			// Reconcile the per-model breakdown to the session total so Input+Output never
-			// exceeds Total in CLI reports. Event-based sessions (Copilot CLI without exact
-			// usage, JetBrains, …) derive actualTokens from real output while modelUsage
-			// derives input from accumulated message content; those heuristics can diverge.
-			fileModelUsage = reconcileModelUsageToActualTokens(fileModelUsage, actualTokens || tokens);
-
-			// Count interactions from JSONL
-			const lines = content.trim().split('\n');
-			for (const line of lines) {
-				try {
-					const event = JSON.parse(line);
-					if (event.type === 'user.message' || (event.kind === 2 && event.k?.[0] === 'requests')) {
-						interactions++;
-					}
-				} catch {
-					// skip
-				}
-			}
-		} else {
-			const result = parseSessionFileContent(
-				filePath,
-				content,
-				estimateTokens,
-				resolveModel
-			);
-			tokens = result.tokens;
-			thinkingTokens = result.thinkingTokens;
-			actualTokens = result.actualTokens;
-			interactions = result.interactions;
-			fileModelUsage = await getModelUsageFromSession(
-				{ warn, tokenEstimators, modelPricing, ecosystems: getEcosystems() },
-				filePath,
-				content
-			);
-		}
-
-		const dailyFractions = extractDailyFractions(content, isJsonl, stats.mtime);
-
-		// Supplement with debug log tokens when available.
-		// Agent-mode sessions make multiple LLM API calls per turn; only the last
-		// call's tokens are stored in the session file. Debug logs record every call,
-		// so they give the true session total — matching VS Code's behavior.
-		const debugLogTokens = await readDebugLogTokensForSession(filePath, verbose);
-		if (debugLogTokens && (debugLogTokens.inputTokens + debugLogTokens.outputTokens) > 0) {
-			tokens = debugLogTokens.inputTokens + debugLogTokens.outputTokens;
-			actualTokens = tokens;
-			if (Object.keys(debugLogTokens.modelBreakdown).length > 0) {
-				const replacement: ModelUsage = {};
-				for (const [model, bd] of Object.entries(debugLogTokens.modelBreakdown)) {
-					replacement[model] = { inputTokens: bd.inputTokens, outputTokens: bd.outputTokens, sessions: 0, ...(bd.cachedTokens > 0 ? { cachedReadTokens: bd.cachedTokens } : {}) };
-				}
-				preserveAutoRouting(fileModelUsage, replacement);
-				fileModelUsage = replacement;
-			}
-		}
-
-		const sessionData: SessionData = {
-			file: filePath,
-			tokens,
-			thinkingTokens,
-			actualTokens,
-			interactions,
-			modelUsage: fileModelUsage,
-			lastModified: stats.mtime,
-			editorSource: getEditorSourceFromPath(filePath),
-			dailyFractions,
-		};
-		setCached(filePath, stats.mtimeMs, stats.size, sessionData);
-		return sessionData;
-	} catch {
-		return null;
-	}
+	return processSessionFileWith(filePath, { verbose, cache: cliSessionCache });
 }
 
 /**

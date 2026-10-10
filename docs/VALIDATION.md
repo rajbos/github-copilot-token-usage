@@ -205,6 +205,11 @@ no longer *showing* is a finding — "showing" means present **and** rendered (n
 crawl uses. That last check is how the Models tab proves a picker reconciles
 instead of dropping to an empty state.
 
+A step can also carry its own `expect` (must be showing after *that* step) and
+`expectHidden` (must not be showing after it), for a toggle whose result only
+holds once it was clicked — e.g. `{ "click": "button[data-mcp-view=\"tool\"]",
+"expect": "#mcp-period-tool", "expectHidden": "#mcp-period-server" }`.
+
 ### A note on the visual diff's baseline
 
 `visual:diff` compares against the merge base with `origin/main`. **On a shallow
