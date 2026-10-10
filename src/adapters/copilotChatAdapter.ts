@@ -115,41 +115,74 @@ export function getVSCodeUserPaths(): string[] {
 	return paths;
 }
 
+/** A discovered WSL Windows user root: which `/mnt/<drive>/Users` directory a username lives under. */
+interface WslUserRoot {
+	username: string;
+	usersDir: string;
+}
+
+/**
+ * Adds a candidate WSL user root, skipping it if an entry for the same directory already
+ * exists with a username differing only in case. Windows usernames are case-insensitive, so
+ * without this a `USERPROFILE`-derived "Alice" and an enumerated "alice" in the same
+ * `/mnt/<drive>/Users` directory would otherwise be treated as two different users and the
+ * same physical memory-file roots would be scanned (and counted) twice.
+ */
+function addWslUserRoot(roots: WslUserRoot[], candidate: WslUserRoot): void {
+	const exists = roots.some(
+		r => r.usersDir === candidate.usersDir && r.username.toLowerCase() === candidate.username.toLowerCase(),
+	);
+	if (!exists) { roots.push(candidate); }
+}
+
+/**
+ * Extracts a `{ username, usersDir }` root from a WSL-style `USERPROFILE` value such as
+ * `/mnt/c/Users/alice` or `/mnt/d/Users/alice`. The drive letter is preserved in `usersDir`
+ * rather than being discarded in favour of a hard-coded `/mnt/c/Users`, so a profile that
+ * lives on a non-C drive still resolves to its own real root instead of silently probing
+ * the (wrong) C: drive path.
+ */
+function wslUserRootFromUserProfile(userprofile: string | undefined): WslUserRoot | undefined {
+	if (!userprofile) { return undefined; }
+	const match = userprofile.match(/^\/mnt\/([a-z])\/Users\/([^/]+)/);
+	if (!match) { return undefined; }
+	return { username: match[2], usersDir: `/mnt/${match[1]}/Users` };
+}
+
+const WINDOWS_USERS_C_DRIVE = '/mnt/c/Users';
+
 /**
  * When running inside WSL, probes the Windows-side VS Code user paths
  * (mounted at /mnt/c/Users/<name>/AppData/Roaming/...) so sessions created
  * in a native Windows VS Code window are also discovered. Always returns []
- * outside of WSL or when /mnt/c is not mounted.
+ * outside of WSL or when /mnt/c is not mounted (and USERPROFILE doesn't point
+ * at a usable drive either).
  */
 export async function getWSLWindowsPaths(): Promise<string[]> {
 	if (!isWSL()) { return []; }
 
 	const wslPaths: string[] = [];
-	const windowsUsernames: string[] = [];
+	const userRoots: WslUserRoot[] = [];
 
-	// USERPROFILE in WSL is sometimes set to a /mnt/c/Users/<name> path.
-	const userprofile = process.env.USERPROFILE;
-	if (userprofile) {
-		const match = userprofile.match(/^\/mnt\/[a-z]\/Users\/([^/]+)/);
-		if (match) { windowsUsernames.push(match[1]); }
-	}
+	const profileRoot = wslUserRootFromUserProfile(process.env.USERPROFILE);
+	if (profileRoot) { addWslUserRoot(userRoots, profileRoot); }
 
-	const windowsUsersDir = '/mnt/c/Users';
 	try {
-		const entries = await fs.promises.readdir(windowsUsersDir, { withFileTypes: true });
+		const entries = await fs.promises.readdir(WINDOWS_USERS_C_DRIVE, { withFileTypes: true });
 		for (const entry of entries) {
 			if (!entry.isDirectory()) { continue; }
 			const name = entry.name;
 			if (SYSTEM_USER_FOLDERS.has(name) || name.startsWith('.')) { continue; }
-			if (!windowsUsernames.includes(name)) { windowsUsernames.push(name); }
+			addWslUserRoot(userRoots, { username: name, usersDir: WINDOWS_USERS_C_DRIVE });
 		}
 	} catch {
-		// /mnt/c/Users not accessible — WSL drive not mounted or no Windows partition.
-		return [];
+		// C: drive's /mnt/c/Users not accessible — WSL drive not mounted or no Windows
+		// partition. A profile-derived root on another drive (if any) is still usable.
+		if (userRoots.length === 0) { return []; }
 	}
 
-	for (const winUser of windowsUsernames) {
-		const appData = path.join(windowsUsersDir, winUser, 'AppData', 'Roaming');
+	for (const { username, usersDir } of userRoots) {
+		const appData = path.join(usersDir, username, 'AppData', 'Roaming');
 		for (const variant of VSCODE_VARIANTS) {
 			wslPaths.push(path.join(appData, variant, 'User'));
 		}
@@ -159,26 +192,41 @@ export async function getWSLWindowsPaths(): Promise<string[]> {
 }
 
 /**
- * Synchronous flavour used only by the diagnostics panel so it can render
- * Windows-side WSL candidates without an await. Mirrors getWSLWindowsPaths
- * but tolerates a missing /mnt/c by returning an empty list.
+ * Synchronous flavour originally added for the diagnostics panel so it can render
+ * Windows-side WSL candidates without an await; `src/copilotMemoryFiles.ts` also calls
+ * it (from `getDefaultUserPaths()`) to discover Windows-side memory files under WSL, since
+ * memory-file discovery is itself synchronous end to end. Mirrors getWSLWindowsPaths: when
+ * `/mnt/c/Users` can't be enumerated it falls back to a `USERPROFILE`-derived root (which may
+ * live on a different drive), and only returns an empty list when neither source yields one.
  */
-function getWSLWindowsPathsSync(): string[] {
+export function getWSLWindowsPathsSync(): string[] {
 	if (!isWSL()) { return []; }
-	const out: string[] = [];
-	const windowsUsersDir = '/mnt/c/Users';
+	const userRoots: WslUserRoot[] = [];
+
+	// USERPROFILE in WSL is sometimes set to a /mnt/<drive>/Users/<name> path. Collect it
+	// before (and independently of) directory enumeration so a profile-derived root is still
+	// found when /mnt/c/Users itself can't be listed (see getWSLWindowsPaths above).
+	const profileRoot = wslUserRootFromUserProfile(process.env.USERPROFILE);
+	if (profileRoot) { addWslUserRoot(userRoots, profileRoot); }
+
 	try {
-		const entries = fs.readdirSync(windowsUsersDir, { withFileTypes: true });
+		const entries = fs.readdirSync(WINDOWS_USERS_C_DRIVE, { withFileTypes: true });
 		for (const entry of entries) {
 			if (!entry.isDirectory() || entry.name.startsWith('.') || SYSTEM_USER_FOLDERS.has(entry.name)) {
 				continue;
 			}
-			for (const variant of VSCODE_VARIANTS) {
-				out.push(path.join(windowsUsersDir, entry.name, 'AppData', 'Roaming', variant, 'User'));
-			}
+			addWslUserRoot(userRoots, { username: entry.name, usersDir: WINDOWS_USERS_C_DRIVE });
 		}
 	} catch {
-		/* /mnt/c not accessible — skip */
+		/* /mnt/c not accessible — fall through with whatever USERPROFILE gave us */
+	}
+
+	const out: string[] = [];
+	for (const { username, usersDir } of userRoots) {
+		const appData = path.join(usersDir, username, 'AppData', 'Roaming');
+		for (const variant of VSCODE_VARIANTS) {
+			out.push(path.join(appData, variant, 'User'));
+		}
 	}
 	return out;
 }

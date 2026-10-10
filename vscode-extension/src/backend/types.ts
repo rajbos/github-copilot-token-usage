@@ -140,7 +140,7 @@ export interface BackendFacadeInterface {
 	setFilters(filters: unknown): void;
 	getFilters(): unknown;
 	getLastQueryResult(): BackendQueryResult | undefined;
-	syncToBackendStore(force: boolean): Promise<void>;
+	syncToBackendStore(force: boolean): Promise<SyncResult | void>;
 	startTimerIfEnabled(): void;
 	stopTimer(): void;
 	dispose(): void;
@@ -151,4 +151,17 @@ export interface BackendFacadeInterface {
 	clearAzureSettingsCommand(): Promise<void>;
 	toggleBackendWorkspaceMachineNameSync(): Promise<void>;
 	setSharingProfileCommand(): Promise<void>;
+}
+
+/** What happened to one sync target during a sync pass. */
+export type SyncTargetOutcome = 'synced' | 'failed' | 'skipped';
+
+/**
+ * Per-target result of a sync pass. A target is absent when it was not attempted (disabled,
+ * unconfigured, or the whole pass was skipped); `skipped` means it was attempted but nothing was
+ * sent (another window holds its lock, or the Team Server has no GitHub token).
+ */
+export interface SyncResult {
+	azure?: SyncTargetOutcome;
+	sharingServer?: SyncTargetOutcome;
 }

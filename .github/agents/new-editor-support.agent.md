@@ -99,7 +99,7 @@ Two functions need updating in `src/workspaceHelpers.ts`:
 
 Also update **`getEditorNameFromRoot()`** — add a check for the new editor's identifier before the generic `code` match. This function is used when reconstructing editor names from cached data.
 
-> **Lesson learned (Eclipse):** `getEditorNameFromRoot()` also checks `isCopilotCliRoot()` very early, which matches *any* path containing the substring `copilot`. If your new editor's own marker path also contains `copilot` (e.g. Eclipse's plugin id `com.microsoft.copilot.eclipse.core`), it gets misclassified as `Copilot CLI` unless your check is placed **before** `isCopilotCliRoot()` — not just before the generic `/code/` check. Apply the same ordering rule to the `/.copilot/` substring checks in `getEditorTypeFromPath()` / `detectEditorSource()`. In practice: search for every substring your new editor's path could accidentally match (`copilot`, `code`, `cursor`, ...) and place your guard before *all* of them, not just the one you expect.
+Detection helpers check several substrings (`copilot`, `code`, `cursor`, ...) in a fixed order — first match wins, including in `getEditorNameFromRoot()`'s early `isCopilotCliRoot()` check (which matches any path containing `copilot`, e.g. a plugin id like `com.microsoft.copilot.eclipse.core`). Search for every substring your new editor's path could accidentally contain and place your guard before all of them, not just the one you expect — apply the same ordering rule to the `/.copilot/` checks in `getEditorTypeFromPath()` / `detectEditorSource()`.
 
 ### Step 4 — Implement the Ecosystem Adapter
 
@@ -113,7 +113,7 @@ See `src/ecosystemAdapter.ts` for the full interface contracts and doc comments.
 
 `enrichDetailsWithEditorInfo()` and `getSessionFileDetailsFromCache()` in `extension.ts` already call `eco.getEditorRoot(sessionFile)` and `getEcosystemDisplayName(eco, sessionFile)` generically for every adapter found via `handles()` — **no manual per-editor guard is needed there anymore** as long as the adapter is registered (Step 5).
 
-> **Critical lesson learned (Eclipse, this session):** Creating only the data-access class (Step 2) and the path-detection guards (Step 3) is **not enough** for anything to appear in the UI. Without an adapter registered in the shared registry (Step 5), `SessionDiscovery` never runs for that editor — the session list, log viewer, charts, usage analysis, and diagnostics panel all stay empty even though `handles()`/`isSessionFile()` would correctly recognise the files if discovery ever reached them. Do not report the integration as done, or hand off to the user, until Step 5 is complete and verified end-to-end (e.g. via `cli diagnostics`).
+Creating the data-access class (Step 2) and the path-detection guards (Step 3) is not sufficient for anything to appear in the UI — the adapter must also be registered in the shared registry (Step 5) before `SessionDiscovery` runs for that editor; until then the session list, log viewer, charts, usage analysis, and diagnostics panel all stay empty even though `handles()`/`isSessionFile()` would correctly recognise the files. Don't report the integration done, or hand off to the user, until Step 5 is verified end-to-end (e.g. via `cli diagnostics`).
 
 ### Step 5 — Register the Adapter in the Shared Registry
 

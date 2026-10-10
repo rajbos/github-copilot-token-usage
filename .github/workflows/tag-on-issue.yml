@@ -9,6 +9,10 @@ permissions:
 
 jobs:
   tag-user:
+    # Don't tag the user on issues they opened (or triggered) themselves.
+    if: >-
+      github.event.issue.user.login != vars.TAG_USER &&
+      github.actor != vars.TAG_USER
     runs-on: ubuntu-latest
     permissions:
       issues: write

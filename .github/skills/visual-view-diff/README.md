@@ -12,13 +12,16 @@ to a baseline commit.
 
 It produces images and a Markdown report. **Publishing them — as a PR comment,
 a job summary, an artifact — is a separate concern and deliberately not part of
-this skill.**
+this skill.** On pull requests that concern is handled by the `ui-checks` job in
+`.github/workflows/ci.yml`, which posts the before/after/diff images to the PR
+with `gh pr comment --attach` via `.github/workflows/scripts/visual-diff-comment.js`.
 
 ## Files in This Directory
 
 - **SKILL.md** — Main skill file with YAML frontmatter and full instructions for the agent
 - **README.md** — This file
-- **views.config.json** — Registry of the panels to render (bundle name, data global, fixture, per-view options)
+- **views.config.json** — Registry of the panels to render (bundle name, data global, fixture, per-view options) and the `states` — tabs and modes — each panel is also screenshotted in
+- **lib/steps.js** — Replays a state's `click`/`select` steps; shared with `scripts/interaction-smoke.js`
 - **visual-diff.js** — End-to-end run: build the baseline commit in a git worktree, build the working tree, render both, compare
 - **render-views.js** — Render the configured views to PNGs from a given build
 - **diff-screenshots.js** — Compare two screenshot directories and write the report
@@ -65,4 +68,8 @@ Ask Copilot something like:
   "Never Launch a Real Editor/IDE Instance" rule in `.github/copilot-instructions.md`.
 - Fixtures use fixed timestamps and synthetic values so unchanged code always
   produces identical screenshots.
+- The Team Dashboard fixture supplies synthetic Azure rollups and a Team Server
+  configuration; both tabs render without contacting a live backend. When a
+  previously disabled view gains a fixture, the baseline bundle uses the same
+  fixture so its visual diff compares layouts rather than a loader with data.
 - See SKILL.md for adding a view, fixture conventions, and known limits.

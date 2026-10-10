@@ -1,0 +1,6 @@
+<!--
+  Activates the optional com.intellij.modules.jcef classloader dependency on
+  IntelliJ Platform 2026.2+. Tool-window registration remains in plugin.xml so
+  older IDEs, where JCEF is part of the core platform, keep the same UI.
+-->
+<idea-plugin/>

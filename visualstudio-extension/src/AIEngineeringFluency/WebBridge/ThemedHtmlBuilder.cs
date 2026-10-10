@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Reflection;
 
@@ -35,12 +37,13 @@ namespace AIEngineeringFluency.WebBridge
             var globalKey  = ViewToGlobalKey(view);
             var vsHideJs   = BuildVsHideScript(view);
             var jsonGlobals = BuildJsonGlobalsScript();
+            var localizationScript = BuildLocalizationScript(globalKey);
 
             // Prevent </script> injection in the JSON payload (OWASP XSS defence)
             var safeJson = statsJson.Replace("<", "\\u003c").Replace(">", "\\u003e");
 
             return $@"<!DOCTYPE html>
-<html lang=""en"">
+<html lang=""{LocalizationLocale()}"">
 <head>
 <meta charset=""UTF-8"">
 <meta http-equiv=""Content-Security-Policy""
@@ -69,6 +72,7 @@ html, body {{ margin: 0; padding: 0; height: 100%; overflow: auto; }}
 <script>
 window.{globalKey} = {safeJson};
 </script>
+{localizationScript}
 {jsonGlobals}
 </head>
 <body>
@@ -295,6 +299,115 @@ html, body {{
                 "fluency-level-viewer" => "__INITIAL_FLUENCY_LEVEL_DATA__",
                 _               => "__INITIAL_DETAILS__",
             };
+
+        /// <summary>
+        /// The locale whose webview strings this host will render.
+        /// </summary>
+        /// <remarks>
+        /// Only locales we actually ship a dictionary for are returned. Declaring
+        /// the raw UI culture would label English text as, say, French and send
+        /// assistive technology down the wrong pronunciation rules — the exact
+        /// mismatch <c>&lt;html lang&gt;</c> exists to prevent.
+        /// </remarks>
+        private static string LocalizationLocale()
+        {
+            foreach (var candidate in LocalizationCandidates())
+            {
+                if (File.Exists(LocalizationFilePath(candidate))) { return candidate; }
+            }
+            return "en";
+        }
+
+        /// <summary>
+        /// Completes the panel payload with the webview string dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The webview bundles localize themselves from <c>initialData.localization</c>.
+        /// Only the VS Code extension ever supplied that, so this extension — which
+        /// redistributes the very same bundles — rendered their built-in English
+        /// fallback regardless of the Visual Studio display language. The dictionaries
+        /// are staged next to the bundles by vscode-extension/esbuild.js.
+        ///
+        /// Emitted as a guarded assignment rather than merged into the JSON so it is a
+        /// no-op when there is no payload, instead of creating an empty object the
+        /// bundle would mistake for real data. Returns an empty string (not a broken
+        /// script) when the sidecar is missing, matching BuildJsonGlobalsScript's
+        /// tolerance of a first run before the webview build has produced its files.
+        /// </remarks>
+        private static string BuildLocalizationScript(string globalKey)
+        {
+            try
+            {
+                foreach (var candidate in LocalizationCandidates())
+                {
+                    var filePath = LocalizationFilePath(candidate);
+                    if (!File.Exists(filePath)) { continue; }
+                    var dictionary = File.ReadAllText(filePath)
+                        .Replace("<", "\\u003c")
+                        .Replace(">", "\\u003e");
+                    return "<script>" + Environment.NewLine
+                         + "(function () { var d = window." + globalKey + ";"
+                         + " if (d && typeof d === 'object') { d.localization = " + dictionary + "; } })();" + Environment.NewLine
+                         + "</script>";
+                }
+            }
+            catch { /* fall through: an unlocalized panel beats a broken one */ }
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Display-language candidates, most specific first, always ending in English.
+        /// </summary>
+        /// <remarks>
+        /// The exact-tag-then-bare-language list this replaced sent <c>zh-Hans</c> and
+        /// <c>zh-Hans-CN</c> to English even though a <c>zh-cn</c> sidecar ships, because
+        /// neither is a prefix of it (raised in review on #2138). Script decides, not
+        /// region: <c>zh-SG</c> is Simplified and should get the bundle, while
+        /// <c>zh-TW</c>, <c>zh-HK</c> and <c>zh-MO</c> are Traditional and must not —
+        /// serving Traditional readers Simplified text is worse than serving English.
+        ///
+        /// Mirrors resolveLocaleId() in vscode-extension/src/l10nCore.ts, which reaches
+        /// the same answer through Intl.Locale.maximize().
+        /// </remarks>
+        private static string[] LocalizationCandidates()
+        {
+            var culture = CultureInfo.CurrentUICulture;
+            var candidates = new System.Collections.Generic.List<string> { culture.Name.ToLowerInvariant() };
+            if (IsSimplifiedChinese(culture)) { candidates.Add("zh-cn"); }
+            candidates.Add("en");
+            return candidates.Distinct().ToArray();
+        }
+
+        /// <summary>
+        /// True for Chinese cultures written in Simplified script.
+        /// </summary>
+        /// <remarks>
+        /// An explicit Hans/Hant script subtag wins. With no script, the region decides:
+        /// Taiwan, Hong Kong and Macau are Traditional, everything else Simplified.
+        /// </remarks>
+        private static bool IsSimplifiedChinese(CultureInfo culture)
+        {
+            if (!string.Equals(culture.TwoLetterISOLanguageName, "zh", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            var parts = culture.Name.Split('-');
+            foreach (var part in parts)
+            {
+                if (string.Equals(part, "Hans", StringComparison.OrdinalIgnoreCase)) { return true; }
+                if (string.Equals(part, "Hant", StringComparison.OrdinalIgnoreCase)) { return false; }
+            }
+            var region = parts.Length > 1 ? parts[parts.Length - 1].ToUpperInvariant() : string.Empty;
+            return region != "TW" && region != "HK" && region != "MO";
+        }
+
+        private static string LocalizationFilePath(string locale)
+        {
+            return Path.Combine(
+                Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!,
+                "webview",
+                "localization." + locale + ".json");
+        }
 
         /// <summary>
         /// Reads the JSON config sidecar files from the installed webview directory and

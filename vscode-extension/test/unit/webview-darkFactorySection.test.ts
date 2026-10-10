@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { buildDarkFactorySectionHtml } from '../../src/webview/maturity/darkFactorySection';
+import { buildDarkFactoryChatPrompt, buildDarkFactorySectionHtml } from '../../src/webview/maturity/darkFactorySection';
 import { buildDarkFactoryReport, scoreDarkFactoryReadiness, type DarkFactoryObservation } from '../../../src/darkFactoryReadiness';
 import type { DarkFactoryReport } from '../../../src/types';
 
@@ -49,8 +49,40 @@ describe('buildDarkFactorySectionHtml', () => {
 	test('states that readiness is per repository and that stage 5 is never awarded', () => {
 		const html = buildDarkFactorySectionHtml(report([repoReport()]));
 		assert.match(html, /per repository and never per person/);
-		assert.match(html, /never tells you that you are ready to go dark/);
+		assert.match(html, /A checklist, not a green light/);
 		assert.match(html, /Stage 5 is not\./);
+	});
+
+	test('renders each repository as a collapsed row whose summary carries the overview', () => {
+		const html = buildDarkFactorySectionHtml(report([
+			repoReport({ name: 'alpha', observations: { 'codeowners': { state: 'absent', detail: 'none' } } }),
+			repoReport({ name: 'beta', facts: { agentFileNames: ['refactor.agent.md'] } }),
+		]));
+		const cards = html.match(/<details class="df-repo-card" data-df-repo="\d+">/g) ?? [];
+		assert.equal(cards.length, 2);
+		assert.equal(/<details class="df-repo-card" open/.test(html), false);
+		const summary = html.slice(html.indexOf('<summary class="df-repo-summary">'), html.indexOf('</summary>', html.indexOf('df-repo-summary')));
+		assert.match(summary, /alpha/);
+		assert.match(summary, /Stage 0 confirmed/);
+		assert.match(summary, /missing for Stage 1/);
+		assert.match(summary, /unchecked/);
+		assert.equal(/Missing for Stage 1 &mdash;/.test(summary), false, 'detail blocks live in the expandable body');
+		assert.match(html, /1 anti-pattern</);
+	});
+
+	test('tallies every scanned repository in a one-line overview', () => {
+		const html = buildDarkFactorySectionHtml(report([
+			repoReport({ name: 'a' }),
+			repoReport({ name: 'b', facts: { agentFileNames: ['refactor.agent.md'] } }),
+		]));
+		assert.match(html, /<strong>2<\/strong> repositories scanned/);
+		assert.match(html, /<strong>2<\/strong> at Stage 0/);
+		assert.match(html, /<strong>1<\/strong> with anti-patterns/);
+	});
+
+	test('keeps the full explanation behind a collapsed "What this measures" toggle', () => {
+		const html = buildDarkFactorySectionHtml(report([repoReport()]));
+		assert.match(html, /<details class="df-about">\s*<summary>📋 What this measures<\/summary>/);
 	});
 
 	test('shows the confirmed/ceiling band when evidence is incomplete', () => {
@@ -140,5 +172,50 @@ describe('buildDarkFactorySectionHtml', () => {
 			observations: { 'codeowners': { state: 'unknown', detail: '<script>alert(3)</script>' } },
 		})]));
 		assert.equal(html.includes('<script>alert(3)</script>'), false);
+	});
+});
+
+describe('Copilot Chat action', () => {
+	const codeownersAbsent = { 'codeowners': { state: 'absent' as const, detail: 'none' } };
+
+	test('offers a checked selection box for each missing control and anti-pattern, not for unchecked controls', () => {
+		const html = buildDarkFactorySectionHtml(report([repoReport({
+			observations: codeownersAbsent,
+			facts: { agentFileNames: ['refactor.agent.md'] },
+		})]));
+		assert.match(html, /class="df-pick" data-df-kind="control" data-df-id="codeowners" checked/);
+		assert.match(html, /class="df-pick" data-df-kind="finding" data-df-id="[^"]+" checked/);
+		const unknownBlock = html.slice(html.indexOf('Could not check for Stage 1'));
+		const unknownList = unknownBlock.slice(0, unknownBlock.indexOf('</ul>'));
+		assert.equal(unknownList.includes('df-pick'), false);
+		assert.match(html, /class="button df-chat-btn" data-df-repo="0"/);
+	});
+
+	test('omits the action when there is nothing to implement', () => {
+		const repo = repoReport();
+		const empty = { ...repo, findings: [], stages: repo.stages.map(stage => ({ ...stage, missing: [] })) };
+		const html = buildDarkFactorySectionHtml(report([empty]));
+		assert.equal(html.includes('df-chat-btn'), false);
+	});
+
+	test('builds a prompt naming the repository and only the selected items', () => {
+		const repo = repoReport({
+			nameWithOwner: 'rajbos/demo',
+			observations: { ...codeownersAbsent, 'ci-test-execution': { state: 'absent', detail: 'none' } },
+			facts: { agentFileNames: ['refactor.agent.md'] },
+		});
+		const prompt = buildDarkFactoryChatPrompt(repo, ['codeowners'], [repo.findings[0].id]);
+		assert.ok(prompt);
+		assert.match(prompt, /rajbos\/demo \(\/tmp\/demo\)/);
+		assert.match(prompt, /CODEOWNERS \(Stage 1\): Add a CODEOWNERS file/);
+		assert.match(prompt, /No independent evaluator agent/);
+		assert.equal(prompt.includes('Tests executed in CI'), false);
+		assert.match(prompt, /Do not claim the repository is ready/);
+	});
+
+	test('ignores ids that are unknown or not absent, and returns nothing for an empty selection', () => {
+		const repo = repoReport({ observations: codeownersAbsent });
+		assert.equal(buildDarkFactoryChatPrompt(repo, [], []), undefined);
+		assert.equal(buildDarkFactoryChatPrompt(repo, ['not-a-control', 'required-reviews'], ['nope']), undefined);
 	});
 });

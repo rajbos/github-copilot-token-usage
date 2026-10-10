@@ -72,7 +72,12 @@ export class WindsurfDataAccess {
 	private log: (msg: string) => void = (msg) => console.log(msg);
 	private sessionCache: { sessions: SessionFileDetails[]; expiresAt: number } | null = null;
 	private _sessionFetchInFlight: Promise<SessionFileDetails[]> | null = null;
-	private static readonly SESSION_CACHE_TTL_MS = 15_000;
+	// Long enough that resolveSession() calls made later in a large preload/stats pass (which can
+	// easily take well over a minute across thousands of session files) still hit the cache
+	// populated by the discovery pass's own getWindsurfSessions() call, instead of re-running the
+	// full API+file-based discovery (several seconds of disk/API I/O) a second time for the same
+	// batch. Was 15s, too short relative to that pipeline's real wall-clock time.
+	private static readonly SESSION_CACHE_TTL_MS = 120_000;
 
 	constructor(extensionUri: vscode.Uri, log?: (msg: string) => void) {
 		this.extensionUri = extensionUri;

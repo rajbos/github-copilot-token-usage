@@ -748,7 +748,37 @@ test('validateTeamAlias rejects common name patterns', () => {
 ### VS Code APIs
 - `vscode.workspace.getConfiguration` - Settings
 - `vscode.ExtensionContext.secrets` - SecretStorage
-- `vscode.ExtensionContext.globalState` - Last sync timestamp
+- `vscode.ExtensionContext.globalState` - Last sync timestamps, tracked per target so a
+  success on one cannot imply a success on another:
+  - `backend.azureLastSyncAt` (Azure Table Storage) and `backend.sharingServerRollupLastSyncAt`
+    (Team Server usage rollups) are scan-driven. They advance in exactly two cases: the
+    upload was confirmed delivered, or the scan found nothing to send and nothing failed
+    while reading it. The second case keeps a legitimately data-free user from being pinned
+    at "never"; it requires a *clean* scan, because unreadable or unparseable session files
+    are logged and skipped and would otherwise look identical to having no data.
+  - `backend.sharingServerFluencyLastSyncAt` (Team Server fluency score) is not scan-driven:
+    the score is always computed, so there is no "nothing to send" case. It advances only
+    when the server confirms the upload.
+  - `backend.sharingServerLastSyncAt` is the retired key that both Team Server uploads once
+    wrote. It is no longer read: a value left by a score upload cannot be distinguished from
+    a rollup upload, so displaying it would reintroduce the failure it was split to expose.
+  - `backend.lastSyncAt` is separate again and is used only to throttle sync attempts, not
+    to report health.
+
+  A session file only counts as a clean no-data scan when *every* parser that looked at it
+  understood it. The cached path is the one production normally takes, so its interaction
+  parsers return `null` rather than an empty map when a line or a `requests` array is
+  unreadable; that makes the scan fall through to the raw-content parser, which counts the
+  file towards `filesFailed`. Without this the cached path would report a malformed session
+  as an empty one and advance the markers above.
+
+  "Unreadable" covers the container *and* its contents: a missing or non-array `requests`
+  value, a delta `requests` event whose payload is not an array, and any individual record
+  that is not a plain object. Delta events are classified in one place
+  (`readDeltaRequestsPayload`) that both the cached and the raw parser call, so the two
+  cannot drift apart and reach different verdicts about the same file. Nested delta updates
+  such as `['requests', 0, 'response']` legitimately carry non-array values and are *not*
+  failures; only a replacement of the whole `requests` array can be malformed.
 - `vscode.window.showQuickPick` - Wizard UI
 - `vscode.env.machineId` - Machine identifier
 - `vscode.workspace.workspaceFolders` - Workspace detection

@@ -132,8 +132,9 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Routinely health-checking external references as part of a maintenance pass
 
 **Contents:**
-- `check-urls.js` — Node.js script that scans every `*.ts` file under `src/`, extracts unique URLs, and sends HTTP HEAD requests (retrying with GET on 4xx) with a 10-second timeout
-- Summary output marking each URL as ✅ OK, ⚠️ REDIRECT, or ❌ BROKEN; exits with code `1` when any URL is broken
+- `check-urls.js` — Node.js script that scans every `*.ts` file under `src/`, extracts unique URLs, skips (and reports) URLs whose host is localhost or a loopback/link-local/private address (also after DNS resolution), and sends HTTP HEAD requests (retrying with GET only on 403, 405 or 501) with a 10-second timeout
+- `check-urls.test.js` — unit tests (no network): `node --test .github/skills/check-urls/check-urls.test.js`
+- Summary output marking each URL as ✅ OK, ⚠️ REDIRECT, ⚠️ INSECURE (plain `http:`), ⏭️ SKIPPED (internal host), or ❌ BROKEN; exits with code `1` when any URL is broken
 - Guidance for fixing broken tech.hub.ms and code.visualstudio.com links
 
 ### scan-hardcoded-strings
@@ -248,7 +249,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 ### visual-view-diff
 
-**Purpose**: Render the extension's webview panels headlessly, screenshot them, and report which views changed visually against a baseline commit. Produces the images and a Markdown report only — publishing them (a PR comment, a job summary, an artifact) is deliberately a separate concern.
+**Purpose**: Render the extension's webview panels headlessly — each in its initial render and in every tab/mode declared as a `state` — screenshot them, and report which views changed visually against a baseline commit. Produces the images and a Markdown report only — publishing them is deliberately a separate concern; on pull requests the `ui-checks` job in `ci.yml` posts them as a comment with `gh pr comment --attach`.
 
 **Use this skill when:**
 - A change touches `vscode-extension/src/webview/**`, the shared webview CSS, or a `get*Html` method in `extension.ts`
@@ -282,6 +283,20 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 **Runs in CI as:** [`.github/workflows/pr-risk-review.yml`](../workflows/pr-risk-review.yml) — gates on the PR author being a known repository contributor, drives this skill through the GitHub Copilot CLI, then applies a `risk: *` label and posts the comment. Advisory; it never blocks a merge.
 
+### pr-review-readiness
+
+**Purpose**: Determine whether GitHub's native automatic Copilot PR review (`copilot-pull-request-reviewer[bot]`) has finished for a PR's current head commit, so an agent doesn't act on stale or incomplete review state.
+
+**Use this skill when:**
+- Driving a PR to green and deciding whether "no new review comments" is a real signal or the review just hasn't posted yet
+- Handling a PR-activity webhook event that might race a fresh push against GitHub's automatic review
+- About to reply to or resolve a review thread and needing to confirm the review content is current, not for a stale commit
+
+**Contents:**
+- The two-check-run-families distinction: GitHub's native `copilot-pull-request-reviewer` check run (the one that gates this skill) vs. this repo's own CI-driven `Review risk` check run, which is unrelated
+- The exact state-machine algorithm using `get_reviews` plus check-run status — preferring the REST `commits/{sha}/check-runs` endpoint (SHA-scoped and able to verify the run's `app` identity) over GitHub's `pull_request_read` action's `get_check_runs` method (PR-scoped, and unable to verify that identity, so it fails closed when the distinction matters); the MCP identifier for that action is also client-specific — Claude Code, VS Code and Copilot CLI each spell it differently — so the skill gives raw REST/`gh api` equivalents throughout that work everywhere, including the `commit_id` cross-check that catches a completed-but-stale check run
+- Guidance to stand down and reschedule rather than poll tightly when a review is still queued or in progress
+
 ### whats-new-catalog
 
 **Purpose**: Keep the What's New release catalog (`vscode-extension/src/whatsNew/catalog.ts`) — the hand-written prose behind the What's New view and the one-a-day new-feature notifications — in step with what the extension actually ships.
@@ -298,6 +313,16 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - Prints the surface inventory (every view and tab, ticked where the catalog names it), marks features that fall beyond the per-release announcement cap, and lists the CHANGELOG's `Unreleased` feature bullets — the raw material for a new entry
 - Exit codes: `0` consistent · `1` mechanical drift · `2` config error · `3` no entry for the current version (needs written prose)
 - The editorial guidance for writing an entry: user-facing prose rather than changelog shorthand, ordering by importance because the cap truncates, and never reusing a feature `id` (they are persisted per user to remember what has been announced)
+
+### create-issue
+
+**Purpose**: Describe how issues are created in this repo — guidance only, no scripts.
+
+**Use this skill when:**
+- Asked to create, file or write up an issue (feature, bug, tech debt)
+
+**Contents:**
+- Steps: clarify what/where with the user, investigate the codebase, define the places and approach to change, list tests to update, check for cross-surface gaps (e.g. data added to a VS Code view but not available in the shared modules/npm package), then file with `gh issue create`
 
 ## Using Agent Skills
 

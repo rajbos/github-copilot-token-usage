@@ -122,6 +122,15 @@ export interface IEcosystemAdapter {
 	getDailyFractions?(sessionFile: string): Promise<Record<string, number>>;
 
 	/**
+	 * Cheap last-activity time for one session, for adapters whose `stat()` cannot
+	 * provide it — DB-backed editors stat the shared database, whose mtime moves
+	 * for every session in it (and may not move at all while writes sit in the
+	 * WAL). Must be a single row read, not a message scan: hosts call it for every
+	 * session to rank them before paying for `getMeta()`. Returns null when unknown.
+	 */
+	getLastActivity?(sessionFile: string): Promise<Date | null>;
+
+	/**
 	 * Return data needed for backend sync.
 	 * Only implemented by ecosystems that support sync (OpenCode, Crush).
 	 */

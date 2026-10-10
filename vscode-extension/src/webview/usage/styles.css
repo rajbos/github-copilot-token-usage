@@ -60,6 +60,43 @@ body {
 	box-shadow: 0 2px 6px var(--shadow-color);
 }
 
+/* Heading that opens a band of related .section cards inside one tab, so a long stack
+   reads as grouped rather than as one flat list with leftovers at the bottom. */
+.section-group-heading {
+	margin: 24px 0 10px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--border-color);
+}
+
+.section-group-heading:first-child {
+	margin-top: 4px;
+}
+
+.section-group-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--text-primary);
+	letter-spacing: 0.01em;
+}
+
+.section-group-subtitle {
+	margin-top: 2px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+/* Sub-heading inside a section card, separating a block that answers a different question
+   from the columns above it (e.g. the 7-day compaction count under the per-period grid). */
+.ctx-window-subheading {
+	margin: 14px 0 6px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
 .section-title {
 	font-size: 14px;
 	font-weight: 700;
@@ -141,59 +178,30 @@ body {
 
 .ctx-ref-table-wrap {
 	margin-bottom: 16px;
-	overflow-x: auto;
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
+}
+
+.ctx-ref-table-wrap .data-table-scroll {
 	box-shadow: 0 2px 4px var(--shadow-color);
 }
 
-.ctx-ref-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 13px;
-}
-
-.ctx-ref-table th,
-.ctx-ref-table td {
-	padding: 8px 14px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-subtle);
-}
-
-.ctx-ref-table thead th {
-	background: var(--bg-tertiary);
-	color: var(--text-secondary);
-	font-size: 11px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.4px;
-	position: sticky;
-	top: 0;
-}
-
-.ctx-ref-table tbody tr:hover {
-	background: var(--list-hover-bg);
-}
-
 .ctx-ref-table .ctx-ref-name {
-	color: var(--text-primary);
 	white-space: nowrap;
 }
 
 .ctx-ref-table .ctx-ref-num {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-	font-weight: 600;
-	color: var(--text-primary);
 	width: 110px;
 }
 
-.ctx-ref-table .ctx-ref-zero {
+.ctx-ref-table td.ctx-ref-num {
+	font-weight: 600;
+}
+
+.ctx-ref-table td.ctx-ref-zero {
 	color: var(--text-muted);
 	font-weight: 400;
 }
 
-.ctx-ref-table .ctx-ref-today-active {
+.ctx-ref-table td.ctx-ref-today-active {
 	color: var(--link-color);
 }
 
@@ -201,20 +209,34 @@ body {
 	background: var(--list-active-bg);
 	color: var(--list-active-fg);
 	font-weight: 700;
-	border-bottom: none;
 	border-top: 2px solid var(--border-color);
-}
-
-.ctx-ref-table tfoot .ctx-ref-total .ctx-ref-num {
-	color: var(--list-active-fg);
 }
 
 .ctx-ref-table .ctx-ref-spark {
 	width: 68px;
-	text-align: center;
 	padding: 4px 8px;
-	vertical-align: middle;
-	color: var(--text-primary);
+}
+
+/* Collapsed long tail of reference kinds with no usage today or in the last 30 days.
+   Mirrors the ".model-leaderboard-other" disclosure so both long tails read the same. */
+.ctx-ref-other {
+	margin-top: 8px;
+}
+
+.ctx-ref-other > summary {
+	cursor: pointer;
+	user-select: none;
+	font-size: 12px;
+	color: var(--text-secondary);
+	padding: 4px 0;
+}
+
+.ctx-ref-other > summary:hover {
+	color: var(--link-color);
+}
+
+.ctx-ref-other[open] > summary {
+	margin-bottom: 6px;
 }
 
 
@@ -466,66 +488,19 @@ body {
 	font-size: 11px;
 }
 
-.model-leaderboard-table-wrap {
-	overflow-x: auto;
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
-}
-
-.model-leaderboard-table {
-	width: 100%;
+.data-table.model-leaderboard-table {
 	min-width: 940px;
-	border-collapse: collapse;
-	font-size: 12px;
-	font-variant-numeric: tabular-nums;
 }
 
-.model-leaderboard-table th,
 .model-leaderboard-table td {
-	padding: 8px 10px;
-	text-align: right;
-	border-bottom: 1px solid var(--border-subtle);
 	white-space: nowrap;
 }
 
-.model-leaderboard-table th:first-child,
-.model-leaderboard-table td:first-child,
-.model-leaderboard-table th:nth-child(2),
-.model-leaderboard-table td:nth-child(2) {
-	text-align: left;
-}
-
-.model-leaderboard-table th {
-	color: var(--text-secondary);
-	background: var(--bg-tertiary);
-	font-size: 11px;
+.model-leaderboard-table td.model-leaderboard-model {
 	font-weight: 600;
 }
 
-.model-leaderboard-table th.sortable {
-	cursor: pointer;
-	user-select: none;
-}
-
-.model-leaderboard-table th.sortable:hover {
-	color: var(--link-color);
-	background: var(--list-hover-bg);
-}
-
-.model-leaderboard-table tbody tr:last-child td {
-	border-bottom: 0;
-}
-
-.model-leaderboard-table tbody tr:hover td {
-	background: var(--list-hover-bg);
-}
-
-.model-leaderboard-table td:first-child {
-	color: var(--text-primary);
-	font-weight: 600;
-}
-
-.model-leaderboard-table td:first-child::before {
+.model-leaderboard-table td.model-leaderboard-model::before {
 	content: "";
 	display: inline-block;
 	width: 7px;
@@ -641,27 +616,10 @@ body {
 	max-width: 100%;
 }
 
-.customization-matrix {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-	color: var(--text-primary);
-}
 
-.customization-matrix th {
-	background: var(--list-hover-bg);
-	color: var(--text-primary);
-	font-weight: 600;
-	font-size: 11px;
-	white-space: nowrap;
-}
-
-.customization-matrix td {
-	background: var(--bg-tertiary);
-}
-
-.customization-matrix tbody tr:hover td {
-	background: var(--list-hover-bg);
+.customization-workspace-name {
+	font-family: 'Courier New', monospace;
+	overflow-wrap: anywhere;
 }
 
 .stale-warning {
@@ -755,6 +713,16 @@ body {
 	display: block;
 }
 
+/* The pane already frames the repository list table. */
+.repo-hygiene-pane-body .data-table-scroll {
+	border: 0;
+}
+
+.repo-hygiene-pane-body .data-table-summary,
+.repo-hygiene-pane-body .data-table-pager {
+	margin-bottom: 8px;
+}
+
 .repo-hygiene-pane-collapsed {
 	display: none;
 }
@@ -794,6 +762,47 @@ margin-bottom: 16px;
 border-bottom: 2px solid var(--border-color);
 padding-bottom: 0;
 flex-wrap: wrap;
+}
+
+/* Two-level tab strip: group tabs above, the active group's leaf tabs below.
+   Mirrors the ".group-tabs" / ".leaf-tabs" pair the Diagnostics view uses. */
+.group-tabs {
+border-bottom-width: 2px;
+margin-bottom: 4px;
+}
+
+.group-tab {
+display: inline-flex;
+align-items: center;
+gap: 5px;
+background: transparent;
+border: none;
+border-bottom: 3px solid transparent;
+color: var(--text-secondary);
+padding: 8px 18px;
+font-size: 13px;
+font-weight: 700;
+cursor: pointer;
+border-radius: 4px 4px 0 0;
+transition: all 0.15s ease;
+white-space: nowrap;
+margin-bottom: -2px;
+font-family: inherit;
+}
+
+.group-tab:hover {
+color: var(--text-primary);
+background: var(--list-hover-bg);
+}
+
+.group-tab.active {
+color: var(--text-primary);
+border-bottom-color: var(--link-color);
+}
+
+/* The leaf bar is subordinate to the group bar above it, so it carries a lighter rule. */
+.leaf-tabs {
+border-bottom-width: 1px;
 }
 
 .tab-button {
@@ -839,43 +848,75 @@ background: var(--bg-tertiary);
 	line-height: 1.4;
 }
 
-/* Sortable table headers */
-.sessions-table th.sortable {
-	cursor: pointer;
-	user-select: none;
-	transition: background 0.1s ease, color 0.1s ease;
+/* Recent Sessions table cells */
+.data-table.sessions-table {
+	min-width: 1050px;
 }
 
-.sessions-table th.sortable:hover {
-	background: var(--list-hover-bg);
-	color: var(--link-color);
+.sessions-table td.session-col-rank {
+	color: var(--text-secondary);
 }
 
-.sessions-table tr:hover td {
-	background: var(--list-hover-bg);
+.sessions-table td.session-col-title {
+	max-width: 200px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sessions-table td.session-col-workspace,
+.sessions-table td.session-col-models {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sessions-table td.session-col-workspace {
+	max-width: 140px;
+}
+
+.sessions-table td.session-col-models {
+	max-width: 180px;
+	font-size: 11px;
+}
+
+.sessions-table td.session-col-nowrap {
+	white-space: nowrap;
 }
 
 /* Recent Sessions pill filter bar (Editor / Vendor / Model / HydraFusion) */
 .session-filter-bar {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px 12px;
+	flex-direction: column;
+	gap: 6px;
 	margin-bottom: 10px;
 }
 
+/* One row per dimension: a fixed-width label column keeps every row's pills starting on the same vertical line. */
 .session-filter-group {
 	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 6px;
+	align-items: flex-start;
+	gap: 8px;
 }
 
 .session-filter-group-label {
+	flex: 0 0 56px;
+	padding-top: 4px;
 	font-size: 11px;
 	font-weight: 600;
 	color: var(--text-secondary);
-	margin-right: 2px;
+}
+
+.session-filter-pills {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.session-filter-bar > .session-filter-pill-clear {
+	align-self: flex-start;
 }
 
 .session-filter-pill {
@@ -943,41 +984,6 @@ background: var(--bg-tertiary);
 	color: var(--text-primary);
 }
 
-.table-container {
-	overflow: auto;
-	max-height: 500px;
-}
-
-.session-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 12px;
-}
-
-.session-table th,
-.session-table td {
-	padding: 8px 10px;
-	text-align: left;
-	border-bottom: 1px solid var(--border-color);
-}
-
-.session-table th {
-	background: var(--bg-tertiary);
-	color: var(--text-primary);
-	font-weight: 600;
-	position: sticky;
-	top: 0;
-}
-
-.session-table th.sortable {
-	cursor: pointer;
-	user-select: none;
-}
-
-.session-table th.sortable:hover {
-	background: var(--list-hover-bg);
-	color: var(--link-color);
-}
 
 .button {
 	background: var(--button-secondary-bg);
@@ -1100,12 +1106,22 @@ background: var(--bg-tertiary);
 	font-weight: 600;
 }
 
-.worktree-repo-row:hover {
+.worktree-repo-row.expanded > td {
 	background: var(--bg-tertiary);
 }
 
-.worktree-repo-row.expanded {
-	background: var(--bg-tertiary);
+/* The expanded details row is a container for the nested table, not a data row to highlight. */
+.data-table.worktree-repo-table tbody tr.worktree-repo-details:hover > td {
+	background: none;
+}
+
+.worktree-repo-table td.worktree-path-cell {
+	max-width: 380px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 11px;
 }
 
 .worktree-delete-link {
@@ -1147,10 +1163,9 @@ background: var(--bg-tertiary);
 	opacity: 0.8;
 }
 
-/* The details row's cell wraps the per-worktree table; trim its padding so the
-   nested table aligns with the parent columns. */
-.worktree-repo-details > td {
-	padding: 0 0 12px;
+/* The details row's cell wraps the per-worktree table; indent it under its repository. */
+.worktree-repo-table .worktree-repo-details > td {
+	padding: 4px 0 12px 24px;
 }
 
 .worktree-cleanup-card {
@@ -1250,6 +1265,21 @@ background: var(--bg-tertiary);
 	color: var(--vscode-errorForeground, #f14c4c);
 }
 
+.worktree-retry-status {
+	margin-top: 8px;
+	font-size: 12px;
+}
+
+.worktree-retry-status.success {
+	color: var(--success-fg);
+	font-weight: 600;
+}
+
+.worktree-retry-status.failed {
+	color: var(--error-fg);
+	margin-bottom: 4px;
+}
+
 .worktree-cleanup-log-actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -1270,4 +1300,518 @@ background: var(--bg-tertiary);
 	font-size: 12px;
 	padding: 4px 10px;
 	font-weight: normal;
+}
+
+.df-section .info-box {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-subtle);
+	border-radius: 6px;
+	padding: 12px;
+	margin-bottom: 16px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.df-section .info-box-title {
+	font-weight: 600;
+	color: var(--text-primary);
+	margin-bottom: 6px;
+}
+
+.df-section-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.df-section-icon {
+	font-size: 22px;
+}
+
+.df-section-title {
+	font-size: 18px;
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+.df-section-badge {
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--badge-bg);
+	color: var(--badge-fg);
+}
+
+.df-notice {
+	font-size: 12px;
+	color: var(--text-secondary);
+	margin-bottom: 16px;
+	padding: 8px 12px;
+	border-left: 3px solid var(--border-color);
+	background: var(--bg-tertiary);
+}
+
+.df-empty, .df-error {
+	font-size: 13px;
+	color: var(--text-secondary);
+	padding: 16px;
+	background: var(--bg-tertiary);
+	border-radius: 6px;
+}
+
+.df-error {
+	border-left: 3px solid var(--error-fg);
+}
+
+.df-repo-card {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	margin-bottom: 8px;
+}
+
+.df-repo-card[open] {
+	margin-bottom: 14px;
+}
+
+.df-repo-summary {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	padding: 10px 14px;
+	cursor: pointer;
+	list-style: none;
+	border-radius: 8px;
+}
+
+.df-repo-summary::-webkit-details-marker {
+	display: none;
+}
+
+.df-repo-summary::before {
+	content: '▸';
+	color: var(--text-primary);
+	font-size: 22px;
+	line-height: 1;
+	width: 20px;
+	text-align: center;
+	transition: transform 0.15s ease;
+}
+
+.df-repo-card[open] > .df-repo-summary::before {
+	transform: rotate(90deg);
+}
+
+.df-repo-summary:hover {
+	background: var(--bg-secondary);
+}
+
+.df-repo-summary:focus-visible {
+	outline: 1px solid var(--focus-border, var(--border-color));
+	outline-offset: -1px;
+}
+
+.df-repo-head {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 10px;
+	flex: 1 1 240px;
+	min-width: 0;
+}
+
+.df-summary-stage {
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--text-primary);
+	white-space: nowrap;
+}
+
+.df-dots {
+	display: inline-flex;
+	gap: 6px;
+}
+
+/* The verdict colour lives on the ring and a tinted fill; the numeral stays in the
+   primary text colour so it keeps its contrast on dark themes (red/amber text on
+   a dark background was unreadable). */
+.df-dot {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	font-size: 14px;
+	font-weight: 700;
+	border: 2px solid var(--border-color);
+	background: var(--bg-secondary);
+	color: var(--text-primary);
+}
+
+.df-dot.df-verdict-attained { background: color-mix(in srgb, var(--success-fg) 28%, transparent); color: var(--text-primary); }
+.df-dot.df-verdict-blocked { background: color-mix(in srgb, var(--error-fg) 28%, transparent); color: var(--text-primary); }
+.df-dot.df-verdict-unverified { background: color-mix(in srgb, var(--warning-fg) 28%, transparent); color: var(--text-primary); }
+
+.df-counts {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.df-count-missing {
+	color: var(--error-fg);
+}
+
+.df-count-findings {
+	color: var(--warning-fg);
+}
+
+.df-repo-body {
+	padding: 4px 16px 16px 38px;
+	border-top: 1px solid var(--border-color);
+	padding-top: 14px;
+}
+
+.df-overview {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px 18px;
+	font-size: 12px;
+	color: var(--text-secondary);
+	margin-bottom: 10px;
+}
+
+.df-overview strong {
+	color: var(--text-primary);
+}
+
+.df-overview-hint {
+	margin-left: auto;
+	color: var(--text-muted);
+	font-size: 11px;
+}
+
+.df-disclaimer {
+	font-size: 12px;
+	color: var(--text-secondary);
+	margin-bottom: 8px;
+}
+
+.df-disclaimer strong {
+	color: var(--text-primary);
+}
+
+.df-about {
+	margin-bottom: 12px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.df-about > summary {
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.df-about-body {
+	margin-top: 8px;
+	padding: 10px 12px;
+	background: var(--bg-tertiary);
+	border-radius: 6px;
+	line-height: 1.5;
+}
+
+.df-repo-name {
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+.df-repo-owner {
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.df-repo-owner-unknown {
+	font-style: italic;
+	color: var(--text-muted);
+}
+
+.df-band {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.df-band-stage {
+	font-size: 20px;
+	font-weight: 800;
+	color: var(--text-primary);
+}
+
+.df-band-note {
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.df-band-complete .df-band-note {
+	color: var(--success-fg);
+}
+
+.df-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 14px;
+}
+
+.df-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 3px 10px;
+	border-radius: 12px;
+	border: 1px solid var(--border-color);
+	color: var(--text-secondary);
+	background: var(--bg-secondary);
+}
+
+.df-chip-stage {
+	font-weight: 800;
+	color: var(--text-primary);
+}
+
+.df-verdict-attained {
+	border-color: var(--success-fg);
+	color: var(--success-fg);
+}
+
+.df-verdict-blocked {
+	border-color: var(--error-fg);
+	color: var(--error-fg);
+}
+
+.df-verdict-unverified {
+	border-color: var(--warning-fg);
+	color: var(--warning-fg);
+}
+
+.df-block {
+	margin-top: 12px;
+	padding: 10px 12px;
+	border-radius: 6px;
+	background: var(--bg-secondary);
+	border-left: 3px solid var(--error-fg);
+}
+
+.df-block-unknown {
+	border-left-color: var(--warning-fg);
+}
+
+.df-block-findings {
+	border-left-color: var(--error-fg);
+}
+
+.df-block-title {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--text-primary);
+	margin-bottom: 8px;
+}
+
+.df-control-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.df-control-list li {
+	margin-bottom: 8px;
+}
+
+.df-control-list li:last-child {
+	margin-bottom: 0;
+}
+
+.df-control-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.df-finding-title {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+.df-control-detail {
+	display: block;
+	font-size: 11px;
+	color: var(--text-secondary);
+	margin-top: 2px;
+}
+
+.df-heuristic {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.4px;
+	color: var(--text-muted);
+	margin-left: 6px;
+}
+
+.df-footer {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-top: 8px;
+}
+
+.df-control-list li.df-pickable {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.df-pick {
+	margin: 2px 0 0;
+	flex-shrink: 0;
+	cursor: pointer;
+}
+
+.df-item-text {
+	min-width: 0;
+}
+
+.df-action {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px 16px;
+	margin-top: 14px;
+	padding: 10px 12px;
+	border-radius: 6px;
+	border: 1px solid var(--border-color);
+	background: var(--bg-secondary);
+}
+
+.df-action-text {
+	flex: 1 1 260px;
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+/* ── Tool execution sections (reliability / latency / MCP health / cost-vs-speed) ── */
+.tool-exec-chart-wrap {
+	overflow-x: auto;
+	border: 1px solid var(--border-color);
+	background: var(--list-hover-bg);
+	border-radius: 6px;
+	padding: 8px 6px;
+}
+
+.tool-exec-chart {
+	display: block;
+	width: 100%;
+	min-width: 640px;
+	height: auto;
+}
+
+.tool-exec-chart text {
+	fill: var(--text-secondary);
+	font-family: inherit;
+	font-size: 11px;
+}
+
+.tool-exec-chart .tool-exec-label,
+.tool-exec-chart .tool-exec-bubble-label {
+	fill: var(--text-primary);
+}
+
+.tool-exec-chart .tool-exec-bubble-label {
+	font-size: 10px;
+}
+
+.tool-exec-chart .tool-exec-axis-title {
+	font-size: 11px;
+}
+
+.tool-exec-chart .tool-exec-chart-hint {
+	fill: var(--text-muted);
+	font-size: 10px;
+}
+
+.tool-exec-grid line {
+	stroke: var(--border-subtle);
+	stroke-width: 1;
+	stroke-dasharray: 3 3;
+}
+
+.tool-exec-bar-success,
+.tool-exec-bar-p50 { fill: var(--vscode-charts-purple, #a78bfa); }
+.tool-exec-bar-failure { fill: var(--vscode-charts-red, #fb7185); }
+.tool-exec-bar-p95 { fill: var(--vscode-charts-purple, #a78bfa); opacity: 0.3; }
+.tool-exec-marker-p95 { stroke: var(--text-primary); stroke-width: 2; }
+.tool-exec-bar-mcp { fill: var(--vscode-charts-yellow, #fbbf24); }
+
+.tool-exec-kind-builtin { fill: var(--vscode-charts-blue, #22d3ee); }
+.tool-exec-kind-mcp { fill: var(--vscode-charts-purple, #a78bfa); }
+.tool-exec-kind-subagent { fill: var(--vscode-charts-red, #f472b6); }
+.tool-exec-kind-skill { fill: var(--vscode-charts-green, #a3e635); }
+
+.tool-exec-bubble {
+	opacity: 0.78;
+	stroke: var(--bg-primary);
+	stroke-width: 1;
+}
+
+.tool-exec-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+	margin: 6px 2px 8px;
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.tool-exec-legend span {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+.tool-exec-empty {
+	color: var(--text-muted);
+	font-size: 12px;
+	padding: 6px 2px;
+}
+
+.tool-exec-table {
+	margin: 6px 2px 2px;
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.tool-exec-table summary {
+	cursor: pointer;
+	user-select: none;
+}
+
+.tool-exec-table .data-table-root {
+	margin-top: 6px;
+}
+
+.tool-exec-table .tool-exec-num {
+	white-space: nowrap;
 }

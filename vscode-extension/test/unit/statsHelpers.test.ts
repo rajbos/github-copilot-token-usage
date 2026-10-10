@@ -11,14 +11,26 @@ computeSessionDurationMs,
 reconcileModelUsageToTotal,
 reconcileModelUsageToActualTokens,
 distributeModelUsageToDays,
+distributeExactCostToDays,
 sumModelUsageTokens,
 computeFallbackDailyRollup,
 type SessionAggregateInput,
 type UtcDateRanges,
+	preferActualTokens,
 } from '../../../src/statsHelpers';
 import type { ModelUsage, EditorUsage, SessionFileCache, DailyRollupEntry } from '../../../src/types';
 import { scaleModelUsage, preserveAutoRouting, reconcileDebugLogModelUsage } from '../../../src/statsHelpers';
 import { calculateEstimatedCost } from '../../../src/tokenEstimation';
+import { TASK_CATEGORIES, type TaskCategory, type TaskCategoryBreakdown } from '../../../src/taskClassification';
+import { getTimeWindowStartDayKey } from '../../../src/timeWindows';
+
+/** Builds a full TaskCategoryBreakdown (all categories present) from a partial map of non-zero shares. */
+function makeShares(partial: Partial<Record<TaskCategory, number>>): TaskCategoryBreakdown {
+return TASK_CATEGORIES.reduce((acc, category) => {
+	acc[category] = partial[category] ?? 0;
+	return acc;
+}, {} as TaskCategoryBreakdown);
+}
 
 test('Auto subsets survive merging, scaling, reconciliation and debug-log replacement', () => {
 	const source: ModelUsage = { model: { inputTokens: 100, outputTokens: 40, sessions: 1,
@@ -454,24 +466,42 @@ assert.ok(fileAtWindowStart >= ranges.last30DaysStartMs,
 'mtime at window start boundary should not be excluded');
 });
 
-test('computeUtcDateRanges: last30DaysUtcStartKey is 30 local days before todayUtcKey', () => {
+test('computeUtcDateRanges: last30DaysUtcStartKey is 30 calendar dates including today', () => {
 const now = new Date(2024, 4, 15, 12, 0, 0); // local May 15
 const ranges = computeUtcDateRanges(now);
-// April 15 is 30 days before May 15
-assert.equal(ranges.last30DaysUtcStartKey, '2024-04-15');
+// April 16..May 15 inclusive is 30 calendar dates.
+assert.equal(ranges.last30DaysUtcStartKey, '2024-04-16');
 });
 
 test('computeUtcDateRanges: 30-day window crosses a month boundary correctly', () => {
 const now = new Date(2024, 2, 10, 12, 0, 0); // local March 10
 const ranges = computeUtcDateRanges(now);
-// Feb 9 is 30 days before Mar 10
-assert.equal(ranges.last30DaysUtcStartKey, '2024-02-09');
+// Feb 10..Mar 10 inclusive is 30 calendar dates (2024 is a leap year: Feb has 29 days).
+assert.equal(ranges.last30DaysUtcStartKey, '2024-02-10');
+});
+
+test('computeUtcDateRanges: last30DaysUtcStartKey always agrees with the Recent Sessions last30 lookback', () => {
+// The two used to disagree by one day (this function started the window at
+// `now - 30`, getTimeWindowStartDayKey('last30') at `now - 30 + 1`), so a
+// session active exactly on the older boundary day could be counted in a
+// "Last 30 Days" total without appearing in a same-labelled Recent Sessions
+// list. computeUtcDateRanges now derives its boundary from the same helper,
+// so this can no longer drift — this test guards that sharing.
+for (const now of [
+new Date(2024, 4, 15, 12, 0, 0),
+new Date(2024, 2, 10, 12, 0, 0),
+new Date(2025, 0, 1, 0, 0, 0),
+new Date(2026, 4, 13, 10, 0, 0),
+]) {
+const ranges = computeUtcDateRanges(now);
+assert.equal(ranges.last30DaysUtcStartKey, getTimeWindowStartDayKey('last30', now));
+}
 });
 
 test('computeUtcDateRanges: last30DaysStartMs equals the local midnight of last30DaysUtcStartKey', () => {
 const now = new Date(2024, 4, 15, 12, 0, 0); // local May 15 at noon
 const ranges = computeUtcDateRanges(now);
-// last30DaysStartKey is April 15; local midnight of April 15
+// last30DaysStartKey is April 16; local midnight of April 16
 const [year, month, day] = ranges.last30DaysUtcStartKey.split('-').map(Number);
 const expectedMs = new Date(year, month - 1, day).getTime();
 assert.equal(ranges.last30DaysStartMs, expectedMs);
@@ -487,7 +517,7 @@ assert.equal(ranges.lastMonthUtcStartKey, '2026-04-01');
 });
 
 test('computeUtcDateRanges: lastMonthStartMs is earlier than last30DaysStartMs when today is May 13', () => {
-// On May 13, last30Days starts Apr 13 but previous month starts Apr 1.
+// On May 13, last30Days starts Apr 14 but previous month starts Apr 1.
 // The file-load cutoff should be Apr 1 (lastMonthStartMs < last30DaysStartMs).
 const now = new Date(2026, 4, 13, 0, 0, 0); // local May 13, 2026
 const ranges = computeUtcDateRanges(now);
@@ -525,7 +555,7 @@ mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
 sessionData: makeSession({
 taskCategory: 'Coding',
 dailyRollups: {
-'2025-03-15': { tokens: 100, actualTokens: 120, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+'2025-03-15': { tokens: 100, actualTokens: 120, thinkingTokens: 0, interactions: 2, modelUsage: {}, primaryTaskCategory: 'Coding' },
 },
 }),
 };
@@ -547,6 +577,235 @@ const result = aggregatePeriodStats([input], ranges);
 const day = result.dailyStatsMap.get('2025-03-14');
 assert.ok(day, 'daily entry should exist');
 assert.deepEqual(day!.taskCategoryUsage, { Debugging: { tokens: 50, sessions: 1 } });
+});
+
+test('aggregatePeriodStats: rollup path – populates taskCategoryTokens/Sessions/ModelUsage on the daily entry (regression: By Task chart empty after periodic refresh)', () => {
+// buildTaskCategoryTokenDatasets/SessionDatasets/CostDatasets (chartDataBuilder.ts) — the
+// datasets the chart's "By Task" split actually renders from — read these three fields, not
+// taskCategoryUsage. Without them, a periodic background refresh (calculateDetailedStats ->
+// aggregatePeriodStats -> mergeIntoFullDailyStats) silently wipes the chart's task-category
+// bars for the recent day range even though taskCategoryUsage stays populated.
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+taskCategory: 'Coding',
+dailyRollups: {
+'2025-03-15': { tokens: 100, actualTokens: 120, thinkingTokens: 0, interactions: 2, modelUsage: { 'gpt-4o': { inputTokens: 80, outputTokens: 40, sessions: 1 } }, primaryTaskCategory: 'Coding' },
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Coding: 120 });
+assert.deepEqual(day!.taskCategorySessions, { Coding: 1 });
+// taskCategoryModelUsage is scaled by category share (scaleModelUsage), which always
+// reports sessions: 0 — session counting for this map lives in taskCategorySessions above.
+assert.deepEqual(day!.taskCategoryModelUsage, { Coding: { 'gpt-4o': { inputTokens: 80, outputTokens: 40, sessions: 0 } } });
+});
+
+test('aggregatePeriodStats: rollup path – splits a mixed session across categories using per-day taskCategoryShares', () => {
+// Regression for a PR review finding: the rollup path must weight by the day's own
+// taskCategoryShares/primaryTaskCategory (mirroring extension.ts's addUsageToDailyEntry
+// call), not collapse a multi-category session onto sessionData.taskCategory.
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+taskCategory: 'Coding',
+dailyRollups: {
+'2025-03-15': {
+tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions: 2,
+modelUsage: { 'gpt-4o': { inputTokens: 60, outputTokens: 40, sessions: 1 } },
+primaryTaskCategory: 'Coding',
+taskCategoryShares: makeShares({ Coding: 0.75, Debugging: 0.25 }),
+},
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Coding: 75, Debugging: 25 });
+assert.deepEqual(day!.taskCategorySessions, { Coding: 0.75, Debugging: 0.25 });
+// The cost chart is driven by taskCategoryModelUsage, not taskCategoryTokens — assert it
+// separately so a regression in the per-category model-usage scaling doesn't slip through.
+assert.deepEqual(day!.taskCategoryModelUsage, {
+Coding: { 'gpt-4o': { inputTokens: 45, outputTokens: 30, sessions: 0 } },
+Debugging: { 'gpt-4o': { inputTokens: 15, outputTokens: 10, sessions: 0 } },
+});
+});
+
+test('aggregatePeriodStats: fallback path – populates taskCategoryTokens/Sessions/ModelUsage on the daily entry (regression: By Task chart empty after periodic refresh)', () => {
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-14T10:00:00.000Z').getTime(),
+lastInteraction: '2025-03-14T10:00:00.000Z',
+sessionData: makeSession({ tokens: 50, taskCategory: 'Debugging', modelUsage: { 'gpt-4o': { inputTokens: 30, outputTokens: 20, sessions: 1 } } }),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-14');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Debugging: 50 });
+assert.deepEqual(day!.taskCategorySessions, { Debugging: 1 });
+assert.deepEqual(day!.taskCategoryModelUsage, { Debugging: { 'gpt-4o': { inputTokens: 30, outputTokens: 20, sessions: 0 } } });
+});
+
+test('aggregatePeriodStats: fallback path – splits a mixed session across categories using session-level taskCategoryShares', () => {
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-14T10:00:00.000Z').getTime(),
+lastInteraction: '2025-03-14T10:00:00.000Z',
+sessionData: makeSession({
+tokens: 50,
+taskCategory: 'Debugging',
+taskCategoryShares: makeShares({ Debugging: 0.6, Testing: 0.4 }),
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-14');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Debugging: 30, Testing: 20 });
+assert.deepEqual(day!.taskCategorySessions, { Debugging: 0.6, Testing: 0.4 });
+});
+
+test('aggregatePeriodStats: rollup path – falls back to "Conversation" when neither the day nor the session has category info', () => {
+// addTaskCategoryToDailyEntry's own fallback, exercised when a pre-existing cached dailyRollup
+// predates task classification (no primaryTaskCategory/taskCategoryShares) AND the session
+// itself has no taskCategory either.
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+dailyRollups: {
+'2025-03-15': { tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Conversation: 100 });
+assert.deepEqual(day!.taskCategorySessions, { Conversation: 1 });
+});
+
+test('aggregatePeriodStats: rollup path – falls back to the session-level taskCategory (not "Conversation") when only the day rollup lacks category info', () => {
+// Regression for a PR review finding: a day rollup that predates per-day task classification
+// (no primaryTaskCategory/taskCategoryShares of its own) must still use the session's overall
+// taskCategory — both for taskCategoryUsage (consumed by efficiencyAnalysis.ts's model
+// task-mix comparison) and for the chart's per-category token/session/model-usage maps —
+// rather than silently dropping to "Conversation" when the session's category is known.
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+taskCategory: 'Refactoring',
+dailyRollups: {
+'2025-03-15': { tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryUsage, { Refactoring: { tokens: 100, sessions: 1 } });
+assert.deepEqual(day!.taskCategoryTokens, { Refactoring: 100 });
+assert.deepEqual(day!.taskCategorySessions, { Refactoring: 1 });
+});
+
+test('aggregatePeriodStats: rollup path – a "__proto__" task category is skipped and does not pollute Object.prototype', () => {
+// Regression for a PR review security finding: taskCategory/taskCategoryShares ultimately come
+// from cached/parsed session data. `if (!entry.taskCategoryModelUsage[cat]) { ... }` reads
+// through the `__proto__` accessor to the real Object.prototype (truthy, so the own-property
+// initializer is skipped) and addModelUsage would then write model fields directly onto it —
+// the same class of bug isUnsafeObjectKey already guards against for "model" keys elsewhere in
+// this file. Use JSON.parse (not an object literal) for the malicious share map so "__proto__"
+// is a genuine own property, matching how untrusted JSON actually behaves.
+const ranges = makeRanges('2025-03-15');
+const maliciousShares = JSON.parse('{"__proto__": 1, "Coding": 0}') as TaskCategoryBreakdown;
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+taskCategory: '__proto__' as TaskCategory,
+dailyRollups: {
+'2025-03-15': {
+tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions: 2,
+modelUsage: { 'gpt-4o': { inputTokens: 10, outputTokens: 5, sessions: 1 } },
+primaryTaskCategory: '__proto__' as TaskCategory,
+taskCategoryShares: maliciousShares,
+},
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.equal(Object.prototype.hasOwnProperty.call(Object.prototype, 'gpt-4o'), false, 'Object.prototype must not gain model fields');
+assert.equal(({} as any).tokens, undefined, 'plain objects must not inherit a stray tokens field');
+assert.equal(Object.prototype.hasOwnProperty.call(day!.taskCategoryTokens ?? {}, '__proto__'), false);
+assert.equal(Object.prototype.hasOwnProperty.call(day!.taskCategorySessions ?? {}, '__proto__'), false);
+assert.equal(Object.prototype.hasOwnProperty.call(day!.taskCategoryModelUsage ?? {}, '__proto__'), false);
+assert.equal(Object.prototype.hasOwnProperty.call(day!.taskCategoryUsage ?? {}, '__proto__'), false);
+});
+
+test('aggregatePeriodStats: rollup path – an all-zero taskCategoryShares breakdown falls back to the primary category', () => {
+// Regression for a PR review finding: TaskCategoryBreakdown is always a full, all-categories
+// map, so `Object.keys(taskCategoryShares).length > 0` is always true even when every share is
+// 0 — that alone must not be treated as "meaningful shares", or every category gets filtered
+// out by the `share <= 0` check below and the entry ends up with no attribution at all.
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+taskCategory: 'Testing',
+dailyRollups: {
+'2025-03-15': {
+tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions: 2, modelUsage: {},
+primaryTaskCategory: 'Testing',
+taskCategoryShares: makeShares({}),
+},
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Testing: 100 });
+assert.deepEqual(day!.taskCategorySessions, { Testing: 1 });
+});
+
+test('aggregatePeriodStats: rollup path – falls back to "Conversation" when the only known category is unsafe and there are no shares', () => {
+// Regression for a PR review finding: an unsafe taskCategory (e.g. "__proto__") must not become
+// the sole entry in the shares fallback map (`{ [taskCategory]: 1 }`), which would then get
+// filtered out by isUnsafeObjectKey inside the loop and leave the entry with no attribution —
+// it should fall through to the "Conversation" default instead, same as no category at all.
+const ranges = makeRanges('2025-03-15');
+const input: SessionAggregateInput = {
+editorType: 'vscode',
+mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+sessionData: makeSession({
+dailyRollups: {
+'2025-03-15': {
+tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions: 2, modelUsage: {},
+primaryTaskCategory: '__proto__' as TaskCategory,
+},
+},
+}),
+};
+const result = aggregatePeriodStats([input], ranges);
+const day = result.dailyStatsMap.get('2025-03-15');
+assert.ok(day, 'daily entry should exist');
+assert.deepEqual(day!.taskCategoryTokens, { Conversation: 100 });
+assert.deepEqual(day!.taskCategorySessions, { Conversation: 1 });
 });
 
 test('aggregatePeriodStats: rollup path – counts sub-agent sessions once per period', () => {
@@ -1376,4 +1635,112 @@ test('computeFallbackDailyRollup: no-ops when tokens or timestamp are missing', 
 
 	computeFallbackDailyRollup(dailyRollups, '2025-03-10T09:00:00.000Z', { tokens: 0 }, {}, 1);
 	assert.equal(Object.keys(dailyRollups).length, 0, 'zero tokens means no rollup entry');
+});
+
+// ── preferActualTokens ───────────────────────────────────────────────────────
+
+test('preferActualTokens: uses the exact API-reported count when there is one', () => {
+	assert.equal(preferActualTokens(5000, 4200), 5000);
+});
+
+test('preferActualTokens: falls back to the estimate when no exact count exists', () => {
+	// The regression this guards: `actualTokens` is 0, not undefined, for a
+	// session with no exact data — a `??` fallback would return 0 and silently
+	// drop the estimate.
+	assert.equal(preferActualTokens(0, 4200), 4200);
+	assert.equal(preferActualTokens(undefined, 4200), 4200);
+});
+
+test('preferActualTokens: a zero estimate stays zero rather than becoming undefined', () => {
+	assert.equal(preferActualTokens(0, 0), 0);
+	assert.equal(preferActualTokens(undefined, 0), 0);
+});
+
+// ── Per-editor interactions (issue #1965) ────────────────────────────────────
+
+test('aggregatePeriodStats: per-editor interactions track the day total', () => {
+	// The Efficiency view's editor filter divides by this. The refresh path used
+	// to bump `entry.interactions` but not the editor slice, so filtered "turns
+	// per session" silently read as zero for the newest days after a background
+	// refresh replaced them.
+	const ranges = makeRanges('2025-03-15');
+	const input: SessionAggregateInput = {
+		editorType: 'vscode',
+		mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+		sessionData: makeSession({
+			dailyRollups: {
+				'2025-03-15': { tokens: 100, actualTokens: 120, thinkingTokens: 0, interactions: 7, modelUsage: {} },
+			},
+		}),
+	};
+	const result = aggregatePeriodStats([input], ranges);
+	const day = result.dailyStatsMap.get('2025-03-15');
+	assert.ok(day, 'expected a daily entry for the rollup day');
+	assert.equal(day.interactions, 7);
+	assert.equal(day.editorUsage['vscode'].interactions, 7, 'per-editor turns must match the day total for a single-editor day');
+});
+
+test('aggregatePeriodStats: two editors on one day split the turns without losing any', () => {
+	const ranges = makeRanges('2025-03-15');
+	const make = (editorType: string, interactions: number): SessionAggregateInput => ({
+		editorType,
+		mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+		sessionData: makeSession({
+			dailyRollups: {
+				'2025-03-15': { tokens: 100, actualTokens: 100, thinkingTokens: 0, interactions, modelUsage: {} },
+			},
+		}),
+	});
+	const result = aggregatePeriodStats([make('vscode', 4), make('Claude Code', 6)], ranges);
+	const day = result.dailyStatsMap.get('2025-03-15');
+	assert.ok(day);
+	const summed = Object.values(day.editorUsage).reduce((sum: number, e) => sum + (e.interactions ?? 0), 0);
+	assert.equal(summed, day.interactions, 'editor slices must sum back to the day total');
+	assert.equal(day.editorUsage['vscode'].interactions, 4);
+	assert.equal(day.editorUsage['Claude Code'].interactions, 6);
+});
+
+
+
+// ── distributeExactCostToDays – debug-log exact cost reaches period totals ──
+
+test('distributeExactCostToDays: splits by interactions, sums to session cost, replaces rollup cost (no double count)', () => {
+	const rollups: Record<string, DailyRollupEntry> = {
+		'2025-03-14': { tokens: 10, actualTokens: 10, thinkingTokens: 0, interactions: 1, modelUsage: {}, copilotExactCostDollars: 99 },
+		'2025-03-15': { tokens: 30, actualTokens: 30, thinkingTokens: 0, interactions: 3, modelUsage: {} },
+	};
+	const out = distributeExactCostToDays(rollups, 0.8)!;
+	assert.ok(Math.abs(out['2025-03-14'].copilotExactCostDollars! - 0.2) < 1e-12);
+	assert.ok(Math.abs(out['2025-03-15'].copilotExactCostDollars! - 0.6) < 1e-12);
+	const sum = Object.values(out).reduce((s, d) => s + (d.copilotExactCostDollars ?? 0), 0);
+	assert.ok(Math.abs(sum - 0.8) < 1e-12);
+	assert.equal(rollups['2025-03-14'].copilotExactCostDollars, 99, 'input is not mutated');
+});
+
+test('distributeExactCostToDays: no cost or no interactions leaves rollups unchanged (undefined)', () => {
+	const rollups: Record<string, DailyRollupEntry> = {
+		'2025-03-15': { tokens: 1, actualTokens: 1, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+	};
+	assert.equal(distributeExactCostToDays(rollups, 0), undefined);
+	assert.equal(distributeExactCostToDays(rollups, NaN), undefined);
+	assert.equal(distributeExactCostToDays({ d: { ...rollups['2025-03-15'], interactions: 0 } }, 1), undefined);
+});
+
+test('aggregatePeriodStats: debug-log-only exact cost appears in period totals once distributed over rollups', () => {
+	const ranges = makeRanges('2025-03-15');
+	const rollups: Record<string, DailyRollupEntry> = {
+		'2025-03-15': { tokens: 100, actualTokens: 120, thinkingTokens: 0, interactions: 2, modelUsage: {} },
+	};
+	const build = (dailyRollups: Record<string, DailyRollupEntry>): SessionAggregateInput => ({
+		editorType: 'vscode',
+		mtime: new Date('2025-03-15T10:00:00.000Z').getTime(),
+		// Session-level exact cost (as buildSessionDataObject writes it) — rollups alone decide period totals.
+		sessionData: makeSession({ dailyRollups, copilotExactCostDollars: 0.5 }),
+	});
+	// Baseline (the bug): rollups built before the debug log was read carry no exact cost.
+	assert.equal(aggregatePeriodStats([build(rollups)], ranges).todayStats.exactCopilotCostDollars, 0);
+	const fixed = aggregatePeriodStats([build(distributeExactCostToDays(rollups, 0.5)!)], ranges);
+	assert.ok(Math.abs(fixed.todayStats.exactCopilotCostDollars - 0.5) < 1e-12);
+	assert.ok(Math.abs(fixed.monthStats.exactCopilotCostDollars - 0.5) < 1e-12);
+	assert.ok(Math.abs(fixed.last30DaysStats.exactCopilotCostDollars - 0.5) < 1e-12);
 });

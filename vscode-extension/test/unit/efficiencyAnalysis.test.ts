@@ -8,17 +8,39 @@ import {
 	computeSkillImpact,
 	computeEfficiencyDeltas,
 	computeValueSignals,
+	valueSignalsEqual,
 	getTrailingWindowBoundaries,
 	splitTrailingWindows,
 	computeModelPeriodMetrics,
 	listComparableModels,
 	compareModels,
 	buildModelWeeklySeries,
+	listEligibleModels,
+	reconcileModelSelection,
 	resolveModelCompareWindow,
 	selectDaysInWindow,
 	windowHasModelData,
+	availableResolutions,
+	buildEfficiencyBuckets,
+	buildEfficiencyBucketSeries,
+	buildModelBucketSeries,
+	buildSkillUsageSeries,
+	drillRangeForBucket,
+	efficiencyTodayKey,
+	efficiencyRangeSpanDays,
+	filterModelsByVendor,
+	listEfficiencyEditors,
+	listModelVendors,
+	UNKNOWN_EDITOR,
+	resolveBucketResolution,
+	resolveEfficiencyRange,
+	selectModelDaysForEditor,
+	splitModelDayByEditor,
+	toEfficiencyDailyVolume,
 	type EfficiencyDeps,
+	type ModelCompareSelection,
 	type EfficiencySessionInput,
+	type ModelDailyInput,
 } from '../../../src/efficiencyAnalysis';
 import { createEmptyDailyModelEfficiencyEntry } from '../../../src/modelEfficiency';
 import type { DailyModelEfficiency, DailyModelEfficiencyEntry, DailyTokenStats, ModelUsage, UsageAnalysisPeriod } from '../../../src/types';
@@ -233,6 +255,51 @@ test('computeCostAttribution: reports the largest model mix shifts', () => {
 	const shiftA = attr.modelShifts.find(s => s.model === 'a');
 	assert.ok(shiftA);
 	assert.ok(shiftA.deltaShare < 0);
+});
+
+test('computeCostAttribution: model shifts stay canonical — raw ids, no host-resolved names', () => {
+	// The host has no pricing map to resolve names against (window.__MODEL_PRICING__
+	// only exists in the webview), so the analytics layer deliberately emits the raw
+	// id and lets the view resolve it. A friendly name appearing here would mean the
+	// resolver moved back to the host and silently degraded to raw ids in production.
+	const deps = pricedDeps({ 'gpt-4o': 10, 'claude-sonnet-4.5': 10 });
+	const prevDays = [day('2026-06-01', { tokens: 1_000_000, sessions: 10, modelUsage: { ...usage('gpt-4o', 500_000, 300_000, 8), ...usage('claude-sonnet-4.5', 150_000, 50_000, 2) } })];
+	const curDays = [day('2026-07-01', { tokens: 1_000_000, sessions: 10, modelUsage: { ...usage('gpt-4o', 150_000, 50_000, 2), ...usage('claude-sonnet-4.5', 500_000, 300_000, 8) } })];
+	const attr = computeCostAttribution(prevDays, curDays, deps);
+	assert.ok(attr);
+	assert.deepEqual(attr.modelShifts.map(s => s.model).sort(), ['claude-sonnet-4.5', 'gpt-4o']);
+	for (const s of attr.modelShifts) {
+		assert.deepEqual(
+			Object.keys(s).sort(),
+			['curShare', 'curTokens', 'deltaShare', 'model', 'prevShare', 'prevTokens'],
+		);
+	}
+});
+
+test('computeCostAttribution: keeps the 0.5-point noise threshold, |delta| sort and six-row cap', () => {
+	// Shares in percentage points; each period totals 100, so a model's delta is
+	// exactly the difference between its two entries. 'quiet' moves 0.4 points —
+	// just under the noise gate — while eight others move 5 points or more.
+	const prevShares: Record<string, number> = { m0: 20, m1: 20, m2: 15, m3: 15, m4: 10, m5: 10, m6: 5, m7: 4.6, quiet: 0.4 };
+	const curShares: Record<string, number> = { m0: 12, m1: 13, m2: 9, m3: 10, m4: 15, m5: 16, m6: 11, m7: 13.2, quiet: 0.8 };
+	const deps = pricedDeps(Object.fromEntries(Object.keys(prevShares).map(m => [m, 10])));
+	const toUsage = (shares: Record<string, number>): ModelUsage =>
+		Object.assign({}, ...Object.entries(shares).map(([m, pts]) => usage(m, pts * 10_000, 0, 1)));
+	const attr = computeCostAttribution(
+		[day('2026-06-01', { tokens: 1_000_000, sessions: 9, modelUsage: toUsage(prevShares) })],
+		[day('2026-07-01', { tokens: 1_000_000, sessions: 9, modelUsage: toUsage(curShares) })],
+		deps,
+	);
+	assert.ok(attr);
+	assert.equal(attr.modelShifts.length, 6, 'capped at the six largest movements');
+	assert.ok(!attr.modelShifts.some(s => s.model === 'quiet'), 'sub-half-point movement is filtered as noise');
+	const magnitudes = attr.modelShifts.map(s => Math.abs(s.deltaShare));
+	assert.deepEqual(magnitudes, [...magnitudes].sort((a, b) => b - a), 'sorted by |deltaShare|, largest first');
+	for (const s of attr.modelShifts) {
+		assert.ok(Math.abs(s.deltaShare) >= 0.005);
+	}
+	// The two smallest qualifying movements (5 points each) fall off the cap.
+	assert.ok(!attr.modelShifts.some(s => s.model === 'm3' || s.model === 'm4'));
 });
 
 // ── splitTrailingWindows ─────────────────────────────────────────────────────
@@ -778,4 +845,611 @@ test('windowHasModelData: true when at least one day in the window has per-model
 test('windowHasModelData: ignores data outside the window bounds', () => {
 	const days = [modelDay('2026-06-01', { 'gpt-4o': {} })];
 	assert.equal(windowHasModelData(days, resolveModelCompareWindow('thisMonth', NOW)), false);
+});
+
+// ── Time ranges, resolutions and buckets (issue #1965) ───────────────────────
+
+test('resolveEfficiencyRange: 30-day preset spans exactly 30 inclusive days ending today', () => {
+	const range = resolveEfficiencyRange('last30d', NOW);
+	assert.equal(range.startKey, '2026-06-16');
+	assert.equal(range.endKey, '2026-07-15');
+	assert.equal(efficiencyRangeSpanDays(range), 30);
+});
+
+test('resolveEfficiencyRange: 12-week preset starts on a Monday, matching the legacy weekly window', () => {
+	const range = resolveEfficiencyRange('last12w', NOW);
+	// Current week's Monday is 2026-07-13; 11 weeks earlier is 2026-04-27.
+	assert.equal(range.startKey, '2026-04-27');
+	assert.equal(range.endKey, '2026-07-15');
+	assert.equal(buildEfficiencyBuckets(range, 'weekly').length, 12);
+});
+
+test('resolveEfficiencyRange: month presets start on the first of the month', () => {
+	assert.equal(resolveEfficiencyRange('last6m', NOW).startKey, '2026-02-01');
+	assert.equal(resolveEfficiencyRange('last1y', NOW).startKey, '2025-08-01');
+	assert.equal(buildEfficiencyBuckets(resolveEfficiencyRange('last6m', NOW), 'monthly').length, 6);
+	assert.equal(buildEfficiencyBuckets(resolveEfficiencyRange('last1y', NOW), 'monthly').length, 12);
+});
+
+test('efficiencyTodayKey: every preset range reaches it, a drilled-into past bucket does not', () => {
+	const todayKey = efficiencyTodayKey(NOW);
+	assert.equal(todayKey, '2026-07-15');
+	for (const id of ['last30d', 'last12w', 'last6m', 'last1y'] as const) {
+		assert.ok(resolveEfficiencyRange(id, NOW).endKey >= todayKey, `${id} should still reach today`);
+	}
+	// Drilling into the current week keeps today in range; an earlier week does not.
+	const weeks = buildEfficiencyBuckets(resolveEfficiencyRange('last12w', NOW), 'weekly');
+	assert.ok(drillRangeForBucket(weeks.at(-1)!).endKey >= todayKey);
+	assert.ok(drillRangeForBucket(weeks.at(-2)!).endKey < todayKey);
+});
+
+test('resolveBucketResolution: auto picks daily/weekly/monthly by span', () => {
+	assert.equal(resolveBucketResolution('auto', resolveEfficiencyRange('last30d', NOW)), 'daily');
+	assert.equal(resolveBucketResolution('auto', resolveEfficiencyRange('last12w', NOW)), 'weekly');
+	assert.equal(resolveBucketResolution('auto', resolveEfficiencyRange('last6m', NOW)), 'weekly');
+	assert.equal(resolveBucketResolution('auto', resolveEfficiencyRange('last1y', NOW)), 'monthly');
+});
+
+test('resolveBucketResolution: an explicit choice the range cannot carry falls back to auto', () => {
+	const year = resolveEfficiencyRange('last1y', NOW);
+	assert.equal(resolveBucketResolution('daily', year), 'monthly');
+	assert.equal(resolveBucketResolution('weekly', year), 'weekly');
+	const month = resolveEfficiencyRange('last30d', NOW);
+	assert.equal(resolveBucketResolution('monthly', month), 'daily');
+});
+
+test('availableResolutions: never offers an empty set, and gates by span', () => {
+	assert.deepEqual(availableResolutions(resolveEfficiencyRange('last30d', NOW)), ['daily', 'weekly']);
+	assert.deepEqual(availableResolutions(resolveEfficiencyRange('last12w', NOW)), ['daily', 'weekly', 'monthly']);
+	assert.deepEqual(availableResolutions(resolveEfficiencyRange('last1y', NOW)), ['weekly', 'monthly']);
+	const singleDay = { id: 'custom' as const, label: 'One day', startKey: '2026-07-15', endKey: '2026-07-15' };
+	assert.deepEqual(availableResolutions(singleDay), ['daily']);
+});
+
+test('buildEfficiencyBuckets: weekly buckets snap outward, and the trailing bucket is clipped to today', () => {
+	const buckets = buildEfficiencyBuckets(resolveEfficiencyRange('last12w', NOW), 'weekly');
+	assert.equal(buckets[0].startKey, '2026-04-27');
+	assert.equal(buckets[0].endKey, '2026-05-03');
+	assert.equal(buckets.at(-1)!.startKey, '2026-07-13');
+	// The current week is partial, not extended into the future.
+	assert.equal(buckets.at(-1)!.endKey, '2026-07-15');
+});
+
+test('buildEfficiencyBuckets: monthly buckets cover whole months except the current one', () => {
+	const buckets = buildEfficiencyBuckets(resolveEfficiencyRange('last6m', NOW), 'monthly');
+	assert.deepEqual(buckets.map(b => b.startKey), ['2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01', '2026-07-01']);
+	assert.equal(buckets[0].endKey, '2026-02-28');
+	assert.equal(buckets.at(-1)!.endKey, '2026-07-15');
+});
+
+test('buildEfficiencyBuckets: daily buckets are one day each, in order', () => {
+	const buckets = buildEfficiencyBuckets(resolveEfficiencyRange('last30d', NOW), 'daily');
+	assert.equal(buckets.length, 30);
+	assert.equal(buckets[0].startKey, buckets[0].endKey);
+	assert.equal(buckets.at(-1)!.startKey, '2026-07-15');
+});
+
+test('buildEfficiencyBuckets: an inverted or malformed range produces no buckets', () => {
+	assert.deepEqual(buildEfficiencyBuckets({ id: 'custom', label: 'x', startKey: '2026-07-15', endKey: '2026-07-01' }, 'daily'), []);
+	assert.deepEqual(buildEfficiencyBuckets({ id: 'custom', label: 'x', startKey: 'nonsense', endKey: '2026-07-01' }, 'daily'), []);
+});
+
+test('drillRangeForBucket: the label names the days drilled into, not the period they belong to', () => {
+	// The trailing bucket of any range is clipped to today, so its period name
+	// ("Jul 2026", "Jul 13–19") is wider than the days it actually holds.
+	const months = buildEfficiencyBuckets(resolveEfficiencyRange('last6m', NOW), 'monthly');
+	const currentMonth = months.at(-1)!;
+	assert.equal(currentMonth.label, 'Jul 2026', 'the bucket keeps its period name for the chart axis');
+	assert.equal(drillRangeForBucket(currentMonth).label, 'Jul 1–15, 2026');
+	assert.equal(drillRangeForBucket(months.at(-2)!).label, 'Jun 1–30, 2026');
+
+	const weeks = buildEfficiencyBuckets(resolveEfficiencyRange('last12w', NOW), 'weekly');
+	assert.equal(drillRangeForBucket(weeks.at(-1)!).label, 'Jul 13–15, 2026', 'the current week stops at today');
+	assert.equal(drillRangeForBucket(weeks.at(-2)!).label, 'Jul 6–12, 2026');
+	// A week that straddles two months, and one that straddles two years.
+	assert.equal(drillRangeForBucket(weeks[0]).label, 'Apr 27 – May 3, 2026');
+	assert.equal(
+		drillRangeForBucket({ key: '2025-12-29', label: 'Dec 29 – Jan 4', startKey: '2025-12-29', endKey: '2026-01-04', resolution: 'weekly' }).label,
+		'Dec 29, 2025 – Jan 4, 2026',
+	);
+	// A bucket clipped to a single day still reads as that day.
+	assert.equal(
+		drillRangeForBucket({ key: '2026-07-15', label: 'Jul 2026', startKey: '2026-07-15', endKey: '2026-07-15', resolution: 'monthly' }).label,
+		'Jul 15, 2026',
+	);
+});
+
+test('drillRangeForBucket: a weekly bucket drills into exactly the days it contains', () => {
+	const week = buildEfficiencyBuckets(resolveEfficiencyRange('last12w', NOW), 'weekly')[0];
+	const drilled = drillRangeForBucket(week);
+	assert.equal(drilled.id, 'custom');
+	assert.equal(drilled.startKey, '2026-04-27');
+	assert.equal(drilled.endKey, '2026-05-03');
+	assert.equal(buildEfficiencyBuckets(drilled, 'daily').length, 7);
+});
+
+// ── Compact daily volume and bucketed series ─────────────────────────────────
+
+function volumeDay(date: string, editors: { [editor: string]: { tokens: number; sessions: number; interactions: number; loc: number } }): DailyTokenStats {
+	const editorUsage: DailyTokenStats['editorUsage'] = {};
+	const editorModelUsage: { [editor: string]: ModelUsage } = {};
+	let tokens = 0, sessions = 0, interactions = 0, linesAdded = 0;
+	for (const [editor, v] of Object.entries(editors)) {
+		editorUsage[editor] = { tokens: v.tokens, sessions: v.sessions, interactions: v.interactions, linesAdded: v.loc, linesRemoved: 0 };
+		editorModelUsage[editor] = usage('gpt-5', v.tokens, 0, v.sessions);
+		tokens += v.tokens; sessions += v.sessions; interactions += v.interactions; linesAdded += v.loc;
+	}
+	return day(date, {
+		tokens, sessions, interactions, linesAdded, linesRemoved: 0,
+		modelUsage: usage('gpt-5', tokens, 0, sessions),
+		editorUsage, editorModelUsage,
+	});
+}
+
+test('toEfficiencyDailyVolume: per-editor slices sum back to the day totals', () => {
+	const volume = toEfficiencyDailyVolume([
+		volumeDay('2026-07-13', { 'VS Code': { tokens: 300, sessions: 3, interactions: 12, loc: 90 }, 'Claude Code': { tokens: 700, sessions: 2, interactions: 8, loc: 40 } }),
+	], flatDeps);
+	const total = volume[0];
+	const summed = Object.values(total.byEditor!).reduce(
+		(acc, s) => ({ tokens: acc.tokens + s.tokens, sessions: acc.sessions + s.sessions, interactions: acc.interactions + s.interactions, loc: acc.loc + s.loc, cost: acc.cost + s.cost }),
+		{ tokens: 0, sessions: 0, interactions: 0, loc: 0, cost: 0 },
+	);
+	assert.equal(summed.tokens, total.tokens);
+	assert.equal(summed.sessions, total.sessions);
+	assert.equal(summed.interactions, total.interactions);
+	assert.equal(summed.loc, total.loc);
+	assert.ok(Math.abs(summed.cost - total.cost) < 1e-9);
+});
+
+test('toEfficiencyDailyVolume: a day with no editor breakdown still carries its totals', () => {
+	const volume = toEfficiencyDailyVolume([day('2026-07-13', { tokens: 500, sessions: 2, interactions: 9, modelUsage: usage('gpt-5', 500, 0, 2) })], flatDeps);
+	assert.equal(volume[0].tokens, 500);
+	assert.equal(volume[0].byEditor, undefined);
+});
+
+test('buildEfficiencyBucketSeries: unfiltered daily buckets keep each day separate and inclusive at both ends', () => {
+	const volume = toEfficiencyDailyVolume([
+		volumeDay('2026-07-13', { 'VS Code': { tokens: 100, sessions: 1, interactions: 4, loc: 10 } }),
+		volumeDay('2026-07-14', { 'VS Code': { tokens: 200, sessions: 2, interactions: 6, loc: 20 } }),
+		volumeDay('2026-07-15', { 'VS Code': { tokens: 300, sessions: 3, interactions: 9, loc: 30 } }),
+		// Outside the range: must not leak into any bucket.
+		volumeDay('2026-07-16', { 'VS Code': { tokens: 999, sessions: 9, interactions: 99, loc: 99 } }),
+	], flatDeps);
+	const range = { id: 'custom' as const, label: 'three days', startKey: '2026-07-13', endKey: '2026-07-15' };
+	const points = buildEfficiencyBucketSeries(volume, [], buildEfficiencyBuckets(range, 'daily'));
+	assert.deepEqual(points.map(p => p.tokens), [100, 200, 300]);
+	assert.deepEqual(points.map(p => p.resolution), ['daily', 'daily', 'daily']);
+});
+
+test('buildEfficiencyBucketSeries: an interval with no data yields zeros and null ratios, not gaps in the axis', () => {
+	const range = { id: 'custom' as const, label: 'two days', startKey: '2026-07-14', endKey: '2026-07-15' };
+	const points = buildEfficiencyBucketSeries([], [], buildEfficiencyBuckets(range, 'daily'));
+	assert.equal(points.length, 2);
+	assert.equal(points[0].tokens, 0);
+	assert.equal(points[0].tokensPerSession, null);
+	assert.equal(points[0].costPerKloc, null);
+	assert.equal(points[0].retryRate, null);
+	assert.equal(points[0].applyRate, null);
+});
+
+test('buildEfficiencyBucketSeries: editor filtering narrows both volume and session-derived metrics', () => {
+	const volume = toEfficiencyDailyVolume([
+		volumeDay('2026-07-13', { 'VS Code': { tokens: 300, sessions: 3, interactions: 12, loc: 90 }, 'Claude Code': { tokens: 700, sessions: 2, interactions: 8, loc: 40 } }),
+	], flatDeps);
+	const sessions: EfficiencySessionInput[] = [
+		{ dayKey: '2026-07-13', editor: 'VS Code', editTurns: 10, retries: 2, applies: 4, codeBlocks: 8, activeDurationMs: 600_000 },
+		{ dayKey: '2026-07-13', editor: 'Claude Code', editTurns: 10, retries: 8, applies: 1, codeBlocks: 8, activeDurationMs: 1_200_000 },
+	];
+	const buckets = buildEfficiencyBuckets({ id: 'custom', label: 'one day', startKey: '2026-07-13', endKey: '2026-07-13' }, 'daily');
+	const all = buildEfficiencyBucketSeries(volume, sessions, buckets)[0];
+	const vscodeOnly = buildEfficiencyBucketSeries(volume, sessions, buckets, { editor: 'VS Code' })[0];
+	const claudeOnly = buildEfficiencyBucketSeries(volume, sessions, buckets, { editor: 'Claude Code' })[0];
+
+	assert.equal(all.tokens, 1000);
+	assert.equal(vscodeOnly.tokens, 300);
+	assert.equal(claudeOnly.tokens, 700);
+	// Totals are conserved across the split — no double counting, no loss.
+	assert.equal(vscodeOnly.tokens + claudeOnly.tokens, all.tokens);
+	assert.equal(vscodeOnly.sessions + claudeOnly.sessions, all.sessions);
+	assert.equal(vscodeOnly.editTurns + claudeOnly.editTurns, all.editTurns);
+	assert.equal(vscodeOnly.retryRate, 0.2);
+	assert.equal(claudeOnly.retryRate, 0.8);
+	assert.equal(all.retryRate, 0.5);
+});
+
+test('buildEfficiencyBucketSeries: sessions without an editor are counted unfiltered but excluded from every editor scope', () => {
+	const sessions: EfficiencySessionInput[] = [
+		{ dayKey: '2026-07-13', editTurns: 10, retries: 5 },
+		{ dayKey: '2026-07-13', editor: 'VS Code', editTurns: 10, retries: 1 },
+	];
+	const buckets = buildEfficiencyBuckets({ id: 'custom', label: 'one day', startKey: '2026-07-13', endKey: '2026-07-13' }, 'daily');
+	assert.equal(buildEfficiencyBucketSeries([], sessions, buckets)[0].editTurns, 20);
+	assert.equal(buildEfficiencyBucketSeries([], sessions, buckets, { editor: 'VS Code' })[0].editTurns, 10);
+});
+
+test('buildEfficiencyBucketSeries: weekly buckets over the default window reproduce buildEfficiencyTrends exactly', () => {
+	const days = [
+		day('2026-07-13', { tokens: 1000, sessions: 4, interactions: 20, linesAdded: 200, linesRemoved: 50, modelUsage: usage('gpt-5', 1000, 0, 4) }),
+		day('2026-07-06', { tokens: 800, sessions: 2, interactions: 10, linesAdded: 100, linesRemoved: 10, modelUsage: usage('gpt-5', 800, 0, 2) }),
+	];
+	const sessions: EfficiencySessionInput[] = [
+		{ dayKey: '2026-07-13', editTurns: 12, retries: 3, applies: 5, codeBlocks: 10, activeDurationMs: 900_000 },
+	];
+	const weekly = buildEfficiencyTrends(days, sessions, flatDeps);
+	const range = resolveEfficiencyRange('last12w', NOW);
+	const bucketed = buildEfficiencyBucketSeries(toEfficiencyDailyVolume(days, flatDeps), sessions, buildEfficiencyBuckets(range, 'weekly'));
+	assert.equal(weekly.length, bucketed.length);
+	for (let i = 0; i < weekly.length; i++) {
+		const { weekKey, ...rest } = weekly[i];
+		assert.equal(weekKey, bucketed[i].bucketKey);
+		assert.deepEqual(rest, bucketed[i]);
+	}
+});
+
+test('listEfficiencyEditors: orders editors by tokens, largest first', () => {
+	const volume = toEfficiencyDailyVolume([
+		volumeDay('2026-07-13', { 'VS Code': { tokens: 300, sessions: 1, interactions: 1, loc: 1 }, 'Claude Code': { tokens: 700, sessions: 1, interactions: 1, loc: 1 } }),
+	], flatDeps);
+	assert.deepEqual(listEfficiencyEditors(volume), ['Claude Code', 'VS Code']);
+});
+
+test('listEfficiencyEditors: omits the Unknown sentinel, which is not a selectable editor', () => {
+	const volume = toEfficiencyDailyVolume([
+		volumeDay('2026-07-13', {
+			'VS Code': { tokens: 300, sessions: 1, interactions: 1, loc: 1 },
+			[UNKNOWN_EDITOR]: { tokens: 900, sessions: 3, interactions: 3, loc: 3 },
+		}),
+	], flatDeps);
+	// Even though it is the largest bucket, it must not be offered as a scope —
+	// the toolbar promises those sessions are excluded from editor-scoped views.
+	assert.deepEqual(listEfficiencyEditors(volume), ['VS Code']);
+	// It still contributes to the unfiltered totals.
+	assert.equal(volume[0].tokens, 1200);
+});
+
+test('buildSkillUsageSeries: scoping to an editor keeps only that editor\'s invocations', () => {
+	const sessions: EfficiencySessionInput[] = [
+		{ dayKey: '2026-07-13', editor: 'VS Code', skillCalls: { graphify: 2 } },
+		{ dayKey: '2026-07-13', editor: 'Claude Code', skillCalls: { graphify: 1, 'code-review': 4 } },
+	];
+	const buckets = buildEfficiencyBuckets({ id: 'custom', label: 'one day', startKey: '2026-07-13', endKey: '2026-07-13' }, 'daily');
+	const all = buildSkillUsageSeries(sessions, buckets);
+	const scoped = buildSkillUsageSeries(sessions, buckets, { editor: 'VS Code' });
+	assert.equal(all.totalCalls, 7);
+	assert.equal(scoped.totalCalls, 2);
+	assert.deepEqual(scoped.weeks[0].byName, { graphify: 2 });
+	assert.equal(scoped.weeks[0].trackedSessions, 1);
+	assert.equal(scoped.weeks[0].skillShare, 1);
+});
+
+// ── Editor- and vendor-scoped model comparison ───────────────────────────────
+
+function createModelEntry(overrides: Partial<DailyModelEfficiencyEntry> = {}): DailyModelEfficiencyEntry {
+	return { ...createEmptyDailyModelEfficiencyEntry(), ...overrides };
+}
+
+test('selectModelDaysForEditor: merging every editor row reproduces the unsplit day', () => {
+	const merged = modelDay('2026-07-13', { 'gpt-5': { editTurns: 10, retries: 2, cost: 4, inputTokens: 1000, outputTokens: 200, sessionShare: 6 } });
+	const split: ModelDailyInput[] = [
+		{ date: '2026-07-13', editor: 'VS Code', modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 6, retries: 1, cost: 2.4, inputTokens: 600, outputTokens: 120, sessionShare: 3.6 }) } },
+		{ date: '2026-07-13', editor: 'Claude Code', modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 4, retries: 1, cost: 1.6, inputTokens: 400, outputTokens: 80, sessionShare: 2.4 }) } },
+	];
+	const whole = computeModelPeriodMetrics([merged], 'gpt-5', 'window')!;
+	const fromSplit = computeModelPeriodMetrics(split, 'gpt-5', 'window')!;
+	assert.equal(fromSplit.editTurns, whole.editTurns);
+	assert.equal(fromSplit.tokens, whole.tokens);
+	assert.ok(Math.abs(fromSplit.cost - whole.cost) < 1e-9);
+	assert.ok(Math.abs(fromSplit.sessionShare - whole.sessionShare) < 1e-9);
+	assert.equal(fromSplit.retryRate, whole.retryRate);
+
+	const scoped = computeModelPeriodMetrics(selectModelDaysForEditor(split, 'VS Code'), 'gpt-5', 'window')!;
+	assert.equal(scoped.editTurns, 6);
+	assert.equal(selectModelDaysForEditor(split, 'Netscape').length, 0);
+});
+
+test('selectModelDaysForEditor: rows with no editor are excluded from an editor scope', () => {
+	const rows: ModelDailyInput[] = [
+		{ date: '2026-07-13', modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 5 }) } },
+		{ date: '2026-07-13', editor: 'VS Code', modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 7 }) } },
+	];
+	assert.equal(selectModelDaysForEditor(rows, 'VS Code').length, 1);
+	assert.equal(selectModelDaysForEditor(rows, undefined).length, 2);
+});
+
+test('listModelVendors / filterModelsByVendor: narrow by the model\'s own provider, not the biller', () => {
+	const rows: ModelDailyInput[] = [{
+		date: '2026-07-13',
+		editor: 'VS Code',
+		modelEfficiency: {
+			'claude-sonnet-4-5': createModelEntry({ inputTokens: 1000, sessionShare: 6 }),
+			'gpt-5': createModelEntry({ inputTokens: 500, sessionShare: 6 }),
+		},
+	}];
+	assert.deepEqual(listModelVendors(rows), ['Anthropic', 'OpenAI']);
+	const models = listComparableModels(rows);
+	assert.deepEqual(filterModelsByVendor(models, 'Anthropic').map(m => m.model), ['claude-sonnet-4-5']);
+	assert.equal(filterModelsByVendor(models, undefined).length, 2);
+	assert.equal(filterModelsByVendor(models, 'Mistral AI').length, 0);
+});
+
+test('buildModelBucketSeries: buckets without the model carry a null profile, not a zero', () => {
+	const rows: ModelDailyInput[] = [
+		{ date: '2026-07-14', editor: 'VS Code', modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 12, sessionShare: 6, inputTokens: 1000 }) } },
+	];
+	const buckets = buildEfficiencyBuckets({ id: 'custom', label: 'three days', startKey: '2026-07-13', endKey: '2026-07-15' }, 'daily');
+	const series = buildModelBucketSeries(rows, 'gpt-5', buckets);
+	assert.deepEqual(series.map(p => p.metrics === null), [true, false, true]);
+	assert.equal(series[1].metrics!.editTurns, 12);
+});
+
+test('buildModelWeeklySeries still matches buildModelBucketSeries over the default weekly window', () => {
+	const rows: ModelDailyInput[] = [
+		{ date: '2026-07-14', modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 12, sessionShare: 6, inputTokens: 1000 }) } },
+	];
+	const weekly = buildModelWeeklySeries(rows, 'gpt-5', NOW);
+	const bucketed = buildModelBucketSeries(rows, 'gpt-5', buildEfficiencyBuckets(resolveEfficiencyRange('last12w', NOW), 'weekly'));
+	assert.equal(weekly.length, bucketed.length);
+	assert.deepEqual(weekly.map(p => p.weekKey), bucketed.map(p => p.bucketKey));
+	assert.deepEqual(weekly.map(p => p.metrics?.editTurns ?? null), bucketed.map(p => p.metrics?.editTurns ?? null));
+});
+
+// ── Per-editor daily aggregation (the extension's payload split) ─────────────
+
+test('splitModelDayByEditor: rows merge back to the unsplit day, with no double counting', () => {
+	const vsCode: DailyModelEfficiency = {
+		'gpt-5': createModelEntry({ editTurns: 6, retries: 1, cost: 2.4, inputTokens: 600, outputTokens: 120, sessions: 2, sessionShare: 1.2, linesAdded: 60 }),
+		'claude-sonnet-4-5': createModelEntry({ editTurns: 2, cost: 0.8, inputTokens: 200, outputTokens: 40, sessions: 1, sessionShare: 0.8, linesAdded: 20 }),
+	};
+	const claudeCode: DailyModelEfficiency = {
+		'claude-sonnet-4-5': createModelEntry({ editTurns: 4, retries: 1, cost: 1.6, inputTokens: 400, outputTokens: 80, sessions: 2, sessionShare: 2, linesAdded: 40 }),
+	};
+	const dayStats = day('2026-07-13', {
+		editorModelEfficiency: { 'VS Code': vsCode, 'Claude Code': claudeCode },
+		taskCategoryUsage: { Coding: { tokens: 1440, sessions: 4 }, Debugging: { tokens: 720, sessions: 2 } },
+	});
+
+	const rows = splitModelDayByEditor(dayStats);
+	assert.deepEqual(rows.map(r => r.editor), ['VS Code', 'Claude Code']);
+
+	// A model used by two editors is counted once per editor, and the merge of
+	// both rows equals what a single unsplit row would have produced.
+	const mergedRow = modelDay('2026-07-13', {
+		'claude-sonnet-4-5': { editTurns: 6, retries: 1, cost: 2.4, inputTokens: 600, outputTokens: 120, sessions: 3, sessionShare: 2.8, linesAdded: 60 },
+	});
+	const fromSplit = computeModelPeriodMetrics(rows, 'claude-sonnet-4-5', 'day')!;
+	const fromWhole = computeModelPeriodMetrics([mergedRow], 'claude-sonnet-4-5', 'day')!;
+	assert.equal(fromSplit.editTurns, fromWhole.editTurns);
+	assert.equal(fromSplit.tokens, fromWhole.tokens);
+	assert.equal(fromSplit.sessions, fromWhole.sessions);
+	assert.ok(Math.abs(fromSplit.cost - fromWhole.cost) < 1e-9);
+	assert.ok(Math.abs(fromSplit.sessionShare - fromWhole.sessionShare) < 1e-9);
+});
+
+test('splitModelDayByEditor: task-category tokens are apportioned by editor token share and sum back to the day', () => {
+	const dayStats = day('2026-07-13', {
+		editorModelEfficiency: {
+			'VS Code': { 'gpt-5': createModelEntry({ inputTokens: 750, outputTokens: 0 }) },
+			'Claude Code': { 'gpt-5': createModelEntry({ inputTokens: 250, outputTokens: 0 }) },
+		},
+		taskCategoryUsage: { Coding: { tokens: 400, sessions: 4 } },
+	});
+	const rows = splitModelDayByEditor(dayStats);
+	assert.equal(rows[0].taskCategoryUsage!.Coding.tokens, 300);
+	assert.equal(rows[1].taskCategoryUsage!.Coding.tokens, 100);
+	const summed = rows.reduce((sum, r) => sum + (r.taskCategoryUsage?.Coding.tokens ?? 0), 0);
+	assert.equal(summed, 400);
+});
+
+test('splitModelDayByEditor: the unsplit task mix is preserved, so an unfiltered view is unchanged', () => {
+	const dayStats = day('2026-07-13', {
+		editorModelEfficiency: {
+			'VS Code': { 'gpt-5': createModelEntry({ inputTokens: 600, outputTokens: 0, sessionShare: 4 }) },
+			'Claude Code': { 'gpt-5': createModelEntry({ inputTokens: 400, outputTokens: 0, sessionShare: 4 }) },
+		},
+		modelEfficiency: { 'gpt-5': createModelEntry({ inputTokens: 1000, outputTokens: 0, sessionShare: 8 }) },
+		taskCategoryUsage: { Coding: { tokens: 800, sessions: 6 }, Debugging: { tokens: 200, sessions: 2 } },
+	});
+	const whole = computeModelPeriodMetrics([{ date: dayStats.date, modelEfficiency: dayStats.modelEfficiency, taskCategoryUsage: dayStats.taskCategoryUsage }], 'gpt-5', 'day')!;
+	const fromSplit = computeModelPeriodMetrics(splitModelDayByEditor(dayStats), 'gpt-5', 'day')!;
+	for (const category of ['Coding', 'Debugging']) {
+		assert.ok(Math.abs((fromSplit.taskMix[category] ?? 0) - (whole.taskMix[category] ?? 0)) < 1e-9, category);
+	}
+});
+
+test('splitModelDayByEditor: a day with no editor breakdown produces no rows, so the caller keeps the unsplit one', () => {
+	assert.deepEqual(splitModelDayByEditor(day('2026-07-13', { modelEfficiency: { 'gpt-5': createModelEntry({ editTurns: 3 }) } })), []);
+	assert.deepEqual(splitModelDayByEditor(day('2026-07-13', { editorModelEfficiency: {} })), []);
+});
+
+test('splitModelDayByEditor: a zero-token day still yields rows, just without a task-mix split to apportion', () => {
+	const rows = splitModelDayByEditor(day('2026-07-13', {
+		editorModelEfficiency: { 'VS Code': { 'gpt-5': createModelEntry({ editTurns: 2 }) } },
+		taskCategoryUsage: { Coding: { tokens: 100, sessions: 1 } },
+	}));
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].taskCategoryUsage, undefined);
+});
+
+// ── valueSignalsEqual ────────────────────────────────────────────────────────
+// Both sides of the Efficiency panel's Value update use this to decide whether anything actually
+// moved: the host to avoid posting churn on every Repository PRs refresh, the webview to leave the
+// rendered Value fragment alone.
+
+test('valueSignalsEqual: an unchanged snapshot is a no-op', () => {
+	const base = computeValueSignals({
+		userPrs: 18, mergedPrs: 14, aiPrs: 3, prsSince: '2026-02-14T00:00:00.000Z',
+		periodCost: 41.8, applyUsage: { totalApplies: 186, totalCodeBlocks: 300, applyRate: 0.62 },
+		linesChanged: 14740, now: new Date('2026-03-12T10:00:00.000Z'),
+	});
+	const same = { ...base };
+	assert.ok(valueSignalsEqual(base, same));
+	assert.ok(valueSignalsEqual(undefined, undefined));
+	assert.equal(valueSignalsEqual(base, undefined), false);
+	assert.equal(valueSignalsEqual(base, { ...base, mergedPrs: 15 }), false);
+	// Losing PR data (sign-out) is a change, not a no-op: the cards must go back to the hint.
+	assert.equal(valueSignalsEqual(base, { ...base, userPrs: null }), false);
+	// Non-PR totals matter too — a refreshed cost changes cost-per-merged-PR.
+	assert.equal(valueSignalsEqual(base, { ...base, periodCost: 50 }), false);
+});
+
+// ── Models tab eligibility and selection reconciliation ──────────────────────
+
+/** A selection with the shipped defaults, overridden per test. */
+function selection(overrides: Partial<ModelCompareSelection> = {}): ModelCompareSelection {
+	return { mode: 'models', modelA: '', modelB: '', window: 'last30', windowA: 'lastMonth', windowB: 'thisMonth', ...overrides };
+}
+
+/** A year of data where the only two-model pair sits outside every selectable window. */
+function historicalOnlyDays(): DailyTokenStats[] {
+	return [
+		modelDay('2025-09-10', { legacy: solidModel({ inputTokens: 9_000_000 }), 'legacy-mini': solidModel({ inputTokens: 8_000_000 }) }),
+		modelDay('2026-07-02', { current: solidModel({}) }),
+	];
+}
+
+test('listEligibleModels: models mode offers only models present in the selected window', () => {
+	const models = listEligibleModels(historicalOnlyDays(), selection({ window: 'last30' }), NOW);
+	assert.deepEqual(models.map(m => m.model), ['current']);
+});
+
+test('listEligibleModels: periods mode offers only models present in both selected windows', () => {
+	const days = [
+		modelDay('2026-06-10', { shared: solidModel({}), juneOnly: solidModel({}) }),
+		modelDay('2026-07-02', { shared: solidModel({}), julyOnly: solidModel({}) }),
+	];
+	const models = listEligibleModels(days, selection({ mode: 'periods', windowA: 'lastMonth', windowB: 'thisMonth' }), NOW);
+	assert.deepEqual(models.map(m => m.model), ['shared']);
+});
+
+test('listEligibleModels: periods mode counts an overlapping window once when sizing the sample', () => {
+	const days = [modelDay('2026-07-02', { a: solidModel({ sessionShare: 3 }) })];
+	// windowA === windowB: the same days must not be merged twice and lift `a` over the sample floor.
+	const models = listEligibleModels(days, selection({ mode: 'periods', windowA: 'thisMonth', windowB: 'thisMonth' }), NOW);
+	assert.deepEqual(models.map(m => m.model), ['a']);
+	assert.equal(models[0].sessionShare, 3);
+	assert.equal(models[0].sampleSufficient, false);
+});
+
+test('reconcileModelSelection: replaces a model that only exists outside the active window', () => {
+	const days = historicalOnlyDays();
+	const window = resolveModelCompareWindow('last30', NOW);
+	// The pre-fix pickers defaulted from the whole payload, so the most-used model
+	// of the year was selected even though the active window has none of it —
+	// leaving a permanently missing side for every offered combination.
+	const stale = listComparableModels(days)[0].model;
+	assert.equal(stale, 'legacy');
+	assert.equal(computeModelPeriodMetrics(selectDaysInWindow(days, window), stale, window.label), null);
+
+	const next = reconcileModelSelection(days, selection({ modelA: 'legacy', modelB: 'legacy-mini' }), NOW);
+	assert.equal(next.modelA, 'current');
+	assert.ok(computeModelPeriodMetrics(selectDaysInWindow(days, window), next.modelA, window.label) !== null);
+});
+
+test('reconcileModelSelection: models mode defaults to two distinct models when the window has a pair', () => {
+	const days = [modelDay('2026-07-02', { big: solidModel({ inputTokens: 5_000_000 }), small: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection(), NOW);
+	assert.equal(next.modelA, 'big');
+	assert.equal(next.modelB, 'small');
+});
+
+test('reconcileModelSelection: models mode splits a Model B that has collapsed onto Model A', () => {
+	const days = [modelDay('2026-07-02', { big: solidModel({ inputTokens: 5_000_000 }), small: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection({ modelA: 'big', modelB: 'big' }), NOW);
+	assert.equal(next.modelA, 'big');
+	assert.equal(next.modelB, 'small');
+});
+
+test('reconcileModelSelection: keeps a still-eligible pick untouched', () => {
+	const days = [modelDay('2026-07-02', { big: solidModel({ inputTokens: 5_000_000 }), small: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection({ modelA: 'small', modelB: 'big' }), NOW);
+	assert.equal(next.modelA, 'small');
+	assert.equal(next.modelB, 'big');
+});
+
+test('reconcileModelSelection: keeps a low-sample pick the user made, but defaults to models that clear the floor', () => {
+	const lowSample = { ...createEmptyDailyModelEfficiencyEntry(), sessions: 1, sessionShare: 1, editTurns: 2, inputTokens: 100 };
+	const days = [modelDay('2026-07-02', { a: solidModel({ inputTokens: 5_000_000 }), b: solidModel({}), rare: lowSample })];
+	assert.equal(reconcileModelSelection(days, selection({ modelA: 'rare', modelB: 'a' }), NOW).modelA, 'rare');
+	assert.deepEqual(
+		[reconcileModelSelection(days, selection(), NOW).modelA, reconcileModelSelection(days, selection(), NOW).modelB],
+		['a', 'b'],
+	);
+});
+
+test('reconcileModelSelection: models mode leaves Model B empty rather than comparing a model with itself', () => {
+	const days = [modelDay('2026-07-02', { only: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection({ modelA: 'only', modelB: 'only' }), NOW);
+	assert.equal(next.modelA, 'only');
+	assert.equal(next.modelB, '');
+});
+
+test('reconcileModelSelection: periods mode repoints a model that is missing from one of the two periods', () => {
+	const days = [
+		modelDay('2026-06-10', { shared: solidModel({}) }),
+		modelDay('2026-07-02', { shared: solidModel({}), julyOnly: solidModel({ inputTokens: 9_000_000 }) }),
+	];
+	const sel = selection({ mode: 'periods', modelA: 'julyOnly', windowA: 'lastMonth', windowB: 'thisMonth' });
+	const next = reconcileModelSelection(days, sel, NOW);
+	assert.equal(next.modelA, 'shared');
+	for (const id of ['lastMonth', 'thisMonth'] as const) {
+		const w = resolveModelCompareWindow(id, NOW);
+		assert.ok(computeModelPeriodMetrics(selectDaysInWindow(days, w), next.modelA, w.label) !== null);
+	}
+});
+
+test('reconcileModelSelection: periods mode preserves Model B so switching back to models mode keeps it', () => {
+	const days = [
+		modelDay('2026-06-10', { a: solidModel({ inputTokens: 5_000_000 }), b: solidModel({}) }),
+		modelDay('2026-07-02', { a: solidModel({ inputTokens: 5_000_000 }), b: solidModel({}) }),
+	];
+	const sel = selection({ mode: 'periods', modelA: 'a', modelB: 'b', windowA: 'lastMonth', windowB: 'thisMonth' });
+	assert.equal(reconcileModelSelection(days, sel, NOW).modelB, 'b');
+});
+
+test('reconcileModelSelection: empties both sides when the active window holds nothing to compare', () => {
+	const days = [modelDay('2025-09-10', { legacy: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection({ modelA: 'legacy', modelB: 'legacy' }), NOW);
+	assert.equal(next.modelA, '');
+	assert.equal(next.modelB, '');
+	// An empty side is the honest answer here — not a zero-valued stand-in.
+	const w = resolveModelCompareWindow('last30', NOW);
+	assert.equal(computeModelPeriodMetrics(selectDaysInWindow(days, w), next.modelA, w.label), null);
+});
+
+test('reconcileModelSelection: does not change the selected windows or mode', () => {
+	const days = [modelDay('2026-07-02', { a: solidModel({}), b: solidModel({}) })];
+	const sel = selection({ window: 'last90', windowA: 'prev30', windowB: 'last30' });
+	const next = reconcileModelSelection(days, sel, NOW);
+	assert.equal(next.mode, 'models');
+	assert.equal(next.window, 'last90');
+	assert.equal(next.windowA, 'prev30');
+	assert.equal(next.windowB, 'last30');
+});
+
+test('reconcileModelSelection: replacing a stale Model A does not displace an eligible Model B', () => {
+	// 'big' sorts first, so a naive replacement would move the user's B onto side A
+	// and then push a different model into B — losing the pick it claims to keep.
+	const days = [modelDay('2026-07-02', { big: solidModel({ inputTokens: 5_000_000 }), small: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection({ modelA: 'gone', modelB: 'big' }), NOW);
+	assert.equal(next.modelB, 'big');
+	assert.equal(next.modelA, 'small');
+});
+
+test('reconcileModelSelection: falls back to Model B for Model A when the window holds nothing else', () => {
+	const days = [modelDay('2026-07-02', { only: solidModel({}) })];
+	const next = reconcileModelSelection(days, selection({ modelA: 'gone', modelB: 'only' }), NOW);
+	assert.equal(next.modelA, 'only');
+	assert.equal(next.modelB, '');
+});
+
+test('reconcileModelSelection: defaults lead with a model that clears the sample floor, not the biggest token count', () => {
+	// 'hog' has the most tokens but only one session equivalent, so it must not
+	// take a default side ahead of 'steady', which clears the floor.
+	const hog = { ...createEmptyDailyModelEfficiencyEntry(), sessions: 1, sessionShare: 1, editTurns: 2, inputTokens: 9_000_000, cost: 40 };
+	const days = [modelDay('2026-07-02', { hog, steady: solidModel({ inputTokens: 1_000_000 }) })];
+	assert.deepEqual(listEligibleModels(days, selection(), NOW).map(m => m.model), ['hog', 'steady']);
+	const next = reconcileModelSelection(days, selection(), NOW);
+	assert.equal(next.modelA, 'steady');
+	assert.equal(next.modelB, 'hog');
 });

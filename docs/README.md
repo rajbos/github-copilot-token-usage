@@ -24,6 +24,7 @@ Essential reference documents covering the data model, scoring rules, and tracke
 | [COPILOT-CLI-FORMAT-CHANGES.md](COPILOT-CLI-FORMAT-CHANGES.md) | Breaking changes to Copilot CLI session log format and their impact |
 | [COPILOT-CLI-OTEL-EXPORT.md](COPILOT-CLI-OTEL-EXPORT.md) | Enabling Copilot CLI's OpenTelemetry file export for exact token counts |
 | [VALIDATION.md](VALIDATION.md) | What each check catches, and the one-command release preflight (`npm run preflight`) |
+| [REPO-HEALTH-SCAN.md](REPO-HEALTH-SCAN.md) | Daily code-health scan (8 topics) → one issue → one PR, via GitHub Actions or a local Claude Code routine |
 
 ## Component Documentation
 
@@ -31,10 +32,13 @@ Per-component guides and READMEs.
 
 | Folder | Description |
 |---|---|
-| [cli/](cli/README.md) | CLI tool — commands, options, and development guide |
+| [cli/](cli/README.md) | CLI tool (npm package) — commands, options, configuration, data sources, troubleshooting and development guide |
+| [copilot-app/](copilot-app/README.md) | GitHub Copilot app canvas (`ai-fluency-canvas` plugin) — one-click and CLI install, usage, updating, troubleshooting |
 | [vscode-extension/](vscode-extension/README.md) | VS Code extension guide |
 | [vscode-extension/DESIGN.md](vscode-extension/DESIGN.md) | VS Code extension UI design system (DESIGN.md spec) |
 | [vscode-extension/WEBVIEW-MESSAGING.md](vscode-extension/WEBVIEW-MESSAGING.md) | How data reaches a webview panel: trust model, readiness/replay, diagnostics, companion-extension impact |
+| [vscode-extension/VIEW-HIERARCHY.md](vscode-extension/VIEW-HIERARCHY.md) | View → sub-view → content-block map of every webview panel, and the rules for grouping them |
+| [vscode-extension/DATA-TABLE.md](vscode-extension/DATA-TABLE.md) | The shared `renderDataTable` component every webview table uses: layout, CSS, sorting, pagination, filters |
 | [visual-studio/](visual-studio/README.md) | Visual Studio extension guide |
 | [sharing-server/](sharing-server/README.md) | Sharing server setup, personal dashboard and Team Insights |
 | [Sharing server data separation contract](../sharing-server/AGENTS.md) | Authoritative server privacy, comparison semantics and coding/testing requirements |
@@ -79,8 +83,11 @@ Detailed documentation for individual features.
 | [features/THEMING_CHANGES.md](features/THEMING_CHANGES.md) | Light theme support implementation details |
 | [features/TOOL-CURATION.md](features/TOOL-CURATION.md) | Tool Curation — surface unused MCP servers and stale skills |
 | [features/MODEL-EFFICIENCY-COMPARISON.md](features/MODEL-EFFICIENCY-COMPARISON.md) | Models tab — compare two models, or one model across two periods |
+| [features/EFFICIENCY-TRENDS.md](features/EFFICIENCY-TRENDS.md) | Efficiency trends — time presets, drill-down, and the per-tab filter policy |
 | [features/CORRECTIONS.md](features/CORRECTIONS.md) | Corrections tab — detect moments where the agent or the user had to correct the conversation |
 | [features/REPEATED-TASKS.md](features/REPEATED-TASKS.md) | Skill Suggestions — find tasks you keep prompting for across sessions and turn them into skills |
+| [features/COPILOT-MEMORY-FILES-INSIGHT.md](features/COPILOT-MEMORY-FILES-INSIGHT.md) | Copilot memory-files hygiene: shared analysis module, insight card, CLI `memory-files` command, and a Tools-tab UI section |
+| [features/COPILOT-SERVER-MEMORIES.md](features/COPILOT-SERVER-MEMORIES.md) | Copilot's server-side per-repository memory store: undocumented API contract, and turning re-learned facts into `AGENTS.md` entries |
 | [features/CLOUD-AGENT-COST.md](features/CLOUD-AGENT-COST.md) | Cloud Agent tab — per-repository AI credits, and the hourly cached snapshot behind it |
 | [features/DARK-FACTORY-READINESS.md](features/DARK-FACTORY-READINESS.md) | Dark Factory Readiness — per-repository governance control scan on the Fluency Score view |
 | [features/TTFT-TRENDS.md](features/TTFT-TRENDS.md) | Research > TTFT diagnostics tab — time-to-first-token averages and per-model trendlines from VS Code Chat's debug log |
@@ -98,3 +105,7 @@ Implementation notes and decisions captured during development sessions.
 | [adr/FLUENCY-DATA-IMPLEMENTATION.md](adr/FLUENCY-DATA-IMPLEMENTATION.md) | Fluency data cloud upload — gap analysis and plan |
 | [adr/PR_SUMMARY.md](adr/PR_SUMMARY.md) | PR summary: comprehensive light theme support |
 | [adr/SQLITE-WAL-READS.md](adr/SQLITE-WAL-READS.md) | Why sql.js reads of data.db/opencode.db must merge pending WAL frames first |
+| [adr/ANALYSIS-WORKER.md](adr/ANALYSIS-WORKER.md) | Why session parsing and workspace scans run on worker threads, and how that is kept from regressing |
+| [adr/LOCALIZATION-ARCHITECTURE.md](adr/LOCALIZATION-ARCHITECTURE.md) | Repo-wide localization standard: the four runtime tiers and one source of truth |
+| [adr/INSIGHTS-CATALOG-LOCALIZATION.md](adr/INSIGHTS-CATALOG-LOCALIZATION.md) | How the Insights catalog is localized without giving up insightsEngine.ts's purity |
+| [adr/TOOL-EXECUTION-STATS.md](adr/TOOL-EXECUTION-STATS.md) | Per-tool failure counts and latency histograms (reliability, latency, MCP health, cost-vs-speed panels): data sources, additive design, phased plan |

@@ -3,7 +3,7 @@
 (Previously known as the "GitHub Copilot Token Tracker")
 ![AI Engineering Fluency](https://raw.githubusercontent.com/rajbos/ai-engineering-fluency/main/assets/AI%20Engineering%20Fluency%20-%20Transparent.png)
 
-Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Studio, and the command line. All data is read from local session logs — nothing leaves your machine unless you opt in to cloud sync.
+Track your GitHub Copilot token usage and AI Fluency across VS Code, Visual Studio, the GitHub Copilot app, and the command line. All data is read from local session logs — nothing leaves your machine unless you opt in to cloud sync, or ask an agent in the GitHub Copilot app about your stats (the numbers it reads are then sent to the model like any other tool result; see [what the agent sees](docs/copilot-app/README.md#what-you-get)).
 
 [![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml) [![Watch the Explainer Video](https://img.shields.io/badge/Watch-Explainer%20Video-FF0000?logo=youtube)](https://youtu.be/Odm3wNursCY)
 
@@ -123,6 +123,24 @@ npx @rajbos/ai-engineering-fluency stats
 ```
 
 📖 [Full CLI documentation](docs/cli/README.md)
+
+---
+
+### 🧩 GitHub Copilot app canvas
+
+A side-panel canvas for the GitHub Copilot app with your token usage, cost, sessions, usage charts and fluency score — styled like the VS Code extension and powered by the CLI over your local session logs. Ships as the `ai-fluency-canvas` Copilot plugin; click both buttons in order (each opens a form you confirm in the app).
+
+[![Step 1: Add marketplace](https://img.shields.io/badge/Step%201-Add%20marketplace-8957e5?logo=githubcopilot&logoColor=white)](https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Fmarketplace%2Fadd%3Fsource%3Drajbos%252Fai-engineering-fluency) [![Step 2: Install plugin](https://img.shields.io/badge/Step%202-Install%20plugin-8957e5?logo=githubcopilot&logoColor=white)](https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Finstall%3Fsource%3Dai-fluency-canvas%2540ai-engineering-fluency)
+
+```bash
+# Or with the Copilot CLI (the app shares the same ~/.copilot config)
+copilot plugin marketplace add rajbos/ai-engineering-fluency
+copilot plugin install ai-fluency-canvas@ai-engineering-fluency
+```
+
+Then ask the agent to "open the AI Engineering Fluency canvas".
+
+📖 [Copilot app canvas documentation](docs/copilot-app/README.md)
 
 ---
 

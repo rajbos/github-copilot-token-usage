@@ -16,8 +16,8 @@ The extension analyzes two types of log files:
 ## Session File Discovery
 
 ### Key Method: `getCopilotSessionFiles()`
-**Location**: `src/extension.ts` (lines 975-1073)
-**Helper Methods**: `getVSCodeUserPaths()` (lines 934-972), `scanDirectoryForSessionFiles()` (lines 1078-1110)
+**Location**: `src/extension.ts` (via `SessionDiscovery`)
+**Helper Methods**: `getVSCodeUserPaths()`, `scanDirectoryForSessionFiles()`
 
 This method discovers session files across all VS Code variants and locations:
 
@@ -46,19 +46,19 @@ This method discovers session files across all VS Code variants and locations:
 - **Remote/Server**: `~/.vscode-server/data/User`, `~/.vscode-server-insiders/data/User`
 
 ### Helper Method: `getVSCodeUserPaths()`
-**Location**: `src/extension.ts` (lines 934-972)
+**Location**: `src/extension.ts`
 
 Returns all possible VS Code user data paths for different variants and platforms.
 
 ### Helper Method: `scanDirectoryForSessionFiles()`
-**Location**: `src/extension.ts` (lines 1078-1110)
+**Location**: `src/extension.ts`
 
 Recursively scans directories for `.json` and `.jsonl` session files.
 
 ## Field Extraction Methods
 
 ### Parsing and Token Accounting: `parseSessionFileContent()`
-**Location**: `src/sessionParser.ts` (lines 184-347)
+**Location**: `src/sessionParser.ts`
 
 **Purpose**: Parses session files and returns tokens, interactions, model usage, and editor type-safe model IDs.
 
@@ -66,17 +66,17 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 1. Accepts raw file content along with callbacks for token estimation and model detection.
 2. Supports both `.json` (Copilot Chat) and `.jsonl` (CLI/agent) formats, including delta-based JSONL streams.
 3. Counts interactions (user messages), input tokens, and output tokens while grouping by model.
-4. Uses `estimateTokensFromText()` (lines 1139-1155 in `src/extension.ts`) for character-to-token estimation.
+4. Uses `estimateTokensFromText()` (in `src/extension.ts`) for character-to-token estimation.
 
 ### Model Detection Logic: `getModelFromRequest()`
-**Location**: `src/extension.ts` (lines 1102-1134)
+**Location**: `src/extension.ts`
 - Primary: `request.result.metadata.modelId`
 - Fallback: parses `request.result.details` for known model patterns
 - Detected patterns: GPT-3.5-Turbo, GPT-4 family (4, 4.1, 4o, 4o-mini, 5, o3-mini, o4-mini), Claude Sonnet (3.5, 3.7, 4), Gemini (2.5 Pro, 3 Pro, 3 Pro Preview); defaults to `gpt-4`
-- Display name mapping in `getModelDisplayName()` (lines 1778-1811) adds variants such as GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, and Raptor when present in `metadata.modelId`.
+- Display name mapping in `getModelDisplayName()` adds variants such as GPT-5 family, Claude Haiku, Claude Opus, Gemini 3 Flash, Grok, and Raptor when present in `metadata.modelId`.
 
 ### Editor Type Detection: `getEditorTypeFromPath()`
-**Location**: `src/extension.ts` (lines 111-143)
+**Location**: `src/extension.ts`
 
 **Purpose**: Determines which VS Code variant created the session file.
 
@@ -95,7 +95,7 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 ## Token Estimation Algorithm
 
 ### Character-to-Token Conversion: `estimateTokensFromText()`
-**Location**: `src/extension.ts` (lines 1139-1155)
+**Location**: `src/extension.ts`
 
 **Approach**: Uses model-specific character-to-token ratios
 - Default ratio: 0.25 (4 characters per token)
@@ -109,16 +109,16 @@ Recursively scans directories for `.json` and `.jsonl` session files.
 ## Caching Strategy
 
 ### Cache Structure: `SessionFileCache`
-**Location**: `src/extension.ts` (lines 72-77)
+**Location**: `src/extension.ts`
 
 Stores pre-calculated tokens, interactions, model usage, and file mtime to avoid re-processing unchanged files.
 
 ### Cache Methods:
-- `isCacheValid()` (lines 227-230): Validates cached entry by mtime
-- `getCachedSessionData()` (lines 232-234): Retrieves cached data
-- `setCachedSessionData()` (lines 236-254): Stores data with FIFO eviction after 1000 files
-- `clearExpiredCache()` (lines 250-264): Drops cache entries for missing files
-- `getSessionFileDataCached()` (lines 811-845): Reads session content, parses via `parseSessionFileContent()`, and caches results
+- `isCacheValid()`: Validates cached entry by mtime
+- `getCachedSessionData()`: Retrieves cached data
+- `setCachedSessionData()`: Stores data with FIFO eviction after 1000 files
+- `clearExpiredCache()`: Drops cache entries for missing files
+- `getSessionFileDataCached()`: Reads session content, parses via `parseSessionFileContent()`, and caches results
 
 ## Schema Documentation
 
@@ -278,7 +278,7 @@ Contains per-million-token costs for input and output:
 ```
 
 ### Cost Calculation: `calculateEstimatedCost()`
-**Location**: `src/extension.ts` (lines 776-802)
+**Location**: `src/extension.ts`
 
 **Formula:**
 - Input cost = `(inputTokens / 1_000_000) * inputCostPerMillion`
@@ -312,7 +312,12 @@ node .github/skills/copilot-log-analysis/get-session-files.js --verbose
 
 # JSON output for programmatic use
 node .github/skills/copilot-log-analysis/get-session-files.js --json
+
+# Print the home directory in full instead of as "~"
+node .github/skills/copilot-log-analysis/get-session-files.js --show-paths
 ```
+
+Paths are printed with the home directory replaced by `~`, so the output does not carry your OS user name. They still contain workspace hashes and session ids: review the output before pasting it into a public issue.
 
 **What it does:**
 - Scans all VS Code variants (Stable, Insiders, Cursor, VSCodium, etc.)
@@ -323,11 +328,11 @@ node .github/skills/copilot-log-analysis/get-session-files.js --json
 **Example output:**
 ```
 Platform: win32
-Home directory: C:\Users\YourName
+Home directory: ~
 
 VS Code installations found:
-  C:\Users\YourName\AppData\Roaming\Code\User
-  C:\Users\YourName\AppData\Roaming\Code - Insiders\User
+  ~\AppData\Roaming\Code\User
+  ~\AppData\Roaming\Code - Insiders\User
 
 Total session files found: 274
 
@@ -362,7 +367,12 @@ node .github/skills/copilot-log-analysis/diagnose-session-files.js
 
 # Verbose output with all file paths and details
 node .github/skills/copilot-log-analysis/diagnose-session-files.js --verbose
+
+# Print the home directory in full instead of as "~"
+node .github/skills/copilot-log-analysis/diagnose-session-files.js --show-paths
 ```
+
+As with Script 1, the home directory is shown as `~` by default; the remaining path segments (workspace hashes, session ids) are printed as-is, so review the output before sharing it publicly.
 
 **What it does:**
 - Discovers all session files across VS Code variants
@@ -390,8 +400,11 @@ node .github/skills/copilot-log-analysis/diagnose-session-files.js --verbose
 # Analyze session files and generate schema
 pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1
 
-# Specify custom output directory
-pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputPath ./output
+# Specify a custom output file
+pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputFile ./output/schema-analysis.json
+
+# Include up to 3 example values per field (private: write outside the repository)
+pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -IncludeExamples -OutputFile "$env:TEMP/schema-with-examples.json"
 ```
 
 **What it does:**
@@ -399,8 +412,10 @@ pwsh .github/skills/copilot-log-analysis/analyze-session-schema.ps1 -OutputPath 
 - Extracts and catalogs all field names and structures
 - Generates JSON schema documentation
 - Creates field analysis reports
-- Outputs to `docs/logFilesSchema/session-file-schema-analysis.json`
+- Outputs to `docs/logFilesSchema/session-file-schema-analysis.json` (a tracked file) unless `-OutputFile` is given
 - Documents field types, occurrences, and variations
+
+**Privacy:** by default the output holds field paths, types and counts only, plus JSONL event type names that look like identifiers. `-IncludeExamples` copies values verbatim from your session logs (prompts, titles, file paths, tool arguments) and prints a warning when it does. Never commit a file produced with `-IncludeExamples`, and never pass it with the default output path.
 
 **Note**: This script generates the `session-file-schema-analysis.json` file referenced in the Schema Documentation section below.
 ## Usage Examples
@@ -455,15 +470,15 @@ for (const file of sessionFiles) {
 **Location**: Throughout `src/extension.ts`
 
 Methods available:
-- `log(message)` (line 146): Info-level logging
-- `warn(message)` (line 151): Warning-level logging
-- `error(message, error?)` (line 156): Error-level logging
+- `log(message)`: Info-level logging
+- `warn(message)`: Warning-level logging
+- `error(message, error?)`: Error-level logging
 
 All logs go to "AI Engineering Fluency" output channel.
 
 ### Diagnostic Report Generation
 **Method**: `generateDiagnosticReport()`
-**Location**: `src/extension.ts` (lines 1813-2019)
+**Location**: `src/extension.ts`
 
 Creates comprehensive report including:
 - System information (OS, Node version, environment)

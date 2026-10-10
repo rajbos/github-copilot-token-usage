@@ -16,18 +16,24 @@ This document provides top-level guidance for AI agents contributing to this rep
 │                                    consumed by vscode-extension/ and cli/)
 ├── vscode-extension/            ← VS Code extension (TypeScript / Node.js)
 ├── cli/                         ← Command-line tool  (TypeScript / Node.js)
+├── copilot-app/                 ← GitHub Copilot app canvas, shipped as the `ai-fluency-canvas`
+│                                   Copilot plugin (plain Node .mjs, no build; runs the CLI)
 ├── visualstudio-extension/      ← Visual Studio extension (C# / .NET)
 ├── jetbrains-plugin/            ← JetBrains IDE plugin (Kotlin / Gradle / IntelliJ Platform)
 ├── desktop/                     ← Electron tray app; reuses vscode-extension's built
 │                                   webview bundles and cli/vscode-extension stats logic
 ├── sharing-server/              ← Self-hosted API server + web dashboard for sharing
 │                                   fluency data across a team (TypeScript, SQLite, Docker)
+├── release-video/               ← Local release-video generator: the What's New
+│                                   catalog + the visual-view-diff harness ->
+│                                   narrated MP4 (TypeScript, FFmpeg, local TTS)
 ├── scripts/                     ← Build/release/CI helper scripts (Node, PowerShell, Python)
 ├── omp-segment/                 ← Oh My Posh terminal prompt segment showing token usage
 ├── assets/                      ← Logos and other static brand assets
 ├── docs/                        ← Shared documentation
 └── .github/
     ├── copilot-instructions.md  ← Pointer to this file (`See ../AGENTS.md`)
+    ├── plugin/marketplace.json  ← Copilot plugin marketplace catalog (lists copilot-app/)
     └── instructions/
         ├── vscode-extension.instructions.md   ← VS Code extension guide
         ├── cli.instructions.md                ← CLI guide
@@ -124,18 +130,83 @@ If you find yourself adding a fallback like "if modelUsage is empty, call X" in 
 
 ## Coding Agent Data Sources
 
-When running as the GitHub Copilot Coding Agent (bootstrapped via `.github/workflows/copilot-setup-steps.yml`), additional data files may be available in the workspace root. These are downloaded from Azure Storage during the agent's setup phase and are **not** present in local development.
+When running as the GitHub Copilot Coding Agent (bootstrapped via `.github/workflows/copilot-setup-steps.yml`), additional data files may be available in the workspace root. They are fetched during the agent's setup phase (the first two from Azure Storage, the third from the GitHub API) and are **not** present in local development.
 
-- **`./session-logs/`**: Raw Copilot Chat session log files (last 7 days) from Azure Blob Storage.
+- **`./session-logs/`**: Raw session log files from every uploading editor (last 7 days) from Azure Blob Storage, as both `.json` and `.jsonl` (mostly `.jsonl`); `.editor-types.json` maps each file to its editor.
 - **`./usage-data/usage-agg-daily.json`**: Aggregated daily token usage data (last 30 days) from Azure Table Storage.
+- **`./usage-data/agent-sessions.json`**: Copilot cloud-agent session statistics for this repository, fetched from the **GitHub API** (not Azure Storage) by `scripts/fetch-agent-sessions.js` using the workflow's `GITHUB_TOKEN`; it is therefore present even when `COPILOT_STORAGE_ACCOUNT` is not configured.
 
-These files are only available when the repository's `copilot` GitHub environment has `COPILOT_STORAGE_ACCOUNT` configured. See the `session-log-data` skill in `.github/skills/session-log-data/SKILL.md` for data schemas, analysis examples, and cost estimation.
+These hydrated files are generated output, not source. `session-logs/` and `usage-data/` are git-ignored; **never commit or force-add them** to a PR (they are not on `main`).
+
+The session logs and aggregated usage data are only available when the repository's `copilot` GitHub environment has `COPILOT_STORAGE_ACCOUNT` configured. See the `session-log-data` skill in `.github/skills/session-log-data/SKILL.md` for data schemas, analysis examples, and cost estimation.
 
 To check if data is available:
 ```bash
 [ -d ./session-logs ] && echo "Session logs available"
 [ -f ./usage-data/usage-agg-daily.json ] && echo "Aggregated data available"
 ```
+
+### Code knowledge graph (graphify)
+
+`copilot-setup-steps.yml` also builds a graphify knowledge graph of the repository's
+code before the agent starts, at **`.graphify-agent/graph.json`** (order of
+10k nodes; the exact size tracks the repo, so don't read a precise figure into
+it). It needs no secrets — it is local AST parsing (`--code-only`).
+The build runs early — before the Azure session-log and usage-data hydration —
+so that graphify's dependency tree is installed and executed while there is no
+sensitive data on disk for a compromised wheel to read. The pinned Playwright
+install and Chromium download that the webview harnesses need sit in the same
+early slot for the same reason. That covers graphify and Playwright only: the
+azure-storage-loader's own npm dependencies and
+`scripts/fetch-agent-sessions.js` still run *after* those files exist, so this
+is one contained path rather than a supply-chain boundary for the whole job.
+The build is deliberately non-blocking (every step is `continue-on-error`),
+which is what lets it run first without a PyPI outage costing the hydration
+that follows. Treat the graph as normally available rather than guaranteed, and
+check for it before relying on it.
+
+Query it instead of fanning `grep`/read across the tree when the question is
+structural — what calls a symbol, what a change reaches, how two areas connect:
+
+```bash
+export GRAPHIFY_OUT=.graphify-agent          # or pass --graph .graphify-agent/graph.json
+
+graphify query "how does the CLI attribute per-model cost"   # BFS context for a question
+graphify explain "getModelUsageFromSession"                  # one node and its neighbors
+graphify affected "src/tokenEstimation.ts"                   # reverse traversal: blast radius
+graphify path "extension.ts" "modelPricing.json"             # shortest path between two nodes
+```
+
+Notes:
+- The graph covers **code only**. Docs, PDFs and images are skipped — semantic
+  extraction needs an LLM backend and an API key, which this setup deliberately
+  does not use. Read docs directly.
+- It is a snapshot from setup time. After large edits, refresh by re-running the
+  build: `GRAPHIFY_OUT=.graphify-agent graphify extract . --code-only --no-viz`
+  (also LLM-free). Do **not** use `graphify update .` for this: it honours
+  `GRAPHIFY_OUT` for the graph itself but still rewrites the committed
+  `graphify-out/cache/stat-index.json`, leaving a tracked modification behind.
+- Never build into the default `graphify-out/` — that directory's `manifest.json`
+  and `cache/` are committed, and a newer graphify prunes them as a stale version.
+- If `.graphify-agent/graph.json` is missing the build failed; fall back to
+  ordinary file search.
+
+## Agent Changes to CI and Agent Configuration Need a Human
+
+`.github/workflows/guard-agent-config.yml` fails a pull request that both
+(a) touches `.github/**`, `.claude/**`, `.devcontainer/**`, `AGENTS.md` or
+`CLAUDE.md`, and (b) looks agent-authored — an agent branch prefix
+(`claude/`, `copilot/`, `agent-review/`), a bot PR author other than
+dependabot or github-actions, or an AI `Co-authored-by:` trailer on any
+commit. That trailer match is not limited to Claude and Copilot — it also
+covers GPT, Codex, Gemini, Mistral, Vibe, Devin, Cursor and Aider, so do not
+read the two examples as the whole list.
+
+These are the files that decide what automation is allowed to do, so an agent
+must not be able to change them unattended. If your PR trips this check, that
+is the check working: say what you changed and why, and ask the maintainer to
+review those paths and add the `agent-config-approved` label. Do not try to
+route around it by renaming the branch or dropping the co-author trailer.
 
 ## Keep Claude Code's Mirrored Agents & Skills in Sync
 
@@ -161,17 +232,33 @@ updating this file's structure diagram and title in the same PR.** Concretely:
 - A product rename → update the H1 and any other name references here, the way
   `README.md`'s title and "Previously known as" line do.
 
+## Skill security classification
+
+Every skill under `.github/skills/<name>/` that ships scripts (`.js .mjs .cjs .ts .ps1 .sh .py`, excluding `tests/` directories and `*.test.*`/`*.spec.*` files) must be classified. It either carries a one-page `SECURITY.md` next to its `SKILL.md`, or it is declared `exempt` (with a reason) or `pending` (with a tracking issue number) in `.github/skills/skill-security-classification.json`. Never both. `scripts/validate-skill-security.js` enforces this over all skills in CI (`validate-skills.yml`) and fails the build otherwise.
+
+A skill needs a `SECURITY.md` when any shipped script:
+
+1. makes network requests;
+2. reads, stores or sends credentials, tokens or keys;
+3. parses content from outside the operator's control (downloads, PR diffs from forks, another repo's content);
+4. writes anywhere other than stdout or its declared output location;
+5. runs an external program with arguments or input derived from any of the above;
+6. emits content read from the user's AI session logs or home-directory data in a way that can carry private prompt text into a chat transcript, CI log, PR comment or tracked file. Output limited to counts, field paths, model IDs and file metadata, with values only behind an explicit opt-in flag, is exempt with the privacy note in the reason. Printing or persisting session-derived free text (titles, prompts, example values) by default is not.
+
+The `SECURITY.md` template is deliberately short. Required `##` sections: *What the scripts do and talk to*, *Credentials used and where they come from*, *Untrusted inputs parsed*, *What it writes and where*, *External programs run*, *Mitigations in the code*, *Known gaps*. Derive every statement from reading the scripts; write `None.` where a section does not apply. Do not invent threats or mitigations.
+
+When you add or change a skill script, classify it in the same PR. A change that adds or alters a trigger surface (a new network call, credential, output location, spawned program, or a new way session data reaches output) updates that skill's `SECURITY.md`, or moves it between exempt and modelled, in the same PR. `SECURITY.md` and the classification file live only under `.github/skills/`; they are not mirrored to `.claude/skills/`.
+
 ## DevContainer Terminal Behavior
 
 This repository uses a devcontainer (`.devcontainer/devcontainer.json`). When working inside the devcontainer, **terminal output capture is unreliable** — commands execute successfully but the `run_in_terminal` tool often returns empty or truncated output. This is a known limitation of the remote filesystem layer.
 
 ### What NOT to do
 
-Do not enter retry loops trying to capture terminal output. These patterns waste turns and never converge:
-- Running commands repeatedly hoping output will appear
-- Redirecting output to `/tmp/` files and using `read_file` to read them (the remote FS often fails on newly-written temp files)
-- Spawning background terminals with `sleep && tail` to poll for results
-- Delegating to subagents to "run tests in a clean way"
+Terminal output capture in this devcontainer is unreliable (remote filesystem
+limitation). Don't retry-loop, poll, redirect to temp files, or delegate to a
+subagent hoping for cleaner output — none of that converges. Use the npm
+scripts and `get_errors` below instead.
 
 ### What to do instead
 
@@ -213,11 +300,56 @@ normal suite. `check:interaction` renders the real bundles headlessly via the
 `visual-view-diff` harness — it never opens an editor window, so it is safe for
 agents to run (see "Never Launch a Real Editor/IDE Instance" above).
 
+### UI changes come with before/after screenshots
+
+A reviewer cannot judge a UI change from a diff of template strings. For any
+change that alters what a panel *looks like*, also run the visual diff and look
+at the result before opening the PR:
+
+```bash
+cd vscode-extension
+npm run visual:diff        # renders merge base vs working tree
+```
+
+The output lands at the **repository root**, in `visual-output/` (so
+`../visual-output/` from `vscode-extension/`). Read
+`visual-output/diff/report.md` there and the diff PNGs. The views you changed
+should show as changed and nothing else should — an unexpected "changed" row is
+a regression to fix before pushing, and an expected change showing as
+"unchanged" means the harness is not looking at what you built (see the next
+paragraph). Then, in the PR body, name the views and tabs you expect to change.
+
+CI posts the screenshots for you: the `ui-checks` job runs the same diff and
+attaches the before/after/diff images as one comment on the PR, replaced on
+every push (`gh pr comment --attach`, via
+`.github/workflows/scripts/visual-diff-comment.js`). Do not commit PNGs to the
+repo and do not try to upload images by hand; make the CI comment say what the
+PR body promised. Uploading needs a user token, so the workflow uses the
+`GH_PAT` secret and falls back to an image-free comment without it.
+
 **Adding a new webview panel means adding it to
 `.github/skills/visual-view-diff/views.config.json`**, with a fixture capturing
 its `__INITIAL_*__` payload. That one registry feeds the visual diff, the CI
 screenshots and the interaction crawl — a view missing from it is silently
-unvalidated by all three.
+unvalidated by all three. **Adding a tab or mode to an existing panel means
+adding a `state` for it** in the same file — the harness screenshots a view in
+its initial render plus its declared states only, so a new section on a tab
+with no state diffs as "unchanged" and ships without a screenshot.
+
+That registry now feeds a fourth consumer: `release-video/` screenshots each
+release's features by looking up the `view` and `tab` from its **What's New**
+catalog entry in this same file, where a `state` id *is* the `data-tab` value.
+A catalogued tab with no matching `state` does **not** fail the build: the
+video generator falls back to the convention every registered state already
+uses — click `.tab-button[data-tab="…"]`, expect `#tab-panel-…`. That fallback
+exists because a panel's *initial* tab is deliberately absent from `states`
+(the harness captures the initial render separately), and several older
+catalog entries point at exactly such a tab. What still fails, hard, is a tab
+that cannot actually be opened — which is the guarantee that matters, since
+the alternative is a release video that silently shows the wrong screen.
+
+Registering a state is still worth doing: it is what gets the tab into the
+visual diff, the CI screenshots and the interaction crawl.
 
 The full picture of what each check catches, and the one-command release
 preflight, is in [docs/VALIDATION.md](docs/VALIDATION.md).
@@ -229,3 +361,13 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 ## File-size ceiling (`max-lines`)
 
 `vscode-extension/eslint.config.mjs` enforces `"max-lines": ["warn", { max: 6000, ... }]` alongside the existing complexity rules. The per-function rules (`max-lines-per-function`, `complexity`, `sonarjs/cognitive-complexity`) were all satisfied while `vscode-extension/src/extension.ts` grew to 12,332 lines and 553 methods — proof that small functions alone don't stop a file from becoming unmanageable. New code should not push any linted file past 6000 lines; if you're about to, split it instead. `extension.ts` is today's sole (known) outlier, and stays that way on purpose until it's decomposed — see `docs/adr/EXTENSION-TS-DECOMPOSITION.md` for the extraction plan. Ratchet the 6000 number down as files shrink; don't raise it to accommodate growth.
+
+## Pre-PR self-review checklist
+
+A reviewer that flags one case of a bug will keep finding the next adjacent
+case if the fix addresses only the cited instance instead of the whole class.
+
+Before pushing a fix for review feedback, agents must:
+
+- **Close the whole class, not just the cited instance.** When a review comment flags one case of a bug (one race condition, one edge case, one unguarded call site), explicitly enumerate the full set of cases/call-sites/interleavings/state transitions that issue belongs to (e.g. every `await` point in the same state machine where a concurrent clear/write/reset could interleave), and fix all of them in that same pass — not just the one instance the reviewer pointed at.
+- **Batch a full round into one push.** Before pushing, collect and address every currently-open review comment together, then push once for that round. Don't push a commit per individual fix as each comment trickles in — that's what turns a handful of review rounds into a dozen.

@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
 import { getNonce } from '../utils/webviewUtils';
+import { readExplicitSharingProfile } from './settings';
+import { applySettingsAtomically } from './settingsBatch';
+import { inferSharingProfile } from './settingsValidation';
+import type { BackendUserIdentityMode } from './identity';
 
 export class TeamServerConfigPanel implements vscode.Disposable {
 	private static current: TeamServerConfigPanel | undefined;
@@ -43,7 +47,16 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
 		const enabled: boolean = config.get<boolean>('backend.sharingServer.enabled', false);
 		const endpointUrl: string = config.get<string>('backend.sharingServer.endpointUrl', '');
-		const sharingProfile: string = config.get<string>('backend.sharingProfile', 'off');
+		// Preselect the explicit profile, or — when none is set — what an enabled Team Server infers
+		// (the same inference getBackendSettings applies, including legacy shareWithTeam). Reading
+		// get()'s 'off' default here would make an unchanged save persist an explicit 'off' and
+		// silently disable uploads.
+		const sharingProfile: string = readExplicitSharingProfile(config) ?? inferSharingProfile(
+			undefined,
+			true,
+			config.get<boolean>('backend.shareWithTeam', false),
+			config.get<BackendUserIdentityMode>('backend.userIdentityMode', 'pseudonymous'),
+		);
 
 		this.panel = vscode.window.createWebviewPanel(
 			'copilotTeamServerConfig',
@@ -85,10 +98,22 @@ export class TeamServerConfigPanel implements vscode.Disposable {
 		const validProfiles = ['off', 'soloFull', 'teamAnonymized', 'teamPseudonymous', 'teamIdentified'];
 		const safeProfile = validProfiles.includes(sharingProfile) ? sharingProfile : 'off';
 
+		// Every settings write triggers a sync, and the sharing profile is shared with Azure, so the
+		// writes are applied as one batch: the settings-change sync runs once, after the last write,
+		// never against a half-applied configuration. The order is also safe on its own (Team
+		// Server off, then profile, endpoint, and on last) as a second line of defence.
 		const config = vscode.workspace.getConfiguration('aiEngineeringFluency');
-		await config.update('backend.sharingServer.enabled', enabled, vscode.ConfigurationTarget.Global);
-		await config.update('backend.sharingServer.endpointUrl', endpointUrl, vscode.ConfigurationTarget.Global);
-		await config.update('backend.sharingProfile', safeProfile, vscode.ConfigurationTarget.Global);
+		const target = vscode.ConfigurationTarget.Global;
+		await applySettingsAtomically(async () => {
+			if (!enabled || config.get<boolean>('backend.sharingServer.enabled', false)) {
+				await config.update('backend.sharingServer.enabled', false, target);
+			}
+			await config.update('backend.sharingProfile', safeProfile, target);
+			await config.update('backend.sharingServer.endpointUrl', endpointUrl, target);
+			if (enabled) {
+				await config.update('backend.sharingServer.enabled', true, target);
+			}
+		});
 
 		vscode.window.showInformationMessage('Team Server configuration saved.');
 		this.panel?.dispose();

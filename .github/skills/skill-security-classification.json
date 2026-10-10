@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "skills": {
+    "discover-debug-log-schema": {
+      "status": "exempt",
+      "reason": "Read-only. Reads VS Code Copilot Chat debug logs under the user's home/AppData, makes no network calls, runs no programs and writes nothing. Privacy note (trigger 6): by default it prints only field paths, types, counts and model IDs; field values (which can hold prompts and paths) appear only behind the explicit --include-examples flag, so the default output is safe to paste into a chat or CI log."
+    },
+    "validate-app-db-schema": {
+      "status": "exempt",
+      "reason": "Read-only. Opens ~/.copilot/data.db in memory via sql.js, runs fixed queries, makes no network calls, runs no programs and writes nothing. Privacy note (trigger 6): it prints table/column names, counts and at most 3 parent/child workspace names from the last 24 hours (workspaces.name); that is a bounded sample of one short label, not raw records, but treat the output as home-directory data before pasting it anywhere public."
+    },
+    "validate-editor-names": {
+      "status": "exempt",
+      "reason": "Repo-only. Regex-parses checked-out TypeScript (cli/src/analysis.ts, src/workspaceHelpers.ts, vscode-extension/src/editorIcons.ts), prints to stdout; no network, no child processes, no writes, no home-directory data."
+    },
+    "validate-model-pricing": {
+      "status": "exempt",
+      "reason": "Read-only. Scans local session logs and debug logs only to extract model ID strings and compares them with src/modelPricing.json; no network, no child processes, no writes. Privacy note (trigger 6): the output contains model IDs, platform names and file counts only, no prompt text, titles or per-session paths (model IDs are copied verbatim from log fields)."
+    },
+    "refresh-json-data": {
+      "status": "exempt",
+      "reason": "Repo-only. validate-json.js only reads and JSON-parses src/tokenEstimators.json and src/modelPricing.json and prints to stdout; no network, no child processes, no writes. (The data refresh itself is agent-driven via SKILL.md, not scripted.)"
+    },
+    "improve-tool-families": {
+      "status": "exempt",
+      "reason": "Repo-only. Reads src/toolNames.json and vscode-extension/src/toolFamilies.ts, prints suggestions to stdout; no network, no child processes, no writes, no home-directory data. It eval()s the DEFAULT_TOOL_FAMILIES array literal from the checked-out source, so run it on a trusted checkout only, not on an unreviewed fork's tree."
+    },
+    "scan-hardcoded-strings": {
+      "status": "exempt",
+      "reason": "Repo-only. Regex-scans vscode-extension/src/webview/** and extension.ts, prints to stdout and writes one Markdown report to its declared location (default hardcoded-strings-report.md, overridable with --out); no network, no child processes, no home-directory data."
+    },
+    "whats-new-catalog": {
+      "status": "exempt",
+      "reason": "Repo-only. Reads repo files and prints to stdout; no network, no child processes, no writes, no home-directory data. It transpiles vscode-extension/src/whatsNew/catalog.ts with the checked-out TypeScript and runs the result in a node:vm context (not a security boundary), so run it on a trusted checkout only."
+    }
+  }
+}

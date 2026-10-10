@@ -1,0 +1,29 @@
+# Top-level input for graphify.txt, the hash-pinned install set for graphify
+# (PyPI distribution: graphifyy) used by .github/workflows/copilot-setup-steps.yml.
+#
+# graphify.txt is GENERATED from this file - never hand-edit it. Regenerate on
+# Linux with the interpreter the setup step uses (CPython 3.12), deleting the
+# old output first - pip-compile otherwise reuses the existing hashes of any pin
+# whose version did not change, stale or not:
+#   rm .github/requirements/graphify.txt
+#   docker run --rm -v "$PWD/.github/requirements:/req" -w /req python:3.12 \
+#     sh -c 'pip install -q "pip-tools>=7.6" "click<8.2" && pip-compile \
+#       --generate-hashes --allow-unsafe --strip-extras \
+#       --output-file=graphify.txt graphify.in'
+#
+# Keep click below 8.2: with newer click, pip-compile writes a "--no-index" it
+# was never given into the header's recorded command, and replaying that
+# command can no longer reach PyPI. check-pip-requirements.yml rejects it.
+#
+# Keeping it a pip-compile pair is what lets Dependabot maintain it: on a bump it
+# re-runs pip-compile from the header graphify.txt records, so every hash and
+# every transitive pin is re-resolved together. Hand-written hash files only get
+# a per-line rewrite, which drifted out of sync twice (see
+# .github/workflows/check-pip-requirements.yml, which now catches that).
+#
+# Do NOT write a "<package>==<version>" pin anywhere in a comment in this file or
+# in graphify.txt. Dependabot's requirement parser matches comment text too: it
+# took a pin quoted in the old header for the real declaration, bumped the
+# version everywhere and left the hash belonging to the old wheel.
+
+graphifyy==0.9.75

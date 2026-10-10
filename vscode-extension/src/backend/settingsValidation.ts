@@ -8,18 +8,22 @@ import { type ValidationResult, validResult, invalidResult } from './validation'
  * profile value has been persisted.
  *
  * Priority: explicit `parsedSharingProfile` wins; otherwise derive from
- * `backendEnabled`, `shareWithTeam`, and `userIdentityMode`.
+ * `uploadEnabled`, `shareWithTeam`, and `userIdentityMode`.
+ *
+ * `uploadEnabled` is true when *any* upload target is switched on — Azure Storage
+ * (`backend.enabled`) or the Team Server (`backend.sharingServer.enabled`). The two are
+ * independent, so a Team Server-only user must not be inferred as `off`.
  */
 export function inferSharingProfile(
 	parsedSharingProfile: BackendSharingProfile | undefined,
-	backendEnabled: boolean,
+	uploadEnabled: boolean,
 	shareWithTeam: boolean,
 	userIdentityMode: BackendUserIdentityMode
 ): BackendSharingProfile {
 	if (parsedSharingProfile !== undefined) {
 		return parsedSharingProfile;
 	}
-	if (!backendEnabled) {
+	if (!uploadEnabled) {
 		return 'off';
 	}
 	if (shareWithTeam && userIdentityMode !== 'pseudonymous') {

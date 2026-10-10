@@ -25,6 +25,7 @@ test('Commands should be registered', async () => {
 		'aiEngineeringFluency.showDetails',
 		'aiEngineeringFluency.showChart',
 		'aiEngineeringFluency.showMaturity',
+		'aiEngineeringFluency.showReadiness',
 		'aiEngineeringFluency.showFluencyLevelViewer',
 		'aiEngineeringFluency.runLocalViewRegression',
 		'aiEngineeringFluency.generateDiagnosticReport'

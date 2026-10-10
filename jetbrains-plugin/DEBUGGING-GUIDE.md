@@ -49,12 +49,18 @@ To enable plugin DEBUG logging, in the sandbox IDE:
 
 ## Common issues
 
-### "Tool window is missing entirely"
+### "Embedded browser unavailable"
 
-The factory's `shouldBeAvailable` requires `JBCefApp.isSupported()`. If JCEF
-isn't bundled with the JBR shipped by your IDE (rare on 2024.3+), the tool
-window is hidden by design. Switch to a JetBrains-bundled JBR via
+If JCEF isn't bundled with the JBR used by your IDE, the tool window displays
+an explanation instead of initializing the browser. Switch to a JetBrains-bundled JBR via
 `Help → Find Action → Choose Boot Java Runtime for the IDE`.
+
+On IntelliJ Platform 2026.2+, JCEF is isolated behind the bundled
+`com.intellij.modules.jcef` plugin. The plugin descriptor must keep its optional
+classloader dependency on that module; without it, tool-window initialization
+fails with `NoClassDefFoundError: com/intellij/ui/jcef/JBCefApp`. It is optional
+because IntelliJ Platform 2024.3 still exposes JCEF from the core platform and
+does not provide that plugin ID.
 
 ### "Bundled CLI not found at classpath:/cli-bundle/…"
 

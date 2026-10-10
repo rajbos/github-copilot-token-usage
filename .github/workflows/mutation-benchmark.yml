@@ -228,9 +228,13 @@ jobs:
         # --allow-all-tools (not --allow-all): the agent only needs workspace
         # file access and shell tools (gh), so don't grant --allow-all-paths
         # or --allow-all-urls (least privilege).
-        COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
-        npx @github/copilot \
-          -p "$COPILOT_PROMPT_TEXT" \
+        #
+        # The prompt is piped via stdin rather than passed to -p/--prompt:
+        # the prompt file's content starts with YAML frontmatter ("---"),
+        # and the Copilot CLI's arg parser misreads a -p value starting
+        # with "-" as another flag, failing with "Invalid command format."
+        # even though the shell quoting is correct. Stdin has no such issue.
+        cat /tmp/copilot-prompt.md | npx @github/copilot \
           --silent \
           --allow-all-tools \
           --add-dir "${GITHUB_WORKSPACE}" \

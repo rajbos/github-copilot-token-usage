@@ -4,6 +4,7 @@
  */
 
 import * as vscode from 'vscode';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -11,9 +12,9 @@ import { DefaultAzureCredential } from '@azure/identity';
 import { safeStringifyError } from '../../../../src/utils/errors';
 import type { DailyRollupKey } from '../rollups';
 import { upsertDailyRollup } from '../rollups';
-import type { BackendSettings } from '../settings';
+import { resolveSyncTargets, type BackendSettings } from '../settings';
 import { BACKEND_SYNC_MIN_INTERVAL_MS } from '../constants';
-import type { DailyRollupValue, ChatRequest, SessionFileCache, ModelUsage } from '../types';
+import type { DailyRollupValue, ChatRequest, SessionFileCache, ModelUsage, SyncResult, SyncTargetOutcome } from '../types';
 import { resolveUserIdentityForSync, type BackendUserIdentityMode } from '../identity';
 import { computeBackendSharingPolicy, hashMachineIdForTeam, hashWorkspaceIdForTeam } from '../sharingProfile';
 import { createDailyAggEntity, type BackendAggDailyEntityLike } from '../storageTables';
@@ -28,6 +29,81 @@ import { getEditorTypeFromPath, refineEditorLabelForInteractionModeSplit } from 
 
 /** Ecosystem session per-model usage entry (input, output, optional interactions). */
 type ModelUsageEntry = { inputTokens: number; outputTokens: number; interactions?: number };
+
+/**
+ * True when a parsed JSON value is a plain object usable as a session record.
+ * Arrays are rejected: `typeof [] === 'object'`, so a bare `[]` line would
+ * otherwise read as a valid record with no usage on it and a file of such
+ * lines would look like a genuinely empty scan rather than a failed one.
+ */
+function isEventRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Canonical form of a Team Server endpoint URL: lower-cased origin plus path without trailing
+ * slashes. The upload service strips a trailing slash before posting, so `https://x` and
+ * `https://x/` hit the same endpoint and must share one cross-window lock.
+ */
+export function canonicalTeamServerUrl(url: string): string {
+	const trimmed = url.trim();
+	try {
+		const parsed = new URL(trimmed);
+		return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+	} catch {
+		return trimmed.replace(/\/+$/, '');
+	}
+}
+
+/** Canonical lock identity for each sync target; also what the lock file records as its server URL. */
+export function syncTargetLockToken(kind: 'azure' | 'sharingserver', endpoint: string): string {
+	return kind === 'azure' ? `azure:${endpoint.trim().toLowerCase()}` : `share:${canonicalTeamServerUrl(endpoint)}`;
+}
+
+/**
+ * Lock files written by extension versions before per-endpoint locks. Their recorded server URL
+ * is a `|`-joined list of the targets that window was syncing (`azure:<account>|share:<url>`).
+ * While an older window may still be running, a live lock there that covers a target blocks it.
+ */
+const LEGACY_SYNC_LOCK_NAMES: ReadonlyArray<string | undefined> = [undefined, 'sharingserver'];
+
+/** Whether a legacy lock's recorded server URL covers `token`. Unknown formats are treated as covering. */
+export function legacyLockCoversTarget(lockServerUrl: string | undefined, token: string): boolean {
+	if (!lockServerUrl) { return true; }
+	return lockServerUrl.split('|').some(part => {
+		if (part.startsWith('azure:')) { return syncTargetLockToken('azure', part.slice('azure:'.length)) === token; }
+		if (part.startsWith('share:')) { return syncTargetLockToken('sharingserver', part.slice('share:'.length)) === token; }
+		return true;
+	});
+}
+
+/**
+ * Lock name for one sync target endpoint: its kind plus a stable hash of the endpoint. One lock
+ * file per endpoint means a window syncing to server A can never make two windows syncing to
+ * server B skip serialization (which a single per-kind file, overwritten by A, would allow).
+ */
+export function targetSyncLockName(kind: 'azure' | 'sharingserver', endpoint: string): string {
+	return `${kind}_${createHash('sha256').update(endpoint).digest('hex').slice(0, 16)}`;
+}
+
+/**
+ * The workspace/machine IDs to upload for a rollup key under a sharing policy: HMAC-hashed per
+ * dataset for team profiles, raw for soloFull. Every upload target (Azure rows, backfill, Team
+ * Server entries) must go through this so no profile leaks raw IDs to one target but not another.
+ */
+export function applyIdStrategies(
+	key: { workspaceId: string; machineId: string },
+	datasetId: string,
+	policy: Pick<ReturnType<typeof computeBackendSharingPolicy>, 'workspaceIdStrategy' | 'machineIdStrategy'>,
+): { workspaceId: string; machineId: string } {
+	return {
+		workspaceId: policy.workspaceIdStrategy === 'hashed' ? hashWorkspaceIdForTeam({ datasetId, workspaceId: key.workspaceId }) : key.workspaceId,
+		machineId: policy.machineIdStrategy === 'hashed' ? hashMachineIdForTeam({ datasetId, machineId: key.machineId }) : key.machineId,
+	};
+}
+
+/** Logged when neither Azure Storage nor the Team Server is switched on and configured. */
+const NO_SYNC_TARGET_REASON = 'no sync target enabled: Azure Storage needs backend.enabled plus Azure settings; Team Server needs backend.sharingServer.enabled plus an endpoint URL';
 
 /**
  * Pure consent-timestamp parser — no side effects.
@@ -118,7 +194,7 @@ export interface SyncServiceDeps {
  */
 export class SyncService {
 	private backendSyncInProgress = false;
-	private syncQueue = Promise.resolve();
+	private syncQueue: Promise<unknown> = Promise.resolve();
 	private backendSyncInterval: NodeJS.Timeout | undefined;
 	private consecutiveFailures = 0;
 	private readonly MAX_CONSECUTIVE_FAILURES = 5;
@@ -149,32 +225,32 @@ export class SyncService {
 	 * *different* server URL, the lock does not apply — both instances are
 	 * syncing to independent endpoints and should not block each other.
 	 */
-	private async acquireSyncLock(backend?: string, serverUrl?: string): Promise<boolean> {
-		return this.syncLock.acquire(backend, serverUrl);
+	private async acquireSyncLock(lockName?: string, serverUrl?: string): Promise<boolean> {
+		return this.syncLock.acquire(lockName, serverUrl);
 	}
 
 	/**
 	 * Release the sync lock, but only if we own it.
 	 */
-	private async releaseSyncLock(backend?: string): Promise<void> {
-		return this.syncLock.release(backend);
+	private async releaseSyncLock(lockName?: string): Promise<void> {
+		return this.syncLock.release(lockName);
 	}
 
 	/**
 	 * Determine whether the sync timer is allowed to start, logging the reason when it isn't.
 	 */
 	private _canStartSyncTimer(settings: BackendSettings, isConfigured: boolean): boolean {
-		const sharingPolicy = computeBackendSharingPolicy({
-			enabled: settings.enabled,
-			profile: settings.sharingProfile,
-			shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
-		});
-		if (!sharingPolicy.allowCloudSync) {
+		if (settings.sharingProfile === 'off') {
 			this.deps.logger.log(`Backend sync: not starting timer (cloud sync disabled, profile: ${settings.sharingProfile})`);
 			return false;
 		}
 		if (!isConfigured) {
 			this.deps.logger.log('Backend sync: not starting timer (backend not configured)');
+			return false;
+		}
+		const targets = resolveSyncTargets(settings);
+		if (!targets.azure && !targets.sharingServer) {
+			this.deps.logger.log(`Backend sync: not starting timer (${NO_SYNC_TARGET_REASON})`);
 			return false;
 		}
 		return true;
@@ -262,7 +338,7 @@ export class SyncService {
 	/**
 	 * Get the current sync queue promise (for testing).
 	 */
-	getSyncQueue(): Promise<void> {
+	getSyncQueue(): Promise<unknown> {
 		return this.syncQueue;
 	}
 
@@ -289,16 +365,25 @@ sessionFile: string,
 fileMtimeMs: number,
 startMs: number,
 now: Date
-): Map<string, Map<string, number>> {
+): Map<string, Map<string, number>> | null {
 const dayModelInteractions = new Map<string, Map<string, number>>();
 const lines = content.trim().split('\n');
 const todayKey = this.utility.toUtcDayKey(now);
 let lineCount = 0;
 let processedLines = 0;
+const failures = { count: 0 };
 for (const line of lines) {
 lineCount++;
 if (!line.trim()) { continue; }
-processedLines = this.processCliJsonlLine(line, fileMtimeMs, startMs, todayKey, sessionFile, lineCount, processedLines, dayModelInteractions);
+processedLines = this.processCliJsonlLine(line, fileMtimeMs, startMs, todayKey, sessionFile, lineCount, processedLines, dayModelInteractions, failures);
+}
+// Any unreadable line means this file's usage is not fully represented here.
+// Returning null makes the caller fall through to the raw-content parser, which
+// counts the file towards filesFailed; swallowing it would let a malformed
+// session look like a clean, empty scan on the cached path.
+if (failures.count > 0) {
+this.deps.logger.warn(`Backend sync: ${failures.count} unreadable line(s) in ${sessionFile} — re-reading without the cache`);
+return null;
 }
 return dayModelInteractions;
 }
@@ -311,11 +396,12 @@ todayKey: string,
 sessionFile: string,
 lineCount: number,
 processedLines: number,
-dayModelInteractions: Map<string, Map<string, number>>
+dayModelInteractions: Map<string, Map<string, number>>,
+failures: { count: number }
 ): number {
 try {
 const event = JSON.parse(line);
-if (!event || typeof event !== 'object') { return processedLines; }
+if (!isEventRecord(event)) { failures.count++; return processedLines; }
 const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
 const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
 if (!eventMs || eventMs < startMs) { return processedLines; }
@@ -329,7 +415,7 @@ if (!dayModelInteractions.has(dayKey)) { dayModelInteractions.set(dayKey, new Ma
 const dayMap = dayModelInteractions.get(dayKey)!;
 dayMap.set(model, (dayMap.get(model) || 0) + 1);
 } catch {
-// skip malformed line
+failures.count++;
 }
 return processedLines;
 }
@@ -342,29 +428,55 @@ private buildDayModelInteractionsFromDeltaJsonl(
 content: string,
 fileMtimeMs: number,
 startMs: number
-): Map<string, Map<string, number>> {
+): Map<string, Map<string, number>> | null {
 const dayModelInteractions = new Map<string, Map<string, number>>();
 let defaultModel = 'unknown';
 const seenRequestIds = new Set<string>();
 const lines = content.trim().split('\n');
+let failures = 0;
 for (const line of lines) {
 if (!line.trim()) { continue; }
 try {
 const event = JSON.parse(line);
-if (!event || typeof event !== 'object') { continue; }
+if (!isEventRecord(event)) { failures++; continue; }
 defaultModel = this.updateDeltaDefaultModel(event, defaultModel);
-if (event.kind === 2 && Array.isArray(event.k) && event.k[0] === 'requests' && Array.isArray(event.v)) {
-this.processDeltaRequests(event.v, defaultModel, seenRequestIds, fileMtimeMs, startMs, dayModelInteractions);
+const payload = this.readDeltaRequestsPayload(event);
+if (payload === 'malformed') {
+failures++;
+} else if (payload !== 'not-requests') {
+failures += this.processDeltaRequests(payload, defaultModel, seenRequestIds, fileMtimeMs, startMs, dayModelInteractions);
 }
 } catch {
-// skip malformed lines
+failures++;
 }
 }
+// Same contract as the other cached parsers: an unreadable line means this file
+// cannot be reported as cleanly empty, so defer to the failure-aware parser.
+if (failures > 0) { return null; }
 return dayModelInteractions;
 }
 
-private updateDeltaDefaultModel(event: any, defaultModel: string): string {
-if (event.kind === 0) {
+/**
+ * Classify a delta event's `requests` payload so the cached and raw parsers
+ * cannot disagree about the same event.
+ *
+ * Returns the entries when the event replaces the whole `requests` array,
+ * 'not-requests' when it targets something else, and 'malformed' when it
+ * targets the whole array but carries a value that cannot be read. That last
+ * case used to be silently ignored, so a file of nothing but
+ * `{"kind":2,"k":["requests"],"v":null}` produced an empty map on both paths,
+ * left filesFailed at zero, and let the no-data branch advance the marker.
+ *
+ * Nested updates (`k.length > 1`, e.g. `['requests', 0, 'response']`) legitimately
+ * carry non-array values, so only the top-level path can be malformed.
+ */
+private readDeltaRequestsPayload(event: any): unknown[] | 'not-requests' | 'malformed' {
+if (event.kind !== 2 || !Array.isArray(event.k) || event.k[0] !== 'requests') { return 'not-requests'; }
+if (Array.isArray(event.v)) { return event.v; }
+return event.k.length === 1 ? 'malformed' : 'not-requests';
+}
+
+private updateDeltaDefaultModel(event: any, defaultModel: string): string {if (event.kind === 0) {
 const modelId = this.extractModelIdFromKind0Event(event);
 if (modelId) { return (modelId as string).replace(/^copilot\//, ''); }
 }
@@ -392,15 +504,31 @@ seenRequestIds: Set<string>,
 fileMtimeMs: number,
 startMs: number,
 dayModelInteractions: Map<string, Map<string, number>>
-): void {
+): number {
+let failed = 0;
 for (const request of requests) {
-const req = request as ChatRequest;
+// A delta payload entry that is not an object carries no usage and cannot be
+// read; counting it keeps this in step with the raw-content delta parser.
+if (!isEventRecord(request)) { failed++; continue; }
+this.upsertDeltaRequest(request as ChatRequest, defaultModel, seenRequestIds, fileMtimeMs, startMs, dayModelInteractions);
+}
+return failed;
+}
+
+private upsertDeltaRequest(
+req: ChatRequest,
+defaultModel: string,
+seenRequestIds: Set<string>,
+fileMtimeMs: number,
+startMs: number,
+dayModelInteractions: Map<string, Map<string, number>>
+): void {
 const reqId = (req as any).requestId as string | undefined;
-if (reqId && seenRequestIds.has(reqId)) { continue; }
+if (reqId && seenRequestIds.has(reqId)) { return; }
 if (reqId) { seenRequestIds.add(reqId); }
 const normalizedTs = this.utility.normalizeTimestampToMs(req.timestamp);
 const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-if (!eventMs || eventMs < startMs) { continue; }
+if (!eventMs || eventMs < startMs) { return; }
 const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 const rawModel = (req as any).modelId || (req as any).result?.metadata?.modelId;
 const model = rawModel ? (rawModel as string).replace(/^copilot\//, '') : defaultModel;
@@ -408,11 +536,12 @@ if (!dayModelInteractions.has(dayKey)) { dayModelInteractions.set(dayKey, new Ma
 const dayMap = dayModelInteractions.get(dayKey)!;
 dayMap.set(model, (dayMap.get(model) ?? 0) + 1);
 }
-}
 
 /**
  * Build day→model interaction counts from regular JSON session format.
- * Returns null if JSON parsing fails (logs a warning internally).
+ * Returns null if the document cannot be read as a session: unparseable JSON, a
+ * missing `requests` array, or any malformed record inside it. The caller treats
+ * null as a cache miss and falls through to the failure-aware parser.
  */
 private buildDayModelInteractionsFromJson(
 content: string,
@@ -422,13 +551,26 @@ sessionFile: string
 ): Map<string, Map<string, number>> | null {
 try {
 const sessionJson = JSON.parse(content);
-if (!sessionJson || typeof sessionJson !== 'object') {
+if (!isEventRecord(sessionJson)) {
 return null;
 }
 const sessionObj = sessionJson as Record<string, unknown>;
-const requests = Array.isArray(sessionObj.requests) ? (sessionObj.requests as unknown[]) : [];
+// Mirrors processJsonSessionFallback: a document with no `requests` array is one
+// we cannot extract usage from, so it must not be reported as cleanly empty.
+if (!Array.isArray(sessionObj.requests)) {
+this.deps.logger.warn(`Backend sync: cached session file has no "requests" array: ${sessionFile}`);
+return null;
+}
+const requests = sessionObj.requests as unknown[];
 const dayModelInteractions = new Map<string, Map<string, number>>();
 for (const request of requests) {
+// processJsonSessionFallback rejects malformed request records, so this path has
+// to as well: casting `[]` or `"bad"` to a ChatRequest yields no usable fields and
+// silently produced an empty, successful-looking map.
+if (!isEventRecord(request)) {
+this.deps.logger.warn(`Backend sync: malformed request record in cached session ${sessionFile}`);
+return null;
+}
 const req = request as ChatRequest;
 const normalizedTs = this.utility.normalizeTimestampToMs(
 typeof req.timestamp !== 'undefined' ? req.timestamp : (sessionObj.lastMessageDate as unknown)
@@ -788,9 +930,9 @@ return this.buildDayModelInteractionsFromJson(content, fileMtimeMs, startMs, ses
 
 	private extractJsonFieldsFluency(analysis: any): any {
 		const result: any = {};
-		if (analysis.toolCalls) { result.toolCallsJson = JSON.stringify(analysis.toolCalls); }
+		if (analysis.toolCalls) { result.toolCallsJson = JSON.stringify(stripLatencyHistograms(analysis.toolCalls)); }
 		if (analysis.contextReferences) { result.contextRefsJson = JSON.stringify(analysis.contextReferences); }
-		if (analysis.mcpTools) { result.mcpToolsJson = JSON.stringify(analysis.mcpTools); }
+		if (analysis.mcpTools) { result.mcpToolsJson = JSON.stringify(stripLatencyHistograms(analysis.mcpTools)); }
 		if (analysis.modelSwitching) { result.modelSwitchingJson = JSON.stringify(analysis.modelSwitching); }
 		if (analysis.agentTypes) { result.agentTypesJson = JSON.stringify(analysis.agentTypes); }
 		if (analysis.sessionDuration) { result.sessionDurationJson = JSON.stringify(analysis.sessionDuration); }
@@ -954,6 +1096,13 @@ return { inputTokens, outputTokens };
  * Process the fallback JSONL content when cached data is unavailable.
  * Handles both VS Code delta-based and Copilot CLI JSONL formats, computing tokens directly.
  */
+/**
+ * Roll up a JSONL session file.
+ *
+ * Returns the number of lines that could not be parsed or processed. Zero means
+ * the file was read cleanly — which is different from it producing no rollups,
+ * since a valid session file can legitimately contain no billable activity.
+ */
 private processJsonlSessionFallback(
 content: string,
 sessionFile: string,
@@ -964,15 +1113,17 @@ machineId: string,
 userId: string | undefined,
 editorForFile: string | undefined,
 rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>
-): void {
+): number {
 const isVsCodeFormat = this.detectFallbackFormat(content);
 const lines = content.trim().split('\n');
 const ctx = { workspaceId, machineId, userId, editorForFile, rollups };
-if (isVsCodeFormat) {
-this.runVsCodeDeltaFallback(lines, fileMtimeMs, startMs, ctx);
-} else {
-this.runCliJsonlFallback(lines, fileMtimeMs, startMs, ctx);
+const failedLines = isVsCodeFormat
+? this.runVsCodeDeltaFallback(lines, fileMtimeMs, startMs, ctx)
+: this.runCliJsonlFallback(lines, fileMtimeMs, startMs, ctx);
+if (failedLines > 0) {
+this.deps.logger.warn(`Backend sync: ${failedLines} unparseable line(s) in ${sessionFile}`);
 }
+return failedLines;
 }
 
 private detectFallbackFormat(content: string): boolean {
@@ -984,23 +1135,26 @@ return typeof firstEv.kind === 'number';
 } catch { return false; }
 }
 
+/** Returns the number of lines that could not be parsed or processed. */
 private runVsCodeDeltaFallback(
 lines: string[],
 fileMtimeMs: number,
 startMs: number,
 ctx: { workspaceId: string; machineId: string; userId: string | undefined; editorForFile: string | undefined; rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }> }
-): void {
+): number {
 let defaultModel = 'unknown';
+let failedLines = 0;
 const seenReqIds = new Set<string>();
 for (const line of lines) {
 if (!line.trim()) { continue; }
 try {
 const event = JSON.parse(line);
-if (!event || typeof event !== 'object') { continue; }
+if (!isEventRecord(event)) { failedLines++; continue; }
 defaultModel = this.updateFallbackVsCodeModel(event, defaultModel);
-this.upsertVsCodeFallbackRequests(event, defaultModel, seenReqIds, fileMtimeMs, startMs, ctx);
-} catch { /* skip */ }
+failedLines += this.upsertVsCodeFallbackRequests(event, defaultModel, seenReqIds, fileMtimeMs, startMs, ctx);
+} catch { failedLines++; }
 }
+return failedLines;
 }
 
 private updateFallbackVsCodeModel(event: any, defaultModel: string): string {
@@ -1028,11 +1182,18 @@ seenReqIds: Set<string>,
 fileMtimeMs: number,
 startMs: number,
 ctx: { workspaceId: string; machineId: string; userId: string | undefined; editorForFile: string | undefined; rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }> }
-): void {
-if (event.kind !== 2 || !Array.isArray(event.k) || event.k[0] !== 'requests' || !Array.isArray(event.v)) { return; }
-for (const request of event.v) {
+): number {
+const payload = this.readDeltaRequestsPayload(event);
+if (payload === 'malformed') { return 1; }
+if (payload === 'not-requests') { return 0; }
+let failed = 0;
+for (const request of payload) {
+// Same contract as the cached delta parser: a non-object entry is a record we
+// could not read, not an absent one.
+if (!isEventRecord(request)) { failed++; continue; }
 this.upsertVsCodeFallbackSingleRequest(request, defaultModel, seenReqIds, fileMtimeMs, startMs, ctx);
 }
+return failed;
 }
 
 private upsertVsCodeFallbackSingleRequest(
@@ -1059,18 +1220,20 @@ const key: DailyRollupKey = { day: dayKey, model, workspaceId: ctx.workspaceId, 
 upsertDailyRollup(ctx.rollups, key, { inputTokens, outputTokens, interactions: 1 });
 }
 
+/** Returns the number of lines that could not be parsed or processed. */
 private runCliJsonlFallback(
 lines: string[],
 fileMtimeMs: number,
 startMs: number,
 ctx: { workspaceId: string; machineId: string; userId: string | undefined; editorForFile: string | undefined; rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }> }
-): void {
+): number {
 let defaultModel = 'unknown';
+let failedLines = 0;
 for (const line of lines) {
 if (!line.trim()) { continue; }
 try {
 const event = JSON.parse(line);
-if (!event || typeof event !== 'object') { continue; }
+if (!isEventRecord(event)) { failedLines++; continue; }
 defaultModel = this.updateCliDefaultModel(event, defaultModel);
 const normalizedTs = this.utility.normalizeTimestampToMs(event.timestamp);
 const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
@@ -1081,8 +1244,9 @@ const { inputTokens, outputTokens, interactions } = this.getCliEventTokenCounts(
 if (inputTokens === 0 && outputTokens === 0 && interactions === 0) { continue; }
 const key: DailyRollupKey = { day: dayKey, model, workspaceId: ctx.workspaceId, machineId: ctx.machineId, userId: ctx.userId, editor: ctx.editorForFile };
 upsertDailyRollup(ctx.rollups, key, { inputTokens, outputTokens, interactions });
-} catch { /* skip */ }
+} catch { failedLines++; }
 }
+return failedLines;
 }
 
 private updateCliDefaultModel(event: any, defaultModel: string): string {
@@ -1111,7 +1275,12 @@ return { inputTokens: 0, outputTokens: 0, interactions: 0 };
 /**
  * Process the fallback JSON content when cached data is unavailable.
  * Handles the VS Code Copilot Chat legacy JSON format.
- * Returns false if the JSON cannot be parsed (a warning is logged internally).
+ *
+ * Returns the number of records that could not be parsed or processed: 1 when
+ * the file itself is unparseable or is not a JSON object, otherwise one per
+ * request that threw while being rolled up. A non-zero result means the file's
+ * usage is not fully represented in `rollups`, so an empty scan that includes
+ * it must not be reported as a successful no-op.
  */
 private processJsonSessionFallback(
 content: string,
@@ -1123,52 +1292,85 @@ machineId: string,
 userId: string | undefined,
 editorForFile: string | undefined,
 rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>
-): boolean {
+): number {
 let sessionJson: unknown;
 try {
 sessionJson = JSON.parse(content);
-if (!sessionJson || typeof sessionJson !== 'object') {
+if (!isEventRecord(sessionJson)) {
 this.deps.logger.warn(`Backend sync: session file has invalid JSON structure: ${sessionFile}`);
-return false;
+return 1;
 }
 } catch (e) {
 this.deps.logger.warn(`Backend sync: failed to parse JSON session file ${sessionFile}: ${e}`);
-return false;
+return 1;
 }
 const sessionObj = sessionJson as Record<string, unknown>;
-const requests = Array.isArray(sessionObj.requests) ? (sessionObj.requests as unknown[]) : [];
+// This is the catch-all branch for every non-JSONL session file, so a document
+// without a `requests` array is one we cannot extract usage from at all. Falling
+// back to `[]` reported it as a clean, empty file, which is exactly the "user with
+// no data" signal a file we failed to understand must not produce. An empty
+// `requests` array is still a genuine empty session and stays successful.
+if (!Array.isArray(sessionObj.requests)) {
+this.deps.logger.warn(`Backend sync: session file has no "requests" array: ${sessionFile}`);
+return 1;
+}
+const requests = sessionObj.requests as unknown[];
+let failedRequests = 0;
 for (const request of requests) {
+if (!isEventRecord(request)) {
+this.deps.logger.warn(`Backend sync: skipping malformed request record in ${sessionFile}`);
+failedRequests++;
+continue;
+}
 try {
-const req = request as ChatRequest;
+this.rollUpJsonRequest(request as ChatRequest, sessionObj, { fileMtimeMs, startMs, workspaceId, machineId, userId, editorForFile, rollups });
+} catch (e) {
+this.deps.logger.warn(`Backend sync: failed to process request in ${sessionFile}: ${e}`);
+failedRequests++;
+}
+}
+return failedRequests;
+}
+
+/** Fold a single legacy JSON request into `rollups`, skipping it when it falls outside the window or carries no tokens. */
+private rollUpJsonRequest(
+req: ChatRequest,
+sessionObj: Record<string, unknown>,
+ctx: { fileMtimeMs: number; startMs: number; workspaceId: string; machineId: string; userId: string | undefined; editorForFile: string | undefined; rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }> }
+): void {
 const normalizedTs = this.utility.normalizeTimestampToMs(
 typeof req.timestamp !== 'undefined' ? req.timestamp : (sessionObj.lastMessageDate as unknown)
 );
-const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : fileMtimeMs;
-if (!eventMs || eventMs < startMs) { continue; }
+const eventMs = Number.isFinite(normalizedTs) ? normalizedTs : ctx.fileMtimeMs;
+if (!eventMs || eventMs < ctx.startMs) { return; }
 const dayKey = this.utility.toUtcDayKey(new Date(eventMs));
 const model = this.deps.sessionHandlers.getModelFromRequest(req);
 const { inputTokens, outputTokens } = this.extractTokenCountsFromRequest(req, model);
-if (inputTokens === 0 && outputTokens === 0) { continue; }
-const key: DailyRollupKey = { day: dayKey, model, workspaceId, machineId, userId, editor: editorForFile };
-upsertDailyRollup(rollups, key, { inputTokens, outputTokens, interactions: 1 });
-} catch (e) {
-this.deps.logger.warn(`Backend sync: failed to process request in ${sessionFile}: ${e}`);
-}
-}
-return true;
+if (inputTokens === 0 && outputTokens === 0) { return; }
+const key: DailyRollupKey = { day: dayKey, model, workspaceId: ctx.workspaceId, machineId: ctx.machineId, userId: ctx.userId, editor: ctx.editorForFile };
+upsertDailyRollup(ctx.rollups, key, { inputTokens, outputTokens, interactions: 1 });
 }
 	/**
 	 * Compute daily rollups from local session files.
 	 * Uses cached session data when available to avoid re-parsing files.
 	 */
-	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; includeEditorDimension?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
+	private async computeDailyRollupsFromLocalSessions(args: { lookbackDays: number; userId?: string; sessionFiles?: string[]; skipMtimeFilter?: boolean; includeEditorDimension?: boolean; collectEditorType?: boolean; onProgress?: (processed: number, total: number, daysFound: number) => void }): Promise<{
 		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 		workspaceNamesById: Record<string, string>;
 		machineNamesById: Record<string, string>;
+		editorTypeByFile: Map<string, string>;
+		/**
+		 * Number of discovered session files that could not be read, parsed or
+		 * stat'ed. These failures are logged and skipped, so an empty `rollups`
+		 * map on its own cannot tell "the user genuinely has no data" apart from
+		 * "the data is there but none of it could be read".
+		 */
+		filesFailed: number;
 	}> {
 		const lookbackDays = args.lookbackDays;
 		const skipMtimeFilter = args.skipMtimeFilter === true;
 		const includeEditorDimension = args.includeEditorDimension === true;
+		const collectEditorType = args.collectEditorType === true;
 		const onProgress = args.onProgress;
 		const userId = (args.userId ?? '').trim() || undefined;
 		const now = new Date();
@@ -1184,12 +1386,13 @@ return true;
 		const rollups = new Map<string, { key: DailyRollupKey; value: DailyRollupValue }>();
 		const workspaceNamesById: Record<string, string> = {};
 		const machineNamesById: Record<string, string> = {};
+		const editorTypeByFile = new Map<string, string>();
 		const machineName = this.utility.normalizeNameForStorage(this.utility.stripHostnameDomain(os.hostname()));
 		if (machineName) { machineNamesById[machineId] = machineName; }
 
 		const sessionFiles = args.sessionFiles ?? await this.deps.sessionHandlers.getCopilotSessionFiles();
 		const useCachedData = !!this.deps.sessionHandlers.getSessionFileDataCached;
-		const progress = { filesSkipped: 0, filesProcessed: 0, cacheHits: 0, cacheMisses: 0 };
+		const progress = { filesSkipped: 0, filesProcessed: 0, cacheHits: 0, cacheMisses: 0, filesFailed: 0 };
 		const totalFiles = sessionFiles.length;
 		this.deps.logger.log(`Backend sync: analyzing ${totalFiles} session files`);
 
@@ -1197,13 +1400,17 @@ return true;
 			await this.processOneSessionForRollup(sessionFile, {
 				skipMtimeFilter, startMs, now, machineId, userId,
 				includeEditorDimension, useCachedData, rollups,
-				workspaceNamesById, totalFiles, onProgress, progress
+				workspaceNamesById, totalFiles, onProgress, progress,
+				editorTypeByFile, collectEditorType
 			});
 		}
 
 		if (useCachedData) { this.logCachePerformance(progress.cacheHits, progress.cacheMisses); }
 		this.deps.logger.log(`Backend sync: processed ${progress.filesProcessed} files, skipped ${progress.filesSkipped} files outside lookback period`);
-		return { rollups, workspaceNamesById, machineNamesById };
+		if (progress.filesFailed > 0) {
+			this.deps.logger.warn(`Backend sync: ${progress.filesFailed} session file(s) could not be read or parsed and were left out of the rollups`);
+		}
+		return { rollups, workspaceNamesById, machineNamesById, editorTypeByFile, filesFailed: progress.filesFailed };
 	}
 
 	private async tryProcessSpecialSession(
@@ -1211,13 +1418,17 @@ return true;
 		sessionArgs: ReturnType<typeof this.makeSessionRollupArgs>,
 		isType: (f: string) => boolean,
 		process: (f: string, mtime: number, args: ReturnType<typeof this.makeSessionRollupArgs>) => Promise<boolean>,
-		filesSkipped: { count: number }
+		filesSkipped: { count: number },
+		filesFailed: { count: number }
 	): Promise<boolean> {
 		if (!isType(sessionFile)) { return false; }
 		try {
 			const processed = await process(sessionFile, fileMtimeMs, sessionArgs);
 			if (!processed) { filesSkipped.count++; }
-		} catch (e) { this.deps.logger.warn(`Backend sync: failed to process session ${sessionFile}: ${e}`); }
+		} catch (e) {
+			this.deps.logger.warn(`Backend sync: failed to process session ${sessionFile}: ${e}`);
+			filesFailed.count++;
+		}
 		return true;
 	}
 
@@ -1229,22 +1440,38 @@ return true;
 			rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
 			workspaceNamesById: Record<string, string>; totalFiles: number;
 			onProgress: ((processed: number, total: number, daysFound: number) => void) | undefined;
-			progress: { filesSkipped: number; filesProcessed: number; cacheHits: number; cacheMisses: number };
+			progress: { filesSkipped: number; filesProcessed: number; cacheHits: number; cacheMisses: number; filesFailed: number };
+			editorTypeByFile: Map<string, string>;
+			collectEditorType: boolean;
 		}
 	): Promise<void> {
+		// Classify the editor type before the lookback filter so that every
+		// discovered file — including ones older than the lookback window —
+		// gets an entry in the blob-upload map when the editor type can be
+		// determined.  The upload list is the full discovery list, not just
+		// files within the lookback.
+		// When includeEditorDimension is true the rollup itself needs the
+		// label, so classify unconditionally.  When it is false, only
+		// classify when the blob upload needs the map, to avoid blocking
+		// I/O on every table-only sync.
+		const needsClassification = ctx.includeEditorDimension || ctx.collectEditorType;
+		const editorForFile = needsClassification ? this.getEditorForFile(sessionFile, true) : undefined;
+		if (editorForFile) { ctx.editorTypeByFile.set(sessionFile, editorForFile); }
+
 		const fileMtimeMs = await this.statSessionFileForRollup(sessionFile, ctx);
 		if (fileMtimeMs === undefined) { return; }
-		const editorForFile = this.getEditorForFile(sessionFile, ctx.includeEditorDimension);
+		const editorForRollup = ctx.includeEditorDimension ? editorForFile : undefined;
 		if (this.isVSSessionFileType(sessionFile)) { ctx.progress.filesSkipped++; return; }
-		const sessionArgs = this.makeSessionRollupArgs(ctx.machineId, ctx.userId, editorForFile, ctx.workspaceNamesById, ctx.rollups, ctx.startMs);
+		const sessionArgs = this.makeSessionRollupArgs(ctx.machineId, ctx.userId, editorForRollup, ctx.workspaceNamesById, ctx.rollups, ctx.startMs);
 		const skipped = { count: 0 };
-		if (await this.tryProcessSpecialSession(sessionFile, fileMtimeMs, sessionArgs, this.isOpenCodeSessionType.bind(this), this.processOpenCodeSession.bind(this), skipped)) { ctx.progress.filesSkipped += skipped.count; return; }
-		if (await this.tryProcessSpecialSession(sessionFile, fileMtimeMs, sessionArgs, this.isCrushSessionType.bind(this), this.processCrushSession.bind(this), skipped)) { ctx.progress.filesSkipped += skipped.count; return; }
+		const failed = { count: 0 };
+		if (await this.tryProcessSpecialSession(sessionFile, fileMtimeMs, sessionArgs, this.isOpenCodeSessionType.bind(this), this.processOpenCodeSession.bind(this), skipped, failed)) { ctx.progress.filesSkipped += skipped.count; ctx.progress.filesFailed += failed.count; return; }
+		if (await this.tryProcessSpecialSession(sessionFile, fileMtimeMs, sessionArgs, this.isCrushSessionType.bind(this), this.processCrushSession.bind(this), skipped, failed)) { ctx.progress.filesSkipped += skipped.count; ctx.progress.filesFailed += failed.count; return; }
 		const workspaceId = this.utility.extractWorkspaceIdFromSessionPath(sessionFile);
 		await this.ensureWorkspaceNameResolved(workspaceId, sessionFile, ctx.workspaceNamesById);
 		if (ctx.useCachedData) {
 			const fileStat = await this.deps.sessionHandlers.statSessionFile(sessionFile);
-			const cacheSuccess = await this.processCachedSessionFile(sessionFile, fileMtimeMs, fileStat.size, workspaceId, ctx.machineId, ctx.userId, ctx.rollups, ctx.startMs, ctx.now, editorForFile);
+			const cacheSuccess = await this.processCachedSessionFile(sessionFile, fileMtimeMs, fileStat.size, workspaceId, ctx.machineId, ctx.userId, ctx.rollups, ctx.startMs, ctx.now, editorForRollup);
 			if (cacheSuccess) { ctx.progress.cacheHits++; return; }
 			ctx.progress.cacheMisses++;
 		}
@@ -1253,13 +1480,38 @@ return true;
 			content = await fs.promises.readFile(sessionFile, 'utf8');
 		} catch (e) {
 			this.deps.logger.warn(`Backend sync: failed to read session file ${sessionFile}: ${e}`);
+			ctx.progress.filesFailed++;
 			return;
 		}
+		this.runContentFallback(content, sessionFile, fileMtimeMs, workspaceId, editorForRollup, ctx);
+	}
+
+	/**
+	 * Roll a session file up from its raw contents, counting a file whose contents
+	 * could not be parsed towards `filesFailed` so that an empty scan can be told
+	 * apart from a failed one.
+	 */
+	private runContentFallback(
+		content: string,
+		sessionFile: string,
+		fileMtimeMs: number,
+		workspaceId: string,
+		editorForRollup: string | undefined,
+		ctx: {
+			startMs: number; machineId: string; userId: string | undefined;
+			rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
+			progress: { filesFailed: number };
+		}
+	): void {
 		if (sessionFile.endsWith('.jsonl') || isJsonlContent(content)) {
-			this.processJsonlSessionFallback(content, sessionFile, fileMtimeMs, ctx.startMs, workspaceId, ctx.machineId, ctx.userId, editorForFile, ctx.rollups);
+			if (this.processJsonlSessionFallback(content, sessionFile, fileMtimeMs, ctx.startMs, workspaceId, ctx.machineId, ctx.userId, editorForRollup, ctx.rollups) > 0) {
+				ctx.progress.filesFailed++;
+			}
 			return;
 		}
-		this.processJsonSessionFallback(content, sessionFile, fileMtimeMs, ctx.startMs, workspaceId, ctx.machineId, ctx.userId, editorForFile, ctx.rollups);
+		if (this.processJsonSessionFallback(content, sessionFile, fileMtimeMs, ctx.startMs, workspaceId, ctx.machineId, ctx.userId, editorForRollup, ctx.rollups) > 0) {
+			ctx.progress.filesFailed++;
+		}
 	}
 
 	private async statSessionFileForRollup(
@@ -1268,7 +1520,7 @@ return true;
 			skipMtimeFilter: boolean; startMs: number; totalFiles: number;
 			onProgress: ((processed: number, total: number, daysFound: number) => void) | undefined;
 			rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>;
-			progress: { filesSkipped: number; filesProcessed: number; cacheHits: number; cacheMisses: number };
+			progress: { filesSkipped: number; filesProcessed: number; cacheHits: number; cacheMisses: number; filesFailed: number };
 		}
 	): Promise<number | undefined> {
 		try {
@@ -1283,6 +1535,7 @@ return true;
 			return fileMtimeMs;
 		} catch (e) {
 			this.deps.logger.warn(`Backend sync: failed to stat session file ${sessionFile}: ${e}`);
+			ctx.progress.filesFailed++;
 			return undefined;
 		}
 	}
@@ -1315,13 +1568,14 @@ return true;
 	 * @param isConfigured - Whether the backend is fully configured
 	 * @throws Error if sync fails due to network or auth issues
 	 */
-	async syncToBackendStore(force: boolean, settings: BackendSettings, isConfigured: boolean): Promise<void> {
-		this.syncQueue = this.syncQueue.then(() => this.doSyncToBackendStore(force, settings, isConfigured));
-		return this.syncQueue;
+	async syncToBackendStore(force: boolean, settings: BackendSettings, isConfigured: boolean): Promise<SyncResult> {
+		const run = this.syncQueue.then(() => this.doSyncToBackendStore(force, settings, isConfigured));
+		this.syncQueue = run;
+		return run;
 	}
 
-	private logSyncSkipReason(sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>, isConfigured: boolean, settings: BackendSettings): void {
-		if (!sharingPolicy.allowCloudSync) {
+	private logSyncSkipReason(isConfigured: boolean, settings: BackendSettings): void {
+		if (settings.sharingProfile === 'off') {
 			this.deps.logger.log(`Backend sync: skipping (sharing policy does not allow cloud sync, profile: ${settings.sharingProfile})`);
 		} else if (!isConfigured) {
 			this.deps.logger.log('Backend sync: skipping (neither Azure Storage nor Team Server is configured)');
@@ -1356,82 +1610,143 @@ return true;
 		}
 	}
 
-	/** Updates the Team-Server-specific "last successful sync" marker shown in its own status panel. */
+	/**
+	 * Updates the Team Server "last successful sync" marker shown in its status panel.
+	 *
+	 * This tracks the usage-rollup upload only. The fluency-score upload has its
+	 * own marker: the two run on different schedules and can fail independently,
+	 * and while they shared this key a small score POST succeeding every couple of
+	 * minutes kept the indicator green while rollup uploads failed for hours.
+	 *
+	 * The key is deliberately new rather than the legacy `backend.sharingServerLastSyncAt`.
+	 * That value is still on disk from versions where both uploads wrote it, so it
+	 * cannot be read as evidence of a rollup upload — reusing it would display a
+	 * score-only timestamp as a confirmed usage sync and keep a failing rollup
+	 * upload hidden behind it after upgrade. Starting empty costs one sync cycle
+	 * of "never" and is self-healing.
+	 */
 	private async tryUpdateSharingServerLastSyncAt(): Promise<void> {
 		try {
-			await this.deps.context?.globalState.update('backend.sharingServerLastSyncAt', Date.now());
+			await this.deps.context?.globalState.update('backend.sharingServerRollupLastSyncAt', Date.now());
 		} catch (e) {
 			this.deps.logger.warn(`Backend sync: failed to update sharing server lastSyncAt: ${e}`);
 		}
 	}
 
-	/** Runs the Azure Table Storage sync in isolation, logging (but not throwing) on failure. */
-	private async runAzureSyncIndependently(settings: BackendSettings, sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>): Promise<void> {
+	/** Updates the Team Server "last successful fluency-score upload" marker, tracked separately from the rollup sync above. */
+	private async tryUpdateSharingServerFluencyLastSyncAt(): Promise<void> {
 		try {
-			await this.performAzureTableSync(settings, sharingPolicy);
+			await this.deps.context?.globalState.update('backend.sharingServerFluencyLastSyncAt', Date.now());
+		} catch (e) {
+			this.deps.logger.warn(`Backend sync: failed to update sharing server fluency lastSyncAt: ${e}`);
+		}
+	}
+
+	/** Runs the Azure Table Storage sync in isolation, logging (but not throwing) on failure. */
+	private async runAzureSyncIndependently(settings: BackendSettings, sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>): Promise<SyncTargetOutcome> {
+		try {
+			return await this.performAzureTableSync(settings, sharingPolicy);
 		} catch (e: unknown) {
 			const secretsToRedact = await this.credentialService.getBackendSecretsToRedactForError(settings);
 			this.deps.logger.warn(`Backend sync: ${safeStringifyError(e, secretsToRedact)}`);
+			return 'failed';
 		}
 	}
 
 	/** Runs the Team Server (sharing server) sync in isolation, logging (but not throwing) on failure. */
-	private async runSharingServerSyncIndependently(settings: BackendSettings, sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>): Promise<void> {
+	private async runSharingServerSyncIndependently(settings: BackendSettings, sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>): Promise<SyncTargetOutcome> {
 		try {
-			await this.syncToSharingServer(settings, sharingPolicy);
+			// Only advance the marker when data actually reached the server. The
+			// upload service swallows HTTP and network errors and returns normally,
+			// so updating this unconditionally made "Last Sync" report a healthy
+			// recent sync while nothing had been uploaded for hours. A delivery
+			// failure throws and is caught below; `false` means the pass could not
+			// run at all, which is a skip rather than a success.
+			if (!await this.syncToSharingServer(settings, sharingPolicy)) { return 'skipped'; }
 			await this.tryUpdateSharingServerLastSyncAt();
+			return 'synced';
 		} catch (ssErr: unknown) {
 			this.deps.logger.warn(`Sharing server sync: failed - ${safeStringifyError(ssErr)}`);
+			return 'failed';
 		}
 	}
 
-	/** Builds a composite lock identifier covering whichever backend(s) are configured for this sync pass. */
-	private buildSyncLockTarget(azureConfigured: boolean, sharingConfigured: boolean, settings: BackendSettings): string {
-		const targets = [
-			azureConfigured ? `azure:${settings.storageAccount}` : null,
-			sharingConfigured ? `share:${settings.sharingServerEndpointUrl}` : null,
-		].filter((t): t is string => !!t);
-		return targets.join('|');
+	/**
+	 * Runs one target's sync under that target endpoint's own cross-window lock, so two windows
+	 * uploading to the same endpoint serialize regardless of their other targets, other windows'
+	 * endpoints, or their `backend.backend` selector.
+	 */
+	private async runUnderTargetLock(kind: 'azure' | 'sharingserver', endpoint: string, label: string, run: () => Promise<SyncTargetOutcome>): Promise<SyncTargetOutcome> {
+		const token = syncTargetLockToken(kind, endpoint);
+		const lockName = targetSyncLockName(kind, token);
+		const skipReason = `Backend sync: skipping ${label} (another VS Code window is currently syncing to the same endpoint)`;
+		if (await this.isLegacyLockHeldFor(token)) {
+			this.deps.logger.log(skipReason);
+			return 'skipped';
+		}
+		if (!await this.acquireSyncLock(lockName, token)) {
+			this.deps.logger.log(skipReason);
+			return 'skipped';
+		}
+		try {
+			return await run();
+		} finally {
+			await this.releaseSyncLock(lockName);
+		}
 	}
 
-	private async doSyncToBackendStore(force: boolean, settings: BackendSettings, isConfigured: boolean): Promise<void> {
-		if (this.backendSyncInProgress) { return; }
+	/** Whether a window still running an older extension version holds a legacy lock covering `token`. */
+	private async isLegacyLockHeldFor(token: string): Promise<boolean> {
+		for (const legacyName of LEGACY_SYNC_LOCK_NAMES) {
+			if (await this.syncLock.isHeldByAnotherWindow(legacyName, (url) => legacyLockCoversTarget(url, token))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private async doSyncToBackendStore(force: boolean, settings: BackendSettings, isConfigured: boolean): Promise<SyncResult> {
+		if (this.backendSyncInProgress) { return {}; }
+		if (settings.sharingProfile === 'off' || !isConfigured) {
+			this.logSyncSkipReason(isConfigured, settings);
+			return {};
+		}
+
+		// Azure Storage and the Team Server are independent sync targets: either, both, or
+		// neither may be enabled at any time, and each must run — and report its own
+		// success/failure and "last sync" timestamp — without the other affecting it.
+		// Azure is gated on `backend.enabled`; the Team Server has its own toggle and must
+		// not depend on the Azure one.
+		const { azure: azureConfigured, sharingServer: sharingConfigured } = resolveSyncTargets(settings);
+		if (!azureConfigured && !sharingConfigured) {
+			this.deps.logger.log(`Backend sync: skipping (${NO_SYNC_TARGET_REASON})`);
+			return {};
+		}
+		if (await this.checkSyncThrottle(force)) { return {}; }
+		// Target gating is done above; the policy here only shapes the uploaded payload.
 		const sharingPolicy = computeBackendSharingPolicy({
-			enabled: settings.enabled,
+			enabled: true,
 			profile: settings.sharingProfile,
 			shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
 		});
-		if (!sharingPolicy.allowCloudSync || !isConfigured) {
-			this.logSyncSkipReason(sharingPolicy, isConfigured, settings);
-			return;
-		}
-		if (await this.checkSyncThrottle(force)) { return; }
 
-		// Azure Storage and the Team Server are independent sync targets: either, both, or
-		// neither may be configured at any time, and each must run — and report its own
-		// success/failure and "last sync" timestamp — without the other affecting it.
-		const azureConfigured = !!(settings.subscriptionId && settings.resourceGroup && settings.storageAccount && settings.aggTable);
-		const sharingConfigured = !!(settings.sharingServerEnabled && settings.sharingServerEndpointUrl);
-		if (!azureConfigured && !sharingConfigured) {
-			this.deps.logger.log('Backend sync: skipping (neither Azure Storage nor Team Server is configured)');
-			return;
-		}
-
-		const lockTarget = this.buildSyncLockTarget(azureConfigured, sharingConfigured, settings);
-		if (!await this.acquireSyncLock(settings.backend, lockTarget)) {
-			this.deps.logger.log('Backend sync: skipping (another VS Code window is currently syncing to the same server)');
-			return;
-		}
+		const result: SyncResult = {};
 		this.backendSyncInProgress = true;
 		try {
 			await this.tryUpdateLastSyncAt();
-			if (azureConfigured) { await this.runAzureSyncIndependently(settings, sharingPolicy); }
-			if (sharingConfigured) { await this.runSharingServerSyncIndependently(settings, sharingPolicy); }
+			if (azureConfigured) {
+				result.azure = await this.runUnderTargetLock('azure', settings.storageAccount, 'Azure Storage',
+					() => this.runAzureSyncIndependently(settings, sharingPolicy));
+			}
+			if (sharingConfigured) {
+				result.sharingServer = await this.runUnderTargetLock('sharingserver', settings.sharingServerEndpointUrl, 'Team Server',
+					() => this.runSharingServerSyncIndependently(settings, sharingPolicy));
+			}
 			this.consecutiveFailures = 0;
 		} finally {
 			this.backendSyncInProgress = false;
-			await this.releaseSyncLock(settings.backend);
 		}
+		return result;
 	}
 
 	private checkBlobUploadNeeded(settings: BackendSettings): boolean {
@@ -1489,12 +1804,7 @@ return true;
 			const effectiveUserId = (key.userId ?? '').trim() || undefined;
 			const includeConsent = sharingPolicy.includeUserDimension && !!effectiveUserId;
 			const includeNames = sharingPolicy.includeNames;
-			const workspaceIdToStore = sharingPolicy.workspaceIdStrategy === 'hashed'
-				? hashWorkspaceIdForTeam({ datasetId: settings.datasetId, workspaceId: key.workspaceId })
-				: key.workspaceId;
-			const machineIdToStore = sharingPolicy.machineIdStrategy === 'hashed'
-				? hashMachineIdForTeam({ datasetId: settings.datasetId, machineId: key.machineId })
-				: key.machineId;
+			const { workspaceId: workspaceIdToStore, machineId: machineIdToStore } = applyIdStrategies(key, settings.datasetId, sharingPolicy);
 			entities.push(createDailyAggEntity({
 				datasetId: settings.datasetId, day: key.day, model: key.model,
 				workspaceId: workspaceIdToStore, workspaceName: includeNames ? workspaceNamesById[key.workspaceId] : undefined,
@@ -1509,12 +1819,13 @@ return true;
 		return entities;
 	}
 
-	private async performBlobUploadIfNeeded(settings: BackendSettings, creds: any, sessionFiles: string[]): Promise<void> {
+	private async performBlobUploadIfNeeded(settings: BackendSettings, creds: any, sessionFiles: string[], editorTypeByFile: Map<string, string>): Promise<void> {
 		try {
 			const machineId = vscode.env.machineId;
 			const uploadSettings = { enabled: settings.blobUploadEnabled, containerName: settings.blobContainerName, uploadFrequencyHours: settings.blobUploadFrequencyHours, compressFiles: settings.blobCompressFiles };
+
 			this.deps.logger.log('Blob upload: starting');
-			const uploadResult = await this.blobUploadService!.uploadSessionFiles(settings.storageAccount, uploadSettings, creds.blobCredential, sessionFiles, machineId, settings.datasetId);
+			const uploadResult = await this.blobUploadService!.uploadSessionFiles(settings.storageAccount, uploadSettings, creds.blobCredential, sessionFiles, machineId, settings.datasetId, editorTypeByFile);
 			if (uploadResult.success) { this.deps.logger.log(`Blob upload: ${uploadResult.message}`); }
 			else { this.deps.logger.warn(`Blob upload: ${uploadResult.message}`); }
 		} catch (blobError: any) {
@@ -1522,12 +1833,17 @@ return true;
 		}
 	}
 
-	private async performAzureTableSync(settings: BackendSettings, sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>): Promise<void> {
+	/**
+	 * Upserts local rollups into Azure Table Storage. Resolves `failed` — without touching the
+	 * Azure "last sync" marker — when credentials are unavailable or any entity failed to upsert,
+	 * so neither case can be reported as a successful sync.
+	 */
+	private async performAzureTableSync(settings: BackendSettings, sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>): Promise<SyncTargetOutcome> {
 		this.deps.logger.log('Backend sync: starting rollup sync');
 		const creds = await this.credentialService.getBackendDataPlaneCredentials(settings);
 		if (!creds) {
 			this.deps.logger.warn('Backend sync: skipping (credentials not available - check authentication mode and secrets)');
-			return;
+			return 'failed';
 		}
 		await this.dataPlaneService.ensureTableExists(settings, creds.tableCredential);
 		await this.dataPlaneService.validateAccess(settings, creds.tableCredential);
@@ -1535,8 +1851,9 @@ return true;
 		const blobUploadNeeded = this.checkBlobUploadNeeded(settings);
 		const sessionFiles = await this.deps.sessionHandlers.getCopilotSessionFiles();
 		const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(settings, sharingPolicy.includeUserDimension);
-		const { rollups, workspaceNamesById, machineNamesById } = await this.computeDailyRollupsFromLocalSessions({
-			lookbackDays: settings.lookbackDays, userId: resolvedIdentity.userId, sessionFiles
+		const { rollups, workspaceNamesById, machineNamesById, editorTypeByFile, filesFailed } = await this.computeDailyRollupsFromLocalSessions({
+			lookbackDays: settings.lookbackDays, userId: resolvedIdentity.userId, sessionFiles,
+			collectEditorType: blobUploadNeeded
 		});
 
 		const sortedDays = this.getSortedDayKeys(rollups);
@@ -1554,10 +1871,33 @@ return true;
 			this.deps.logger.log(`Backend sync: ${successCount} entities synced successfully`);
 		}
 
-		await this.tryUpdateAzureLastSyncAt();
-		this.deps.logger.log('Backend sync: completed');
+		// Same invariant as the Team Server marker: `upsertEntitiesBatch` catches
+		// per entity and returns normally, so every entity can fail without this
+		// method throwing. Advancing unconditionally made the Azure status panel
+		// report a healthy recent sync while nothing had been stored.
+		const outcome: SyncTargetOutcome = this.isAzureSyncSuccessful(successCount, errors.length, entities.length, filesFailed) ? 'synced' : 'failed';
+		if (outcome === 'synced') {
+			await this.tryUpdateAzureLastSyncAt();
+			this.deps.logger.log('Backend sync: completed');
+		} else {
+			this.deps.logger.warn('Backend sync: completed with failures - not updating the last sync marker');
+		}
 
-		if (blobUploadNeeded && this.blobUploadService) { await this.performBlobUploadIfNeeded(settings, creds, sessionFiles); }
+		if (blobUploadNeeded && this.blobUploadService) { await this.performBlobUploadIfNeeded(settings, creds, sessionFiles, editorTypeByFile); }
+		return outcome;
+	}
+
+	/**
+	 * Whether an Azure Table sync pass delivered everything it found, and so may
+	 * advance the "last successful sync" marker.
+	 *
+	 * Having nothing to store is a successful no-op, but only when the scan that
+	 * produced it was clean: unreadable session files are logged and skipped, so
+	 * local data can exist and still yield zero entities.
+	 */
+	private isAzureSyncSuccessful(successCount: number, errorCount: number, entityCount: number, filesFailed: number): boolean {
+		if (errorCount > 0 || successCount !== entityCount) { return false; }
+		return entityCount > 0 || filesFailed === 0;
 	}
 
 	/**
@@ -1574,28 +1914,31 @@ return true;
 	}
 
 	/**
-	 * Sync daily rollups to the self-hosted sharing server using a GitHub Bearer token.
+	 * Sync daily rollups to the self-hosted sharing server using a GitHub Bearer token. Resolves
+	 * `true` when the pass completed (including "nothing to upload") and `false` when it could not
+	 * run at all (no upload service or no GitHub token). Throws when data existed but did not
+	 * reach the server, so the caller records the target as failed rather than skipped.
 	 */
 	private async syncToSharingServer(
 		settings: BackendSettings,
 		sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>,
-	): Promise<void> {
+	): Promise<boolean> {
 		if (!this.sharingServerUploadService) {
 			this.deps.logger.warn('Sharing server upload: service not available');
-			return;
+			return false;
 		}
 
 		const githubToken = this.deps.getGithubToken?.();
 		if (!githubToken) {
 			this.deps.logger.log('Sharing server upload: skipping (no GitHub token — authenticate with GitHub in VS Code first)');
-			return;
+			return false;
 		}
 
 		const resolvedIdentity = await this.resolveEffectiveUserIdentityForSync(
 			settings,
 			sharingPolicy.includeUserDimension,
 		);
-		const { rollups, workspaceNamesById, machineNamesById } =
+		const { rollups, workspaceNamesById, machineNamesById, filesFailed } =
 			await this.computeDailyRollupsFromLocalSessions({
 				lookbackDays: settings.lookbackDays,
 				userId: resolvedIdentity.userId,
@@ -1603,19 +1946,76 @@ return true;
 			});
 
 		if (rollups.size === 0) {
+			// An empty scan is only a successful no-op when it is a *genuine* empty
+			// scan. Unreadable or unparseable session files are logged and skipped,
+			// so local data can exist and still produce no rollups — reporting that
+			// as a successful sync is the same false "all good" signal this guards
+			// against, just one layer earlier. Throwing rather than returning false
+			// records the target as failed; false here means "could not run at all".
+			if (filesFailed > 0) {
+				throw new Error(`nothing to upload, but ${filesFailed} session file(s) could not be read`);
+			}
 			this.deps.logger.log('Sharing server upload: no data to upload');
-			return;
+			// Nothing to send and nothing failed: the sync ran and the server is
+			// already up to date, so the marker should still advance. The failure
+			// this guards against is data that exists and does not arrive, which is
+			// handled by the upload result below.
+			return true;
 		}
 
+		const entries = this.buildSharingServerEntries(rollups, settings, sharingPolicy, workspaceNamesById, machineNamesById);
+
+		const totalInputTokens = entries.reduce((s, e) => s + e.inputTokens, 0);
+		const totalOutputTokens = entries.reduce((s, e) => s + e.outputTokens, 0);
+		this.deps.logger.log(`Sharing server upload: uploading ${entries.length} rollup entries (${(totalInputTokens + totalOutputTokens).toLocaleString()} tokens total)`);
+		// uploadRollups reports HTTP/network failures and server-side rejections in its result
+		// rather than throwing; turn both into errors so the caller records the target as failed.
+		const upload = await this.sharingServerUploadService.uploadRollups(
+			settings.sharingServerEndpointUrl,
+			githubToken,
+			entries,
+			this.deps.logger.log,
+			this.deps.logger.warn,
+		);
+		// `success` is already false unless the server reported every entry stored:
+		// a 2xx alone is not enough, since the endpoint returns 200 with
+		// `uploaded: 0` for validation or database failures. The count comparison
+		// is kept as a second, local guard on the same invariant.
+		if (!upload.success) {
+			throw new Error(upload.message);
+		}
+		if (upload.entriesUploaded < entries.length) {
+			throw new Error(`server accepted ${upload.entriesUploaded} of ${entries.length} entries`);
+		}
+		return true;
+	}
+
+	/**
+	 * Build the Team Server upload payload for a set of daily rollups.
+	 *
+	 * Split out of syncToSharingServer purely to keep that method readable; it must
+	 * stay in lockstep with buildEntitiesForSync so no sharing profile leaks raw
+	 * workspace/machine IDs to one target while hashing them for the other.
+	 */
+	private buildSharingServerEntries(
+		rollups: Map<string, { key: DailyRollupKey; value: DailyRollupValue }>,
+		settings: BackendSettings,
+		sharingPolicy: ReturnType<typeof computeBackendSharingPolicy>,
+		workspaceNamesById: Record<string, string>,
+		machineNamesById: Record<string, string>
+	): SharingServerEntry[] {
 		const includeNames = sharingPolicy.includeNames;
 		const entries: SharingServerEntry[] = [];
 		for (const { key, value } of rollups.values()) {
+			// Same ID strategy as the Azure path: team profiles upload hashed workspace/machine
+			// IDs, only soloFull uploads raw ones. Names are still looked up by the raw ID.
+			const ids = applyIdStrategies(key, settings.datasetId, sharingPolicy);
 			entries.push({
 				day: key.day,
 				model: key.model,
-				workspaceId: key.workspaceId,
+				workspaceId: ids.workspaceId,
 				workspaceName: includeNames ? workspaceNamesById[key.workspaceId] : undefined,
-				machineId: key.machineId,
+				machineId: ids.machineId,
 				machineName: includeNames ? machineNamesById[key.machineId] : undefined,
 				inputTokens: value.inputTokens,
 				outputTokens: value.outputTokens,
@@ -1625,17 +2025,7 @@ return true;
 				fluencyMetrics: value.fluencyMetrics as Record<string, unknown> | undefined,
 			});
 		}
-
-		const totalInputTokens = entries.reduce((s, e) => s + e.inputTokens, 0);
-		const totalOutputTokens = entries.reduce((s, e) => s + e.outputTokens, 0);
-		this.deps.logger.log(`Sharing server upload: uploading ${entries.length} rollup entries (${(totalInputTokens + totalOutputTokens).toLocaleString()} tokens total)`);
-		await this.sharingServerUploadService.uploadRollups(
-			settings.sharingServerEndpointUrl,
-			githubToken,
-			entries,
-			this.deps.logger.log,
-			this.deps.logger.warn,
-		);
+		return entries;
 	}
 
 	/**
@@ -1648,19 +2038,23 @@ return true;
 		score: Record<string, unknown>,
 	): Promise<void> {
 		if (!this.sharingServerUploadService) { return; }
-		if (!settings.sharingServerEnabled || !settings.sharingServerEndpointUrl) { return; }
+		// Same gate as rollup sync: toggle + endpoint, and a sharing profile other than 'off'.
+		if (!resolveSyncTargets(settings).sharingServer) { return; }
 
 		const githubToken = this.deps.getGithubToken?.();
 		if (!githubToken) { return; }
 
-		await this.sharingServerUploadService.uploadFluencyScore(
+		const uploaded = await this.sharingServerUploadService.uploadFluencyScore(
 			settings.sharingServerEndpointUrl,
 			githubToken,
 			score,
 			this.deps.logger.log,
 			this.deps.logger.warn,
 		);
-		await this.tryUpdateSharingServerLastSyncAt();
+		// The fluency score has its own marker: it is a separate, much smaller POST,
+		// and letting it advance the rollup marker is exactly how a failing rollup
+		// upload stayed invisible behind a succeeding score upload.
+		if (uploaded) { await this.tryUpdateSharingServerFluencyLastSyncAt(); }
 	}
 
 	/**
@@ -1673,14 +2067,16 @@ return true;
 	 * mtime-based file-age filter (e.g. the backend was configured after a large volume of
 	 * activity had already accumulated locally).
 	 */
-	async backfillSync(settings: BackendSettings, isConfigured: boolean, maxLookbackDays = 365, onProgress?: (processed: number, total: number, daysFound: number) => void): Promise<void> {
+	async backfillSync(settings: BackendSettings, maxLookbackDays = 365, onProgress?: (processed: number, total: number, daysFound: number) => void): Promise<void> {
 		const sharingPolicy = computeBackendSharingPolicy({
 			enabled: settings.enabled,
 			profile: settings.sharingProfile,
 			shareWorkspaceMachineNames: settings.shareWorkspaceMachineNames
 		});
-		if (!sharingPolicy.allowCloudSync || !isConfigured) {
-			this.deps.logger.warn('Backfill: skipping (cloud sync disabled or backend not configured)');
+		// Backfill writes to Azure Table Storage only, so it is gated solely on the Azure target
+		// (backend.enabled + Azure fields + non-off profile), not on the backend.backend selector.
+		if (!resolveSyncTargets(settings).azure) {
+			this.deps.logger.warn('Backfill: skipping (Azure Storage sync disabled or not configured)');
 			return;
 		}
 
@@ -1741,12 +2137,7 @@ return true;
 			const effectiveUserId = (key.userId ?? '').trim() || undefined;
 			const includeConsent = sharingPolicy.includeUserDimension && !!effectiveUserId;
 			const includeNames = sharingPolicy.includeNames;
-			const workspaceIdToStore = sharingPolicy.workspaceIdStrategy === 'hashed'
-				? hashWorkspaceIdForTeam({ datasetId: settings.datasetId, workspaceId: key.workspaceId })
-				: key.workspaceId;
-			const machineIdToStore = sharingPolicy.machineIdStrategy === 'hashed'
-				? hashMachineIdForTeam({ datasetId: settings.datasetId, machineId: key.machineId })
-				: key.machineId;
+			const { workspaceId: workspaceIdToStore, machineId: machineIdToStore } = applyIdStrategies(key, settings.datasetId, sharingPolicy);
 			entities.push(createDailyAggEntity({
 				datasetId: settings.datasetId, day: key.day, model: key.model,
 				workspaceId: workspaceIdToStore, workspaceName: includeNames ? workspaceNamesById[key.workspaceId] : undefined,
@@ -1784,4 +2175,17 @@ return true;
 			this.deps.logger.warn(`Backfill: failed to clean stale entities (continuing with upsert): ${e}`);
 		}
 	}
+}
+
+/**
+ * The per-tool / per-server latency histograms (`latencyByTool`, `latencyByServer`,
+ * ~25 integers per key — docs/adr/TOOL-EXECUTION-STATS.md) are a local-dashboard
+ * feature and nothing server-side reads them, while an Azure Table string
+ * property is capped at 64 KiB and a day's rollup keeps the union of every tool
+ * seen. Drop them from the uploaded JSON so the payload stays bounded by the
+ * number of distinct tools times a few counters; the count maps are kept.
+ */
+export function stripLatencyHistograms<T extends Record<string, unknown>>(usage: T): Omit<T, 'latencyByTool' | 'latencyByServer'> {
+	const { latencyByTool: _lt, latencyByServer: _ls, ...rest } = usage as T & { latencyByTool?: unknown; latencyByServer?: unknown };
+	return rest;
 }

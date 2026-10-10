@@ -9,7 +9,10 @@
  *
  * The script listens for `message` events on `window` with payloads:
  *   { command: 'loadingStep', step: 'discovering' | 'parsing' | 'computing',
- *     total?, editors? }
+ *     total?, editors?, percentage?, label? }
+ *     (`percentage`/`label` apply to the 'computing' step: a caller that can break its
+ *      compute phase into sub-steps drives the bar through them instead of parking it
+ *      at the default 96% for the whole phase.)
  *   { command: 'loadingProgress', completed, total, percentage, editors? }
  * In VS Code these arrive via webview.postMessage; in the desktop app the
  * preload bridges ipcRenderer 'loading-message' events to window.postMessage.
@@ -107,11 +110,35 @@ ${getLoadingHtmlScript(startedAtMs)}
 </body>`;
 }
 
+/**
+ * The loading screen's inline script.
+ *
+ * On the 'computing' step the host may send a `percentage` and `label` per compute
+ * sub-step so the bar keeps moving through a long aggregation phase; a host that
+ * computes in one opaque block sends neither and gets the historical fixed 96%.
+ *
+ * `barPct` is the value behind the bar, fed by both phases: parsing progress is scaled
+ * into the lower 85% and compute sub-steps occupy the rest. Parsing always ends on a
+ * 100% tick, so without that split the first compute step would drop the bar (to 88%,
+ * or to 96% for a host that sends no sub-steps at all).
+ *
+ * The clamp applies only once the compute phase has begun, not within parsing itself.
+ * A parsing percentage can legitimately fall — `_preloadSessionFiles` reports against a
+ * discovery total that grows as adapter batches arrive, so an early batch can read 1/1
+ * and a later tick 2/400 — and clamping that would freeze the bar at the high-water mark
+ * for the rest of the parse. After a compute sub-step, a parsing tick is stale (a
+ * concurrent background refresh shares this channel) and must not drag the bar back.
+ *
+ * Kept as one function (not split further) deliberately: scripts/check-hardcoded-strings.mjs
+ * scans this file's own string/template literals for embedded HTML tag structure, and splitting
+ * this script across multiple functions/literals broke its ability to recognize the content as
+ * a single opaque script body — see this PR's own history for the CI failure that caused.
+ */
 export function getLoadingHtmlScript(startedAtMs: number = Date.now()): string {
 	return `(function () {
     var t0 = ${Math.floor(startedAtMs)};
     var EDITORS = [];
-    var editorsSeen = 0;
+    var editorsSeen = 0, barPct = 0, computing = false;
     function updateElapsed() {
         var s = Math.floor((Date.now() - t0) / 1000);
         var el = document.getElementById('badge-elapsed');
@@ -131,6 +158,11 @@ export function getLoadingHtmlScript(startedAtMs: number = Date.now()): string {
         el.classList.remove('step-done'); el.classList.add('step-active');
         var ico = el.querySelector('.step-ico'); if (ico) { ico.className = 'step-ico'; ico.innerHTML = '<span class="spin-ico">↻</span>'; }
     }
+    function setPending(id) {
+        var el = document.getElementById(id); if (!el) return;
+        el.classList.remove('step-active'); el.classList.remove('step-done');
+        var ico = el.querySelector('.step-ico'); if (ico) { ico.className = 'step-ico'; ico.innerHTML = '○'; }
+    }
     // Advance the checklist into the parsing phase. Idempotent: the step transition runs
     // once even if it is triggered by a loadingProgress message because the one-time
     // loadingStep 'parsing' was posted before this webview's listener was attached.
@@ -146,7 +178,25 @@ export function getLoadingHtmlScript(startedAtMs: number = Date.now()): string {
     window.addEventListener('message', function (ev) {
         var m = ev.data; if (!m) return;
         if (m.command === 'loadingStep') {
-            if (m.step === 'discovering') { setActive('s-discover');
+            if (m.step === 'discovering') {
+                // A panel a superseded run left registered for a replacement (see isRefreshSuperseded()
+                // callers in extension.ts) keeps this exact script instance alive instead of getting a
+                // fresh getLoadingHtml() paint, so the replacement's own first 'discovering' message is
+                // the only signal this script gets that a new refresh has actually started. Without
+                // resetting here, the checklist stays stuck showing 's-parse'/'s-compute' as already
+                // done, computing/barPct stay clamped from the old run's compute phase (so the new
+                // run's own early parsing ticks render as if compute were already well underway), and
+                // stale editor pills from the old run linger in the row.
+                parsingShown = false; computing = false; barPct = 0; EDITORS = []; editorsSeen = 0;
+                setActive('s-discover'); setPending('s-parse'); setPending('s-compute');
+                var chips0 = document.getElementById('chips'); if (chips0) chips0.style.display = 'none';
+                var fill0 = document.getElementById('prog-fill'); if (fill0) { fill0.classList.add('indeterminate'); fill0.style.width = ''; }
+                var pct0 = document.getElementById('pct'); if (pct0) pct0.textContent = '–';
+                var sub0 = document.getElementById('subtitle'); if (sub0) sub0.textContent = 'Discovering session files...';
+                var bf0 = document.getElementById('badge-files'); if (bf0) bf0.textContent = '– files';
+                var row0 = document.getElementById('editors-row'); if (row0) row0.innerHTML = '';
+                var scd0 = document.getElementById('sc-discover'); if (scd0) scd0.textContent = '';
+                var scp0 = document.getElementById('sc-parse'); if (scp0) scp0.textContent = '';
             } else if (m.step === 'parsing') {
                 var total = m.total || 0;
                 if (m.editors !== undefined) { EDITORS = m.editors; editorsSeen = 0; }
@@ -156,10 +206,10 @@ export function getLoadingHtmlScript(startedAtMs: number = Date.now()): string {
                 var ct = document.getElementById('chip-total'); if (ct) ct.textContent = total.toLocaleString();
             } else if (m.step === 'computing') {
                 enterParsing(0);
-                setDone('s-parse'); setActive('s-compute');
-                var fill = document.getElementById('prog-fill'); if (fill) { fill.classList.remove('indeterminate'); fill.style.width = '96%'; }
-                var pct = document.getElementById('pct'); if (pct) pct.textContent = '96%';
-                var sub2 = document.getElementById('subtitle'); if (sub2) sub2.textContent = 'Computing statistics...';
+                setDone('s-parse'); setActive('s-compute'); computing = true; barPct = Math.max(barPct, typeof m.percentage === 'number' ? m.percentage : 96);
+                var fill = document.getElementById('prog-fill'); if (fill) { fill.classList.remove('indeterminate'); fill.style.width = barPct + '%'; }
+                var pct = document.getElementById('pct'); if (pct) pct.textContent = barPct + '%';
+                var sub2 = document.getElementById('subtitle'); if (sub2) sub2.textContent = m.label || 'Computing statistics...';
             }
         } else if (m.command === 'loadingProgress') {
             // Receiving progress means parsing is underway — reconcile the checklist in case
@@ -168,8 +218,8 @@ export function getLoadingHtmlScript(startedAtMs: number = Date.now()): string {
             // Editors are included in every progress tick so pills appear even when the
             // one-time loadingStep 'parsing' message was dropped before the listener attached.
             if (m.editors && m.editors.length > EDITORS.length) { EDITORS = m.editors; }
-            var pct2 = document.getElementById('pct'); if (pct2) pct2.textContent = m.percentage + '%';
-            var fill2 = document.getElementById('prog-fill'); if (fill2) { fill2.classList.remove('indeterminate'); fill2.style.width = (m.percentage < 3 ? 3 : m.percentage) + '%'; }
+            var pct2 = document.getElementById('pct'); var scaled = Math.round(m.percentage * 0.85); barPct = computing ? Math.max(barPct, scaled) : scaled; if (pct2) pct2.textContent = barPct + '%';
+            var fill2 = document.getElementById('prog-fill'); if (fill2) { fill2.classList.remove('indeterminate'); fill2.style.width = (barPct < 3 ? 3 : barPct) + '%'; }
             var cd = document.getElementById('chip-done'); if (cd) cd.textContent = m.completed.toLocaleString();
             // Backfill the total chip too: when the one-time loadingStep 'parsing' message
             // was dropped before this listener attached, it would otherwise stay at '–'.

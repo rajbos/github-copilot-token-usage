@@ -15,6 +15,7 @@ import {
 import { OAUTH_STATE_MAX_AGE_SECONDS } from '../config.js';
 import { getTeamInsights, parseTeamDays } from '../teamInsights.js';
 import { renderTeamInsights, teamInsightsCsv } from './teamPage.js';
+import { renderNavExtra } from '../nav.js';
 export const dashboard = new Hono();
 
 dashboard.use('*', async (c, next) => {
@@ -29,6 +30,7 @@ const BASE_URL = (process.env.BASE_URL ?? 'http://localhost:3000').replace(/\/$/
 const DEPLOY_SHA    = process.env.DEPLOY_SHA    ?? 'unknown';
 const DEPLOY_BRANCH = process.env.DEPLOY_BRANCH ?? 'unknown';
 const DEPLOY_DATE   = process.env.DEPLOY_DATE   ?? 'unknown';
+const { version: packageVersion } = require('../../package.json') as { version: string };
 
 // Load Chart.js UMD bundle once at startup.
 // Bundled build: esbuild.js copies it next to dist/server.js.
@@ -249,7 +251,7 @@ dashboard.get('/dashboard', (c) => {
 	const uploads = getUploadsForUser(user.id, 30);
 	const isAdmin = user.is_admin === 1;
 
-	return c.html(dashboardPage(user, uploads, isAdmin));
+	return c.html(dashboardPage(c, user, uploads, isAdmin));
 });
 
 /** GET /admin — Admin-only dashboard showing all-user token usage and trends. */
@@ -264,7 +266,7 @@ dashboard.get('/admin', (c) => {
 	const userSummaries = getAdminUserSummaries(30);
 	const dailyTotals = getAdminDailyTotals(90);
 
-	return c.html(adminDashboardPage(user, userSummaries, dailyTotals));
+	return c.html(adminDashboardPage(c, user, userSummaries, dailyTotals));
 });
 
 function getSessionUser(c: Context): UserRow | undefined {
@@ -282,11 +284,17 @@ dashboard.get('/team', (c) => {
 <div class="header">
   <h1><img src="/icon.png" class="header-icon" alt="AI Engineering Fluency"></h1>
   <span class="spacer"></span>
-  ${user.is_admin === 1 ? '<a href="/admin">Admin Dashboard</a>' : ''}
-  <a href="/dashboard">My Dashboard</a>
-  <strong aria-current="page">Team Insights</strong>
-  <span>${h(user.github_name ?? user.github_login)}</span>
-  <a href="/auth/logout">Sign out</a>
+  <nav class="header-nav" aria-label="Pages">
+    ${user.is_admin === 1 ? '<a href="/admin" class="nav-admin">Admin Dashboard</a>' : ''}
+    <a href="/dashboard">My Dashboard</a>
+    <strong aria-current="page">Team Insights</strong>
+    ${renderNavExtra(c, '/team')}
+  </nav>
+  <div class="header-user">
+    ${user.avatar_url ? `<img src="${h(user.avatar_url)}" class="avatar-sm" alt="">` : ''}
+    <span class="user-name">${h(user.github_name ?? user.github_login)}</span>
+    <a href="/auth/logout">Sign out</a>
+  </div>
 </div>
 <script>${_chartJsCode}</script>
 ${renderTeamInsights(data)}`));
@@ -349,11 +357,21 @@ function safeJson(data: unknown): string {
 }
 
 function fmt(n: number): string {
-	if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 999_950_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+	if (n >= 999_950) return `${(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
 	return String(n);
 }
+
+const chartFormatterJs = `
+  function formatChartTokens(n) {
+    n = Math.round(n);
+    if (n >= 999950000) return (n / 1000000000).toFixed(1) + 'B';
+    if (n >= 999950) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+`;
 
 // ── Fluency Score types (score is computed by the extension and uploaded directly) ──────────
 
@@ -369,25 +387,43 @@ function layout(title: string, body: string): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161b22">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
 <title>${h(title)} — AI Engineering Fluency</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0; background: #0d1117; color: #e6edf3; min-height: 100vh; }
 
   /* ── Header ── */
-  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px;
-    display: flex; align-items: center; gap: 12px; }
+  /* Wraps instead of overflowing: a header wider than the screen widens the whole page. */
+  .header { background: #161b22; border-bottom: 1px solid #30363d;
+    padding: 12px max(24px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left));
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
   .header h1 { margin: 0; font-size: 1.1rem; color: #58a6ff; display: flex; align-items: center; gap: 8px; }
   .header-icon { height: 32px; width: auto; display: block; }
   .header .spacer { flex: 1; }
   .header a { color: #8b949e; text-decoration: none; font-size: 0.875rem; }
   .header a:hover { color: #e6edf3; }
-  .avatar-sm { width: 28px; height: 28px; border-radius: 50%; vertical-align: middle; }
+  .avatar-sm { width: 28px; height: 28px; border-radius: 50%; vertical-align: middle; flex-shrink: 0; }
+  .header-nav { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .header-nav a, .header-nav [aria-current="page"] { padding: 6px 10px; border-radius: 6px;
+    font-size: 0.875rem; white-space: nowrap; }
+  .header-nav [aria-current="page"] { color: #e6edf3; font-weight: 600; background: #21262d; }
+  .header-nav a.nav-admin { color: #e3b341; }
+  .header-user { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: 8px; }
+  .header-user .user-name { color: #c9d1d9; font-size: 0.875rem; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header-user a { white-space: nowrap; }
 
   /* ── Layout ── */
-  .content { max-width: 1100px; margin: 28px auto; padding: 0 20px; display: flex; flex-direction: column; gap: 16px; }
+  .content { max-width: 1100px; margin: 28px auto; display: flex; flex-direction: column; gap: 16px;
+    padding: 0 max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left)); }
+  .content > * { min-width: 0; }
 
   /* ── Cards ── */
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
@@ -407,7 +443,7 @@ function layout(title: string, body: string): string {
   .profile-avatar { width: 72px; height: 72px; border-radius: 50%; border: 2px solid #30363d; flex-shrink: 0; }
   .profile-avatar-placeholder { width: 72px; height: 72px; border-radius: 50%; background: #21262d;
     display: flex; align-items: center; justify-content: center; font-size: 2rem; flex-shrink: 0; }
-  .profile-name { font-size: 1.3rem; font-weight: 700; color: #e6edf3; margin-bottom: 2px; }
+  .profile-name { font-size: 1.3rem; font-weight: 700; color: #e6edf3; margin-bottom: 2px; overflow-wrap: anywhere; }
   .profile-login a { color: #58a6ff; text-decoration: none; font-size: 0.9rem; }
   .profile-login a:hover { text-decoration: underline; }
   .profile-meta { color: #8b949e; font-size: 0.8rem; margin-top: 4px; }
@@ -430,6 +466,7 @@ function layout(title: string, body: string): string {
 
   /* ── Chart ── */
   .chart-wrap { position: relative; height: 290px; margin-top: 4px; }
+  .chart-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
   /* ── Table ── */
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -437,6 +474,9 @@ function layout(title: string, body: string): string {
   th { background: #0d1117; color: #8b949e; padding: 8px 10px; text-align: left; border-bottom: 1px solid #30363d; white-space: nowrap; }
   td { padding: 7px 10px; border-bottom: 1px solid #161b22; white-space: nowrap; }
   td.truncate { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  /* Keeps the row label in view while a wide table scrolls sideways on a narrow screen. */
+  .sticky-first th:first-child, .sticky-first td:first-child { position: sticky; left: 0; z-index: 1; }
+  .sticky-first td:first-child { background: #161b22; }
   tr:hover td { background: #21262d33; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; background: #1f6feb33; color: #58a6ff; white-space: nowrap; }
 
@@ -515,12 +555,112 @@ function layout(title: string, body: string): string {
   .deploy-footer { text-align: center; padding: 20px; margin-top: 8px;
     color: #484f58; font-size: 0.75rem; border-top: 1px solid #21262d; }
   .deploy-footer code { background: transparent; color: #484f58; padding: 0; font-size: 0.75em; }
+
+  /* ── Phones and narrow windows ── */
+  @media (max-width: 720px) {
+    .header { padding-top: 8px; padding-bottom: 0; gap: 6px 10px;
+      padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+    .header-icon { height: 28px; }
+    .header .spacer { order: 1; }
+    .fluency-badge { order: 2; min-height: 40px; padding: 6px 10px; }
+    .fluency-badge .fb-text { display: none; }
+    .header-user { order: 3; margin-left: 0; }
+    .header-user .user-name { max-width: 30vw; }
+    .header-user a { display: inline-flex; align-items: center; min-height: 40px; }
+    /* Page links get their own row that scrolls sideways, so any number of them fits. */
+    .header-nav { order: 4; flex: 1 0 100%; overflow-x: auto; scrollbar-width: none;
+      -webkit-overflow-scrolling: touch; margin: 0 -12px; padding: 0 12px 6px; }
+    .header-nav::-webkit-scrollbar { display: none; }
+    .header-nav a, .header-nav [aria-current="page"] { display: inline-flex; align-items: center;
+      min-height: 40px; padding: 0 12px; flex-shrink: 0; }
+    .header:not(:has(.header-nav)) { padding-bottom: 8px; }
+
+    .content { margin: 12px auto; gap: 12px;
+      padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+    .card { padding: 14px; }
+    .card-header { flex-direction: column; align-items: stretch; margin-bottom: 12px; }
+    .profile-card { padding: 14px; gap: 14px; }
+    .profile-avatar, .profile-avatar-placeholder { width: 52px; height: 52px; }
+    .profile-avatar-placeholder { font-size: 1.5rem; }
+    .profile-name { font-size: 1.1rem; }
+    .profile-meta { line-height: 1.5; }
+
+    .tabs { display: flex; }
+    .tab { flex: 1 1 auto; min-height: 40px; padding: 6px 8px; font-size: 0.85rem;
+      display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+    .chart-controls { display: grid; grid-template-columns: 1fr 1fr; }
+    .chart-controls > .tabs { grid-column: 1 / -1; }
+    .chart-controls > #group-tabs, .chart-controls > #scale-tabs { grid-column: auto; }
+    .chart-controls > #view-tabs { order: 1; }
+
+    .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .stat-card { padding: 10px 12px; }
+    .stat-card .value { font-size: 1.35rem; margin-top: 4px; }
+
+    .editor-row { flex-wrap: wrap; gap: 4px 10px; margin-bottom: 12px; }
+    .editor-label { width: auto; flex: 1 1 0; min-width: 0; text-align: left; }
+    .editor-track { order: 1; flex: 1 0 100%; }
+
+    .chart-wrap { height: 300px; }
+    table { font-size: 0.8rem; }
+    th, td { padding: 9px 10px; }
+    td.truncate { max-width: 140px; }
+
+    /* Own uploads: each row becomes a small card so the token counts need no sideways scroll.
+       The column headings stay available to assistive technology; each value carries its label. */
+    .breakdown-table { min-width: 0; }
+    .breakdown-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .breakdown-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px;
+      padding: 12px 0; border-bottom: 1px solid #30363d; }
+    .breakdown-table tr:hover td { background: transparent; }
+    .breakdown-table td { padding: 0; border: none; white-space: normal; min-width: 0; overflow-wrap: anywhere; }
+    .breakdown-table td.truncate { max-width: none; overflow: visible; }
+    .breakdown-table .bd-day { font-weight: 600; align-self: center; }
+    .breakdown-table .bd-model { grid-column: 2 / -1; justify-self: end; }
+    .breakdown-table .bd-model .pill { white-space: normal; }
+    .breakdown-table .bd-num { order: 1; font-variant-numeric: tabular-nums; }
+    .breakdown-table .bd-num::before { content: attr(data-label); display: block; color: #8b949e; font-size: 0.72rem; }
+    .breakdown-table .bd-meta { order: 2; grid-column: 1 / -1; color: #8b949e; }
+    .breakdown-table .bd-meta::before { content: attr(data-label) ": "; }
+    details.card > summary, details > summary { min-height: 40px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; text-align: center; }
+    .alert { overflow-wrap: anywhere; }
+    .alert ul { padding-left: 20px; }
+
+    /* The score details become a full-screen sheet rather than a floating dialog. */
+    .fluency-modal-overlay { padding: 0; align-items: stretch; }
+    .fluency-modal { max-width: none; max-height: none; height: 100%; border: none; border-radius: 0;
+      padding-bottom: env(safe-area-inset-bottom); }
+    .fluency-modal-header { position: sticky; top: 0; z-index: 1; background: #161b22;
+      padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
+      border-bottom: 1px solid #30363d; }
+    .fluency-modal-close { min-width: 44px; min-height: 44px; margin: -6px -8px 0 0; }
+    .fluency-modal-body { gap: 14px;
+      padding: 14px max(14px, env(safe-area-inset-right)) 14px max(14px, env(safe-area-inset-left)); }
+    .fluency-chart-wrap { height: 280px; }
+    .fluency-categories { grid-template-columns: 1fr; }
+
+    .deploy-footer { padding: 16px 12px max(16px, env(safe-area-inset-bottom)); overflow-wrap: anywhere; }
+  }
+  @media (max-width: 720px) and (orientation: landscape) {
+    .chart-wrap { height: 240px; }
+  }
+  /* Touch screens of any width, e.g. a phone held sideways: keep controls easy to hit. */
+  @media (pointer: coarse) {
+    .tab { min-height: 40px; }
+    .header-nav a, .header-nav [aria-current="page"] { padding-top: 10px; padding-bottom: 10px; }
+    .header-user a { padding: 10px 0; }
+  }
+  @media (max-width: 350px) {
+    .stat-card .value { font-size: 1.2rem; }
+    .header-user .user-name { display: none; }
+  }
 </style>
 </head>
 <body>
 ${body}
 <footer class="deploy-footer">
-  deployed from <code>${h(DEPLOY_BRANCH)}</code> &middot; <code>${h(DEPLOY_SHA)}</code> &middot; ${h(DEPLOY_DATE)}
+  sharing-server <code>v${h(packageVersion)}</code> &middot; deployed from <code>${h(DEPLOY_BRANCH)}</code> &middot; <code>${h(DEPLOY_SHA)}</code> &middot; ${h(DEPLOY_DATE)}
 </footer>
 </body>
 </html>`;
@@ -549,7 +689,7 @@ function loginPage(): string {
 </div>`);
 }
 
-function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): string {
+function dashboardPage(c: Context, user: UserRow, uploads: UploadRow[], isAdmin: boolean): string {
 	// ── Per-period stats ───────────────────────────────────────────────────────
 	const today = new Date().toISOString().slice(0, 10);
 	const sevenDaysAgo = (() => {
@@ -674,7 +814,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
 <div class="card">
   <div class="card-header">
     <h3>Token Usage Trend</h3>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <div class="chart-controls">
       <div class="tabs" id="chart-period-tabs">
         <button class="tab" data-chart-period="7">Last 7 days</button>
         <button class="tab active" data-chart-period="30">Last 30 days</button>
@@ -698,16 +838,24 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
   <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
 </div>` : `
 <div class="alert alert-warn">
-  No data yet. Configure the VS Code extension with this server's endpoint URL
-  (<code>aiEngineeringFluency.backend.sharingServer.endpointUrl</code>) and wait for the
-  next sync (or trigger one from the status bar).
+  No data yet. The VS Code extension uploads to this server when <em>all</em> of these settings are in place:
+  <ul>
+    <li><code>aiEngineeringFluency.backend.sharingServer.enabled</code> — must be <code>true</code></li>
+    <li><code>aiEngineeringFluency.backend.sharingServer.endpointUrl</code> — this server's URL</li>
+    <li><code>aiEngineeringFluency.backend.sharingProfile</code> — any value other than <code>off</code></li>
+  </ul>
+  Running <strong>AI Engineering Fluency: Configure Team Server Backend</strong> sets all three; pick a
+  sharing profile other than <em>Off</em> there. The Azure Storage toggle is not needed for this server.
+  You also need to be signed in to GitHub in VS Code, since uploads are authenticated with that account.
+  Saving the settings triggers an upload straight away; check the extension's output channel for
+  <code>Sharing server upload:</code> if nothing arrives.
 </div>`;
 
 	const tableHtml = uploads.length > 0 ? `
 <details class="card">
   <summary>Detailed Breakdown (${uploads.length} rows, last 30 days)</summary>
   <div class="table-scroll">
-  <table>
+  <table class="breakdown-table">
     <thead>
       <tr>
         <th>Day</th><th>Model</th><th>Editor</th><th>Workspace</th><th>Machine</th>
@@ -717,14 +865,14 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
     <tbody>
       ${uploads.map(r => `
       <tr>
-        <td>${h(r.day)}</td>
-        <td><span class="pill">${h(r.model)}</span></td>
-        <td>${h(normalizeEditorName(r.editor))}</td>
-        <td class="truncate" title="${h(r.workspace_name ?? r.workspace_id)}">${h(r.workspace_name ?? r.workspace_id)}</td>
-        <td class="truncate" title="${h(r.machine_name ?? r.machine_id)}">${h(r.machine_name ?? r.machine_id)}</td>
-        <td>${r.input_tokens.toLocaleString()}</td>
-        <td>${r.output_tokens.toLocaleString()}</td>
-        <td>${r.interactions.toLocaleString()}</td>
+        <td class="bd-day">${h(r.day)}</td>
+        <td class="bd-model"><span class="pill">${h(r.model)}</span></td>
+        <td class="bd-meta" data-label="Editor">${h(normalizeEditorName(r.editor))}</td>
+        <td class="bd-meta truncate" data-label="Workspace" title="${h(r.workspace_name ?? r.workspace_id)}">${h(r.workspace_name ?? r.workspace_id)}</td>
+        <td class="bd-meta truncate" data-label="Machine" title="${h(r.machine_name ?? r.machine_id)}">${h(r.machine_name ?? r.machine_id)}</td>
+        <td class="bd-num" data-label="Input">${r.input_tokens.toLocaleString()}</td>
+        <td class="bd-num" data-label="Output">${r.output_tokens.toLocaleString()}</td>
+        <td class="bd-num" data-label="Interactions">${r.interactions.toLocaleString()}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -734,6 +882,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
 	// ── Interactive JS ────────────────────────────────────────────────────────
 	const interactiveJs = `
 (function () {
+  ${chartFormatterJs}
   // ── Period tabs ─────────────────────────────────────────────────────────
   function activatePeriod(period) {
     document.querySelectorAll('#period-tabs .tab').forEach(function(b) { b.classList.remove('active'); });
@@ -762,6 +911,10 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
   // ── Chart ────────────────────────────────────────────────────────────────
   var canvas = document.getElementById('trend-chart');
   if (!canvas || !CHART_DATA.length) return;
+  // Fewer axis labels on a phone: sixteen rotated dates leave no room for the bars.
+  // Re-evaluated when the width crosses the breakpoint, e.g. on rotating the phone.
+  var narrowQuery = window.matchMedia('(max-width: 720px)');
+  var narrow = narrowQuery.matches;
 
   var MODEL_PALETTE  = ['#58a6ff','#3fb950','#bc8cff','#f0883e','#e3b341','#f778ba','#79c0ff','#56d364','#d2a8ff','#ffa657'];
   var CLAUDE_COLORS  = ['#bc8cff','#a371f7','#d2a8ff','#6e40c9','#8250df'];
@@ -814,7 +967,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
       .map(function(dim) {
         return {
           label: dim,
-          data: labels.map(function(l) { return Math.round((grouped[l] && grouped[l][dim] || 0) / 1000); }),
+          data: labels.map(function(l) { return grouped[l] && grouped[l][dim] || 0; }),
           backgroundColor: colorFn(dim) + 'bb',
           borderColor: colorFn(dim),
           borderWidth: 1,
@@ -848,10 +1001,10 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
             var log = Math.log10(v);
             if (Math.abs(log - Math.round(log)) > 0.01) { return null; }
           }
-          return v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K';
+          return formatChartTokens(v);
         },
       },
-      title: { display: true, text: 'Tokens (K)', color: '#8b949e', font: { size: 11 } },
+      title: { display: !narrow, text: 'Tokens', color: '#8b949e', font: { size: 11 } },
     };
   }
 
@@ -866,7 +1019,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: 16, font: { size: 11 } } },
+        x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: narrow ? 6 : 16, font: { size: 11 } } },
         y: makeYAxisConfig(),
       },
       plugins: {
@@ -876,11 +1029,11 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
           callbacks: {
             label: function(ctx) {
               var v = ctx.parsed.y;
-              return '  ' + ctx.dataset.label + ': ' + (v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K') + ' tokens';
+              return '  ' + ctx.dataset.label + ': ' + formatChartTokens(v) + ' tokens';
             },
             footer: function(items) {
               var total = items.reduce(function(s,i) { return s + i.parsed.y; }, 0);
-              return 'Total: ' + (total >= 1000 ? (total/1000).toFixed(1)+'M' : total+'K') + ' tokens';
+              return 'Total: ' + formatChartTokens(total) + ' tokens';
             },
           },
         },
@@ -909,6 +1062,12 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
     chart.options.scales.y = makeYAxisConfig();
     chart.update();
   }
+
+  narrowQuery.addEventListener('change', function(e) {
+    narrow = e.matches;
+    chart.options.scales.x.ticks.maxTicksLimit = narrow ? 6 : 16;
+    rebuildChart();
+  });
 
   document.querySelectorAll('#chart-period-tabs .tab').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -955,9 +1114,9 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
 	const stageColor = fluencyScore ? (stageColorMap[fluencyScore.overallStage] ?? '#93c5fd') : '#93c5fd';
 
 	const fluencyBadgeHtml = fluencyScore ? `
-<button class="fluency-badge" id="fluency-badge-btn" title="View your AI Fluency Score details">
+<button class="fluency-badge" id="fluency-badge-btn" title="View your AI Fluency Score details" aria-label="AI Fluency: ${h(fluencyScore.overallLabel)}. View details">
   <span class="fb-icon">🎯</span>
-  <div>
+  <div class="fb-text">
     <div class="fb-label">AI Fluency</div>
     <div class="fb-stage" style="color:${stageColor}">${h(fluencyScore.overallLabel)}</div>
   </div>
@@ -1028,7 +1187,19 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
 
   function buildRadar() {
     var FLUENCY_DATA = ${safeJson(fluencyScore.categories.map(c => ({ category: c.category, icon: c.icon, stage: c.stage })))};
-    var labels   = FLUENCY_DATA.map(function(c) { return c.icon + ' ' + c.category; });
+    // On a phone the chart is too narrow for one-line labels: one word per line, no icon.
+    var narrowQuery = window.matchMedia('(max-width: 720px)');
+    var narrow   = narrowQuery.matches;
+    function radarLabels() {
+      return FLUENCY_DATA.map(function(c) { return narrow ? c.category.split(' ') : c.icon + ' ' + c.category; });
+    }
+    var labels   = radarLabels();
+    narrowQuery.addEventListener('change', function(e) {
+      narrow = e.matches;
+      radarChart.data.labels = radarLabels();
+      radarChart.options.scales.r.ticks.display = !narrow;
+      radarChart.update();
+    });
     var values   = FLUENCY_DATA.map(function(c) { return c.stage; });
     var overallStage = ${fluencyScore.overallStage};
     var fillColor   = 'rgba(88,166,255,0.25)';
@@ -1056,7 +1227,7 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
           r: {
             min: 0, max: 4,
             ticks: {
-              stepSize: 1, color: '#8b949e', backdropColor: 'transparent', font: { size: 10 },
+              display: !narrow, stepSize: 1, color: '#8b949e', backdropColor: 'transparent', font: { size: 10 },
               callback: function(v) {
                 return v === 0 ? '' : ['','AI Skeptic','Explorer','Collaborator','Strategist'][v] || v;
               },
@@ -1089,11 +1260,17 @@ function dashboardPage(user: UserRow, uploads: UploadRow[], isAdmin: boolean): s
   <h1><img src="/icon.png" class="header-icon" alt="AI Engineering Fluency"></h1>
   <span class="spacer"></span>
   ${fluencyBadgeHtml}
-  ${isAdmin ? `<a href="/admin" style="margin-left:8px;color:#e3b341">Admin Dashboard</a><span style="margin-left:8px;color:#e6edf3;font-size:0.875rem;font-weight:600">My Dashboard</span>` : ''}
-  <a href="/team">Team Insights</a>
-  ${avatarUrl ? `<img src="${avatarUrl}" class="avatar-sm" alt="${login}" style="margin-left:8px">` : ''}
-  <span style="color:#c9d1d9;font-size:0.875rem">${displayName}</span>
-  <a href="/auth/logout" style="margin-left:8px">Sign out</a>
+  <nav class="header-nav" aria-label="Pages">
+    ${isAdmin ? '<a href="/admin" class="nav-admin">Admin Dashboard</a>' : ''}
+    <strong aria-current="page">My Dashboard</strong>
+    <a href="/team">Team Insights</a>
+    ${renderNavExtra(c, '/dashboard')}
+  </nav>
+  <div class="header-user">
+    ${avatarUrl ? `<img src="${avatarUrl}" class="avatar-sm" alt="${login}">` : ''}
+    <span class="user-name">${displayName}</span>
+    <a href="/auth/logout">Sign out</a>
+  </div>
 </div>
 <div class="content">
   ${profileHtml}
@@ -1113,8 +1290,8 @@ var CHART_DATA = ${safeJson(chartData)};
 // Re-compute "Today" stats using browser's local timezone (server pre-renders in UTC)
 (function() {
   function fmtLocal(n) {
-    if (n >= 1000000000) return (n / 1000000000).toFixed(1) + 'B';
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 999950000) return (n / 1000000000).toFixed(1) + 'B';
+    if (n >= 999950) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
     return String(n);
   }
@@ -1178,6 +1355,7 @@ function adminStatPanel(stats: AdminPeriodStats, totalUsers: number, panelId: st
 }
 
 function adminDashboardPage(
+	c: Context,
 	adminUser: UserRow,
 	userSummaries: UserUsageSummary[],
 	dailyTotals: AdminDailyRow[],
@@ -1219,7 +1397,7 @@ function adminDashboardPage(
 <div class="card">
   <div class="card-header">
     <h3>Usage Trend</h3>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <div class="chart-controls">
       <div class="tabs" id="admin-mode-tabs">
         <button class="tab active" data-admin-mode="total">Total</button>
         <button class="tab" data-admin-mode="average">Per-User Average</button>
@@ -1262,6 +1440,7 @@ function adminDashboardPage(
 
 	const adminInteractiveJs = `
 (function () {
+  ${chartFormatterJs}
   // ── Period tabs (stat cards only — chart uses its own period state) ─────────
   var currentPeriod = 30;
   var currentMode = 'total';
@@ -1296,6 +1475,8 @@ function adminDashboardPage(
   // ── Chart ────────────────────────────────────────────────────────────────
   var canvas = document.getElementById('admin-trend-chart');
   if (!canvas || !ADMIN_CHART_DATA.length) return;
+  var narrowQuery = window.matchMedia('(max-width: 720px)');
+  var narrow = narrowQuery.matches;
 
   var TOP_N = 10;
   var USER_COLORS = ['#58a6ff','#3fb950','#bc8cff','#f0883e','#e3b341','#f778ba','#79c0ff','#56d364','#d2a8ff','#ffa657'];
@@ -1340,7 +1521,7 @@ function adminDashboardPage(
         data: labels.map(function(day) {
           var total = 0;
           data.forEach(function(r) { if (r.day === day && r.login === login) total += r.inputTokens + r.outputTokens; });
-          return Math.round(total / 1000);
+          return total;
         }),
         backgroundColor: color + 'bb',
         borderColor: color,
@@ -1354,7 +1535,7 @@ function adminDashboardPage(
         data: labels.map(function(day) {
           var total = 0;
           data.forEach(function(r) { if (r.day === day && !topSet[r.login]) total += r.inputTokens + r.outputTokens; });
-          return Math.round(total / 1000);
+          return total;
         }),
         backgroundColor: OTHERS_COLOR + 'bb',
         borderColor: OTHERS_COLOR,
@@ -1378,7 +1559,7 @@ function adminDashboardPage(
         var logins = Object.keys(dayMap[day]).filter(function(l) { return dayMap[day][l] > 0; });
         if (!logins.length) return 0;
         var total = logins.reduce(function(s, l) { return s + dayMap[day][l]; }, 0);
-        return Math.round(total / logins.length / 1000);
+        return total / logins.length;
       }),
       backgroundColor: '#58a6ffbb',
       borderColor: '#58a6ff',
@@ -1392,9 +1573,9 @@ function adminDashboardPage(
       grid: { color: '#21262d' },
       ticks: {
         color: '#8b949e', font: { size: 11 },
-        callback: function(v) { return v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K'; },
+        callback: function(v) { return formatChartTokens(v); },
       },
-      title: { display: true, text: 'Tokens (K)', color: '#8b949e', font: { size: 11 } },
+      title: { display: !narrow, text: 'Tokens', color: '#8b949e', font: { size: 11 } },
     };
   }
 
@@ -1411,7 +1592,7 @@ function adminDashboardPage(
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: 20, font: { size: 11 } } },
+        x: { stacked: true, grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: narrow ? 6 : 20, font: { size: 11 } } },
         y: makeYConfig(true),
       },
       plugins: {
@@ -1421,11 +1602,11 @@ function adminDashboardPage(
           callbacks: {
             label: function(ctx) {
               var v = ctx.parsed.y;
-              return '  ' + ctx.dataset.label + ': ' + (v >= 1000 ? (v/1000).toFixed(1)+'M' : v+'K') + ' tokens';
+              return '  ' + ctx.dataset.label + ': ' + formatChartTokens(v) + ' tokens';
             },
             footer: function(items) {
               var total = items.reduce(function(s, i) { return s + i.parsed.y; }, 0);
-              return 'Total: ' + (total >= 1000 ? (total/1000).toFixed(1)+'M' : total+'K') + ' tokens';
+              return 'Total: ' + formatChartTokens(total) + ' tokens';
             },
           },
         },
@@ -1448,21 +1629,32 @@ function adminDashboardPage(
     chart.data.datasets = datasets;
     chart.options.scales.x.stacked = stacked;
     chart.options.scales.y = makeYConfig(stacked);
-    chart.options.scales.y.title.text = currentMode === 'total' ? 'Tokens (K)' : 'Avg Tokens/User (K)';
+    chart.options.scales.y.title.text = currentMode === 'total' ? 'Tokens' : 'Avg Tokens/User';
     chart.update();
   }
+
+  narrowQuery.addEventListener('change', function(e) {
+    narrow = e.matches;
+    chart.options.scales.x.ticks.maxTicksLimit = narrow ? 6 : 20;
+    rebuildChart();
+  });
 })();`;
 
 	return layout('Admin Dashboard', `
 <div class="header">
   <h1><img src="/icon.png" class="header-icon" alt="AI Engineering Fluency"></h1>
   <span class="spacer"></span>
-  <span style="color:#e6edf3;font-size:0.875rem;font-weight:600">Admin Dashboard</span>
-  <a href="/dashboard" style="margin-left:8px">My Dashboard</a>
-  <a href="/team">Team Insights</a>
-  ${adminAvatar ? `<img src="${adminAvatar}" class="avatar-sm" alt="${adminLogin}" style="margin-left:8px">` : ''}
-  <span style="color:#c9d1d9;font-size:0.875rem">${adminName}</span>
-  <a href="/auth/logout" style="margin-left:8px">Sign out</a>
+  <nav class="header-nav" aria-label="Pages">
+    <strong aria-current="page">Admin Dashboard</strong>
+    <a href="/dashboard">My Dashboard</a>
+    <a href="/team">Team Insights</a>
+    ${renderNavExtra(c, '/admin')}
+  </nav>
+  <div class="header-user">
+    ${adminAvatar ? `<img src="${adminAvatar}" class="avatar-sm" alt="${adminLogin}">` : ''}
+    <span class="user-name">${adminName}</span>
+    <a href="/auth/logout">Sign out</a>
+  </div>
 </div>
 <div class="content">
   ${overviewHtml}

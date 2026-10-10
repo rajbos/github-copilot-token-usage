@@ -63,19 +63,9 @@ That's it! Files will upload during the next backend sync (runs every 5 minutes 
 2. **Add to `copilot` environment**:
    - Secret: `COPILOT_STORAGE_KEY` = your storage key
    - Variable: `COPILOT_STORAGE_ACCOUNT` = your storage account name
+   - Variable: `COPILOT_DATASET_ID` = the dataset ID your uploads use (the first path segment of the blobs, `default` unless you changed it)
 
-3. **Update workflow** to use shared key auth (modify `.github/workflows/copilot-setup-steps.yml`):
-   ```yaml
-   - name: Download with shared key
-     env:
-       AZURE_STORAGE_KEY: ${{ secrets.COPILOT_STORAGE_KEY }}
-     run: |
-       az storage blob download-batch \
-         --account-name ${{ vars.COPILOT_STORAGE_ACCOUNT }} \
-         --account-key $AZURE_STORAGE_KEY \
-         --source copilot-session-logs \
-         --destination ./session-logs
-   ```
+   No workflow changes are needed: `.github/workflows/copilot-setup-steps.yml` picks up `COPILOT_STORAGE_KEY` automatically and authenticates with `--auth-mode key`.
 
 ## Step 3: Verify Setup
 
@@ -133,10 +123,10 @@ Common causes:
 
 ### Workflow can't download files?
 
-1. Verify environment variables are set correctly
-2. Check authentication (Azure login step in workflow)
+1. Verify environment variables are set correctly, especially `COPILOT_DATASET_ID`
+2. Check authentication: the download step logs `Using --auth-mode key` (or `login`), or warns that neither `COPILOT_STORAGE_KEY` nor an Azure login is configured
 3. Ensure storage account allows GitHub Actions access
-4. Review workflow run logs for specific errors
+4. Review the workflow run's warnings and logs for specific errors
 
 ### Need more help?
 

@@ -24,7 +24,7 @@ These files are only present when the coding agent environment has Azure Storage
 
 ### 1. Session Log Files — `./session-logs/`
 
-**What**: Raw GitHub Copilot Chat session log files downloaded from Azure Blob Storage. These contain the full conversation history including prompts, responses, model information, and tool calls.
+**What**: Raw AI-coding session log files (Copilot Chat, Copilot CLI, Claude Code/Desktop and other supported editors) downloaded from Azure Blob Storage. These contain the full conversation history including prompts, responses, model information, and tool calls.
 
 **Structure**:
 ```
@@ -33,12 +33,15 @@ These files are only present when the coding agent environment has Azure Storage
     └── {machineId}/
         └── {YYYY-MM-DD}/
             ├── session-abc123.json
-            └── session-def456.json
+            └── 3a364aa6-b270-4d67-b1df-39841ccb74b0.jsonl
 ```
 
 **Date range**: Last 7 days of session data.
 
-**File format**: JSON files (decompressed from `.json.gz`). Each file contains a Copilot Chat session with this structure:
+**File formats**: Files arrive as `.json` and `.jsonl`, decompressed from `.gz` uploads or downloaded as-is when the uploader's `blobCompressFiles` setting is off. A download contains both formats, and in recent data nearly all of them are `.jsonl`. Always search for both extensions; a `*.json`-only search silently skips most sessions.
+
+- **`.jsonl`** — one JSON event per line. The event shape depends on the editor that wrote it (Claude Code/Desktop, Copilot CLI, VS Code Chat delta logs, ...), so look up the file's editor in the [editor type manifest](#editor-type-manifest--session-logseditor-typesjson) and its schema under `docs/logFilesSchema/`. For token and model numbers, prefer the shared parsers in the repo-root `src/` (`estimateTokensFromJsonlSession()`, `getModelUsageFromSession()`) over hand-rolled `jq`.
+- **`.json`** — a whole Copilot Chat session in one document, with this structure:
 
 ```json
 {
@@ -60,7 +63,7 @@ These files are only present when the coding agent environment has Azure Storage
 }
 ```
 
-**Key fields**:
+**Key fields** (`.json` Copilot Chat sessions):
 - `requests[].message.parts[].text` — User input (input tokens)
 - `requests[].response[].value` — Assistant output (output tokens)
 - `requests[].result.metadata.modelId` — Model used
@@ -68,12 +71,38 @@ These files are only present when the coding agent environment has Azure Storage
 
 **How to analyze**: Use `jq`, Node.js, or Python to parse and aggregate. Example:
 ```bash
-# Count total interactions across all session files
-find ./session-logs -name "*.json" -exec jq '.requests | length' {} \; | paste -sd+ | bc
+# Inventory every downloaded session file, both formats
+find ./session-logs -type f \( -name "*.json" -o -name "*.jsonl" \) ! -name ".editor-types.json" | wc -l
 
-# List all models used
-find ./session-logs -name "*.json" -exec jq -r '.requests[].result.metadata.modelId // empty' {} \; | sort -u
+# Sessions per editor (covers .json and .jsonl alike)
+jq -r '.[]' ./session-logs/.editor-types.json | sort | uniq -c
+
+# Count total interactions across the .json Copilot Chat sessions only
+find ./session-logs -name "*.json" ! -name ".editor-types.json" -exec jq '.requests | length' {} \; | paste -sd+ | bc
+
+# List models used in the .json Copilot Chat sessions only
+find ./session-logs -name "*.json" ! -name ".editor-types.json" -exec jq -r '.requests[].result.metadata.modelId // empty' {} \; | sort -u
 ```
+
+### Editor Type Manifest — `./session-logs/.editor-types.json`
+
+**What**: A JSON manifest mapping each downloaded session file's relative path to its source editor type (e.g., "VS Code", "Copilot CLI", "JetBrains"). Built from blob metadata during the download workflow.
+
+**Format**:
+```json
+{
+  "default/machineId/2026-09-14/session-abc123.json": "VS Code",
+  "default/machineId/2026-09-14/events.jsonl": "Copilot CLI"
+}
+```
+
+**Usage**: Load the manifest to classify session files by editor without relying on filename heuristics or content sniffing.
+```javascript
+const editorTypes = require('./session-logs/.editor-types.json');
+// editorTypes['default/machineId/2026-09-14/session-abc123.json'] === 'VS Code'
+```
+
+**Note**: Only blobs uploaded after the `editorType` metadata feature was added will have entries. Older uploads will be absent from the manifest.
 
 ### 2. Aggregated Usage Data — `./usage-data/usage-agg-daily.json`
 

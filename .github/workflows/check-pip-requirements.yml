@@ -1,0 +1,141 @@
+name: Check pip requirements
+
+# The hash-pinned requirements under .github/requirements/ are only ever
+# installed by copilot-setup-steps.yml, inside a continue-on-error step - so a
+# broken pin never fails anything there. Dependabot bumped graphifyy twice while
+# leaving the previous wheel's sha256 in place, and the agent quietly lost its
+# code graph for over a week. This workflow runs the same install WITHOUT
+# continue-on-error, so a broken pin fails the PR that introduces it - Dependabot
+# PRs included, which no reviewer reads closely.
+
+on:
+  pull_request:
+    paths:
+      - '.github/requirements/**'
+      - '.github/workflows/check-pip-requirements.yml'
+      # The interpreter and install flags this gate mirrors live here.
+      - '.github/workflows/copilot-setup-steps.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/requirements/**'
+      - '.github/workflows/check-pip-requirements.yml'
+      # The interpreter and install flags this gate mirrors live here.
+      - '.github/workflows/copilot-setup-steps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Install hash-pinned requirements
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The install below runs third-party wheel code; give it no token.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # Must match copilot-setup-steps.yml: the interpreter decides which
+          # wheels resolve, so checking any other version proves nothing.
+          python-version: '3.12'
+
+      - name: Check lock files match their inputs
+        shell: python
+        run: |
+          # Static checks, before any third-party code runs.
+          #  1. Every pin in a *.in file appears verbatim in its generated *.txt,
+          #     so an input bumped without regenerating the lock fails here.
+          #  2. No comment in either file quotes a "name==version" pin. That
+          #     is what broke Dependabot last time: its parser matched the pin
+          #     in the header comment, bumped the version string everywhere
+          #     and never rewrote the real line's hash.
+          #  3. The pip-compile command recorded in a lock's header is
+          #     replayable: pip-tools under click >= 8.2 records a spurious
+          #     --no-index, which cuts the replay off from PyPI entirely.
+          #  4. copilot-setup-steps.yml still uses the interpreter and the pip
+          #     flags this gate tests with. Otherwise a change there could break
+          #     the (non-blocking) install while this gate stays green.
+          import pathlib, re, sys
+
+          pin = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)")
+          comment_pin = re.compile(r"#.*\b[A-Za-z0-9][A-Za-z0-9._-]*==[0-9]")
+          errors = []
+
+          version = re.compile(r"""^\s*python-version:\s*['"]?([^'"\s#]+)""", re.M)
+          gate = pathlib.Path(".github/workflows/check-pip-requirements.yml").read_text(encoding="utf-8")
+          setup_path = ".github/workflows/copilot-setup-steps.yml"
+          setup = pathlib.Path(setup_path).read_text(encoding="utf-8")
+          gate_versions, setup_versions = set(version.findall(gate)), set(version.findall(setup))
+          if setup_versions != gate_versions:
+              errors.append(f"{setup_path} sets up Python {sorted(setup_versions)} but this gate tests on {sorted(gate_versions)} - keep them in step")
+          install = re.compile(r"pip install\s+--require-hashes\s+--only-binary\s+:all:\s+-r\s+\.github/requirements/\S+\.txt")
+          if not install.search(setup):
+              errors.append(f"{setup_path} no longer runs 'pip install --require-hashes --only-binary :all: -r .github/requirements/<file>.txt' - update this gate to install the same way")
+          root = pathlib.Path(".github/requirements")
+
+          for f in sorted([*root.glob("*.in"), *root.glob("*.txt")]):
+              for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                  if comment_pin.search(line):
+                      errors.append(f"{f}:{n}: comment quotes a pinned requirement - Dependabot mistakes it for the real one: {line.strip()}")
+                  if re.match(r"#\s+pip-compile\s", line) and re.search(r"\s--no-index(\s|$)", line) and "--find-links" not in line:
+                      errors.append(f"{f}:{n}: recorded pip-compile command has --no-index and no --find-links, so it cannot resolve - regenerate with click<8.2 (see the .in header)")
+
+          for src in sorted(root.glob("*.in")):
+              lock = src.with_suffix(".txt")
+              if not lock.exists():
+                  errors.append(f"{src}: no generated {lock.name} next to it")
+                  continue
+              locked = {m.group(1).lower().replace("_", "-"): m.group(2)
+                        for m in map(pin.match, lock.read_text(encoding="utf-8").splitlines()) if m}
+              for line in src.read_text(encoding="utf-8").splitlines():
+                  m = pin.match(line.split("#", 1)[0].strip())
+                  if not m:
+                      continue
+                  name = m.group(1).lower().replace("_", "-")
+                  if locked.get(name) != m.group(2):
+                      errors.append(f"{src}: pins {m.group(1)}=={m.group(2)} but {lock.name} has {locked.get(name, 'nothing')} - regenerate it (see the header of {src.name})")
+
+          for e in errors:
+              print(f"::error::{e}")
+          sys.exit(1 if errors else 0)
+
+      - name: Install each requirements file exactly as copilot-setup-steps does
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(.github/requirements/*.txt)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No requirements files found under .github/requirements/"
+            exit 1
+          fi
+          for req in "${files[@]}"; do
+            echo "::group::$req"
+            venv="$RUNNER_TEMP/venv-$(basename "$req" .txt)"
+            python -m venv "$venv"
+            # Same flags as copilot-setup-steps.yml. A stale hash, a missing
+            # transitive pin or a version conflict between pins all fail here.
+            if ! "$venv/bin/pip" install --require-hashes --only-binary :all: -r "$req"; then
+              echo "::endgroup::"
+              echo "::error file=$req::pip could not install $req with --require-hashes. Regenerate it from its .in file (see that file's header)."
+              exit 1
+            fi
+            "$venv/bin/pip" check
+            echo "::endgroup::"
+          done
+
+      - name: Smoke-test graphify
+        run: |
+          "$RUNNER_TEMP/venv-graphify/bin/graphify" --version

@@ -1,0 +1,24 @@
+# Review requests for CI and agent configuration.
+#
+# These entries auto-request a review on the paths that decide what automation
+# does: workflows and composite actions, the Copilot- and Claude-side
+# instructions/skills/agents, and the devcontainer (whose `initializeCommand`
+# runs on a developer's own machine).
+#
+# This file is deliberately ADVISORY. Do not enable "Require review from Code
+# Owners" in branch protection: with a single owner it would block that owner's
+# own pull requests, because an author never satisfies their own code-owner
+# review. Adding a second owner just to unblock that makes them a bottleneck on
+# every CI change.
+#
+# What actually gates these paths is .github/workflows/guard-agent-config.yml,
+# which fails when an AGENT-authored pull request touches them until a human
+# adds the `agent-config-approved` label. That distinguishes "a person changed
+# CI" from "an agent changed CI" - which is the real concern - without making
+# anyone wait on a second reviewer.
+
+/.github/       @rajbos
+/.claude/       @rajbos
+/AGENTS.md      @rajbos
+/CLAUDE.md      @rajbos
+/.devcontainer/ @rajbos

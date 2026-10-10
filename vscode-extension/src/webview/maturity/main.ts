@@ -2,16 +2,16 @@
 import { navButtonsHtml } from '../shared/buttonConfig';
 import type { ContextReferenceUsage } from '../shared/contextRefUtils';
 import { setHtml } from '../shared/domUtils';
-import { escapeHtml, markdownToHtml, safeSectionHtml, STAGE_LABELS, STAGE_DESCRIPTIONS } from '../shared/formatUtils';
+import { escapeHtml, markdownToHtml, STAGE_LABELS, STAGE_DESCRIPTIONS } from '../shared/formatUtils';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
-import { buildDarkFactorySectionHtml } from './darkFactorySection';
 import { buildShareCardHeaderHtml, shareCardContainerStyle } from './shareCard';
-import type { DarkFactoryReport } from '../../../../src/types';
 import type { McpToolUsage, ModeUsage, ModelSwitchingAnalysis, ToolCallUsage, CategoryLevelData } from '../shared/types';
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
-import { initializeWebviewLocalization, setCurrentLanguage } from '../shared/localization';
+import { applyWebviewLocale } from '../shared/webviewLocale';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 type UsageAnalysisPeriod = {
 	sessions: number;
@@ -55,8 +55,6 @@ type MaturityData = {
 	fluencyLevels?: CategoryLevelData[];
 	backendConfigured?: boolean;
 	installedHooks?: string[];
-	/** Per-repository Dark Factory readiness scan; absent when the scan could not run. */
-	darkFactory?: DarkFactoryReport;
 };
 
 // Maps a category name to the hook id that provides a session reminder for it
@@ -73,14 +71,11 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 };
 
 const vscode = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'maturity');
 const initialData = getWindowData<MaturityData & { localization?: Record<string, string> }>('__INITIAL_MATURITY__');
 
 // Initialize localization for webview
-if (initialData?.localization) {
-	initializeWebviewLocalization(initialData.localization);
-	const language = initialData.localization['__language__'] || 'en';
-	setCurrentLanguage(language);
-}
+applyWebviewLocale(initialData);
 
 // ── Demo mode state ─────────────────────────────────────────────────────
 
@@ -457,7 +452,7 @@ function buildMaturityRootHtml(
     ? Math.round(demoStageOverrides.reduce((s, v) => s + v, 0) / demoStageOverrides.length)
     : data.overallStage;
   return `
-    <style>${themeStyles}</style>
+    <style>${themeStyles}</style><style>${dataTableStyles}</style>
     <style>${styles}</style>
     <div class="container">
       <div class="header">
@@ -499,7 +494,6 @@ function buildMaturityRootHtml(
         </div>
       </div>
       <div class="category-grid">${categoryCards}</div>
-      ${safeSectionHtml('Dark Factory Readiness', () => buildDarkFactorySectionHtml(data.darkFactory))}
       <div class="footer">
         <span class="footer-info">Based on last 30 days of activity &middot; Last updated: ${new Date(data.lastUpdated).toLocaleString()} &middot; Updates every 5 minutes</span>
         ${dismissedTips.length > 0 ? `<button id="btn-reset-tips" class="reset-tips-btn" title="Show all dismissed improvement suggestions again">🔄 Reset Dismissed Tips</button>` : ''}

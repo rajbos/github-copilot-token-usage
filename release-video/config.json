@@ -1,0 +1,210 @@
+{
+	"$comment": [
+		"Settings for the local release-video pipeline. Everything here is a",
+		"knob a human turns; nothing an AI model is allowed to write.",
+		"",
+		"Run `npm run doctor` after changing anything in `tools` or `voice`."
+	],
+
+	"project": {
+		"width": 1920,
+		"height": 1080,
+		"fps": 30,
+		"theme": "dark",
+		"productName": "AI Engineering Fluency"
+	},
+
+	"branding": {
+		"$comment": [
+			"Paths are relative to the REPOSITORY root, not to release-video, because",
+			"these assets belong to the product rather than to this tool.",
+			"",
+			"Used to build the opening logo card and the closing download card.",
+			"Both are rendered as HTML through the same headless browser that takes",
+			"the screenshots, so layout and fonts behave the way they would on a page."
+		],
+		"logo": "assets/AI Engineering Fluency - Transparent.png",
+		"repoUrl": "github.com/rajbos/ai-engineering-fluency",
+		"tagline": "Download from these marketplaces",
+		"marketplaces": [
+			{ "name": "VS Code Marketplace", "logo": "assets/tool-logos/vscode.svg" },
+			{ "name": "Visual Studio Marketplace", "logo": "assets/tool-logos/visual-studio.svg" },
+			{ "name": "JetBrains Marketplace", "logo": "assets/tool-logos/jetbrains.png" },
+			{ "name": "Open VSX", "logo": "assets/open-vsx-logo.svg" }
+		]
+	},
+
+	"tools": {
+		"$comment": "Absolute paths or bare names resolved on PATH.",
+		"ffmpeg": "ffmpeg",
+		"ffprobe": "ffprobe"
+	},
+
+	"encode": {
+		"$comment": [
+			"NVENC presets run p1 (fastest) to p7 (best quality). p6 is the",
+			"sweet spot for screen content. Set `encoder` to libx264 to render",
+			"without a GPU — everything else stays identical."
+		],
+		"encoder": "h264_nvenc",
+		"preset": "p6",
+		"tune": "hq",
+		"rateControl": "vbr",
+		"cq": 19,
+		"audioBitrate": "192k"
+	},
+
+	"motion": {
+		"$comment": [
+			"Ken Burns defaults. A scene whose feature declares a DOM anchor gets",
+			"its focus point measured from that element's real bounding box, so",
+			"the zoom lands on the thing being talked about rather than the",
+			"middle of the screenshot."
+		],
+		"zoomFrom": 1.0,
+		"zoomTo": 1.12,
+		"transition": "fade",
+		"transitionSeconds": 0.6,
+		"paddingSeconds": 0.7,
+		"minSceneSeconds": 3.0
+	},
+
+	"voice": {
+		"$comment": [
+			"engine: mistral | voicebox | sapi | command | silence",
+			"",
+			"  voicebox — local Voicebox REST server (your cloned voice). Start it",
+			"             first; the pipeline only ever talks to it over HTTP, so",
+			"             TTS never shares VRAM with ffmpeg or whisper.",
+			"  sapi     — Windows built-in speech. Zero install, generic voice.",
+			"             Use it to get a watchable first cut today.",
+			"  command  — any CLI that writes a WAV. See `command` below.",
+			"  silence  — no audio; durations estimated from word count. For",
+			"             checking timing and motion without generating speech.",
+			"",
+			"referenceWav/referenceText are the consented clone source. Record",
+			"10-20s of clean speech and put the exact transcript beside it.",
+			"See assets/voice/README.md."
+		],
+		"engine": "command",
+
+		"voicebox": {
+			"endpoint": "http://127.0.0.1:8000",
+			"path": "/v1/audio/speech",
+			"model": "chatterbox-turbo",
+			"referenceWav": "assets/voice/rob-reference.wav",
+			"referenceText": "assets/voice/rob-reference.txt",
+			"exaggeration": 0.5,
+			"cfgWeight": 0.5,
+			"timeoutMs": 180000,
+			"extra": {}
+		},
+
+		"mistral": {
+			"$comment": [
+				"Mistral's hosted TTS with a cloned voice.",
+				"",
+				"UNLIKE EVERY OTHER ENGINE HERE, THIS IS NOT LOCAL. Narration text",
+				"leaves the machine and the service is billed per request. The",
+				"narration cache therefore matters more, not less: an unchanged",
+				"scene is never re-sent.",
+				"",
+				"The API key is read from the environment variable named by",
+				"apiKeyEnv and is never stored in this file, which is committed.",
+				"",
+				"voiceId comes from the voice you cloned in Mistral's console."
+			],
+			"endpoint": "https://api.mistral.ai",
+			"path": "/v1/audio/speech",
+			"model": "voxtral-mini-tts-latest",
+			"voiceId": "d82c75e2-55bc-4ab8-998a-fa0249dfb53e",
+			"responseFormat": "mp3",
+			"apiKeyEnv": "MISTRAL_API_KEY",
+			"expectedHost": "api.mistral.ai",
+			"allowOtherHosts": false,
+			"timeoutMs": 180000
+		},
+
+		"sapi": {
+			"$comment": "Run `npm run video -- voices` to list installed SAPI voices.",
+			"voiceName": "",
+			"rate": 0
+		},
+
+		"command": {
+			"$comment": [
+				"argv template for an arbitrary TTS CLI. {{text}}, {{out}},",
+				"{{referenceWav}} and {{referenceText}} are substituted as single",
+				"argv entries — never through a shell, so narration text is never",
+				"parsed as a command. A command containing a path separator is",
+				"resolved relative to this project.",
+				"",
+				"Configured for Piper: neural, CPU-only, so it never competes with",
+				"NVENC for the 6 GB of VRAM. Voices live in assets/voice/piper and",
+				"are fetched with:",
+				"  .venv-tts/Scripts/python -m piper.download_voices \\",
+				"    --download-dir assets/voice/piper en_GB-alan-medium",
+				"",
+				"Swap -m for en_US-ryan-high for a slower, higher-quality US voice.",
+				"",
+				"This is the shipped default because it is local, free and needs no",
+				"key. To clone a real voice, either set engine to \"mistral\" (hosted,",
+				"billed, fast) or point argv at scripts/chatterbox-speak.py (local,",
+				"free, minutes per paragraph on CPU). See README.md.",
+				"",
+				"--length-scale is pace: 1.0 is the model's own, lower is faster.",
+				"0.88 reads at about the speed of a presenter who knows the",
+				"material. Below ~0.8 it starts to clip its own consonants.",
+				"--sentence-silence is the gap between sentences, in seconds.",
+				"",
+				"Both change the narration cache key, so editing either one",
+				"regenerates every line on the next `build --from voice`."
+			],
+			"argv": [
+				".venv-tts/Scripts/python.exe",
+				"-m", "piper",
+				"-m", "en_GB-alan-medium",
+				"--data-dir", "assets/voice/piper",
+				"--length-scale", "0.84",
+				"--sentence-silence", "0.25",
+				"-f", "{{out}}"
+			],
+			"stdinText": true
+		}
+	},
+
+	"llm": {
+		"$comment": [
+			"Optional narration polish. The pipeline produces a complete,",
+			"deterministic script from the release catalog with `enabled: false`;",
+			"the model only ever rewrites prose, never timings, paths or",
+			"coordinates, and its output is schema-validated and length-capped",
+			"before it is used.",
+			"",
+			"provider: ollama | openai-compatible (LM Studio, llama.cpp server)"
+		],
+		"enabled": false,
+		"provider": "ollama",
+		"endpoint": "http://127.0.0.1:11434",
+		"allowRemote": false,
+		"model": "qwen3:8b",
+		"temperature": 0.4,
+		"timeoutMs": 120000,
+		"maxWordsPerScene": 70
+	},
+
+	"subtitles": {
+		"$comment": [
+			"Word-level timings come from faster-whisper if `align` is true and",
+			"the CLI is on PATH; otherwise captions are one cue per scene, timed",
+			"from the measured WAV duration (still correct, just less granular)."
+		],
+		"enabled": true,
+		"align": false,
+		"whisperCommand": "whisper-ctranslate2",
+		"whisperModel": "small",
+		"fontName": "Segoe UI",
+		"fontSize": 44,
+		"marginV": 70
+	}
+}

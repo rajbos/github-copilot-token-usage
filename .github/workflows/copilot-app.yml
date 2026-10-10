@@ -1,0 +1,52 @@
+name: Copilot app plugin
+
+# Tests the AI Engineering Fluency canvas plugin (copilot-app/) and its marketplace entry
+# (.github/plugin/marketplace.json): the canvas unit tests plus the manifest
+# checks (Agent Plugins schema, marketplace version in sync with plugin.json,
+# no personal artifacts/snapshot.json in the plugin). Plain `node --test`, no
+# npm install. Not a required check, so a `paths:` trigger is fine here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'copilot-app/**'
+      - '.github/plugin/**'
+      - '.github/workflows/copilot-app.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'copilot-app/**'
+      - '.github/plugin/**'
+      - '.github/workflows/copilot-app.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: copilot-app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test canvas plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Run canvas and manifest tests
+        run: node --test "copilot-app/**/*.test.mjs"

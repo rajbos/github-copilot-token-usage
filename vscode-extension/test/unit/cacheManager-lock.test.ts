@@ -2,7 +2,7 @@ import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
+import { makeTmpFixtureDir } from './tmpFixtureDirs';
 import * as path from 'node:path';
 
 import { CacheManager } from '../../src/cacheManager';
@@ -19,7 +19,7 @@ function makeManager(dir: string): CacheManager {
 }
 
 function makeDirAndManager(): { dir: string; manager: CacheManager; logs: string[] } {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-lock-test-'));
+	const dir = makeTmpFixtureDir('ctt-lock-test-');
 	const logs: string[] = [];
 	const context: any = {
 		extensionMode: 1,

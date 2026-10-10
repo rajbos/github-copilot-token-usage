@@ -3,6 +3,23 @@
  *
  * This module is intentionally pure (no VS Code API dependencies) so it can be
  * unit-tested with mocked data following the same pattern as onboarding.ts.
+ *
+ * Localization (issue #2081): every user-facing string here — titles, bodies,
+ * action labels — resolves through `InsightContext.translate`, a `Translate`
+ * injected by the caller, rather than through `l10n.ts`'s `t()`. Importing
+ * `t()` would pull `vscode` in and end this module's purity; injection keeps it
+ * VS Code-free while still rendering real localized text. `extension.ts` passes
+ * the real `t()`; tests pass `createTranslator('en' | 'zh-cn')` from
+ * `l10nCore.ts`, so they assert against the actually-shipped bundles.
+ *
+ * Two rules for adding or editing an insight:
+ *   1. Never build a sentence by concatenating translated fragments with
+ *      literal English glue, and never inline a `count > 1 ? 's' : ''`-style
+ *      ternary into a template. Plural forms and verb agreement differ per
+ *      locale, so each grammatical variant gets its own key (`.body.one` /
+ *      `.body.other`) and the whole sentence lives inside it.
+ *   2. Put the whole sentence in the bundle with `{0}`-style placeholders for
+ *      live values, so a translator can reorder clauses freely.
  */
 import type {
 	UsageAnalysisPeriod,
@@ -12,6 +29,7 @@ import type {
 	TodaySessionSummary,
 	ToolCurationAnalysis,
 	RepeatedTaskReport,
+	MemoryFilesAnalysis,
 } from '../../src/types';
 import toolNamesData from '../../src/toolNames.json';
 import modelPricingData from '../../src/modelPricing.json';
@@ -19,6 +37,38 @@ import { resolveGuidMcpToolName, resolveMcpFamilyToolName, lookupKnownToolName }
 import { getLongContextInfo, type LongContextInfo } from '../../src/tokenEstimation';
 import { CONTEXT_NEAR_LIMIT_RATIO } from '../../src/types';
 import type { ModelPricing } from '../../src/types';
+// Type-only: `l10nCore` itself imports no `vscode`, but importing only the type
+// keeps even the bundle JSON out of this module's graph.
+import type { Translate } from './l10nCore';
+
+/**
+ * Picks the `.one` or `.other` variant of a key for `count`.
+ *
+ * English only distinguishes one/other, which is all the shipped bundles need.
+ * A locale with richer plural categories (Polish, Arabic, Russian) would need
+ * this to consult `Intl.PluralRules` and the bundle to carry the extra forms —
+ * deliberately not built until a bundle actually needs it, rather than guessed
+ * at now.
+ */
+function plural(key: string, count: number): string {
+	return `${key}.${count === 1 ? 'one' : 'other'}`;
+}
+
+/**
+ * Joins names into a list using the locale's own separator — `, ` in English,
+ * but a full-width `、` in zh-CN, which is why this is not a hardcoded `', '`.
+ */
+function joinNames(ctx: InsightContext, names: string[]): string {
+	return names.join(ctx.translate('insight.shared.listSeparator'));
+}
+
+/**
+ * The trailing " (+N more)" on a truncated list, or an empty string when the
+ * list was shown in full.
+ */
+function moreSuffix(ctx: InsightContext, total: number, shown: number): string {
+	return total > shown ? ctx.translate('insight.shared.andMore', total - shown) : '';
+}
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -248,10 +298,10 @@ function _largestTieredRequestToday(ctx: InsightContext): SessionLongContextStat
  * Human-readable "how much repo fits in the default tier" estimate derived
  * from the threshold: ~4 characters per token, ~40 characters per source line.
  */
-function _describeDefaultTierCapacity(thresholdTokens: number): string {
+function _describeDefaultTierCapacity(ctx: InsightContext, thresholdTokens: number): string {
 	const mb = (thresholdTokens * 4) / (1024 * 1024);
 	const lines = Math.round(thresholdTokens / 10 / 1000);
-	return `roughly ${mb.toFixed(1)} MB of code (≈${lines}K lines) — the largest slice of a repo that fits in one request at default pricing`;
+	return ctx.translate('insight.shared.defaultTierCapacity', mb.toFixed(1), lines);
 }
 
 function autoModelUsageRatio(p: UsageAnalysisPeriod): number {
@@ -275,6 +325,16 @@ export type InsightSeverity = 'tip' | 'opportunity' | 'celebration';
 export type InsightStatus = 'new' | 'seen' | 'dismissed' | 'snoozed' | 'done';
 
 export interface InsightContext {
+	/**
+	 * Resolves every user-facing string this module produces against
+	 * `package.nls*.json`. Required, not optional with an English default: a
+	 * missing translator must be a compile error at the call site, because the
+	 * silent alternative is shipping raw `insight.*` keys into the UI.
+	 *
+	 * `extension.ts` passes `l10n.ts`'s `t()`; tests pass
+	 * `createTranslator('en')` / `createTranslator('zh-cn')`.
+	 */
+	translate: Translate;
 	today: UsageAnalysisPeriod;
 	last30Days: UsageAnalysisPeriod;
 	/** Current calendar month-to-date — enables month-over-month trend insights. */
@@ -290,6 +350,8 @@ export interface InsightContext {
 	curationAnalysis?: ToolCurationAnalysis | null;
 	/** Optional — populated when repeated-task detection found candidates. */
 	repeatedTasks?: RepeatedTaskReport | null;
+	/** Optional — populated when Copilot memory-files discovery has run. */
+	memoryFilesAnalysis?: MemoryFilesAnalysis | null;
 }
 
 export interface InsightState {
@@ -327,11 +389,21 @@ interface InsightDefinition {
 	id: string;
 	category: InsightCategory;
 	severity: InsightSeverity;
-	title: string;
+	/**
+	 * A `package.nls.json` key, not display text — `evaluateInsights` resolves it
+	 * through `ctx.translate`. The `Key` suffix on the label fields is what keeps
+	 * them visibly distinct from the neighbouring `actionCommand` fields, which
+	 * hold literal VS Code command ids and must never be translated.
+	 */
+	titleKey: string;
 	buildBody: (ctx: InsightContext) => string;
-	actionLabel?: string | ((ctx: InsightContext) => string);
+	/** A `package.nls.json` key for a fixed action label. */
+	actionLabelKey?: string;
+	/** For an action label that depends on live data; takes precedence over `actionLabelKey`. */
+	buildActionLabel?: (ctx: InsightContext) => string;
 	actionCommand?: string | ((ctx: InsightContext) => string);
-	secondaryActionLabel?: string | ((ctx: InsightContext) => string);
+	/** A `package.nls.json` key for a fixed secondary action label. */
+	secondaryActionLabelKey?: string;
 	secondaryActionCommand?: string | ((ctx: InsightContext) => string);
 	/** Returns true when this insight is applicable given the current context. */
 	appliesTo: (ctx: InsightContext) => boolean;
@@ -346,14 +418,19 @@ function autoCompactCount(ctx: InsightContext): number {
 	return ctx.autoCompactionsLast7Days?.total ?? 0;
 }
 
-function autoCompactBreakdown(stats: AutomaticCompactionStats): string {
+/**
+ * "GitHub Copilot CLI: 3; Claude: 1" — the source names are product names and
+ * stay untranslated, but the `name: count` pairing and the separator are
+ * punctuation conventions a locale may differ on, so both come from the bundle.
+ */
+function autoCompactBreakdown(ctx: InsightContext, stats: AutomaticCompactionStats): string {
 	const sources: Array<[string, number]> = [
 		['GitHub Copilot CLI', stats.bySource.copilotCli],
 		['Claude', stats.bySource.claude],
 	];
 	return sources.filter(([, count]) => count > 0)
-		.map(([source, count]) => `${source}: ${count}`)
-		.join('; ');
+		.map(([source, count]) => ctx.translate('insight.shared.sourceCount', source, count))
+		.join(ctx.translate('insight.shared.sourceSeparator'));
 }
 
 /** Sessions in the last 30 days whose history was automatically compacted. */
@@ -374,7 +451,7 @@ function compactedSessionPhrase(ctx: InsightContext): string {
 	const cp = ctx.last30Days.contextPressure;
 	if (!cp || cp.sessionsConsidered === 0 || cp.sessionsCompacted === 0) { return ''; }
 	const pct = Math.round((cp.sessionsCompacted / cp.sessionsConsidered) * 100);
-	return ` That's ${cp.sessionsCompacted} of the ${cp.sessionsConsidered} sessions with context data over the last 30 days (${pct}%).`;
+	return ctx.translate('insight.shared.compactedSessionPhrase', cp.sessionsCompacted, cp.sessionsConsidered, pct);
 }
 
 // Starter catalog
@@ -388,18 +465,13 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'missing-instructions',
 		category: 'customization',
 		severity: 'opportunity',
-		title: '🗒️ Add copilot-instructions.md to your repos',
+		titleKey: 'insight.missingInstructions.title',
 		buildBody: (ctx) => {
 			const count = ctx.missedPotential.length;
-			const names = ctx.missedPotential
-				.slice(0, 3)
-				.map(w => w.workspaceName)
-				.join(', ');
-			const suffix = count > 3 ? ` (+${count - 3} more)` : '';
-			return `${count} active workspace${count > 1 ? 's' : ''} (${names}${suffix}) ${count > 1 ? 'don\'t have' : 'doesn\'t have'} a \`copilot-instructions.md\` file. ` +
-				`Adding one gives Copilot project-specific context, reducing back-and-forth and improving response quality.`;
+			const names = joinNames(ctx, ctx.missedPotential.slice(0, 3).map(w => w.workspaceName));
+			return ctx.translate(plural('insight.missingInstructions.body', count), count, names, moreSuffix(ctx, count, 3));
 		},
-		actionLabel: 'View Workspace Health',
+		actionLabelKey: 'insight.action.viewWorkspaceHealth',
 		actionCommand: 'aiEngineeringFluency.openHealthTab',
 		appliesTo: (ctx) => ctx.missedPotential.length > 0,
 		weight: 90,
@@ -409,12 +481,12 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'auto-model-efficiency',
 		category: 'customization',
 		severity: 'tip',
-		title: '⚡ Use the Auto model more often for cost-sensitive work',
+		titleKey: 'insight.autoModelEfficiency.title',
 		buildBody: (ctx) => {
 			const ratio = Math.round(autoModelUsageRatio(ctx.last30Days) * 100);
 			return ratio > 0
-				? `Auto is only ${ratio}% of your model-switching sessions in the last 30 days. When you are optimizing for cost or speed, Auto can choose a better fit without you having to manage model selection manually.`
-				: `You have not used the Auto model in the last 30 days. When you are optimizing for cost or speed, Auto can choose a better fit without you having to manage model selection manually.`;
+				? ctx.translate('insight.autoModelEfficiency.body.some', ratio)
+				: ctx.translate('insight.autoModelEfficiency.body.none');
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
@@ -427,10 +499,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'foundry-local-models',
 		category: 'customization',
 		severity: 'celebration',
-		title: '🧠 Nice use of Microsoft Foundry on Windows models',
+		titleKey: 'insight.foundryLocalModels.title',
 		buildBody: (ctx) => {
 			const sessions = ctx.last30Days.modelSwitching.foundryWindowsSessions ?? 0;
-			return `You used Microsoft Foundry on Windows / local models in ${sessions} session${sessions === 1 ? '' : 's'} in the last 30 days. Local models are great when you want more private, on-device or offline-friendly workflows.`;
+			return ctx.translate(plural('insight.foundryLocalModels.body', sessions), sessions);
 		},
 		appliesTo: (ctx) => (ctx.last30Days.modelSwitching.foundryWindowsSessions ?? 0) > 0,
 		weight: 88,
@@ -439,11 +511,9 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'explore-model-providers',
 		category: 'customization',
 		severity: 'tip',
-		title: '🧩 Try more model providers from the Marketplace',
-		buildBody: (ctx) => {
-			return `You have mostly used the same default model so far. The VS Code Marketplace has model-provider extensions that can add more choices for different tasks, budgets, and privacy needs.`;
-		},
-		actionLabel: 'Open Extensions',
+		titleKey: 'insight.exploreModelProviders.title',
+		buildBody: (ctx) => ctx.translate('insight.exploreModelProviders.body'),
+		actionLabelKey: 'insight.action.openExtensions',
 		actionCommand: 'workbench.extensions.action.showExtensions',
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
@@ -457,16 +527,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'no-context-refs',
 		category: 'context',
 		severity: 'tip',
-		title: '📎 Try anchoring Copilot with context references',
+		titleKey: 'insight.noContextRefs.title',
 		buildBody: (ctx) => {
 			const sessions = ctx.last30Days.sessions;
 			const total = (ctx.last30Days.contextReferences.file ?? 0)
 				+ (ctx.last30Days.contextReferences.codebase ?? 0)
 				+ (ctx.last30Days.contextReferences.selection ?? 0)
 				+ (ctx.last30Days.contextReferences.symbol ?? 0);
-			return `Across your ${sessions} sessions in the last 30 days you used only ${total} context ` +
-				`reference${total !== 1 ? 's' : ''} (#file, #codebase, @workspace, etc.). ` +
-				`Attaching relevant files or symbols helps Copilot give more accurate, targeted answers and reduces follow-up turns.`;
+			return ctx.translate(plural('insight.noContextRefs.body', total), sessions, total);
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
@@ -483,12 +551,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'try-agent-mode',
 		category: 'agentic',
 		severity: 'tip',
-		title: '🤖 Try Agent mode for multi-file tasks',
+		titleKey: 'insight.tryAgentMode.title',
 		buildBody: (ctx) => {
 			const editCount = ctx.last30Days.modeUsage.edit ?? 0;
-			return `You ran ${editCount} edit-mode interaction${editCount !== 1 ? 's' : ''} in the last 30 days but haven't used Agent mode yet. ` +
-				`Agent mode lets Copilot autonomously traverse, edit, and test across multiple files — ` +
-				`great for refactors, feature additions, or bug hunts that touch more than one file.`;
+			return ctx.translate(plural('insight.tryAgentMode.body', editCount), editCount);
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 5) { return false; }
@@ -503,14 +569,12 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'low-context-diversity',
 		category: 'context',
 		severity: 'opportunity',
-		title: '🔍 Most of your sessions have no context attached',
+		titleKey: 'insight.lowContextDiversity.title',
 		buildBody: (ctx) => {
 			const sessions = ctx.last30Days.sessions;
 			const total = totalContextRefs(ctx.last30Days);
 			const noContextPct = Math.round(Math.max(0, 1 - total / sessions) * 100);
-			return `About ${noContextPct}% of your ${sessions} sessions in the last 30 days had no context references. ` +
-				`Try using \`#file\` to attach relevant files, \`@workspace\` to search your codebase, ` +
-				`or select code before asking — Copilot's answers improve significantly with relevant context.`;
+			return ctx.translate('insight.lowContextDiversity.body', noContextPct, sessions);
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
@@ -523,12 +587,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'only-using-file-refs',
 		category: 'context',
 		severity: 'tip',
-		title: '📂 Broaden your context beyond file references',
-		buildBody: (_ctx) => {
-			return `You attach files frequently, but there's more context available. ` +
-				`Try \`#codebase\` or \`@workspace\` to let Copilot search across your entire project for relevant code, ` +
-				`or select a specific code block before asking for precision on a particular snippet.`;
-		},
+		titleKey: 'insight.onlyUsingFileRefs.title',
+		buildBody: (ctx) => ctx.translate('insight.onlyUsingFileRefs.body'),
 		appliesTo: (ctx) => {
 			const refs = ctx.last30Days.contextReferences;
 			return (refs.file ?? 0) > 20 && (refs.codebase ?? 0) < 5 && (refs.selection ?? 0) < 5;
@@ -539,7 +599,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'good-context-variety',
 		category: 'context',
 		severity: 'celebration',
-		title: '🌟 Great job using diverse context references',
+		titleKey: 'insight.goodContextVariety.title',
 		buildBody: (ctx) => {
 			const refs = ctx.last30Days.contextReferences;
 			const activeTypes = [
@@ -551,9 +611,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 				refs.clipboard,
 				refs.changes,
 			].filter(v => (v ?? 0) > 3).length;
-			return `You're using ${activeTypes} different types of context references in the last 30 days — ` +
-				`\`#file\`, \`#selection\`, \`@workspace\`, and more. ` +
-				`Diverse context helps Copilot understand exactly what you're working with and deliver more precise answers.`;
+			return ctx.translate('insight.goodContextVariety.body', activeTypes);
 		},
 		appliesTo: (ctx) => {
 			const refs = ctx.last30Days.contextReferences;
@@ -574,12 +632,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'conversation-depth-low',
 		category: 'consistency',
 		severity: 'tip',
-		title: '💬 Try refining answers within the same conversation',
+		titleKey: 'insight.conversationDepthLow.title',
 		buildBody: (ctx) => {
 			const avg = ctx.last30Days.conversationPatterns.avgTurnsPerSession.toFixed(1);
-			return `Your conversations average ${avg} turns per session in the last 30 days. ` +
-				`When Copilot's first answer isn't quite right, follow up in the same conversation — ` +
-				`it retains context across turns and often converges to the right answer faster than starting fresh.`;
+			return ctx.translate('insight.conversationDepthLow.body', avg);
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
@@ -593,12 +649,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'consistent-daily-user',
 		category: 'consistency',
 		severity: 'celebration',
-		title: '🔥 You\'re a consistent Copilot user!',
-		buildBody: (ctx) => {
-			const n = ctx.last30Days.sessions;
-			return `You've been consistently using Copilot — ${n} sessions over the last 30 days. ` +
-				`Consistent AI use builds stronger intuition over time.`;
-		},
+		titleKey: 'insight.consistentDailyUser.title',
+		buildBody: (ctx) => ctx.translate('insight.consistentDailyUser.body', ctx.last30Days.sessions),
 		appliesTo: (ctx) => ctx.last30Days.sessions >= 25,
 		weight: 45,
 		allowToast: true,
@@ -607,11 +659,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'irregular-usage',
 		category: 'consistency',
 		severity: 'opportunity',
-		title: '📅 Build a Copilot habit with daily use',
+		titleKey: 'insight.irregularUsage.title',
 		buildBody: (ctx) => {
 			const n = ctx.last30Days.sessions;
-			return `You've used Copilot ${n} time${n !== 1 ? 's' : ''} in the last 30 days. ` +
-				`Regular daily use (even for small tasks) helps you build intuition and flow with AI-assisted coding.`;
+			return ctx.translate(plural('insight.irregularUsage.body', n), n);
 		},
 		appliesTo: (ctx) => ctx.last30Days.sessions > 0 && ctx.last30Days.sessions < 10,
 		weight: 60,
@@ -620,16 +671,16 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'mode-diversity-low',
 		category: 'consistency',
 		severity: 'tip',
-		title: '🔀 Explore more Copilot modes',
+		titleKey: 'insight.modeDiversityLow.title',
 		buildBody: (ctx) => {
 			const m = ctx.last30Days.modeUsage;
 			const ask = m.ask ?? 0;
 			const agentic = (m.agent ?? 0) + (m.plan ?? 0) + (m.customAgent ?? 0) + (m.cli ?? 0) + (m.cliApp ?? 0);
 			const total = ask + (m.edit ?? 0) + agentic;
 			if (total > 0 && ask > 0.85 * total) {
-				return 'You mostly use Ask mode. Try Agent mode for making code changes directly — it can edit files, run terminal commands, and iterate across your whole codebase autonomously.';
+				return ctx.translate('insight.modeDiversityLow.body.mostlyAsk');
 			}
-			return 'You haven\'t tried Agent mode yet. It handles multi-step tasks autonomously — great for refactoring, adding tests, or implementing features.';
+			return ctx.translate('insight.modeDiversityLow.body.noAgent');
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
@@ -645,7 +696,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 			return ask > 0.85 * total
 				|| (agentic === 0 && total >= 15);
 		},
-		actionLabel: 'View Interaction Modes',
+		actionLabelKey: 'insight.action.viewInteractionModes',
 		actionCommand: 'aiEngineeringFluency.openActivityTab',
 		weight: 50,
 	},
@@ -655,11 +706,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'no-mcp-in-agent-mode',
 		category: 'tools',
 		severity: 'tip',
-		title: '🔌 Extend Agent mode with MCP servers',
-		buildBody: (_ctx) => {
-			return `You use Agent mode regularly — MCP (Model Context Protocol) servers can extend what Copilot can do in agent sessions, ` +
-				`like reading databases, calling APIs, or browsing docs. Search for 'MCP servers VS Code' to explore options.`;
-		},
+		titleKey: 'insight.noMcpInAgentMode.title',
+		buildBody: (ctx) => ctx.translate('insight.noMcpInAgentMode.body'),
 		appliesTo: (ctx) => {
 			const m = ctx.last30Days.modeUsage;
 			return (m.agent ?? 0) >= 5 && ctx.last30Days.mcpTools.total === 0;
@@ -670,7 +718,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'mcp-tools-active',
 		category: 'tools',
 		severity: 'celebration',
-		title: '🛠️ You\'re actively using MCP tools',
+		titleKey: 'insight.mcpToolsActive.title',
 		buildBody: (ctx) => {
 			const byTool = ctx.last30Days.mcpTools.byTool;
 			const total = ctx.last30Days.mcpTools.total;
@@ -683,9 +731,9 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 				}
 			}
 			if (topTool) {
-				return `You're actively using MCP tools in your Copilot sessions — great! Your most-used tool: ${friendlyToolName(topTool)} (${topCount} calls).`;
+				return ctx.translate('insight.mcpToolsActive.body.topTool', friendlyToolName(topTool), topCount);
 			}
-			return `You're using ${total} MCP tool calls — great adoption of extended Copilot capabilities!`;
+			return ctx.translate('insight.mcpToolsActive.body.total', total);
 		},
 		appliesTo: (ctx) => ctx.last30Days.mcpTools.total >= 10,
 		weight: 35,
@@ -695,11 +743,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'install-extensions',
 		category: 'tools',
 		severity: 'tip',
-		title: '🧩 Discover Agent mode and MCP extensions',
-		buildBody: (_ctx) => {
-			return `If you haven't explored Agent mode yet, it's worth trying for complex multi-file tasks. ` +
-				`Agent mode can use tools — including MCP servers you install — to complete tasks more autonomously.`;
-		},
+		titleKey: 'insight.installExtensions.title',
+		buildBody: (ctx) => ctx.translate('insight.installExtensions.body'),
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions < 10) { return false; }
 			const m = ctx.last30Days.modeUsage;
@@ -714,14 +759,12 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'mostly-single-turn',
 		category: 'consistency',
 		severity: 'tip',
-		title: '🔄 Iterate with Copilot instead of starting fresh',
+		titleKey: 'insight.mostlySingleTurn.title',
 		buildBody: (ctx) => {
 			const { singleTurnSessions, multiTurnSessions } = ctx.last30Days.conversationPatterns;
 			const total = singleTurnSessions + multiTurnSessions;
 			const pct = total > 0 ? Math.round((singleTurnSessions / total) * 100) : 0;
-			return `${pct}% of your last-30-day sessions ended after a single message (${singleTurnSessions} of ${total}). ` +
-				`When Copilot's first answer isn't quite right, follow up in the same conversation rather than ` +
-				`starting over — it retains context and typically converges faster.`;
+			return ctx.translate('insight.mostlySingleTurn.body', pct, singleTurnSessions, total);
 		},
 		appliesTo: (ctx) => {
 			const { singleTurnSessions, multiTurnSessions } = ctx.last30Days.conversationPatterns;
@@ -737,13 +780,11 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'sessions-trending-up',
 		category: 'trend',
 		severity: 'celebration',
-		title: '🚀 Your Copilot usage is on the rise!',
+		titleKey: 'insight.sessionsTrendingUp.title',
 		buildBody: (ctx) => {
 			const dailyAvg = ctx.last30Days.sessions / 30;
 			const pct = Math.round((ctx.today.sessions / dailyAvg - 1) * 100);
-			return `You've had ${ctx.today.sessions} session${ctx.today.sessions !== 1 ? 's' : ''} today — ` +
-				`${pct}% above your daily average of ${dailyAvg.toFixed(1)} over the last 30 days. ` +
-				`Great momentum! Keep the streak going.`;
+			return ctx.translate(plural('insight.sessionsTrendingUp.body', ctx.today.sessions), ctx.today.sessions, pct, dailyAvg.toFixed(1));
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.sessions <= 0) { return false; }
@@ -757,10 +798,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'sessions-trending-down',
 		category: 'trend',
 		severity: 'opportunity',
-		title: '💡 No Copilot session yet today',
-		buildBody: (_ctx) => {
-			return `You haven't started a Copilot session yet today — open a project and let Copilot help.`;
-		},
+		titleKey: 'insight.sessionsTrendingDown.title',
+		buildBody: (ctx) => ctx.translate('insight.sessionsTrendingDown.body'),
 		appliesTo: (ctx) => {
 			return ctx.last30Days.sessions > 10 && ctx.today.sessions === 0;
 		},
@@ -770,14 +809,13 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'agent-mode-growth',
 		category: 'trend',
 		severity: 'celebration',
-		title: '🤖 You\'re using Agent mode more — nice!',
+		titleKey: 'insight.agentModeGrowth.title',
 		buildBody: (ctx) => {
 			const todayTotal = ctx.today.modeUsage.ask + ctx.today.modeUsage.edit + ctx.today.modeUsage.agent;
 			const last30Total = ctx.last30Days.modeUsage.ask + ctx.last30Days.modeUsage.edit + ctx.last30Days.modeUsage.agent;
 			const todayPct = Math.round((ctx.today.modeUsage.agent / todayTotal) * 100);
 			const last30Pct = Math.round((ctx.last30Days.modeUsage.agent / last30Total) * 100);
-			return `Agent mode made up ${todayPct}% of your interactions today, up from ${last30Pct}% over the last 30 days. ` +
-				`Leaning into Agent mode for complex, multi-file tasks is a sign of growing AI engineering fluency!`;
+			return ctx.translate('insight.agentModeGrowth.body', todayPct, last30Pct);
 		},
 		appliesTo: (ctx) => {
 			if (ctx.last30Days.modeUsage.agent <= 0 || ctx.today.modeUsage.agent <= 0) { return false; }
@@ -795,7 +833,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'context-refs-trending-up',
 		category: 'trend',
 		severity: 'celebration',
-		title: '📎 Your context usage is improving!',
+		titleKey: 'insight.contextRefsTrendingUp.title',
 		buildBody: (ctx) => {
 			const todayRefs = ctx.today.contextReferences.file + ctx.today.contextReferences.codebase
 				+ ctx.today.contextReferences.selection + ctx.today.contextReferences.symbol
@@ -807,9 +845,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 				+ ctx.last30Days.contextReferences.vscode + ctx.last30Days.contextReferences.implicitSelection;
 			const dailyAvg = last30Total / 30;
 			const pct = Math.round((todayRefs / dailyAvg - 1) * 100);
-			return `You used ${todayRefs} context reference${todayRefs !== 1 ? 's' : ''} today — ` +
-				`${pct}% above your 30-day daily average of ${dailyAvg.toFixed(1)}. ` +
-				`Rich context (files, symbols, codebase) helps Copilot give more precise, targeted answers.`;
+			return ctx.translate(plural('insight.contextRefsTrendingUp.body', todayRefs), todayRefs, pct, dailyAvg.toFixed(1));
 		},
 		appliesTo: (ctx) => {
 			const last30Total = ctx.last30Days.contextReferences.file + ctx.last30Days.contextReferences.codebase
@@ -832,12 +868,12 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'productive-session-today',
 		category: 'consistency',
 		severity: 'celebration',
-		title: '🏆 Great deep-work session today!',
+		titleKey: 'insight.productiveSessionToday.title',
 		buildBody: (ctx) => {
 			const best = (ctx.todaySessions ?? [])
 				.filter(s => s.interactions > 20)
 				.sort((a, b) => b.interactions - a.interactions)[0];
-			return `Your session in ${best.editor} had ${best.interactions} interactions — a sign of great deep work!`;
+			return ctx.translate('insight.productiveSessionToday.body', best.editor, best.interactions);
 		},
 		appliesTo: (ctx) => {
 			if (!ctx.todaySessions || ctx.todaySessions.length === 0) { return false; }
@@ -850,10 +886,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'morning-sessions-pattern',
 		category: 'consistency',
 		severity: 'tip',
-		title: '🌅 You code with AI best in the morning',
-		buildBody: () => {
-			return `You tend to start coding with AI early — your morning sessions show good focus habits.`;
-		},
+		titleKey: 'insight.morningSessionsPattern.title',
+		buildBody: (ctx) => ctx.translate('insight.morningSessionsPattern.body'),
 		appliesTo: (ctx) => {
 			const sessions = ctx.todaySessions ?? [];
 			if (sessions.length < 3) { return false; }
@@ -869,12 +903,11 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'short-scattered-sessions',
 		category: 'consistency',
 		severity: 'opportunity',
-		title: '⚡ Consolidate short sessions for deeper focus',
+		titleKey: 'insight.shortScatteredSessions.title',
 		buildBody: (ctx) => {
 			const sessions = ctx.todaySessions ?? [];
 			const avg = Math.round(sessions.reduce((sum, s) => sum + s.interactions, 0) / sessions.length);
-			return `You had ${sessions.length} short sessions today (avg ${avg} interactions each). ` +
-				`Fewer, deeper sessions often produce better results — try keeping context within one session.`;
+			return ctx.translate('insight.shortScatteredSessions.body', sessions.length, avg);
 		},
 		appliesTo: (ctx) => {
 			const sessions = ctx.todaySessions ?? [];
@@ -890,15 +923,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'marathon-session-today',
 		category: 'consistency',
 		severity: 'opportunity',
-		title: '🧵 A very long chat session today',
+		titleKey: 'insight.marathonSessionToday.title',
 		buildBody: (ctx) => {
 			const s = biggestSessionToday(ctx);
 			if (!s) { return ''; }
-			const where = s.editor ? ` in ${s.editor}` : '';
-			const turns = `${s.interactions} turn${s.interactions === 1 ? '' : 's'}`;
-			const tokens = s.totalTokens > 0 ? ` (~${formatTokensShort(s.totalTokens)} tokens)` : '';
-			return `Your longest chat today${where} reached ${turns}${tokens}. Deep work in one chat is great — but once a session gets this long, earlier context is more likely to be summarized, compressed, or dropped, so replies can drift and slow down. ` +
-				`When the goal changes, start a fresh chat (New Chat / \`/new\`) and paste a short handoff summary. A handy rule: one chat per bug, feature, or refactor.`;
+			const where = s.editor ? ctx.translate('insight.marathonSessionToday.inEditor', s.editor) : '';
+			const turns = ctx.translate(plural('insight.shared.turns', s.interactions), s.interactions);
+			const tokens = s.totalTokens > 0 ? ctx.translate('insight.marathonSessionToday.tokens', formatTokensShort(s.totalTokens)) : '';
+			return ctx.translate('insight.marathonSessionToday.body', where, turns, tokens);
 		},
 		appliesTo: (ctx) => hasMarathonSessionToday(ctx),
 		weight: 58,
@@ -908,13 +940,11 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'very-long-sessions-pattern',
 		category: 'consistency',
 		severity: 'tip',
-		title: '📏 Your chats tend to run long',
+		titleKey: 'insight.veryLongSessionsPattern.title',
 		buildBody: (ctx) => {
 			const maxTurns = ctx.last30Days.conversationPatterns.maxTurnsInSession;
 			const avg = ctx.last30Days.conversationPatterns.avgTurnsPerSession.toFixed(1);
-			return `Over the last 30 days your longest conversation reached ${maxTurns} prompts, and your sessions average ${avg} prompts each. ` +
-				`Very long chats make earlier context less reliable — the assistant may compress or ignore it as the window fills. ` +
-				`Keeping one focused chat per task (and starting fresh when the topic shifts) usually produces sharper, faster answers.`;
+			return ctx.translate('insight.veryLongSessionsPattern.body', maxTurns, avg);
 		},
 		appliesTo: (ctx) => {
 			// Pattern-level insight: don't double up with the "today" marathon nudge.
@@ -930,14 +960,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'frequent-manual-compaction',
 		category: 'consistency',
 		severity: 'celebration',
-		title: '🎉 You\'re managing context like a pro',
-		buildBody: (ctx) => {
-			const n = manualCompactCount(ctx.last30Days);
-			return `You've used \`/compact\` ${n} times in the last 30 days — that shows deliberate context management, which is a real power-user habit. ` +
-				`One refinement: \`/compact\` is best for continuing the *same task* when a chat gets long. ` +
-				`When you're switching to a *new subtask*, a fresh chat (\`/new\`) with a short handoff summary usually produces sharper answers, since compaction already condenses earlier detail. ` +
-				`Rule of thumb: \`/compact\` = same task, \`/new\` = new goal.`;
-		},
+		titleKey: 'insight.frequentManualCompaction.title',
+		buildBody: (ctx) => ctx.translate('insight.frequentManualCompaction.body', manualCompactCount(ctx.last30Days)),
 		appliesTo: (ctx) => manualCompactCount(ctx.last30Days) >= 5,
 		weight: 50,
 		allowToast: true,
@@ -946,13 +970,11 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'auto-compaction-pattern',
 		category: 'consistency',
 		severity: 'opportunity',
-		title: '⚠️ Your sessions are auto-compacting frequently',
+		titleKey: 'insight.autoCompactionPattern.title',
 		buildBody: (ctx) => {
 			const stats = ctx.autoCompactionsLast7Days!;
 			const n = autoCompactCount(ctx);
-			return `Your sessions automatically compacted ${n} time${n !== 1 ? 's' : ''} in the last 7 days (${autoCompactBreakdown(stats)}).${compactedSessionPhrase(ctx)} ` +
-				`Auto-compaction means earlier context was lost without your control — you may have noticed replies suddenly lacking earlier detail. ` +
-				`To avoid this: start a fresh chat (\`/new\`) when switching tasks, and use \`/compact\` yourself in Claude before the window fills.`;
+			return ctx.translate(plural('insight.autoCompactionPattern.body', n), n, autoCompactBreakdown(ctx, stats), compactedSessionPhrase(ctx));
 		},
 		appliesTo: (ctx) => autoCompactCount(ctx) > 5,
 		weight: 65,
@@ -962,20 +984,23 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'context-window-near-limit',
 		category: 'context',
 		severity: 'tip',
-		title: '🧠 Some sessions nearly ran out of context window',
+		titleKey: 'insight.contextWindowNearLimit.title',
 		buildBody: (ctx) => {
 			const cp = ctx.last30Days.contextPressure!;
 			const n = cp.sessionsNearLimit;
 			const worst = cp.worstFillPercent;
-			const worstNote = worst ? ` The fullest one reached ${worst}% of its window.` : '';
+			const worstNote = worst ? ctx.translate('insight.contextWindowNearLimit.worstNote', worst) : '';
 			const compacted = cp.sessionsCompacted;
 			const compactedNote = compacted > 0
-				? ` Separately, ${compacted} session${compacted !== 1 ? 's' : ''} compacted automatically, losing earlier context.`
+				? ctx.translate(plural('insight.contextWindowNearLimit.compactedNote', compacted), compacted)
 				: '';
-			return `${n} of your ${cp.sessionsWithFillData} sessions with measured context fill reached at least ${Math.round(CONTEXT_NEAR_LIMIT_RATIO * 100)}% of their context window in the last 30 days.${worstNote}${compactedNote} ` +
-				`Once a window fills, the client silently drops or summarizes earlier turns — answers start losing detail you already gave. ` +
-				`Head it off by starting a fresh chat (\`/new\`) per task with a short handoff summary, running \`/compact\` yourself while you still control what's kept, and narrowing context to the files that matter instead of whole-repo references.`;
+			return ctx.translate('insight.contextWindowNearLimit.body',
+				n, cp.sessionsWithFillData, Math.round(CONTEXT_NEAR_LIMIT_RATIO * 100), worstNote, compactedNote);
 		},
+		// Always plural: `appliesTo` below only fires this insight from two
+		// near-limit sessions up, so there is no one-session case to word for.
+		buildActionLabel: (ctx) => ctx.translate('insight.contextWindowNearLimit.action', nearLimitSessionCount(ctx)),
+		actionCommand: 'aiEngineeringFluency.showContextPressureSessions',
 		appliesTo: (ctx) => {
 			// Don't double up with the auto-compaction insight, which already covers
 			// sessions that went past the line.
@@ -990,14 +1015,12 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'context-window-healthy',
 		category: 'context',
 		severity: 'celebration',
-		title: '🎯 You keep your context windows comfortable',
+		titleKey: 'insight.contextWindowHealthy.title',
 		buildBody: (ctx) => {
 			const cp = ctx.last30Days.contextPressure!;
 			const worst = cp.worstFillPercent;
-			const worstNote = worst ? ` — the fullest reached only ${worst}% of its window` : '';
-			return `None of your ${cp.sessionsWithFillData} sessions with measured context fill came close to their context window in the last 30 days${worstNote}. ` +
-				`That means no silent compaction and no lost earlier detail, which is exactly where you want to be. ` +
-				`Keep scoping one task per chat and pointing at specific files rather than the whole repo.`;
+			const worstNote = worst ? ctx.translate('insight.contextWindowHealthy.worstNote', worst) : '';
+			return ctx.translate('insight.contextWindowHealthy.body', cp.sessionsWithFillData, worstNote);
 		},
 		appliesTo: (ctx) => {
 			const cp = ctx.last30Days.contextPressure;
@@ -1014,14 +1037,13 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'high-cost-model-usage',
 		category: 'agentic',
 		severity: 'tip',
-		title: '💰 Most of your requests use cost-intensive models',
+		titleKey: 'insight.highCostModelUsage.title',
 		buildBody: (ctx) => {
 			const ms = ctx.last30Days.modelSwitching;
 			const pct = ms.totalRequests > 0 ? Math.round((ms.highCostRequests / ms.totalRequests) * 100) : 0;
-			const models = ms.highCostModels.slice(0, 3).join(', ');
-			return `${pct}% of your ${ms.totalRequests.toLocaleString()} requests over the last 30 days used higher-cost models${models ? ` (${models})` : ''}. ` +
-				`For routine tasks like quick questions, summaries, or boilerplate, lighter models often perform just as well at a fraction of the cost. ` +
-				`Reserve the heavier models for complex multi-step reasoning, architecture decisions, or subtle bugs.`;
+			const models = joinNames(ctx, ms.highCostModels.slice(0, 3));
+			const modelNote = models ? ctx.translate('insight.highCostModelUsage.modelNote', models) : '';
+			return ctx.translate('insight.highCostModelUsage.body', pct, ms.totalRequests.toLocaleString(), modelNote);
 		},
 		appliesTo: (ctx) => {
 			const ms = ctx.last30Days.modelSwitching;
@@ -1036,22 +1058,20 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'model-edit-retries',
 		category: 'agentic',
 		severity: 'tip',
-		title: '🔁 Some of your models retry edits often',
+		titleKey: 'insight.modelEditRetries.title',
 		buildBody: (ctx) => {
 			const ranked = rankModelsByEditRetries(ctx.last30Days);
 			const worst = ranked[0];
 			const best = ranked.length >= 2 ? ranked[ranked.length - 1] : undefined;
-			const intro = `${modelDisplayName(worst.model)} averaged ${worst.retryRate.toFixed(1)} edit retries per edit turn over the last 30 days ` +
-				`(${worst.retries} retries across ${worst.editTurns} edit turns).`;
+			const intro = ctx.translate('insight.modelEditRetries.intro',
+				modelDisplayName(worst.model), worst.retryRate.toFixed(1), worst.retries, worst.editTurns);
 			if (best && best.retryRate < worst.retryRate / 2) {
-				return `${intro} ${modelDisplayName(best.model)} managed ${best.retryRate.toFixed(1)} on comparable work — ` +
-					`a model that lands its edits first try is often cheaper overall, even at a higher per-token price. ` +
-					`Compare them side by side in the Model Efficiency table.`;
+				return ctx.translate('insight.modelEditRetries.body.comparison',
+					intro, modelDisplayName(best.model), best.retryRate.toFixed(1));
 			}
-			return `${intro} Frequent retries usually mean failed edits being reattempted. ` +
-				`Compare your models in the Model Efficiency table, or give the model more context (attach the relevant files) before asking for edits.`;
+			return ctx.translate('insight.modelEditRetries.body.single', intro);
 		},
-		actionLabel: 'View Model Efficiency',
+		actionLabelKey: 'insight.action.viewModelEfficiency',
 		actionCommand: 'aiEngineeringFluency.openModelEfficiency',
 		appliesTo: (ctx) => {
 			const ranked = rankModelsByEditRetries(ctx.last30Days);
@@ -1070,15 +1090,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'trend-leaner-sessions',
 		category: 'trend',
 		severity: 'celebration',
-		title: '📉 Your sessions are getting leaner',
+		titleKey: 'insight.trendLeanerSessions.title',
 		buildBody: (ctx) => {
 			const prev = trendTurnsPerSession(ctx.lastMonth)!;
 			const cur = trendTurnsPerSession(ctx.month)!;
 			const pct = Math.round(((prev - cur) / prev) * 100);
-			return `You averaged ${cur.toFixed(1)} turns per session this month, down ${pct}% from ${prev.toFixed(1)} last month — ` +
-				`less back-and-forth to get to a usable result. See the Efficiency view for the full trend and what is driving it.`;
+			return ctx.translate('insight.trendLeanerSessions.body', cur.toFixed(1), pct, prev.toFixed(1));
 		},
-		actionLabel: 'Open Efficiency view',
+		actionLabelKey: 'insight.action.openEfficiencyView',
 		actionCommand: 'aiEngineeringFluency.showEfficiency',
 		appliesTo: (ctx) => {
 			const prev = trendTurnsPerSession(ctx.lastMonth);
@@ -1097,16 +1116,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'trend-sessions-getting-heavier',
 		category: 'trend',
 		severity: 'opportunity',
-		title: '📈 Sessions are taking more turns than last month',
+		titleKey: 'insight.trendSessionsGettingHeavier.title',
 		buildBody: (ctx) => {
 			const prev = trendTurnsPerSession(ctx.lastMonth)!;
 			const cur = trendTurnsPerSession(ctx.month)!;
 			const pct = Math.round(((cur - prev) / prev) * 100);
-			return `You are averaging ${cur.toFixed(1)} turns per session this month, up ${pct}% from ${prev.toFixed(1)} last month. ` +
-				`More turns can mean harder tasks — or prompts that need more context up front. ` +
-				`The Efficiency view's Cost Attribution tab shows whether this is also driving your cost up.`;
+			return ctx.translate('insight.trendSessionsGettingHeavier.body', cur.toFixed(1), pct, prev.toFixed(1));
 		},
-		actionLabel: 'Open Efficiency view',
+		actionLabelKey: 'insight.action.openEfficiencyView',
 		actionCommand: 'aiEngineeringFluency.showEfficiency',
 		appliesTo: (ctx) => {
 			const prev = trendTurnsPerSession(ctx.lastMonth);
@@ -1120,15 +1137,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'retry-price-mismatch',
 		category: 'trend',
 		severity: 'tip',
-		title: '💸 Your priciest model is also retrying the most',
+		titleKey: 'insight.retryPriceMismatch.title',
 		buildBody: (ctx) => {
-			const mismatch = findRetryPriceMismatch(ctx.last30Days)!;
-			return `${modelDisplayName(mismatch.worst.model)} retried ${mismatch.worst.retryRate.toFixed(1)} times per edit turn over the last 30 days — ` +
-				`while costing ~${mismatch.priceRatio.toFixed(1)}× as much per output token as ${modelDisplayName(mismatch.best.model)} ` +
-				`(${mismatch.best.retryRate.toFixed(1)} retries per edit turn on comparable work). ` +
-				`For edit-heavy tasks, switching models could improve both quality and cost at once.`;
+			const m = findRetryPriceMismatch(ctx.last30Days)!;
+			return ctx.translate('insight.retryPriceMismatch.body',
+				modelDisplayName(m.worst.model), m.worst.retryRate.toFixed(1), m.priceRatio.toFixed(1),
+				modelDisplayName(m.best.model), m.best.retryRate.toFixed(1));
 		},
-		actionLabel: 'Open Efficiency view',
+		actionLabelKey: 'insight.action.openEfficiencyView',
 		actionCommand: 'aiEngineeringFluency.showEfficiency',
 		appliesTo: (ctx) => findRetryPriceMismatch(ctx.last30Days) !== null,
 		weight: 55,
@@ -1139,13 +1155,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'low-apply-rate',
 		category: 'agentic',
 		severity: 'opportunity',
-		title: '📋 You\'re not applying many suggested code blocks',
+		titleKey: 'insight.lowApplyRate.title',
 		buildBody: (ctx) => {
 			const a = ctx.last30Days.applyUsage;
-			const pct = Math.round(a.applyRate);
-			return `You've applied ${pct}% of the ${a.totalCodeBlocks} code blocks Copilot suggested over the last 30 days. ` +
-				`A low apply rate often means the suggestions are off-target. Try: ` +
-				`attaching the specific file or selection (#file / select-then-ask), being more precise about what you need changed, or asking Copilot to explain its approach first so you can redirect it early.`;
+			return ctx.translate('insight.lowApplyRate.body', Math.round(a.applyRate), a.totalCodeBlocks);
 		},
 		appliesTo: (ctx) => {
 			const a = ctx.last30Days.applyUsage;
@@ -1159,12 +1172,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'reasoning-effort-never-tuned',
 		category: 'agentic',
 		severity: 'tip',
-		title: '🧠 Try tuning reasoning effort for complex tasks',
+		titleKey: 'insight.reasoningEffortNeverTuned.title',
 		buildBody: (ctx) => {
-			const eu = ctx.last30Days.thinkingEffortUsage;
-			const sessions = eu?.sessionCount ?? 0;
-			return `You've had ${sessions} sessions where reasoning effort data was tracked, but you haven't switched effort levels yet. ` +
-				`Raising effort to "high" gives the model more thinking budget for complex problems like architecture decisions, tricky bugs, or multi-step refactors — and you can keep it on "low" for quick questions to stay responsive.`;
+			const sessions = ctx.last30Days.thinkingEffortUsage?.sessionCount ?? 0;
+			return ctx.translate('insight.reasoningEffortNeverTuned.body', sessions);
 		},
 		appliesTo: (ctx) => {
 			const eu = ctx.last30Days.thinkingEffortUsage;
@@ -1177,11 +1188,10 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'reasoning-effort-switcher',
 		category: 'agentic',
 		severity: 'celebration',
-		title: '🎯 You\'re tuning reasoning effort — nice!',
+		titleKey: 'insight.reasoningEffortSwitcher.title',
 		buildBody: (ctx) => {
 			const eu = ctx.last30Days.thinkingEffortUsage!;
-			return `You switched reasoning effort ${eu.switchCount} times across ${eu.sessionCount} sessions. ` +
-				`Adapting effort to task complexity is one of the clearest signs of AI-engineering fluency — you're getting more out of Copilot without wasting compute on simple asks.`;
+			return ctx.translate('insight.reasoningEffortSwitcher.body', eu.switchCount, eu.sessionCount);
 		},
 		appliesTo: (ctx) => {
 			const eu = ctx.last30Days.thinkingEffortUsage;
@@ -1196,12 +1206,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'multi-agent-orchestration',
 		category: 'agentic',
 		severity: 'celebration',
-		title: '🤖 You\'re orchestrating multi-agent sessions!',
-		buildBody: (ctx) => {
-			const n = ctx.last30Days.multiAgentParentSessions!;
-			return `You've run ${n} sessions that spawned parallel sub-agents over the last 30 days. ` +
-				`Multi-agent orchestration is advanced AI engineering — you're splitting complex tasks across focused agents running in parallel, which significantly increases throughput for large changes.`;
-		},
+		titleKey: 'insight.multiAgentOrchestration.title',
+		buildBody: (ctx) => ctx.translate('insight.multiAgentOrchestration.body', ctx.last30Days.multiAgentParentSessions!),
 		appliesTo: (ctx) => (ctx.last30Days.multiAgentParentSessions ?? 0) >= 3,
 		weight: 35,
 		allowToast: true,
@@ -1212,12 +1218,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'subagent-delegation',
 		category: 'agentic',
 		severity: 'celebration',
-		title: '🧩 You\'re delegating work to sub-agents!',
-		buildBody: (ctx) => {
-			const n = ctx.last30Days.delegationSessions!;
-			return `You've delegated work to sub-agents/Task tools in ${n} sessions over the last 30 days. ` +
-				`Breaking work into focused delegated tasks is a strong AI-engineering habit — it keeps each agent's context tight and lets you parallelize independent pieces of work.`;
-		},
+		titleKey: 'insight.subagentDelegation.title',
+		buildBody: (ctx) => ctx.translate('insight.subagentDelegation.body', ctx.last30Days.delegationSessions!),
 		appliesTo: (ctx) => (ctx.last30Days.delegationSessions ?? 0) >= 5 && (ctx.last30Days.multiAgentParentSessions ?? 0) < 3,
 		weight: 32,
 		allowToast: true,
@@ -1228,13 +1230,8 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'single-file-edits-only',
 		category: 'agentic',
 		severity: 'tip',
-		title: '📁 Try multi-file edits for larger refactors',
-		buildBody: (ctx) => {
-			const es = ctx.last30Days.editScope;
-			return `You've made ${es.singleFileEdits} edit-mode sessions over the last 30 days, all touching a single file. ` +
-				`For refactors that span multiple files — renaming a type, extracting a module, updating API contracts — switch to Agent mode. ` +
-				`It can make changes consistently across your whole codebase without you opening each file manually.`;
-		},
+		titleKey: 'insight.singleFileEditsOnly.title',
+		buildBody: (ctx) => ctx.translate('insight.singleFileEditsOnly.body', ctx.last30Days.editScope.singleFileEdits),
 		appliesTo: (ctx) => {
 			const es = ctx.last30Days.editScope;
 			return es.singleFileEdits >= 10
@@ -1248,16 +1245,17 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'session-context-truncated',
 		category: 'context',
 		severity: 'opportunity',
-		title: '⚠️ Context window was truncated in a session today',
+		titleKey: 'insight.sessionContextTruncated.title',
 		buildBody: (ctx) => {
 			const truncated = (ctx.todaySessions ?? []).filter(s => (s.truncationCount ?? 0) > 0);
 			const count = truncated.length;
 			const totalRemoved = truncated.reduce((sum, s) => sum + (s.truncationCount ?? 0), 0);
-			const sessionWord = count === 1 ? 'session' : 'sessions';
-			const truncationWord = totalRemoved === 1 ? 'truncation event' : 'truncation events';
-			return `${count} of your ${sessionWord} today had ${totalRemoved} ${truncationWord} where the AI dropped earlier messages to fit within the context window. ` +
-				`This breaks the prompt cache (increasing latency and cost) and may have caused responses to lose track of earlier context. ` +
-				`To avoid truncation: start a new session when switching tasks, use /compact before the context fills, or break large tasks into smaller focused sessions.`;
+			// Two independently-varying counts, so the sentence needs a key per
+			// combination rather than one key with two interpolated noun phrases —
+			// which locales with case agreement could not render correctly.
+			const sessionForm = count === 1 ? 'oneSession' : 'otherSessions';
+			const eventForm = totalRemoved === 1 ? 'oneEvent' : 'otherEvents';
+			return ctx.translate(`insight.sessionContextTruncated.body.${sessionForm}.${eventForm}`, count, totalRemoved);
 		},
 		appliesTo: (ctx) => {
 			return (ctx.todaySessions ?? []).some(s => (s.truncationCount ?? 0) > 0);
@@ -1269,7 +1267,7 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'long-context-pricing-crossed',
 		category: 'context',
 		severity: 'opportunity',
-		title: '💸 A request crossed into long-context pricing today',
+		titleKey: 'insight.longContextPricingCrossed.title',
 		buildBody: (ctx) => {
 			const crossed = _longContextCrossedToday(ctx);
 			if (crossed) {
@@ -1278,16 +1276,16 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 					? (info.longContextInputCostPerMillion / info.defaultInputCostPerMillion).toFixed(1)
 					: null;
 				const rateNote = ratio
-					? ` ($${info.defaultInputCostPerMillion.toFixed(2)} → $${info.longContextInputCostPerMillion.toFixed(2)} per 1M input tokens, ${ratio}× more)`
+					? ctx.translate('insight.longContextPricingCrossed.rateNote',
+						info.defaultInputCostPerMillion.toFixed(2), info.longContextInputCostPerMillion.toFixed(2), ratio)
 					: '';
-				return `Your largest request today sent ${formatTokensShort(session.maxRequestInputTokens ?? 0)} input tokens to ${model} — above its ${formatTokensShort(info.thresholdTokens)} default-tier threshold, so it was billed at long-context rates${rateNote}. ` +
-					`The default tier fits ${_describeDefaultTierCapacity(info.thresholdTokens)}. ` +
-					`Trim attached context, use \`/compact\`, or split work into focused sessions to stay under the line.`;
+				return ctx.translate('insight.longContextPricingCrossed.body.crossed',
+					formatTokensShort(session.maxRequestInputTokens ?? 0), model,
+					formatTokensShort(info.thresholdTokens), rateNote,
+					_describeDefaultTierCapacity(ctx, info.thresholdTokens));
 			}
 			const tiered = (ctx.todaySessions ?? []).find(s => _isNonDefaultTier(s) && !_qualifiesWindowUnused(s));
-			return `A session today ran in the "${tiered?.contextTier}" context tier instead of the default tier. ` +
-				`Non-default tiers unlock a larger context window but bill input tokens at long-context rates once requests exceed the model's default-tier threshold. ` +
-				`Switch back to the default tier for routine work to keep costs down.`;
+			return ctx.translate('insight.longContextPricingCrossed.body.tierOnly', tiered?.contextTier ?? '');
 		},
 		appliesTo: (ctx) => {
 			// Tier-only sessions whose window usage proves the big window was
@@ -1302,19 +1300,20 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'large-context-window-unused',
 		category: 'context',
 		severity: 'tip',
-		title: '🗜️ You selected a large context window you never needed',
+		titleKey: 'insight.largeContextWindowUnused.title',
 		buildBody: (ctx) => {
 			const s = _windowUnusedToday(ctx);
 			if (!s) { return ''; }
 			const reached = s.contextReachedTokens ?? 0;
 			const tier = _sessionLongContextStatus(s);
-			const limitNote = s.contextWindowLimit ? ` (${formatTokensShort(s.contextWindowLimit)}-token window)` : '';
+			const limitNote = s.contextWindowLimit
+				? ctx.translate('insight.largeContextWindowUnused.limitNote', formatTokensShort(s.contextWindowLimit))
+				: '';
 			const comparison = tier
-				? `stayed within the ${formatTokensShort(tier.info.thresholdTokens)} default-tier threshold for ${tier.model}`
-				: `only used ${Math.round((reached / (s.contextWindowLimit || reached)) * 100)}% of the selected window`;
-			return `A session today ran in the "${s.contextTier}" context tier${limitNote}, but its context only reached ${formatTokensShort(reached)} tokens — it ${comparison}. ` +
-				`The default tier would have covered this work at cheaper input rates. ` +
-				`Save the larger tiers for tasks that genuinely need huge context (whole-repo analysis, very long documents), and stay on the default tier for everything else.`;
+				? ctx.translate('insight.largeContextWindowUnused.comparison.threshold', formatTokensShort(tier.info.thresholdTokens), tier.model)
+				: ctx.translate('insight.largeContextWindowUnused.comparison.percent', Math.round((reached / (s.contextWindowLimit || reached)) * 100));
+			return ctx.translate('insight.largeContextWindowUnused.body',
+				s.contextTier ?? '', limitNote, formatTokensShort(reached), comparison);
 		},
 		appliesTo: (ctx) => _windowUnusedToday(ctx) !== null,
 		weight: 52,
@@ -1323,17 +1322,17 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'long-context-headroom',
 		category: 'context',
 		severity: 'tip',
-		title: '📐 Your requests are approaching the long-context price line',
+		titleKey: 'insight.longContextHeadroom.title',
 		buildBody: (ctx) => {
 			const largest = _largestTieredRequestToday(ctx);
 			if (!largest) { return ''; }
 			const { session, info, model } = largest;
 			const max = session.maxRequestInputTokens ?? 0;
 			const pct = Math.round((max / info.thresholdTokens) * 100);
-			return `Your largest request today reached ${formatTokensShort(max)} input tokens — ${pct}% of the ${formatTokensShort(info.thresholdTokens)} default-tier window for ${model}. ` +
-				`Above that threshold GitHub bills long-context rates ($${info.defaultInputCostPerMillion.toFixed(2)} → $${info.longContextInputCostPerMillion.toFixed(2)} per 1M input tokens). ` +
-				`At ~4 characters per token, the default tier fits ${_describeDefaultTierCapacity(info.thresholdTokens)}. ` +
-				`Keep requests under the line with focused context, \`/compact\`, or a fresh chat per task.`;
+			return ctx.translate('insight.longContextHeadroom.body',
+				formatTokensShort(max), pct, formatTokensShort(info.thresholdTokens), model,
+				info.defaultInputCostPerMillion.toFixed(2), info.longContextInputCostPerMillion.toFixed(2),
+				_describeDefaultTierCapacity(ctx, info.thresholdTokens));
 		},
 		appliesTo: (ctx) => {
 			// Don't double up with the crossed insight.
@@ -1351,32 +1350,30 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'unused-mcp-servers',
 		category: 'tools',
 		severity: 'opportunity',
-		title: '🔌 MCP servers with no recent usage are adding prompt overhead',
+		titleKey: 'insight.unusedMcpServers.title',
 		buildBody: (ctx) => {
 			const unused = ctx.curationAnalysis?.underusedMcpServers.filter(s => s.usedToolCount === 0) ?? [];
-			const names = unused.slice(0, 3).map(s => `"${s.server}"`).join(', ');
-			const extra = unused.length > 3 ? ` (+${unused.length - 3} more)` : '';
+			const names = joinNames(ctx, unused.slice(0, 3).map(s => ctx.translate('insight.shared.quoted', s.server)));
 			const tokens = ctx.curationAnalysis?.estimatedPromptBloat.totalTokens ?? 0;
-			const tokenNote = tokens > 0 ? ` (est. ~${tokens.toLocaleString()} extra context tokens per interaction)` : '';
+			const tokenNote = tokens > 0 ? ctx.translate('insight.unusedMcpServers.tokenNote', tokens.toLocaleString()) : '';
 			const hasExtensionServers = unused.some(s => s.extensionId);
 			const hasFileServers = unused.some(s => !s.extensionId);
 			let howToDisable: string;
 			if (hasExtensionServers && hasFileServers) {
-				howToDisable = `Open \`.vscode/mcp.json\` to remove file-configured servers, and review the Extensions view to disable or uninstall MCP-providing extensions you no longer need.`;
+				howToDisable = ctx.translate('insight.unusedMcpServers.howTo.both');
 			} else if (hasExtensionServers) {
-				howToDisable = `These servers come from installed extensions. Disable or uninstall the contributing extension to reclaim prompt budget. (VS Code does not expose chat tool picker state to extensions, so servers you have already deselected in the picker may still show up here.)`;
+				howToDisable = ctx.translate('insight.unusedMcpServers.howTo.extensions');
 			} else {
-				howToDisable = `Open \`.vscode/mcp.json\` to remove or comment out the unused server entries.`;
+				howToDisable = ctx.translate('insight.unusedMcpServers.howTo.file');
 			}
-			return `${unused.length} MCP server${unused.length > 1 ? 's' : ''} (${names}${extra}) ` +
-				`${unused.length > 1 ? 'have' : 'has'} not been used in the last ${ctx.curationAnalysis?.windowDays ?? 30} days${tokenNote}. ` +
-				`Each registered MCP server adds tool-description context to every prompt, even when its tools are never invoked. ` +
-				howToDisable;
+			return ctx.translate(plural('insight.unusedMcpServers.body', unused.length),
+				unused.length, names, moreSuffix(ctx, unused.length, 3),
+				ctx.curationAnalysis?.windowDays ?? 30, tokenNote, howToDisable);
 		},
-		actionLabel: (ctx) => {
+		buildActionLabel: (ctx) => {
 			const unused = ctx.curationAnalysis?.underusedMcpServers.filter(s => s.usedToolCount === 0) ?? [];
 			const allExtension = unused.length > 0 && unused.every(s => s.extensionId);
-			return allExtension ? 'Manage MCP Extensions' : 'Open mcp.json';
+			return ctx.translate(allExtension ? 'insight.action.manageMcpExtensions' : 'insight.action.openMcpJson');
 		},
 		actionCommand: (ctx) => {
 			const unused = ctx.curationAnalysis?.underusedMcpServers.filter(s => s.usedToolCount === 0) ?? [];
@@ -1393,15 +1390,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'high-prompt-bloat',
 		category: 'tools',
 		severity: 'opportunity',
-		title: '💡 Unused tools are adding significant prompt overhead',
+		titleKey: 'insight.highPromptBloat.title',
 		buildBody: (ctx) => {
 			const tokens = ctx.curationAnalysis?.estimatedPromptBloat.totalTokens ?? 0;
 			const unusedCount = ctx.curationAnalysis?.unusedTools.length ?? 0;
-			return `Your unused tools are adding an estimated ~${tokens.toLocaleString()} extra tokens to every prompt. ` +
-				`${unusedCount} tool${unusedCount !== 1 ? 's' : ''} (MCP servers and/or skills) ${unusedCount !== 1 ? 'were' : 'was'} not used in the last ${ctx.curationAnalysis?.windowDays ?? 30} days but ${unusedCount !== 1 ? 'are' : 'is'} still injected into each interaction. ` +
-				`Removing or disabling them can meaningfully reduce your prompt size, lower latency, and cut costs.`;
+			return ctx.translate(plural('insight.highPromptBloat.body', unusedCount),
+				tokens.toLocaleString(), unusedCount, ctx.curationAnalysis?.windowDays ?? 30);
 		},
-		actionLabel: 'View Tool Curation',
+		actionLabelKey: 'insight.action.viewToolCuration',
 		actionCommand: 'aiEngineeringFluency.openToolsTab',
 		appliesTo: (ctx) => {
 			if (!ctx.curationAnalysis) { return false; }
@@ -1413,17 +1409,14 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'stale-skills',
 		category: 'customization',
 		severity: 'tip',
-		title: '📚 Some skills haven\'t been used recently',
+		titleKey: 'insight.staleSkills.title',
 		buildBody: (ctx) => {
 			const stale = ctx.curationAnalysis?.unusedTools.filter(t => t.source === 'skill') ?? [];
-			const names = stale.slice(0, 3).map(s => `"${s.name}"`).join(', ');
-			const extra = stale.length > 3 ? ` (+${stale.length - 3} more)` : '';
-			return `${stale.length} skill file${stale.length > 1 ? 's' : ''} (${names}${extra}) ` +
-				`${stale.length > 1 ? 'were' : 'was'} not invoked in the last ${ctx.curationAnalysis?.windowDays ?? 30} days. ` +
-				`Unused skills still occupy space in instruction-file contexts. ` +
-				`Consider updating their descriptions so Copilot selects them more reliably, or remove skills that are no longer needed.`;
+			const names = joinNames(ctx, stale.slice(0, 3).map(s => ctx.translate('insight.shared.quoted', s.name)));
+			return ctx.translate(plural('insight.staleSkills.body', stale.length),
+				stale.length, names, moreSuffix(ctx, stale.length, 3), ctx.curationAnalysis?.windowDays ?? 30);
 		},
-		actionLabel: 'View Tool Curation',
+		actionLabelKey: 'insight.action.viewToolCuration',
 		actionCommand: 'aiEngineeringFluency.openToolsTab',
 		appliesTo: (ctx) => {
 			if (!ctx.curationAnalysis) { return false; }
@@ -1432,25 +1425,49 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		},
 		weight: 40,
 	},
+	{
+		id: 'stale-memory-files',
+		category: 'customization',
+		severity: 'tip',
+		titleKey: 'insight.staleMemoryFiles.title',
+		buildBody: (ctx) => {
+			const analysis = ctx.memoryFilesAnalysis;
+			const staleCount = analysis?.staleFileCount ?? 0;
+			const largeCount = analysis?.largeFileCount ?? 0;
+			const parts: string[] = [];
+			if (staleCount > 0) {
+				parts.push(ctx.translate(plural('insight.staleMemoryFiles.stale', staleCount), staleCount, analysis?.staleDays ?? 90));
+			}
+			if (largeCount > 0) {
+				parts.push(ctx.translate(plural('insight.staleMemoryFiles.large', largeCount), largeCount, Math.round((analysis?.largeFileBytes ?? 0) / 1024)));
+			}
+			return ctx.translate('insight.staleMemoryFiles.body', parts.join(ctx.translate('insight.shared.and')));
+		},
+		appliesTo: (ctx) => {
+			const analysis = ctx.memoryFilesAnalysis;
+			if (!analysis) { return false; }
+			return analysis.staleFileCount > 0 || analysis.largeFileCount > 0;
+		},
+		weight: 25,
+	},
 
 	// ── Corrections ─────────────────────────────────────────────────────────
 	{
 		id: 'corrections-user-pushback',
 		category: 'customization',
 		severity: 'opportunity',
-		title: '🔁 You had to correct the agent repeatedly',
+		titleKey: 'insight.correctionsUserPushback.title',
 		buildBody: (ctx) => {
 			const c = ctx.last30Days.corrections;
 			const count = c?.userCorrections ?? 0;
 			const sessions = c?.sessionsWithUserCorrections ?? Math.min(count, c?.sessionsWithMoments ?? 0);
-			return `In the last 30 days you corrected the agent ${count} time${count !== 1 ? 's' : ''} across ${sessions} session${sessions !== 1 ? 's' : ''} ` +
-				`(messages like "no, that's wrong" or "not what I asked"). Recurring corrections often mean the agent is missing project conventions — ` +
-				`capturing them in \`copilot-instructions.md\` or an \`AGENTS.md\` file can prevent the same mistakes. ` +
-				`See the Corrections tab for the exact moments.`;
+			const sessionForm = sessions === 1 ? 'oneSession' : 'otherSessions';
+			const countForm = count === 1 ? 'oneCorrection' : 'otherCorrections';
+			return ctx.translate(`insight.correctionsUserPushback.body.${countForm}.${sessionForm}`, count, sessions);
 		},
-		actionLabel: 'View Corrections',
+		actionLabelKey: 'insight.action.viewCorrections',
 		actionCommand: 'aiEngineeringFluency.openCorrectionsTab',
-		secondaryActionLabel: '🤖 Ask Copilot to Fix This',
+		secondaryActionLabelKey: 'insight.action.askCopilotToFix',
 		secondaryActionCommand: 'aiEngineeringFluency.askCopilotAboutCorrections',
 		appliesTo: (ctx) => (ctx.last30Days.corrections?.userCorrections ?? 0) >= 3,
 		weight: 70,
@@ -1459,16 +1476,16 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'corrections-tool-errors',
 		category: 'tools',
 		severity: 'tip',
-		title: '🛠️ The agent is hitting repeated tool failures',
+		titleKey: 'insight.correctionsToolErrors.title',
 		buildBody: (ctx) => {
 			const c = ctx.last30Days.corrections;
 			const errors = c?.toolErrors ?? 0;
 			const editRetries = (c?.editRetries ?? 0) + (c?.editSelfCorrections ?? 0);
-			return `The agent hit ${errors} failed tool call${errors !== 1 ? 's' : ''} and re-edited a file it had just edited ${editRetries} time${editRetries !== 1 ? 's' : ''} ` +
-				`in the last 30 days. These self-correction loops burn tokens and time. ` +
-				`The Corrections tab shows which tools and files are involved — a recurring failure on the same tool is worth investigating.`;
+			const errorForm = errors === 1 ? 'oneError' : 'otherErrors';
+			const retryForm = editRetries === 1 ? 'oneRetry' : 'otherRetries';
+			return ctx.translate(`insight.correctionsToolErrors.body.${errorForm}.${retryForm}`, errors, editRetries);
 		},
-		actionLabel: 'View Corrections',
+		actionLabelKey: 'insight.action.viewCorrections',
 		actionCommand: 'aiEngineeringFluency.openCorrectionsTab',
 		appliesTo: (ctx) => {
 			const c = ctx.last30Days.corrections;
@@ -1481,18 +1498,16 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'corrections-user-escalation',
 		category: 'customization',
 		severity: 'opportunity',
-		title: '📈 Corrections are clustering, not one-off',
+		titleKey: 'insight.correctionsUserEscalation.title',
 		buildBody: (ctx) => {
 			const c = ctx.last30Days.corrections;
 			const escalated = c?.escalatedUserCorrections ?? 0;
 			const sessions = c?.sessionsWithEscalations ?? 0;
-			return `In the last 30 days, ${escalated} correction${escalated !== 1 ? 's' : ''} landed within a few turns of ` +
-				`an earlier one in the same session, across ${sessions} session${sessions !== 1 ? 's' : ''} — no single editor records a real ` +
-				`sentiment score, but repeated back-to-back pushback is the closest local signal we have to "this conversation is going badly". ` +
-				`When you see this, it's often faster to stop, restate the goal or constraint clearly, and start a fresh turn than to keep correcting course. ` +
-				`See the Corrections tab (moments marked 📈) for exactly where.`;
+			const escalatedForm = escalated === 1 ? 'oneCorrection' : 'otherCorrections';
+			const sessionForm = sessions === 1 ? 'oneSession' : 'otherSessions';
+			return ctx.translate(`insight.correctionsUserEscalation.body.${escalatedForm}.${sessionForm}`, escalated, sessions);
 		},
-		actionLabel: 'View Corrections',
+		actionLabelKey: 'insight.action.viewCorrections',
 		actionCommand: 'aiEngineeringFluency.openCorrectionsTab',
 		appliesTo: (ctx) => (ctx.last30Days.corrections?.escalatedUserCorrections ?? 0) >= 2,
 		weight: 60,
@@ -1501,19 +1516,18 @@ export const INSIGHT_CATALOG: InsightDefinition[] = [
 		id: 'repeated-task-skill-candidate',
 		category: 'customization',
 		severity: 'opportunity',
-		title: '🧩 You keep prompting for the same task — make it a skill',
+		titleKey: 'insight.repeatedTaskSkillCandidate.title',
 		buildBody: (ctx) => {
 			const top = ctx.repeatedTasks?.clusters[0];
 			const count = top?.sessionCount ?? 0;
 			const prompt = top?.representativePrompt ?? '';
 			const more = (ctx.repeatedTasks?.clusters.length ?? 1) - 1;
-			return `You started ${count} sessions with a similar prompt: "${prompt}". ` +
-				`Turning a repeated task like this into a skill or prompt file saves you from re-explaining it and makes the outcome more consistent. ` +
-				(more > 0
-					? `${more} more repeated task${more !== 1 ? 's' : ''} found — see Tools & Integrations → Skill Suggestions.`
-					: `See Tools & Integrations → Skill Suggestions for details.`);
+			const tail = more > 0
+				? ctx.translate(plural('insight.repeatedTaskSkillCandidate.more', more), more)
+				: ctx.translate('insight.repeatedTaskSkillCandidate.seeDetails');
+			return ctx.translate('insight.repeatedTaskSkillCandidate.body', count, prompt, tail);
 		},
-		actionLabel: 'View Skill Suggestions',
+		actionLabelKey: 'insight.action.viewSkillSuggestions',
 		actionCommand: 'aiEngineeringFluency.openToolsTab',
 		appliesTo: (ctx) => (ctx.repeatedTasks?.clusters[0]?.sessionCount ?? 0) >= 3,
 		weight: 60,
@@ -1542,11 +1556,13 @@ export function evaluateInsights(
 				id: def.id,
 				category: def.category,
 				severity: def.severity,
-				title: def.title,
+				title: ctx.translate(def.titleKey),
 				body: def.buildBody(ctx),
-				actionLabel: typeof def.actionLabel === 'function' ? def.actionLabel(ctx) : def.actionLabel,
+				actionLabel: def.buildActionLabel
+					? def.buildActionLabel(ctx)
+					: def.actionLabelKey === undefined ? undefined : ctx.translate(def.actionLabelKey),
 				actionCommand: typeof def.actionCommand === 'function' ? def.actionCommand(ctx) : def.actionCommand,
-				secondaryActionLabel: typeof def.secondaryActionLabel === 'function' ? def.secondaryActionLabel(ctx) : def.secondaryActionLabel,
+				secondaryActionLabel: def.secondaryActionLabelKey === undefined ? undefined : ctx.translate(def.secondaryActionLabelKey),
 				secondaryActionCommand: typeof def.secondaryActionCommand === 'function' ? def.secondaryActionCommand(ctx) : def.secondaryActionCommand,
 				status,
 				allowToast: def.allowToast,

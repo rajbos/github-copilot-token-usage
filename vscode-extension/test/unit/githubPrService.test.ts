@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
 import type * as http from 'node:http';
 import { EventEmitter } from 'node:events';
-import { detectAiType, detectCoAuthorAiType, fetchPrCommitMessages, fetchRepoPrs, fetchRepoPrsPage, fetchCopilotPlanInfo, fetchCopilotTokenEndpointInfo, fetchUserEnterprises, fetchEnterprisePremiumBudgets, discoverGitHubRepos, type CopilotPlanInfo, type CopilotTokenEndpointInfo, type EnterpriseInfo, type EnterpriseBudgetEntry } from '../../src/githubPrService';
+import { detectAiType, detectCoAuthorAiType, fetchPrCommitMessages, fetchRepoPrs, fetchRepoPrsPage, fetchCopilotPlanInfo, fetchCopilotTokenEndpointInfo, fetchUserEnterprises, fetchEnterprisePremiumBudgets, discoverGitHubRepos, fetchPrCopilotReviews, fetchPrCopilotReviewRequests, fetchPrCopilotReviewActivity, isCompletedCopilotReview, isAttributableCopilotReviewRequest, type CopilotPlanInfo, type CopilotTokenEndpointInfo, type EnterpriseInfo, type EnterpriseBudgetEntry } from '../../src/githubPrService';
 
 /**
  * Minimal stand-in for `http.ClientRequest`, exercising exactly the surface
@@ -128,6 +128,190 @@ test('fetchPrCommitMessages: propagates error from fetcher', async () => {
 	const { messages, error } = await fetchPrCommitMessages('owner', 'repo', 42, 'token', mockFetcher);
 	assert.deepEqual(messages, []);
 	assert.equal(error, 'Not Found');
+});
+
+// ---------------------------------------------------------------------------
+// isCompletedCopilotReview — pure function, no I/O
+// ---------------------------------------------------------------------------
+
+test('isCompletedCopilotReview: true for a submitted Copilot review', () => {
+	assert.equal(isCompletedCopilotReview({ user: { login: 'copilot-pull-request-reviewer[bot]' }, state: 'COMMENTED' }), true);
+	assert.equal(isCompletedCopilotReview({ user: { login: 'copilot-pull-request-reviewer[bot]' }, state: 'APPROVED' }), true);
+});
+
+test('isCompletedCopilotReview: false for a PENDING (drafted, not yet submitted) Copilot review', () => {
+	assert.equal(isCompletedCopilotReview({ user: { login: 'copilot-pull-request-reviewer[bot]' }, state: 'PENDING' }), false);
+});
+
+test('isCompletedCopilotReview: false for a submitted review from someone other than Copilot', () => {
+	assert.equal(isCompletedCopilotReview({ user: { login: 'octocat' }, state: 'COMMENTED' }), false);
+});
+
+test('isCompletedCopilotReview: false for a Copilot review with a missing/undefined state', () => {
+	// A partial or unexpected-shape API response must not be treated as completed just because
+	// `undefined !== 'PENDING'` — state has to be a real, non-PENDING string.
+	assert.equal(isCompletedCopilotReview({ user: { login: 'copilot-pull-request-reviewer[bot]' } }), false);
+	assert.equal(isCompletedCopilotReview({ user: { login: 'copilot-pull-request-reviewer[bot]' }, state: undefined }), false);
+});
+
+test('isCompletedCopilotReview: false for missing user/state', () => {
+	assert.equal(isCompletedCopilotReview({}), false);
+	assert.equal(isCompletedCopilotReview(null), false);
+	assert.equal(isCompletedCopilotReview(undefined), false);
+});
+
+// ---------------------------------------------------------------------------
+// isAttributableCopilotReviewRequest — pure function, no I/O
+// ---------------------------------------------------------------------------
+
+test('isAttributableCopilotReviewRequest: true for a review_requested event naming Copilot with a real actor login', () => {
+	assert.equal(
+		isAttributableCopilotReviewRequest({ event: 'review_requested', requested_reviewer: { login: 'Copilot' }, actor: { login: 'rajbos' } }),
+		true,
+	);
+});
+
+test('isAttributableCopilotReviewRequest: false when the actor login is missing (e.g. a deleted account) — not synthesized into "unknown"', () => {
+	assert.equal(
+		isAttributableCopilotReviewRequest({ event: 'review_requested', requested_reviewer: { login: 'Copilot' }, actor: {} }),
+		false,
+	);
+	assert.equal(
+		isAttributableCopilotReviewRequest({ event: 'review_requested', requested_reviewer: { login: 'Copilot' } }),
+		false,
+	);
+	assert.equal(
+		isAttributableCopilotReviewRequest({ event: 'review_requested', requested_reviewer: { login: 'Copilot' }, actor: { login: '' } }),
+		false,
+	);
+});
+
+test('isAttributableCopilotReviewRequest: false for a review_requested event naming a different reviewer', () => {
+	assert.equal(
+		isAttributableCopilotReviewRequest({ event: 'review_requested', requested_reviewer: { login: 'octocat' }, actor: { login: 'rajbos' } }),
+		false,
+	);
+});
+
+test('isAttributableCopilotReviewRequest: false for a non-review_requested timeline event', () => {
+	assert.equal(
+		isAttributableCopilotReviewRequest({ event: 'commented', requested_reviewer: { login: 'Copilot' }, actor: { login: 'rajbos' } }),
+		false,
+	);
+});
+
+test('isAttributableCopilotReviewRequest: false for missing/null/undefined input', () => {
+	assert.equal(isAttributableCopilotReviewRequest({}), false);
+	assert.equal(isAttributableCopilotReviewRequest(null), false);
+	assert.equal(isAttributableCopilotReviewRequest(undefined), false);
+});
+
+// ---------------------------------------------------------------------------
+// fetchPrCopilotReviews / fetchPrCopilotReviewRequests / fetchPrCopilotReviewActivity
+// ---------------------------------------------------------------------------
+
+test('fetchPrCopilotReviews: returns reviews on success', async () => {
+	const reviews = [{ submittedAt: '2026-09-19T14:18:55Z', state: 'COMMENTED' }];
+	const mockFetcher = async () => ({ reviews, statusCode: 200 });
+	const result = await fetchPrCopilotReviews('owner', 'repo', 42, 'token', mockFetcher);
+	assert.deepEqual(result.reviews, reviews);
+	assert.equal(result.error, undefined);
+});
+
+test('fetchPrCopilotReviews: propagates error from fetcher', async () => {
+	const mockFetcher = async () => ({ reviews: [], statusCode: 404, error: 'Not Found' });
+	const result = await fetchPrCopilotReviews('owner', 'repo', 42, 'token', mockFetcher);
+	assert.deepEqual(result.reviews, []);
+	assert.equal(result.error, 'Not Found');
+});
+
+test('fetchPrCopilotReviews: pages through a full first page to collect reviews from a second page', async () => {
+	// A full page of 100 raw reviews with only one of them Copilot's must not be mistaken for
+	// "no more pages" just because the filtered `reviews.length` (1) is well under 100.
+	const pages = [
+		{ reviews: [{ submittedAt: '2026-09-19T10:00:00Z', state: 'COMMENTED' }], pageSize: 100, statusCode: 200 },
+		{ reviews: [{ submittedAt: '2026-09-19T11:00:00Z', state: 'APPROVED' }], pageSize: 3, statusCode: 200 },
+	];
+	const calledPages: number[] = [];
+	const mockFetcher = async (_o: string, _r: string, _n: number, _t: string, page: number) => {
+		calledPages.push(page);
+		return pages[page - 1];
+	};
+	const result = await fetchPrCopilotReviews('owner', 'repo', 42, 'token', mockFetcher);
+	assert.deepEqual(calledPages, [1, 2]);
+	assert.deepEqual(result.reviews, [...pages[0].reviews, ...pages[1].reviews]);
+	assert.equal(result.error, undefined);
+});
+
+test('fetchPrCopilotReviews: stops at the page cap rather than paginating forever', async () => {
+	let calls = 0;
+	const countingFetcher = async () => { calls++; return { reviews: [], pageSize: 100, statusCode: 200 }; };
+	await fetchPrCopilotReviews('owner', 'repo', 42, 'token', countingFetcher);
+	assert.equal(calls, 5);
+});
+
+test('fetchPrCopilotReviewRequests: returns requests on success', async () => {
+	const requests = [{ requestedBy: 'rajbos', requestedAt: '2026-09-19T14:12:18Z' }];
+	const mockFetcher = async () => ({ requests, statusCode: 200 });
+	const result = await fetchPrCopilotReviewRequests('owner', 'repo', 42, 'token', mockFetcher);
+	assert.deepEqual(result.requests, requests);
+	assert.equal(result.error, undefined);
+});
+
+test('fetchPrCopilotReviewRequests: pages through a full first page to collect requests from a second page', async () => {
+	// A full page of 100 raw timeline events with only one review request must not be mistaken
+	// for "no more pages" just because the filtered `requests.length` (1) is well under 100.
+	const pages = [
+		{ requests: [{ requestedBy: 'rajbos', requestedAt: '2026-09-19T10:00:00Z' }], pageSize: 100, statusCode: 200 },
+		{ requests: [{ requestedBy: 'octocat', requestedAt: '2026-09-19T11:00:00Z' }], pageSize: 3, statusCode: 200 },
+	];
+	const calledPages: number[] = [];
+	const mockFetcher = async (_o: string, _r: string, _n: number, _t: string, page: number) => {
+		calledPages.push(page);
+		return pages[page - 1];
+	};
+	const result = await fetchPrCopilotReviewRequests('owner', 'repo', 42, 'token', mockFetcher);
+	assert.deepEqual(calledPages, [1, 2]);
+	assert.deepEqual(result.requests, [...pages[0].requests, ...pages[1].requests]);
+	assert.equal(result.error, undefined);
+});
+
+test('fetchPrCopilotReviewRequests: stops at the page cap rather than paginating forever', async () => {
+	let calls = 0;
+	const countingFetcher = async () => { calls++; return { requests: [], pageSize: 100, statusCode: 200 }; };
+	await fetchPrCopilotReviewRequests('owner', 'repo', 42, 'token', countingFetcher);
+	assert.equal(calls, 5);
+});
+
+test('fetchPrCopilotReviewRequests: propagates error from fetcher', async () => {
+	const mockFetcher = async () => ({ requests: [], statusCode: 403, error: 'Forbidden' });
+	const result = await fetchPrCopilotReviewRequests('owner', 'repo', 42, 'token', mockFetcher);
+	assert.deepEqual(result.requests, []);
+	assert.equal(result.error, 'Forbidden');
+});
+
+test('fetchPrCopilotReviewActivity: combines reviews and requests from both fetchers', async () => {
+	const reviews = [
+		{ submittedAt: '2026-09-19T10:25:49Z', state: 'COMMENTED' },
+		{ submittedAt: '2026-09-19T14:19:01Z', state: 'COMMENTED' },
+	];
+	const requests = [
+		{ requestedBy: 'rajbos', requestedAt: '2026-09-19T10:20:02Z' },
+		{ requestedBy: 'rajbos', requestedAt: '2026-09-19T14:12:18Z' },
+	];
+	const mockFetchReviews = async () => ({ reviews, statusCode: 200 });
+	const mockFetchRequests = async () => ({ requests, statusCode: 200 });
+	const result = await fetchPrCopilotReviewActivity('owner', 'repo', 42, 'token', mockFetchReviews, mockFetchRequests);
+	assert.deepEqual(result.reviews, reviews);
+	assert.deepEqual(result.requests, requests);
+	assert.equal(result.error, undefined);
+});
+
+test('fetchPrCopilotReviewActivity: surfaces an error from either fetcher', async () => {
+	const mockFetchReviews = async () => ({ reviews: [], statusCode: 500, error: 'Server error' });
+	const mockFetchRequests = async () => ({ requests: [], statusCode: 200 });
+	const result = await fetchPrCopilotReviewActivity('owner', 'repo', 42, 'token', mockFetchReviews, mockFetchRequests);
+	assert.equal(result.error, 'Server error');
 });
 
 // ---------------------------------------------------------------------------

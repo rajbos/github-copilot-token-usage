@@ -22,6 +22,13 @@ test('getModelBillingProvider: google prefix maps to Google', () => {
 	assert.equal(getModelBillingProvider('google-something'), 'Google');
 });
 
+test('getModelBillingProvider: glm maps to Z.ai rather than falling through to Other', () => {
+	// Mistral Vibe routes to GLM models, and they are priced in modelPricing.json — so
+	// without a prefix entry their real cost would land in the generic "Other" bucket.
+	assert.equal(getModelBillingProvider('glm-5-2'), 'Z.ai');
+	assert.equal(getModelBillingProvider('glm-4.6'), 'Z.ai');
+});
+
 test('getModelBillingProvider: mistral maps to Mistral AI', () => {
 	assert.equal(getModelBillingProvider('mistral-large'), 'Mistral AI');
 });
@@ -68,6 +75,19 @@ test('getModelBillingProvider: two-part model IDs are not treated as custom endp
 
 test('getModelBillingProvider: mai- maps to Microsoft', () => {
 	assert.equal(getModelBillingProvider('mai-ds-r1'), 'Microsoft');
+});
+
+test('getModelBillingProvider: HydraFusion belongs to GitHub Copilot, not to any model vendor', () => {
+	// The models behind hydrafusion vary per turn, so the only honest provider is
+	// the one running the router — and the Efficiency view's vendor filter must
+	// not file it under "Other".
+	assert.equal(getModelBillingProvider('hydrafusion'), 'GitHub Copilot');
+});
+
+test('getModelBillingProvider: the bare auto id is not claimed for Copilot', () => {
+	// Kiro CLI records every session under `auto` as well; without editor
+	// context this helper cannot tell the two apart, so it stays unclassified.
+	assert.equal(getModelBillingProvider('auto'), 'Other');
 });
 
 test('getModelBillingProvider: unknown model maps to Other', () => {

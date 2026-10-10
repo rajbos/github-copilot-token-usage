@@ -1,13 +1,20 @@
 {
-  "currentVersion": "0.17.3",
+  "currentVersion": "0.18.0",
   "backendConfigured": true,
   "releases": [
     {
-      "version": "0.17.3",
+      "version": "0.18.0",
       "date": null,
-      "headline": "This release is about noticing patterns you would otherwise have to spot yourself: where the agent had to backtrack, which prompts you keep retyping, and how quickly models actually start answering.",
+      "headline": "This release is about noticing patterns you would otherwise have to spot yourself: where the agent had to backtrack, which prompts you keep retyping, how quickly models actually start answering, and how much Copilot agent memory has piled up on disk.",
       "isCurrent": true,
       "features": [
+        {
+          "id": "usage.memory-files-hygiene",
+          "title": "Copilot Memory Files",
+          "description": "A new section on the Tools tab showing how much Copilot agent memory has accumulated on disk — per workspace, repo, session, and global scope — with counts for stale and oversized files so you know what is safe to clear out.",
+          "kind": "section",
+          "isUnseen": true
+        },
         {
           "id": "usage.corrections-tab",
           "title": "Corrections tab",

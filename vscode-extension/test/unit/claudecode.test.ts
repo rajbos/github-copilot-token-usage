@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { makeWorkspaceFixtureDir } from './tmpFixtureDirs';
 
 import { ClaudeCodeDataAccess, normalizeClaudeModelId } from '../../../src/claudecode';
 import { ClaudeCodeAdapter } from '../../../src/adapters/claudeCodeAdapter';
@@ -84,7 +85,7 @@ test('getProjectPathFromHash: Windows path reversal', async () => {
 function createTempSession(events: any[]): string {
 	// Keep synthetic session files outside the OS temp directory so the secure file-read guard
 	// in src/utils/safeFileRead.ts still permits the parser to exercise actual session logic.
-	const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'claude-test-'));
+	const tmpDir = makeWorkspaceFixtureDir('claude-test-');
 	const projectDir = path.join(tmpDir, '.claude', 'projects', 'test-project');
 	fs.mkdirSync(projectDir, { recursive: true });
 	const filePath = path.join(projectDir, 'test-session.jsonl');
@@ -93,12 +94,18 @@ function createTempSession(events: any[]): string {
 	return filePath;
 }
 
-function cleanup(filePath: string) {
-	try {
-		// Walk up to the temp dir root and remove
-		const tmpRoot = filePath.split('.claude')[0];
-		fs.rmSync(tmpRoot, { recursive: true, force: true });
-	} catch { /* ignore */ }
+function cleanup(filePath: string): void {
+	// Deliberately a no-op on the path: makeWorkspaceFixtureDir registers the
+	// directory it created and removes it when the file finishes, so there is
+	// nothing to derive here.
+	//
+	// This used to be `fs.rmSync(filePath.split('.claude')[0], { recursive: true,
+	// force: true })`, which guessed the fixture root by splitting on a path
+	// segment that also occurs in the fixture's own path. A checkout whose own
+	// path contains `.claude` — a git worktree under `~/.claude/worktrees/`, say —
+	// made that expression resolve to the user's home directory and try to delete
+	// it recursively, with the failure swallowed by the surrounding catch.
+	void filePath;
 }
 
 test('getTokensFromClaudeCodeSession: counts actual API tokens', async () => {
@@ -788,6 +795,23 @@ test('getClaudeCodeModelUsage: crashed session contributes partial tokens per mo
 
 const adapterCtx = { modelPricing: {}, toolNameMap: {} };
 
+test('ClaudeCodeAdapter.analyzeUsage: counts permissionMode per human user prompt as autonomyUsage', async () => {
+const user = (mode: string | undefined, id: string) => ({
+type: 'user', uuid: id, message: { role: 'user', content: 'hi' }, timestamp: '2026-10-04T09:00:00.000Z',
+...(mode ? { permissionMode: mode } : {}),
+});
+const toolResult = { type: 'user', uuid: 'tr', permissionMode: 'auto', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] }, timestamp: '2026-10-04T09:00:00.000Z' };
+const synthetic = { type: 'user', uuid: 'sy', permissionMode: 'auto', message: { role: 'user', content: '<system-reminder>generated</system-reminder>' }, timestamp: '2026-10-04T09:00:00.000Z' };
+const events = [user('default', 'a'), user('auto', 'b'), toolResult, synthetic, user('auto', 'c'), user('acceptEdits', 'd'), user(undefined, 'e')];
+const filePath = createTempSession(events);
+try {
+const result = await claudeCodeAdapter.analyzeUsage(filePath, adapterCtx);
+assert.deepEqual(result.autonomyUsage, { autonomous: 2, supervised: 2, plan: 0, other: 0 });
+} finally {
+cleanup(filePath);
+}
+});
+
 test('ClaudeCodeAdapter.analyzeUsage: increments __auto_compact__ for trigger=auto', async () => {
 const events = [
 {
@@ -1368,5 +1392,211 @@ test('getClaudeCodeModelUsage: does not double-count a message.id replayed in a 
 		assert.equal(totalOutput, 60, 'summed output tokens must not double-count the shared message');
 	} finally {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+// ── Synthetic (harness-injected) user turns ────────────────────────────────────────────────────
+// Claude Desktop-launched sessions interleave machine-generated `user` events with real prompts.
+// Counting those as interactions inflated the count, and could make a session's presence in the
+// Recent Sessions table depend entirely on synthetic noise (both views drop interactions === 0).
+
+test('countClaudeCodeInteractions: ignores a turn that is only a <system-reminder>', async () => {
+	const events = [
+		{
+			type: 'user',
+			isSidechain: false,
+			message: { role: 'user', content: '<system-reminder>\nYou are operating in a git worktree.\n</system-reminder>' }
+		}
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		assert.equal(await claudeCode.countClaudeCodeInteractions(filePath), 0);
+	} finally {
+		cleanup(filePath);
+	}
+});
+
+test('countClaudeCodeInteractions: ignores a turn that is only a <task-notification>', async () => {
+	const events = [
+		{
+			type: 'user',
+			isSidechain: false,
+			message: { role: 'user', content: '<task-notification>\n<task-id>bhs2oz7e1</task-id>\n</task-notification>' }
+		}
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		assert.equal(await claudeCode.countClaudeCodeInteractions(filePath), 0);
+	} finally {
+		cleanup(filePath);
+	}
+});
+
+test('countClaudeCodeInteractions: counts a real prompt prefixed by a <system-reminder>', async () => {
+	// Claude Desktop prepends a worktree notice to the first prompt of a session. The human text
+	// after the wrapper is a genuine turn and must survive stripping.
+	const events = [
+		{
+			type: 'user',
+			isSidechain: false,
+			message: {
+				role: 'user',
+				content: '<system-reminder>\nYou are operating in a git worktree.\n</system-reminder>\n\nFix the broken CLI call in pr-risk-review.yml'
+			}
+		}
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		assert.equal(await claudeCode.countClaudeCodeInteractions(filePath), 1);
+	} finally {
+		cleanup(filePath);
+	}
+});
+
+test('countClaudeCodeInteractions: strips wrappers inside text blocks too', async () => {
+	const events = [
+		{
+			type: 'user',
+			isSidechain: false,
+			message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>noise</system-reminder>' }] }
+		},
+		{
+			type: 'user',
+			isSidechain: false,
+			message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>noise</system-reminder>\nreal question' }] }
+		}
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		assert.equal(await claudeCode.countClaudeCodeInteractions(filePath), 1);
+	} finally {
+		cleanup(filePath);
+	}
+});
+
+test('countClaudeCodeInteractions: leaves unmatched angle brackets in prompt text alone', async () => {
+	// Only paired, known wrapper elements are stripped — a prompt mentioning a tag must still count.
+	const events = [
+		{
+			type: 'user',
+			isSidechain: false,
+			message: { role: 'user', content: 'why does <system-reminder> show up in my logs?' }
+		}
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		assert.equal(await claudeCode.countClaudeCodeInteractions(filePath), 1);
+	} finally {
+		cleanup(filePath);
+	}
+});
+
+// ── Titles ─────────────────────────────────────────────────────────────────────────────────────
+
+test('getClaudeCodeSessionMeta: reads a custom-title when there is no ai-title', async () => {
+	// Claude Desktop-started sessions often carry only `custom-title`; reading `ai-title` alone
+	// left them untitled in the Recent Sessions table.
+	const events = [
+		{ type: 'user', timestamp: '2026-09-16T07:49:59.000Z', entrypoint: 'claude-desktop' },
+		{ type: 'custom-title', sessionId: 'test', customTitle: "Fix PR risk review's broken Copilot CLI call" }
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		const meta = await claudeCode.getClaudeCodeSessionMeta(filePath);
+		assert.equal(meta!.title, "Fix PR risk review's broken Copilot CLI call");
+		assert.equal(meta!.entrypoint, 'claude-desktop');
+	} finally {
+		cleanup(filePath);
+	}
+});
+
+test('getClaudeCodeSessionMeta: a custom-title outranks an ai-title', async () => {
+	const events = [
+		{ type: 'user', timestamp: '2026-09-16T07:49:59.000Z' },
+		{ type: 'ai-title', sessionId: 'test', aiTitle: 'Model-generated title' },
+		{ type: 'custom-title', sessionId: 'test', customTitle: 'Title the user chose' }
+	];
+
+	const filePath = createTempSession(events);
+	try {
+		assert.equal((await claudeCode.getClaudeCodeSessionMeta(filePath))!.title, 'Title the user chose');
+	} finally {
+		cleanup(filePath);
+	}
+});
+// ----- ClaudeCodeAdapter.analyzeUsage: tool_use/tool_result pairing -> failures, latency, output tokens -----
+
+test('ClaudeCodeAdapter.analyzeUsage: pairs tool_result with tool_use to record failures, observed latency and output tokens', async () => {
+	const t = (offsetMs: number) => new Date(Date.UTC(2026, 4, 1, 10, 0, 0, offsetMs)).toISOString();
+	const assistant = (ts: string, blocks: any[], extra: Record<string, unknown> = {}) => ({
+		type: 'assistant', timestamp: ts, ...extra,
+		message: { role: 'assistant', model: 'claude-sonnet-4-6', content: blocks },
+	});
+	const result = (ts: string, blocks: any[], extra: Record<string, unknown> = {}) => ({
+		type: 'user', timestamp: ts, parentUuid: 'x', ...extra,
+		message: { role: 'user', content: blocks },
+	});
+	const events = [
+		{ type: 'user', timestamp: t(0), message: { role: 'user', content: 'do things' } },
+		// Bash: 3000 ms, is_error
+		assistant(t(100), [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash', input: { command: 'x' } }]),
+		result(t(3100), [{ type: 'tool_result', tool_use_id: 'toolu_bash', is_error: true, content: 'boom' }]),
+		// Read: 40 ms, success, result text sized into outputTokensByTool
+		assistant(t(4000), [{ type: 'tool_use', id: 'toolu_read', name: 'Read', input: { file_path: '/a' } }]),
+		result(t(4040), [{ type: 'tool_result', tool_use_id: 'toolu_read', content: [{ type: 'text', text: 'x'.repeat(400) }] }]),
+		// Streaming re-log of the same tool_use id: the earlier timestamp must win.
+		assistant(t(4500), [{ type: 'tool_use', id: 'toolu_read', name: 'Read', input: { file_path: '/a' } }]),
+		// MCP: 1500 ms, failure, attributed to the server derived from the name prefix.
+		assistant(t(5000), [{ type: 'tool_use', id: 'toolu_mcp', name: 'mcp__github__create_issue', input: {} }]),
+		result(t(6500), [{ type: 'tool_result', tool_use_id: 'toolu_mcp', is_error: true, content: 'nope' }]),
+		// Sidechain (subagent) pair: matched even though sidechain user events are not real turns.
+		assistant(t(7000), [{ type: 'tool_use', id: 'toolu_side', name: 'Grep', input: {} }], { isSidechain: true }),
+		result(t(7200), [{ type: 'tool_result', tool_use_id: 'toolu_side', content: 'hit' }], { isSidechain: true }),
+		// Result with no timestamp: failure counted, no latency sample.
+		assistant(t(8000), [{ type: 'tool_use', id: 'toolu_edit', name: 'Edit', input: {} }]),
+		{ type: 'user', parentUuid: 'x', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_edit', is_error: true, content: '' }] } },
+		// Orphaned tool_use (session aborted): nothing recorded.
+		assistant(t(9000), [{ type: 'tool_use', id: 'toolu_orphan', name: 'WebFetch', input: {} }]),
+		// Result for an unknown id: ignored.
+		result(t(9500), [{ type: 'tool_result', tool_use_id: 'toolu_unknown', content: 'stray' }]),
+	];
+	const filePath = createTempSession(events);
+	try {
+		const analysis = await claudeCodeAdapter.analyzeUsage(filePath, adapterCtx);
+
+		assert.deepEqual(analysis.toolCalls.completedByTool, { Bash: 1, Read: 1, Grep: 1, Edit: 1 }, 'one completion per matched result; re-logged and orphaned tool_use blocks do not count');
+		assert.deepEqual(analysis.toolCalls.failuresByTool, { Bash: 1, Edit: 1 });
+		assert.deepEqual(analysis.mcpTools.completedByServer, { github: 1 });
+		assert.deepEqual(analysis.mcpTools.failuresByServer, { github: 1 });
+
+		const lat = analysis.toolCalls.latencyByTool!;
+		assert.equal(lat.Bash.count, 1);
+		assert.equal(lat.Bash.sumMs, 3000);
+		assert.equal(lat.Read.count, 1);
+		assert.equal(lat.Read.sumMs, 40);
+		assert.equal(lat.Grep.sumMs, 200);
+		assert.equal(lat.mcp__github__create_issue, undefined, 'MCP latency lives under mcpTools only');
+		assert.equal(lat.Edit, undefined, 'no latency sample without a result timestamp');
+		assert.equal(lat.WebFetch, undefined, 'orphaned tool_use must not produce a sample');
+		assert.equal(analysis.mcpTools.latencyByServer!.github.sumMs, 1500);
+
+		const out = analysis.toolCalls.outputTokensByTool!;
+		assert.ok(out.Read > 0, 'Read result text should be sized');
+		assert.ok(out.Bash > 0, 'error text still counts as tool output');
+		assert.equal(out.mcp__github__create_issue, undefined, 'MCP results are not sized into outputTokensByTool');
+		assert.equal(out.Edit, undefined, 'empty result text adds nothing');
+
+		// Existing counters are unchanged by the pairing (the re-logged tool_use still counts as before).
+		assert.equal(analysis.toolCalls.byTool.Read, 2);
+		assert.equal(analysis.toolCalls.byTool.Bash, 1);
+		assert.equal(analysis.mcpTools.byServer.github, 1);
+	} finally {
+		cleanup(filePath);
 	}
 });

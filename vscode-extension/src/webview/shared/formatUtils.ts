@@ -101,10 +101,47 @@ export function formatCost(value: number): string {
 }
 
 /**
+ * Locale-aware signed USD amount with a fixed number of fraction digits.
+ * `Intl` places both the sign and the currency symbol, so the result stays
+ * correct in locales that write `US$ -0,0037` rather than `-$0.0037`.
+ * Zero carries no sign.
+ */
+function formatSignedCostWithDigits(value: number, digits: number): string {
+	return new Intl.NumberFormat(currentLocale, {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: digits,
+		maximumFractionDigits: digits,
+		signDisplay: 'exceptZero'
+	}).format(value);
+}
+
+/**
+ * Formats a signed USD cost effect at full precision (four fraction digits),
+ * for tooltips and other places where the exact amount matters more than
+ * brevity — e.g. `+$7.3500`.
+ */
+export function formatSignedCostPrecise(value: number): string {
+	return formatSignedCostWithDigits(value, 4);
+}
+
+/**
+ * Formats a signed USD cost effect for compact display: two fraction digits,
+ * widening to four when a non-zero effect would otherwise round away to
+ * `$0.00` and read as "no change at all" — e.g. `-$0.0037`.
+ */
+export function formatSignedCostCompact(value: number): string {
+	const roundsToZero = value !== 0 && Math.abs(value) < 0.005;
+	return formatSignedCostWithDigits(value, roundsToZero ? 4 : 2);
+}
+
+/**
  * Escapes HTML special characters in a string to prevent XSS.
  */
 export function escapeHtml(text: string): string {
-	return text
+	// Host payloads are untyped at runtime; a missing field must render empty, not throw and
+	// abort the whole panel render (matches `escapeHtml` in src/utils/html.ts).
+	return String(text ?? '')
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
@@ -217,6 +254,22 @@ export function getTimeSince(isoString: string): string {
 	} catch {
 		return 'Unknown';
 	}
+}
+
+/**
+ * Formats a timestamp as a locale-aware absolute date (e.g. "Sep 14, 2026"). Accepts an ISO
+ * string, epoch milliseconds, or a `Date` directly so callers with a raw `mtimeMs` number don't
+ * need an extra `new Date(ms).toISOString()` round-trip just to hand this a string.
+ * Unlike {@link getTimeSince}, this is deterministic (does not depend on `Date.now()`)
+ * and honors the caller's locale, making it safe for fixture-driven screenshots.
+ * Returns "—" when the value is missing or invalid.
+ */
+export function formatAbsoluteDate(input: string | number | Date): string {
+	const then = input instanceof Date ? input : new Date(input);
+	if (!Number.isFinite(then.getTime())) {
+		return '—';
+	}
+	return then.toLocaleDateString(currentLocale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 /**

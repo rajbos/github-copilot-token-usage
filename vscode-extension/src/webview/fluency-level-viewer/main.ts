@@ -6,7 +6,8 @@ import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import type { CategoryLevelData } from '../shared/types';
-import { initializeWebviewLocalization, setCurrentLanguage } from '../shared/localization';
+import { applyWebviewLocale } from '../shared/webviewLocale';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -23,14 +24,11 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 };
 
 const vscode = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'fluency-level-viewer');
 const initialData = getWindowData<FluencyLevelData & { localization?: Record<string, string> }>('__INITIAL_FLUENCY_LEVEL_DATA__');
 
 // Initialize localization for webview
-if (initialData?.localization) {
-	initializeWebviewLocalization(initialData.localization);
-	const language = initialData.localization['__language__'] || 'en';
-	setCurrentLanguage(language);
-}
+applyWebviewLocale(initialData);
 
 let selectedCategoryIndex = 0;
 

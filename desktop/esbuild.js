@@ -108,7 +108,7 @@ async function main() {
  * produced by the VS Code extension (each bundle already includes the
  * vscode-elements web components it uses). If those artifacts are missing
  * (e.g. a fresh checkout where only the desktop app was built), build the
- * extension automatically so `npm run build` is self-sufficient instead of
+ * extension automatically so `pnpm run build` is self-sufficient instead of
  * silently producing an app with blank panels.
  */
 function ensureWebviewBundles(extWebviewDir) {
@@ -129,7 +129,7 @@ function ensureWebviewBundles(extWebviewDir) {
     throw new Error(
       'Failed to build the vscode-extension webview bundles automatically.\n' +
       'Build it manually first:\n' +
-      '  cd ../vscode-extension && npm install && npm run compile\n' +
+      '  cd ../vscode-extension && pnpm install && pnpm run compile\n' +
       (stillMissing.length ? `Still missing: ${stillMissing.join(', ')}` : ''),
     );
   }
@@ -144,6 +144,16 @@ function copyStaticAssets(distDir, webviewDir) {
     fs.copyFileSync(path.join(extWebviewDir, bundle), path.join(webviewDir, bundle));
     console.log(`Copied ${bundle}`);
   }
+
+  // Codicon icon font — the nav buttons in the shared bundles render
+  // `.codicon-*` glyphs, which VS Code webviews get from this stylesheet.
+  const codiconsSrcDir = path.join(__dirname, '..', 'vscode-extension', 'node_modules', '@vscode', 'codicons', 'dist');
+  const codiconsDstDir = path.join(webviewDir, 'codicons');
+  fs.mkdirSync(codiconsDstDir, { recursive: true });
+  for (const file of ['codicon.css', 'codicon.ttf']) {
+    fs.copyFileSync(path.join(codiconsSrcDir, file), path.join(codiconsDstDir, file));
+  }
+  console.log('Copied codicons');
 
   const wasmSrc = fs.existsSync(path.join(__dirname, '..', 'cli', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'))
     ? path.join(__dirname, '..', 'cli', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')

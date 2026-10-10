@@ -39,6 +39,16 @@ export function normalizePathForComparison(p: string): string {
 }
 
 /**
+ * The lower-cased, forward-slash prefix that `path.join(dir, child)` puts in front of
+ * `child`, for matching paths an adapter built by joining onto `dir`. Unlike
+ * `normalizePathForComparison(dir) + '/'` this agrees with `path.join` on the edge
+ * cases: `'.'` gives `''` (join drops the `./`) and `'/'` gives `'/'` (not `'//'`).
+ */
+export function joinedChildPrefixForComparison(dir: string): string {
+	return normalizePathForComparison(path.join(dir, 'x')).slice(0, -1);
+}
+
+/**
  * Normalize a filesystem path for deduplication across adapters.
  */
 export function normalizePathForDedup(
@@ -47,6 +57,39 @@ export function normalizePathForDedup(
 ): string {
 	const normalized = normalizePath(p);
 	return platform === 'linux' ? normalized : normalized.toLowerCase();
+}
+
+/**
+ * Collapses `entries` to at most one per normalizePathForDedup() key, keeping whichever value
+ * has the greater `getValue()` (typically an mtime) for a given key. A single logical resource
+ * (a session file, a cache entry) can be recorded more than once under raw-string keys that
+ * differ only in separator/case — e.g. two Windows spellings of the same path — and any caller
+ * that reads such a keyed collection directly, rather than through a path-identity-aware lookup,
+ * must dedupe through this first or it will double-count that resource.
+ */
+export function dedupeByNormalizedKeyKeepGreatest<T>(
+	entries: Iterable<[string, T]>,
+	getValue: (value: T) => number,
+	platform: NodeJS.Platform = process.platform as NodeJS.Platform
+): [string, T][] {
+	const winners = new Map<string, [string, T]>();
+	for (const [key, value] of entries) {
+		// A persisted snapshot is just parsed JSON — a corrupt/malformed record (e.g. a null
+		// entry, or one with a missing/non-numeric score field) must not crash this whole pass,
+		// nor silently win its normalized key over a usable duplicate: `undefined > 123` and
+		// `NaN > 123` are both false, so an invalid first-seen record would otherwise block every
+		// later, valid record under the same key from ever replacing it. Skip it instead, the same
+		// way callers already skip an unusable entry when iterating the cache directly.
+		if (value === null || value === undefined) { continue; }
+		const score = getValue(value);
+		if (!Number.isFinite(score)) { continue; }
+		const normalizedKey = normalizePathForDedup(key, platform);
+		const existing = winners.get(normalizedKey);
+		if (!existing || score > getValue(existing[1])) {
+			winners.set(normalizedKey, [key, value]);
+		}
+	}
+	return Array.from(winners.values());
 }
 
 /**

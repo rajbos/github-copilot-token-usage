@@ -1,11 +1,14 @@
 import * as fs from 'fs';
-import type { ModelUsage, ChatTurn, ActualUsage } from '../types';
+import type { ModelUsage, ChatTurn } from '../types';
 import type { IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem, DiscoveryResult, CandidatePath, UsageAnalysisAdapterContext } from '../ecosystemAdapter';
 import { ClaudeCodeDataAccess, normalizeClaudeModelId } from '../claudecode';
-import { readClaudeCodeEventsForAnalysis, createEmptySessionUsageAnalysis, applyModelTierClassification, addSkillCall } from '../usageAnalysis';
+import { recordAutonomy } from '../autonomy';
+import { isHumanUserTurn } from '../utils/claudeUserTurns';
+import { readClaudeCodeEventsForAnalysis, createEmptySessionUsageAnalysis, applyModelTierClassification, addSkillCall, recordToolOutcome, extractToolResultText } from '../usageAnalysis';
+import { estimateTokensFromText } from '../tokenEstimation';
 import { isMcpTool, extractMcpServerName, detectClaudeCodeEditorVariant } from '../workspaceHelpers';
 import { detectCacheBreakage, type CacheTurn } from '../cacheBreakage';
-import { createEmptyContextRefs } from '../tokenEstimation';
+import { buildClaudeChatTurns, type ClaudeAssistantTurnData } from './claudeTurns';
 
 /**
  * Claude Code slash commands that map to Prompt Engineering fluency.
@@ -98,6 +101,61 @@ export function recordInvokedSkillCall(analysis: import('../types').SessionUsage
 	if (skillName) { addSkillCall(analysis, skillName); }
 }
 
+/**
+ * Pairs Claude-family `tool_use` blocks (assistant events) with their `tool_result`
+ * blocks — harness-replayed `user` events, matched by `tool_use_id` — to record the
+ * per-tool outcome: `is_error` as failure, the message-timestamp delta as observed
+ * latency, and the result text size as `outputTokensByTool`. Shared by the Claude
+ * Code and Claude Desktop adapters (docs/adr/TOOL-EXECUTION-STATS.md).
+ *
+ * The first sighting of a `tool_use` id wins: Claude Code re-logs streaming fragments
+ * of the same assistant message, and the earliest timestamp is the real start.
+ */
+export class ClaudeToolOutcomeTracker {
+	private readonly pending = new Map<string, { toolName: string; mcpServer?: string; startedAt?: number }>();
+
+	constructor(private readonly resolveMcpServer: (toolName: string) => string | undefined) {}
+
+	noteToolUse(event: any, block: any): void {
+		const id = typeof block?.id === 'string' ? block.id : '';
+		if (!id || this.pending.has(id)) { return; }
+		const toolName = String(block.name || 'tool');
+		this.pending.set(id, { toolName, mcpServer: this.resolveMcpServer(toolName), startedAt: eventEpochMs(event) });
+	}
+
+	noteToolResults(event: any, analysis: import('../types').SessionUsageAnalysis): void {
+		const content: any[] = Array.isArray(event?.message?.content) ? event.message.content : [];
+		for (const block of content) {
+			if (block?.type !== 'tool_result') { continue; }
+			const started = typeof block.tool_use_id === 'string' ? this.pending.get(block.tool_use_id) : undefined;
+			if (!started) { continue; }
+			this.pending.delete(block.tool_use_id);
+			recordToolOutcome(analysis, started.toolName, started.mcpServer, block.is_error !== true, durationSince(started.startedAt, eventEpochMs(event)));
+			if (!started.mcpServer) { addToolOutputTokens(analysis, started.toolName, block.content); }
+		}
+	}
+}
+
+/** Size a non-MCP tool result's text into `outputTokensByTool`; empty results add nothing. */
+function addToolOutputTokens(analysis: import('../types').SessionUsageAnalysis, toolName: string, resultContent: unknown): void {
+	const tokens = estimateTokensFromText(extractToolResultText(resultContent));
+	if (tokens <= 0) { return; }
+	analysis.toolCalls.outputTokensByTool ??= {};
+	analysis.toolCalls.outputTokensByTool[toolName] = (analysis.toolCalls.outputTokensByTool[toolName] || 0) + tokens;
+}
+
+/** Observed duration between two epoch timestamps, or undefined when either is missing or the order is inverted. */
+function durationSince(startedAt: number | undefined, completedAt: number | undefined): number | undefined {
+	if (startedAt === undefined || completedAt === undefined || completedAt < startedAt) { return undefined; }
+	return completedAt - startedAt;
+}
+
+/** Parse a Claude event's ISO `timestamp` to epoch ms, or undefined when absent/invalid. */
+function eventEpochMs(event: any): number | undefined {
+	const ts = typeof event?.timestamp === 'string' ? Date.parse(event.timestamp) : NaN;
+	return Number.isNaN(ts) ? undefined : ts;
+}
+
 export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'claudecode';
 	readonly displayName = 'Claude Code';
@@ -181,71 +239,12 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 	}
 
 	async buildTurns(sessionFile: string): Promise<{ turns: ChatTurn[]; actualTokens?: number }> {
-		const turns: ChatTurn[] = [];
 		const events = await readClaudeCodeEventsForAnalysis(sessionFile);
-		let currentUserEvent: any = null;
-		const pendingAssistantEvents: any[] = [];
-
-		for (const event of events) {
-			if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user' && this.isRealUserMessage(event)) {
-				const turn = this.buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, turns.length + 1);
-				if (turn) { turns.push(turn); }
-				currentUserEvent = event;
-				pendingAssistantEvents.length = 0;
-			} else if (event.type === 'assistant' && event.message?.stop_reason && event.message?.role === 'assistant') {
-				pendingAssistantEvents.push(event);
-			}
-		}
-		const finalTurn = this.buildTurnFromEvents(currentUserEvent, pendingAssistantEvents, turns.length + 1);
-		if (finalTurn) { turns.push(finalTurn); }
-
+		const turns = buildClaudeChatTurns(events, pending => this.processAssistantEventsForTurn(pending), this.estimateTokensFn);
 		return { turns };
 	}
 
-	private isRealUserMessage(event: any): boolean {
-		const content = event.message?.content;
-		if (typeof content === 'string') { return !!content.trim(); }
-		if (!Array.isArray(content)) { return false; }
-		const hasText = content.some((c: any) => c.type === 'text');
-		const hasToolResult = content.some((c: any) => c.type === 'tool_result');
-		return hasText && !hasToolResult;
-	}
-
-	private buildTurnFromEvents(userEvent: any, pendingAssistantEvents: any[], turnNumber: number): ChatTurn | null {
-		if (!userEvent) { return null; }
-		const content = userEvent.message?.content;
-		const userMessage = typeof content === 'string' ? content
-			: Array.isArray(content) ? content.filter((c: any) => c.type === 'text').map((c: any) => c.text || '').join('\n')
-			: '';
-		const { assistantText, model, actualInputTokens, actualOutputTokens, toolCalls, mcpTools } =
-			this.processAssistantEventsForTurn(pendingAssistantEvents);
-		const usedModel = model || 'claude-sonnet-4-6';
-		const actualUsage: ActualUsage | undefined = (actualInputTokens > 0 || actualOutputTokens > 0) ? {
-			promptTokens: actualInputTokens,
-			completionTokens: actualOutputTokens
-		} : undefined;
-		return {
-			turnNumber,
-			timestamp: userEvent.timestamp ? new Date(userEvent.timestamp).toISOString() : null,
-			mode: 'agent',
-			userMessage,
-			assistantResponse: assistantText,
-			model: usedModel,
-			toolCalls,
-			contextReferences: createEmptyContextRefs(),
-			mcpTools,
-			inputTokensEstimate: actualInputTokens || this.estimateTokensFn(userMessage, usedModel),
-			outputTokensEstimate: actualOutputTokens || this.estimateTokensFn(assistantText, usedModel),
-			thinkingTokensEstimate: 0,
-			actualUsage
-		};
-	}
-
-	private processAssistantEventsForTurn(pendingAssistantEvents: any[]): {
-		assistantText: string; model: string | null; actualInputTokens: number;
-		actualOutputTokens: number; toolCalls: { toolName: string; arguments?: string }[];
-		mcpTools: { server: string; tool: string }[];
-	} {
+	private processAssistantEventsForTurn(pendingAssistantEvents: any[]): ClaudeAssistantTurnData {
 		let assistantText = '';
 		let actualInputTokens = 0;
 		let actualOutputTokens = 0;
@@ -306,11 +305,16 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 		// Cache turns are keyed by message.id so a re-logged API response is counted
 		// once — detectCacheBreakage reads a duplicate as a full prefix wipe.
 		const cacheTurns = new Map<string, CacheTurn>();
+		// Tool results arrive as user events (sidechain ones included — their tool_use was
+		// counted from the sidechain assistant event), so they are matched before the
+		// real-turn filter below.
+		const outcomes = new ClaudeToolOutcomeTracker(name => isMcpTool(name) ? extractMcpServerName(name, ctx.toolNameMap) : undefined);
 		for (const event of events) {
+			if (event.type === 'user') { outcomes.noteToolResults(event, analysis); }
 			if (event.type === 'user' && event.message?.role === 'user' && !event.isSidechain) {
 				this.processUserEvent(event, analysis, modeBucket);
 			} else if (event.type === 'assistant') {
-				this.processAssistantEvent(event, analysis, ctx, models);
+				this.processAssistantEvent(event, analysis, ctx, models, outcomes);
 				this.collectCacheTurn(event, cacheTurns);
 			} else if (event.type === 'system' && event.subtype === 'compact_boundary') {
 				this.processCompactBoundaryEvent(event, analysis);
@@ -386,6 +390,8 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 		} else {
 			analysis.modeUsage[modeBucket] = (analysis.modeUsage[modeBucket] ?? 0) + 1;
 		}
+		// Only real human prompts count; tool results and synthetic wrapper events also carry permissionMode.
+		if (isHumanUserTurn(event)) { recordAutonomy(analysis, event.permissionMode); }
 		const cmd = extractClaudeSlashCommand(event.message?.content);
 		if (cmd) {
 			const key = `__slash__${cmd}`;
@@ -395,12 +401,13 @@ export class ClaudeCodeAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 		recordInvokedSkillCall(analysis, event.message?.content);
 	}
 
-	private processAssistantEvent(event: any, analysis: import('../types').SessionUsageAnalysis, ctx: UsageAnalysisAdapterContext, models: string[]): void {
+	private processAssistantEvent(event: any, analysis: import('../types').SessionUsageAnalysis, ctx: UsageAnalysisAdapterContext, models: string[], outcomes: ClaudeToolOutcomeTracker): void {
 		const model = normalizeClaudeModelId(event.message?.model || 'unknown');
 		models.push(model);
 		const content: any[] = Array.isArray(event.message?.content) ? event.message.content : [];
 		for (const c of content) {
 			if (c?.type !== 'tool_use') { continue; }
+			outcomes.noteToolUse(event, c);
 			const toolName = String(c.name || 'tool');
 			if (isMcpTool(toolName)) {
 				const server = extractMcpServerName(toolName, ctx.toolNameMap);

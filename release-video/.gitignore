@@ -1,0 +1,30 @@
+# Build output
+dist/
+
+# Generated media. All of this is reproducible from the What's New catalog plus
+# a build of the extension, so the inputs are what belongs in git, not the
+# bytes. Screenshots in particular: the repo already refuses committed PNGs for
+# the visual diff, and these come from the same harness.
+cache/
+output/
+assets/screenshots/
+assets/cards/
+
+# Written by `plan`, then edited by hand between runs. It is derived from the
+# catalog and references locally-hashed narration files, so it is yours, not
+# the repository's.
+content/manifest.json
+
+# Your voice reference is personal data and consent-bound. Keep it local.
+assets/voice/*.wav
+assets/voice/*.txt
+!assets/voice/README.md
+
+node_modules/
+
+# Piper voice models: ~180 MB of ONNX, re-downloadable with
+# .venv-tts/Scripts/python -m piper.download_voices
+assets/voice/piper/
+
+# TTS virtualenv
+.venv-tts/

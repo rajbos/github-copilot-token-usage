@@ -156,35 +156,70 @@ function extractIncludesRules(body) {
     const name = m[1] ?? 'Claude Code';
     if (/^\d+$/.test(name)) continue; // skip numeric strings
 
-    // Look backward for the nearest "if (" or "if(" before this return
-    const before = body.slice(0, m.index);
-    const ifIdx = Math.max(before.lastIndexOf('if ('), before.lastIndexOf('if('));
-    if (ifIdx === -1) continue;
-
-    // Use balanced-paren walk to extract the full if condition
-    let depth = 0;
-    let condStart = -1;
-    let condEnd   = -1;
-    for (let i = ifIdx + 2; i < body.length; i++) {
-      const ch = body[i];
-      if (ch === '(') {
-        if (depth === 0) condStart = i + 1;
-        depth++;
-      } else if (ch === ')') {
-        depth--;
-        if (depth === 0) { condEnd = i; break; }
-      }
-    }
-    if (condStart === -1 || condEnd === -1) continue;
-
-    const condition = body.slice(condStart, condEnd);
-
-    // Extract all .includes('pattern') from the condition
+    // Walk outward through the enclosing if-chain: for each `if (` found
+    // before the return, extract its condition and block; when the return
+    // sits inside that block, the condition guards it too, so accumulate its
+    // patterns and keep walking. This makes nested guards like
+    // `if (A) { if (B) { return 'X'; } }` simulate correctly.
     const patterns = [];
-    const incRe = /\.includes\(['"]([^'"]+)['"]\)/g;
-    let inc;
-    while ((inc = incRe.exec(condition)) !== null) {
-      patterns.push(inc[1]);
+    let searchFrom = m.index;
+    while (true) {
+      const before = body.slice(0, searchFrom);
+      const ifIdx = Math.max(before.lastIndexOf('if ('), before.lastIndexOf('if('));
+      if (ifIdx === -1) break;
+
+      // Use balanced-paren walk to extract the full if condition
+      let depth = 0;
+      let condStart = -1;
+      let condEnd   = -1;
+      for (let i = ifIdx + 2; i < body.length; i++) {
+        const ch = body[i];
+        if (ch === '(') {
+          if (depth === 0) condStart = i + 1;
+          depth++;
+        } else if (ch === ')') {
+          depth--;
+          if (depth === 0) { condEnd = i; break; }
+        }
+      }
+      if (condStart === -1 || condEnd === -1) break;
+
+      // The if's block must contain the return for its condition to guard it;
+      // otherwise this `if (` belongs to a sibling statement.
+      const blockStart = body.indexOf('{', condEnd);
+      let braceDepth = 0;
+      let blockEnd = -1;
+      for (let i = blockStart; i < body.length; i++) {
+        if (body[i] === '{') braceDepth++;
+        else if (body[i] === '}') {
+          braceDepth--;
+          if (braceDepth === 0) { blockEnd = i; break; }
+        }
+      }
+      if (blockStart === -1 || blockEnd < m.index) break;
+
+      const condition = body.slice(condStart, condEnd);
+
+      // Condition normal form: AND of ORs. Split on '&&' for the required
+      // parts, then on '||' inside each part for alternatives. Patterns within
+      // one part become a single OR group (match if ANY is present); parts are
+      // ANDed (ALL groups must match). '||'-joined alternatives that each
+      // contain several '&&'-joined includes are not supported — none exist,
+      // and the ordering check would rather under-report than guess.
+      const conditionGroups = condition
+        .split('&&')
+        .map(part => {
+          const group = [];
+          const incRe = /\.includes\(['"]([^'"]+)['"]\)/g;
+          let inc;
+          while ((inc = incRe.exec(part)) !== null) {
+            group.push(inc[1]);
+          }
+          return group;
+        })
+        .filter(group => group.length > 0);
+      patterns.push(...conditionGroups);
+      searchFrom = ifIdx;
     }
     if (patterns.length > 0) {
       rules.push({ patterns, name });
@@ -199,12 +234,13 @@ function extractIncludesRules(body) {
 
 /**
  * Given ordered rules, returns the first matching name for a given path.
- * Matches if ALL patterns in a rule are found in the normalized path.
+ * A rule's patterns are AND-of-OR groups: every group must have at least one
+ * pattern present in the normalized path (OR within a group, AND across).
  */
 function detectEditor(rules, filePath) {
   const normalized = filePath.replace(/\\/g, '/').toLowerCase();
   for (const rule of rules) {
-    if (rule.patterns.every(p => normalized.includes(p))) {
+    if (rule.patterns.every(group => group.some(p => normalized.includes(p)))) {
       return rule.name;
     }
   }
@@ -312,11 +348,24 @@ const TEST_CASES = [
     expected: 'Claude Desktop Cowork',
     label: 'Claude Desktop Cowork session'
   },
-  // Visual Studio
+  // Visual Studio (solution chats live under <solution>/.vs/project/copilot-chat/<hash>/sessions/)
   {
-    path: 'C:/Users/user/AppData/Local/Microsoft/VisualStudio/17/.vs/project/copilot-chat/abc.json',
+    path: 'C:/Users/user/AppData/Local/Microsoft/VisualStudio/17/.vs/project/copilot-chat/abc/sessions/def.json',
     expected: 'Visual Studio',
     label: 'Visual Studio chat session'
+  },
+  // Visual Studio solution-less chats (VS AppData VSGitHubCopilot folder) — must
+  // not be misclassified as SSMS or fall through to VS Code.
+  {
+    path: 'C:/Users/user/AppData/Local/Microsoft/VisualStudio/17/vsgithubcopilot/copilot-chat/abc/sessions/def.json',
+    expected: 'Visual Studio',
+    label: 'Visual Studio solution-less chat session'
+  },
+  // SSMS Copilot Chat — must keep its own label, not Visual Studio.
+  {
+    path: 'C:/Users/user/AppData/Local/Microsoft/SQL Server Management Studio/19/ssmsgithubcopilot/copilot-chat/abc/sessions/def.json',
+    expected: 'SSMS',
+    label: 'SSMS chat session'
   },
   // VS Code Server
   {
@@ -329,6 +378,36 @@ const TEST_CASES = [
     path: '/home/user/.vscode-server-insiders/data/User/workspaceStorage/abc/chatSessions/session.json',
     expected: 'VS Code Server (Insiders)',
     label: 'VS Code Server (Insiders) session'
+  },
+  // Eclipse — must not fall through to the CLI's 'VS Code' default
+  {
+    path: '/home/user/eclipse-workspace/.metadata/.plugins/com.microsoft.copilot.eclipse/conversations/abc.json',
+    expected: 'Eclipse',
+    label: 'Eclipse Copilot conversation'
+  },
+  // Pi — the encoded cwd folder can contain 'code'
+  {
+    path: '/home/user/.pi/agent/sessions/--home-user-code-repo--/2026-09-01T10-00-00_abc.jsonl',
+    expected: 'Pi',
+    label: 'Pi session'
+  },
+  // Devin CLI virtual DB path
+  {
+    path: 'C:/Users/user/AppData/Roaming/devin/cli/sessions.db#sess-123',
+    expected: 'Devin CLI',
+    label: 'Devin CLI sessions.db'
+  },
+  // Hermes virtual DB path
+  {
+    path: 'C:/Users/user/AppData/Local/hermes/state.db#20260726_204744_427b88',
+    expected: 'Hermes',
+    label: 'Hermes state.db'
+  },
+  // Codex CLI — 'codex' contains 'code'
+  {
+    path: '/home/user/.codex/sessions/2026/09/01/rollout-2026-09-01T10-00-00-abc.jsonl',
+    expected: 'Codex CLI',
+    label: 'Codex CLI rollout'
   },
 ];
 
@@ -351,17 +430,18 @@ function checkOrderingInvariants(rules) {
       const broad    = rules[i];
       const specific = rules[j];
       // A broad rule shadows a specific rule when:
-      //   - broad has exactly 1 pattern
+      //   - broad has exactly 1 pattern (single group, single alternative)
       //   - specific.patterns includes that broad pattern as a substring prefix
       //   - the two return different names
-      if (broad.patterns.length !== 1) continue;
-      const broadPat = broad.patterns[0];
-      const isShadowing = specific.patterns.some(p => p.startsWith(broadPat) && p !== broadPat);
+      if (broad.patterns.length !== 1 || broad.patterns[0].length !== 1) continue;
+      const broadPat = broad.patterns[0][0];
+      const specificPatterns = specific.patterns.flat();
+      const isShadowing = specificPatterns.some(p => p.startsWith(broadPat) && p !== broadPat);
       if (isShadowing && broad.name !== specific.name) {
         issues.push({
           broadPattern:    broadPat,
           broadName:       broad.name,
-          specificPattern: specific.patterns.join(' && '),
+          specificPattern: specific.patterns.map(g => g.join(' | ')).join(' && '),
           specificName:    specific.name,
           broadIndex:      i,
           specificIndex:   j,
@@ -418,11 +498,20 @@ function main() {
     process.stderr.write('ERROR: Could not find detectToolEditorFromPath or detectVSCodeVariantFromPath in workspaceHelpers.ts\n');
     process.exit(2);
   }
-  // detectGlobalStorageEditorFromPath (Kiro, Kiro CLI, Cline) is a helper invoked
-  // from detectToolEditorFromPath before the VS Code variant checks; include its
-  // rules first so the simulation matches the real evaluation order.
-  const detectGlobalStorageFnBody = extractFunctionBody(wsHelpersSource, 'detectGlobalStorageEditorFromPath') ?? '';
-  const wsComboBody = detectGlobalStorageFnBody + '\n' + detectToolFnBody + '\n' + detectVSFnBody;
+  // getEditorTypeFromPath's own pre-checks (Eclipse) run first; then the helpers
+  // detectToolEditorFromPath delegates to — detectCopilotFamilyFromPath (JetBrains,
+  // Copilot CLI), detectCliAgentStoreFromPath (Crush, Kilo Code, Hermes, Devin CLI,
+  // Codex CLI) and detectGlobalStorageEditorFromPath (Kiro, Kiro CLI, Cline) — ahead
+  // of the VS Code variant checks, so the simulation matches the real evaluation order.
+  const helperBody = name => extractFunctionBody(wsHelpersSource, name) ?? '';
+  const wsComboBody = [
+    helperBody('getEditorTypeFromPath'),
+    helperBody('detectCopilotFamilyFromPath'),
+    helperBody('detectCliAgentStoreFromPath'),
+    helperBody('detectGlobalStorageEditorFromPath'),
+    detectToolFnBody,
+    detectVSFnBody,
+  ].join('\n');
 
   // -- Extract rules ---------------------------------------------------------
 

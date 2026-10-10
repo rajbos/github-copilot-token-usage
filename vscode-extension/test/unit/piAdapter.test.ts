@@ -15,6 +15,7 @@ import * as fs from 'node:fs';
 
 import { PiAdapter } from '../../../src/adapters/piAdapter';
 import { PiDataAccess } from '../../../src/pi';
+import { makeTmpFixtureDir } from './tmpFixtureDirs';
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -72,7 +73,7 @@ function makeToolResultMessage(id: string, parentId: string): string {
 }
 
 async function writeTempSession(lines: string[]): Promise<string> {
-    const dir = fs.mkdtempSync(path.join(process.cwd(), 'pi-test-'));
+    const dir = makeTmpFixtureDir('pi-test-');
     const file = path.join(dir, '2026-01-01T00-00-00-000Z_test.jsonl');
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
     return file;
@@ -269,7 +270,7 @@ test('PiDataAccess.discoverSessions: discovers nested child session.jsonl files'
     // Build a fake sessions dir that mirrors the real pi layout:
     //   sessions/{cwdDir}/2026-01-01T_abc.jsonl           ← top-level
     //   sessions/{cwdDir}/2026-01-01T_abc/deadbeef/run-0/session.jsonl  ← child
-    const tmpRoot = fs.mkdtempSync(path.join(process.cwd(), 'pi-discover-'));
+    const tmpRoot = makeTmpFixtureDir('pi-discover-');
     const cwdDir = path.join(tmpRoot, '--cwd--');
     const parentFile = path.join(cwdDir, '2026-01-01T00-00-00-000Z_abc.jsonl');
     const childDir   = path.join(cwdDir, '2026-01-01T00-00-00-000Z_abc', 'deadbeef', 'run-0');

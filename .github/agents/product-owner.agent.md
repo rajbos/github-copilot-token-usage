@@ -94,15 +94,13 @@ For each candidate:
 
 ## Phase 3 — Rubber Duck Reviews
 
-Before presenting anything to the user, stress-test your proposals. Use the `task` tool with `agent_type: "rubber-duck"` three times, each with a **different model family**, to get independent perspectives.
+Before presenting anything to the user, stress-test your proposals. Use the `task` tool with `agent_type: "rubber-duck"` three times, in parallel, to get independent perspectives on the same proposal set. Vary the angle of each review with its focus rather than the model family — the coding agent may only have access to one vendor's models — so each duck still argues from a genuinely different vantage point:
 
-Run all three rubber-duck reviews in parallel. Use these models:
-
-| Duck | Model | Focus |
-|---|---|---|
-| Duck 1 (Claude Opus — deep reasoning) | `claude-opus-4.6` | Architectural correctness, hidden complexity, missed edge cases |
-| Duck 2 (GPT-5.4 — cross-family perspective) | `gpt-5.4` | User impact, feature viability, alternative approaches |
-| Duck 3 (Claude Haiku — fast pragmatist) | `claude-haiku-4.5` | Implementation feasibility, scope creep risks, simpler alternatives |
+| Duck | Focus |
+|---|---|
+| Duck 1 — deep reasoning | Architectural correctness, hidden complexity, missed edge cases |
+| Duck 2 — cross-cutting pragmatist | User impact, feature viability, alternative approaches |
+| Duck 3 — fast pragmatist | Implementation feasibility, scope creep risks, simpler alternatives |
 
 Prompt each duck with the full set of proposals plus the relevant codebase excerpts. Ask each duck to:
 1. Identify weaknesses or blind spots in the proposals

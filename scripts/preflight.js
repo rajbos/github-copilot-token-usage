@@ -241,14 +241,16 @@ function selectChecks(args) {
 function runCheck(check) {
   const started = Date.now();
   const [command, ...commandArgs] = check.command;
-  // npm is a shim on Windows and Node refuses to spawn .cmd without a shell,
-  // so npm scripts go through a shell while direct node invocations do not.
+  // npm is a shim on Windows (npm.cmd) and Node refuses to spawn .cmd files
+  // without a shell, so npm scripts go through a shell there; direct node
+  // invocations never need one.
   const isNpm = command === 'npm';
-  const result = spawnSync(isNpm && process.platform === 'win32' ? 'npm.cmd' : command, commandArgs, {
+  const useShell = isNpm && process.platform === 'win32';
+  const result = spawnSync(command, commandArgs, {
     cwd: check.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
-    shell: false,
+    shell: useShell,
     env: process.env,
     maxBuffer: 64 * 1024 * 1024,
   });

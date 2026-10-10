@@ -1,0 +1,49 @@
+name: "Check gated job results"
+description: >-
+  Validate the results of jobs downstream of a paths-filter gate job, for use
+  by a workflow's "stable required-check anchor" job (see ci.yml, build.yml,
+  codeql.yml). A job downstream of a FAILED `needs` reports as "skipped", not
+  "failure", and branch protection counts a skipped required check as
+  passing — so accepting "skipped" without first proving the gate itself
+  succeeded would let a transient checkout/paths-filter failure wave a PR
+  through with no CI at all. This action therefore requires the gate to have
+  succeeded before any downstream skip is read as a deliberate decision, then
+  requires every listed job to be "success" or "skipped".
+
+inputs:
+  gate-name:
+    description: "Display name of the gate job, used in the error message."
+    required: true
+  gate-result:
+    description: "The gate job's result (e.g. needs.check-changes.result)."
+    required: true
+  results:
+    description: >-
+      Newline-separated "job=result" pairs for every job downstream of the
+      gate that the anchor job depends on.
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check the gated job results
+      env:
+        GATE_NAME: ${{ inputs.gate-name }}
+        GATE: ${{ inputs.gate-result }}
+        RESULTS: ${{ inputs.results }}
+      shell: bash
+      run: |
+        set -uo pipefail
+        if [ "$GATE" != "success" ]; then
+          echo "::error::$GATE_NAME did not succeed (result: $GATE) - a job skipped downstream of a broken gate is not a pass"
+          exit 1
+        fi
+        status=0
+        while IFS='=' read -r job result; do
+          [ -z "$job" ] && continue
+          case "$result" in
+            success|skipped) echo "ok    $job: $result" ;;
+            *) echo "::error::$job: $result"; status=1 ;;
+          esac
+        done <<< "$RESULTS"
+        exit "$status"

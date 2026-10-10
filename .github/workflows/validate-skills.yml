@@ -5,11 +5,15 @@ on:
     paths:
       - "*"
       - ".github/skills/**"
+      - "scripts/validate-skill-security.js"
+      - "scripts/validate-skill-security.test.js"
       - ".github/workflows/validate-skills.yml"
   pull_request:
     branches: [main]
     paths:
       - ".github/skills/**"
+      - "scripts/validate-skill-security.js"
+      - "scripts/validate-skill-security.test.js"
       - ".github/workflows/validate-skills.yml"
 
 concurrency:
@@ -47,13 +51,15 @@ jobs:
             HEAD=${{ github.event.after }}
           fi
 
-          # Find changed files in .github/skills and extract skill directories
+          # Find changed files in .github/skills and extract skill directories.
+          # Filtered in jq, not grep: grep exits 1 on no match, which under
+          # pipefail fails the job when no skill directory changed.
           SKILLS=$(git diff --name-only $BASE $HEAD | \
-            grep '^\.github/skills/' | \
-            grep -v '^\.github/skills/README\.md$' | \
-            cut -d'/' -f1-3 | \
-            sort -u | \
-            jq -R -s -c 'split("\n") | map(select(length > 0))')
+            jq -R -s -c '[split("\n")[]
+              | select(startswith(".github/skills/"))
+              | select(. != ".github/skills/README.md"
+                  and . != ".github/skills/skill-security-classification.json")
+              | split("/")[0:3] | join("/")] | unique')
 
           echo "skills=$SKILLS" >> "$GITHUB_OUTPUT"
           echo "Changed skills: $SKILLS"
@@ -79,3 +85,44 @@ jobs:
         uses: Flash-Brew-Digital/validate-skill@39c9da973b7ce3fd4d9632672a0c355bdd733d89  # v1.0.0
         with:
           path: ${{ matrix.skill }}
+
+  # Skill security classification: every skill that ships scripts carries a
+  # SECURITY.md or is declared exempt/pending in
+  # .github/skills/skill-security-classification.json. Checks ALL skills, not
+  # just the changed ones, so editing only the classification file cannot leave
+  # a stale entry. See "Skill security classification" in AGENTS.md.
+  security-classification:
+    name: Skill security classification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Test the validator
+        run: node --test scripts/validate-skill-security.test.js
+
+      - name: Validate skill security classification
+        run: node scripts/validate-skill-security.js
+
+      - name: Test the azure-storage-loader hardening
+        run: node --test .github/skills/azure-storage-loader/load-table-data.test.js
+
+      # The pr-risk-review scripts turn model output over an untrusted diff
+      # into a PR comment; these are the regression tests for their sanitizer
+      # and rename handling (#2307).
+      - name: Test the pr-risk-review scripts
+        run: node --test .github/skills/pr-risk-review/tests/pr-risk-review.test.js

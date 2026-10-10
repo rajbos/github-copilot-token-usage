@@ -35,8 +35,24 @@ export type ModeUsage = { ask: number; edit: number; agent: number; plan: number
  * and fails the build if they diverge.
  */
 export const MODE_USAGE_CONTENT_CLASSIFIED_KEYS = ['cliApp', 'claudeDesktop', 'claudeVsCode'] as const;
-export type ToolCallUsage = { total: number; byTool: { [key: string]: number }; outputTokensByTool?: { [key: string]: number } };
-export type McpToolUsage = { total: number; byServer: { [key: string]: number }; byTool: { [key: string]: number } };
+/** Mirror of `LatencyHistogram` in `src/types.ts` (repo root). */
+export type LatencyHistogram = { count: number; sumMs: number; buckets: number[] };
+export type ToolCallUsage = {
+	total: number;
+	byTool: { [key: string]: number };
+	outputTokensByTool?: { [key: string]: number };
+	completedByTool?: { [key: string]: number };
+	failuresByTool?: { [key: string]: number };
+	latencyByTool?: { [key: string]: LatencyHistogram };
+};
+export type McpToolUsage = {
+	total: number;
+	byServer: { [key: string]: number };
+	byTool: { [key: string]: number };
+	completedByServer?: { [key: string]: number };
+	failuresByServer?: { [key: string]: number };
+	latencyByServer?: { [key: string]: LatencyHistogram };
+};
 
 /** Common fields shared across all webviews that display model-switching data. */
 export type ModelSwitchingAnalysis = {

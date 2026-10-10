@@ -19,6 +19,13 @@
  *     methods that build webview HTML (`^get[A-Za-z0-9_]*Html$`) — the rest of
  *     that 13k-line file is extension-host code with its own l10n conventions
  *     already covered by the other two scripts.
+ *   - vscode-extension/src/insightsEngine.ts, but only inside `INSIGHT_CATALOG`,
+ *     and under a rule of its own (see scanInsightCatalog) rather than the
+ *     UI-rendering positions below — that file builds no HTML, so none of those
+ *     sinks exist in it. Added with issue #2081, which localized the catalog;
+ *     before that refactor this rule reported 360 violations there, all of
+ *     which the refactor removed, so the file enters the ratchet with a clean
+ *     slate and no baseline entries.
  *
  * What counts as a UI-rendering position:
  *   - `expr.textContent = '...'` / `.innerText` / `.innerHTML` / `.title` /
@@ -136,6 +143,20 @@ const EXTRA_FULL_SCAN_FILES = [
 	path.join(extRoot, 'src', 'backend', 'teamServerConfigPanel.ts'),
 	path.join(extRoot, 'src', 'loadingHtml.ts'),
 ];
+// The personalized-insights catalog (issue #2081). Unlike every other scanned
+// file this one renders no HTML at all — its user-facing strings are plain
+// object properties and `buildBody` return values, which none of the DOM/markup
+// sinks above can see. It gets its own rule in scanInsightCatalog() instead.
+const insightsEnginePath = path.join(extRoot, 'src', 'insightsEngine.ts');
+const INSIGHT_CATALOG_NAME = 'INSIGHT_CATALOG';
+// Calls whose string arguments are localization keys, not display text.
+const INSIGHT_KEY_CALLS = new Set(['translate', 'plural']);
+// Catalog properties holding machine values — ids, VS Code command ids, enum
+// members and the `*Key` fields, which are nls keys by construction.
+const INSIGHT_NON_TEXT_PROPS = new Set([
+	'id', 'category', 'severity', 'actionCommand', 'secondaryActionCommand',
+	'titleKey', 'actionLabelKey', 'secondaryActionLabelKey',
+]);
 const baselinePath = path.join(scriptDir, 'hardcoded-strings-baseline.json');
 const allowlistPath = path.join(scriptDir, 'hardcoded-strings-allowlist.json');
 
@@ -684,6 +705,91 @@ function findHtmlMethodBodies(sourceFile) {
 	return bodies;
 }
 
+/**
+ * Scans the personalized-insights catalog for prose that never reaches a
+ * translator.
+ *
+ * Why this needs its own pass rather than another entry in TARGET_PROPS: the
+ * catalog renders no HTML and touches no DOM, so every sink the rest of this
+ * script recognizes is absent. Its user-facing text is ordinary object
+ * properties and `buildBody` return values. Post-#2081 all of it flows through
+ * `ctx.translate(key, ...)`, so the rule is simply: inside `INSIGHT_CATALOG`,
+ * a prose-looking literal that is not a localization key is a violation.
+ *
+ * What is deliberately not reported:
+ *   - arguments to `translate(` / `plural(` — those are keys, not display text
+ *   - the machine-valued properties in INSIGHT_NON_TEXT_PROPS (ids, VS Code
+ *     command ids, `category`/`severity` enum members, and the `*Key` fields)
+ *   - literals being compared (`x === 'skill'`, `tier !== 'default'`), which are
+ *     data values read out of session logs, not text shown to anyone
+ *
+ * Known limitation, same class as the rest of this script: a prose literal
+ * passed through a local helper that itself calls `translate()` is judged at
+ * the helper's own call site, not traced into. That is the existing
+ * TEXT_ARG_SINKS boundary (limitation 3 above), not a new one.
+ */
+export function scanInsightCatalog(filePath, allowlist, violations) {
+	if (!fs.existsSync(filePath)) { return; }
+	const sourceText = fs.readFileSync(filePath, 'utf8');
+	const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const ctx = {
+		sourceFile,
+		exemptCommentLines: findExemptCommentLines(sourceFile),
+		relFile: path.relative(repoRoot, filePath).replace(/\\/g, '/'),
+		allowlist,
+		violations
+	};
+
+	const callName = (node) => {
+		if (!ts.isCallExpression(node)) { return null; }
+		const e = node.expression;
+		if (ts.isIdentifier(e)) { return e.text; }
+		// `ctx.translate(...)` / `someCtx.translate(...)`
+		if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.name)) { return e.name.text; }
+		return null;
+	};
+
+	function visit(node, skip) {
+		const name = callName(node);
+		if (name && INSIGHT_KEY_CALLS.has(name)) {
+			// The callee itself can still contain reportable code (a nested
+			// translate is fine either way); only its arguments are keys.
+			ts.forEachChild(node, (child) => visit(child, true));
+			return;
+		}
+		if (ts.isPropertyAssignment(node) && node.name && ts.isIdentifier(node.name)
+			&& INSIGHT_NON_TEXT_PROPS.has(node.name.text)) {
+			return;
+		}
+		if (ts.isBinaryExpression(node)
+			&& [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
+				ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken].includes(node.operatorToken.kind)) {
+			return;
+		}
+		if (!skip && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
+			reportAt(node.text, node.getStart(sourceFile), ctx, 'insight catalog text not passed through translate()');
+		}
+		if (!skip && ts.isTemplateExpression(node)) {
+			for (const span of [node.head, ...node.templateSpans.map(s => s.literal)]) {
+				reportAt(span.text, span.getStart(sourceFile), ctx, 'insight catalog text not passed through translate()');
+			}
+		}
+		ts.forEachChild(node, (child) => visit(child, skip));
+	}
+
+	// Scope to the catalog itself — the rest of the file is threshold constants,
+	// tool-name parsing and pure scoring helpers with their own string data.
+	function findCatalog(node) {
+		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
+			&& node.name.text === INSIGHT_CATALOG_NAME && node.initializer) {
+			visit(node.initializer, false);
+			return;
+		}
+		ts.forEachChild(node, findCatalog);
+	}
+	findCatalog(sourceFile);
+}
+
 export function scanFile(filePath, allowlist, violations, rootSelector) {
 	const sourceText = fs.readFileSync(filePath, 'utf8');
 	const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -709,6 +815,7 @@ function collectAllViolations() {
 		if (fs.existsSync(file)) { scanFile(file, allowlist, violations); }
 	}
 	scanFile(extensionTsPath, allowlist, violations, findHtmlMethodBodies);
+	scanInsightCatalog(insightsEnginePath, allowlist, violations);
 
 	// De-duplicate exact (file, offset, text) hits — the assignment-based and HTML-template-based
 	// passes can both match the same literal at the same source position. Keying on the offset

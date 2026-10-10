@@ -7,11 +7,13 @@ import {
 	REPO_PRS_REFRESH_INTERVAL_MS,
 	canServeRepoPrSnapshot,
 	getRepoPrCachePath,
+	isRealRepoPrSnapshot,
 	isRepoPrEnvelopeUsable,
 	isRepoPrSnapshotFresh,
 	nextRepoPrRefreshAt,
 	readRepoPrSnapshot,
 	shouldPreserveRepoPrSnapshotForEmptyDiscovery,
+	shouldPublishRepoPrStats,
 	writeRepoPrSnapshot,
 	type RepoPrCacheEnvelope,
 } from '../../src/repoPrCache';
@@ -152,4 +154,47 @@ test('readRepoPrSnapshot: missing or corrupt files read as undefined, never thro
 	assert.equal(await readRepoPrSnapshot(missing), undefined);
 	assert.equal(await readRepoPrSnapshot(corrupt), undefined);
 	await fs.promises.rm(dir, { recursive: true, force: true });
+});
+
+// ── isRealRepoPrSnapshot ─────────────────────────────────────────────────────
+// The Efficiency view's Value tab derives PR metrics from this snapshot, so it has to tell the
+// instant cold-open placeholder ("no PR data yet" — render the hint) from a snapshot that really
+// was fetched and happens to contain zeroes.
+
+test('isRealRepoPrSnapshot: the never-fetched placeholder is not real data', () => {
+	assert.equal(isRealRepoPrSnapshot(undefined), false);
+	assert.equal(isRealRepoPrSnapshot({ repos: [], fetchedAt: '' }), false);
+	assert.equal(isRealRepoPrSnapshot({ repos: [], fetchedAt: undefined }), false);
+});
+
+test('isRealRepoPrSnapshot: a fetched snapshot is real even with zero repos', () => {
+	assert.equal(isRealRepoPrSnapshot(makeResult({ repos: [] })), true);
+});
+
+test('isRealRepoPrSnapshot: a populated repo list counts without a fetch timestamp', () => {
+	// `fetchedAt` is optional on `RepoPrStatsResult` and the cache-read path does not require it,
+	// so repos alone must be enough — otherwise such a snapshot would leave the Value tab on its
+	// "never loaded" hint.
+	const repo = { owner: 'a', repo: 'b', repoUrl: 'https://github.com/a/b', totalPrs: 3, aiAuthoredPrs: 1, aiReviewRequestedPrs: 0, aiDetails: [] };
+	assert.equal(isRealRepoPrSnapshot({ repos: [repo], fetchedAt: undefined }), true);
+});
+
+// ── shouldPublishRepoPrStats ─────────────────────────────────────────────────
+// The other half of "which snapshots may reach the Value cards": a refresh that was already in
+// flight when the user signed out finishes with an authenticated result the signed-out check at
+// the *start* of a refresh cannot see.
+
+test('shouldPublishRepoPrStats: an authenticated result is dropped once the user signed out', () => {
+	assert.equal(shouldPublishRepoPrStats(makeResult({ authenticated: true }), true), false);
+});
+
+test('shouldPublishRepoPrStats: the sign-out\'s own unauthenticated result still publishes', () => {
+	// Sign-out sets the flag *before* publishing its empty snapshot, so dropping on the flag alone
+	// would leave the cards showing pre-sign-out numbers — the opposite of the intent.
+	assert.equal(shouldPublishRepoPrStats(makeResult({ authenticated: false }), true), true);
+});
+
+test('shouldPublishRepoPrStats: nothing is dropped while signed in', () => {
+	assert.equal(shouldPublishRepoPrStats(makeResult({ authenticated: true }), false), true);
+	assert.equal(shouldPublishRepoPrStats(makeResult({ authenticated: false }), false), true);
 });

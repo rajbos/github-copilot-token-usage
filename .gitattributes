@@ -7,9 +7,13 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
-# jetbrains-plugin gradlew.bat override: keep LF (not CRLF) to prevent
-# git stash/pop conflicts on Linux runners (see PR #1463 / issue #1445)
-jetbrains-plugin/gradlew.bat text
+# jetbrains-plugin gradlew.bat: store byte-for-byte, no line-ending conversion.
+# Dependabot's gradle-wrapper bumps commit the file with CRLF straight from the
+# Gradle distribution. Under the *.bat rule above git then wants to normalize it,
+# so it shows as modified in every checkout and breaks stash/pop on Linux runners
+# (PR #1463 / issue #1445). A bare "text" override does not cancel eol=crlf, so
+# the file is marked -text instead: what is committed is what is checked out.
+jetbrains-plugin/gradlew.bat -text
 
 # Keep images and binaries untouched
 *.png binary

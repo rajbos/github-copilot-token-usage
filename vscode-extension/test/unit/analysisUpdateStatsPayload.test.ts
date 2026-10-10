@@ -23,28 +23,13 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { extractBracesBlock } from './sourceStructureTestHelpers';
 
 // Compiled test output lives under out/vscode-extension/test/unit (tsconfig.tests.json's
 // rootDir is the repo root), so __dirname does not sit next to the real source tree —
 // walk back up to the vscode-extension package root, then down into src/.
 const EXTENSION_SRC_PATH = path.join(__dirname, '../../../../src/extension.ts');
 const EXTENSION_SRC = fs.readFileSync(EXTENSION_SRC_PATH, 'utf8');
-
-/** Extract the full `{ ... }` block starting at the first `{` found after `marker` (brace-balanced). */
-function extractBracesBlock(source: string, marker: string): string {
-	const markerIndex = source.indexOf(marker);
-	assert.notEqual(markerIndex, -1, `marker not found in extension.ts: ${marker}`);
-	const braceStart = source.indexOf('{', markerIndex);
-	let depth = 0;
-	for (let i = braceStart; i < source.length; i++) {
-		if (source[i] === '{') { depth++; }
-		else if (source[i] === '}') {
-			depth--;
-			if (depth === 0) { return source.slice(markerIndex, i + 1); }
-		}
-	}
-	throw new Error(`unbalanced braces while scanning for marker: ${marker}`);
-}
 
 /** Find every balanced `marker(...)` call in `source` (marker must end with '('). */
 function findAllBalancedCalls(source: string, marker: string): string[] {
@@ -74,7 +59,7 @@ test('_buildAnalysisUpdateData still includes every field the Usage Analysis web
 	const body = extractBracesBlock(EXTENSION_SRC, 'private _buildAnalysisUpdateData(');
 	const requiredFields = [
 		'today:', 'last30Days:', 'month:', 'lastMonth:',
-		'insights:', 'correctionReport:', 'repeatedTasks:', 'curationAnalysis:',
+		'insights:', 'correctionReport:', 'repeatedTasks:', 'curationAnalysis:', 'memoryFilesAnalysis:',
 	];
 	for (const field of requiredFields) {
 		assert.ok(body.includes(field), `_buildAnalysisUpdateData() is missing '${field}' — the webview will blank the section that reads it`);

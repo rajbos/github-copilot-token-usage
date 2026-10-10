@@ -82,6 +82,26 @@
       "caseInsensitive": true
     },
     {
+      "id": "claude-md",
+      "type": "instructions",
+      "category": "copilot",
+      "icon": "📋",
+      "label": "CLAUDE.md",
+      "path": "CLAUDE.md",
+      "scanMode": "exact",
+      "caseInsensitive": true
+    },
+    {
+      "id": "claude-dir-md",
+      "type": "instructions",
+      "category": "copilot",
+      "icon": "📋",
+      "label": ".claude/CLAUDE.md",
+      "path": ".claude/CLAUDE.md",
+      "scanMode": "exact",
+      "caseInsensitive": true
+    },
+    {
       "id": "amazonq-rules",
       "type": "non-copilot-instructions",
       "category": "non-copilot",

@@ -1,6 +1,6 @@
 {
   "name": "@rajbos/ai-engineering-fluency-sharing-server",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Self-hosted sharing server for AI Engineering Fluency — accepts daily usage uploads from VS Code via GitHub OAuth tokens",
   "license": "MIT",
   "author": "RobBos",
@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
-    "hono": "^4.13.7"
+    "hono": "^4.13.8"
   },
   "peerDependencies": {
     "chart.js": "^4.4.7"
@@ -62,7 +62,7 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.1",
     "chart.js": "^4.4.7",
     "esbuild": "^0.28.2",
     "typescript": "^5.8.0"

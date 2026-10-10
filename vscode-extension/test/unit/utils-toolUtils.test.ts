@@ -1,7 +1,8 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { resolveGuidMcpToolName, isGuidMcpTool, resolveMcpFamilyToolName, isMcpFamilyResolvedTool, canonicalizeToolId, lookupKnownToolName } from '../../../src/utils/toolUtils';
+import { resolveGuidMcpToolName, isGuidMcpTool, resolveMcpFamilyToolName, isMcpFamilyResolvedTool, canonicalizeToolId, lookupKnownToolName, isKnownToolDisplayName } from '../../../src/utils/toolUtils';
+import toolNamesData from '../../../src/toolNames.json';
 
 // ── resolveGuidMcpToolName ───────────────────────────────────────────────────
 
@@ -176,4 +177,57 @@ test('lookupKnownToolName: returns canonicalized match for a PascalCase id', () 
 
 test('lookupKnownToolName: returns undefined when nothing matches', () => {
 	assert.equal(lookupKnownToolName('totally_unknown_tool', { list_agents: 'List Agents' }), undefined);
+});
+
+// ── issue #2223: equivalent MCP-prefix entries and server display names ─────
+// The "Toolnames Checkup" comment (toolnames_utils.py) reported these as
+// equivalent to an existing entry; the extension must agree and resolve them.
+
+test('canonicalizeToolId: Claude_Browser and claude-in-chrome prefixes are equivalent', () => {
+	assert.equal(
+		canonicalizeToolId('mcp__Claude_Browser__browser_batch'),
+		canonicalizeToolId('mcp__claude-in-chrome__browser_batch'),
+	);
+	assert.equal(canonicalizeToolId('mcp__Claude_Browser__browser_batch'), 'claude_browser_browser_batch');
+});
+
+test('canonicalizeToolId: numeric collision suffix on a server prefix is ignored', () => {
+	assert.equal(canonicalizeToolId('mcp_context73_query_docs'), canonicalizeToolId('mcp_context7_query_docs'));
+});
+
+test('canonicalizeToolId: GitHub local and remote prefixes are equivalent', () => {
+	assert.equal(canonicalizeToolId('mcp.io.github.git.issue_read'), canonicalizeToolId('mcp_github_github_issue_read'));
+});
+
+test('lookupKnownToolName: resolves an equivalent MCP-prefix entry (issue #2223)', () => {
+	const map = { 'mcp__claude-in-chrome__browser_batch': 'MCP: Claude In Chrome - Browser Batch' };
+	assert.equal(lookupKnownToolName('mcp__Claude_Browser__browser_batch', map), 'MCP: Claude In Chrome - Browser Batch');
+});
+
+test('lookupKnownToolName: every issue #2223 equivalent id resolves against the real toolNames.json', () => {
+	assert.ok(lookupKnownToolName('mcp__Claude_Browser__browser_batch', toolNamesData as Record<string, string>));
+});
+
+test('isKnownToolDisplayName: matches a server part of a friendly name', () => {
+	const map = { 'mcp__ccd_session__mark_chapter': 'CCD Session: Mark Chapter' };
+	assert.equal(isKnownToolDisplayName('CCD Session', map), true);
+});
+
+test('isKnownToolDisplayName: matches a full friendly name', () => {
+	assert.equal(isKnownToolDisplayName('Claude Browser', { Claude_Browser: 'Claude Browser' }), true);
+});
+
+test('isKnownToolDisplayName: raw tool ids and unknown names are not display names', () => {
+	const map = { 'mcp__ccd_session__mark_chapter': 'CCD Session: Mark Chapter' };
+	assert.equal(isKnownToolDisplayName('mcp__ccd_host__sync_with_base_branch', map), false);
+	assert.equal(isKnownToolDisplayName('Mark Chapter', map), false);
+});
+
+test('isKnownToolDisplayName: issue #2223 server names are recognized in the real toolNames.json', () => {
+	for (const name of ['CCD Session', 'Claude Browser', 'GitHub MCP (Local)', 'MCP Claude Browser', 'MCP Scheduled Tasks']) {
+		assert.equal(isKnownToolDisplayName(name, toolNamesData as Record<string, string>), true, name);
+	}
+	for (const id of ['ccd_host', 'mcp__ccd_host__sync_with_base_branch', 'mcp__ccd_pr__bind_pr', 'mcp__ccd_pr__set_monitor']) {
+		assert.equal(isKnownToolDisplayName(id, toolNamesData as Record<string, string>), false, id);
+	}
 });

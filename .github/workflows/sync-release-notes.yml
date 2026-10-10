@@ -1,7 +1,11 @@
 name: Sync Release Notes
 
-# Manual-only trigger — automated changelog sync is handled by the Release workflow.
-# Use this to re-sync CHANGELOG.md from GitHub releases at any time.
+# Manual-only trigger. The per-project CHANGELOG.md files are the source of
+# release notes: they are written in the release-prep PR and the release
+# workflows copy them into the GitHub release, not the other way round. This
+# only backfills: sync-changelog.js adds a section for a GitHub release whose
+# version has no "## [<version>]" section yet, and never rewrites an existing
+# (curated) one.
 on:
   workflow_dispatch:
 

@@ -1,7 +1,10 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import {
+    buildRepeatedTaskReport,
     detectRepeatedTasks,
+    repoDisplayName,
+    toRepeatedTaskInput,
     normalizePromptTokens,
     tokenSimilarity,
     PROMPT_SIMILARITY_THRESHOLD,
@@ -198,4 +201,88 @@ test('detectRepeatedTasks: identical data clusters identically regardless of inp
         reversed.map(c => c.sessionCount).sort(),
         forward.map(c => c.sessionCount).sort(),
     );
+});
+
+// ---------------------------------------------------------------------------
+// repoDisplayName / toRepeatedTaskInput / buildRepeatedTaskReport
+// ---------------------------------------------------------------------------
+
+test('repoDisplayName: shortens remote URLs to owner/repo and keeps bare names', () => {
+    assert.equal(repoDisplayName('https://github.com/o/r.git'), 'o/r');
+    assert.equal(repoDisplayName('https://github.com/o/r'), 'o/r');
+    assert.equal(repoDisplayName('git@github.com:o/r'), 'o/r');
+    assert.equal(repoDisplayName('git@github.com:o/r.git'), 'o/r');
+    assert.equal(repoDisplayName('ssh://git@github.com/o/r.git'), 'o/r');
+    assert.equal(repoDisplayName('https://gitlab.example.com/group/sub/r/'), 'sub/r');
+    assert.equal(repoDisplayName('my-repo'), 'my-repo');
+    assert.equal(repoDisplayName('o/r'), 'o/r');
+});
+
+test('repoDisplayName: leaves filesystem paths and other non-remote values unchanged', () => {
+    assert.equal(repoDisplayName('/Users/alice/project'), '/Users/alice/project');
+    assert.equal(repoDisplayName('C:\\code\\project'), 'C:\\code\\project');
+    assert.equal(repoDisplayName('C:/code/project'), 'C:/code/project');
+    assert.equal(repoDisplayName('file:///Users/alice/project'), 'file:///Users/alice/project');
+    assert.equal(repoDisplayName('owner/repo/extra'), 'owner/repo/extra');
+});
+
+test('toRepeatedTaskInput: skips sessions without a first prompt', () => {
+    assert.equal(toRepeatedTaskInput({ file: 'a', mtime: 0 }), null);
+    assert.equal(toRepeatedTaskInput({ file: 'a', mtime: 0, firstUserPrompt: '' }), null);
+    assert.equal(toRepeatedTaskInput({ file: 'a', mtime: 0, firstUserPrompt: null }), null);
+});
+
+test('toRepeatedTaskInput: skips prompts clustering would drop (whitespace, stopwords, slash commands)', () => {
+    assert.equal(toRepeatedTaskInput({ file: 'a', mtime: 0, firstUserPrompt: '                    ' }), null);
+    assert.equal(toRepeatedTaskInput({ file: 'a', mtime: 0, firstUserPrompt: 'please could you then do it now' }), null);
+    assert.equal(toRepeatedTaskInput({ file: 'a', mtime: 0, firstUserPrompt: '/fix the failing tests please' }), null);
+});
+
+test('toRepeatedTaskInput: falls back to mtime for lastInteraction and maps the repository', () => {
+    const mtime = Date.parse('2026-08-05T12:00:00Z');
+    const result = toRepeatedTaskInput({
+        file: 'a.jsonl',
+        firstUserPrompt: 'run the tests and fix the failures',
+        mtime,
+        repository: 'https://github.com/o/r.git',
+    });
+    assert.deepEqual(result, {
+        prompt: 'run the tests and fix the failures',
+        session: { file: 'a.jsonl', title: null, lastInteraction: '2026-08-05T12:00:00.000Z', repository: 'o/r' },
+    });
+    const withTimes = toRepeatedTaskInput({
+        file: 'b.jsonl', firstUserPrompt: 'x'.repeat(20), mtime, title: 'T',
+        lastInteraction: '2026-08-01T00:00:00Z', repository: null,
+    });
+    assert.equal(withTimes?.session.lastInteraction, '2026-08-01T00:00:00Z');
+    assert.equal(withTimes?.session.title, 'T');
+    assert.equal(withTimes?.session.repository, undefined);
+});
+
+test('buildRepeatedTaskReport: returns undefined for empty input and when nothing clusters', () => {
+    assert.equal(buildRepeatedTaskReport([]), undefined);
+    assert.equal(buildRepeatedTaskReport([
+        { file: 'a', mtime: 0, firstUserPrompt: 'run the tests and fix the failures' },
+        { file: 'b', mtime: 0, firstUserPrompt: 'update the changelog and bump the version' },
+    ]), undefined);
+});
+
+test('buildRepeatedTaskReport: reports minClusterSize and counts only sessions with a prompt', () => {
+    const report = buildRepeatedTaskReport([
+        { file: 's1', mtime: Date.parse('2026-08-01T10:00:00Z'), firstUserPrompt: 'run the tests and fix the failures', repository: 'git@github.com:o/r' },
+        { file: 's2', mtime: 0, lastInteraction: '2026-08-02T10:00:00Z', firstUserPrompt: 'please run the tests and fix any failures', repository: 'https://github.com/o/r.git' },
+        { file: 's3', mtime: 0, firstUserPrompt: undefined },
+        { file: 's4', mtime: 0, firstUserPrompt: '' },
+        { file: 's5', mtime: 0, firstUserPrompt: 'please could you then do it now' },
+        { file: 's6', mtime: 0, firstUserPrompt: '/fix the failing tests please' },
+    ]);
+    assert.ok(report);
+    assert.equal(report.minClusterSize, MIN_CLUSTER_SIZE);
+    assert.equal(report.sessionsScanned, 2);
+    assert.equal(report.clusters.length, 1);
+    const [cluster] = report.clusters;
+    assert.equal(cluster.sessionCount, 2);
+    assert.deepEqual(cluster.repositories, ['o/r']);
+    assert.deepEqual(cluster.sessions.map(s => s.file), ['s2', 's1']);
+    assert.equal(cluster.sessions[1].lastInteraction, '2026-08-01T10:00:00.000Z');
 });

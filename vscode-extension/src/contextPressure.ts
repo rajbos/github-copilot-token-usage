@@ -16,10 +16,11 @@
  * to keep `sessionsConsidered` a true session count. Without it,
  * `sessionsNearLimit` could exceed `sessionsConsidered`.
  */
-import { CONTEXT_NEAR_LIMIT_RATIO } from '../../src/types';
+import { getSessionContextFillPercent, isSessionNearContextLimit } from '../../src/utils/contextFill';
 import type { UsageAnalysisPeriod } from '../../src/types';
 import type { SessionFileCache } from '../../src/types';
 import type { SessionContextWindow } from './copilotAppData';
+import type { TodaySessionSummary } from '../../src/types';
 
 export type ContextPressure = NonNullable<UsageAnalysisPeriod['contextPressure']>;
 
@@ -77,7 +78,61 @@ export function mergeDbContextPressure(
 	if (!alreadyCounted) { cp.sessionsConsidered++; }
 	if (!hasFill) { return; }
 	cp.sessionsWithFillData++;
-	const fillPercent = Math.min(100, Math.round((reached! / limit!) * 100));
+	// Both the fill percentage and the near-limit rule come from the shared
+	// helper the Recent Sessions column and its filter use, so this counter and
+	// the list the insight links to can never answer differently. `compacted`
+	// arrives as its own flag here rather than on the row, so it is mapped onto
+	// the field the shared predicate reads.
+	const fill = { contextWindowLimit: limit!, contextReachedTokens: reached!, truncationCount: compacted ? 1 : 0 };
+	const fillPercent = getSessionContextFillPercent(fill)!;
 	if (fillPercent > (cp.worstFillPercent ?? 0)) { cp.worstFillPercent = fillPercent; }
-	if (!compacted && reached! >= limit! * CONTEXT_NEAR_LIMIT_RATIO) { cp.sessionsNearLimit++; }
+	if (isSessionNearContextLimit(fill)) { cp.sessionsNearLimit++; }
+}
+
+/**
+ * Index session summaries by Copilot CLI session uuid.
+ *
+ * One uuid can map to several summary objects: the "Today" list is built
+ * separately from the Recent Sessions lookback buckets, so the same session
+ * arrives as two objects that both need stamping. `extractUuid` is injected so
+ * this stays free of the extension host's path handling.
+ */
+export function indexSessionsByCliUuid(
+	sessionLists: TodaySessionSummary[][],
+	extractUuid: (filePath: string) => string | null,
+): Map<string, TodaySessionSummary[]> {
+	const byUuid = new Map<string, TodaySessionSummary[]>();
+	for (const list of sessionLists) {
+		for (const session of list) {
+			const uuid = extractUuid(session.filePath);
+			if (!uuid) { continue; }
+			const existing = byUuid.get(uuid);
+			if (!existing) { byUuid.set(uuid, [session]); }
+			else if (!existing.includes(session)) { existing.push(session); }
+		}
+	}
+	return byUuid;
+}
+
+/**
+ * Stamp one data.db context row onto a session summary: the context tier (only
+ * when the session did not already carry one from its own log), the selected
+ * window limit, and the last known fill. The limit/fill pair is what the Recent
+ * Sessions "Context" column and its near-limit filter read, so a session that
+ * never gets stamped shows "—" and is never flagged.
+ */
+export function applyDbContextToSession(session: TodaySessionSummary, info: SessionContextWindow): void {
+	if (info.contextTier && !session.contextTier) { session.contextTier = info.contextTier; }
+	if (info.contextWindowLimit) { session.contextWindowLimit = info.contextWindowLimit; }
+	if (info.contextReachedTokens) { session.contextReachedTokens = info.contextReachedTokens; }
+}
+
+/** Stamp every data.db row in `contextInfo` onto each summary indexed under its uuid. */
+export function applyDbContextToIndexedSessions(
+	sessionsByUuid: Map<string, TodaySessionSummary[]>,
+	contextInfo: Map<string, SessionContextWindow>,
+): void {
+	for (const [uuid, info] of contextInfo) {
+		for (const session of sessionsByUuid.get(uuid) ?? []) { applyDbContextToSession(session, info); }
+	}
 }

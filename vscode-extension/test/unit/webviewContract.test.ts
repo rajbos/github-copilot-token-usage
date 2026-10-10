@@ -1,9 +1,9 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import { makeTmpFixtureDir } from './tmpFixtureDirs';
 
 // The validator is plain CommonJS developer tooling that runs from the repo
 // root, outside the extension's TypeScript program, so it is loaded by path.
@@ -38,7 +38,7 @@ const contract = requireFromHere(
 
 /** Writes `source` to a throwaway .ts file and returns its path. */
 function fixture(source: string): string {
-	const dir = fs.mkdtempSync(path.join(process.cwd(), 'contract-fixture-'));
+	const dir = makeTmpFixtureDir('contract-fixture-');
 	const file = path.join(dir, 'fixture.ts');
 	fs.writeFileSync(file, source);
 	return file;

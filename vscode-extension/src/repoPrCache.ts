@@ -99,6 +99,46 @@ export function shouldPreserveRepoPrSnapshotForEmptyDiscovery(
 		&& (envelope?.data.repos.length ?? 0) > 0;
 }
 
+/**
+ * True when a snapshot carries real PR data rather than the "never fetched" placeholder.
+ *
+ * `buildEmptyRepoPrStatsResult()` serves an instant placeholder on cold open — `repos: []` with
+ * `fetchedAt: ''` — so consumers that derive metrics from the snapshot (the Efficiency view's Value
+ * tab) can tell "no PR data yet" from "fetched, and the answer is zero". `fetchedAt` is optional in
+ * `RepoPrStatsResult`, and nothing on the cache-read path requires it, so a populated repo list
+ * counts as real on its own.
+ *
+ * A snapshot with neither a timestamp nor repos is deliberately "no data" rather than "fetched,
+ * and the answer is zero": every producer stamps `fetchedAt` (the placeholder with `''`, the
+ * refresh path with a real ISO time, and the cache write carries that same result), so nothing
+ * legitimate lands here — and a zero-PR claim derived from a snapshot that cannot show it ever
+ * fetched would be a worse guess than the actionable hint.
+ */
+export function isRealRepoPrSnapshot(
+	result: Pick<RepoPrStatsResult, 'repos' | 'fetchedAt'> | undefined,
+): boolean {
+	if (!result) { return false; }
+	return Boolean(result.fetchedAt) || (Array.isArray(result.repos) && result.repos.length > 0);
+}
+
+/**
+ * Whether a freshly collected Repository PR result may still be published.
+ *
+ * Sits beside {@link isRealRepoPrSnapshot} on purpose: between them they decide which snapshots
+ * are allowed to reach the Repository PRs tab and the Efficiency view's Value cards.
+ *
+ * A refresh already in flight when the user signs out finishes with an authenticated result — the
+ * signed-out check that gates *starting* a refresh cannot see it — and publishing that result
+ * would repopulate the very cards the sign-out just cleared. The unauthenticated result the
+ * sign-out itself publishes is unaffected: only authenticated ones are dropped.
+ */
+export function shouldPublishRepoPrStats(
+	result: Pick<RepoPrStatsResult, 'authenticated'>,
+	signedOutByUser: boolean,
+): boolean {
+	return !(result.authenticated && signedOutByUser);
+}
+
 /** When the next refresh becomes due, as an ISO timestamp (undefined when it is due now). */
 export function nextRepoPrRefreshAt(
 	fetchedAt: string | undefined,

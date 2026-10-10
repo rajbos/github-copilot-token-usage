@@ -32,6 +32,7 @@ export const EDITOR_ICON_MAP: Record<string, string> = {
 	'MS Scout (Copilot CLI)': '🔭',
 	'OpenCode': '🟢',
 	'Pi': 'π',
+	'SSMS': '🗄️',
 	'Unknown': '❓',
 	'Visual Studio': '🪟',
 	'VS Code': '💙',

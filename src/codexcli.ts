@@ -52,7 +52,7 @@ import * as path from 'path';
 import * as os from 'os';
 import initSqlJs from 'sql.js';
 import type { ModelUsage } from './types';
-import { normalizePath } from './utils/pathUtils';
+import { joinedChildPrefixForComparison, normalizePath } from './utils/pathUtils';
 import { toLocalDayKey } from './utils/dayKeys';
 
 type SqlJsStatic = initSqlJs.SqlJsStatic;
@@ -64,8 +64,11 @@ type DbCacheEntry = { db: SqlDatabase; mtimeMs: number; size: number };
 const ROLLOUT_FILE_RE = /^rollout-.*\.jsonl$/i;
 /** Extracts the thread/session uuid from a rollout filename. */
 const ROLLOUT_UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
-/** Matches virtual thread paths that point into a state_<N>.sqlite DB. */
-const STATE_DB_VIRTUAL_RE = /\/state_\d+\.sqlite#/i;
+/**
+ * Matches virtual thread paths that point into a state_<N>.sqlite DB. The DB name may
+ * start the path: with CODEX_HOME='.' path.join drops the './', giving `state_<N>.sqlite#<id>`.
+ */
+const STATE_DB_VIRTUAL_RE = /(?:^|\/)state_\d+\.sqlite#/i;
 /** Newest schema generation observed at implementation time (used only as a diagnostics fallback). */
 const DEFAULT_STATE_DB_NAME = 'state_5.sqlite';
 /** System-injected user messages start with these XML-ish tags and are not real user turns. */
@@ -201,11 +204,18 @@ export class CodexCliDataAccess {
 	 */
 	isCodexCliSessionFile(filePath: string): boolean {
 		const norm = normalizePath(filePath).toLowerCase();
-		const home = normalizePath(this.getCodexHome()).toLowerCase();
-		const inCodexHome = norm.includes('/.codex/') || norm.startsWith(home + '/');
-		if (!inCodexHome) { return false; }
-		if (STATE_DB_VIRTUAL_RE.test(norm)) { return true; }
-		return ROLLOUT_FILE_RE.test(path.basename(norm));
+		if (norm.includes('/.codex/')) {
+			return STATE_DB_VIRTUAL_RE.test(norm) || ROLLOUT_FILE_RE.test(path.basename(norm));
+		}
+		// A relocated $CODEX_HOME: compare against the prefix path.join() puts on this
+		// adapter's own paths, so homes like '.' (join drops the './') and '/' still match.
+		// Only Codex's own entries count — a broad home (e.g. '/') must not claim an
+		// unrelated rollout-*.jsonl elsewhere under it.
+		const homePrefix = joinedChildPrefixForComparison(this.getCodexHome());
+		if (!norm.startsWith(homePrefix)) { return false; }
+		const rest = norm.slice(homePrefix.length);
+		if (/^state_\d+\.sqlite#/.test(rest)) { return true; }
+		return /^(sessions|archived_sessions)\//.test(rest) && ROLLOUT_FILE_RE.test(path.basename(norm));
 	}
 
 	/** Returns true when the path is a virtual DB-thread path (as opposed to a rollout file). */

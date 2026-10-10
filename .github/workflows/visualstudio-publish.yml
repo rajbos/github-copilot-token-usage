@@ -56,6 +56,10 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       - name: Read local version from VSIX manifest
         id: version
@@ -141,13 +145,16 @@ jobs:
 
       - name: Restore NuGet packages
         working-directory: visualstudio-extension
-        run: nuget restore AIEngineeringFluency.sln
+        # -LockedMode: fail if a PackageReference drifts from the committed
+        # packages.lock.json instead of resolving something new (see
+        # visualstudio-extension/Directory.Build.props).
+        run: nuget restore AIEngineeringFluency.sln -LockedMode
 
       - name: Restore SDK-style projects
         working-directory: visualstudio-extension
         run: |
-          dotnet restore src/AIEngineeringFluency.Tests/AIEngineeringFluency.Tests.csproj
-          dotnet restore src/AIEngineeringFluencyRunner/AIEngineeringFluencyRunner.csproj
+          dotnet restore --locked-mode src/AIEngineeringFluency.Tests/AIEngineeringFluency.Tests.csproj
+          dotnet restore --locked-mode src/AIEngineeringFluencyRunner/AIEngineeringFluencyRunner.csproj
 
       - name: Build solution (Release)
         working-directory: visualstudio-extension
@@ -178,26 +185,42 @@ jobs:
 
       # ── Create GitHub release (tag push only) ──────────────────────────────
 
-      - name: Generate release notes
+      # The notes are the "## [<version>]" section of visualstudio-extension/CHANGELOG.md,
+      # written in the release-prep PR (scripts/release-changelog.js promote). The
+      # tag is already pushed here, so a missing section warns and falls back to
+      # GitHub's generated PR list instead of failing.
+      - name: Read release notes from CHANGELOG.md
         if: ${{ steps.version.outputs.is_tag == 'true' && inputs.dry_run != true }}
         id: release_notes
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.local_version }}
         run: |
-          $tag = "vs/v${{ steps.version.outputs.local_version }}"
+          $tag = "vs/v$env:VERSION"
           $notesPath = Join-Path $env:RUNNER_TEMP "release_notes.md"
-          Write-Host "Generating release notes for $tag ..."
-          $notes = gh api repos/${{ github.repository }}/releases/generate-notes `
+          $generated = gh api repos/${{ github.repository }}/releases/generate-notes `
             -f tag_name="$tag" `
             --jq '.body' 2>$null
-          if ($LASTEXITCODE -eq 0 -and $notes) {
-            $notes | Out-File -FilePath $notesPath -Encoding utf8
-            Write-Host "✅ Generated release notes from merged PRs"
+          $haveGenerated = ($LASTEXITCODE -eq 0 -and $generated)
+
+          node scripts/release-changelog.js extract visualstudio-extension/CHANGELOG.md "$env:VERSION" --out $notesPath
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Release notes from visualstudio-extension/CHANGELOG.md"
+            if ($haveGenerated) {
+              @("", "<details><summary>All merged pull requests</summary>", "", ($generated -join "`n"), "", "</details>") |
+                Out-File -FilePath $notesPath -Encoding utf8 -Append
+            }
           } else {
-            "Visual Studio Extension v${{ steps.version.outputs.local_version }}" | Out-File -FilePath $notesPath -Encoding utf8
-            Write-Host "⚠️ Could not auto-generate notes, using fallback"
+            Write-Host "::warning::visualstudio-extension/CHANGELOG.md has no [$env:VERSION] section; using GitHub's generated notes. Write it in the release-prep PR."
+            if ($haveGenerated) {
+              $generated | Out-File -FilePath $notesPath -Encoding utf8
+            } else {
+              "Visual Studio Extension v$env:VERSION" | Out-File -FilePath $notesPath -Encoding utf8
+            }
           }
+          # A failed extract must not fail the step: the fallback above covers it.
+          $global:LASTEXITCODE = 0
           echo "notes_path=$notesPath" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release

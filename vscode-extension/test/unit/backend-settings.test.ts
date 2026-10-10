@@ -4,7 +4,7 @@ import * as assert from 'node:assert/strict';
 
 import * as vscode from 'vscode';
 
-import { getBackendSettings, isBackendConfigured, shouldPromptToSetSharedKey } from '../../src/backend/settings';
+import { getBackendSettings, isBackendConfigured, readExplicitSharingProfile, shouldPromptToSetSharedKey } from '../../src/backend/settings';
 
 test('shouldPromptToSetSharedKey gates on authMode/storageAccount/sharedKey presence', () => {
 	assert.equal(shouldPromptToSetSharedKey('entraId', 'acct', undefined), false);
@@ -157,4 +157,13 @@ test('isBackendConfigured checks required fields', () => {
 		}),
 		false
 	);
+});
+
+test('readExplicitSharingProfile follows VS Code scope precedence (folder > workspace > user)', () => {
+	const cfg = (inspected: Record<string, string | undefined>) => ({ inspect: () => inspected }) as any;
+	assert.equal(readExplicitSharingProfile(cfg({ globalValue: 'teamIdentified', workspaceValue: 'off' })), 'off');
+	assert.equal(readExplicitSharingProfile(cfg({ globalValue: 'off', workspaceValue: 'soloFull', workspaceFolderValue: 'teamPseudonymous' })), 'teamPseudonymous');
+	assert.equal(readExplicitSharingProfile(cfg({ globalValue: 'teamIdentified' })), 'teamIdentified');
+	assert.equal(readExplicitSharingProfile(cfg({})), undefined);
+	assert.equal(readExplicitSharingProfile({ get: () => 'off' } as any), undefined, 'no inspect() means no explicit value');
 });

@@ -94,6 +94,13 @@
     "kimi-k3": 0.25,
     "claude-fable-5.1": 0.24,
     "gpt-6-astra": 0.25,
-    "gemini-3.8-flash": 0.25
+    "gemini-3.8-flash": 0.25,
+    "grok-4.7": 0.25,
+    "gpt-6-luna": 0.25,
+    "gpt-6-sol": 0.25,
+    "claude-opus-5.5": 0.24,
+    "claude-sonnet-5.5": 0.24,
+    "gpt-6.1-sol": 0.25,
+    "claude-haiku-5.5": 0.24
   }
 }

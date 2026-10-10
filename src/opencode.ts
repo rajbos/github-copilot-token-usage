@@ -6,16 +6,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import initSqlJs from 'sql.js';
 import type { ModelUsage, ModelId } from './types';
 import { normalizePathForComparison } from './workspaceHelpers';
 import { isUnsafeObjectKey } from './utils/protoGuard';
 import { readTextFileWithSizeGuardSync } from './utils/safeFileRead';
 import { readDbBufferWithWalFingerprint, getWalStat, type WalReadResult } from './utils/sqliteWal';
 
-// Access SqlJsStatic and Database via the globally declared initSqlJs namespace.
-type SqlJsStatic = initSqlJs.SqlJsStatic;
-type SqlDatabase = initSqlJs.Database;
+import { SqlJsDbCacheBase, type SqlDatabase } from './utils/sqlJsDbCache';
 
 /** Minimal URI interface required by OpenCodeDataAccess (subset of vscode.Uri). */
 export interface UriLike {
@@ -24,28 +21,15 @@ export interface UriLike {
 	readonly scheme: string;
 }
 
-// walSize (not just walMtimeMs) is part of the cache identity: mtime granularity is coarse on
-// some filesystems, so two WAL appends inside one tick can leave the mtime unchanged while the
-// WAL still grows — see getWalStat's doc comment and #2036 review notes (Fix 1b).
-type OpenCodeDbCache = { db: SqlDatabase; mtimeMs: number; size: number; path: string; walMtimeMs: number; walSize: number };
 type OpenCodeModelUsageWithInteractions = {
 	[modelName: ModelId]: ModelUsage[ModelId] & { interactions?: number };
 };
 
-export class OpenCodeDataAccess {
-	private _sqlJsModule: SqlJsStatic | null = null;
-	private _sqlJsInitPromise: Promise<SqlJsStatic> | null = null;
-	private _dbCache: OpenCodeDbCache | null = null;
-	private _dbCacheInflight: Map<string, Promise<SqlDatabase | null>> = new Map();
-	// A single trailing slot for the most recent WAL-blind (`walIncluded: false`) parsed Database —
-	// still usable for the call that just produced it, but deliberately NOT installed as `_dbCache`
-	// (see `refreshOpenCodeDb`'s doc comment on why a WAL-blind read must not be treated as
-	// settled). Held here — rather than closed immediately — only so its underlying WASM memory is
-	// still reclaimed (on the next read, or on `dispose()`) instead of leaking.
-	private _pendingTransientDb: SqlDatabase | null = null;
+export class OpenCodeDataAccess extends SqlJsDbCacheBase {
 	private readonly extensionUri: UriLike;
 
 	constructor(extensionUri: UriLike) {
+		super();
 		this.extensionUri = extensionUri;
 	}
 
@@ -81,67 +65,6 @@ export class OpenCodeDataAccess {
 	 */
 	isOpenCodeDbSession(filePath: string): boolean {
 		return filePath.includes('opencode.db#ses_');
-	}
-
-	/**
-	 * Lazily initialize and return the sql.js SQL module.
-	 *
-	 * Promise-caches the in-flight load so concurrent callers share a single
-	 * WASM initialization rather than each starting an independent load.
-	 * The cache is reset on failure so a transient error is retryable.
-	 */
-	async initSqlJs(): Promise<SqlJsStatic> {
-		if (this._sqlJsModule) { return this._sqlJsModule; }
-		if (!this._sqlJsInitPromise) {
-			this._sqlJsInitPromise = (async () => {
-				const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
-				let wasmBinary: Uint8Array | undefined;
-				if (fs.existsSync(wasmPath)) {
-					wasmBinary = fs.readFileSync(wasmPath);
-				}
-				const module = await initSqlJs(wasmBinary ? { wasmBinary: wasmBinary.buffer as ArrayBuffer } : undefined);
-				this._sqlJsModule = module;
-				return module;
-			})().catch(err => {
-				this._sqlJsInitPromise = null;
-				throw err;
-			});
-		}
-		return this._sqlJsInitPromise;
-	}
-
-	dispose(): void {
-		this.closeDbCache();
-		this.releasePendingTransientDb();
-		this._dbCacheInflight.clear();
-		this._sqlJsInitPromise = null;
-	}
-
-	private closeDb(db: SqlDatabase): void {
-		try { db.close(); } catch { /* ignore */ }
-	}
-
-	private closeDbCache(): void {
-		if (this._dbCache) {
-			this.closeDb(this._dbCache.db);
-			this._dbCache = null;
-		}
-	}
-
-	private releasePendingTransientDb(): void {
-		if (this._pendingTransientDb) {
-			this.closeDb(this._pendingTransientDb);
-			this._pendingTransientDb = null;
-		}
-	}
-
-	private getCachedDbForPath(dbPath: string): SqlDatabase | null {
-		return this._dbCache?.path === dbPath ? this._dbCache.db : null;
-	}
-
-	private isMissingFileError(error: unknown): boolean {
-		const code = (error as NodeJS.ErrnoException)?.code;
-		return code === 'ENOENT' || code === 'ENOTDIR';
 	}
 
 	private statOpenCodeDb(dbPath: string): fs.Stats | null {

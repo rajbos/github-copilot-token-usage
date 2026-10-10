@@ -20,6 +20,7 @@ import * as os from 'node:os';
 import {
     CopilotChatAdapter,
     getVSCodeUserPaths,
+    getWSLWindowsPathsSync,
     isWSL,
 } from '../../../src/adapters/copilotChatAdapter';
 import { isCopilotChatSessionPath } from '../../../src/adapters/adapterPredicates';
@@ -146,6 +147,55 @@ test('isWSL: respects WSL_DISTRO_NAME env var on linux', () => {
     } finally {
         if (original === undefined) { delete process.env.WSL_DISTRO_NAME; }
         else { process.env.WSL_DISTRO_NAME = original; }
+    }
+});
+
+test('getWSLWindowsPathsSync: falls back to the USERPROFILE-derived root when /mnt/c/Users cannot be enumerated', () => {
+    if (os.platform() !== 'linux') { return; } // isWSL() is always false outside linux — nothing to test.
+
+    const originalDistro = process.env.WSL_DISTRO_NAME;
+    const originalUserProfile = process.env.USERPROFILE;
+    try {
+        process.env.WSL_DISTRO_NAME = 'Ubuntu';
+        // A path that (almost certainly) does not exist on the test runner, so
+        // fs.readdirSync('/mnt/c/Users') throws — mirrors a WSL box with the C: drive unmounted.
+        process.env.USERPROFILE = '/mnt/c/Users/memowl-test-user';
+
+        const paths = getWSLWindowsPathsSync();
+        assert.ok(
+            paths.some(p => p.includes(`${path.sep}memowl-test-user${path.sep}`) || p.includes('/memowl-test-user/')),
+            `expected a USERPROFILE-derived root even when /mnt/c/Users enumeration fails, got: ${JSON.stringify(paths)}`,
+        );
+    } finally {
+        if (originalDistro === undefined) { delete process.env.WSL_DISTRO_NAME; } else { process.env.WSL_DISTRO_NAME = originalDistro; }
+        if (originalUserProfile === undefined) { delete process.env.USERPROFILE; } else { process.env.USERPROFILE = originalUserProfile; }
+    }
+});
+
+test('getWSLWindowsPathsSync: preserves a non-C drive letter from USERPROFILE instead of probing /mnt/c/Users', () => {
+    if (os.platform() !== 'linux') { return; } // isWSL() is always false outside linux — nothing to test.
+
+    const originalDistro = process.env.WSL_DISTRO_NAME;
+    const originalUserProfile = process.env.USERPROFILE;
+    try {
+        process.env.WSL_DISTRO_NAME = 'Ubuntu';
+        // USERPROFILE on a D: drive must resolve under /mnt/d/Users, never the hard-coded
+        // /mnt/c/Users — even though /mnt/c/Users enumeration also fails here (test runner
+        // almost certainly has neither mounted).
+        process.env.USERPROFILE = '/mnt/d/Users/memowl-test-user';
+
+        const paths = getWSLWindowsPathsSync();
+        assert.ok(
+            paths.some(p => p.replace(/\\/g, '/').includes('/mnt/d/Users/memowl-test-user/')),
+            `expected a /mnt/d-rooted path for a D: drive USERPROFILE, got: ${JSON.stringify(paths)}`,
+        );
+        assert.ok(
+            !paths.some(p => p.replace(/\\/g, '/').includes('/mnt/c/Users/memowl-test-user/')),
+            `did not expect the D: drive user to be probed under /mnt/c/Users, got: ${JSON.stringify(paths)}`,
+        );
+    } finally {
+        if (originalDistro === undefined) { delete process.env.WSL_DISTRO_NAME; } else { process.env.WSL_DISTRO_NAME = originalDistro; }
+        if (originalUserProfile === undefined) { delete process.env.USERPROFILE; } else { process.env.USERPROFILE = originalUserProfile; }
     }
 });
 

@@ -10,15 +10,91 @@ permissions:
   contents: read
 
 jobs:
+  # Path gate. Everything in this workflow builds, tests or renders the VS Code
+  # extension, so a PR touching only docs/, sharing-server/, jetbrains-plugin/,
+  # visualstudio-extension/, omp-segment/ or assets/ has nothing here to run.
+  # Filtering in a gate job rather than with a `paths:` trigger keeps the gated
+  # jobs reporting a (skipped) result, so they can stay required status checks -
+  # a `paths:` trigger would leave those PRs waiting on checks that never
+  # arrive. Mirrors the same pattern in cli-build.yml.
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      # Two predicates, one runner slot. The expensive jobs (build, ui-checks)
+      # only care about the extension and its shared sources; the cheap
+      # coverage guard additionally has to see cli/src, which the extension
+      # build does not depend on at all. Gating both on one flag made a
+      # CLI-only source change schedule the full extension build and the
+      # Playwright suite for nothing.
+      ci-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.ci-relevant == 'true' }}
+      coverage-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.coverage-relevant == 'true' }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for CI-relevant file changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            # Gates build + ui-checks: what the extension is actually built from.
+            ci-relevant:
+              - 'vscode-extension/**'
+              # The extension compiles the shared sources from the repo-root
+              # src/ (see vscode-extension/tsconfig.json).
+              - 'src/**'
+              # Not just the two parse-*.js files invoked directly below: the
+              # npm scripts this job runs reach repo-root scripts/ indirectly -
+              # lint:json -> validate-json.js, lint:l10n ->
+              # validate-localization.js, compile-tests -> prepare-test-output.js,
+              # test -> run-node-unit-tests.js, check:contract ->
+              # validate-webview-contract.js, check:duplicates ->
+              # check-code-duplication.js, check:interaction ->
+              # interaction-smoke.js. Narrowing this glob would let a change to
+              # the unit-test runner or the contract validator skip CI, so the
+              # whole directory stays in scope deliberately.
+              - 'scripts/**'
+              - '.vscode/*.json'
+              - '.devcontainer/devcontainer.json'
+              - 'docs/logFilesSchema/session-file-schema.json'
+              - 'docs/logFilesSchema/session-file-schema-analysis.json'
+              - '.nvmrc'
+              # Harnesses invoked by the build and ui-checks jobs.
+              - '.github/skills/visual-view-diff/**'
+              - '.github/skills/sync-host-views/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/dependencies/playwright/**'
+              # The screenshot-comment publisher ui-checks runs; a change to
+              # it must exercise the job that executes it.
+              - '.github/workflows/scripts/visual-diff-comment.js'
+            # Gates test-coverage-check only: the production-source trees that
+            # check-test-coverage.sh's is_source_file() recognises. cli/src is
+            # here and NOT in ci-relevant, because the coverage guard must see
+            # CLI source changes while the extension build must not be dragged
+            # in by them (cli/ is built by cli-build.yml).
+            coverage-relevant:
+              - 'vscode-extension/src/**'
+              - 'src/**'
+              - 'cli/src/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/scripts/check-test-coverage.sh'
+              - '.github/workflows/scripts/check-test-coverage.test.sh'
+
   # Deterministic guard against "new source logic without test changes" — the
-  # class of finding the agent-review Test Expert agent would otherwise have to
+  # class of finding the Test Expert agent would otherwise have to
   # catch with an LLM. Fails the PR when production source under
   # vscode-extension/src/, cli/src/ or src/ changes without any test file
-  # changing too. Escape hatch: put [skip-test-check] in the PR body.
+  # changing too (deletion-only changes and pure renames are exempt). Escape hatch: put [skip-test-check] in the PR body.
   test-coverage-check:
     name: Test coverage companion check
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    needs: check-changes
+    if: github.event_name == 'pull_request' && needs.check-changes.outputs.coverage-relevant == 'true'
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
       uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -34,6 +110,10 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Run check-test-coverage.sh scenario tests
+      shell: bash
+      run: bash .github/workflows/scripts/check-test-coverage.test.sh
+
     - name: Check source changes come with test changes
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -42,14 +122,18 @@ jobs:
       shell: bash
       run: bash .github/workflows/scripts/check-test-coverage.sh
 
+  # No matrix. 22.x was dropped (.nvmrc pins 24, and package/ui-checks here
+  # already build on 24 only), and a one-entry matrix would be actively
+  # harmful now that this job is gated: GitHub evaluates a job-level `if`
+  # BEFORE expanding the matrix, so a gated-out matrix job reports as the bare
+  # name ("build") while a running one reports as "build (24.x)" - a required
+  # status check cannot match both, and PRs would hang on the name that never
+  # appears. Without a matrix the check is "build" in either state.
   build:
     runs-on: ubuntu-latest
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [22.x, 24.x]
-    
+    needs: check-changes
+    if: needs.check-changes.outputs.ci-relevant == 'true'
+
     steps:
     - name: Harden the runner (Block all outbound calls except allowed)
       uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -78,10 +162,11 @@ jobs:
       uses: pnpm/action-setup@v4
       with:
         version: '11.2.2'
-    - name: Setup Node.js ${{ matrix.node-version }}
+
+    - name: Setup Node.js
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: '24.x'
         cache: 'pnpm'
         cache-dependency-path: vscode-extension/pnpm-lock.yaml
         
@@ -115,7 +200,7 @@ jobs:
       run: pnpm run --silent lint:report > "$RUNNER_TEMP/lint-output.json" 2>/dev/null || true
 
     - name: Publish complexity results to step summary
-      if: always() && matrix.node-version == '24.x'
+      if: always()
       shell: bash
       run: node scripts/parse-lint-output.js "$RUNNER_TEMP/lint-output.json" >> "$GITHUB_STEP_SUMMARY"
 
@@ -127,7 +212,7 @@ jobs:
       # its only nonzero exit is a genuine tool failure (syntax/runtime error);
       # leaving that unmasked surfaces tool-health problems instead of a green
       # job with no analysis.
-      if: always() && matrix.node-version == '24.x'
+      if: always()
       working-directory: vscode-extension
       shell: bash
       run: pnpm run --silent check:duplicates -- --min-lines 14 >> "$GITHUB_STEP_SUMMARY"
@@ -161,7 +246,6 @@ jobs:
     # this exists to catch is a silently empty/partial dist/webview producing
     # a "successful" but broken VSIX build downstream.
     - name: Check webview bundles are generated correctly
-      if: matrix.node-version == '24.x'
       shell: bash
       run: |
         set -euo pipefail
@@ -233,7 +317,7 @@ jobs:
         exit "$status"
 
     - name: Publish test results to step summary
-      if: always() && matrix.node-version == '24.x'
+      if: always()
       shell: bash
       run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
       
@@ -252,7 +336,6 @@ jobs:
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      if: matrix.node-version == '24.x'
       with:
         name: extension-build
         path: |
@@ -324,7 +407,18 @@ jobs:
   ui-checks:
     name: Webview UI checks
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    needs: check-changes
+    if: github.event_name == 'pull_request' && needs.check-changes.outputs.ci-relevant == 'true'
+    permissions:
+      contents: read
+      pull-requests: write # post the before/after screenshot comment
+    # One ui-checks run per PR at a time. Two runs for rapid pushes would race
+    # on replacing the screenshot comment and could leave two behind; the
+    # older head's screenshots are obsolete the moment a new push lands, so
+    # cancelling the in-flight run loses nothing.
+    concurrency:
+      group: ui-checks-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -337,6 +431,12 @@ jobs:
         # The visual diff builds the merge base in a temporary worktree, which
         # needs real history rather than a shallow clone.
         fetch-depth: 0
+        # This job holds pull-requests: write, and everything after checkout
+        # runs code from the PR (npm scripts, esbuild, the harness). Nothing
+        # here needs authenticated git - the worktree and merge-base are
+        # local operations on the full clone - so the token is never written
+        # to .git/config where that code could read it.
+        persist-credentials: false
 
     - name: Setup pnpm
       uses: pnpm/action-setup@v4
@@ -354,13 +454,32 @@ jobs:
       working-directory: vscode-extension
       run: pnpm install --frozen-lockfile --ignore-scripts
 
+    # The Chromium build Playwright downloads is pinned by the locked Playwright
+    # version, so the lock file hash is an exact cache key - a hit means the
+    # cached browser is the one this run would have downloaded.
+    - name: Cache Playwright browsers
+      id: playwright-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('.github/workflows/dependencies/playwright/package-lock.json') }}
+
     # Playwright is deliberately not a dependency of the extension - it is
     # tooling, not shipped code - so the harness uses a dedicated locked install.
+    # The browser download is skipped on a cache hit; the apt-level system
+    # libraries it needs live outside ~/.cache/ms-playwright and are installed
+    # either way.
     - name: Install Playwright Chromium
       working-directory: .github/workflows/dependencies/playwright
+      env:
+        CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
       run: |
         npm ci --ignore-scripts --no-audit --no-fund
-        npx --no-install playwright install --with-deps chromium
+        if [ "$CACHE_HIT" = "true" ]; then
+          npx --no-install playwright install-deps chromium
+        else
+          npx --no-install playwright install --with-deps chromium
+        fi
 
     - name: Compile webview bundles
       working-directory: vscode-extension
@@ -375,7 +494,11 @@ jobs:
       # A visual change is usually intended, so this reports rather than gates;
       # the report and the images are the deliverable for the reviewer.
       continue-on-error: true
-      run: node .github/skills/visual-view-diff/visual-diff.js --theme both
+      run: node .github/skills/visual-view-diff/visual-diff.js --theme both --base "$BASE_REF"
+      env:
+        # The PR's base branch, not origin/main: the merge base is computed
+        # against whatever the PR is actually targeting.
+        BASE_REF: origin/${{ github.event.pull_request.base.ref }}
 
     - name: Publish visual diff to the job summary
       if: always()
@@ -385,6 +508,11 @@ jobs:
           cat visual-output/diff/report.md >> "$GITHUB_STEP_SUMMARY"
         else
           echo "No visual diff report was produced." >> "$GITHUB_STEP_SUMMARY"
+        fi
+        # Where the step's time went (checkout, builds, renders, compare).
+        if [ -f visual-output/timings.md ]; then
+          printf '\n' >> "$GITHUB_STEP_SUMMARY"
+          cat visual-output/timings.md >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Upload before/after/diff screenshots
@@ -397,3 +525,336 @@ jobs:
           visual-output/current/
           visual-output/diff/
         retention-days: 14
+
+    # ── Put the screenshots where the reviewer is: on the PR ──────────────
+    # An artifact zip and a job summary table are where screenshots went to
+    # die: nobody opened them, so UI PRs shipped with no visual review. The
+    # steps below post the before/after/diff images as one comment on the PR,
+    # replaced on every push, using `gh pr comment --attach` (GitHub CLI
+    # 2.99+, https://github.blog/changelog/2026-09-01-github-cli-media-in-issues-pull-requests-and-comments/).
+    #
+    # Two constraints shape this:
+    #   - gh only uploads with a user token (OAuth, classic or fine-grained
+    #     PAT). The Actions installation token is refused, so the upload uses
+    #     the repository's GH_PAT secret - the same one pr-risk-review.yml
+    #     already relies on - and the comment is authored by that user. The
+    #     PAT is exposed to the posting step only; nothing that builds or
+    #     renders the PR's code can read it. Attaching files needs push access
+    #     (https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli),
+    #     which on a fine-grained PAT is Contents: write, and the same token
+    #     then posts the comment, which needs Pull requests: write. gh's
+    #     pre-flight checks the user's role, not the token's grants, so a
+    #     token short of either fails mid-command with "not accessible by
+    #     personal access token" (suffixed "(addComment)" for the comment
+    #     half). Without the secret (or if gh fails) the comment is still
+    #     posted with GITHUB_TOKEN, minus the inline images, pointing at the
+    #     artifact and saying why the images are missing.
+    #   - Fork and Dependabot PRs get a read-only token and no secrets, so the
+    #     posting step is skipped for them; their screenshots stay in the
+    #     artifact.
+    # Rendering the comment and preparing gh are report-only, like the diff
+    # they publish: a failure there warns and lets the job continue. The
+    # posting step is NOT: it fails the required UI gate (and so CI result)
+    # on an API error, or when a configured GH_PAT cannot deliver the images
+    # that were due. Only an unset GH_PAT stays non-fatal.
+    - name: Render the screenshot comment
+      id: visual-comment
+      if: always() && github.event.pull_request.head.repo.full_name == github.repository
+      continue-on-error: true
+      env:
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        node .github/workflows/scripts/visual-diff-comment.js \
+          --report visual-output/diff/report.json \
+          --screenshots visual-output \
+          --out-dir visual-comment \
+          --run-url "$RUN_URL" \
+          --artifact webview-screenshots \
+          --base "$BASE_SHA"
+
+    # ubuntu-latest may lag behind the gh release that added --attach. Pin a
+    # known-good build and verify its checksum rather than trusting whatever
+    # the image ships; the download is skipped when the image is new enough.
+    - name: Ensure the GitHub CLI can attach images
+      # The has_report output is empty when the render step was skipped for a
+      # fork, so this is already fork-safe; the explicit guard keeps it so if
+      # the render step's condition ever changes.
+      if: always() && github.event.pull_request.head.repo.full_name == github.repository && steps.visual-comment.outputs.has_report == 'true'
+      continue-on-error: true
+      env:
+        GH_CLI_VERSION: "2.101.0"
+        GH_CLI_SHA256: "9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
+        GH_CLI_MIN_VERSION: "2.99.0"
+      run: |
+        set -euo pipefail
+        have="$(gh --version 2>/dev/null | head -n1 | awk '{print $3}' || true)"
+        if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$GH_CLI_MIN_VERSION" "$have" | sort -V | head -n1)" = "$GH_CLI_MIN_VERSION" ]; then
+          echo "gh $have already supports --attach (needs $GH_CLI_MIN_VERSION+)."
+          exit 0
+        fi
+        echo "gh ${have:-<missing>} is older than $GH_CLI_MIN_VERSION; installing $GH_CLI_VERSION."
+        archive="$RUNNER_TEMP/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz"
+        curl -fsSL --retry 3 -o "$archive" \
+          "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz"
+        echo "${GH_CLI_SHA256}  ${archive}" | sha256sum -c -
+        tar -xzf "$archive" -C "$RUNNER_TEMP"
+        echo "$RUNNER_TEMP/gh_${GH_CLI_VERSION}_linux_amd64/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/gh_${GH_CLI_VERSION}_linux_amd64/bin/gh" --version
+
+    - name: Post the screenshot comment on the PR
+      # Runs without a report too (the render or the diff failed on this
+      # push): an earlier push's screenshot comment would otherwise stay up,
+      # showing before/after images that no longer describe this head.
+      #
+      # Deliberately NOT continue-on-error: this step used to swallow every
+      # failure, so an expired GH_PAT left the job green and the PR without
+      # screenshots for days. A configured-but-unusable PAT, a failed upload
+      # and an API error now fail the job; only a PAT that is not configured
+      # at all stays a notice. Dependabot runs are skipped outright: they get
+      # neither secrets nor a writable GITHUB_TOKEN, so the image-free fallback
+      # could not post either; their screenshots stay in the artifact.
+      if: always() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # User token for the uploads; see the note above. Optional.
+        GH_ATTACH_TOKEN: ${{ secrets.GH_PAT }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        HAS_REPORT: ${{ steps.visual-comment.outputs.has_report }}
+        HAS_CHANGES: ${{ steps.visual-comment.outputs.has_changes }}
+        ATTACHMENTS: ${{ steps.visual-comment.outputs.attachments }}
+        COMMENT_MARKER: visual-view-diff
+      run: |
+        set -euo pipefail
+
+        # Escape a value for a ::warning::/::error:: workflow command (the
+        # encoding GitHub documents for command data). gh's error text and the
+        # attachment list are outside input: an unescaped newline or %0A in
+        # them would end the annotation early or start a new command.
+        cmd_escape() {
+          local s="$1"
+          s="${s//'%'/%25}"
+          s="${s//$'\r'/%0D}"
+          s="${s//$'\n'/%0A}"
+          printf '%s' "$s"
+        }
+
+        # The same outside text for a PR comment: first line only, no
+        # Markdown/HTML/mention/escape characters, bounded length.
+        comment_safe() {
+          printf '%s' "$1" | head -n1 | tr -d '\r' | tr -c 'A-Za-z0-9 .,:;/()?=_-' ' ' | tr -s ' ' | cut -c1-300
+        }
+
+        # The identities this workflow posts as: the Actions bot, and the PAT's
+        # user when one is configured. Only their comments are ever replaced,
+        # so a person quoting the marker in their own comment keeps it.
+        posters='"github-actions[bot]"'
+        # gh's error when the PAT could not be used. A failed `gh api user`
+        # can be a bad token or just a GitHub/network hiccup, so this keeps
+        # gh's own words rather than guessing which.
+        pat_error=""
+        # Set when images were due and a configured token could not deliver
+        # them. The comment is still posted (without images), then the step
+        # fails so the problem is a red check rather than a silent gap.
+        images_failed=""
+        if [ -n "${GH_ATTACH_TOKEN:-}" ]; then
+          pat_err_file="$(mktemp)"
+          # Judge by gh's exit status, never by whether it printed something:
+          # for an HTTP error gh writes the JSON error body to STDOUT, so a
+          # revoked token used to yield a non-empty "login" that was spliced
+          # into the jq program below and crashed it. The login is also
+          # checked against GitHub's username shape before it is trusted.
+          if pat_login="$(GH_TOKEN="$GH_ATTACH_TOKEN" gh api user --jq .login 2>"$pat_err_file")" \
+            && [[ "$pat_login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]]; then
+            posters="${posters},\"${pat_login}\""
+          else
+            pat_error="$(head -n1 "$pat_err_file")"
+            [ -n "$pat_error" ] || pat_error="$(printf '%s' "$pat_login" | tr '\n' ' ' | cut -c1-200)"
+            pat_error="${pat_error:-gh gave no reason}"
+            echo "::error::GH_PAT is set but could not be authenticated with 'gh api user' ($(cmd_escape "$pat_error")); posting without inline images. Rotate the secret."
+            GH_ATTACH_TOKEN=""
+            if [ "${ATTACHMENTS:-0}" -gt 0 ]; then images_failed=1; fi
+          fi
+        fi
+
+        # Our earlier comments, oldest first. A comment is ours when it was
+        # authored by one of our own identities (the Actions bot, or the user
+        # behind the PAT this run holds) AND its body STARTS with the marker -
+        # the renderer emits it as the very first line of its template, so a
+        # comment that merely quotes it (a review reply discussing it, say)
+        # never matches. Identity is the ownership proof; the body text only
+        # narrows which of our comments this is. Nothing anyone else writes
+        # can make their comment look like ours to this step. The cost: after
+        # a PAT rotation, the comment the previous PAT's user posted is no
+        # longer ours and stays until someone deletes it by hand.
+        # `--slurp` gathers every page into one array before the jq filter
+        # runs; with `--paginate` alone the filter runs once per page and the
+        # output is one line per page, which the "newest" pick below would
+        # misread on a PR with more than a page of comments. `gh api` refuses
+        # to combine `--slurp` with its own `--jq`, so slurp via `gh api` and
+        # filter with a separate `jq` invocation instead.
+        list_ours() {
+          GH_TOKEN="$GITHUB_TOKEN" gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --paginate --slurp \
+            | jq "[.[][] | select(.user.login | IN(${posters})) | select(.body | startswith(\"<!-- ${COMMENT_MARKER} -->\")) | .id] | sort | join(\" \")" -r
+        }
+        existing="$(list_ours)"
+
+        # No report on this push (the render or the diff failed): nothing to
+        # show, but a comment from an earlier push must not keep describing
+        # screenshots this head never produced, so one that exists is replaced
+        # by a notice below.
+        if [ "$HAS_REPORT" != "true" ] && [ -z "$existing" ]; then
+          echo "No visual diff report and no earlier screenshot comment; nothing to post."
+          exit 0
+        fi
+
+        # A PR with no visual change gets no comment - unless an earlier push
+        # did change something, in which case the stale comment is replaced by
+        # the all-clear rather than silently deleted.
+        if [ "$HAS_REPORT" = "true" ] && [ "$HAS_CHANGES" != "true" ] && [ -z "$existing" ]; then
+          echo "No visual changes and no earlier screenshot comment; nothing to post."
+          exit 0
+        fi
+
+        # Re-check every attachment here, with the token in hand: only a
+        # regular, non-symlinked PNG directly under one of the three screenshot
+        # directories is ever handed to gh. The renderer already enforces this;
+        # the step it produced its list in did not hold the token, this one does.
+        post_with_images() {
+          [ -n "${GH_ATTACH_TOKEN:-}" ] || return 1
+          [ "${ATTACHMENTS:-0}" -gt 0 ] || return 1
+          args=()
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            file="${line%%#*}"
+            case "$file" in
+              visual-output/baseline/*.png|visual-output/current/*.png|visual-output/diff/*.png) ;;
+              *) echo "::error::Refusing to attach '$(cmd_escape "$file")': not a screenshot path."; return 1 ;;
+            esac
+            case "${file#visual-output/*/}" in
+              */*|*..*) echo "::error::Refusing to attach '$(cmd_escape "$file")': nested or relative path."; return 1 ;;
+            esac
+            if [ -L "$file" ] || [ ! -f "$file" ]; then
+              echo "::error::Refusing to attach '$(cmd_escape "$file")': not a regular file."; return 1
+            fi
+            args+=(--attach "$line")
+          done < visual-comment/attachments.txt
+          [ "${#args[@]}" -gt 0 ] || return 1
+          # gh's own explanation is the diagnosis (which file, which HTTP
+          # status, what the endpoint said); keep it for the annotation so
+          # the reason is on the checks page, not buried in the job log.
+          if ! upload_error="$(GH_TOKEN="$GH_ATTACH_TOKEN" gh pr comment "$PR_NUMBER" --repo "$REPO" \
+            --body-file visual-comment/comment.md "${args[@]}" 2>&1 >/dev/null)"; then
+            printf '%s\n' "$upload_error"
+            return 1
+          fi
+        }
+
+        post_plain() {
+          GH_TOKEN="$GITHUB_TOKEN" gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            -F body=@visual-comment/comment-plain.md > /dev/null
+        }
+
+        if [ "$HAS_REPORT" != "true" ]; then
+          mkdir -p visual-comment
+          printf '<!-- %s -->\n### Webview screenshots\n\nThe visual diff produced no report on this push (the render or the diff step failed), so the screenshots from the previous push no longer apply. See the [workflow run](%s).\n' \
+            "$COMMENT_MARKER" "$RUN_URL" > visual-comment/comment-plain.md
+          post_plain
+          echo "Replaced the earlier screenshot comment with a no-report notice."
+        elif post_with_images; then
+          echo "Posted the screenshot comment with ${ATTACHMENTS} inline image(s)."
+        else
+          # Why the images are missing, for the comment itself as well as the
+          # annotation: a warning on the checks page is where this failure
+          # went unnoticed for weeks. Empty when there were no images to show.
+          why=""
+          if [ -n "$pat_error" ]; then
+            [ "${ATTACHMENTS:-0}" -gt 0 ] && why="the \`GH_PAT\` secret could not be authenticated (\`gh api user\`: \`$(comment_safe "$pat_error")\`)."
+          elif [ -z "${GH_ATTACH_TOKEN:-}" ]; then
+            echo "::notice::GH_PAT is not configured, so the screenshot comment links to the artifact instead of embedding images. Add a user PAT as the GH_PAT secret to inline them: a classic PAT needs the repo scope; a fine-grained one needs Contents: write (the upload) and Pull requests: write (the comment) on this repository."
+            [ "${ATTACHMENTS:-0}" -gt 0 ] && why="the \`GH_PAT\` secret is not configured."
+          elif [ "${ATTACHMENTS:-0}" -gt 0 ]; then
+            # One line, so it survives as a workflow annotation.
+            reason="$(printf '%s' "${upload_error:-}" | grep -m1 -E 'upload|HTTP|attach|GraphQL' || printf '%s' "${upload_error:-}" | head -n1)"
+            hint=""
+            case "$reason" in
+              # gh uploads first and then posts the comment with the same
+              # token, so the same 403 text can come from either half.
+              *"(addComment)"*)
+                hint=" The fine-grained GH_PAT can upload but cannot comment: it needs Pull requests: write on this repository." ;;
+              *"not accessible by personal access token"*)
+                hint=" The fine-grained GH_PAT is missing a permission; for the upload that is most likely Contents: write (push access) on this repository." ;;
+              *"requires write access"*)
+                hint=" The GH_PAT user needs write access to this repository." ;;
+            esac
+            # Not "uploading failed": gh uploads and then comments, and either
+            # half can be the one that failed; gh's reason says which.
+            echo "::error::gh pr comment --attach failed; posting the comment without inline images. $(cmd_escape "${reason:-gh gave no reason}").${hint}"
+            images_failed=1
+            why="\`gh pr comment --attach\` failed: \`$(comment_safe "${reason:-gh gave no reason}")\`.${hint}"
+          fi
+          if [ -n "$why" ]; then
+            # Right under the heading; the marker must stay the first line.
+            printf '> [!WARNING]\n> Inline screenshots could not be attached: %s See the [workflow run](%s).\n\n' \
+              "$why" "$RUN_URL" > visual-comment/why.md
+            awk 'NR==FNR { note = note $0 "\n"; next } { print } FNR==3 { printf "%s", note }' \
+              visual-comment/why.md visual-comment/comment-plain.md > visual-comment/comment-plain.tmp
+            mv visual-comment/comment-plain.tmp visual-comment/comment-plain.md
+          fi
+          post_plain
+          echo "Posted the screenshot comment without inline images."
+        fi
+
+        # Keep only the newest of our marker comments. Listing again after
+        # posting (rather than deleting the ids captured before) means two
+        # runs that raced past the concurrency group still converge on one
+        # surviving comment instead of each sparing its own.
+        all="$(list_ours)"
+        newest="${all##* }"
+        for id in $all; do
+          [ "$id" = "$newest" ] && continue
+          GH_TOKEN="$GITHUB_TOKEN" gh api --method DELETE "repos/${REPO}/issues/comments/${id}" > /dev/null \
+            && echo "Removed the previous screenshot comment ${id}." \
+            || echo "::warning::Could not remove the previous screenshot comment ${id}."
+        done
+
+        if [ -n "$images_failed" ]; then
+          echo "::error::The screenshot comment was posted without inline images (see the annotations above); failing the step so the broken GH_PAT or its scopes get fixed."
+          exit 1
+        fi
+
+  # Stable required-check anchor for this workflow. Require "CI result" in
+  # branch protection rather than the individual jobs: it is the only name that
+  # exists in every case, and the only one that fails when the path gate breaks.
+  ci-result:
+    name: CI result
+    runs-on: ubuntu-latest
+    needs: [check-changes, test-coverage-check, build, package, ui-checks]
+    if: always()
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # The composite action below is a local action (./.github/actions/...),
+      # which needs the repo checked out at this path to be found at all -
+      # without this, the step fails with "Can't find 'action.yml' ...".
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the gated job results
+        uses: ./.github/actions/check-gated-results
+        with:
+          gate-name: check-changes
+          gate-result: ${{ needs.check-changes.result }}
+          # skipped is legitimate here for a PR the gate filtered out, for the
+          # PR-only jobs on a push, and for package outside main.
+          results: |
+            test-coverage-check=${{ needs.test-coverage-check.result }}
+            build=${{ needs.build.result }}
+            package=${{ needs.package.result }}
+            ui-checks=${{ needs.ui-checks.result }}

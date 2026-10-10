@@ -74,6 +74,19 @@ graphify-out/*
 # Stray/misplaced graphify cache (wrong working directory on a past run)
 src/graphify-out/
 
+# Graphify graph built by copilot-setup-steps for the Copilot coding agent
+# (GRAPHIFY_OUT=.graphify-agent). Kept out of the default graphify-out/ so the
+# build never touches the committed manifest.json / cache/ above.
+.graphify-agent/
+
+# AI Engineering Fluency canvas (copilot-app/) writes its snapshot and refresh lock to
+# $COPILOT_HOME/extensions/ai-fluency/artifacts/, never into the repo. This is
+# the backstop so a copy run from a checkout can never commit personal usage data.
+copilot-app/**/artifacts/
+copilot-app/**/snapshot.json
+copilot-app/**/refresh.lock
+copilot-app/**/refresh.lock.*
+
 # Visual view-diff output (screenshots, diff images and reports produced by
 # .github/skills/visual-view-diff). Regenerable from any checkout — the fixtures
 # that drive the renders are committed, the rendered PNGs are not.
@@ -83,6 +96,30 @@ visual-output/
 # comment). Regenerated on every run by collect-changeset.js — never committed.
 pr-risk/
 
-# Generated cloud-agent session cache from copilot-setup-steps; contains only
-# ephemeral fetched timestamps/counts and is recreated on demand.
-usage-data/agent-sessions.json
+# Data hydrated into the workspace by copilot-setup-steps (session-logs/ from
+# Azure Blob, usage-data/ incl. agent-sessions.json and its cache files). Generated
+# output, recreated on demand — never committed.
+session-logs/
+usage-data/
+
+# Throwaway fixture directories created by the vscode-extension unit suite.
+# The tests create these under os.tmpdir(), or under .test-fixtures/ where the
+# subject refuses to read out of the temp directory, and clean them up (see
+# vscode-extension/test/unit/tmpFixtureDirs.ts). These patterns are the backstop
+# for a run that crashed or was interrupted before cleanup, so a stray one can
+# never be swept into a commit by `git add -A`.
+vscode-extension/.test-fixtures/
+vscode-extension/claude-test-*/
+vscode-extension/sync-test-*/
+vscode-extension/cowork-test-*/
+vscode-extension/cliapp-split-*/
+vscode-extension/contract-fixture-*/
+vscode-extension/ctt-cache-*/
+vscode-extension/ctt-dev-cleanup-*/
+vscode-extension/ctt-lock-test-*/
+vscode-extension/ctt-rollups-*/
+vscode-extension/ctt-snapshot-*/
+vscode-extension/ctt-snapshot-test-*/
+vscode-extension/pi-test-*/
+vscode-extension/pi-discover-*/
+vscode-extension/ctt-otel-test-*/

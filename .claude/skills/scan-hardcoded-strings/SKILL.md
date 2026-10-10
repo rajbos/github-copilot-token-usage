@@ -44,7 +44,7 @@ node .github/skills/scan-hardcoded-strings/scan-hardcoded-strings.js --json
 The script will:
 1. Recursively scan every `*.ts` file (excluding `*.test.ts`) under
    `vscode-extension/src/webview/`, plus only the `get*Html(...)` method
-   bodies in `vscode-extension/src/extension.ts` (not the whole 13k-line
+   bodies in `vscode-extension/src/extension.ts` (not the whole
    file — this keeps out unrelated string literals like GitHub issue
    Markdown templates or VS Code panel titles), after blanking out `/* ... */`
    block/JSDoc comments so example markup in a doc comment isn't mistaken

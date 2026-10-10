@@ -2,7 +2,7 @@
   "name": "ai-engineering-fluency",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.17.3",
+  "version": "0.19.1",
   "publisher": "RobBos",
   "icon": "assets/logo.png",
   "engines": {
@@ -68,6 +68,11 @@
       {
         "command": "aiEngineeringFluency.showMaturity",
         "title": "%command.showMaturity.title%",
+        "category": "AI Engineering Fluency"
+      },
+      {
+        "command": "aiEngineeringFluency.showReadiness",
+        "title": "%command.showReadiness.title%",
         "category": "AI Engineering Fluency"
       },
       {
@@ -486,6 +491,11 @@
           "default": true,
           "description": "%config.whatsNew.notificationsEnabled.description%"
         },
+        "aiEngineeringFluency.serverMemories.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.serverMemories.enabled.description%"
+        },
         "aiEngineeringFluency.insights.cadenceDays": {
           "type": "number",
           "default": 2,
@@ -529,7 +539,7 @@
     "lint:report": "eslint src ../src --format json",
     "lint:css": "stylelint \"src/webview/**/*.css\"",
     "lint:json": "node ../scripts/validate-json.js",
-    "lint:l10n": "node ../scripts/validate-localization.js",
+    "lint:l10n": "node ../scripts/validate-localization.js && node scripts/generate-webview-strings.mjs --check",
     "lint:hardcoded-strings": "node scripts/check-hardcoded-strings.mjs",
     "test:hardcoded-strings": "node --test scripts/check-hardcoded-strings.test.mjs",
     "test": "node ../scripts/run-node-unit-tests.js",
@@ -556,26 +566,30 @@
     "cli:usage": "cd ../cli && node dist/cli.js usage",
     "cli:environmental": "cd ../cli && node dist/cli.js environmental",
     "cli:fluency": "cd ../cli && node dist/cli.js fluency",
-    "cli": "cd ../cli && node dist/cli.js"
+    "cli": "cd ../cli && node dist/cli.js",
+    "generate:webview-strings": "node scripts/generate-webview-strings.mjs",
+    "check:webview-strings": "node scripts/generate-webview-strings.mjs --check",
+    "lint:locale": "node scripts/check-bare-tolocale.mjs"
   },
   "devDependencies": {
-    "@github/copilot": "^1.0.83",
+    "@github/copilot": "^1.0.91",
     "@stryker-mutator/core": "^10.0.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.4",
     "@types/sql.js": "1.4.11",
-    "@types/vscode": "1.136.0",
-    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@types/vscode": "1.134.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.42.0",
-    "@vscode/vsce": "^3.7.1",
+    "@vscode/codicons": "0.0.45",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.10.0",
-    "eslint-plugin-sonarjs": "4.2.0",
+    "eslint": "^10.12.0",
+    "eslint-plugin-sonarjs": "4.2.2",
     "jsonc-parser": "^3.3.1",
     "npm-run-all": "^4.1.5",
-    "ovsx": "1.1.1",
+    "ovsx": "1.2.0",
     "strip-json-comments": "^2.0.1",
-    "stylelint": "^17.15.0",
+    "stylelint": "^17.16.0",
     "stylelint-config-standard": "^40.0.0",
     "tslib": "^2.8.1",
     "typescript": "^5.9.3"
@@ -583,18 +597,18 @@
   "dependencies": {
     "@azure/arm-resources": "^8.0.0",
     "@azure/arm-resources-subscriptions": "^3.0.0",
-    "@azure/arm-storage": "^20.1.0",
+    "@azure/arm-storage": "^20.2.0",
     "@azure/arm-subscriptions": "^6.0.0",
     "@azure/core-auth": "^1.10.1",
     "@azure/data-tables": "^13.3.2",
-    "@azure/identity": "^4.13.2",
-    "@azure/storage-blob": "^12.33.0",
+    "@azure/identity": "^4.13.3",
+    "@azure/storage-blob": "^12.34.0",
     "@msgpack/msgpack": "^3.1.3",
     "@vscode-elements/elements": "^2.5.1",
     "chart.js": "^4.4.1",
     "html-escape": "^2.0.0",
     "html2canvas": "1.4.1",
-    "jsdom": "^30.0.1",
+    "jsdom": "^30.1.2",
     "jspdf": "4.2.1",
     "pptxgenjs": "4.0.1",
     "sql.js": "1.14.2"
@@ -603,15 +617,16 @@
   "overrides": {
     "@azure/msal-node": "5.1.4",
     "@babel/core": ">=7.29.6",
-    "brace-expansion": ">=5.0.9",
+    "brace-expansion": ">=5.0.12",
     "js-yaml": ">=4.3.2 <5.0.0",
     "diff": ">=8.0.3",
-    "dompurify": ">=3.4.13",
-    "fast-uri": ">=4.1.4",
+    "dompurify": ">=3.4.16",
+    "image-size": ">=2.0.3",
+    "fast-uri": ">=4.2.1",
     "qs": ">=6.15.2",
     "serialize-javascript": ">=7.0.3",
     "cheerio": {
-      "undici": "7.29.0"
+      "undici": ">=7.29.1 <8"
     },
     "uuid": "^14.0.0"
   },

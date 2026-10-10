@@ -113,6 +113,39 @@ body {
 	text-align: center;
 }
 
+.editor-logo-wrap {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 24px;
+	margin-bottom: 6px;
+}
+
+.editor-logo {
+	height: 24px;
+	width: 24px;
+	object-fit: contain;
+}
+
+.editor-logo-emoji {
+	font-size: 20px;
+	line-height: 24px;
+}
+
+/* Flat single-colour marks ship a light and a dark variant. Light is the default; syncLogoTheme()
+   sets data-logo-theme="dark" from the host theme (or the page background where the host declares none). */
+.editor-logo-dark {
+	display: none;
+}
+
+body[data-logo-theme="dark"] .editor-logo-dark {
+	display: inline;
+}
+
+body[data-logo-theme="dark"] .editor-logo-wrap > .editor-logo-light:has(+ .editor-logo-dark) {
+	display: none;
+}
+
 .card-label {
 	color: var(--text-secondary);
 	font-size: 11px;

@@ -2,12 +2,18 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Model pricing data - costs per million tokens. Each model has direct provider/API pricing at the top level (used as a reference); models billed through GitHub Copilot AI Credits also include a `copilotPricing` block reflecting GitHub's published per-token rates (1 AI credit = $0.01).",
   "metadata": {
-    "lastUpdated": "2026-09-05",
+    "lastUpdated": "2026-10-08",
     "sources": [
       {
         "name": "OpenAI API Pricing",
         "url": "https://developers.openai.com/api/docs/pricing",
         "retrievedDate": "2026-04-24"
+      },
+      {
+        "name": "Mistral Vibe CLI reported rates",
+        "url": "https://docs.mistral.ai/vibe/code/cli/",
+        "retrievedDate": "2026-09-20",
+        "note": "input/output/cached_input_price_per_million read from ~/.vibe/logs/session/*/meta.json stats; cross-checked against the existing mistral-medium-3.5 entry, which matched exactly. Source of the devstral-2, glm-5-2 and Mistral Medium 3.5 cached-read rates."
       },
       {
         "name": "Mistral AI API Pricing",
@@ -854,6 +860,7 @@
     },
     "mistral-medium-latest": {
       "inputCostPerMillion": 1.5,
+      "cachedInputCostPerMillion": 0.15,
       "outputCostPerMillion": 7.5,
       "category": "Mistral models",
       "tier": "unknown",
@@ -863,6 +870,7 @@
     },
     "mistral-medium-3-5": {
       "inputCostPerMillion": 1.5,
+      "cachedInputCostPerMillion": 0.15,
       "outputCostPerMillion": 7.5,
       "category": "Mistral models",
       "tier": "unknown",
@@ -872,11 +880,30 @@
     },
     "mistral-medium-3.5": {
       "inputCostPerMillion": 1.5,
+      "cachedInputCostPerMillion": 0.15,
       "outputCostPerMillion": 7.5,
       "category": "Mistral models",
       "tier": "unknown",
       "displayNames": [
         "Mistral Medium 3.5"
+      ]
+    },
+    "devstral-2": {
+      "inputCostPerMillion": 0.4,
+      "outputCostPerMillion": 2.0,
+      "category": "Mistral models",
+      "tier": "unknown",
+      "displayNames": [
+        "Devstral 2"
+      ]
+    },
+    "glm-5-2": {
+      "inputCostPerMillion": 1.4,
+      "outputCostPerMillion": 4.4,
+      "category": "Z.ai GLM models",
+      "tier": "unknown",
+      "displayNames": [
+        "GLM 5.2"
       ]
     },
     "mistral-medium-2505": {
@@ -1285,6 +1312,82 @@
         "Gemini 3.8 Flash"
       ],
       "cachedInputCostPerMillion": 0.075
+    },
+    "grok-4.7": {
+      "inputCostPerMillion": 2.0,
+      "outputCostPerMillion": 6.0,
+      "category": "xAI Grok models",
+      "tier": "standard",
+      "displayNames": [
+        "Grok 4.7"
+      ],
+      "cachedInputCostPerMillion": 0.5
+    },
+    "gpt-6-luna": {
+      "inputCostPerMillion": 0.1,
+      "outputCostPerMillion": 0.5,
+      "category": "OpenAI models",
+      "tier": "standard",
+      "displayNames": [
+        "GPT-6 Luna"
+      ],
+      "cachedInputCostPerMillion": 0.01,
+      "cacheCreationCostPerMillion": 0.125
+    },
+    "gpt-6-sol": {
+      "inputCostPerMillion": 2.0,
+      "outputCostPerMillion": 10.0,
+      "category": "OpenAI models",
+      "tier": "standard",
+      "displayNames": [
+        "GPT-6 Sol"
+      ],
+      "cachedInputCostPerMillion": 0.2,
+      "cacheCreationCostPerMillion": 2.5
+    },
+    "claude-opus-5.5": {
+      "inputCostPerMillion": 4.0,
+      "outputCostPerMillion": 20.0,
+      "category": "Claude models (Anthropic)",
+      "tier": "standard",
+      "displayNames": [
+        "Claude Opus 5.5"
+      ],
+      "cachedInputCostPerMillion": 0.2,
+      "cacheCreationCostPerMillion": 5.0
+    },
+    "claude-sonnet-5.5": {
+      "inputCostPerMillion": 2.0,
+      "outputCostPerMillion": 10.0,
+      "category": "Claude models (Anthropic)",
+      "tier": "standard",
+      "displayNames": [
+        "Claude Sonnet 5.5"
+      ],
+      "cachedInputCostPerMillion": 0.1,
+      "cacheCreationCostPerMillion": 2.5
+    },
+    "gpt-6.1-sol": {
+      "inputCostPerMillion": 2.0,
+      "outputCostPerMillion": 10.0,
+      "category": "OpenAI models",
+      "tier": "standard",
+      "displayNames": [
+        "GPT-6.1 Sol"
+      ],
+      "cachedInputCostPerMillion": 0.1,
+      "cacheCreationCostPerMillion": 2.5
+    },
+    "claude-haiku-5.5": {
+      "inputCostPerMillion": 0.1,
+      "outputCostPerMillion": 0.5,
+      "category": "Claude models (Anthropic)",
+      "tier": "standard",
+      "displayNames": [
+        "Claude Haiku 5.5"
+      ],
+      "cachedInputCostPerMillion": 0.01,
+      "cacheCreationCostPerMillion": 0.125
     }
   }
 }

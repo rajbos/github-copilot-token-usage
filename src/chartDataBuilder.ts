@@ -20,6 +20,7 @@ const MODEL_PROVIDER_PREFIXES: Array<[string, string]> = [
 	['codestral', 'Mistral AI'],
 	['devstral', 'Mistral AI'],
 	['gemini', 'Google'],
+	['glm', 'Z.ai'],
 	['goldeneye', 'xAI'],
 	['google', 'Google'],
 	['gpt', 'OpenAI'],
@@ -45,6 +46,11 @@ const MODEL_PROVIDER_PREFIXES: Array<[string, string]> = [
 export function getModelBillingProvider(modelId: string): string {
 	const customGroup = getCustomProviderGroup(modelId);
 	if (customGroup) { return customGroup; }
+	// HydraFusion is Copilot's own router, not any vendor's model: the real models
+	// behind it vary per turn, so the only honest provider is the one running it.
+	// The bare `auto` id is deliberately *not* mapped here — Kiro CLI records every
+	// session under `auto` too, and this helper has no editor context to tell them apart.
+	if (modelId === 'hydrafusion') { return 'GitHub Copilot'; }
 	const match = getModelLookupCandidates(modelId)
 		.flatMap(candidate => MODEL_PROVIDER_PREFIXES.filter(([prefix]) => candidate.toLowerCase().startsWith(prefix)))
 		.at(0);

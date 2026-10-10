@@ -178,6 +178,14 @@
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\toolNames.json" />
       <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\automaticTools.json" />
       <!--
+        Resolved webview string dictionaries, one per shipped locale. The bundles only
+        localize themselves if the host puts one in the panel payload, and this extension
+        is C# so it cannot build one from package.nls*.json itself. Without these, the
+        reused bundles render their built-in English fallback whatever language VS is in.
+      -->
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\localization.en.json" />
+      <_WebviewBundle Include="..\..\..\vscode-extension\dist\webview\localization.zh-cn.json" />
+      <!--
         The Scoring Guide (fluency-level-viewer) reads its rubric straight from the shared
         source JSON; unlike the four above it is not needed by the VS Code webviews at
         runtime, so esbuild does not stage it in dist/webview/ and we copy it from src/.
@@ -347,6 +355,14 @@
       </VSIXSourceItem>
       <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\automaticTools.json"
                       Condition="Exists('$(MSBuildProjectDirectory)\webview\automaticTools.json')">
+        <VSIXSubPath>webview\</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\localization.en.json"
+                      Condition="Exists('$(MSBuildProjectDirectory)\webview\localization.en.json')">
+        <VSIXSubPath>webview\</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\localization.zh-cn.json"
+                      Condition="Exists('$(MSBuildProjectDirectory)\webview\localization.zh-cn.json')">
         <VSIXSubPath>webview\</VSIXSubPath>
       </VSIXSourceItem>
       <VSIXSourceItem Include="$(MSBuildProjectDirectory)\webview\fluencyLevelData.json"

@@ -1,0 +1,71 @@
+name: 'Attest VSIX'
+description: >-
+  Generate SPDX SBOMs for a VSIX (and the extension's lockfile dependencies), create
+  GitHub build-provenance and SBOM attestations for the VSIX, then verify them against
+  the exact file. The CALLING JOB must grant `id-token: write` and `attestations: write`,
+  and must have checked out the repo (for the dependency SBOM) and have `gh` on PATH.
+
+inputs:
+  vsix-path:
+    description: 'Path to the .vsix file to attest'
+    required: true
+  sbom-dir:
+    description: 'Directory the SBOM files are written to (created if missing)'
+    required: false
+    default: 'sbom'
+  dependency-path:
+    description: 'Directory containing the lockfile used for the dependency SBOM'
+    required: false
+    default: 'vscode-extension'
+  github-token:
+    description: 'Token used by gh attestation verify'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare SBOM directory
+      shell: bash
+      env:
+        SBOM_DIR: ${{ inputs.sbom-dir }}
+      run: mkdir -p "$SBOM_DIR"
+
+    - name: Generate SBOM for the VSIX
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      with:
+        file: ${{ inputs.vsix-path }}
+        format: spdx-json
+        output-file: ${{ inputs.sbom-dir }}/vsix.spdx.json
+        upload-artifact: false
+        upload-release-assets: false
+
+    - name: Generate dependency SBOM
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      with:
+        path: ${{ inputs.dependency-path }}
+        format: spdx-json
+        output-file: ${{ inputs.sbom-dir }}/dependencies.spdx.json
+        upload-artifact: false
+        upload-release-assets: false
+
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: ${{ inputs.vsix-path }}
+
+    - name: Attest VSIX SBOM
+      uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+      with:
+        subject-path: ${{ inputs.vsix-path }}
+        sbom-path: ${{ inputs.sbom-dir }}/vsix.spdx.json
+
+    - name: Verify attestations against the VSIX
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        VSIX_PATH: ${{ inputs.vsix-path }}
+      run: |
+        gh attestation verify "$VSIX_PATH" --repo "$GITHUB_REPOSITORY" \
+          --predicate-type https://slsa.dev/provenance/v1
+        gh attestation verify "$VSIX_PATH" --repo "$GITHUB_REPOSITORY" \
+          --predicate-type https://spdx.dev/Document/v2.3

@@ -66,7 +66,29 @@ const PATHS = {
   diagnosticsMain: path.join(EXT, 'src', 'webview', 'diagnostics', 'main.ts'),
   efficiencyMain: path.join(EXT, 'src', 'webview', 'efficiency', 'main.ts'),
   webviewDir: path.join(EXT, 'src', 'webview'),
+  // The catalog holds nls keys, not prose, since it was localized —
+  // resolve them for display so this report stays readable.
+  englishBundle: path.join(EXT, 'package.nls.json'),
 };
+
+/**
+ * English text for an nls key.
+ *
+ * The catalog stores `titleKey`/`descriptionKey`/`headlineKey` rather than
+ * prose — it is a pure module and cannot resolve strings itself, so
+ * `extension.ts` does it at the render boundary. This report reads the English
+ * bundle directly for the same reason, and degrades to showing the key rather
+ * than failing if the bundle cannot be read.
+ */
+let _englishBundle;
+function englishText(key) {
+  if (!key) { return '(no key)'; }
+  if (_englishBundle === undefined) {
+    try { _englishBundle = JSON.parse(fs.readFileSync(PATHS.englishBundle, 'utf8')); }
+    catch { _englishBundle = null; }
+  }
+  return (_englishBundle && _englishBundle[key]) || key;
+}
 
 // ── Tiny ANSI helpers ────────────────────────────────────────────────────────
 const asJson = process.argv.includes('--json');
@@ -321,7 +343,7 @@ function report(r) {
     console.log(`   ${green('✓')} ${r.version} — ${dated}, ${r.entry.features.length} feature(s)`);
     r.entry.features.forEach((f, i) => {
       const capped = i >= r.maxPerRelease ? dim('  (beyond the cap — listed in the view, never announced)') : '';
-      console.log(`       ${dim(`${f.kind}`.padEnd(8))} ${f.title}${capped}`);
+      console.log(`       ${dim(`${f.kind}`.padEnd(8))} ${englishText(f.titleKey)}${capped}`);
     });
     console.log('');
   }

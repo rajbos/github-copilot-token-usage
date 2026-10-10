@@ -15,9 +15,14 @@ task is the strongest signal that a workflow has stabilized enough to be capture
    punctuation stripped, English stopwords and short tokens removed) and clusters greedily by
    Jaccard similarity on token sets (`PROMPT_SIMILARITY_THRESHOLD = 0.5`). Each cluster's centroid is
    the strict-majority token set of its members, which keeps clusters stable as they grow.
-3. **Report**: the extension clusters across **all** scanned sessions (cross-repository on purpose —
-   tasks like "create the PR" repeat across repos) and attaches clusters with at least
-   `MIN_CLUSTER_SIZE = 2` sessions to `UsageAnalysisStats.repeatedTasks`, largest first.
+3. **Report**: `buildRepeatedTaskReport()` in `src/repeatedTasks.ts` maps the parsed sessions
+   (first prompt, file, title, last interaction or file mtime, repository shortened by
+   `repoDisplayName()`) to clustering input and clusters across **all** of them (cross-repository on
+   purpose — tasks like "create the PR" repeat across repos). Clusters with at least
+   `MIN_CLUSTER_SIZE = 2` sessions are returned largest first, with `minClusterSize` and
+   `sessionsScanned` (sessions whose first prompt survives normalization, i.e. excluding the
+   prompts listed under "What is excluded"), as `UsageAnalysisStats.repeatedTasks`; the report is undefined when nothing
+   repeats. The VS Code extension and the CLI both call this one function.
 4. **Surface**: the webview renders one card per cluster — repetition count, representative (most
    recent) prompt, shared keywords, and an expandable session list. The
    `repeated-task-skill-candidate` insight fires when a cluster reaches 3 sessions and links to the
@@ -35,14 +40,22 @@ task is the strongest signal that a workflow has stabilized enough to be capture
   the already-cached prompts. It catches lexical repetition ("run the tests and fix the failures")
   but not paraphrases ("make the test suite green") — that is the intended trade-off for a local,
   zero-cost heuristic; a future version could tighten clusters with model assistance on demand.
-- First prompts are stored only in the local extension cache and shown only in the local webview;
-  nothing is sent anywhere.
+- First prompts are stored only in the local extension cache and shown only in the local webview
+  and the CLI; nothing is sent anywhere, and the report is never part of the sharing-server upload.
+- **CLI**: `ai-engineering-fluency skill-suggestions` prints the report; its `--json` output omits
+  prompt text, prompt-derived keywords and session titles unless `--include-prompts` is passed. `usage-analysis --json`
+  includes `repeatedTasks` only with `--repeated-tasks`. Other hosts (desktop, Visual Studio,
+  JetBrains) do not forward the report to their usage view yet. See
+  [docs/cli/README.md](../cli/README.md#skill-suggestions--repeated-tasks).
 - Tunables live at the top of `src/repeatedTasks.ts` (similarity threshold, cluster size, stopword
   list) and are expected to be adjusted as real usage data comes in.
 
 ## Tests
 
 - `vscode-extension/test/unit/repeatedTasks.test.ts` — normalization, similarity, clustering,
-  ordering, truncation, exclusions.
+  ordering, truncation, exclusions, and the shared report builder (`buildRepeatedTaskReport`,
+  `toRepeatedTaskInput`, `repoDisplayName`).
+- `cli/src/test/skillSuggestions.test.ts` — the CLI builds the report from real session files only
+  when asked, and `skill-suggestions --json` redacts prompts unless opted in.
 - `vscode-extension/test/unit/insightsEngine.test.ts` — the `repeated-task-skill-candidate`
   insight thresholds.

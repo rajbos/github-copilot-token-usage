@@ -31,6 +31,8 @@ node load-table-data.js --help
 
 - **SKILL.md**: Complete skill documentation with examples and troubleshooting
 - **load-table-data.js**: Helper script to fetch data from Azure Storage Tables
+- **load-table-data.test.js**: Unit tests for the input validation and output hardening
+  (`node --test .github/skills/azure-storage-loader/load-table-data.test.js`; no network or SDK needed)
 - **example-usage.js**: Example script demonstrating data loading and analysis
 - **package.json**: Node.js dependencies
 
@@ -43,7 +45,11 @@ Authenticate using one of these methods:
 - Environment variables
 
 ### Shared Key
-Use `--sharedKey` parameter to provide storage account key.
+Set the `AZURE_STORAGE_KEY` environment variable to the storage account key.
+The key is not accepted on the command line, so it stays out of process
+listings, shell history and transcripts. Set the variable with a silent prompt
+(`read -rs AZURE_STORAGE_KEY && export AZURE_STORAGE_KEY`) or a secret manager,
+not by typing the key into a command.
 
 ## Common Use Cases
 

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { api } from './routes/api.js';
 import { dashboard } from './routes/dashboard.js';
+import { navExtraMiddleware, type NavLink } from './nav.js';
 
 export interface CreateAppOptions {
 	/**
@@ -14,6 +15,13 @@ export interface CreateAppOptions {
 	extend?: (app: Hono) => void;
 	/** Extra fields merged into the `/health` response, e.g. a downstream version stamp. */
 	healthExtra?: () => Record<string, unknown>;
+	/**
+	 * Extra links appended to the built-in page headers, so a page mounted through
+	 * `extend` is reachable from the UI instead of by URL only. Called on each render,
+	 * so the list can vary per deployment. Scoped to this app, and only same-origin
+	 * paths are accepted.
+	 */
+	navExtra?: () => NavLink[];
 	/** Mount the built-in `/api` routes. Default: true. */
 	mountApi?: boolean;
 	/** Mount the built-in dashboard and OAuth routes. Default: true. */
@@ -39,6 +47,11 @@ export interface CreateAppOptions {
  */
 export function createApp(options: CreateAppOptions = {}): Hono {
 	const app = new Hono();
+
+	// Publishes this app's nav links on every request context, so pages registered
+	// through `extend` can render them too. Middleware only decorates the context, so
+	// it does not affect the extend-before-builtins precedence below.
+	app.use('*', navExtraMiddleware(options.navExtra));
 
 	// Registered first so downstream routes take precedence over every built-in
 	// route below — Hono resolves in registration order.

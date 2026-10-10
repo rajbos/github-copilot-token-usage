@@ -1,8 +1,9 @@
 # Dark Factory Readiness — a per-repository control scan
 
-The **Dark Factory Readiness** section at the bottom of the Fluency Score view assesses each
+The **AI Readiness** tab in **Usage Analysis** (or the **Show AI Readiness** command) assesses each
 repository in the workspace against the software-development "dark factory" maturity ladder, and
-names the specific controls blocking its next stage.
+names the specific controls blocking its next stage. It is separate from the personal Fluency Score
+view; opening or refreshing that score no longer runs a repository scan.
 
 A dark factory is *not* vibe coding at scale. It is a governed, observable production system in
 which humans specify intent, constraints, risk and evidence of success, while agents implement and
@@ -91,7 +92,7 @@ Findings surface the anti-patterns from the research that are actually observabl
 | Scoring — **pure**, no VS Code API and no filesystem access | `src/darkFactoryReadiness.ts` |
 | Filesystem signal collection | `src/darkFactorySignals.ts` |
 | Orchestration (paths → signals → PR join → report) | `vscode-extension/src/darkFactoryService.ts` |
-| Rendering | `vscode-extension/src/webview/maturity/darkFactorySection.ts` |
+| Rendering | `vscode-extension/src/webview/usage/main.ts` and the shared renderer `vscode-extension/src/webview/maturity/darkFactorySection.ts` |
 | Types | `src/types.ts` (`DarkFactory*`) |
 
 ## Cost

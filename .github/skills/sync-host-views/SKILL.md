@@ -38,11 +38,9 @@ this skill protects.
 | **Visual Studio host list** | `visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj` | `_WebviewBundle Include="…\dist\webview\<name>.js"` items (`CopyWebviewBundles` target) |
 | **JetBrains host list** | `jetbrains-plugin/build.gradle.kts` | `prepareBundledAssets` → `from(".../dist/webview") { include("<name>.js", …) }` |
 
-At the time of writing VS Code builds **11** views and both hosts ship the same
-**7**: `chart, details, diagnostics, environmental, fluency-level-viewer,
-maturity, usage`. The remaining VS Code-only views are `dashboard`,
-`efficiency`, `logviewer` and `whatsnew` — intentionally not shipped by the
-hosts.
+Run the script (see below) for the current per-host view counts and coverage —
+this drifts every time a view is added or a host picks one up. Views a host
+doesn't ship are intentionally excluded, not missing.
 
 ### Why nothing is committed for either host
 

@@ -328,6 +328,7 @@ function attachMock(target: any): void {
 		'aiEngineeringFluency.showDetails',
 		'aiEngineeringFluency.showChart',
 		'aiEngineeringFluency.showMaturity',
+		'aiEngineeringFluency.showReadiness',
 		'aiEngineeringFluency.showFluencyLevelViewer',
 		'aiEngineeringFluency.runLocalViewRegression',
 		'aiEngineeringFluency.generateDiagnosticReport'

@@ -2,7 +2,7 @@ import './vscode-shim-register';
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
+import { makeTmpFixtureDir } from './tmpFixtureDirs';
 import * as path from 'node:path';
 
 import { BackendFacade } from '../../src/backend/facade';
@@ -17,7 +17,7 @@ test('Backend cache integration: uses cached data when available', async () => {
 	const warnings: string[] = [];
 	const logs: string[] = [];
 	const now = Date.now();
-	const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-cache-test-'));
+	const tmpDir = makeTmpFixtureDir('ctt-cache-test-');
 
 	const sessionFile = path.join(tmpDir, 'test.json');
 	fs.writeFileSync(
@@ -42,9 +42,6 @@ test('Backend cache integration: uses cached data when available', async () => {
 		log: (m) => logs.push(String(m)),
 		warn: (m) => warnings.push(String(m)),
 		calculateEstimatedCost: () => 0,
-		co2Per1kTokens: 0.2,
-		waterUsagePer1kTokens: 0.3,
-		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [sessionFile],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
@@ -86,7 +83,7 @@ test('Backend cache integration: falls back to parsing on cache miss', async () 
 	const warnings: string[] = [];
 	const logs: string[] = [];
 	const now = Date.now();
-	const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-cache-miss-'));
+	const tmpDir = makeTmpFixtureDir('ctt-cache-miss-');
 
 	const sessionFile = path.join(tmpDir, 'test.json');
 	fs.writeFileSync(
@@ -111,9 +108,6 @@ test('Backend cache integration: falls back to parsing on cache miss', async () 
 		log: (m) => logs.push(String(m)),
 		warn: (m) => warnings.push(String(m)),
 		calculateEstimatedCost: () => 0,
-		co2Per1kTokens: 0.2,
-		waterUsagePer1kTokens: 0.3,
-		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [sessionFile],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
@@ -144,7 +138,7 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 	const warnings: string[] = [];
 	const logs: string[] = [];
 	const now = Date.now();
-	const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-cache-validation-'));
+	const tmpDir = makeTmpFixtureDir('ctt-cache-validation-');
 
 	// Create a session file with at least one request to trigger per-model validation
 	const sessionFile = path.join(tmpDir, 'test.json');
@@ -189,9 +183,6 @@ test('Backend cache integration: validates cached data and rejects invalid struc
 			log: (m) => logs.push(String(m)),
 			warn: (m) => warnings.push(String(m)),
 			calculateEstimatedCost: () => 0,
-			co2Per1kTokens: 0.2,
-			waterUsagePer1kTokens: 0.3,
-			co2AbsorptionPerTreePerYear: 21000,
 			getCopilotSessionFiles: async () => [sessionFile],
 			estimateTokensFromText: (text: string) => (text ?? '').length,
 			getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
@@ -215,7 +206,7 @@ test('Backend cache integration: counts interactions only once for multi-model f
 	const warnings: string[] = [];
 	const logs: string[] = [];
 	const now = Date.now();
-	const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-cache-multimodel-'));
+	const tmpDir = makeTmpFixtureDir('ctt-cache-multimodel-');
 
 	// Create session file with requests for each model - the code requires parsing requests
 	// to determine day/model combinations, then uses cache for token counts
@@ -243,9 +234,6 @@ test('Backend cache integration: counts interactions only once for multi-model f
 		log: (m) => logs.push(String(m)),
 		warn: (m) => warnings.push(String(m)),
 		calculateEstimatedCost: () => 0,
-		co2Per1kTokens: 0.2,
-		waterUsagePer1kTokens: 0.3,
-		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [sessionFile],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),
@@ -295,7 +283,7 @@ test('Backend cache integration: handles cache errors gracefully', async () => {
 	const warnings: string[] = [];
 	const logs: string[] = [];
 	const now = Date.now();
-	const tmpDir = fs.mkdtempSync(path.join(process.cwd(), 'ctt-cache-error-'));
+	const tmpDir = makeTmpFixtureDir('ctt-cache-error-');
 
 	const sessionFile = path.join(tmpDir, 'test.json');
 	fs.writeFileSync(
@@ -318,9 +306,6 @@ test('Backend cache integration: handles cache errors gracefully', async () => {
 		log: (m) => logs.push(String(m)),
 		warn: (m) => warnings.push(String(m)),
 		calculateEstimatedCost: () => 0,
-		co2Per1kTokens: 0.2,
-		waterUsagePer1kTokens: 0.3,
-		co2AbsorptionPerTreePerYear: 21000,
 		getCopilotSessionFiles: async () => [sessionFile],
 		estimateTokensFromText: (text: string) => (text ?? '').length,
 		getModelFromRequest: (request: any) => (request?.model ?? 'gpt-4o').toString(),

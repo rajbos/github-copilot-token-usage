@@ -24,8 +24,81 @@ permissions:
   contents: read
 
 jobs:
+  # Path gate for the two compiled languages.
+  #
+  # CodeQL supports [ $supported-codeql-languages ]
+  # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
+  #
+  # Each matrix entry only checks out and sets up the toolchain its own language
+  # needs (see the sparse-checkout / conditional setup steps below):
+  #   - actions / typescript: repo-wide, no compiled build required. These are
+  #     cheap and always analyzed, so their check runs never go missing.
+  #   - csharp: build-mode "manual", built via MSBuild on windows-latest
+  #     (the visualstudio-extension/ classic VSSDK net48 project needs a
+  #     real compiler pass — build-mode "none" left CodeQL's call-target
+  #     quality metric at 82% (< 85% threshold) because the no-build
+  #     extractor can't fully resolve the VS SDK / NuGet package types).
+  #   - java-kotlin: build-mode "manual", built via the jetbrains-plugin/
+  #     Gradle wrapper (compileKotlin only — buildPlugin isn't needed for
+  #     extraction and would pull down the full IntelliJ Platform SDK).
+  #
+  # csharp and java-kotlin are the two slowest entries to build AND the two
+  # slowest to be scheduled (csharp needs a scarce windows runner), while the
+  # code they analyze changes in a minority of PRs. They are therefore added to
+  # the matrix only when a PR actually touches them. On push to main and on the
+  # weekly schedule the full matrix always runs, so the security dashboard
+  # keeps full coverage regardless of what any individual PR touched.
+  check-changes:
+    name: Select languages
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check which compiled sources changed
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            csharp:
+              - 'visualstudio-extension/**'
+              - '.github/workflows/codeql.yml'
+              - '.github/codeql/**'
+            jetbrains:
+              - 'jetbrains-plugin/**'
+              - '.github/workflows/codeql.yml'
+              - '.github/codeql/**'
+
+      - name: Build the language matrix
+        id: build-matrix
+        shell: bash
+        env:
+          # Anything that is not a pull_request (push to main, the weekly
+          # schedule) analyzes every language.
+          RUN_CSHARP: ${{ github.event_name != 'pull_request' || steps.filter.outputs.csharp == 'true' }}
+          RUN_JETBRAINS: ${{ github.event_name != 'pull_request' || steps.filter.outputs.jetbrains == 'true' }}
+        run: |
+          set -euo pipefail
+          entries='[{"language":"actions"},{"language":"typescript"}]'
+          if [ "$RUN_CSHARP" = "true" ]; then
+            entries=$(jq -c '. + [{"language":"csharp","build-mode":"manual","runs-on":"windows-latest","sparse-checkout":"visualstudio-extension\n.github\n"}]' <<<"$entries")
+          fi
+          if [ "$RUN_JETBRAINS" = "true" ]; then
+            entries=$(jq -c '. + [{"language":"java-kotlin","build-mode":"manual","sparse-checkout":"jetbrains-plugin\n.github\n"}]' <<<"$entries")
+          fi
+          echo "Analyzing: $(jq -r '[.[].language] | join(", ")' <<<"$entries")"
+          echo "matrix=$entries" >> "$GITHUB_OUTPUT"
+
   analyze:
     name: Analyze
+    needs: check-changes
     runs-on: ${{ matrix.runs-on || 'ubuntu-latest' }}
     permissions:
       actions: read
@@ -35,34 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # CodeQL supports [ $supported-codeql-languages ]
-        # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
-        #
-        # Each entry only checks out and sets up the toolchain its own language
-        # needs (see the sparse-checkout / conditional setup steps below):
-        #   - actions / typescript: repo-wide, no compiled build required.
-        #   - csharp: build-mode "manual", built via MSBuild on windows-latest
-        #     (the visualstudio-extension/ classic VSSDK net48 project needs a
-        #     real compiler pass — build-mode "none" left CodeQL's call-target
-        #     quality metric at 82% (< 85% threshold) because the no-build
-        #     extractor can't fully resolve the VS SDK / NuGet package types).
-        #   - java-kotlin: build-mode "manual", built via the jetbrains-plugin/
-        #     Gradle wrapper (compileKotlin only — buildPlugin isn't needed for
-        #     extraction and would pull down the full IntelliJ Platform SDK).
-        include:
-          - language: actions
-          - language: typescript
-          - language: csharp
-            build-mode: manual
-            runs-on: windows-latest
-            sparse-checkout: |
-              visualstudio-extension
-              .github
-          - language: java-kotlin
-            build-mode: manual
-            sparse-checkout: |
-              jetbrains-plugin
-              .github
+        include: ${{ fromJSON(needs.check-changes.outputs.matrix) }}
 
     steps:
       - name: Harden the runner (Block all outbound calls except allowed)
@@ -122,14 +168,14 @@ jobs:
 
       - name: Set up Java 21 (Temurin)
         if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: '21'
           distribution: 'temurin'
 
       - name: Setup Gradle
         if: matrix.language == 'java-kotlin'
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           # CodeQL needs to observe an actual compiler invocation between the
           # init and analyze steps. If this action restores a previous run's
@@ -142,7 +188,7 @@ jobs:
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -188,17 +234,34 @@ jobs:
         if: matrix.language == 'csharp'
         uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
 
+      # Unlike the Gradle build cache disabled above, caching the NuGet global
+      # packages folder is safe under CodeQL tracing: it only avoids
+      # re-downloading packages, it never lets MSBuild skip a compiler
+      # invocation. The `msbuild ... /t:Build` step below still compiles for
+      # real, so the extractor keeps seeing source.
+      - name: Cache NuGet packages (C#)
+        if: matrix.language == 'csharp'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('visualstudio-extension/**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Restore NuGet packages (C#)
         if: matrix.language == 'csharp'
         working-directory: visualstudio-extension
-        run: nuget restore AIEngineeringFluency.sln
+        # -LockedMode: fail if a PackageReference drifts from the committed
+        # packages.lock.json instead of resolving something new (see
+        # visualstudio-extension/Directory.Build.props).
+        run: nuget restore AIEngineeringFluency.sln -LockedMode
 
       - name: Restore test project (SDK-style)
         if: matrix.language == 'csharp'
         working-directory: visualstudio-extension
         run: |
-          dotnet restore src/AIEngineeringFluency.Tests/AIEngineeringFluency.Tests.csproj
-          dotnet restore src/AIEngineeringFluencyRunner/AIEngineeringFluencyRunner.csproj
+          dotnet restore --locked-mode src/AIEngineeringFluency.Tests/AIEngineeringFluency.Tests.csproj
+          dotnet restore --locked-mode src/AIEngineeringFluencyRunner/AIEngineeringFluencyRunner.csproj
 
       - name: Build C# solution (CodeQL tracing)
         if: matrix.language == 'csharp'
@@ -217,7 +280,7 @@ jobs:
       # through to CodeQL's default build-mode.
       - name: Autobuild
         if: matrix.language != 'csharp' && matrix.language != 'java-kotlin'
-        uses: github/codeql-action/autobuild@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/autobuild@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
 
       # ℹ️ Command-line programs to run using the OS shell.
       # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
@@ -230,6 +293,39 @@ jobs:
       #   ./location_of_script_within_repo/buildscript.sh
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: "/language:${{matrix.language}}"
+
+  # Stable required-check anchor - see the same pattern in build.yml.
+  #
+  # analyze's matrix is built by check-changes, so the per-language check runs
+  # ("Analyze (csharp, ...)", "Analyze (java-kotlin, ...)") are ABSENT, not
+  # skipped, on a PR touching neither visualstudio-extension/ nor
+  # jetbrains-plugin/. Requiring those names would hang such PRs forever.
+  #
+  # Require "CodeQL result" in branch protection rather than the per-language
+  # entries.
+  codeql-result:
+    name: CodeQL result
+    runs-on: ubuntu-latest
+    needs: [check-changes, analyze]
+    if: always()
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # The composite action below is a local action (./.github/actions/...),
+      # which needs the repo checked out at this path to be found at all -
+      # without this, the step fails with "Can't find 'action.yml' ...".
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the gated job results
+        uses: ./.github/actions/check-gated-results
+        with:
+          gate-name: check-changes (Select languages)
+          gate-result: ${{ needs.check-changes.result }}
+          results: |
+            analyze=${{ needs.analyze.result }}

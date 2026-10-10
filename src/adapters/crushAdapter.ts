@@ -60,6 +60,12 @@ export class CrushAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, 
 		};
 	}
 
+	async getLastActivity(sessionFile: string): Promise<Date | null> {
+		const session = await this.crush.readCrushSession(sessionFile);
+		const seconds = session?.updated_at ?? session?.created_at;
+		return typeof seconds === 'number' ? new Date(seconds * 1000) : null; // epoch seconds → ms
+	}
+
 	getEditorRoot(sessionFile: string): string {
 		return path.dirname(this.crush.getCrushDbPath(sessionFile));
 	}

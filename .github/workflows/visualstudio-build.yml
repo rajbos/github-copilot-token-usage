@@ -47,6 +47,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
+          # This job installs dependencies in both vscode-extension/ and cli/, so the
+          # pnpm cache is keyed on both lock files.
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       # ── Install dependencies ────────────────────────────────────────────────
 
@@ -125,13 +131,42 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
 
+      # Both projects use PackageReference, so `nuget restore` and `dotnet
+      # restore` below both populate the NuGet global packages folder. Caching
+      # it turns the restore into a local copy instead of a fresh download of
+      # the VS SDK / VSSDK package set on every run.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          # Folded block scalar (>-), not a plain multi-line value: a plain
+          # YAML scalar's continuation lines can't start with a reserved
+          # indicator character, and every line below starts with a single
+          # quote - that broke the YAML parse (reproduced with both actionlint
+          # and PyYAML) even though it looked like ordinary multi-line syntax.
+          key: >-
+            ${{ runner.os }}-nuget-${{ hashFiles(
+            'visualstudio-extension/**/*.csproj',
+            'visualstudio-extension/**/Directory.Packages.props',
+            'visualstudio-extension/**/NuGet.config',
+            'visualstudio-extension/**/packages.lock.json',
+            'Directory.Packages.props',
+            'NuGet.config',
+            'global.json'
+            ) }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Restore NuGet packages
         working-directory: visualstudio-extension
-        run: nuget restore AIEngineeringFluency.sln
+        # -LockedMode: fail if a PackageReference drifts from the committed
+        # packages.lock.json instead of resolving something new (see
+        # visualstudio-extension/Directory.Build.props).
+        run: nuget restore AIEngineeringFluency.sln -LockedMode
 
       - name: Restore test project (SDK-style)
         working-directory: visualstudio-extension
-        run: dotnet restore src/AIEngineeringFluency.Tests/AIEngineeringFluency.Tests.csproj
+        run: dotnet restore --locked-mode src/AIEngineeringFluency.Tests/AIEngineeringFluency.Tests.csproj
 
       - name: Build solution (Release)
         working-directory: visualstudio-extension

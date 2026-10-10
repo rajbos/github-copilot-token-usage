@@ -1,5 +1,6 @@
 package com.github.rajbos.aiengineeringfluency
 
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.thisLogger
@@ -8,6 +9,16 @@ import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import javax.swing.JComponent
+
+/**
+ * Methodology links the environmental view may ask to open, by id. Mirrors
+ * `ENVIRONMENTAL_METHODOLOGY_SOURCES` in `src/environmentalImpact.ts`;
+ * `environmentalImpact.test.ts` fails if the two drift apart.
+ */
+private val ENVIRONMENTAL_METHODOLOGY_SOURCES = mapOf(
+    "paper" to "https://arxiv.org/abs/2505.09598",
+    "neuland" to "https://github.com/neuland/tokendashboard-backend/blob/main/docs/co2-methodology.md",
+)
 
 /**
  * Hosts a single JCEF browser that renders one of the compiled webview bundles
@@ -309,6 +320,13 @@ class TokenTrackerPanel(
                         currentChartPeriod = period
                         log.info("Chart period preference updated to: $period")
                     }
+                }
+
+                "openMethodologySource" -> {
+                    // Fixed id -> URL lookup: the webview never supplies the address itself.
+                    val source = """"source"\s*:\s*"([^"]+)"""".toRegex()
+                        .find(rawMessage)?.groupValues?.get(1)
+                    ENVIRONMENTAL_METHODOLOGY_SOURCES[source]?.let { BrowserUtil.browse(it) }
                 }
 
                 else -> log.warn("Unknown webview command: $command")

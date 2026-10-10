@@ -94,9 +94,10 @@ function readJsonConfigGlobals(repoRoot) {
  * @param {'dark'|'light'} options.theme
  * @param {string} options.bundlePath   absolute path to `dist/webview/<view>.js`
  * @param {string} options.repoRoot
+ * @param {object} [options.extraGlobals]  additional window globals supplied by the panel shell
  * @returns {string} the full HTML document
  */
-function buildPageHtml({ globalName, fixture, theme, bundlePath, repoRoot }) {
+function buildPageHtml({ globalName, fixture, theme, bundlePath, repoRoot, extraGlobals = {} }) {
 	const themeCss = fs.readFileSync(path.join(__dirname, `theme-${theme}.css`), 'utf8');
 	const themeKind = theme === 'light' ? 'vscode-light' : 'vscode-dark';
 	const codiconCss = path.join(path.dirname(bundlePath), 'codicons', 'codicon.css');
@@ -159,6 +160,7 @@ ${codiconTag}
 	});
 </script>
 <script>window.${globalName} = ${toScriptJson(fixture)};</script>
+<script>${Object.entries(extraGlobals).map(([name, value]) => `window[${toScriptJson(name)}] = ${toScriptJson(value)};`).join('')}</script>
 <script>${readJsonConfigGlobals(repoRoot)}</script>
 <script>window.__EXTENSION_POINT_BUTTONS__ = [];</script>
 <script src="${pathToFileUrl(bundlePath)}"></script>

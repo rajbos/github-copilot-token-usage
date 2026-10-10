@@ -1,0 +1,21 @@
+{
+	"name": "release-video",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Local, zero-cost release-video generator: What's New catalog -> screenshots -> narration -> FFmpeg/NVENC MP4.",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"check-types": "tsc -p tsconfig.json --noEmit",
+		"video": "node dist/cli.js",
+		"doctor": "node dist/cli.js doctor",
+		"test": "npm run build && node --test dist/test"
+	},
+	"devDependencies": {
+		"@types/node": "^20.14.0",
+		"typescript": "^5.5.0"
+	}
+}

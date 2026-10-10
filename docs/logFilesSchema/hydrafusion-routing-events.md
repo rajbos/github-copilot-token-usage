@@ -18,6 +18,14 @@ Copilot CLI session. Fusion events sit alongside the normal `user.message` /
 `analyzeHydraFusionSession(content)`, surfaced in the Session Log Viewer's
 "⚡ HydraFusion Routing" section.
 
+**Efficiency attribution:** the CLI keys a routed session's per-turn counters by the
+synthetic id (`hydrafusion`, likewise `auto`) but its `session.shutdown` model metrics by
+the real models that served each leg. The Efficiency view's Models tab re-keys those metrics
+onto the router so it can be compared as a model in its own right — see
+`findRoutedSessionModel` / `attributeRoutedModelUsage` in
+[`src/modelEfficiency.ts`](../../src/modelEfficiency.ts). The Usage view keeps the real
+models.
+
 **Credit to prior art:** the event names and the idea of reconstructing a turn as a trace with
 one span per leg come from [`samueltauil/hydrafusion-traces`](https://github.com/samueltauil/hydrafusion-traces)
 and its [walkthrough](https://samueltauil.github.io/github-copilot/devops/2026/09/10/hydrafusion-model-routing-grafana-traces.html),

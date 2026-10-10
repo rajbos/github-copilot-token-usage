@@ -12,6 +12,7 @@ import { withErrorRecovery } from './utils/errors';
 import { normalizePathForComparison } from './workspaceHelpers';
 import { toLocalDayKey } from './utils/dayKeys';
 import { isUnsafeObjectKey } from './utils/protoGuard';
+import { isHumanUserTurn } from './utils/claudeUserTurns';
 import { readTextFileWithSizeGuard } from './utils/safeFileRead';
 
 /**
@@ -337,17 +338,9 @@ export class ClaudeCodeDataAccess {
 		let count = 0;
 		for (const event of events) {
 			if (event.type === 'user' && !event.isSidechain && event.message?.role === 'user') {
-				// Only count actual user text messages (not tool results)
-				const content = event.message?.content;
-				if (typeof content === 'string') {
-					count++;
-				} else if (Array.isArray(content)) {
-					// Count if any content block is a text block (not tool_result)
-					const hasText = content.some((c: any) => c.type === 'text');
-					if (hasText && !content.some((c: any) => c.type === 'tool_result')) {
-						count++;
-					}
-				}
+				// Only count real human turns — not tool results, and not the harness's synthetic
+				// <system-reminder>/<task-notification> injections (see claudeUserTurns.ts).
+				if (isHumanUserTurn(event)) { count++; }
 			}
 		}
 		return count;
@@ -445,11 +438,16 @@ export class ClaudeCodeDataAccess {
 
 	private extractMetaFieldsFromEvents(events: any[]): { title?: string; entrypoint?: string; cwd?: string; timestamps: number[] } {
 		let title: string | undefined;
+		let customTitle: string | undefined;
 		let entrypoint: string | undefined;
 		let cwd: string | undefined;
 		const timestamps: number[] = [];
 		for (const event of events) {
 			if (event.type === 'ai-title' && event.aiTitle) { title = event.aiTitle; }
+			// A title the user set (or Claude Desktop set when naming a Cowork session) is written as
+			// a separate `custom-title` event. Sessions started from Claude Desktop often carry ONLY
+			// this one, so reading `ai-title` alone left them with no title at all.
+			if (event.type === 'custom-title' && event.customTitle) { customTitle = event.customTitle; }
 			if (!entrypoint && event.entrypoint) { entrypoint = event.entrypoint; }
 			if (!cwd && event.cwd) { cwd = event.cwd; }
 			if (event.timestamp) {
@@ -457,7 +455,8 @@ export class ClaudeCodeDataAccess {
 				if (!isNaN(ts)) { timestamps.push(ts); }
 			}
 		}
-		return { title, entrypoint, cwd, timestamps };
+		// An explicit custom title outranks the model-generated one.
+		return { title: customTitle ?? title, entrypoint, cwd, timestamps };
 	}
 
 	/**

@@ -141,22 +141,27 @@ function mockAutoSession(t: TestContext, format: 'json' | 'jsonl', debug = false
 			...requests.map(request => ({ kind: 2, k: ['requests'], v: request })),
 		].map(event => JSON.stringify(event)).join('\n');
 	const sessionId = '11111111-1111-4111-8111-111111111111';
-	const filePath = path.join(__dirname, 'workspaceStorage', 'synthetic', 'chatSessions', `${sessionId}.${format}`);
-	const fixtureStat = fs.statSync(FIXTURE_PATH);
+	// Real files (session files are read through the size-guarded reader, which opens a file
+	// handle), under cli/out/ rather than os.tmpdir(), which that reader refuses.
+	const root = fs.mkdtempSync(path.join(__dirname, 'auto-session-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const hashDir = path.join(root, 'workspaceStorage', 'synthetic');
+	const filePath = path.join(hashDir, 'chatSessions', `${sessionId}.${format}`);
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, content);
+	if (debug) {
+		const debugLog = path.join(hashDir, 'GitHub.copilot-chat', 'debug-logs', sessionId, 'main.jsonl');
+		fs.mkdirSync(path.dirname(debugLog), { recursive: true });
+		fs.writeFileSync(debugLog, JSON.stringify({
+			type: 'llm_request',
+			attrs: { model: AUTO_MODEL, inputTokens: 8000, outputTokens: 1600, cachedTokens: 3200 },
+		}));
+	}
+	// Pin mtime to today's noon so daily attribution is deterministic.
+	const realStat = fs.statSync(filePath);
 	t.mock.method(fs.promises, 'stat', async (file: string) => {
 		assert.equal(file, filePath);
-		return { ...fixtureStat, mtime: today, mtimeMs: today.getTime(), size: content.length };
-	});
-	t.mock.method(fs.promises, 'readFile', async (file: string) => {
-		if (file === filePath) { return content; }
-		assert.ok(String(file).replace(/\\/g, '/').endsWith(`/debug-logs/${sessionId}/main.jsonl`));
-		if (debug) {
-			return JSON.stringify({
-				type: 'llm_request',
-				attrs: { model: AUTO_MODEL, inputTokens: 8000, outputTokens: 1600, cachedTokens: 3200 },
-			});
-		}
-		throw Object.assign(new Error('Synthetic session has no debug log'), { code: 'ENOENT' });
+		return { ...realStat, mtime: today, mtimeMs: today.getTime() };
 	});
 	return filePath;
 }
@@ -252,6 +257,44 @@ test('CLI daily, history, weekly, monthly and billing aggregates retain Auto dis
 		assert.ok(Math.abs(period.billingGroupCostDatasets[0].data.reduce((sum, cost) => sum + cost, 0) - expectedCost) < 1e-12);
 	}
 	assert.deepEqual(days, originalDays);
+});
+
+test('CLI chart payload carries sortable period keys for every period', () => {
+	// The chart webview filters each period by time window on `periodKeys` and throws
+	// on load without them, which left the desktop app's Chart view blank.
+	const now = new Date();
+	const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+	const entry: DailyEntry = { tokens: 10, sessions: 1, modelUsage: {}, editorUsage: {} };
+	const payload = buildChartPayload([key], [entry]) as unknown as { periods: Record<string, { labels: string[]; periodKeys: string[] }> };
+	for (const period of Object.values(payload.periods)) {
+		assert.equal(period.periodKeys.length, period.labels.length);
+		assert.deepEqual(period.periodKeys, [...period.periodKeys].sort());
+	}
+	assert.deepEqual(payload.periods.day.periodKeys, [key]);
+	assert.match(payload.periods.week.periodKeys[0], /^\d{4}-\d{2}-\d{2}$/);
+	assert.equal(payload.periods.month.periodKeys.at(-1), key.slice(0, 7));
+});
+
+test('CLI groups GLM sessions under Z.ai, matching the shared billing helper', () => {
+	// The CLI used to keep its own copy of chartDataBuilder's provider-prefix table, which
+	// never gained `glm` — so a Mistral Vibe session routed to GLM billed to "Other" here
+	// while the extension showed Z.ai. Guards against that copy reappearing.
+	const usage: ModelUsage = { 'glm-5-2': { inputTokens: 4000, outputTokens: 800, sessions: 0 } };
+	const entry: DailyEntry = {
+		tokens: 4800, sessions: 1, modelUsage: usage,
+		editorUsage: { 'Mistral Vibe': { tokens: 4800, sessions: 1 } },
+		editorModelUsage: { 'Mistral Vibe': usage },
+	};
+	const today = new Date();
+	const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+	const payload = buildChartPayload([key], [entry]) as { periods: Record<string, CostPeriod> };
+	for (const period of Object.values(payload.periods)) {
+		assert.equal(period.billingGroupCostDatasets[0].label, 'Z.ai', 'GLM must not fall into the "Other" bucket');
+		assert.ok(
+			period.billingGroupCostDatasets[0].data.reduce((sum, cost) => sum + cost, 0) > 0,
+			'glm-5-2 is priced, so it must contribute non-zero cost',
+		);
+	}
 });
 
 test('CLI provider editor and billing costs remain undiscounted with Auto metadata', () => {

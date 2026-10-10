@@ -1,4 +1,376 @@
 {
+  "readinessAvailable": true,
+  "customizationMatrix": {
+    "customizationTypes": [
+      {
+        "id": "copilot-instructions",
+        "icon": "📋",
+        "label": "copilot-instructions.md"
+      },
+      {
+        "id": "agents-md",
+        "icon": "🤖",
+        "label": "AGENTS.md"
+      },
+      {
+        "id": "instructions",
+        "icon": "📝",
+        "label": ".instructions.md"
+      },
+      {
+        "id": "prompts",
+        "icon": "💬",
+        "label": ".prompt.md"
+      },
+      {
+        "id": "skills",
+        "icon": "🧰",
+        "label": "SKILL.md"
+      }
+    ],
+    "workspaces": [
+      {
+        "workspacePath": "/home/dev/repos/ai-engineering-fluency",
+        "workspaceName": "ai-engineering-fluency",
+        "sessionCount": 40,
+        "interactionCount": 520,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "✅",
+          "instructions": "✅",
+          "prompts": "⚠️",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/website",
+        "workspaceName": "website",
+        "sessionCount": 38,
+        "interactionCount": 501,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "❌",
+          "instructions": "⚠️",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/api-gateway",
+        "workspaceName": "api-gateway",
+        "sessionCount": 36,
+        "interactionCount": 482,
+        "typeStatuses": {
+          "copilot-instructions": "⚠️",
+          "agents-md": "✅",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/docs",
+        "workspaceName": "docs",
+        "sessionCount": 34,
+        "interactionCount": 463,
+        "typeStatuses": {
+          "copilot-instructions": "❌",
+          "agents-md": "❌",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/infra",
+        "workspaceName": "infra",
+        "sessionCount": 32,
+        "interactionCount": 444,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "⚠️",
+          "instructions": "✅",
+          "prompts": "✅",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/mobile-app",
+        "workspaceName": "mobile-app",
+        "sessionCount": 30,
+        "interactionCount": 425,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "✅",
+          "instructions": "✅",
+          "prompts": "⚠️",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/work/client-a/frontend",
+        "workspaceName": "frontend",
+        "sessionCount": 18,
+        "interactionCount": 410,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "✅",
+          "instructions": "⚠️",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/design-system",
+        "workspaceName": "design-system",
+        "sessionCount": 28,
+        "interactionCount": 406,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "❌",
+          "instructions": "⚠️",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/data-pipeline",
+        "workspaceName": "data-pipeline",
+        "sessionCount": 26,
+        "interactionCount": 387,
+        "typeStatuses": {
+          "copilot-instructions": "⚠️",
+          "agents-md": "✅",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/billing-service",
+        "workspaceName": "billing-service",
+        "sessionCount": 24,
+        "interactionCount": 368,
+        "typeStatuses": {
+          "copilot-instructions": "❌",
+          "agents-md": "❌",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/auth-service",
+        "workspaceName": "auth-service",
+        "sessionCount": 22,
+        "interactionCount": 349,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "⚠️",
+          "instructions": "✅",
+          "prompts": "✅",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/search",
+        "workspaceName": "search",
+        "sessionCount": 20,
+        "interactionCount": 330,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "✅",
+          "instructions": "✅",
+          "prompts": "⚠️",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/notifications",
+        "workspaceName": "notifications",
+        "sessionCount": 18,
+        "interactionCount": 311,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "❌",
+          "instructions": "⚠️",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/analytics",
+        "workspaceName": "analytics",
+        "sessionCount": 16,
+        "interactionCount": 292,
+        "typeStatuses": {
+          "copilot-instructions": "⚠️",
+          "agents-md": "✅",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/cli-tools",
+        "workspaceName": "cli-tools",
+        "sessionCount": 14,
+        "interactionCount": 273,
+        "typeStatuses": {
+          "copilot-instructions": "❌",
+          "agents-md": "❌",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/sandbox",
+        "workspaceName": "sandbox",
+        "sessionCount": 12,
+        "interactionCount": 254,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "⚠️",
+          "instructions": "✅",
+          "prompts": "✅",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/playground",
+        "workspaceName": "playground",
+        "sessionCount": 10,
+        "interactionCount": 235,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "✅",
+          "instructions": "✅",
+          "prompts": "⚠️",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/work/client-b/frontend",
+        "workspaceName": "frontend",
+        "sessionCount": 7,
+        "interactionCount": 233,
+        "typeStatuses": {
+          "copilot-instructions": "❌",
+          "agents-md": "❌",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/scratch",
+        "workspaceName": "scratch",
+        "sessionCount": 8,
+        "interactionCount": 216,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "❌",
+          "instructions": "⚠️",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/demo-app",
+        "workspaceName": "demo-app",
+        "sessionCount": 6,
+        "interactionCount": 197,
+        "typeStatuses": {
+          "copilot-instructions": "⚠️",
+          "agents-md": "✅",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/legacy-portal",
+        "workspaceName": "legacy-portal",
+        "sessionCount": 4,
+        "interactionCount": 178,
+        "typeStatuses": {
+          "copilot-instructions": "❌",
+          "agents-md": "❌",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/ml-models",
+        "workspaceName": "ml-models",
+        "sessionCount": 2,
+        "interactionCount": 159,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "⚠️",
+          "instructions": "✅",
+          "prompts": "✅",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/reporting",
+        "workspaceName": "reporting",
+        "sessionCount": 1,
+        "interactionCount": 140,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "✅",
+          "instructions": "✅",
+          "prompts": "⚠️",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/admin-console",
+        "workspaceName": "admin-console",
+        "sessionCount": 1,
+        "interactionCount": 121,
+        "typeStatuses": {
+          "copilot-instructions": "✅",
+          "agents-md": "❌",
+          "instructions": "⚠️",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/sdk-js",
+        "workspaceName": "sdk-js",
+        "sessionCount": 1,
+        "interactionCount": 102,
+        "typeStatuses": {
+          "copilot-instructions": "⚠️",
+          "agents-md": "✅",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "✅"
+        }
+      },
+      {
+        "workspacePath": "/home/dev/repos/sdk-python",
+        "workspaceName": "sdk-python",
+        "sessionCount": 1,
+        "interactionCount": 83,
+        "typeStatuses": {
+          "copilot-instructions": "❌",
+          "agents-md": "❌",
+          "instructions": "❌",
+          "prompts": "❌",
+          "skills": "❌"
+        }
+      }
+    ],
+    "totalWorkspaces": 26,
+    "workspacesWithIssues": 6
+  },
   "today": {
     "sessions": 24,
     "toolCalls": {
@@ -188,8 +560,12 @@
     "delegationSessions": 5,
     "contextWindow": {
       "maxRequestInputTokens": 96000,
-      "maxRequestModels": ["claude-sonnet-4.5"],
-      "tierCounts": { "default": 4 },
+      "maxRequestModels": [
+        "claude-sonnet-4.5"
+      ],
+      "tierCounts": {
+        "default": 4
+      },
       "maxReachedTokens": 118000,
       "maxReachedWindowLimit": 128000
     },
@@ -220,6 +596,29 @@
         "grep_search": 176000,
         "semantic_search": 319000,
         "create_file": 55000
+      },
+      "completedByTool": {
+        "read_file": 572,
+        "run_in_terminal": 451,
+        "apply_patch": 363,
+        "grep_search": 308,
+        "semantic_search": 220,
+        "create_file": 132
+      },
+      "failuresByTool": {
+        "read_file": 9,
+        "run_in_terminal": 38,
+        "apply_patch": 41,
+        "grep_search": 4,
+        "create_file": 2
+      },
+      "latencyByTool": {
+        "read_file": { "count": 572, "sumMs": 68640, "buckets": [0, 0, 0, 20, 120, 250, 100, 40, 15, 10, 7, 6, 3, 1] },
+        "run_in_terminal": { "count": 451, "sumMs": 4059000, "buckets": [0, 0, 0, 0, 0, 5, 10, 20, 30, 40, 60, 90, 70, 50, 35, 25, 12, 4] },
+        "apply_patch": { "count": 363, "sumMs": 108900, "buckets": [0, 0, 0, 0, 5, 20, 60, 90, 80, 50, 30, 15, 8, 4, 1] },
+        "grep_search": { "count": 308, "sumMs": 46200, "buckets": [0, 0, 0, 10, 40, 80, 70, 50, 30, 15, 8, 4, 1] },
+        "semantic_search": { "count": 220, "sumMs": 198000, "buckets": [0, 0, 0, 0, 0, 0, 0, 10, 30, 60, 60, 35, 15, 7, 3] },
+        "create_file": { "count": 132, "sumMs": 15840, "buckets": [0, 0, 0, 0, 10, 30, 40, 25, 15, 8, 3, 1] }
       }
     },
     "modeUsage": {
@@ -274,6 +673,18 @@
         "github/create_issue": 55,
         "github/list_prs": 44,
         "playwright/navigate": 55
+      },
+      "completedByServer": {
+        "github": 99,
+        "playwright": 55
+      },
+      "failuresByServer": {
+        "github": 6,
+        "playwright": 11
+      },
+      "latencyByServer": {
+        "github": { "count": 99, "sumMs": 247500, "buckets": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 45, 25, 9] },
+        "playwright": { "count": 55, "sumMs": 82500, "buckets": [0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 15, 20, 10, 5] }
       }
     },
     "skillCalls": {
@@ -470,8 +881,13 @@
     "delegationSessions": 55,
     "contextWindow": {
       "maxRequestInputTokens": 142000,
-      "maxRequestModels": ["claude-sonnet-4.5"],
-      "tierCounts": { "default": 48, "long": 6 },
+      "maxRequestModels": [
+        "claude-sonnet-4.5"
+      ],
+      "tierCounts": {
+        "default": 48,
+        "long": 6
+      },
       "maxReachedTokens": 126500,
       "maxReachedWindowLimit": 128000
     },
@@ -483,6 +899,22 @@
       "worstFillPercent": 99
     }
   },
+  "accountBudgets": [
+    {
+      "accountId": "fixture-account-1",
+      "label": "octo-personal",
+      "status": "ok",
+      "planName": "Copilot Pro",
+      "resetDate": "2026-11-01T00:00:00.000Z",
+      "balance": { "budgetUsd": 39, "budgetAiCredits": 3900, "remainingAiCredits": 1500, "usedAiCredits": 2400, "pctAvailable": 38.5 }
+    },
+    {
+      "accountId": "fixture-account-2",
+      "label": "octo-work",
+      "status": "unavailable",
+      "reason": "no-session"
+    }
+  ],
   "month": {
     "sessions": 288,
     "toolCalls": {
@@ -955,5 +1387,1319 @@
         ]
       }
     ]
+  },
+  "memoryFilesAnalysis": {
+    "staleDays": 90,
+    "largeFileBytes": 10240,
+    "totalFiles": 4,
+    "totalBytes": 24576,
+    "staleFileCount": 2,
+    "largeFileCount": 1,
+    "byWorkspace": [
+      {
+        "workspaceName": "<script>alert('xss')</script> & \"my-repo\"",
+        "workspaceHash": "abc123",
+        "repoCount": 3,
+        "sessionCount": 1,
+        "userCount": 0,
+        "totalBytes": 20480,
+        "newestMtimeMs": 1710000000000,
+        "staleFileCount": 2
+      },
+      {
+        "workspaceName": "User (global)",
+        "repoCount": 0,
+        "sessionCount": 0,
+        "userCount": 1,
+        "totalBytes": 4096,
+        "newestMtimeMs": 1710500000000,
+        "staleFileCount": 0
+      }
+    ]
+  },
+  "serverMemoriesAnalysis": {
+    "repo": "rajbos/ai-engineering-fluency",
+    "enabled": true,
+    "truncated": true,
+    "totalMemories": 340,
+    "distinctSubjects": 191,
+    "documentedCount": 99,
+    "promotionCandidateCount": 231,
+    "repeatedGroupCount": 40,
+    "fullyStaleCount": 4,
+    "topPromotionGroups": [
+      {
+        "displaySubject": "snapshot identity",
+        "repeatCount": 12,
+        "representativeFact": "CacheManager shared snapshots use mtime+size plus a durable cache_<id>.seq publish generation; writers update the sidecar before the body.",
+        "citationCount": 9
+      },
+      {
+        "displaySubject": "<script>alert('xss')</script> & \"quoted\"",
+        "repeatCount": 3,
+        "representativeFact": "Escaping check: subject & fact both carry markup that must render as text, not HTML.",
+        "citationCount": 2
+      },
+      {
+        "displaySubject": "CLI versioning",
+        "repeatCount": 1,
+        "representativeFact": "The CLI's `--version` output is sourced from cli/package.json, not hard-coded in TypeScript.",
+        "citationCount": 2
+      }
+    ]
+  },
+  "repeatedTasks": {
+    "minClusterSize": 2,
+    "sessionsScanned": 42,
+    "clusters": [
+      {
+        "representativePrompt": "Bump the changelog and tag a release for the web app",
+        "sessionCount": 3,
+        "repositories": [
+          "acme/web-app"
+        ],
+        "sharedKeywords": [
+          "changelog",
+          "release",
+          "tag"
+        ],
+        "sessions": [
+          {
+            "file": "/sessions/release-notes-3.jsonl",
+            "title": "Release notes for 2.4.0",
+            "lastInteraction": "2026-03-13T16:05:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/release-notes-2.jsonl",
+            "title": "Release notes for 2.3.1",
+            "lastInteraction": "2026-03-06T11:20:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/release-notes-1.jsonl",
+            "title": "Release notes for 2.3.0",
+            "lastInteraction": "2026-02-27T09:45:00.000Z",
+            "repository": "acme/web-app"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Write unit tests for the new parser helper",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/web-app",
+          "acme/data-tools"
+        ],
+        "sharedKeywords": [
+          "tests",
+          "parser"
+        ],
+        "sessions": [
+          {
+            "file": "/sessions/parser-tests-2.jsonl",
+            "title": "Tests for the CSV parser",
+            "lastInteraction": "2026-03-11T14:00:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/parser-tests-1.jsonl",
+            "title": "Tests for the config parser",
+            "lastInteraction": "2026-03-02T10:15:00.000Z",
+            "repository": "acme/web-app"
+          }
+        ]
+      }
+    ]
+  },
+  "claudeDesktopCoverage": {
+    "knownSessions": 145,
+    "withTranscript": 76,
+    "missingTranscript": 69
+  },
+  "todaySessions": [
+    {
+      "title": "g2g?",
+      "filePath": "C:/sessions/g2g?.jsonl",
+      "interactions": 69,
+      "toolCalls": 414,
+      "inputTokens": 41400000,
+      "outputTokens": 165600,
+      "thinkingTokens": 0,
+      "cachedTokens": 40020000,
+      "totalTokens": 41565600,
+      "estimatedCost": 15.87,
+      "editor": "Copilot CLI (App)",
+      "models": [
+        "gpt-5.6-sol"
+      ],
+      "lastActivity": "2026-03-14T08:17:00Z",
+      "workspace": "barco-repo-analysis",
+      "durationMs": 2622000,
+      "activeDurationMs": 2070000,
+      "subAgentCalls": 6
+    },
+    {
+      "title": "Refactor usage panel",
+      "filePath": "C:/sessions/Refactor_usage_panel.jsonl",
+      "interactions": 41,
+      "toolCalls": 246,
+      "inputTokens": 24600000,
+      "outputTokens": 98400,
+      "thinkingTokens": 0,
+      "cachedTokens": 23780000,
+      "totalTokens": 24698400,
+      "estimatedCost": 9.43,
+      "editor": "Claude Desktop",
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "lastActivity": "2026-03-14T07:50:00Z",
+      "workspace": "ai-engineering-fluency",
+      "durationMs": 1558000,
+      "activeDurationMs": 1230000,
+      "subAgentCalls": 4
+    },
+    {
+      "title": "Fusion routing spike",
+      "filePath": "C:/sessions/Fusion_routing_spike.jsonl",
+      "interactions": 33,
+      "toolCalls": 198,
+      "inputTokens": 19800000,
+      "outputTokens": 79200,
+      "thinkingTokens": 0,
+      "cachedTokens": 19140000,
+      "totalTokens": 19879200,
+      "estimatedCost": 7.59,
+      "editor": "Copilot CLI (App)",
+      "models": [
+        "hydrafusion",
+        "gpt-5.6-luna"
+      ],
+      "lastActivity": "2026-03-14T07:12:00Z",
+      "workspace": "ai-engineering-fluency",
+      "durationMs": 1254000,
+      "activeDurationMs": 990000,
+      "subAgentCalls": 3
+    },
+    {
+      "title": "Pricing refresh",
+      "filePath": "C:/sessions/Pricing_refresh.jsonl",
+      "interactions": 22,
+      "toolCalls": 132,
+      "inputTokens": 13200000,
+      "outputTokens": 52800,
+      "thinkingTokens": 0,
+      "cachedTokens": 12760000,
+      "totalTokens": 13252800,
+      "estimatedCost": 5.06,
+      "editor": "Copilot CLI",
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "lastActivity": "2026-03-14T06:40:00Z",
+      "workspace": "model-pricing",
+      "durationMs": 836000,
+      "activeDurationMs": 660000,
+      "subAgentCalls": 2
+    },
+    {
+      "title": "Docs pass",
+      "filePath": "C:/sessions/Docs_pass.jsonl",
+      "interactions": 14,
+      "toolCalls": 84,
+      "inputTokens": 8400000,
+      "outputTokens": 33600,
+      "thinkingTokens": 0,
+      "cachedTokens": 8120000,
+      "totalTokens": 8433600,
+      "estimatedCost": 3.22,
+      "editor": "Claude Code",
+      "models": [
+        "claude-sonnet-4-6"
+      ],
+      "lastActivity": "2026-03-14T06:05:00Z",
+      "workspace": "docs-site",
+      "durationMs": 532000,
+      "activeDurationMs": 420000,
+      "subAgentCalls": 1
+    },
+    {
+      "title": "Terra benchmark",
+      "filePath": "C:/sessions/Terra_benchmark.jsonl",
+      "interactions": 9,
+      "toolCalls": 54,
+      "inputTokens": 5400000,
+      "outputTokens": 21600,
+      "thinkingTokens": 0,
+      "cachedTokens": 5220000,
+      "totalTokens": 5421600,
+      "estimatedCost": 2.07,
+      "editor": "Copilot CLI (App)",
+      "models": [
+        "gpt-5.6-terra",
+        "kimi-k3"
+      ],
+      "lastActivity": "2026-03-14T05:30:00Z",
+      "workspace": "bench",
+      "durationMs": 342000,
+      "activeDurationMs": 270000,
+      "subAgentCalls": 0
+    },
+    {
+      "title": "Flash eval",
+      "filePath": "C:/sessions/Flash_eval.jsonl",
+      "interactions": 5,
+      "toolCalls": 30,
+      "inputTokens": 3000000,
+      "outputTokens": 12000,
+      "thinkingTokens": 0,
+      "cachedTokens": 2900000,
+      "totalTokens": 3012000,
+      "estimatedCost": 1.15,
+      "editor": "Copilot CLI",
+      "models": [
+        "mai-code-1.1-flash"
+      ],
+      "lastActivity": "2026-03-14T04:55:00Z",
+      "workspace": "evals",
+      "durationMs": 190000,
+      "activeDurationMs": 150000,
+      "subAgentCalls": 0
+    }
+  ],
+  "curationAnalysis": {
+    "windowDays": 30,
+    "availableTools": [
+      {
+        "name": "builtin-tool-01",
+        "description": "Built-in tool 1 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-02",
+        "description": "Built-in tool 2 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-03",
+        "description": "Built-in tool 3 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-04",
+        "description": "Built-in tool 4 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-05",
+        "description": "Built-in tool 5 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-06",
+        "description": "Built-in tool 6 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-07",
+        "description": "Built-in tool 7 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-08",
+        "description": "Built-in tool 8 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-09",
+        "description": "Built-in tool 9 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-10",
+        "description": "Built-in tool 10 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-11",
+        "description": "Built-in tool 11 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "builtin-tool-12",
+        "description": "Built-in tool 12 provides a description long enough to demonstrate estimated prompt overhead and sorting.",
+        "source": "builtin"
+      },
+      {
+        "name": "unused-skill-01",
+        "description": "A representative workspace or user skill description number 1, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": ".github/skills/sample/SKILL.md",
+        "configFiles": [
+          ".github/skills/sample/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-02",
+        "description": "A representative workspace or user skill description number 2, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": ".claude/skills/sample/SKILL.md",
+        "configFiles": [
+          ".claude/skills/sample/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-03",
+        "description": "A representative workspace or user skill description number 3, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": ".agents/skills/sample/SKILL.md",
+        "configFiles": [
+          ".agents/skills/sample/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-04",
+        "description": "A representative workspace or user skill description number 4, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-4/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-4/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-05",
+        "description": "A representative workspace or user skill description number 5, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-5/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-5/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-06",
+        "description": "A representative workspace or user skill description number 6, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-6/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-6/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-07",
+        "description": "A representative workspace or user skill description number 7, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-7/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-7/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-08",
+        "description": "A representative workspace or user skill description number 8, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-8/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-8/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-09",
+        "description": "A representative workspace or user skill description number 9, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-9/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-9/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-10",
+        "description": "A representative workspace or user skill description number 10, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-10/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-10/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-11",
+        "description": "A representative workspace or user skill description number 11, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-11/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-11/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-12",
+        "description": "A representative workspace or user skill description number 12, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-12/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-12/SKILL.md"
+        ],
+        "pluginName": "sample-agent-plugin"
+      },
+      {
+        "name": "mcp__zero-usage-01__tool-1",
+        "description": "Tool 1 from zero-usage-01",
+        "source": "mcp",
+        "server": "zero-usage-01",
+        "configFiles": [
+          "workspace-1/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-02__tool-1",
+        "description": "Tool 1 from zero-usage-02",
+        "source": "mcp",
+        "server": "zero-usage-02",
+        "extensionId": "sample.extension-2"
+      },
+      {
+        "name": "mcp__zero-usage-02__tool-2",
+        "description": "Tool 2 from zero-usage-02",
+        "source": "mcp",
+        "server": "zero-usage-02",
+        "extensionId": "sample.extension-2"
+      },
+      {
+        "name": "mcp__zero-usage-03__tool-1",
+        "description": "Tool 1 from zero-usage-03",
+        "source": "mcp",
+        "server": "zero-usage-03",
+        "configFiles": [
+          "workspace-3/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-03__tool-2",
+        "description": "Tool 2 from zero-usage-03",
+        "source": "mcp",
+        "server": "zero-usage-03",
+        "configFiles": [
+          "workspace-3/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-03__tool-3",
+        "description": "Tool 3 from zero-usage-03",
+        "source": "mcp",
+        "server": "zero-usage-03",
+        "configFiles": [
+          "workspace-3/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-04__tool-1",
+        "description": "Tool 1 from zero-usage-04",
+        "source": "mcp",
+        "server": "zero-usage-04",
+        "extensionId": "sample.extension-4"
+      },
+      {
+        "name": "mcp__zero-usage-04__tool-2",
+        "description": "Tool 2 from zero-usage-04",
+        "source": "mcp",
+        "server": "zero-usage-04",
+        "extensionId": "sample.extension-4"
+      },
+      {
+        "name": "mcp__zero-usage-04__tool-3",
+        "description": "Tool 3 from zero-usage-04",
+        "source": "mcp",
+        "server": "zero-usage-04",
+        "extensionId": "sample.extension-4"
+      },
+      {
+        "name": "mcp__zero-usage-04__tool-4",
+        "description": "Tool 4 from zero-usage-04",
+        "source": "mcp",
+        "server": "zero-usage-04",
+        "extensionId": "sample.extension-4"
+      },
+      {
+        "name": "mcp__zero-usage-05__tool-1",
+        "description": "Tool 1 from zero-usage-05",
+        "source": "mcp",
+        "server": "zero-usage-05",
+        "configFiles": [
+          "workspace-5/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-05__tool-2",
+        "description": "Tool 2 from zero-usage-05",
+        "source": "mcp",
+        "server": "zero-usage-05",
+        "configFiles": [
+          "workspace-5/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-05__tool-3",
+        "description": "Tool 3 from zero-usage-05",
+        "source": "mcp",
+        "server": "zero-usage-05",
+        "configFiles": [
+          "workspace-5/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-05__tool-4",
+        "description": "Tool 4 from zero-usage-05",
+        "source": "mcp",
+        "server": "zero-usage-05",
+        "configFiles": [
+          "workspace-5/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-05__tool-5",
+        "description": "Tool 5 from zero-usage-05",
+        "source": "mcp",
+        "server": "zero-usage-05",
+        "configFiles": [
+          "workspace-5/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-06__tool-1",
+        "description": "Tool 1 from zero-usage-06",
+        "source": "mcp",
+        "server": "zero-usage-06",
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "name": "mcp__zero-usage-06__tool-2",
+        "description": "Tool 2 from zero-usage-06",
+        "source": "mcp",
+        "server": "zero-usage-06",
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "name": "mcp__zero-usage-06__tool-3",
+        "description": "Tool 3 from zero-usage-06",
+        "source": "mcp",
+        "server": "zero-usage-06",
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "name": "mcp__zero-usage-06__tool-4",
+        "description": "Tool 4 from zero-usage-06",
+        "source": "mcp",
+        "server": "zero-usage-06",
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "name": "mcp__zero-usage-06__tool-5",
+        "description": "Tool 5 from zero-usage-06",
+        "source": "mcp",
+        "server": "zero-usage-06",
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "name": "mcp__zero-usage-06__tool-6",
+        "description": "Tool 6 from zero-usage-06",
+        "source": "mcp",
+        "server": "zero-usage-06",
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-1",
+        "description": "Tool 1 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-2",
+        "description": "Tool 2 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-3",
+        "description": "Tool 3 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-4",
+        "description": "Tool 4 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-5",
+        "description": "Tool 5 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-6",
+        "description": "Tool 6 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-07__tool-7",
+        "description": "Tool 7 from zero-usage-07",
+        "source": "mcp",
+        "server": "zero-usage-07",
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-1",
+        "description": "Tool 1 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-2",
+        "description": "Tool 2 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-3",
+        "description": "Tool 3 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-4",
+        "description": "Tool 4 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-5",
+        "description": "Tool 5 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-6",
+        "description": "Tool 6 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-7",
+        "description": "Tool 7 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-08__tool-8",
+        "description": "Tool 8 from zero-usage-08",
+        "source": "mcp",
+        "server": "zero-usage-08",
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-1",
+        "description": "Tool 1 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-2",
+        "description": "Tool 2 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-3",
+        "description": "Tool 3 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-4",
+        "description": "Tool 4 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-5",
+        "description": "Tool 5 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-6",
+        "description": "Tool 6 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-7",
+        "description": "Tool 7 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-8",
+        "description": "Tool 8 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-09__tool-9",
+        "description": "Tool 9 from zero-usage-09",
+        "source": "mcp",
+        "server": "zero-usage-09",
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-1",
+        "description": "Tool 1 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-2",
+        "description": "Tool 2 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-3",
+        "description": "Tool 3 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-4",
+        "description": "Tool 4 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-5",
+        "description": "Tool 5 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-6",
+        "description": "Tool 6 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-7",
+        "description": "Tool 7 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-8",
+        "description": "Tool 8 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-9",
+        "description": "Tool 9 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-10__tool-10",
+        "description": "Tool 10 from zero-usage-10",
+        "source": "mcp",
+        "server": "zero-usage-10",
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-1",
+        "description": "Tool 1 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-2",
+        "description": "Tool 2 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-3",
+        "description": "Tool 3 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-4",
+        "description": "Tool 4 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-5",
+        "description": "Tool 5 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-6",
+        "description": "Tool 6 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-7",
+        "description": "Tool 7 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-8",
+        "description": "Tool 8 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-9",
+        "description": "Tool 9 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-10",
+        "description": "Tool 10 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__zero-usage-11__tool-11",
+        "description": "Tool 11 from zero-usage-11",
+        "source": "mcp",
+        "server": "zero-usage-11",
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__partly-used-config__tool-1",
+        "description": "Tool 1 from partly-used-config",
+        "source": "mcp",
+        "server": "partly-used-config",
+        "configFiles": [
+          "workspace/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__partly-used-config__tool-2",
+        "description": "Tool 2 from partly-used-config",
+        "source": "mcp",
+        "server": "partly-used-config",
+        "configFiles": [
+          "workspace/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__partly-used-config__tool-3",
+        "description": "Tool 3 from partly-used-config",
+        "source": "mcp",
+        "server": "partly-used-config",
+        "configFiles": [
+          "workspace/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__partly-used-config__tool-4",
+        "description": "Tool 4 from partly-used-config",
+        "source": "mcp",
+        "server": "partly-used-config",
+        "configFiles": [
+          "workspace/.vscode/mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__partly-used-extension__tool-1",
+        "description": "Tool 1 from partly-used-extension",
+        "source": "mcp",
+        "server": "partly-used-extension",
+        "extensionId": "sample.partial-mcp"
+      },
+      {
+        "name": "mcp__partly-used-extension__tool-2",
+        "description": "Tool 2 from partly-used-extension",
+        "source": "mcp",
+        "server": "partly-used-extension",
+        "extensionId": "sample.partial-mcp"
+      },
+      {
+        "name": "mcp__partly-used-extension__tool-3",
+        "description": "Tool 3 from partly-used-extension",
+        "source": "mcp",
+        "server": "partly-used-extension",
+        "extensionId": "sample.partial-mcp"
+      },
+      {
+        "name": "mcp__fully-used-config__tool-1",
+        "description": "Tool 1 from fully-used-config",
+        "source": "mcp",
+        "server": "fully-used-config",
+        "configFiles": [
+          "workspace/.mcp.json"
+        ]
+      },
+      {
+        "name": "mcp__fully-used-config__tool-2",
+        "description": "Tool 2 from fully-used-config",
+        "source": "mcp",
+        "server": "fully-used-config",
+        "configFiles": [
+          "workspace/.mcp.json"
+        ]
+      }
+    ],
+    "usedTools": [],
+    "unusedTools": [
+      {
+        "name": "unused-skill-01",
+        "description": "A representative workspace or user skill description number 1, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": ".github/skills/sample/SKILL.md",
+        "configFiles": [
+          ".github/skills/sample/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-02",
+        "description": "A representative workspace or user skill description number 2, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": ".claude/skills/sample/SKILL.md",
+        "configFiles": [
+          ".claude/skills/sample/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-03",
+        "description": "A representative workspace or user skill description number 3, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": ".agents/skills/sample/SKILL.md",
+        "configFiles": [
+          ".agents/skills/sample/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-04",
+        "description": "A representative workspace or user skill description number 4, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-4/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-4/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-05",
+        "description": "A representative workspace or user skill description number 5, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-5/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-5/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-06",
+        "description": "A representative workspace or user skill description number 6, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-6/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-6/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-07",
+        "description": "A representative workspace or user skill description number 7, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-7/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-7/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-08",
+        "description": "A representative workspace or user skill description number 8, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-8/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-8/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-09",
+        "description": "A representative workspace or user skill description number 9, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-9/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-9/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-10",
+        "description": "A representative workspace or user skill description number 10, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-10/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-10/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-11",
+        "description": "A representative workspace or user skill description number 11, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-11/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-11/SKILL.md"
+        ]
+      },
+      {
+        "name": "unused-skill-12",
+        "description": "A representative workspace or user skill description number 12, used by the visual table fixture.",
+        "source": "skill",
+        "skillPath": "~/.copilot/skills/sample-12/SKILL.md",
+        "configFiles": [
+          "C:/Users/sample/.copilot/skills/sample-12/SKILL.md"
+        ],
+        "pluginName": "sample-agent-plugin"
+      }
+    ],
+    "underusedMcpServers": [
+      {
+        "server": "zero-usage-01",
+        "availableToolCount": 1,
+        "usedToolCount": 0,
+        "configFiles": [
+          "workspace-1/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "zero-usage-02",
+        "availableToolCount": 2,
+        "usedToolCount": 0,
+        "extensionId": "sample.extension-2"
+      },
+      {
+        "server": "zero-usage-03",
+        "availableToolCount": 3,
+        "usedToolCount": 0,
+        "configFiles": [
+          "workspace-3/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "zero-usage-04",
+        "availableToolCount": 4,
+        "usedToolCount": 0,
+        "extensionId": "sample.extension-4"
+      },
+      {
+        "server": "zero-usage-05",
+        "availableToolCount": 5,
+        "usedToolCount": 0,
+        "configFiles": [
+          "workspace-5/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "zero-usage-06",
+        "availableToolCount": 6,
+        "usedToolCount": 0,
+        "extensionId": "sample.extension-6"
+      },
+      {
+        "server": "zero-usage-07",
+        "availableToolCount": 7,
+        "usedToolCount": 0,
+        "configFiles": [
+          "workspace-7/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "zero-usage-08",
+        "availableToolCount": 8,
+        "usedToolCount": 0,
+        "extensionId": "sample.extension-8"
+      },
+      {
+        "server": "zero-usage-09",
+        "availableToolCount": 9,
+        "usedToolCount": 0,
+        "configFiles": [
+          "workspace-9/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "zero-usage-10",
+        "availableToolCount": 10,
+        "usedToolCount": 0,
+        "extensionId": "sample.extension-10"
+      },
+      {
+        "server": "zero-usage-11",
+        "availableToolCount": 11,
+        "usedToolCount": 0,
+        "configFiles": [
+          "workspace-11/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "zero-usage-12",
+        "availableToolCount": 0,
+        "usedToolCount": 0,
+        "extensionId": "sample.extension-12"
+      },
+      {
+        "server": "partly-used-config",
+        "availableToolCount": 4,
+        "usedToolCount": 1,
+        "configFiles": [
+          "workspace/.vscode/mcp.json"
+        ]
+      },
+      {
+        "server": "partly-used-extension",
+        "availableToolCount": 3,
+        "usedToolCount": 2,
+        "extensionId": "sample.partial-mcp"
+      },
+      {
+        "server": "fully-used-config",
+        "availableToolCount": 2,
+        "usedToolCount": 2,
+        "configFiles": [
+          "workspace/.mcp.json"
+        ]
+      }
+    ],
+    "underusedAgentPlugins": [
+      {
+        "pluginName": "sample-agent-plugin",
+        "availableSkillCount": 1,
+        "usedSkillCount": 0
+      }
+    ],
+    "estimatedPromptBloat": {
+      "totalTokens": 3240,
+      "byServer": {
+        "builtin": 980,
+        "skill": 720,
+        "zero-usage-01": 30,
+        "zero-usage-02": 60,
+        "zero-usage-03": 90,
+        "zero-usage-04": 120,
+        "zero-usage-05": 150,
+        "zero-usage-06": 180,
+        "zero-usage-07": 210,
+        "zero-usage-08": 240,
+        "zero-usage-09": 270,
+        "zero-usage-10": 300,
+        "zero-usage-11": 330,
+        "zero-usage-12": 360,
+        "partly-used-config": 390,
+        "partly-used-extension": 420,
+        "fully-used-config": 450
+      }
+    },
+    "recommendations": []
   }
+
 }

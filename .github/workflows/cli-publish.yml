@@ -59,6 +59,10 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       - name: Install extension dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -153,19 +157,44 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate release notes
+      # The notes are the "## [<version>]" section of cli/CHANGELOG.md, written in
+      # the release-prep PR (scripts/release-changelog.js promote). The tag is
+      # already pushed and the package already on npm here, so a missing section
+      # warns and falls back to GitHub's generated PR list instead of failing.
+      - name: Read release notes from CHANGELOG.md
         if: ${{ !inputs.dry_run && steps.check_published.outputs.already_published != 'true' && steps.trigger_type.outputs.is_tag == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          TAG_NAME="cli/v${{ steps.version.outputs.version }}"
-          echo "Generating release notes for $TAG_NAME..."
-          if gh api repos/${{ github.repository }}/releases/generate-notes \
-            -f tag_name="${TAG_NAME}" \
-            --jq '.body' > /tmp/release_notes.md 2>/dev/null && [ -s /tmp/release_notes.md ]; then
-            echo "✅ Generated release notes from merged PRs"
+          TAG_NAME="cli/v${VERSION}"
+          if gh api "repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="${TAG_NAME}" --jq '.body' > /tmp/generated_notes.md 2>/dev/null \
+            && [ -s /tmp/generated_notes.md ]; then
+            HAVE_GENERATED=true
           else
-            echo "CLI v${{ steps.version.outputs.version }}" > /tmp/release_notes.md
+            HAVE_GENERATED=false
+          fi
+
+          if node scripts/release-changelog.js extract cli/CHANGELOG.md "$VERSION" --out /tmp/release_notes.md; then
+            echo "✅ Release notes from cli/CHANGELOG.md"
+            if [ "$HAVE_GENERATED" = "true" ]; then
+              {
+                echo ""
+                echo "<details><summary>All merged pull requests</summary>"
+                echo ""
+                cat /tmp/generated_notes.md
+                echo ""
+                echo "</details>"
+              } >> /tmp/release_notes.md
+            fi
+          else
+            echo "::warning::cli/CHANGELOG.md has no [${VERSION}] section; using GitHub's generated notes. Write it in the release-prep PR."
+            if [ "$HAVE_GENERATED" = "true" ]; then
+              cp /tmp/generated_notes.md /tmp/release_notes.md
+            else
+              echo "CLI v${VERSION}" > /tmp/release_notes.md
+            fi
           fi
         working-directory: .
 

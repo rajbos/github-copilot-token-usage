@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Engineering Fluency</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <header class="header">
+            <span class="header-icon" id="header-icon" aria-hidden="true">🎯</span>
+            <div>
+                <h1 class="header-title" id="header-title">AI Engineering Fluency</h1>
+                <p class="subtitle" id="subtitle">Loading…</p>
+            </div>
+        </header>
+        <div class="button-row">
+            <button type="button" class="nav-button" id="refresh"><span class="nav-icon" aria-hidden="true">🔄</span><span id="refresh-label">Refresh</span></button>
+            <nav class="nav-tabs" role="tablist" aria-label="Views">
+                <button type="button" class="nav-button" role="tab" id="tab-overview" aria-controls="panel" data-tab="overview"><span class="nav-icon" aria-hidden="true">🤖</span>Details</button>
+                <button type="button" class="nav-button" role="tab" id="tab-chart" aria-controls="panel" data-tab="chart"><span class="nav-icon" aria-hidden="true">📈</span>Chart</button>
+                <button type="button" class="nav-button" role="tab" id="tab-sessions" aria-controls="panel" data-tab="sessions"><span class="nav-icon" aria-hidden="true">📂</span>Sessions</button>
+                <button type="button" class="nav-button" role="tab" id="tab-fluency" aria-controls="panel" data-tab="fluency"><span class="nav-icon" aria-hidden="true">🎯</span>Fluency Score</button>
+            </nav>
+        </div>
+        <div id="banner" class="banner" hidden></div>
+        <section id="panel" role="tabpanel" tabindex="0"></section>
+        <footer class="footer">
+            <p>Data from <code>@rajbos/ai-engineering-fluency</code>, read from local session logs on this machine. Refreshes automatically every 30 minutes while open.</p>
+            <p>AI Engineering Fluency is open source: <a href="https://github.com/rajbos/ai-engineering-fluency" target="_blank" rel="noopener noreferrer">rajbos/ai-engineering-fluency</a> on GitHub.</p>
+        </footer>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>

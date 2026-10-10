@@ -10,15 +10,20 @@ import {
 	formatPercent,
 	formatNumber,
 	formatCost,
+	formatSignedCostPrecise,
+	formatSignedCostCompact,
 	formatDurationShort,
 	formatFileSize,
 	getTimeSince,
+	formatAbsoluteDate,
 	escapeHtml,
 	safeSectionHtml,
 	markdownToHtml,
 	STAGE_LABELS,
 	STAGE_DESCRIPTIONS
 } from '../../src/webview/shared/formatUtils';
+import { buildAttributionTooltip } from '../../src/webview/efficiency/attributionText';
+import { initializeWebviewLocalization } from '../../src/webview/shared/localization';
 
 // ── getModelDisplayName ─────────────────────────────────────────────────
 
@@ -29,9 +34,25 @@ test('getModelDisplayName: returns display name for known models', () => {
 	assert.equal(getModelDisplayName('gpt-5'), 'GPT-5');
 });
 
+test('getModelDisplayName: Copilot routers have a display name without a pricing entry', () => {
+	assert.equal(getModelDisplayName('hydrafusion'), 'HydraFusion');
+	assert.equal(getModelDisplayName('auto'), 'Auto');
+});
+
 test('getModelDisplayName: returns raw model ID for unknown models', () => {
 	assert.equal(getModelDisplayName('some-future-model-99'), 'some-future-model-99');
 	assert.equal(getModelDisplayName(''), '');
+});
+
+test('getModelDisplayName: an Object.prototype key is an unknown model, not an inherited value', () => {
+	// Model ids come from session data. With a normal object backing the lookup,
+	// `constructor` resolves to Object.prototype.constructor — a function — which
+	// then throws inside escapeHtml() and takes the whole view's render down.
+	for (const id of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+		const name = getModelDisplayName(id);
+		assert.equal(typeof name, 'string', `${id} must resolve to a string`);
+		assert.equal(name, id, `${id} is unknown, so it stays itself`);
+	}
 });
 
 test('getModelDisplayName: decodes URI-encoded segments in unknown model IDs', () => {
@@ -222,6 +243,108 @@ test('formatCost: zero cost', () => {
 	assert.ok(result.includes('0.00'), 'should show two decimal zeros');
 });
 
+// ── formatSignedCostPrecise / formatSignedCostCompact ───────────────────
+
+test('formatSignedCostPrecise: signs the effect and keeps four decimals', () => {
+	setFormatLocale('en-US');
+	assert.equal(formatSignedCostPrecise(7.35), '+$7.3500');
+	assert.equal(formatSignedCostPrecise(-7.35), '-$7.3500');
+});
+
+test('formatSignedCostPrecise: a sub-cent effect keeps its digits and its sign', () => {
+	setFormatLocale('en-US');
+	assert.equal(formatSignedCostPrecise(-0.0037), '-$0.0037');
+	assert.equal(formatSignedCostPrecise(0.0037), '+$0.0037');
+});
+
+test('formatSignedCostPrecise: zero carries no sign', () => {
+	setFormatLocale('en-US');
+	assert.equal(formatSignedCostPrecise(0), '$0.0000');
+});
+
+test('formatSignedCostCompact: two decimals for ordinary dollar amounts', () => {
+	setFormatLocale('en-US');
+	assert.equal(formatSignedCostCompact(7.35), '+$7.35');
+	assert.equal(formatSignedCostCompact(-1234.5), '-$1,234.50');
+	assert.equal(formatSignedCostCompact(0), '$0.00');
+});
+
+test('formatSignedCostCompact: widens to four decimals rather than showing a non-zero effect as $0.00', () => {
+	setFormatLocale('en-US');
+	assert.equal(formatSignedCostCompact(-0.0037), '-$0.0037');
+	assert.equal(formatSignedCostCompact(0.0037), '+$0.0037');
+});
+
+test('formatSignedCostCompact: a locale places its own separators and symbol', () => {
+	setFormatLocale('nl-NL');
+	// nl-NL writes the USD symbol first (followed by a non-breaking space) and
+	// uses a comma as the decimal mark.
+	assert.equal(formatSignedCostCompact(1234.5), 'US$\u00a0+1.234,50');
+	assert.equal(formatSignedCostPrecise(-0.0037), 'US$\u00a0-0,0037');
+	setFormatLocale('en-US');
+});
+
+// ── buildAttributionTooltip ─────────────────────────────────────────────
+
+test('buildAttributionTooltip: volume bar names the session counts and the signed effect', () => {
+	setFormatLocale('en-US');
+	initializeWebviewLocalization({});
+	assert.equal(
+		buildAttributionTooltip({ headlineKey: 'efficiency.attribution.tooltip.volume', prev: 64, cur: 73, kind: 'count', effect: 7.35 }),
+		'Session count: 64 → 73 sessions\nEstimated cost effect: +$7.3500',
+	);
+});
+
+test('buildAttributionTooltip: session-size bar groups and rounds the token averages', () => {
+	setFormatLocale('en-US');
+	initializeWebviewLocalization({});
+	assert.equal(
+		buildAttributionTooltip({ headlineKey: 'efficiency.attribution.tooltip.size', prev: 60938.4, cur: 55120.6, kind: 'tokens', effect: -3.5 }),
+		'Tokens per session: 60,938 → 55,121 tokens/session\nEstimated cost effect: -$3.5000',
+	);
+});
+
+test('buildAttributionTooltip: model-mix bar renders the blended rates as currency', () => {
+	setFormatLocale('en-US');
+	initializeWebviewLocalization({});
+	assert.equal(
+		buildAttributionTooltip({ headlineKey: 'efficiency.attribution.tooltip.mix', prev: 13.41, cur: 13.41, kind: 'rate', effect: 0 }),
+		'Blended price: $13.41 → $13.41 per M tokens\nEstimated cost effect: $0.0000',
+	);
+});
+
+test('buildAttributionTooltip: a non-zero sub-cent effect survives into the tooltip', () => {
+	setFormatLocale('en-US');
+	initializeWebviewLocalization({});
+	const tooltip = buildAttributionTooltip({ headlineKey: 'efficiency.attribution.tooltip.mix', prev: 13.41, cur: 13.4, kind: 'rate', effect: -0.0037 });
+	assert.ok(tooltip.endsWith('Estimated cost effect: -$0.0037'), tooltip);
+});
+
+test('buildAttributionTooltip: a non-US locale groups the counts and localizes the currency', () => {
+	setFormatLocale('nl-NL');
+	initializeWebviewLocalization({});
+	assert.equal(
+		buildAttributionTooltip({ headlineKey: 'efficiency.attribution.tooltip.size', prev: 1234567, cur: 1234567, kind: 'tokens', effect: 7.35 }),
+		'Tokens per session: 1.234.567 → 1.234.567 tokens/session\nEstimated cost effect: US$\u00a0+7,3500',
+	);
+	setFormatLocale('en-US');
+});
+
+test('buildAttributionTooltip: a translated payload localizes the whole tooltip, not just the effect line', () => {
+	// The measure and its unit live inside the template, so a translation can
+	// reword and reorder both — nothing English is concatenated around it.
+	setFormatLocale('en-US');
+	initializeWebviewLocalization({
+		'efficiency.attribution.tooltip.volume': '会话数：{0} → {1} 个会话',
+		'efficiency.attribution.costEffectLine': '预计成本影响：{0}',
+	});
+	assert.equal(
+		buildAttributionTooltip({ headlineKey: 'efficiency.attribution.tooltip.volume', prev: 64, cur: 73, kind: 'count', effect: 7.35 }),
+		'会话数：64 → 73 个会话\n预计成本影响：+$7.3500',
+	);
+	initializeWebviewLocalization({});
+});
+
 // ── escapeHtml ──────────────────────────────────────────────────────────
 
 test('escapeHtml: escapes ampersand, angle brackets, double quote, single quote', () => {
@@ -382,4 +505,54 @@ test('getTimeSince: formats seconds, minutes, hours and days', () => {
 	assert.equal(getTimeSince(new Date(Date.now() - 3 * 60_000).toISOString()), '3 minutes ago');
 	assert.equal(getTimeSince(new Date(Date.now() - 2 * 3_600_000).toISOString()), '2 hours ago');
 	assert.equal(getTimeSince(new Date(Date.now() - 4 * 86_400_000).toISOString()), '4 days ago');
+});
+
+// ── formatAbsoluteDate ──────────────────────────────────────────────────
+
+test('formatAbsoluteDate: renders a fixed timestamp as a locale-formatted absolute date', () => {
+	setFormatLocale('en-US');
+	try {
+		// Built from local Y/M/D at noon (not a fixed UTC string) so the asserted calendar date
+		// holds regardless of the test runner's timezone — a fixed "...T10:00:00Z" would render
+		// as a different local date on UTC+14/UTC-12 hosts.
+		const localJan15Noon = new Date(2026, 0, 15, 12, 0, 0);
+		// Compute the expected string via the same toLocaleDateString call rather than a
+		// hard-coded literal, since exact month/punctuation formatting is ICU-version-dependent.
+		const expected = localJan15Noon.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+		assert.equal(formatAbsoluteDate(localJan15Noon.toISOString()), expected);
+	} finally {
+		setFormatLocale(undefined);
+	}
+});
+
+test('formatAbsoluteDate: returns "—" for invalid ISO values instead of "Invalid Date"', () => {
+	assert.equal(formatAbsoluteDate('not-a-date'), '—');
+	assert.equal(formatAbsoluteDate(''), '—');
+});
+
+test('formatAbsoluteDate: also accepts epoch milliseconds or a Date directly, not just an ISO string', () => {
+	setFormatLocale('en-US');
+	try {
+		const localJan15Noon = new Date(2026, 0, 15, 12, 0, 0);
+		const expected = localJan15Noon.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+		assert.equal(formatAbsoluteDate(localJan15Noon.getTime()), expected);
+		assert.equal(formatAbsoluteDate(localJan15Noon), expected);
+	} finally {
+		setFormatLocale(undefined);
+	}
+});
+
+test('formatAbsoluteDate: honors setFormatLocale for a fixed timestamp', () => {
+	setFormatLocale('de-DE');
+	try {
+		// See the timezone note on the en-US test above — construct from local components.
+		const localJan15Noon = new Date(2026, 0, 15, 12, 0, 0);
+		// Compute the expected string via the same toLocaleDateString call rather than a
+		// hard-coded literal — de-DE month abbreviation/punctuation can vary across Node/ICU
+		// versions, which made a hard-coded '15. Jan. 2026' flaky across environments.
+		const expected = localJan15Noon.toLocaleDateString('de-DE', { year: 'numeric', month: 'short', day: 'numeric' });
+		assert.equal(formatAbsoluteDate(localJan15Noon.toISOString()), expected);
+	} finally {
+		setFormatLocale(undefined);
+	}
 });

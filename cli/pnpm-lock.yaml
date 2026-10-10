@@ -15,8 +15,8 @@ importers:
         specifier: ^26.0.0
         version: 26.5.1
       chalk:
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^6.0.1
+        version: 6.0.1
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -315,8 +315,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  chalk@6.0.0:
-    resolution: {integrity: sha512-2uNTXIuTTxk7ciZgAU1BQcgnchcG0xXnrs6jzkQfj9SsRa9M2s5zE8WT96hS6KmG4MzWHSrvH43DF1m4XRkrFg==}
+  chalk@6.0.1:
+    resolution: {integrity: sha512-/Ce6KNm3vIbWdMlNna6RVIZ/ICQxnJxCicet5LBKK9ZffBkqzDw0xh9EiKSljdRtiIQ1S1z4YgcscUUGzNCWrA==}
     engines: {node: '>=22'}
 
   commander@15.0.0:
@@ -485,7 +485,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  chalk@6.0.0: {}
+  chalk@6.0.1: {}
 
   commander@15.0.0: {}
 

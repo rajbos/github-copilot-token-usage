@@ -41,7 +41,10 @@ export function getCopilotCliSessionStateDir(): string {
 export class CopilotCliAdapter implements IEcosystemAdapter, IDiscoverableEcosystem, IAnalyzableEcosystem {
 	readonly id = 'copilotcli';
 	readonly displayName = 'Copilot CLI';
-	private static readonly WORKSPACE_YAML_CONCURRENCY = 20;
+	// Bounded so large session histories don't saturate disk, but the pathExists() pre-check
+	// above (added alongside this) makes each miss a cheap access() instead of an open()+error-log,
+	// so a higher bound is safe now — was 20, too low for histories with thousands of sessions.
+	private static readonly WORKSPACE_YAML_CONCURRENCY = 64;
 
 	private readonly store = new CopilotCliStoreAccess();
 	/** UUIDs of sessions discovered to have been created by Microsoft Scout. */
@@ -53,6 +56,33 @@ export class CopilotCliAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 	 * older sessions predating this field).
 	 */
 	private readonly _appSessionIds = new Set<string>();
+
+	/** The id the classification sets are keyed by: the DB session id, or the session-state directory name. */
+	private classificationId(sessionFile: string): string {
+		return this.store.getSessionId(sessionFile) ?? path.basename(path.dirname(sessionFile));
+	}
+
+	/**
+	 * How discovery classified this session: started by Microsoft Scout, by the Copilot desktop app, or both (the two
+	 * are independent; only the display label gives Scout precedence). Empty when it did not classify it.
+	 * Discovery runs only where the adapter was asked to discover (the extension host), so a second instance — the
+	 * analysis worker's — has to be told; see {@link noteSessionKinds}.
+	 */
+	getSessionKinds(sessionFile: string): Array<'scout' | 'app'> {
+		const id = this.classificationId(sessionFile);
+		const kinds: Array<'scout' | 'app'> = [];
+		if (!id) { return kinds; }
+		if (this._scoutSessionIds.has(id)) { kinds.push('scout'); }
+		if (this._appSessionIds.has(id)) { kinds.push('app'); }
+		return kinds;
+	}
+
+	/** Records classifications made elsewhere (by discovery in another instance) for this session. */
+	noteSessionKinds(sessionFile: string, kinds: ReadonlyArray<'scout' | 'app'>): void {
+		const id = this.classificationId(sessionFile);
+		if (!id) { return; }
+		for (const kind of kinds) { (kind === 'scout' ? this._scoutSessionIds : this._appSessionIds).add(id); }
+	}
 
 	/**
 	 * Returns the per-session display name.
@@ -98,6 +128,10 @@ export class CopilotCliAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 	 */
 	async getWorkspacePathForDiscoveredPath(sessionFile: string): Promise<string | undefined> {
 		const yamlPath = path.join(path.dirname(sessionFile), 'workspace.yaml');
+		// pathExists() pre-check: see _tryMarkScoutFromWorkspaceYaml()'s doc comment — this is
+		// called once per discovered Copilot CLI session file, and older sessions routinely
+		// predate workspace.yaml.
+		if (!await pathExists(yamlPath)) { return undefined; }
 		const content = await readTextFileWithSizeGuard(yamlPath, 'copilotCliAdapter');
 		if (content === undefined) { return undefined; }
 		const match = content.match(/^cwd:\s*(.+)$/m);
@@ -231,9 +265,19 @@ export class CopilotCliAdapter implements IEcosystemAdapter, IDiscoverableEcosys
 	 * _scoutSessionIds if the cwd indicates a Microsoft Scout session, and/or to
 	 * _appSessionIds if client_name indicates the Copilot desktop app.
 	 * Silently ignores missing or unreadable files.
+	 *
+	 * The pathExists() pre-check (same pattern as usageAnalysis.ts's
+	 * _asuApplyCopilotAppSplit()) matters at this call site's scale: many
+	 * historical sessions predate workspace.yaml, so this is called across
+	 * thousands of session dirs where the file is routinely absent — without
+	 * the pre-check, readTextFileWithSizeGuard() logs a console.error() on
+	 * every miss, which is measurably slow under a debugger/Extension
+	 * Development Host and was the dominant cost of a multi-minute discovery
+	 * scan on a large session history.
 	 */
 	private async _tryMarkScoutFromWorkspaceYaml(uuidDir: string, uuid: string): Promise<void> {
 		const yamlPath = path.join(uuidDir, 'workspace.yaml');
+		if (!await pathExists(yamlPath)) { return; }
 		const content = await readTextFileWithSizeGuard(yamlPath, 'copilotCliAdapter');
 		if (content === undefined) { return; }
 		const cwdMatch = content.match(/^cwd:\s*(.+)$/m);

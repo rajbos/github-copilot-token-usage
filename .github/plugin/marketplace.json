@@ -1,0 +1,25 @@
+{
+  "name": "ai-engineering-fluency",
+  "owner": {
+    "name": "Rob Bos"
+  },
+  "metadata": {
+    "description": "AI Engineering Fluency plugins for GitHub Copilot: see your AI token usage, cost and fluency score from local session logs."
+  },
+  "plugins": [
+    {
+      "name": "ai-fluency-canvas",
+      "description": "AI Engineering Fluency canvas for the GitHub Copilot app: token usage, cost, sessions, charts and fluency score from local session logs.",
+      "version": "0.1.1",
+      "author": {
+        "name": "Rob Bos",
+        "url": "https://github.com/rajbos"
+      },
+      "homepage": "https://github.com/rajbos/ai-engineering-fluency/blob/main/docs/copilot-app/README.md",
+      "repository": "https://github.com/rajbos/ai-engineering-fluency",
+      "license": "MIT",
+      "keywords": ["copilot-app", "canvas", "token-usage", "ai-fluency"],
+      "source": "./copilot-app"
+    }
+  ]
+}

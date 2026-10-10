@@ -9,9 +9,9 @@
     "build": "node esbuild.js",
     "build:production": "node esbuild.js --production",
     "dev": "node esbuild.js --watch",
-    "start": "npm run build && electron .",
-    "pack": "npm run build:production && electron-builder --dir",
-    "dist": "npm run build:production && electron-builder",
+    "start": "pnpm run build && electron .",
+    "pack": "pnpm run build:production && electron-builder --dir",
+    "dist": "pnpm run build:production && electron-builder --win nsis --publish never",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -19,9 +19,9 @@
   },
   "devDependencies": {
     "@msgpack/msgpack": "^3.1.3",
-    "@types/node": "^26.5.0",
-    "chalk": "^6.0.0",
-    "electron": "^44.3.0",
+    "@types/node": "^26.6.4",
+    "chalk": "^6.0.1",
+    "electron": "^44.6.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "sql.js": "^1.14.2",
@@ -30,13 +30,10 @@
   "engines": {
     "node": ">=22.14.0"
   },
-  "overrides": {
-    "brace-expansion": ">=5.0.9",
-    "tar": ">=7.5.21"
-  },
   "build": {
     "appId": "com.rajbos.ai-engineering-fluency",
     "productName": "AI Engineering Fluency",
+    "artifactName": "AI-Engineering-Fluency-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -52,12 +49,6 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "appx",
-          "arch": [
-            "x64"
-          ]
         }
       ]
     },
@@ -67,15 +58,9 @@
       "createDesktopShortcut": false,
       "runAfterFinish": true
     },
-    "appx": {
-      "applicationId": "RajBos.AIEngineeringFluency",
-      "displayName": "AI Engineering Fluency",
-      "identityName": "RajBos.AIEngineeringFluency"
-    },
     "publish": {
-      "provider": "github",
-      "owner": "rajbos",
-      "repo": "ai-engineering-fluency"
+      "provider": "generic",
+      "url": "https://github.com/rajbos/ai-engineering-fluency/releases/download/desktop-latest/"
     }
   },
   "allowScripts": {

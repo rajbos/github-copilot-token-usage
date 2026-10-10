@@ -60,7 +60,11 @@ export function createDetailsPayload(stats: DetailedStats) {
 	};
 }
 
-/** Full usage-analysis payload built from computed stats. */
+/**
+ * Full usage-analysis payload built from computed stats.
+ * Intentionally machine-readable: each period may carry an optional `autonomyUsage`
+ * ({ autonomous, supervised, plan, other } prompt counts); it is absent when no session reported a mode.
+ */
 export function createUsageAnalysisPayload(stats: UsageAnalysisStats, now = new Date()) {
 	return {
 		...stats,

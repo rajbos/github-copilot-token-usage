@@ -180,6 +180,7 @@ Cache-aware pricing only applies when the session source actually exposes how ma
 | **OpenCode** (`opencode.ts`) | ✅ Yes (DB format) | `msg.tokens.cache.write`, `msg.tokens.cache.read` |
 | **Gemini CLI** (`geminicli.ts`) | ✅ Yes | `tokens.cached` in `GeminiCliAssistantTokens` |
 | **VS Code Copilot Chat** | ✅ Yes (debug log) | `debug-logs/{sessionId}/main.jsonl` → `llm_request.attrs.cachedTokens` |
+| **Mistral Vibe** (`mistralvibe.ts`) | ✅ Cache reads only | `meta.json` → `stats.session_cached_tokens`, already counted inside `stats.session_prompt_tokens` (so it maps to `cachedReadTokens`, never added on top). No cache-creation field is reported |
 | Continue.dev | ❌ No | Character-based estimation only |
 | Cursor (Crush) | ❌ No | DB prompt/completion totals only |
 | Visual Studio | ❌ No | Character-based estimation only |
@@ -216,7 +217,7 @@ Note: These are the current GitHub Copilot supported Gemini models. Pricing from
 - These files are imported at compile time and bundled into the extension
 - After making changes, run `npm run compile` to rebuild
 - Pricing is for reference only - GitHub Copilot may use different pricing structures
-- Cost estimates use actual input/output token counts when available. Cache-aware pricing is applied automatically for sources that expose cache token breakdowns (Claude Desktop, Claude Code, OpenCode, Gemini CLI, VS Code Copilot Chat).
+- Cost estimates use actual input/output token counts when available. Cache-aware pricing is applied automatically for sources that expose cache token breakdowns (Claude Desktop, Claude Code, OpenCode, Gemini CLI, VS Code Copilot Chat, Mistral Vibe).
 
 ## customizationPatterns.json
 

@@ -2,18 +2,21 @@
 import { el, createButton, iconHeading } from '../shared/domUtils';
 import { getNavButtons } from '../shared/buttonConfig';
 import { formatCompact, setCompactNumbers } from '../shared/formatUtils';
+import { buildEditorLogo, syncLogoTheme } from '../shared/editorLogos';
 import { wireExtensionPointButtons } from '../shared/extensionPoints';
 import { createPeriodSelector, PERIOD_LABELS } from '../shared/periodSelector';
 import { getCurrentPeriodFraction, computeProjectionExtra } from './projectionUtils';
 import { createViewStateManager } from '../shared/viewState';
-import { initializeWebviewLocalization, setCurrentLanguage } from '../shared/localization';
+import { applyWebviewLocale } from '../shared/webviewLocale';
 import type { ChartTimeWindow } from '../../../../src/types';
-import { getTimeWindowStartDayKey, getTimeWindowStartMonthKey } from '../../../../src/timeWindows';
+import { filterPeriodByTimeWindow } from './timeWindowFilter';
 // CSS imported as text via esbuild
 import themeStyles from '../shared/theme.css';
+import dataTableStyles from '../shared/dataTable.css';
 import styles from './styles.css';
 import { getWindowData } from '../../../../src/webview/shared/dataLoader';
 import { registerMessageHandler } from '../shared/messageHandler';
+import { installSurfaceNavigation } from '../shared/surfaceNavigation';
 
 type ChartModule = typeof import('chart.js/auto');
 type ChartConstructor = ChartModule['default'];
@@ -87,6 +90,8 @@ type InitialChartData = {
 	initialView?: 'total' | 'model' | 'editor' | 'repository' | 'cost' | 'task' | 'taskCategory';
 	initialMetric?: 'tokens' | 'output' | 'cost' | 'sessions';
 	initialSplit?: 'total' | 'model' | 'editor' | 'repository' | 'language' | 'provider' | 'task' | 'taskCategory';
+	/** Host-persisted collapsed state of "By Editor"; outlives the panel, unlike webview state. */
+	initialEditorListCollapsed?: boolean;
 	monthlyBudget?: number;
 	periods?: {
 		day: ChartPeriodData;
@@ -105,14 +110,11 @@ declare function acquireVsCodeApi<TState = unknown>(): {
 type VSCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 const vscode: VSCodeApi = acquireVsCodeApi();
+installSurfaceNavigation(vscode, 'chart');
 const initialData = getWindowData<InitialChartData & { localization?: Record<string, string> }>('__INITIAL_CHART__');
 
 // Initialize localization for webview
-if (initialData?.localization) {
-	initializeWebviewLocalization(initialData.localization);
-	const language = initialData.localization['__language__'] || 'en';
-	setCurrentLanguage(language);
-}
+applyWebviewLocale(initialData);
 
 let chart: ChartInstance | undefined;
 let Chart: ChartConstructor | undefined;
@@ -161,103 +163,6 @@ let editorListCollapsed = false;
 
 function saveWebviewState(): void {
 	chartState.save({ period: currentPeriod, timeWindow: currentTimeWindow, metric: currentMetric, split: currentSplit, displayMode: currentDisplayMode, editorListCollapsed });
-}
-
-function sliceByIndices<T>(arr: T[] | undefined, indices: number[]): T[] | undefined {
-	if (!arr) { return undefined; }
-	return indices.map(i => arr[i]);
-}
-
-function sliceDatasetsByIndices(datasets: object[] | undefined, indices: number[]): object[] | undefined {
-	if (!datasets) { return undefined; }
-	return datasets.map(ds => {
-		const d = ds as { data: number[] };
-		return { ...d, data: indices.map(i => d.data[i]) };
-	});
-}
-
-function getFilterStartKey(timeWindow: ChartTimeWindow, periodType: ChartPeriod, now: Date): string {
-	return periodType === 'month'
-		? getTimeWindowStartMonthKey(timeWindow, now)
-		: getTimeWindowStartDayKey(timeWindow, now);
-}
-
-function buildCoreFilteredPeriod(period: ChartPeriodData, indices: number[]): ChartPeriodData {
-	const totalTokens = indices.reduce((sum, i) => sum + period.tokensData[i], 0);
-	const totalSessions = indices.reduce((sum, i) => sum + period.sessionsData[i], 0);
-	const costData = sliceByIndices(period.costData, indices) as number[];
-	const totalCost = costData.reduce((a, b) => a + b, 0);
-	return {
-		labels: indices.map(i => period.labels[i]),
-		periodKeys: indices.map(i => period.periodKeys[i]),
-		tokensData: indices.map(i => period.tokensData[i]),
-		sessionsData: indices.map(i => period.sessionsData[i]),
-		modelDatasets: sliceDatasetsByIndices(period.modelDatasets, indices) as ModelDataset[],
-		editorDatasets: sliceDatasetsByIndices(period.editorDatasets, indices) as EditorDataset[],
-		repositoryDatasets: sliceDatasetsByIndices(period.repositoryDatasets, indices) as RepositoryDataset[],
-		periodCount: indices.length,
-		totalTokens,
-		totalSessions,
-		avgPerPeriod: indices.length > 0 ? Math.round(totalTokens / indices.length) : 0,
-		costData,
-		totalCost,
-		avgCostPerPeriod: indices.length > 0 ? totalCost / indices.length : 0,
-	};
-}
-
-function copyFilteredLocFields(source: ChartPeriodData, target: ChartPeriodData, indices: number[]): void {
-	const locData = sliceByIndices(source.locData, indices);
-	const linesAddedData = sliceByIndices(source.linesAddedData, indices);
-	const linesRemovedData = sliceByIndices(source.linesRemovedData, indices);
-
-	if (locData) { target.locData = locData as number[]; }
-	if (linesAddedData) { target.linesAddedData = linesAddedData as number[]; }
-	if (linesRemovedData) { target.linesRemovedData = linesRemovedData as number[]; }
-	if (source.totalLinesAdded !== undefined) { target.totalLinesAdded = (linesAddedData as number[] ?? []).reduce((a, b) => a + b, 0); }
-	if (source.totalLinesRemoved !== undefined) { target.totalLinesRemoved = (linesRemovedData as number[] ?? []).reduce((a, b) => a + b, 0); }
-	if (source.avgLocPerPeriod !== undefined) {
-		target.avgLocPerPeriod = locData && locData.length > 0 ? (locData as number[]).reduce((a, b) => a + b, 0) / locData.length : 0;
-	}
-}
-
-function copyFilteredDatasetFields(source: ChartPeriodData, target: ChartPeriodData, indices: number[]): void {
-	const datasetFields: Array<{ key: keyof ChartPeriodData; source: object[] | undefined }> = [
-		{ key: 'languageDatasets', source: source.languageDatasets },
-		{ key: 'locEditorDatasets', source: source.locEditorDatasets },
-		{ key: 'locRepositoryDatasets', source: source.locRepositoryDatasets },
-		{ key: 'editorCostDatasets', source: source.editorCostDatasets },
-		{ key: 'billingGroupCostDatasets', source: source.billingGroupCostDatasets },
-		{ key: 'modelCostDatasets', source: source.modelCostDatasets },
-		{ key: 'modelSessionsDatasets', source: source.modelSessionsDatasets },
-		{ key: 'editorSessionsDatasets', source: source.editorSessionsDatasets },
-		{ key: 'providerSessionsDatasets', source: source.providerSessionsDatasets },
-		{ key: 'providerTokensDatasets', source: source.providerTokensDatasets },
-		{ key: 'taskCategoryDatasets', source: source.taskCategoryDatasets },
-	];
-	for (const { key, source: ds } of datasetFields) {
-		if (ds) { (target as Record<string, object[]>)[key] = sliceDatasetsByIndices(ds, indices) as object[]; }
-	}
-}
-
-function copyFilteredOptionalFields(source: ChartPeriodData, target: ChartPeriodData, indices: number[]): void {
-	copyFilteredLocFields(source, target, indices);
-	copyFilteredDatasetFields(source, target, indices);
-}
-
-function filterPeriodByTimeWindow(period: ChartPeriodData, timeWindow: ChartTimeWindow, periodType: ChartPeriod): ChartPeriodData {
-	if (timeWindow === 'last30' && periodType === 'day') {
-		return period;
-	}
-	const startKey = getFilterStartKey(timeWindow, periodType, new Date());
-	const indices: number[] = [];
-	for (let i = 0; i < period.periodKeys.length; i++) {
-		if (period.periodKeys[i] >= startKey) { indices.push(i); }
-	}
-	if (indices.length === 0) { return period; }
-
-	const filtered = buildCoreFilteredPeriod(period, indices);
-	copyFilteredOptionalFields(period, filtered, indices);
-	return filtered;
 }
 
 const ROLLING_WINDOW: Record<ChartPeriod, number> = { day: 7, week: 4, month: 3 };
@@ -524,7 +429,7 @@ function renderLayout(data: InitialChartData): void {
 	const root = document.getElementById('root');
 	if (!root) { return; }
 	root.replaceChildren();
-	const themeStyle = document.createElement('style'); themeStyle.textContent = themeStyles;
+	const themeStyle = document.createElement('style'); themeStyle.textContent = `${themeStyles}\n${dataTableStyles}`;
 	const style = document.createElement('style'); style.textContent = styles;
 	const periodData = getActivePeriodData(data);
 	const periodMeta = PERIOD_LABELS[currentPeriod];
@@ -568,6 +473,7 @@ function buildEditorCards(editorTotals: Record<string, number>): HTMLElement | n
 	wrap.id = 'editor-cards';
 	entries.forEach(([editor, tokens]) => {
 		const card = buildCard(`editor-${editor}`, editor, formatCompact(tokens));
+			card.prepend(buildEditorLogo(editor));
 		// JetBrains only persists user messages + assistant text in its JSONL
 		// — no API counts, no thinking tokens. Flag the caveat with an
 		// info marker on the card so users don't compare apples-to-oranges.
@@ -663,11 +569,13 @@ function wireEditorListToggle(): void {
 		toggle.title = editorListCollapsed ? 'Show per-editor breakdown' : 'Hide per-editor breakdown';
 		if (chevron) { chevron.textContent = editorListCollapsed ? '▸' : '▾'; }
 		chartState.patch({ editorListCollapsed });
+		vscode.postMessage({ command: 'setEditorListCollapsed', collapsed: editorListCollapsed });
 	});
 }
 
 function wireInteractions(data: InitialChartData): void {
 	wireEditorListToggle();
+	syncLogoTheme();
 
 	const refresh = document.getElementById('btn-refresh');
 	refresh?.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
@@ -1518,6 +1426,10 @@ function applySavedChartState(saved: ChartWebviewState): void {
 
 function restoreChartState(initialData: InitialChartData): void {
 	const saved = chartState.restore();
+	// Webview state is newest for an existing panel (the host value is a snapshot embedded when the
+	// panel was created); the host value only seeds a brand-new panel, which has no saved flag.
+	const savedFlag = (vscode.getState() as Partial<ChartWebviewState> | undefined)?.editorListCollapsed;
+	editorListCollapsed = savedFlag ?? initialData.initialEditorListCollapsed ?? false;
 	if (!vscode.getState()) {
 		if (initialData.initialPeriod) { currentPeriod = initialData.initialPeriod; }
 		if (initialData.initialTimeWindow) { currentTimeWindow = initialData.initialTimeWindow; }
@@ -1533,7 +1445,6 @@ function restoreChartState(initialData: InitialChartData): void {
 	currentPeriod = saved.period ?? 'day';
 	currentTimeWindow = saved.timeWindow ?? 'last30';
 	currentDisplayMode = saved.displayMode ?? 'actual';
-	editorListCollapsed = saved.editorListCollapsed ?? false;
 	if (saved.view && !saved.metric) {
 		const m = migrateViewKey(saved.view);
 		currentMetric = m.metric;

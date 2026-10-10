@@ -120,80 +120,38 @@ jobs:
         echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
         echo "Tag name: $TAG_NAME"
 
-    - name: Generate release notes
+    # The changelog is written in the release-prep PR (scripts/release-changelog.js
+    # promote), so it is already on main and inside the VSIX. This step only reads
+    # it back, and refuses to release a version whose section was never written —
+    # before anything is tagged. Nothing here commits to git, so the tag below
+    # lands on the main commit that was actually released.
+    - name: Read release notes from CHANGELOG.md
+      if: inputs.vs_only != true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG_NAME: ${{ steps.tag_name.outputs.tag_name }}
+        VERSION: ${{ steps.extract_version.outputs.tag_version }}
       run: |
-        TAG_NAME="${{ steps.tag_name.outputs.tag_name }}"
-        VERSION="${{ steps.extract_version.outputs.tag_version }}"
-        echo "Generating release notes for $TAG_NAME..."
-        
-        # Use GitHub API to auto-generate notes from merged PRs since last release
-        if gh api repos/${{ github.repository }}/releases/generate-notes \
-          -f tag_name="${TAG_NAME}" \
-          --jq '.body' > /tmp/release_notes.md 2>/tmp/generate_notes_err.txt && [ -s /tmp/release_notes.md ]; then
-          echo "✅ Generated release notes from merged PRs"
-        else
-          echo "Release ${VERSION}" > /tmp/release_notes.md
-          echo "⚠️  Could not auto-generate notes, using fallback"
-          if [ -s /tmp/generate_notes_err.txt ]; then
-            echo "    Error: $(cat /tmp/generate_notes_err.txt)"
-          fi
+        node scripts/release-changelog.js extract vscode-extension/CHANGELOG.md "$VERSION" --out /tmp/release_notes.md
+
+        # Append GitHub's generated PR list (contributors, full diff link) collapsed,
+        # as a supplement to the curated notes. Optional: a failure here is ignored.
+        if gh api "repos/${{ github.repository }}/releases/generate-notes" \
+          -f tag_name="${TAG_NAME}" --jq '.body' > /tmp/generated_notes.md 2>/dev/null \
+          && [ -s /tmp/generated_notes.md ]; then
+          {
+            echo ""
+            echo "<details><summary>All merged pull requests</summary>"
+            echo ""
+            cat /tmp/generated_notes.md
+            echo ""
+            echo "</details>"
+          } >> /tmp/release_notes.md
         fi
-        
+
         echo "--- Release notes preview ---"
         cat /tmp/release_notes.md
         echo "---"
-
-    - name: Update CHANGELOG.md for VSIX packaging
-      if: inputs.vs_only != true
-      run: |
-        VERSION="${{ steps.extract_version.outputs.tag_version }}"
-        node -e "
-          const fs = require('fs');
-          const version = process.argv[1];
-          const notes = fs.readFileSync('/tmp/release_notes.md', 'utf8').trim();
-          let changelog = fs.readFileSync('vscode-extension/CHANGELOG.md', 'utf8');
-          const marker = '## [Unreleased]';
-          const idx = changelog.indexOf(marker);
-          if (idx >= 0) {
-            const insertAt = changelog.indexOf('\n', idx) + 1;
-            const section = '\n## [' + version + ']\n\n' + notes + '\n';
-            changelog = changelog.slice(0, insertAt) + section + changelog.slice(insertAt);
-          }
-          fs.writeFileSync('vscode-extension/CHANGELOG.md', changelog);
-          console.log('✅ Updated vscode-extension/CHANGELOG.md with v' + version + ' notes for VSIX packaging');
-        " "$VERSION"
-
-    - name: Create changelog branch and commit
-      if: steps.trigger_type.outputs.is_manual == 'true' && inputs.vs_only != true
-      id: changelog_branch
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        VERSION="${{ steps.extract_version.outputs.tag_version }}"
-        BRANCH="vscode/changelog/v${VERSION}"
-        echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-
-        # Check if branch already exists on remote
-        if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-          echo "ℹ️ Branch $BRANCH already exists on remote — skipping changelog commit"
-          exit 0
-        fi
-
-        if git diff --quiet vscode-extension/CHANGELOG.md; then
-          echo "ℹ️ No changes to vscode-extension/CHANGELOG.md, skipping branch + commit"
-          exit 0
-        fi
-
-        git checkout -b "$BRANCH"
-        git add vscode-extension/CHANGELOG.md
-        git commit -m "docs: update vscode-extension/CHANGELOG.md for v${VERSION}"
-        git push origin "$BRANCH"
-        echo "✅ Pushed vscode-extension/CHANGELOG.md update to $BRANCH"
 
     - name: Create tag for manual trigger
       if: steps.trigger_type.outputs.is_manual == 'true' && inputs.create_tag == true && inputs.vs_only != true
@@ -386,13 +344,62 @@ jobs:
           exit 1
         fi
 
-  publish:
+  attest:
     needs: release
+    name: SBOM and Provenance Attestation
+    # Runs after the VSIX is packaged and before any marketplace publish. The publish job
+    # needs this job, so a failed attestation or verification blocks publishing.
+    if: inputs.vs_only != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # attach SBOMs to the GitHub release
+      id-token: write       # Sigstore keyless signing for the attestations
+      attestations: write   # store the attestations
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # The exact artifact uploaded by the release job; no re-packaging happens here.
+    - name: Download VSIX workflow artifact
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: vsix-package
+        path: dist
+
+    - name: Generate SBOMs, attest, and verify
+      uses: ./.github/actions/vsix-attest
+      with:
+        vsix-path: dist/${{ needs.release.outputs.vsix_file }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Attach SBOMs to the GitHub release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        VSIX="${{ needs.release.outputs.vsix_file }}"
+        cp sbom/vsix.spdx.json "sbom/${VSIX}.spdx.json"
+        cp sbom/dependencies.spdx.json "sbom/${VSIX%.vsix}-dependencies.spdx.json"
+        gh release upload "${{ needs.release.outputs.tag_name }}" \
+          "sbom/${VSIX}.spdx.json" \
+          "sbom/${VSIX%.vsix}-dependencies.spdx.json" \
+          --repo "${{ github.repository }}" --clobber
+
+  publish:
+    needs: [release, attest]
     name: Publish VS Code Extension
     if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace && inputs.vs_only != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      attestations: read    # gh attestation verify before publishing
     
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -446,21 +453,28 @@ jobs:
       working-directory: vscode-extension
       run: pnpm install --frozen-lockfile --ignore-scripts
 
-    - name: Download VSIXs from release
+    # Publish the exact bytes the attest job attested: take the VSIX from the workflow
+    # artifact (not a re-package), and verify the attestation again right before publishing.
+    - name: Download VSIX workflow artifact
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: vsix-package
+        path: .
+
+    - name: Verify VSIX attestation before publishing
       id: download_vsix
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG_NAME="${{ needs.release.outputs.tag_name }}"
-        echo "Downloading VSIXs from release $TAG_NAME..."
-        gh release download "$TAG_NAME" \
-          --repo "${{ github.repository }}" \
-          --pattern "*.vsix" \
-          --dir .
         PRIMARY_VSIX=$(find . -maxdepth 1 -name "ai-engineering-fluency-*.vsix" -exec basename {} \; | head -n 1)
         # LEGACY_VSIX=$(find . -maxdepth 1 -name "copilot-token-tracker-*.vsix" -exec basename {} \; | head -n 1)  # legacy disabled
+        if [ -z "$PRIMARY_VSIX" ]; then
+          echo "❌ No VSIX found in the vsix-package artifact."
+          exit 1
+        fi
         echo "Primary VSIX: $PRIMARY_VSIX"
-        # echo "Legacy VSIX:  $LEGACY_VSIX"  # legacy disabled
+        gh attestation verify "$PRIMARY_VSIX" --repo "${{ github.repository }}" \
+          --predicate-type https://slsa.dev/provenance/v1
         echo "vsix_file=$PRIMARY_VSIX" >> "$GITHUB_OUTPUT"
         # echo "legacy_vsix_file=$LEGACY_VSIX" >> "$GITHUB_OUTPUT"  # legacy disabled
 
@@ -606,6 +620,10 @@ jobs:
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: '.nvmrc'
+        cache: 'pnpm'
+        cache-dependency-path: |
+          vscode-extension/pnpm-lock.yaml
+          cli/pnpm-lock.yaml
 
     # ── Install dependencies ────────────────────────────────────────────────
 
@@ -661,7 +679,10 @@ jobs:
 
     - name: Restore NuGet packages
       working-directory: visualstudio-extension
-      run: nuget restore AIEngineeringFluency.sln
+      # -LockedMode: fail if a PackageReference drifts from the committed
+      # packages.lock.json instead of resolving something new (see
+      # visualstudio-extension/Directory.Build.props).
+      run: nuget restore AIEngineeringFluency.sln -LockedMode
 
     - name: Build solution (Release)
       working-directory: visualstudio-extension
