@@ -74,11 +74,15 @@ test('artifact contents are untrusted: non-PNG, oversized and unusable inputs ar
       fs.writeFileSync(path.join(screenshots, directory, name), bytes);
     }
   }
+  // A real PNG header followed by padding past the size bound.
+  for (const directory of ['baseline', 'current', 'diff']) {
+    fs.writeFileSync(path.join(screenshots, directory, 'big.png'), Buffer.concat([PNG, Buffer.alloc(10 * 1024 * 1024)]));
+  }
   const row = (view, file) => ({
     view, theme: 'light', status: 'changed', baseline: file, current: file, diff: file,
     changedPixels: 1, changedPercent: 1,
   });
-  fs.writeFileSync(path.join(root, 'report.json'), JSON.stringify({ comparisons: [row('fake', 'fake.png'), row('good', 'good.png')] }));
+  fs.writeFileSync(path.join(root, 'report.json'), JSON.stringify({ comparisons: [row('fake', 'fake.png'), row('big', 'big.png'), row('good', 'good.png')] }));
   const run = (report) => execFileSync(process.execPath, [
     script, '--report', report, '--screenshots', 'screenshots', '--out-dir', 'output',
   ], { cwd: root, encoding: 'utf8' });
@@ -87,6 +91,7 @@ test('artifact contents are untrusted: non-PNG, oversized and unusable inputs ar
   const attachments = fs.readFileSync(path.join(root, 'output', 'attachments.txt'), 'utf8');
   assert.ok(attachments.includes('good.png'));
   assert.ok(!attachments.includes('fake.png'));
+  assert.ok(!attachments.includes('big.png'), 'a PNG over the size bound must be omitted');
 
   // An oversized report is treated like a missing one, not parsed.
   fs.writeFileSync(path.join(root, 'huge.json'), ' '.repeat(2 * 1024 * 1024 + 1));

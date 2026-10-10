@@ -320,9 +320,10 @@ a regression to fix before pushing, and an expected change showing as
 paragraph). Then, in the PR body, name the views and tabs you expect to change.
 
 CI posts the screenshots for you: the `ui-checks` job runs the same diff and
-uploads the images, then the separate `ui-checks-comment` job (the only one
-holding a secret; it runs no PR code) attaches the before/after/diff images as
-one comment on the PR, replaced on every push (`gh pr comment --attach`, via
+uploads the images, then the separate `ui-checks-comment.yml` workflow (a
+`workflow_run` workflow, so it runs from the default branch and is the only
+place the secret lives) attaches the before/after/diff images as one comment on
+the PR, replaced on every push (`gh pr comment --attach`, via
 `.github/workflows/scripts/visual-diff-comment.js`). Do not commit PNGs to the
 repo and do not try to upload images by hand; make the CI comment say what the
 PR body promised. Uploading needs a user token, so the workflow uses the

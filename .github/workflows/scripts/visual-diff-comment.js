@@ -212,28 +212,26 @@ function resolveAttachment(rootDir, subDir, fileName) {
     return null;
   }
   const relative = path.posix.join(rootDir, subDir, fileName);
-  let real;
+  // Containment first (realpath resolves symlinks anywhere in the path), then
+  // ONE open that refuses a final-component symlink; size and signature are
+  // read from that descriptor, so nothing is checked by path and used later.
+  let fd;
   try {
-    if (fs.lstatSync(relative).isSymbolicLink()) { return null; }
-    real = fs.realpathSync(relative);
-    const stat = fs.statSync(real);
+    const rootReal = fs.realpathSync(rootDir);
+    const real = fs.realpathSync(relative);
+    if (!real.startsWith(rootReal + path.sep)) { return null; }
+    fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const stat = fs.fstatSync(fd);
     if (!stat.isFile() || stat.size > MAX_PNG_BYTES) { return null; }
     // The screenshots arrive as an artifact from a job that ran PR code, so
     // they are untrusted bytes: only something that really is a PNG goes out.
-    const fd = fs.openSync(real, 'r');
-    try {
-      const head = Buffer.alloc(PNG_SIGNATURE.length);
-      fs.readSync(fd, head, 0, head.length, 0);
-      if (!head.equals(PNG_SIGNATURE)) { return null; }
-    } finally {
-      fs.closeSync(fd);
-    }
+    const head = Buffer.alloc(PNG_SIGNATURE.length);
+    const read = fs.readSync(fd, head, 0, head.length, 0);
+    if (read !== head.length || !head.equals(PNG_SIGNATURE)) { return null; }
   } catch {
     return null;
-  }
-  const rootReal = (() => { try { return fs.realpathSync(rootDir); } catch { return null; } })();
-  if (!rootReal || !real.startsWith(rootReal + path.sep)) {
-    return null;
+  } finally {
+    if (fd !== undefined) { fs.closeSync(fd); }
   }
   return relative;
 }
@@ -381,6 +379,18 @@ function renderBody(report, opts, titles, plan, { withImages }) {
   return lines.join('\n');
 }
 
+/** Reads a regular file through a single descriptor, refusing anything over `limit` bytes. */
+function readBounded(file, limit) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > limit) throw new Error('not a regular file within the size limit');
+    return fs.readFileSync(fd, 'utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   fs.mkdirSync(opts.outDir, { recursive: true });
@@ -400,9 +410,7 @@ function main() {
   // an unreadable one like a missing one rather than failing the job.
   let report;
   try {
-    const stat = fs.lstatSync(opts.report);
-    if (!stat.isFile() || stat.size > MAX_REPORT_BYTES) throw new Error('not a regular file within the size limit');
-    report = JSON.parse(fs.readFileSync(opts.report, 'utf8'));
+    report = JSON.parse(readBounded(opts.report, MAX_REPORT_BYTES));
   } catch (err) {
     console.log(`Report at ${opts.report} is unusable (${safeText(err.message)}); nothing to post.`);
     emit('has_report', 'false');
