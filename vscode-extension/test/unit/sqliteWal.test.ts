@@ -535,9 +535,10 @@ test('the over-cap skip is logged once per path via console.debug, and again aft
 		const forPath = () => messages.filter(m => m.includes(dbPath));
 		assert.equal(forPath().length, 1, 'repeated polls over the cap must log exactly once');
 
-		// Path becomes ineligible for a different reason (empty WAL) then eligible-sized again.
+		// Shrink the main db below the cap: the path becomes eligible again (clearing the logged flag),
+		// and the merge attempt on this fake db fails quietly. Then regrow it past the cap.
 		makeSparse(dbPath, 1024);
-		await tryReadDbWithWal(dbPath); // merge attempt on a fake db fails quietly; clears the logged flag
+		await tryReadDbWithWal(dbPath);
 		makeSparse(dbPath, MAX_WAL_MERGE_DB_SIZE_BYTES + 1024);
 		await tryReadDbWithWal(dbPath);
 		assert.equal(forPath().length, 2, 'regrowing past the cap after being eligible must log again');
@@ -548,19 +549,21 @@ test('the over-cap skip is logged once per path via console.debug, and again aft
 });
 
 test('falls back to a direct (WAL-blind) read, without throwing, when node:sqlite cannot be loaded', async () => {
-	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlitewal-nonative-'));
-	const dbPath = path.join(tmpDir, 'plain.db');
+	// A REAL WAL fixture: without the loader seam being consulted, the merge would succeed and
+	// return the WAL row, so this test fails if performWalMerge bypasses the injected loader.
+	const fixture = createWalFixture();
+	let loaderCalls = 0;
 	try {
-		fs.writeFileSync(dbPath, 'main-file-bytes');
-		fs.writeFileSync(dbPath + '-wal', 'pending wal frames');
-		setNodeSqliteLoaderForTests(() => { throw new Error('Cannot find module node:sqlite'); });
+		setNodeSqliteLoaderForTests(() => { loaderCalls++; throw new Error('Cannot find module node:sqlite'); });
 
-		assert.equal(await tryReadDbWithWal(dbPath), null, 'no merge is possible without node:sqlite');
-		const result = await readDbBufferWithWalFingerprint(dbPath);
-		assert.equal(result.buffer.toString(), 'main-file-bytes', 'must fall back to the plain main-file bytes');
+		assert.equal(await tryReadDbWithWal(fixture.dbPath), null, 'no merge is possible without node:sqlite');
+		assert.equal(loaderCalls, 1, 'the merge must have gone through the injected loader, not the real module');
+
+		const result = await readDbBufferWithWalFingerprint(fixture.dbPath);
+		assert.deepEqual(result.buffer, fs.readFileSync(fixture.dbPath), 'must fall back to the plain main-file bytes');
 		assert.equal(result.walIncluded, false, 'the non-empty WAL was not merged, and must be reported as such');
 	} finally {
 		setNodeSqliteLoaderForTests(undefined);
-		fs.rmSync(tmpDir, { recursive: true, force: true });
+		fixture.cleanup();
 	}
 });

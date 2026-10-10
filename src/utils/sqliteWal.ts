@@ -224,7 +224,7 @@ function performWalMerge(dbPath: string, walPath: string): Buffer {
 	let tmpShm: string | undefined;
 	let nativeDb: import('node:sqlite').DatabaseSync | undefined;
 	try {
-		const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
+		const { DatabaseSync } = loadNodeSqlite();
 		const tmpDir = path.join(os.homedir(), '.copilot', 'tmp');
 		fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
 		tmpDb = path.join(tmpDir, `sqlite-wal-${path.basename(dbPath)}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.db`);
