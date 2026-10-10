@@ -12,7 +12,7 @@
 		"check-types": "tsc -p tsconfig.json --noEmit",
 		"video": "node dist/cli.js",
 		"doctor": "node dist/cli.js doctor",
-		"test": "npm run build && node --test dist/test"
+		"test": "npm run build && node --test \"dist/test/*.test.js\""
 	},
 	"devDependencies": {
 		"@types/node": "^20.14.0",
