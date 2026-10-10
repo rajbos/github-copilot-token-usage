@@ -99,7 +99,7 @@ prompt — it reuses your existing GitHub session.
 
 For code changes, also run the [server validation checks](../docs/VALIDATION.md#sharing-server)
 and satisfy the data separation contract's HTTP/HTML privacy tests.
-The root `.\build.ps1 -Project sharing -Target test` runs the server's `npm test`;
+The root `.\build.ps1 -Project sharing -Target test` runs the server's `pnpm test`;
 run the type/build/headless interaction checks separately as described there.
 
 ```bash
@@ -119,7 +119,7 @@ pnpm run build:production # minified build
 
 ```bash
 cd sharing-server
-npm ci
+pnpm install --frozen-lockfile
 ```
 
 ### 2. Create a `.env` file
@@ -146,17 +146,17 @@ DB_PATH=./data/sharing.db
 ### 3. Build and start
 
 ```bash
-npm run build   # compile TypeScript → dist/server.js
+pnpm run build   # compile TypeScript → dist/server.js
 npm start       # start the server (automatically loads .env via Node --env-file)
 ```
 
 Or for **watch mode** (auto-restarts `dist/server.js` whenever it changes):
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
-> Run `npm run build` in a separate terminal to rebuild after editing `src/`. The `dev`
+> Run `pnpm run build` in a separate terminal to rebuild after editing `src/`. The `dev`
 > script uses `node --watch` which restarts automatically when `dist/server.js` changes.
 
 ### 4. Verify
@@ -255,7 +255,7 @@ including chart ticks and tooltips; Team Insights keeps exact values in its
 numeric tables and exports.
 The page footer shows the sharing-server package version alongside the
 deployment branch, commit and timestamp, so a deployed instance can be
-compared with the published npm version.
+compared with the published pnpm version.
 
 Download the selected period with cookie-authenticated
 `/team/export?days=N&format=csv` or `format=json` (N is 7, 30 or 90).

@@ -474,7 +474,7 @@ Run `ai-engineering-fluency diagnostics` to see exactly which of these locations
 Since 0.7.0 the package also works as a Node library. The `@rajbos/ai-engineering-fluency/session` entry point returns token usage and cost for one session file, so another app can show per-session cost without running the CLI. It works with `require()` and `import`, ships its own TypeScript types, and contains none of the CLI code.
 
 ```bash
-npm install @rajbos/ai-engineering-fluency
+pnpm install @rajbos/ai-engineering-fluency
 ```
 
 ```js
@@ -553,7 +553,7 @@ pnpm run cli:diagnostics     # Run diagnostics command
 pnpm run cli -- --help       # Run any CLI command
 ```
 
-From `cli/`: `npm run build`, `npm test`, `npm run check-types`, `npm run lint`. The CLI is a thin wrapper around the shared modules in the repository's [`src/`](../../src/) folder — parsing and cost logic belong there, not in `cli/`. See the [CLI contributor guide](../../.github/instructions/cli.instructions.md).
+From `cli/`: `pnpm run build`, `pnpm test`, `pnpm run check-types`, `pnpm run lint`. The CLI is a thin wrapper around the shared modules in the repository's [`src/`](../../src/) folder — parsing and cost logic belong there, not in `cli/`. See the [CLI contributor guide](../../.github/instructions/cli.instructions.md).
 
 When you add or change a command or option, update this page: a unit test (`cli/src/test/docsCoverage.test.ts`) fails if a command or option is missing here.
 

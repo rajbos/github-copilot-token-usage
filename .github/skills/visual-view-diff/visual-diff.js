@@ -114,7 +114,7 @@ function buildWebviews(checkoutRoot, label) {
 		// build needs, and dependencies rarely differ across a single PR.
 		const source = path.join(REPO_ROOT, 'vscode-extension', 'node_modules');
 		if (!fs.existsSync(source)) {
-			throw new Error(`vscode-extension/node_modules is missing — run \`npm install\` in vscode-extension/ first.`);
+			throw new Error(`vscode-extension/node_modules is missing — run \`pnpm install\` in vscode-extension/ first.`);
 		}
 		fs.symlinkSync(source, nodeModules, 'dir');
 	}

@@ -81,7 +81,7 @@ node .github/skills/improve-tool-families/analyze-tool-families.js --json
      tools, orchestration tools like `task`/`write_agent`) → leave it out;
      not every tool needs a family.
 3. Edit `vscode-extension/src/toolFamilies.ts` (`DEFAULT_TOOL_FAMILIES`).
-4. Verify with `cd vscode-extension && npm run validate` (tsc + eslint +
+4. Verify with `cd vscode-extension && pnpm run validate` (tsc + eslint +
    esbuild).
 5. Re-run this script to confirm the previously-uncovered names are now
    covered.

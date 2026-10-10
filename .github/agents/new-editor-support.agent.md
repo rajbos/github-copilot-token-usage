@@ -124,7 +124,7 @@ All per-editor wiring for **both** the VS Code extension and the CLI happens in 
 3. Instantiate it in `createDataAccessInstances()`.
 4. Push `new <Editor>Adapter(deps.<editor>)` into the array returned by `buildAdapterRegistry()`. **Order matters** — first match wins in `handles()`. Place adapters whose paths could collide with broader/generic checks (anything living under a path containing `copilot`, `code`, `cursor`, etc.) early enough to win, and add a one-line comment explaining why if the ordering isn't obvious.
 
-Once registered, session discovery, caching, token/interaction counting, stats aggregation, the log viewer, and usage analysis all pick up the new editor automatically. Verify with `node cli/dist/cli.js diagnostics` (after `npm run build` in `cli/`) — a working integration shows the editor's candidate path as `yes` (exists) and a non-zero file/session/token count.
+Once registered, session discovery, caching, token/interaction counting, stats aggregation, the log viewer, and usage analysis all pick up the new editor automatically. Verify with `node cli/dist/cli.js diagnostics` (after `pnpm run build` in `cli/`) — a working integration shows the editor's candidate path as `yes` (exists) and a non-zero file/session/token count.
 
 ### Step 6 — Add the Editor Icon
 
@@ -143,7 +143,7 @@ For editors that produce **many candidate paths** (one per project/workspace), c
 3. Bump the count in `assert.equal(allAdapters.length, N)`.
 4. Add an `assert.equal(<editor>Adapter.id, '<expected-id>')` assertion alongside the other editors.
 
-Run `npm run compile-tests` then the specific test file (see the devcontainer terminal guidance in the repo-wide instructions) rather than the whole suite.
+Run `pnpm run compile-tests` then the specific test file (see the devcontainer terminal guidance in the repo-wide instructions) rather than the whole suite.
 
 ### Step 8 — (Optional) Add an Editor-Specific Data-Availability Note
 

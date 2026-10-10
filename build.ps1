@@ -115,7 +115,7 @@ function Build-CliExe {
     Write-Step "cli: bundle-exe"
     Push-Location "$PSScriptRoot/cli"
     try {
-        pnpm install --frozen-lockfile
+        Ensure-PnpmDeps .
         & pwsh -NoProfile -File bundle-exe.ps1
         if ($LASTEXITCODE -ne 0) { throw "CLI exe bundling failed" }
         Write-Ok "cli exe bundled."
@@ -139,7 +139,7 @@ function Build-VisualStudio {
     Write-Step "vscode-extension: compile (for VS webview bundles)"
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
-        pnpm install --frozen-lockfile
+        Ensure-PnpmDeps .
         pnpm run compile
         if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
         Write-Ok "vscode-extension compiled."
@@ -259,7 +259,7 @@ function Build-Jetbrains {
     Write-Step "vscode-extension: compile (for JetBrains webview bundles)"
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
-        pnpm install --frozen-lockfile
+        Ensure-PnpmDeps .
         pnpm run compile
         if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
     }

@@ -30,7 +30,7 @@ If the CI artifact is unavailable, run Stryker locally instead:
 ```bash
 cd vscode-extension
 pnpm run compile-tests
-npx stryker run
+pnpm exec stryker run
 # Report is written to: vscode-extension/reports/mutation/mutation.json
 ```
 
@@ -168,7 +168,7 @@ pnpm run test:node
 All tests must pass. Then optionally re-run Stryker on the affected files to confirm the new tests actually kill the targeted mutants:
 
 ```bash
-npx stryker run
+pnpm exec stryker run
 ```
 
 Compare the new score to the baseline.

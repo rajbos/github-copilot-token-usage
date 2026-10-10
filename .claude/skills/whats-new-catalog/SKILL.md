@@ -81,7 +81,7 @@ duplicated here.
    line, reorder the `features` array. Catalog order *is* the decision about
    what mattered most in the release.
 5. **Re-run until clean**, then run the unit tests:
-   `cd vscode-extension && npm run test:node`.
+   `cd vscode-extension && pnpm run test:node`.
 
 ## Writing a release entry
 

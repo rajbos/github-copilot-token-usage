@@ -4,6 +4,7 @@
   "description": "AI Engineering Fluency - Windows Desktop App",
   "author": "RobBos",
   "license": "MIT",
+  "packageManager": "pnpm@11.2.2",
   "main": "dist/main.js",
   "scripts": {
     "build": "node esbuild.js",

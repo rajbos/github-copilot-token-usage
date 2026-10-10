@@ -104,7 +104,7 @@ async function renderView({ browser, view, state, theme, outDir, tmpDir, default
 			theme,
 			status: 'error',
 			missing: true,
-			error: `Missing bundle ${bundlePath} — run \`npm run compile\` in vscode-extension/ first.`,
+			error: `Missing bundle ${bundlePath} — run \`pnpm run compile\` in vscode-extension/ first.`,
 		};
 	}
 

@@ -145,7 +145,7 @@ For JetBrains plugin (if changed), edit two files with the `edit` tool:
 For Desktop app (if changed):
 ```bash
 cd desktop
-npm version <bump-type> --no-git-tag-version
+pnpm version <bump-type> --no-git-tag-version
 cd ..
 ```
 
@@ -270,7 +270,7 @@ Once the release-prep PR is merged, trigger the actual publish workflows. Do not
 
 #### CLI — push a tag, don't use `workflow_dispatch`
 
-`cli-publish.yml`'s `workflow_dispatch` path (`version_bump` input) **re-bumps `cli/package.json` itself** via `npm version <bump-type>` before publishing. Since the release-prep PR already bumped and merged the version, running `workflow_dispatch` (e.g. with `patch`) bumps it *again* (0.2.12 → 0.2.13) and publishes a version nobody reviewed — the merged 0.2.12 never gets published.
+`cli-publish.yml`'s `workflow_dispatch` path (`version_bump` input) **re-bumps `cli/package.json` itself** via `pnpm version <bump-type>` before publishing. Since the release-prep PR already bumped and merged the version, running `workflow_dispatch` (e.g. with `patch`) bumps it *again* (0.2.12 → 0.2.13) and publishes a version nobody reviewed — the merged 0.2.12 never gets published.
 
 Instead, push a git tag matching the already-merged version to trigger the workflow's tag-push path. That path publishes the current `package.json` version as-is and verifies it matches the tag (fails loudly if not) — no re-bump:
 

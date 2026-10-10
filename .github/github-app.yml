@@ -2,7 +2,7 @@ scripts:
 - name: Install and compile VS Code extension
   command: |
     cd vscode-extension
-    pnpm install
+    pnpm install --frozen-lockfile
     pnpm run compile
   triggers:
   - session.create
