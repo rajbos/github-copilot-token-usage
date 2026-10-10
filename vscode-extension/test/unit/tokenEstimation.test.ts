@@ -1127,6 +1127,21 @@ test('EventJsonlTokenStrategy: older per-segment shutdowns (counter reset) are s
         assert.deepEqual(result.dailyActualTokens, { '2026-05-22': 960, '2026-05-23': 315 });
 });
 
+test('EventJsonlTokenStrategy: a model id named like an Object.prototype member is not treated as present', () => {
+        // Built by assignment: in an object literal TypeScript types a 'toString' key against Object.prototype.
+        const first: Record<string, [number, number]> = { 'gpt-5.6-sol': [100, 10] };
+        first['toString'] = [400, 40];
+        const lines = [
+                cliShutdown('2026-10-03T12:00:00.000Z', first),
+                // "toString" disappeared → a fresh segment, so both shutdowns add up.
+                cliShutdown('2026-10-03T14:00:00.000Z', { 'gpt-5.6-sol': [200, 20] }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        assert.equal(result.actualTokens, 770);
+        assert.equal(result.modelUsage['toString'].inputTokens, 400);
+        assert.equal(result.modelUsage['gpt-5.6-sol'].inputTokens, 300);
+});
+
 test('EventJsonlTokenStrategy: returns empty result for empty input', () => {
         const result = new EventJsonlTokenStrategy().estimate([]);
         assert.equal(result.tokens, 0);

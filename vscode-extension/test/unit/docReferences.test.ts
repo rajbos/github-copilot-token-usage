@@ -93,6 +93,18 @@ const PATH_PLACEHOLDER_ALLOWLIST: Record<string, string[]> = {
 	'.github/skills/README.md': ['.github/skills/new-skill-name/'],
 };
 
+/**
+ * Build-output directories (`out`, `dist`) are gitignored and only exist after
+ * a compile, so a doc quoting one (e.g. `vscode-extension/dist/webview`) would
+ * fail on a fresh checkout for reasons unrelated to the rename — the same
+ * false positive described for `scripts/repo-stats.ps1` above.
+ */
+const BUILD_OUTPUT_SEGMENTS = new Set(['out', 'dist']);
+
+function isBuildOutputPath(pathLikeCandidate: string): boolean {
+	return pathLikeCandidate.split('/').some((segment) => BUILD_OUTPUT_SEGMENTS.has(segment));
+}
+
 /** Release-tag prefixes like `cli/v`, `cli/v0.2.10`, `cli/vX.Y.Z` — not paths. */
 function looksLikeVersionTag(pathLikeCandidate: string): boolean {
 	const segments = pathLikeCandidate.split('/');
@@ -112,6 +124,7 @@ function extractBacktickedPaths(content: string): { line: number; candidate: str
 			if (!KNOWN_TOP_LEVEL_DIRS.some((dir) => candidate.startsWith(dir))) { continue; }
 			if (/[<>*]/.test(candidate) || candidate.includes(' ') || candidate.includes('...')) { continue; } // glob/placeholder shapes
 			if (looksLikeVersionTag(candidate)) { continue; }
+			if (isBuildOutputPath(candidate)) { continue; }
 			results.push({ line: idx + 1, candidate });
 		}
 	});

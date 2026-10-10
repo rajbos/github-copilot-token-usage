@@ -68,8 +68,9 @@ function toSnapshot(modelMetrics: Record<string, CliShutdownModelMetricsEntry>):
 /** True when `cur` extends `prev`: every model of `prev` is present and no counter went down. */
 function isCumulativeOf(prev: ModelUsage, cur: ModelUsage): boolean {
 	for (const [model, p] of Object.entries(prev)) {
+		// Own-property check: a model id such as "toString" must not resolve to an inherited member.
+		if (!Object.hasOwn(cur, model)) { return false; }
 		const c = cur[model];
-		if (!c) { return false; }
 		if (c.inputTokens < p.inputTokens || c.outputTokens < p.outputTokens) { return false; }
 		if ((c.cachedReadTokens ?? 0) < (p.cachedReadTokens ?? 0)) { return false; }
 		if ((c.cacheCreationTokens ?? 0) < (p.cacheCreationTokens ?? 0)) { return false; }
@@ -85,7 +86,8 @@ function sumInputOutput(usage: ModelUsage): number {
 
 function addInto(dest: ModelUsage, src: ModelUsage): void {
 	for (const [model, u] of Object.entries(src)) {
-		const d = dest[model] ?? (dest[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 });
+		if (!Object.hasOwn(dest, model)) { dest[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
+		const d = dest[model];
 		d.inputTokens += u.inputTokens;
 		d.outputTokens += u.outputTokens;
 		if (u.cachedReadTokens) { d.cachedReadTokens = (d.cachedReadTokens ?? 0) + u.cachedReadTokens; }
