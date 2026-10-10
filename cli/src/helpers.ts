@@ -152,17 +152,18 @@ export function sessionActiveSince(fileMtime: Date, ownLastActivity: Date | null
  * (Copilot CLI, OpenCode, Crush and the other adapter-backed editors record both); the
  * format-specific fallbacks below cover Claude Code JSONL and VS Code chatSessions files.
  */
-async function resolveSessionWorkspace(activity: SessionActivityLookup, claudeBasePath: string): Promise<{ path: string; repository?: string } | undefined> {
+export async function resolveSessionWorkspace(activity: SessionActivityLookup, claudeBasePath: string): Promise<{ path: string; repository?: string } | undefined> {
 	const meta = await activity.meta();
-	if (meta?.workspacePath) { return { path: meta.workspacePath, repository: meta.repository }; }
-	// Copilot CLI events.jsonl: discovered by its adapter but not handled by it, so getMeta()
-	// knows nothing; the adapter still reads the adjacent workspace.yaml through this hook.
-	const workspacePath = await findWorkspacePathForDiscoveredPath(getEcosystems(), activity.file)
+	// The adapter's own workspace first; then Copilot CLI events.jsonl, discovered by its adapter
+	// but not handled by it (so getMeta() knows nothing), whose adjacent workspace.yaml the adapter
+	// still reads through this hook; then the Claude Code JSONL / VS Code chatSessions fallbacks.
+	const workspacePath = meta?.workspacePath
+		?? await findWorkspacePathForDiscoveredPath(getEcosystems(), activity.file)
 		?? await resolveSessionWorkspacePath(activity.file, claudeBasePath);
 	if (!workspacePath) { return undefined; }
-	// No adapter covers VS Code chatSessions files: the remote is the workspace folder's own
-	// repository (walking up for a sub-folder workspace), the same shared rule as the extension's
-	// analysis — never a referenced file, which can live in another or a nested repository.
+	// The adapter's recorded remote, else the workspace folder's own repository (walking up for a
+	// sub-folder workspace) — the same shared rule as the extension's analysis, for adapter-backed
+	// and VS Code sessions alike; never a referenced file, which can live in another repository.
 	const repository = meta?.repository ?? await withErrorRecovery(
 		() => findRepositoryRemoteForFolder(workspacePath),
 		undefined,

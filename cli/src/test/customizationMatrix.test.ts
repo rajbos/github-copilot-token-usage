@@ -342,3 +342,35 @@ test('buildCustomizationMatrix: rows carry the instructions status the issue cou
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test('resolveSessionWorkspace: an adapter workspace without a recorded remote still gets its folder\'s remote (parity)', async () => {
+	const { resolveSessionWorkspace, createSessionActivityLookup } = await import('../helpers');
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
+	try {
+		const repo = path.join(root, 'widget');
+		const subfolder = path.join(repo, 'packages', 'api'); // an adapter-reported cwd inside the repository
+		fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+		fs.mkdirSync(subfolder, { recursive: true });
+		fs.writeFileSync(path.join(repo, '.git', 'config'), '[remote "origin"]\n\turl = https://github.com/acme/widget.git\n');
+		const lookup = (meta: { workspacePath?: string; repository?: string }) => createSessionActivityLookup('/virtual/session', {
+			getMeta: async () => ({ title: undefined, firstInteraction: null, lastInteraction: null, ...meta }),
+			getLastActivity: async () => null,
+			getBackingPath: (f: string) => f,
+		});
+
+		// No remote from the adapter: the workspace folder's own repository, found by walking up.
+		assert.deepEqual(await resolveSessionWorkspace(lookup({ workspacePath: subfolder }), '/nowhere'), {
+			path: subfolder, repository: 'https://github.com/acme/widget.git',
+		});
+		// The adapter's recorded remote still wins.
+		assert.deepEqual(await resolveSessionWorkspace(lookup({ workspacePath: subfolder, repository: 'acme/other' }), '/nowhere'), {
+			path: subfolder, repository: 'acme/other',
+		});
+		// A workspace in no repository has no remote.
+		const loose = path.join(root, 'loose');
+		fs.mkdirSync(loose);
+		assert.deepEqual(await resolveSessionWorkspace(lookup({ workspacePath: loose }), '/nowhere'), { path: loose });
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
