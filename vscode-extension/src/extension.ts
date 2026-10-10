@@ -1096,6 +1096,9 @@ type SessionsTabPreset = { filter: 'nearContextLimit'; lookback: 'last30' };
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation.
+	// v79: Copilot CLI exact cost (copilotNanoAiu) is the latest session.usage_checkpoint/shutdown
+	// totalNanoAiu instead of a sum over shutdowns (it is cumulative, so resumed sessions were
+	// counted more than once); an mtime/size hit would keep the summed value until the file changed.
 	// v78: per-tool outcome maps (toolCalls.completedByTool/failuresByTool/latencyByTool,
 	// mcpTools.completedByServer/failuresByServer/latencyByServer) are now recorded from Copilot
 	// CLI/JetBrains tool.execution_start/complete pairs and Claude Code tool_use/tool_result pairs;
@@ -1115,9 +1118,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// showing an estimate in Today/month/30-day totals until their file changed.
 	// v76: Add per-session autonomyUsage (autopilot/auto vs supervised) to usageAnalysis: cache hits
 	// skip re-analysis, so existing entries would lack the metric until their file changed.
-	// v79: Resolve each session's git remote during analysis (adapter metadata, else content
+	// v80: Resolve each session's git remote during analysis (adapter metadata, else content
 	// references) so workspace grouping has it on a cold cache; existing entries lack it.
-	private static readonly CACHE_VERSION = 79;
+	private static readonly CACHE_VERSION = 80;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**

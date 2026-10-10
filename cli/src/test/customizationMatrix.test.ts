@@ -13,6 +13,15 @@ import * as path from 'node:path';
 import { buildCustomizationMatrix } from '../helpers';
 
 /**
+ * Where fixture folders are created (each test removes its own). Not os.tmpdir(): the shared safe
+ * file reader refuses to read session files from the OS temp directory (src/utils/safeFileRead.ts).
+ * Not under this checkout either: a checkout can itself sit in a Claude worktree layout
+ * (`~/.claude/worktrees/<repo>/<name>`), which the grouping rightly recognises and which would
+ * then decide these tests' group names. A folder directly under the home directory is neither.
+ */
+const FIXTURE_PREFIX = path.join(os.homedir(), '.aef-cli-custmatrix-');
+
+/**
  * A VS Code chat session with one request: the matrix only counts sessions with interactions
  * in the last 30 days, like the extension, so an empty `{}` file would be skipped.
  */
@@ -34,7 +43,7 @@ function backdate(sessionFile: string, when: Date): void {
 
 /** Build a VS Code-style session file whose workspace.json points at a temp workspace. */
 function makeWorkspace(files: string[]): { root: string; sessionFile: string } {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	const workspace = path.join(root, 'ws');
 	fs.mkdirSync(workspace);
 	for (const rel of files) {
@@ -101,7 +110,7 @@ function makeSessions(root: string, folders: string[]): string[] {
 }
 
 test('buildCustomizationMatrix: worktrees and clones of one repository count as one grouped workspace', async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	try {
 		const main = path.join(root, 'code', 'acme-app');
 		const sibling = path.join(root, 'code', 'acme-app-refactor-wt');
@@ -129,7 +138,7 @@ test('buildCustomizationMatrix: worktrees and clones of one repository count as 
 });
 
 test('buildCustomizationMatrix: grouped totals match the shared grouping the extension uses (parity)', async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	try {
 		const folders = [
 			path.join(root, 'code', 'widget'),
@@ -157,7 +166,7 @@ test('buildCustomizationMatrix: grouped totals match the shared grouping the ext
 });
 
 test('buildCustomizationMatrix: only sessions with interactions in the last 30 days count, like the extension', async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	try {
 		const active = path.join(root, 'code', 'active-repo');
 		const old = path.join(root, 'code', 'old-repo');
@@ -200,7 +209,7 @@ test('sessionActiveSince: a DB-backed session is placed by its own activity, nev
 });
 
 test('buildCustomizationMatrix: the 30-day window is the extension\'s (30 calendar dates including today)', async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	try {
 		const now = new Date();
 		const first = path.join(root, 'code', 'first-day');
@@ -221,7 +230,7 @@ test('buildCustomizationMatrix: the 30-day window is the extension\'s (30 calend
 test('buildCustomizationMatrix: VS Code sessions are grouped by the remote of the files they referenced (parity)', async () => {
 	// Long-form path: the workspace folder resolved from workspace.json goes through realpath,
 	// and a Windows runner's temp dir can be an 8.3 short path (RUNNER~1), so build fixtures on the real path.
-	const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-')));
+	const root = fs.realpathSync.native(fs.mkdtempSync(FIXTURE_PREFIX));
 	try {
 		// Two workspace folders inside one repository (a monorepo opened per package): neither
 		// folder has its own .git, so only the files the sessions referenced lead to the remote.
@@ -249,7 +258,7 @@ test('buildCustomizationMatrix: VS Code sessions are grouped by the remote of th
 });
 
 test('buildCustomizationMatrix: a recently copied log of old requests does not count (last activity day, not file mtime)', async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	try {
 		const copied = path.join(root, 'code', 'copied-repo');
 		fs.mkdirSync(copied, { recursive: true });
@@ -294,7 +303,7 @@ function sessionReferencing(file: string): string {
 test('buildCustomizationMatrix: a file referenced from another repository is not the workspace\'s remote', async () => {
 	// Long-form path: the workspace folder resolved from workspace.json goes through realpath,
 	// and a Windows runner's temp dir can be an 8.3 short path (RUNNER~1), so build fixtures on the real path.
-	const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-')));
+	const root = fs.realpathSync.native(fs.mkdtempSync(FIXTURE_PREFIX));
 	try {
 		const other = path.join(root, 'repos', 'other-lib');
 		fs.mkdirSync(path.join(other, '.git'), { recursive: true });
@@ -316,7 +325,7 @@ test('buildCustomizationMatrix: a file referenced from another repository is not
 });
 
 test('buildCustomizationMatrix: rows carry the instructions status the issue count is based on', async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-custmatrix-'));
+	const root = fs.mkdtempSync(FIXTURE_PREFIX);
 	try {
 		const customized = path.join(root, 'code', 'customized');
 		const missing = path.join(root, 'code', 'missing');
