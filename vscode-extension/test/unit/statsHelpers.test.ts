@@ -20,6 +20,7 @@ type UtcDateRanges,
 	addSessionToDailyStats,
 	sortedDailyStats,
 	repositoryKey,
+	addLanguageUsage,
 	sessionLocFromUsageAnalysis,
 } from '../../../src/statsHelpers';
 import type { DailyTokenStats } from '../../../src/types';
@@ -1833,4 +1834,11 @@ test('addSessionToDailyStats records a __proto__ repository as Unknown without p
 	assert.equal(day.repositoryUsage.Unknown.linesAdded, 3);
 	assert.equal(Object.prototype.hasOwnProperty.call(day.repositoryUsage, '__proto__'), false);
 	assert.equal(({} as Record<string, unknown>).tokens, undefined, 'Object.prototype must not gain a tokens field');
+});
+
+test('addLanguageUsage skips an own __proto__ extension key', () => {
+	const target: Record<string, { linesAdded: number; linesRemoved: number }> = {};
+	addLanguageUsage(target, JSON.parse('{"__proto__": {"linesAdded": 3, "linesRemoved": 1}, "py": {"linesAdded": 2, "linesRemoved": 0}}'));
+	assert.deepEqual(Object.keys(target), ['py']);
+	assert.equal((Object.prototype as Record<string, unknown>).linesAdded, undefined);
 });

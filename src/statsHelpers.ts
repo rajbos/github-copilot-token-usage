@@ -347,6 +347,8 @@ export function distributeExactCostToDays(
  */
 export function addLanguageUsage(target: LanguageUsage, source: LanguageUsage): void {
 	for (const [ext, usage] of Object.entries(source)) {
+		// Extensions come from parsed session data and caches — see protoGuard.ts.
+		if (isUnsafeObjectKey(ext)) { continue; }
 		if (!target[ext]) { target[ext] = { linesAdded: 0, linesRemoved: 0 }; }
 		target[ext].linesAdded += usage.linesAdded;
 		target[ext].linesRemoved += usage.linesRemoved;

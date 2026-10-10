@@ -134,6 +134,7 @@ function mergeLanguageUsage(target: DailyTokenStats, src: DailyTokenStats): void
 	if (!src.languageUsage) { return; }
 	if (!target.languageUsage) { target.languageUsage = {}; }
 	for (const [ext, usage] of Object.entries(src.languageUsage)) {
+		if (isUnsafeObjectKey(ext)) { continue; }
 		if (!target.languageUsage[ext]) { target.languageUsage[ext] = { linesAdded: 0, linesRemoved: 0 }; }
 		target.languageUsage[ext].linesAdded += usage.linesAdded;
 		target.languageUsage[ext].linesRemoved += usage.linesRemoved;
@@ -144,6 +145,7 @@ function mergeEditorModelUsage(target: DailyTokenStats, src: DailyTokenStats): v
 	if (!src.editorModelUsage) { return; }
 	if (!target.editorModelUsage) { target.editorModelUsage = {}; }
 	for (const [editor, modelUsage] of Object.entries(src.editorModelUsage)) {
+		if (isUnsafeObjectKey(editor)) { continue; }
 		if (!target.editorModelUsage[editor]) { target.editorModelUsage[editor] = {}; }
 		addModelUsage(target.editorModelUsage[editor], modelUsage);
 	}
@@ -153,18 +155,21 @@ function mergeTaskCategoryUsage(target: DailyTokenStats, src: DailyTokenStats): 
 	if (src.taskCategoryTokens) {
 		target.taskCategoryTokens = target.taskCategoryTokens ?? {};
 		for (const [category, value] of Object.entries(src.taskCategoryTokens)) {
+			if (isUnsafeObjectKey(category)) { continue; }
 			target.taskCategoryTokens[category as TaskCategory] = (target.taskCategoryTokens[category as TaskCategory] || 0) + value;
 		}
 	}
 	if (src.taskCategorySessions) {
 		target.taskCategorySessions = target.taskCategorySessions ?? {};
 		for (const [category, value] of Object.entries(src.taskCategorySessions)) {
+			if (isUnsafeObjectKey(category)) { continue; }
 			target.taskCategorySessions[category as TaskCategory] = (target.taskCategorySessions[category as TaskCategory] || 0) + value;
 		}
 	}
 	if (!src.taskCategoryModelUsage) { return; }
 	target.taskCategoryModelUsage = target.taskCategoryModelUsage ?? {};
 	for (const [category, usage] of Object.entries(src.taskCategoryModelUsage)) {
+		if (isUnsafeObjectKey(category)) { continue; }
 		const key = category as TaskCategory;
 		target.taskCategoryModelUsage[key] = target.taskCategoryModelUsage[key] ?? {};
 		addModelUsage(target.taskCategoryModelUsage[key]!, usage);

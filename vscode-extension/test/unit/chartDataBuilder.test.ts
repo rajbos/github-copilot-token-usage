@@ -330,3 +330,29 @@ test('buildChartData ignores prototype-polluting usage keys from cached daily st
 	assert.deepEqual(Object.keys(payload.repositoryTotalsMap), ['o/r']);
 	assert.equal(({} as Record<string, unknown>).tokens, undefined, 'Object.prototype must not gain a tokens field');
 });
+
+test('buildChartData ignores unsafe language, editor-model and task keys from cached daily stats', () => {
+	const today = new Date();
+	const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+	// JSON.parse, as a cache read does, creates own "__proto__" keys in every one of these maps.
+	const day = JSON.parse(`{
+		"date": "${date}", "tokens": 10, "sessions": 1, "interactions": 1, "modelUsage": {},
+		"editorUsage": {}, "repositoryUsage": {}, "taskCategoryUsage": {},
+		"linesAdded": 2, "linesRemoved": 0,
+		"languageUsage": { "__proto__": { "linesAdded": 7, "linesRemoved": 1 }, "ts": { "linesAdded": 2, "linesRemoved": 0 } },
+		"editorModelUsage": { "__proto__": { "gpt-4o": { "inputTokens": 1, "outputTokens": 1, "sessions": 0 } } },
+		"taskCategoryTokens": { "__proto__": 5, "Coding": 10 },
+		"taskCategorySessions": { "__proto__": 1, "Coding": 1 },
+		"taskCategoryModelUsage": { "__proto__": { "gpt-4o": { "inputTokens": 1, "outputTokens": 1, "sessions": 0 } } }
+	}`) as DailyTokenStats;
+	const payload = buildChartData([day], {
+		getRepoDisplayName: (url: string) => url, calculateEstimatedCost: () => 0,
+		backendConfigured: false, compactNumbers: false, now: today,
+	});
+	const languages = (payload.periods.day.languageDatasets as Array<{ label: string }>).map(d => d.label);
+	assert.deepEqual(languages, ['ts']);
+	const proto = Object.prototype as Record<string, unknown>;
+	for (const field of ['linesAdded', 'linesRemoved', 'gpt-4o', 'tokens']) {
+		assert.equal(proto[field], undefined, `Object.prototype must not gain "${field}"`);
+	}
+});
