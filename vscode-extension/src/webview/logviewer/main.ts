@@ -1343,18 +1343,6 @@ if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') { 
 let logViewerClicksBound = false;
 
 function wireUpEventHandlers(): void {
-document.getElementById('btn-raw')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'openRawFile' });
-});
-document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showDiagnostics' });
-});
-document.getElementById('btn-usage')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showUsageAnalysis' });
-});
-document.getElementById('btn-details')?.addEventListener('click', () => {
-vscode.postMessage({ command: 'showDetails' });
-});
 document.getElementById('btn-refresh-session')?.addEventListener('click', () => {
 vscode.postMessage({ command: 'refreshSession' });
 });
