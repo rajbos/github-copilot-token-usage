@@ -214,13 +214,23 @@ export function buildSkillSuggestionsSectionHtml(report: RepeatedTaskReport | nu
 // ── Interaction ────────────────────────────────────────────────────────────
 
 /**
- * Whether a repository (an `owner/repo` display name) is one of the open
- * workspace folders, matched by folder name. No open folders means not open.
+ * Last path segment of a repository or folder value. Repository values are
+ * usually `owner/repo`, but `repoDisplayName()` leaves local paths (including
+ * Windows ones like `C:\code\project`) as they are, so split on both separators.
+ */
+export function lastPathSegment(value: string): string | undefined {
+	return value.split(/[/\\]/).filter(Boolean).pop();
+}
+
+/**
+ * Whether a repository (an `owner/repo` display name or a local path) is one
+ * of the open workspace folders, matched by folder name. No open folders
+ * means not open.
  */
 export function isRepositoryOpen(repository: string, workspacePaths: readonly string[]): boolean {
-	const repoName = repository.split('/').filter(Boolean).pop()?.toLowerCase();
+	const repoName = lastPathSegment(repository)?.toLowerCase();
 	if (!repoName) { return false; }
-	return workspacePaths.some(p => p.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase() === repoName);
+	return workspacePaths.some(p => lastPathSegment(p)?.toLowerCase() === repoName);
 }
 
 export type SkillSuggestionsMessage =
@@ -294,7 +304,7 @@ function showOpenRepoNotice(section: HTMLElement, button: Element, action: Extra
 	const notice = Array.from(section.querySelectorAll<HTMLElement>('.skill-suggestion-notice'))
 		.find(n => n.getAttribute('data-cluster-index') === index);
 	if (!notice) { return; }
-	const repoFolderName = action.repository.split('/').filter(Boolean).pop() ?? action.repository;
+	const repoFolderName = lastPathSegment(action.repository) ?? action.repository;
 	setHtml(notice, `
 		<div style="margin-top:8px; padding:10px; background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.4); border-radius:4px; display:flex; flex-direction:column; gap:8px;">
 			<div style="font-size:11px; color:var(--warning-fg, var(--text-primary));">${escapeHtml(localizeFormat('usage.skillSuggestions.openRepoFirst', repoFolderName))}</div>

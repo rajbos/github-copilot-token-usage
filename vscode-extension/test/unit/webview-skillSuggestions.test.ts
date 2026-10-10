@@ -13,6 +13,7 @@ import {
 	buildSkillSuggestionsSectionHtml,
 	getSkillSuggestionsPage,
 	isRepositoryOpen,
+	lastPathSegment,
 	resolveSkillCreateAction,
 	sanitizeRepeatedTaskReport,
 	sessionsTableId,
@@ -148,6 +149,35 @@ test('isRepositoryOpen: matches the repository name against open workspace folde
 	assert.equal(isRepositoryOpen('octo/app', ['/home/me/src/app/']), true);
 	assert.equal(isRepositoryOpen('octo/app', ['/home/me/src/api']), false);
 	assert.equal(isRepositoryOpen('octo/app', []), false);
+	// repoDisplayName() leaves local paths unchanged, including Windows ones.
+	assert.equal(isRepositoryOpen('C:\\code\\Project', ['c:\\code\\project']), true);
+	assert.equal(isRepositoryOpen('C:\\code\\Project\\', ['/mnt/c/code/project']), true);
+	assert.equal(isRepositoryOpen('C:\\code\\Project', ['C:\\code\\other']), false);
+	assert.equal(lastPathSegment('C:\\code\\Project'), 'Project');
+	assert.equal(lastPathSegment('octo/app'), 'app');
+	assert.equal(lastPathSegment('///'), undefined);
+});
+
+test('resolveSkillCreateAction: a single Windows-path repository that is open drafts, and a closed one names its folder', () => {
+	const cluster = makeCluster(0, 2, ['C:\\code\\Project']);
+	assert.equal(resolveSkillCreateAction(cluster, ['C:\\code\\Project']).kind, 'draft');
+	resetPages();
+	const report: RepeatedTaskReport = { minClusterSize: 2, sessionsScanned: 2, clusters: [cluster] };
+	const dom = new JSDOM(`<div id="root">${buildSkillSuggestionsSectionHtml(report)}</div>`);
+	const globals = globalThis as unknown as Record<string, unknown>;
+	const previous = { document: globals.document, Element: globals.Element, HTMLElement: globals.HTMLElement };
+	Object.assign(globals, { document: dom.window.document, Element: dom.window.Element, HTMLElement: dom.window.HTMLElement });
+	try {
+		const posted: SkillSuggestionsMessage[] = [];
+		wireSkillSuggestions({ getReport: () => report, getWorkspacePaths: () => ['D:\\elsewhere'], postMessage: m => posted.push(m) });
+		(dom.window.document.querySelector('button.skill-suggestion-create') as HTMLElement).click();
+		assert.deepEqual(posted, []);
+		const notice = dom.window.document.querySelector('.skill-suggestion-notice')!.textContent!;
+		assert.match(notice, /Open "Project" in VS Code first/);
+		assert.doesNotMatch(notice, /Open "C:/);
+	} finally {
+		Object.assign(globals, previous);
+	}
 });
 
 test('resolveSkillCreateAction: drafts when the single repo is open or the cluster spans repos, else asks to open it', () => {
