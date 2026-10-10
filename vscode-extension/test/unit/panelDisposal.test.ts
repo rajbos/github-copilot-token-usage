@@ -40,18 +40,37 @@ function loadExtensionSource(): string {
 	throw new Error(`extension.ts not found; tried ${candidates.join(', ')}`);
 }
 
-test('extension.ts dispose() releases every vscode.WebviewPanel field', () => {
-	const source = loadExtensionSource();
-	const fields = [...source.matchAll(/^\s*private\s+(\w+)\??\s*(?::\s*vscode\.WebviewPanel\b|\?:\s*vscode\.WebviewPanel\b)/gm)]
-		.map(m => m[1]);
-	assert.ok(fields.length >= 11, `expected to find the panel fields, found: ${fields.join(', ')}`);
+/** WebviewPanel field names declared on the class. */
+function findPanelFields(source: string): string[] {
+	return [...source.matchAll(/^\s*private\s+(\w+)\??\s*(?::|\?:)\s*vscode\.WebviewPanel\b/gm)].map(m => m[1]);
+}
 
+/** Panel fields that are in the `panelsToDispose` list handed to disposePanels() inside dispose(). */
+function findDisposedPanelFields(source: string): string[] {
 	const start = source.indexOf('public dispose(): void {');
 	assert.ok(start > 0, 'dispose() not found');
-	const end = source.indexOf('\n  }\n', start);
-	const body = source.slice(start, end);
-	assert.match(body, /disposePanels\(/, 'dispose() must call disposePanels()');
+	const body = source.slice(start, source.indexOf('\n  }\n', start));
+	const list = /const\s+panelsToDispose\s*=\s*\[([^\]]*)\]/.exec(body);
+	assert.ok(list, 'dispose() must declare a panelsToDispose array');
+	assert.match(body, /disposePanels\(\s*panelsToDispose\s*\)/, 'dispose() must pass panelsToDispose to disposePanels()');
+	return [...list[1].matchAll(/this\.(\w+)/g)].map(m => m[1]);
+}
 
-	const missing = fields.filter(f => !new RegExp(`this\\.${f}\\b`).test(body));
-	assert.deepEqual(missing, [], `WebviewPanel fields not disposed in dispose(): ${missing.join(', ')}`);
+test('extension.ts dispose() releases every vscode.WebviewPanel field', () => {
+	const source = loadExtensionSource();
+	const fields = findPanelFields(source);
+	assert.ok(fields.length >= 11, `expected to find the panel fields, found: ${fields.join(', ')}`);
+	const disposed = findDisposedPanelFields(source);
+	const missing = fields.filter(f => !disposed.includes(f));
+	assert.deepEqual(missing, [], `WebviewPanel fields not in panelsToDispose: ${missing.join(', ')}`);
+});
+
+test('panel guard: fails when a field is removed from panelsToDispose even if still mentioned elsewhere in dispose()', () => {
+	const source = loadExtensionSource();
+	const mutated = source
+		.replace(/(const\s+panelsToDispose\s*=\s*\[[^\]]*?)this\.dashboardPanel,\s*/, '$1')
+		.replace('this._disposed = true;', 'this.dashboardPanel = undefined; this._disposed = true;');
+	assert.notEqual(mutated, source, 'mutation must change the source');
+	const missing = findPanelFields(mutated).filter(f => !findDisposedPanelFields(mutated).includes(f));
+	assert.deepEqual(missing, ['dashboardPanel']);
 });
