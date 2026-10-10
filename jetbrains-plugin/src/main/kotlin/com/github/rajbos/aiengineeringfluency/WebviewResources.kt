@@ -22,10 +22,17 @@ object WebviewResources {
      * snippet produced by `JBCefJSQuery.inject("payload")` — calling it sends
      * the value of the `payload` variable to the Kotlin handler.
      */
-    fun buildHtml(view: String, hostBridgeInjectFunction: String, initialStatsJson: String? = null): String {
-        val shim = loadResource("/webview/vscode-shim.js")
+    fun buildHtml(
+        view: String,
+        hostBridgeInjectFunction: String,
+        initialStatsJson: String? = null,
+        // Injectable so unit tests can supply a fake classpath and locale without the IDE.
+        locale: java.util.Locale = java.util.Locale.getDefault(),
+        loader: (String) -> String? = ::loadResource,
+    ): String {
+        val shim = loader("/webview/vscode-shim.js")
             ?: "/* vscode-shim.js missing from plugin resources */"
-        val bundle = loadResource("/webview/$view.js")
+        val bundle = loader("/webview/$view.js")
             ?: "/* webview bundle $view.js missing from plugin resources */"
         val globalKey = viewToGlobalKey(view)
 
@@ -46,16 +53,7 @@ object WebviewResources {
         // Written as a guarded assignment instead of being merged into the JSON so
         // it is a no-op when there is no initial payload yet, rather than creating
         // an empty object the bundle would mistake for real data.
-        val localizationScript = loadWebviewLocalization()
-            ?.let { dictionary ->
-                """
-                (function () {
-                    var data = window.$globalKey;
-                    if (data && typeof data === 'object') { data.localization = ${dictionary.replace("</", "<\\/")}; }
-                })();
-                """.trimIndent()
-            }
-            ?: "/* webview localization dictionary missing from plugin resources */"
+        val localizationScript = buildLocalizationScript(globalKey, loadWebviewLocalization(locale, loader))
 
         // Bridge bootstrap:
         //   * defines window.chrome.webview.postMessage(...) which forwards
@@ -335,15 +333,34 @@ object WebviewResources {
      * (esbuild fills untranslated keys with their English text), so a partially
      * populated dictionary can never reach a bundle.
      */
-    private fun loadWebviewLocalization(): String? {
-        val ideLocale = java.util.Locale.getDefault()
-        loadResource("/webview/localization.${ideLocale.toLanguageTag().lowercase()}.json")
+    internal fun loadWebviewLocalization(
+        ideLocale: java.util.Locale = java.util.Locale.getDefault(),
+        loader: (String) -> String? = ::loadResource,
+    ): String? {
+        loader("/webview/localization.${ideLocale.toLanguageTag().lowercase()}.json")
             ?.let { return it.trim() }
         if (isSimplifiedChinese(ideLocale)) {
-            loadResource("/webview/localization.zh-cn.json")?.let { return it.trim() }
+            loader("/webview/localization.zh-cn.json")?.let { return it.trim() }
         }
-        return loadResource("/webview/localization.en.json")?.trim()
+        return loader("/webview/localization.en.json")?.trim()
     }
+
+    /**
+     * The inline script that attaches [dictionary] to the `window.[globalKey]` payload,
+     * or a comment placeholder when the sidecar was missing (an unlocalized panel
+     * beats a broken one).
+     */
+    internal fun buildLocalizationScript(globalKey: String, dictionary: String?): String =
+        dictionary
+            ?.let {
+                """
+                (function () {
+                    var data = window.$globalKey;
+                    if (data && typeof data === 'object') { data.localization = ${it.replace("</", "<\\/")}; }
+                })();
+                """.trimIndent()
+            }
+            ?: "/* webview localization dictionary missing from plugin resources */"
 
     /**
      * True for Chinese locales written in Simplified script.
