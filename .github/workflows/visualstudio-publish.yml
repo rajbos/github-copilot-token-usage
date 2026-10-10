@@ -175,6 +175,14 @@ jobs:
           echo "vsix_path=$($vsix.FullName)" >> $env:GITHUB_OUTPUT
           echo "vsix_name=$($vsix.Name)"     >> $env:GITHUB_OUTPUT
 
+      # Fail before anything is released or published if the package does not
+      # contain the webview bundles (a green MSBuild does not prove that).
+      - name: Verify .vsix contains the webview bundles
+        shell: pwsh
+        env:
+          VSIX_PATH: ${{ steps.vsix.outputs.vsix_path }}
+        run: node scripts/verify-vsix-webview.js "$env:VSIX_PATH"
+
       - name: Upload .vsix as workflow artifact
         if: steps.vsix.outputs.vsix_path != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
