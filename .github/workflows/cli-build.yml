@@ -77,6 +77,13 @@ jobs:
         working-directory: cli
         run: pnpm run build
 
+      # Lints cli/src with the extension's ESLint and config (the CLI has no
+      # eslint of its own). Findings are warnings, so this reports without
+      # failing; new errors fail the job.
+      - name: Lint CLI sources
+        working-directory: cli
+        run: npm run lint
+
       # Needs the build above: some tests import the built library from dist/lib.
       - name: Run CLI unit tests
         working-directory: cli
