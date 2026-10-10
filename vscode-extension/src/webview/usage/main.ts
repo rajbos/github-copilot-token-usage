@@ -3823,10 +3823,6 @@ function buildUsageRootHtml(
 	sessionsSummaryHtml: string,
 	todayTotalRefs: number,
 	last30DaysTotalRefs: number,
-	allHighCostModels: string[],
-	allLowCostModels: string[],
-	allMediumCostModels: string[],
-	allUnknownModels: string[],
 ): string {
 	return `
 		<style>${themeStyles}</style><style>${dataTableStyles}</style>
@@ -3858,7 +3854,7 @@ function buildUsageRootHtml(
 
 			${safeSectionHtml('Recent Sessions', () => buildSessionsTabPanelHtml(stats))}
 			${safeSectionHtml('My Activity', () => buildActivityTabPanelHtml(stats, multiModelHtml, thinkingEffortHtml, sessionsSummaryHtml, todayTotalRefs, last30DaysTotalRefs))}
-			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats, allHighCostModels, allLowCostModels, allMediumCostModels, allUnknownModels))}
+			${safeSectionHtml('Tools & Integrations', () => buildToolsTabPanelHtml(stats))}
 			${safeSectionHtml('Workspace Health', () => buildHealthTabPanelHtml(customizationHtml, stats))}
 			${safeSectionHtml('Repository PRs & Cloud Agent', () => buildReposAndAgentTabPanelsHtml())}
 			${safeSectionHtml('AI Readiness', () => darkFactoryTab.panel(activeTab))}
@@ -5266,13 +5262,7 @@ function setupModelEfficiencySection(): void {
 	});
 }
 
-function buildToolsTabPanelHtml(
-	stats: UsageAnalysisStats,
-	allHighCostModels: string[],
-	allLowCostModels: string[],
-	allMediumCostModels: string[],
-	allUnknownModels: string[],
-): string {
+function buildToolsTabPanelHtml(stats: UsageAnalysisStats): string {
 	return `
 		<div id="tab-panel-tools" class="tab-panel"${activeTab !== 'tools' ? ' style="display:none"' : ''}>
 			<!-- Tool Calls Section -->
@@ -5303,16 +5293,6 @@ function buildToolsTabPanelHtml(
 			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
 			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
 			${buildSkillSuggestionsSectionHtml(stats.repeatedTasks ?? null)}
-			<!-- Multi-Model Usage Section -->
-			<div class="section" id="section-multi-model">
-				<div class="section-title"><span>🔀</span><span>Multi-Model Usage</span></div>
-				<div class="section-subtitle">Track model diversity and switching patterns in your conversations</div>
-				<div class="three-column">
-					${renderMultiModelPeriod('📅 Today', stats.today.modelSwitching, allLowCostModels, allMediumCostModels, allHighCostModels, allUnknownModels)}
-					${renderMultiModelPeriod('📆 Last 30 Days', stats.last30Days.modelSwitching, allLowCostModels, allMediumCostModels, allHighCostModels, allUnknownModels)}
-					${renderMultiModelPeriod('📅 Previous Month', stats.month.modelSwitching, allLowCostModels, allMediumCostModels, allHighCostModels, allUnknownModels)}
-				</div>
-			</div>
 		</div>`;
 }
 
@@ -5390,6 +5370,17 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const todayTotalRefs = getTotalContextRefs(stats.today.contextReferences);
 	const last30DaysTotalRefs = getTotalContextRefs(stats.last30Days.contextReferences);
 	const thinkingEffortHtml = safeSectionHtml('Thinking Effort', () => buildThinkingEffortSectionHtml(stats));
+	const multiModelHtml = safeSectionHtml('Multi-Model Usage', () => `
+		<!-- Multi-Model Usage Section -->
+		<div class="section" id="section-multi-model">
+			<div class="section-title"><span>🔀</span><span>Multi-Model Usage</span></div>
+			<div class="section-subtitle">Track model diversity and switching patterns in your conversations</div>
+			<div class="three-column">
+				${renderMultiModelPeriod('📅 Today', stats.today.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
+				${renderMultiModelPeriod('📆 Last 30 Days', stats.last30Days.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
+				${renderMultiModelPeriod('📅 Previous Month', stats.month.modelSwitching, allKeys.allLowCostModels, allKeys.allMediumCostModels, allKeys.allHighCostModels, allKeys.allUnknownModels)}
+			</div>
+		</div>`);
 	const sessionsSummaryHtml = `
 		<!-- Summary Section -->
 		<div class="section" id="section-sessions-summary">
@@ -5405,15 +5396,11 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	const rendered = assignUsageRootHtml(root, () => buildUsageRootHtml(
 		stats,
 		customizationHtml,
-		'',
+		multiModelHtml,
 		thinkingEffortHtml,
 		sessionsSummaryHtml,
 		todayTotalRefs,
 		last30DaysTotalRefs,
-		allKeys.allHighCostModels,
-		allKeys.allLowCostModels,
-		allKeys.allMediumCostModels,
-		allKeys.allUnknownModels,
 	));
 	if (!rendered) { return; }
 
