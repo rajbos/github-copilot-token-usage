@@ -13,7 +13,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff } from '../helpers';
+import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup } from '../helpers';
 import { getCached } from '../cliCache';
 import { buildClassificationInputFromUsageAnalysis, classifySessionTask } from '../../../src/taskClassification';
 
@@ -155,4 +155,26 @@ test('calculateDailyStats enriches only sessions modified since enrichSince', as
 	const recent = mockSession(t, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', false);
 	await calculateDailyStats([recent.filePath], false, { enrichSince: new Date(Date.now() - 86_400_000) });
 	assert.equal(recent.reads(), 2, 'a recent session is enriched');
+});
+
+test('isSessionActiveSince asks the adapter when a DB-backed session\'s file mtime is older than the window', async () => {
+	// A virtual session's database mtime can lag its real activity (writes still in the WAL), so
+	// the bounded `all`/`chart` enrichment must not treat a recently active session as old.
+	const cutoff = new Date(2026, 4, 1);
+	const oldMtime = new Date(2026, 3, 1);
+	let adapterCalls = 0;
+	const sources = (lastActivity: Date | null) => ({
+		getBackingPath: () => 'store.db',
+		getLastActivity: async () => { adapterCalls++; return lastActivity; },
+		getMeta: async () => null,
+	});
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#1', sources(new Date(2026, 4, 5))), oldMtime, cutoff), true);
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#2', sources(new Date(2026, 3, 5))), oldMtime, cutoff), false);
+	const before = adapterCalls;
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#3', sources(null)), new Date(2026, 4, 2), cutoff), true);
+	assert.equal(adapterCalls, before, 'a recent file mtime decides without an adapter lookup');
+	// A regular file: its own mtime is the answer; the adapter is never asked.
+	const regular = { getBackingPath: (f: string) => f, getLastActivity: async () => { adapterCalls++; return new Date(); }, getMeta: async () => null };
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('session.json', regular), oldMtime, cutoff), false);
+	assert.equal(adapterCalls, before);
 });

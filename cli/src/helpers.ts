@@ -719,9 +719,22 @@ async function processSessionFileWithinWindow(filePath: string, verbose: boolean
 	if (enrichSince) {
 		let modified: Date | undefined;
 		try { modified = (await statSessionFile(filePath)).mtime; } catch { /* processSessionFile reports it */ }
-		if (!modified || modified < enrichSince) { return processSessionFile(filePath, verbose); }
+		if (!modified || !(await isSessionActiveSince(createSessionActivityLookup(filePath), modified, enrichSince))) {
+			return processSessionFile(filePath, verbose);
+		}
 	}
 	return processSessionFileForViews(filePath, verbose);
+}
+
+/**
+ * Whether a session was active since `cutoff`. The backing file's mtime decides for regular
+ * files; a DB-backed (virtual) session's database mtime can lag its real activity (writes still
+ * in the SQLite WAL), so the adapter's last-activity time is asked too — only when the mtime
+ * alone says "older", and the same way Usage Analysis decides (isActiveSince).
+ */
+export async function isSessionActiveSince(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<boolean> {
+	if (fileMtime >= cutoff) { return true; }
+	return isActiveSince(fileMtime, await activity.lastActivity(), cutoff);
 }
 
 function dailyStatsFromSessions(sessions: Array<SessionData | null | undefined>): DailyTokenStats[] {
