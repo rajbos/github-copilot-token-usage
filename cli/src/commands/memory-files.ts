@@ -19,9 +19,8 @@ import {
 	parseRepoFromRemoteUrl,
 	renderPromotionMarkdown,
 	isValidRepoSlug,
-	createRepoFileExists,
-	createPromotionTargetProbe,
-	createRepoRegularFileCheck,
+	analyzeServerMemoriesForCheckout,
+	normalizeRepoSlug,
 	describePromotionTarget,
 	describeNoPromotionCandidates,
 	sanitizeForDisplay,
@@ -172,8 +171,11 @@ function resolveRepoContext(cwd: string): { root: string; repo: string } | undef
  * (no `gh`, no Copilot access, memory disabled) comes back as an analysis carrying an
  * `error`, so the report can say *why* it is empty.
  */
-async function buildServerMemoriesAnalysis(cwd: string, repoOverride: string | undefined, limit: number): Promise<ServerMemoriesAnalysis | undefined> {
+async function buildServerMemoriesAnalysis(cwd: string, rawRepoOverride: string | undefined, limit: number): Promise<ServerMemoriesAnalysis | undefined> {
 	const context = resolveRepoContext(cwd);
+	// Normalized before validation and fetching (`owner/repo.git` → `owner/repo`), so the API
+	// request goes to the repository the local-checkout match below compares against.
+	const repoOverride = rawRepoOverride === undefined ? undefined : normalizeRepoSlug(rawRepoOverride);
 	const repo = repoOverride ?? context?.repo;
 	if (!repo) { return undefined; }
 	// `--repo` never went through the remote parser's validation but reaches the same URL
@@ -205,19 +207,13 @@ async function buildServerMemoriesAnalysis(cwd: string, repoOverride: string | u
 		},
 	}, limit);
 
-	const analysis = analyzeServerMemories(result, {
-		// Only check citations against the working tree when the analyzed repo is the one
-		// checked out here. With `--repo` pointing elsewhere, the local tree says nothing
-		// about that repo's files, so every citation would look missing — report none instead.
-		//
-		// createRepoFileExists() rather than a bare existsSync(): that follows symlinks, so a
-		// repository symlink out of the checkout would let a citation probe an arbitrary path.
-		fileExists: analyzingThisCheckout ? createRepoFileExists(root) : () => true,
-		// Same reasoning: whether AGENTS.md exists here says nothing about another repository,
-		// so no target is reported rather than a guessed one.
-		isRegularFile: analyzingThisCheckout ? createRepoRegularFileCheck(root) : undefined,
-		promotionTargetStatus: analyzingThisCheckout ? createPromotionTargetProbe(root) : undefined,
-	});
+	// Only check citations against the working tree when the analyzed repo is the one checked
+	// out here. With `--repo` pointing elsewhere, the local tree says nothing about that repo's
+	// files — every citation would look missing, and AGENTS.md here is not its target — so
+	// none are checked and no target is reported rather than a guessed one.
+	const analysis = analyzingThisCheckout
+		? analyzeServerMemoriesForCheckout(result, root)
+		: analyzeServerMemories(result, { fileExists: () => true });
 	// Named in every output mode so it is clear which checkout the citations and the promotion
 	// target were resolved against. Omitted for `--repo` elsewhere: that tree says nothing.
 	return analyzingThisCheckout ? { ...analysis, repoRoot: root } : analysis;

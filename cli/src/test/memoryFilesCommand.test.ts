@@ -7,7 +7,7 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
 import { resolveMemoryFilesThresholds, buildPromoteOutput, analyzesLocalCheckout } from '../commands/memory-files';
-import { analyzeServerMemories } from '../../../src/copilotServerMemories';
+import { analyzeServerMemories, normalizeRepoSlug } from '../../../src/copilotServerMemories';
 import { DEFAULT_STALE_DAYS, DEFAULT_LARGE_FILE_BYTES } from '../../../src/copilotMemoryFiles';
 
 test('resolveMemoryFilesThresholds falls back to defaults when options are missing', () => {
@@ -110,4 +110,12 @@ test('analyzesLocalCheckout matches --repo against the origin case-insensitively
 	assert.equal(analyzesLocalCheckout('owner/repo.git', 'owner/repo'), true, 'remote-form --repo still names this checkout');
 	assert.equal(analyzesLocalCheckout('owner/other', 'owner/repo'), false);
 	assert.equal(analyzesLocalCheckout('owner/repo', undefined), false);
+});
+
+test('a remote-form --repo is normalized before it is matched or fetched', () => {
+	// buildServerMemoriesAnalysis() normalizes the override first; the same slug then drives the
+	// checkout match and the API request.
+	const override = normalizeRepoSlug('Owner/Repo.git');
+	assert.equal(override, 'Owner/Repo');
+	assert.equal(analyzesLocalCheckout(override, 'owner/repo'), true);
 });

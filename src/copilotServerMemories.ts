@@ -263,8 +263,18 @@ export function safeRepoLabel(slug: string): string {
  * ending in `.git`, and {@link parseRepoFromRemoteUrl} already strips it from the origin.
  */
 export function sameRepoSlug(a: string | undefined, b: string | undefined): boolean {
-	const normalize = (slug: string) => slug.trim().replace(/\.git$/i, '').toLowerCase();
-	return typeof a === 'string' && typeof b === 'string' && normalize(a) === normalize(b);
+	return typeof a === 'string' && typeof b === 'string' && normalizeRepoSlug(a).toLowerCase() === normalizeRepoSlug(b).toLowerCase();
+}
+
+/**
+ * An `owner/name` slug as the API wants it: trimmed and without a trailing `.git` (GitHub
+ * forbids that suffix in repository names, so `owner/repo.git` can only mean `owner/repo`).
+ * Letter case is kept — the API is case-insensitive and the user's spelling reads better in
+ * output. Apply it to a `--repo` override *before* validation and fetching, so the request
+ * goes to the same repository {@link sameRepoSlug} matched.
+ */
+export function normalizeRepoSlug(slug: string): string {
+	return slug.trim().replace(/\.git$/i, '');
 }
 
 export function isValidRepoSlug(slug: string): boolean {
@@ -691,7 +701,9 @@ function probeCitations(checkable: string[], deps: ServerMemoryAnalysisDeps): { 
  * after this ordering, so the representative's source is never the one dropped.
  */
 function orderLiveCitations(representative: ServerMemory, liveMembers: ServerMemory[], scan: MemoryScan): string[] {
-	const own = [...(scan.liveCitations.get(representative.id) ?? [])].sort();
+	// De-duplicated like the others: a server that repeats one citation must not let the copies
+	// fill every capped slot and hide another distinct live source.
+	const own = Array.from(new Set(scan.liveCitations.get(representative.id) ?? [])).sort();
 	const ownSet = new Set(own);
 	const others = Array.from(new Set(liveMembers.flatMap(m => scan.liveCitations.get(m.id) ?? []))).filter(c => !ownSet.has(c)).sort();
 	return [...own, ...others];
@@ -819,6 +831,23 @@ export function analyzeServerMemories(
 		byAgent: countBy(memories, m => m.source?.agent),
 		byModel: countBy(memories, m => m.source?.baseModel),
 	};
+}
+
+/**
+ * Analyze a raw memory read against a local checkout, with every filesystem-derived input —
+ * citation staleness, regular-file evidence, documentation presence and the promotion target —
+ * probed *now*. Hosts cache only the raw `result` (the network read) and call this on each use:
+ * the analysis it produces goes stale the moment a cited file is deleted or restored, so it must
+ * never outlive the request it was computed for.
+ */
+export function analyzeServerMemoriesForCheckout(result: RepoMemoriesResult, repoRoot: string): ServerMemoriesAnalysis {
+	return analyzeServerMemories(result, {
+		// Symlink-safe: existsSync() follows links, so a repository symlink pointing out of the
+		// checkout would turn a lexically innocent citation into a probe of an arbitrary path.
+		fileExists: createRepoFileExists(repoRoot),
+		isRegularFile: createRepoRegularFileCheck(repoRoot),
+		promotionTargetStatus: createPromotionTargetProbe(repoRoot),
+	});
 }
 
 /**

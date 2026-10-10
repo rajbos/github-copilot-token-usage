@@ -24,6 +24,8 @@ import {
 	promotionGroupFingerprint,
 	isOpenableCitedDocument,
 	sameRepoSlug,
+	normalizeRepoSlug,
+	analyzeServerMemoriesForCheckout,
 	buildPromotionPrompt,
 	MEMORY_INTEGRATION_ID,
 	isSafeRepoRelativePath,
@@ -1721,4 +1723,66 @@ test('sameRepoSlug treats GitHub slugs case-insensitively', () => {
 	assert.equal(sameRepoSlug('Owner/Repo.git', 'owner/repo'), true);
 	assert.equal(sameRepoSlug('owner/repo.github', 'owner/repo'), false, 'only a whole .git suffix is dropped');
 	assert.equal(serverMemoriesDraftContextMatches({ repo: 'Owner/Repo', repoRoot: '/w/a' }, { repo: 'owner/repo', repoRoot: '/w/a' }), true);
+});
+
+// ---------------------------------------------------------------------------
+// Review round 9 (#2373): recompute checkout-dependent results; normalize the
+// override; de-duplicate the representative's citations
+// ---------------------------------------------------------------------------
+
+test('analyzeServerMemoriesForCheckout reflects files deleted or restored since the read', () => {
+	const fsMod = require('fs') as typeof import('fs');
+	const os = require('os') as typeof import('os');
+	const pathMod = require('path') as typeof import('path');
+	const root = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'srvmem-recompute-'));
+	try {
+		fsMod.mkdirSync(pathMod.join(root, 'src'));
+		fsMod.mkdirSync(pathMod.join(root, 'docs'));
+		fsMod.writeFileSync(pathMod.join(root, 'src', 'a.ts'), 'x');
+		// One raw read, cached by the host for an hour.
+		const result = { repo: 'o/n', enabled: true, memories: [
+			memory({ id: '1', subject: 'promotable', citations: ['src/a.ts:1'] }),
+			memory({ id: '2', subject: 'documented', citations: ['docs/guide.md:1'] }),
+		] };
+		const first = analyzeServerMemoriesForCheckout(result, root);
+		assert.deepEqual(first.promotionGroups.map(g => g.displaySubject), ['promotable']);
+		assert.deepEqual(first.documentedMemories[0].missingInstructionFiles, ['docs/guide.md']);
+		assert.deepEqual(first.promotionTarget, { path: 'AGENTS.md', exists: false });
+
+		// The group's last cited file is deleted and the documentation is restored, with no new
+		// network read: recomputing from the same raw result must see both.
+		fsMod.rmSync(pathMod.join(root, 'src', 'a.ts'));
+		fsMod.writeFileSync(pathMod.join(root, 'docs', 'guide.md'), '# guide');
+		fsMod.writeFileSync(pathMod.join(root, 'AGENTS.md'), '# agents');
+		const second = analyzeServerMemoriesForCheckout(result, root);
+		assert.deepEqual(second.promotionGroups, [], 'no Ask Copilot for a fact with no surviving source');
+		assert.equal(second.fullyStaleCount, 1);
+		assert.deepEqual(second.documentedMemories[0].missingInstructionFiles, [], 'a restored doc is no longer missing');
+		assert.deepEqual(second.promotionTarget, { path: 'AGENTS.md', exists: true });
+	} finally {
+		fsMod.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('normalizeRepoSlug drops whitespace and a trailing .git but keeps case', () => {
+	assert.equal(normalizeRepoSlug(' Owner/Repo.git '), 'Owner/Repo');
+	assert.equal(normalizeRepoSlug('owner/repo'), 'owner/repo');
+	assert.equal(normalizeRepoSlug('owner/repo.github'), 'owner/repo.github');
+	// The normalized override is what validation and the API request see.
+	assert.equal(isValidRepoSlug(normalizeRepoSlug('owner/repo.git')), true);
+	assert.equal(buildMemoryApiUrl(normalizeRepoSlug('owner/repo.git'), 'enabled').includes('repo.git'), false);
+});
+
+test('the representative\'s repeated citations cannot crowd out another live source', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [
+			memory({ id: '1', subject: 's', fact: 'The longest, representative wording.', citations: Array.from({ length: 6 }, () => 'src/a.ts:1') }),
+			memory({ id: '2', subject: 's', fact: 'Short.', citations: ['src/b.ts:2'] }),
+		],
+	}, { fileExists: () => true, promotionTargetStatus: () => 'exists' });
+	assert.deepEqual(analysis.promotionGroups[0].liveCitations, ['src/a.ts:1', 'src/b.ts:2']);
+	const prompt = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0].prompt ?? '';
+	assert.match(prompt, /Cited sources: src\/a\.ts:1, src\/b\.ts:2/);
 });

@@ -193,9 +193,11 @@ fully stale breakdown, rather than claiming every memory is already documented.
   memory is not actually written down any more, so the hint says to keep it, and to check
   the cited file before deleting any memory.
   "Documented" follows `INSTRUCTION_PATH_PATTERN`, which also matches `docs/` and
-  `.github/skills|agents/`. The stored copy of such a memory is redundant; it can
-  only be deleted on GitHub (Settings → Copilot → Memory), since this repository
-  deliberately implements no write route.
+  `.github/skills|agents/`. The stored copy is redundant only once you have confirmed
+  that at least one cited file still exists and still states the fact; when every cited
+  file is missing, or none says it any more, the memory may be the only remaining copy
+  and should be kept. Deletion happens on GitHub (Settings → Copilot → Memory), since this
+  repository deliberately implements no write route.
 
 ## Usage
 

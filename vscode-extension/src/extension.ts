@@ -138,16 +138,15 @@ const MEMORY_FILES_SCAN_TTL_MS = 5 * 60 * 1000;
 // --- Copilot server-side repository memories ---
 import {
   fetchRepoMemories as _fetchRepoMemories,
-  analyzeServerMemories as _analyzeServerMemories,
   parseRepoFromRemoteUrl as _parseRepoFromRemoteUrl,
   toServerMemoriesAnalysisView as _toServerMemoriesAnalysisView,
-  createRepoFileExists as _createRepoFileExists,
   createPromotionTargetProbe as _createPromotionTargetProbe,
   createRepoRegularFileCheck as _createRepoRegularFileCheck,
-  withFreshPromotionTarget as _withFreshPromotionTarget,
   buildPromotionPromptForSubject as _buildPromotionPromptForSubject,
   isOpenableCitedDocument as _isOpenableCitedDocument,
   sameRepoSlug as _sameRepoSlug,
+  analyzeServerMemoriesForCheckout as _analyzeServerMemoriesForCheckout,
+  type RepoMemoriesResult as _RepoMemoriesResult,
 } from '../../src/copilotServerMemories';
 import { readGitOriginUrl as _readGitOriginUrl, isGitRepoRoot as _isGitRepoRoot } from '../../src/darkFactorySignals';
 
@@ -1396,6 +1395,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * this field holds and a background refresh updates it for the *next* render.
 	 */
 	private _serverMemoriesAnalysis: ServerMemoriesAnalysis | null | undefined;
+	/**
+	 * The raw memory read {@link _serverMemoriesAnalysis} was computed from. Only this network
+	 * result is worth caching: everything derived from the checkout (staleness, live evidence,
+	 * missing docs, the target) is recomputed from it on each use by
+	 * {@link currentServerMemoriesAnalysis}.
+	 */
+	private _serverMemoriesResult: _RepoMemoriesResult | undefined;
 	/** Wall-clock time (ms) of the last server-memory fetch attempt, successful or not. */
 	private _serverMemoriesFetchedAt: number | undefined;
 	/**
@@ -7223,6 +7229,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// disqualified from publishing, rather than overwriting this clear when it returns.
 		this._serverMemoriesGeneration++;
 		this._serverMemoriesAnalysis = undefined;
+		this._serverMemoriesResult = undefined;
 		this._serverMemoriesRepo = undefined;
 		this._serverMemoriesRepoRoot = undefined;
 		this._serverMemoriesFetchedAt = undefined;
@@ -7345,6 +7352,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		if (decision.clearCache) {
 			this._serverMemoriesAnalysis = null;
+			this._serverMemoriesResult = undefined;
 			this._serverMemoriesRepo = undefined;
 			this._serverMemoriesRepoRoot = undefined;
 			this._serverMemoriesFetchedAt = undefined;
@@ -7368,6 +7376,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// non-prompting getSession() call, so repeating it costs nothing.
 					if (this.isServerMemoriesContextCurrent(context, generation)) {
 						this._serverMemoriesAnalysis = null;
+						this._serverMemoriesResult = undefined;
 						this._serverMemoriesRepo = undefined;
 						this._serverMemoriesRepoRoot = undefined;
 						this._serverMemoriesFetchedAt = undefined;
@@ -7377,20 +7386,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const result = await _fetchRepoMemories(context.repo, {
 					getToken: async () => token,
 				});
-				// Symlink-safe: existsSync() follows links, so a repository symlink pointing out of
-				// the checkout would turn a lexically-innocent citation into a probe of an
-				// arbitrary path. createRepoFileExists() resolves the real path and requires it
-				// to stay under the real root.
-				const analysis = _analyzeServerMemories(result, {
-					fileExists: _createRepoFileExists(context.repoRoot),
-					isRegularFile: _createRepoRegularFileCheck(context.repoRoot),
-					promotionTargetStatus: _createPromotionTargetProbe(context.repoRoot),
-				});
+				const analysis = _analyzeServerMemoriesForCheckout(result, context.repoRoot);
 				// The workspace can change, or the user can switch the feature off, while this
 				// request is in flight. Publishing unconditionally would then put one repository's
 				// memories on screen for another — or restore a section the user just disabled.
 				if (this.isServerMemoriesContextCurrent(context, generation)) {
 					this._serverMemoriesAnalysis = analysis;
+					this._serverMemoriesResult = result;
 					this._serverMemoriesRepo = context.repo;
 					this._serverMemoriesRepoRoot = context.repoRoot;
 					this._serverMemoriesFetchedAt = Date.now();
@@ -7399,6 +7401,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log(`⚠️ Server memories fetch failed: ${String(err)}`);
 				if (this.isServerMemoriesContextCurrent(context, generation)) {
 					this._serverMemoriesAnalysis = null;
+					this._serverMemoriesResult = undefined;
 					this._serverMemoriesRepo = context.repo;
 					this._serverMemoriesRepoRoot = context.repoRoot;
 					this._serverMemoriesFetchedAt = Date.now();
@@ -7437,11 +7440,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private buildServerMemoriesView(): ServerMemoriesAnalysisView | null {
 		this.scheduleServerMemoriesRefresh();
 		const repoRoot = this._serverMemoriesRepoRoot;
-		const cached = this._serverMemoriesAnalysis ?? null;
-		// Only the network read is cached. The promotion target is a filesystem fact that can
-		// change at any moment, so it is re-probed on every render (two lstat calls) rather than
-		// served from the hour-old analysis. The click handler probes again before drafting.
-		const analysis = cached && repoRoot ? _withFreshPromotionTarget(cached, _createPromotionTargetProbe(repoRoot)) : cached;
+		// Only the network read is cached. Promotion eligibility, live evidence, missing docs and
+		// the target are filesystem facts that change at any moment, so they are recomputed on
+		// every render; the click handlers recompute again before acting.
+		const analysis = this.currentServerMemoriesAnalysis();
 		return _toServerMemoriesAnalysisView(analysis, {
 			// The store is per GitHub repository, not per workspace, so the section names the
 			// checkout it resolved the repository from and how many folders it chose among.
@@ -7453,6 +7455,20 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// decides whether to show the button; openServerMemoryCitation() re-checks on click.
 			isOpenable: repoRoot ? _createRepoRegularFileCheck(repoRoot) : undefined,
 		});
+	}
+
+	/**
+	 * The server-memories analysis recomputed against the checkout *now*, from the cached raw read.
+	 * The hour-long cache covers only the network request; a file deleted or restored since then
+	 * is reflected here (a group losing its last live source loses its button; a restored
+	 * documentation file is no longer "missing"). Falls back to the cached analysis when there is
+	 * no raw result to recompute from, e.g. a read that failed.
+	 */
+	private currentServerMemoriesAnalysis(): ServerMemoriesAnalysis | null {
+		const result = this._serverMemoriesResult;
+		const repoRoot = this._serverMemoriesRepoRoot;
+		if (result && repoRoot) { return _analyzeServerMemoriesForCheckout(result, repoRoot); }
+		return this._serverMemoriesAnalysis ?? null;
 	}
 
 	/**
@@ -7473,7 +7489,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * escaping symlink while the panel stayed open be opened from outside the checkout.
 	 */
 	private async openServerMemoryCitation(repoRelativePath: string): Promise<void> {
-		const analysis = this._serverMemoriesAnalysis;
+		const analysis = this.currentServerMemoriesAnalysis();
 		const repoRoot = this._serverMemoriesRepoRoot;
 		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot)) { return; }
 		if (!_isOpenableCitedDocument(analysis, repoRelativePath, _createRepoRegularFileCheck(repoRoot))) {
@@ -7491,7 +7507,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * become unsafe. With no safe target any more, nothing is drafted.
 	 */
 	private async draftServerMemoryPromotion(subject: string, fingerprint: string): Promise<void> {
-		const analysis = this._serverMemoriesAnalysis;
+		const analysis = this.currentServerMemoriesAnalysis();
 		const repoRoot = this._serverMemoriesRepoRoot;
 		// Re-resolve the workspace's repository now, not just the target file: the button may
 		// have been rendered before the workspace folders (or their trust) changed.
