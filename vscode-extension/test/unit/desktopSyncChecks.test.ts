@@ -29,6 +29,7 @@ const desktopContract = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validat
 	readDesktopViews: () => string[];
 	collectViewFiles: (entry: string) => string[];
 	collectIpcHandledCommands: (file: string) => Set<string>;
+	selectorOverreach: (token: string, postedBy: Set<string>, viewOwnTexts: Map<string, string>) => string[];
 	analyse: () => { views: string[]; findings: Finding[] };
 };
 const webviewShell = requireFromHere(path.join(REPO_ROOT, 'scripts', 'validate-webview-shell.js')) as {
@@ -90,6 +91,21 @@ test('desktop contract: only registerIpcHandlers counts as handling a command', 
 		}
 	`);
 	assert.deepEqual([...desktopContract.collectIpcHandledCommands(file)].sort(), ['copyText', 'refresh', 'showDetails']);
+});
+
+test('desktop contract: a hidden selector must not reach views that do not post its command', () => {
+	// Desktop CSS applies to every panel. `.share-btn` sat on both the Diagnostics
+	// and the Fluency Score share buttons, so hiding it for Diagnostics' command
+	// silently hid Fluency Score's controls too.
+	const viewOwnTexts = new Map([
+		['diagnostics', '<button id="btn-share-card-linkedin" class="share-btn">'],
+		['maturity', '<button id="btn-share-linkedin" class="share-btn">'],
+	]);
+	const postedBy = new Set(['diagnostics']);
+	assert.deepEqual(desktopContract.selectorOverreach('share-btn', postedBy, viewOwnTexts), ['maturity']);
+	assert.deepEqual(desktopContract.selectorOverreach('btn-share-card-linkedin', postedBy, viewOwnTexts), []);
+	// Whole-word match: an id that merely starts with the token is a different control.
+	assert.deepEqual(desktopContract.selectorOverreach('btn-share', postedBy, viewOwnTexts), []);
 });
 
 test('webview shell: every --vscode-* token the webviews use is defined for the desktop app and harness', () => {

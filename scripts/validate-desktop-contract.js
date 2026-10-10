@@ -125,6 +125,26 @@ function readUnsupported() {
 }
 
 /** The identifier a simple `#id` / `.class` selector targets, as it would appear in source. */
+/** Views whose bundled sources mention `token` as a whole word (id or class name). */
+function viewsMentioning(token, viewTexts) {
+  const pattern = new RegExp(`(^|[^\\w-])${token}([^\\w-]|$)`);
+  return [...viewTexts].filter(([, text]) => pattern.test(text)).map(([view]) => view).sort();
+}
+
+/**
+ * Views a hidden selector reaches that do not post the command it is listed
+ * under. Desktop CSS applies to every panel, so a class shared across views
+ * (`.share-btn` on both Diagnostics and Fluency Score) would also hide another
+ * view's controls — which then disappear or reappear with an unrelated entry.
+ *
+ * `viewOwnTexts` holds only each view's own directory: shared modules such as
+ * the nav-button registry list every id for every view, so counting them would
+ * report views that never render the control.
+ */
+function selectorOverreach(token, postedBy, viewOwnTexts) {
+  return viewsMentioning(token, viewOwnTexts).filter((view) => !postedBy.has(view));
+}
+
 function selectorToken(selector) {
   const match = selector.trim().match(/^[#.]([\w-]+)$/);
   return match ? match[1] : undefined;
@@ -187,14 +207,19 @@ function analyse() {
 
   /** command -> { views: Set, locations: [] } */
   const posted = new Map();
-  const allViewFiles = new Set();
+  /** view -> the text of every source file in its bundle */
+  const viewTexts = new Map();
+  /** view -> the text of the bundle's files under the view's own directory */
+  const viewOwnTexts = new Map();
   for (const view of views) {
     const entry = path.join(EXT_WEBVIEW_DIR, view, 'main.ts');
     if (!fs.existsSync(entry)) {
       throw new ConfigError(`Desktop bundles '${view}.js' but ${path.relative(REPO_ROOT, entry)} does not exist.`);
     }
     const files = collectViewFiles(entry);
-    files.forEach((f) => allViewFiles.add(f));
+    viewTexts.set(view, files.map((f) => fs.readFileSync(f, 'utf8')).join('\n'));
+    const viewDir = path.join(EXT_WEBVIEW_DIR, view) + path.sep;
+    viewOwnTexts.set(view, files.filter((f) => f.startsWith(viewDir)).map((f) => fs.readFileSync(f, 'utf8')).join('\n'));
     for (const [command, locations] of collectPostedCommands(files)) {
       if (!posted.has(command)) {
         posted.set(command, { views: new Set(), locations: [] });
@@ -226,7 +251,6 @@ function analyse() {
     });
   }
 
-  const sourceText = [...allViewFiles].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   for (const [command, entry] of Object.entries(unsupported).sort(([a], [b]) => a.localeCompare(b))) {
     if (handled.has(command)) {
       findings.push({
@@ -249,12 +273,23 @@ function analyse() {
           command,
           detail: `hides '${selector}', which is not a simple #id or .class selector the check can verify`,
         });
-      } else if (!new RegExp(`(^|[^\\w-])${token}([^\\w-]|$)`).test(sourceText)) {
+      } else if (viewsMentioning(token, viewTexts).length === 0) {
         findings.push({
           kind: 'selector',
           command,
           detail: `hides '${selector}', but '${token}' no longer appears in the desktop views' sources — the selector hides nothing`,
         });
+      } else {
+        const overreach = selectorOverreach(token, posted.get(command)?.views ?? new Set(), viewOwnTexts);
+        if (overreach.length > 0) {
+          findings.push({
+            kind: 'selector',
+            command,
+            detail:
+              `hides '${selector}', which also appears in the ${overreach.join(', ')} view(s) that do not post '${command}' — ` +
+              "it would hide their controls too. Use a selector specific to this command's controls.",
+          });
+        }
       }
     }
   }
@@ -326,4 +361,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { readDesktopViews, collectViewFiles, collectIpcHandledCommands, analyse };
+module.exports = { readDesktopViews, collectViewFiles, collectIpcHandledCommands, selectorOverreach, analyse };

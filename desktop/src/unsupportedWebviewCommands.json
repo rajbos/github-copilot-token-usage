@@ -90,8 +90,18 @@
     },
     "shareCardToSocial": {
       "status": "hidden",
-      "hiddenBy": [".share-btn"],
+      "hiddenBy": ["#btn-share-card-linkedin", "#btn-share-card-bluesky", "#btn-share-card-mastodon"],
       "reason": "Diagnostics: social sharing is not wired up in the desktop app."
+    },
+    "shareToSocial": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-share-linkedin", "#btn-share-bluesky", "#btn-share-mastodon"],
+      "reason": "Fluency Score: social sharing is not wired up in the desktop app."
+    },
+    "saveChartImage": {
+      "status": "hidden",
+      "hiddenBy": ["#btn-export-toggle"],
+      "reason": "Fluency Score: the export menu (PNG / PDF / PowerPoint) saves through VS Code."
     },
 
     "analyzeModelUsage": { "status": "gap", "reason": "Diagnostics: model-usage analysis action is visible and unhandled." },
@@ -102,10 +112,8 @@
 
     "dismissTips": { "status": "gap", "reason": "Fluency Score: dismissing tips is unhandled." },
     "resetDismissedTips": { "status": "gap", "reason": "Fluency Score: resetting dismissed tips is unhandled." },
-    "saveChartImage": { "status": "gap", "reason": "Fluency Score: export as image is unhandled." },
     "searchMcpExtensions": { "status": "gap", "reason": "Fluency Score: MCP marketplace search is a VS Code action." },
     "shareToIssue": { "status": "gap", "reason": "Fluency Score: share to issue is unhandled." },
-    "shareToSocial": { "status": "gap", "reason": "Fluency Score: social sharing is unhandled." },
 
     "analyseAllRepositories": { "status": "gap", "reason": "Usage Analysis: repository analysis is unhandled." },
     "analyseRepository": { "status": "gap", "reason": "Usage Analysis: repository analysis is unhandled." },

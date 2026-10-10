@@ -318,7 +318,10 @@ or from the repo root, `./build.ps1 -Project desktop -Target test`.
   (background notices such as telemetry or preferences). A new button in a shared
   view therefore fails the desktop check until someone decides what the desktop
   does with it. Stale entries fail too: a command that is now handled or no longer
-  posted, or a hidden selector whose id/class is gone from the views.
+  posted, or a hidden selector whose id/class is gone from the views. A hidden
+  selector must also be specific to its command: one whose id/class appears in
+  another view that does not post that command fails, because the desktop CSS
+  applies to every panel and would hide that view's controls too.
 - **`check:shell`** (`scripts/validate-webview-shell.js`) — every `--vscode-*`
   token used under `vscode-extension/src/webview/` and `src/webview/` must be
   defined in the visual-view-diff harness's `lib/theme-dark.css` and
