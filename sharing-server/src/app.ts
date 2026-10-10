@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { api } from './routes/api.js';
 import { dashboard } from './routes/dashboard.js';
+import { assertSessionSecretConfigured } from './session.js';
 import { navExtraMiddleware, type NavLink } from './nav.js';
 
 export interface CreateAppOptions {
@@ -46,6 +47,8 @@ export interface CreateAppOptions {
  * ```
  */
 export function createApp(options: CreateAppOptions = {}): Hono {
+	// Covers embedders that serve the app themselves instead of calling `startServer`.
+	assertSessionSecretConfigured();
 	const app = new Hono();
 
 	// Publishes this app's nav links on every request context, so pages registered

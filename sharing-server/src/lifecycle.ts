@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import type { Hono } from 'hono';
 import { getDb, closeDb, restoreFromBackup, backupToAzureFiles, syncAdminLogins } from './db.js';
 import { BACKUP_INTERVAL_MS } from './config.js';
+import { assertSessionSecretConfigured } from './session.js';
 
 export interface StartServerOptions {
 	/** Port to listen on. Defaults to `PORT` env var, then 3000. */
@@ -62,6 +63,9 @@ export function registerShutdownHandlers(): void {
  * handlers and start listening. Downstream servers call this with their own composed app.
  */
 export async function startServer(app: Hono, options: StartServerOptions = {}): Promise<void> {
+	// Fail fast, before touching the database or listening, on an unusable production secret.
+	assertSessionSecretConfigured();
+
 	const port = options.port ?? parseInt(process.env.PORT ?? '3000', 10);
 
 	registerShutdownHandlers();
