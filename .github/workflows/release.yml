@@ -703,6 +703,13 @@ jobs:
         echo "vsix_path=$($vsix.FullName)" >> $env:GITHUB_OUTPUT
         echo "vsix_name=$($vsix.Name)"     >> $env:GITHUB_OUTPUT
 
+    # Fail before upload/publish if the package lacks the webview bundles.
+    - name: Verify .vsix contains the webview bundles
+      shell: pwsh
+      env:
+        VSIX_PATH: ${{ steps.vsix.outputs.vsix_path }}
+      run: node scripts/verify-vsix-webview.js "$env:VSIX_PATH"
+
     # ── Upload .vsix to GitHub release ────────────────────────────────────
 
     - name: Upload .vsix to GitHub release

@@ -171,7 +171,7 @@ function readEntryData(buf, entry) {
 // ── Verification ─────────────────────────────────────────────────────────────
 
 /**
- * @returns {{ok: boolean, expected: string[], failures: string[]}}
+ * @returns {{ok: boolean, expected: string[], failures: string[], entries: string[]}}
  */
 function verifyVsix(vsixBuf, expected) {
   const entries = readZipEntries(vsixBuf);
@@ -196,7 +196,7 @@ function verifyVsix(vsixBuf, expected) {
       catch { failures.push(`${VSIX_WEBVIEW_DIR}${file}: not valid JSON`); }
     }
   }
-  return { ok: failures.length === 0, expected, failures };
+  return { ok: failures.length === 0, expected, failures, entries: [...entries.keys()].sort() };
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
@@ -241,6 +241,9 @@ function main(argv) {
   } else {
     console.error(`FAIL: ${path.basename(vsixPath)} does not contain the expected webview content:`);
     for (const f of result.failures) console.error(`  - ${f}`);
+    // Evidence for diagnosing wrong-path vs genuinely-missing: what the package does contain.
+    console.error(`VSIX contains ${result.entries.length} entries; non-binary-looking ones:`);
+    for (const e of result.entries) if (!/\.(dll|exe|wasm|pdb)$/i.test(e)) console.error(`    ${e}`);
   }
   return result.ok ? 0 : 1;
 }

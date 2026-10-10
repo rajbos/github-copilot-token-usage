@@ -253,3 +253,17 @@ test('CLI exits 2 for a missing file argument or a non-zip file', () => {
   assert.equal(spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' }).status, 2);
   assert.equal(runCli(Buffer.from('not a zip, just some bytes padding padding')).status, 2);
 });
+
+test('failure output lists the VSIX entries so wrong-path vs missing can be told apart', () => {
+  const r = runCli(makeZip([{ name: 'extension.vsixmanifest', data: '<x/>' }, { name: 'Webview/Chart.js', data: 'x' }]));
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /extension\.vsixmanifest/);
+  assert.match(r.stderr, /Webview\/Chart\.js/);
+});
+
+test('AddWebviewBundlesToVsix depends on CopyWebviewBundles (VSIX is written before BeforeTargets="Build" runs)', () => {
+  const csproj = fs.readFileSync(REAL_CSPROJ, 'utf8');
+  const m = csproj.match(/<Target\s+Name="AddWebviewBundlesToVsix"[^>]*>/);
+  assert.ok(m, 'AddWebviewBundlesToVsix target not found');
+  assert.match(m[0], /DependsOnTargets="[^"]*\bCopyWebviewBundles\b[^"]*"/);
+});

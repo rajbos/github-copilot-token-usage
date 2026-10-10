@@ -8,6 +8,7 @@ on:
       - 'cli/**'
       - 'src/**'
       - 'scripts/verify-vsix-webview*.js'
+      - 'vscode-extension/esbuild.js'
       - '.github/workflows/visualstudio-build.yml'
   pull_request:
     branches: [ main, develop ]
@@ -16,6 +17,7 @@ on:
       - 'cli/**'
       - 'src/**'
       - 'scripts/verify-vsix-webview*.js'
+      - 'vscode-extension/esbuild.js'
       - '.github/workflows/visualstudio-build.yml'
 
 permissions:
