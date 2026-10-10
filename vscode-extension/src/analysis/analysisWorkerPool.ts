@@ -147,6 +147,16 @@ const HOST_LOOKUP_COOLDOWN_MS = 60 * 1000;
 /** Generous: a multi-hundred-MB session file parses to a large object graph, but a runaway must not take the host with it. */
 const WORKER_MAX_OLD_GENERATION_MB = 4096;
 
+/** Starts a real worker thread. `WorkerCtor` is a test seam so the options passed to it can be asserted. */
+export function createThreadWorker(workerPath: string, data: AnalysisWorkerData, WorkerCtor: typeof Worker = Worker): WorkerLike {
+	return new WorkerCtor(workerPath, {
+		workerData: data,
+		// Workers inherit the parent's node flags by default; the extension host's (--inspect, --require hooks, ...) are meant for that process, not for this one.
+		execArgv: [],
+		resourceLimits: { maxOldGenerationSizeMb: WORKER_MAX_OLD_GENERATION_MB },
+	}) as unknown as WorkerLike;
+}
+
 export class AnalysisWorkerPool {
 	private readonly slots: Slot[] = [];
 	private readonly queue: Pending[] = [];
@@ -328,12 +338,7 @@ export class AnalysisWorkerPool {
 		const data: AnalysisWorkerData = { extensionPath: this.options.extensionPath };
 		const worker = this.options.createWorker
 			? this.options.createWorker(this.options.workerPath, data)
-			: new Worker(this.options.workerPath, {
-				workerData: data,
-				// Workers inherit the parent's node flags by default; the extension host's (--inspect, --require hooks, ...) are meant for that process, not for this one.
-				execArgv: [],
-				resourceLimits: { maxOldGenerationSizeMb: WORKER_MAX_OLD_GENERATION_MB },
-			}) as unknown as WorkerLike;
+			: createThreadWorker(this.options.workerPath, data);
 		// A worker alone must never keep the host process alive.
 		worker.unref?.();
 		const slot: Slot = { worker, pending: new Map(), ready: false, resumeQueue: [] };
