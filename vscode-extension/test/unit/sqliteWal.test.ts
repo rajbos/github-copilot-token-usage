@@ -12,6 +12,10 @@ import {
 	sweepStaleWalTempFiles,
 	walMergeCacheSizeForTests,
 	walMergeCacheHasEntryForTests,
+	WAL_MERGE_MIN_INTERVAL_MS,
+	WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS,
+	WRITER_ACTIVE_WAL_RECENCY_MS,
+	setNodeSqliteLoaderForTests,
 } from '../../../src/utils/sqliteWal';
 
 /**
@@ -499,5 +503,64 @@ test('tryReadDbWithWal throttles a persistently failing merge instead of retryin
 	} finally {
 		restoreCopyFileSync();
 		fixture.cleanup();
+	}
+});
+
+test('the throttle interval constants keep their documented values (1 min, 5 min writer-active, 30 s recency)', () => {
+	assert.equal(WAL_MERGE_MIN_INTERVAL_MS, 60_000);
+	assert.equal(WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS, 5 * 60_000);
+	assert.equal(WRITER_ACTIVE_WAL_RECENCY_MS, 30_000);
+	assert.ok(WAL_MERGE_WRITER_ACTIVE_INTERVAL_MS > WAL_MERGE_MIN_INTERVAL_MS, 'a live writer must back off harder than the plain throttle');
+});
+
+test('the over-cap skip is logged once per path via console.debug, and again after the path becomes eligible and regrows', async () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlitewal-logonce-'));
+	const dbPath = path.join(tmpDir, 'huge.db');
+	const walPath = dbPath + '-wal';
+	const messages: string[] = [];
+	const originalDebug = console.debug;
+	console.debug = (...args: unknown[]) => { messages.push(args.join(' ')); };
+	const makeSparse = (file: string, size: number) => {
+		const fd = fs.openSync(file, 'w');
+		fs.ftruncateSync(fd, size);
+		fs.closeSync(fd);
+	};
+	try {
+		makeSparse(dbPath, MAX_WAL_MERGE_DB_SIZE_BYTES + 1024);
+		fs.writeFileSync(walPath, 'not empty');
+
+		await tryReadDbWithWal(dbPath);
+		await tryReadDbWithWal(dbPath);
+		await tryReadDbWithWal(dbPath);
+		const forPath = () => messages.filter(m => m.includes(dbPath));
+		assert.equal(forPath().length, 1, 'repeated polls over the cap must log exactly once');
+
+		// Path becomes ineligible for a different reason (empty WAL) then eligible-sized again.
+		makeSparse(dbPath, 1024);
+		await tryReadDbWithWal(dbPath); // merge attempt on a fake db fails quietly; clears the logged flag
+		makeSparse(dbPath, MAX_WAL_MERGE_DB_SIZE_BYTES + 1024);
+		await tryReadDbWithWal(dbPath);
+		assert.equal(forPath().length, 2, 'regrowing past the cap after being eligible must log again');
+	} finally {
+		console.debug = originalDebug;
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test('falls back to a direct (WAL-blind) read, without throwing, when node:sqlite cannot be loaded', async () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlitewal-nonative-'));
+	const dbPath = path.join(tmpDir, 'plain.db');
+	try {
+		fs.writeFileSync(dbPath, 'main-file-bytes');
+		fs.writeFileSync(dbPath + '-wal', 'pending wal frames');
+		setNodeSqliteLoaderForTests(() => { throw new Error('Cannot find module node:sqlite'); });
+
+		assert.equal(await tryReadDbWithWal(dbPath), null, 'no merge is possible without node:sqlite');
+		const result = await readDbBufferWithWalFingerprint(dbPath);
+		assert.equal(result.buffer.toString(), 'main-file-bytes', 'must fall back to the plain main-file bytes');
+		assert.equal(result.walIncluded, false, 'the non-empty WAL was not merged, and must be reported as such');
+	} finally {
+		setNodeSqliteLoaderForTests(undefined);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
 	}
 });
