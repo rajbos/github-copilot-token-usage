@@ -272,11 +272,10 @@ function copyWithFeedback(section: HTMLElement, button: HTMLButtonElement, text:
 	} catch {
 		return;
 	}
-	write.then(() => {
-		const original = button.textContent;
+write.then(() => {
 		button.textContent = localize('usage.skillSuggestions.copied');
 		announce(section, localize('usage.skillSuggestions.copied'));
-		setTimeout(() => { button.textContent = original; }, 2000);
+		setTimeout(() => { button.textContent = localize('usage.skillSuggestions.copyPrompt'); }, 2000);
 	}).catch(() => { /* clipboard unavailable: leave the label unchanged */ });
 }
 
