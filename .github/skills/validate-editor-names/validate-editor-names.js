@@ -47,7 +47,7 @@ const CLI_ANALYSIS      = path.join(ROOT, 'cli', 'src', 'analysis.ts');
 const WS_HELPERS        = path.join(ROOT, 'src', 'workspaceHelpers.ts');
 // The authoritative icon map lives in editorIcons.ts; formatUtils.ts only
 // re-exports it for the webview bundles.
-const FORMAT_UTILS      = path.join(ROOT, 'vscode-extension', 'src', 'editorIcons.ts');
+const FORMAT_UTILS      = path.join(ROOT, 'src', 'editorIcons.ts');
 
 // ---------------------------------------------------------------------------
 // Source file reading

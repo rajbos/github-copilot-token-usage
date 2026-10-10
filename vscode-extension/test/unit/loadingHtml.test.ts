@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { getLoadingHtmlBody, getLoadingHtmlScript } from '../../src/loadingHtml';
+import { getLoadingHtmlBody, getLoadingHtmlScript } from '../../../src/loadingHtml';
 
 test('loading timer starts from the supplied analysis start time', () => {
 	const startedAtMs = 1_725_000_123_456;

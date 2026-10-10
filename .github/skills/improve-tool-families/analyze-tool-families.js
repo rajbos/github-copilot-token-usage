@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Analyze coverage of vscode-extension/src/toolFamilies.ts (DEFAULT_TOOL_FAMILIES)
+ * Analyze coverage of src/toolFamilies.ts (DEFAULT_TOOL_FAMILIES)
  * against the canonical tool-name list in src/toolNames.json, and optionally
  * against a live/adhoc list of tool names (e.g. the current agent's own tool list).
  *
@@ -35,7 +35,7 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const TOOL_NAMES_JSON = path.join(REPO_ROOT, 'src', 'toolNames.json');
-const TOOL_FAMILIES_TS = path.join(REPO_ROOT, 'vscode-extension', 'src', 'toolFamilies.ts');
+const TOOL_FAMILIES_TS = path.join(REPO_ROOT, 'src', 'toolFamilies.ts');
 
 function fail(message) {
   console.error(`ERROR: ${message}`);

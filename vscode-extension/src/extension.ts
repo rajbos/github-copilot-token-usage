@@ -21,8 +21,8 @@ import customizationPatternsData from '../../src/customizationPatterns.json';
 import copilotPlansData from './copilotPlans.json';
 import * as packageJson from '../package.json';
 import { getToolFamilies, DEFAULT_TOOL_FAMILIES } from './toolFamilies';
-import { getEditorIconByName } from './editorIcons';
-import * as loadingHtml from './loadingHtml';
+import { getEditorIconByName } from '../../src/editorIcons';
+import * as loadingHtml from '../../src/loadingHtml';
 
 // --- Core types ---
 import type {
