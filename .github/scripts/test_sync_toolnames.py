@@ -36,14 +36,8 @@ class SyncToolNamesTests(unittest.TestCase):
         )
 
     def test_missing_enum_fails_loudly(self):
-        only_tool_name = "export enum ToolName {
-	A = 'a_tool',
-}
-"
-        only_contributed = "export enum ContributedToolName {
-	B = 'b_tool',
-}
-"
+        only_tool_name = "export enum ToolName {\n\tA = 'a_tool',\n}\n"
+        only_contributed = "export enum ContributedToolName {\n\tB = 'b_tool',\n}\n"
         with self.assertRaisesRegex(ValueError, "ContributedToolName"):
             extract_tool_ids(only_tool_name)
         with self.assertRaisesRegex(ValueError, r"enum ToolName not found"):
