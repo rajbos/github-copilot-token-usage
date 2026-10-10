@@ -53,9 +53,9 @@ node .github/skills/scan-hardcoded-strings/scan-hardcoded-strings.js
 # Machine-readable JSON
 node .github/skills/scan-hardcoded-strings/scan-hardcoded-strings.js --json
 
-# Write the report somewhere other than the default hardcoded-strings-report.md
-# (the CLI smoke tests in scan-hardcoded-strings.test.js use this so running
-# the suite doesn't rewrite the tracked report on every run)
+# Write the report somewhere other than the default (git-ignored) hardcoded-strings-report.md
+# (the CLI smoke tests in scan-hardcoded-strings.test.js use this to keep
+# scratch output out of the repo root)
 node .github/skills/scan-hardcoded-strings/scan-hardcoded-strings.js --out /tmp/scratch-report.md
 ```
 
@@ -63,7 +63,7 @@ The script scans:
 - `vscode-extension/src/webview/**/*.ts` (excluding `*.test.ts`)
 - `vscode-extension/src/extension.ts` (the `get*Html` methods that build webview HTML)
 
-and writes a report to `hardcoded-strings-report.md` at the repo root, in
+and writes a report to the git-ignored `hardcoded-strings-report.md` at the repo root, in
 addition to printing a console summary grouped by file.
 
 ## What counts as a "UI-rendering position"
