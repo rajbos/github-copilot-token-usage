@@ -149,7 +149,7 @@ let modelOtherExpanded: boolean = (_initSort?.modelOtherExpanded) ?? false;
 let editorOtherExpanded: boolean = (_initSort?.editorOtherExpanded) ?? false;
 let editorSectionCollapsed: boolean = (_initSort?.editorSectionCollapsed) ?? false;
 /** Billing-group (provider) names deselected in the "Cost by Provider" filter. Empty = all providers included. */
-let excludedProviders: Set<string> = new Set(_initSort?.excludedProviders ?? []);
+const excludedProviders: Set<string> = new Set(_initSort?.excludedProviders ?? []);
 /** The subset of `excludedProviders` that applies to the current render — see `getActiveExcludedProviders`. */
 let activeExcludedProviders: Set<string> = new Set();
 /** Last rendered stats, kept so provider-filter toggles can trigger a full re-render. */

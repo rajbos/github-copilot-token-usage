@@ -414,7 +414,7 @@ function getRepoDisplayName(repoUrl: string): string {
   }
 
   // Remove .git suffix if present
-  let url = repoUrl.replace(/\.git$/, "");
+  const url = repoUrl.replace(/\.git$/, "");
 
   // Handle SSH URLs like git@github.com:owner/repo
   if (url.includes("@") && url.includes(":")) {
