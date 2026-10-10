@@ -44,7 +44,7 @@
     "build": "node esbuild.js",
     "build:production": "node esbuild.js --production",
     "bundle-exe": "pwsh -NoProfile -File bundle-exe.ps1",
-    "lint": "eslint src",
+    "lint": "npm --prefix ../vscode-extension run lint",
     "check-types": "tsc --noEmit",
     "test": "node dist/cli.js --help && node dist/cli.js --version && pnpm run test:unit",
     "test:unit": "node esbuild.tests.js && node --test \"out/test/*.test.js\""

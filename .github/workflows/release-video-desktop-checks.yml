@@ -1,0 +1,139 @@
+name: Release video & Desktop - Checks
+
+# PR checks for two packages that otherwise have no CI before release time:
+#   - release-video/: type-check + node:test suite (no FFmpeg, TTS models or
+#     browsers needed - the tests are pure logic over the catalog/narration/
+#     timeline modules).
+#   - desktop/: type-check only. It imports the shared src/, cli/src and
+#     vscode-extension/src sources, so an extension refactor can break it;
+#     desktop-publish.yml would otherwise be the first place that shows up.
+# Path-gated in a job rather than with a `paths:` trigger so the jobs can stay
+# required status checks (they report "skipped" instead of never arriving).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-video/**'
+      - 'desktop/**'
+      - 'src/**'
+      - 'cli/src/**'
+      - 'vscode-extension/src/**'
+      - 'vscode-extension/package.nls.json'
+      - '.github/skills/visual-view-diff/views.config.json'
+      - '.github/workflows/release-video-desktop-checks.yml'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      release-video: ${{ github.event_name == 'push' || steps.filter.outputs.release-video == 'true' }}
+      desktop: ${{ github.event_name == 'push' || steps.filter.outputs.desktop == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for relevant file changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            release-video:
+              - 'release-video/**'
+              # Reads the What's New catalog, its strings and the view registry.
+              - 'vscode-extension/src/whatsNew/**'
+              - 'vscode-extension/package.nls.json'
+              - '.github/skills/visual-view-diff/views.config.json'
+              - '.github/workflows/release-video-desktop-checks.yml'
+            desktop:
+              - 'desktop/**'
+              - 'src/**'
+              - 'cli/src/**'
+              - 'cli/package-lock.json'
+              - 'vscode-extension/src/**'
+              - 'vscode-extension/package-lock.json'
+              - '.github/workflows/release-video-desktop-checks.yml'
+
+  release-video:
+    name: release-video - type-check & test
+    needs: check-changes
+    if: needs.check-changes.outputs.release-video == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: release-video/package-lock.json
+
+      - name: Install release-video dependencies
+        working-directory: release-video
+        run: npm ci --ignore-scripts
+
+      - name: Type-check
+        working-directory: release-video
+        run: npm run check-types
+
+      # `npm test` builds, then runs node:test over dist/test.
+      - name: Run release-video tests
+        working-directory: release-video
+        run: npm test
+
+  desktop:
+    name: desktop - type-check
+    needs: check-changes
+    if: needs.check-changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: |
+            vscode-extension/package-lock.json
+            cli/package-lock.json
+            desktop/package-lock.json
+
+      # Same three installs as desktop-publish.yml: the desktop app type-checks
+      # against the extension's typings and the CLI's sources.
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: npm ci --ignore-scripts
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm ci --ignore-scripts
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci --ignore-scripts
+
+      - name: Type-check desktop app
+        working-directory: desktop
+        run: npm run check-types
