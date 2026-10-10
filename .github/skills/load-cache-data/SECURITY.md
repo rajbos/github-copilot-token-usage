@@ -80,8 +80,10 @@ None.
   100 entries (`parseLastCount`, line 34).
 - Only the user's VS Code globalStorage directories are searched (`readCacheFile`, line 351).
   Every decision is made about the open descriptor, never about a path checked beforehand.
-  The candidate is opened first (with `O_NOFOLLOW` on POSIX, which refuses a symlink), and
-  `fstat` on the descriptor must report a regular file. The path is then `lstat`ed, which
+  The candidate is opened first. On POSIX the open uses `O_NOFOLLOW`, which refuses a
+  symlink, and `O_NONBLOCK`, so opening a FIFO returns at once instead of waiting for a writer
+  (it has no effect on reading a regular file). Then `fstat` on the descriptor must report a
+  regular file. The path is then `lstat`ed, which
   does not follow links, and must be a regular file with the same `dev` and `ino` as the
   descriptor (compared as bigints). That refuses a symlink on Windows, where `open` follows
   it but `lstat` reports the link itself, and anything else Node reports as a link (such as
@@ -103,7 +105,8 @@ None.
   rules: which files are read and in what order, envelope unwrapping, temp/cwd files ignored,
   directories skipped, and symlinks refused and skipped in favour of the next real
   candidate. The symlink tests run on Windows too, and skip only when the account cannot
-  create symlinks (`EPERM`).
+  create symlinks (`EPERM`). A FIFO test (POSIX only) checks that a FIFO at a candidate path
+  is skipped without blocking; every spawned run has a 15 s timeout, so a hang fails the test.
 
 ## Known gaps
 

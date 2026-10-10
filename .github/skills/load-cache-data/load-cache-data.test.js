@@ -50,7 +50,9 @@ function createFixture(t) {
             return spawnSync(process.execPath, [scriptPath, ...args], {
                 cwd,
                 env,
-                encoding: 'utf8'
+                encoding: 'utf8',
+                // A script that blocks (e.g. opening a FIFO) fails the test instead of hanging CI
+                timeout: 15000
             });
         }
     };
@@ -309,6 +311,21 @@ test('a refused symlink falls through to the next real candidate, not its target
     const result = fixture.run(['--json']);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).entries['session-1'].tokens, 7);
+});
+
+test('does not block on a FIFO at a candidate cache path', { skip: process.platform === 'win32' && 'no filesystem FIFOs on Windows' }, (t) => {
+    const fixture = createFixture(t);
+    const mkfifo = spawnSync('mkfifo', [path.join(fixture.storage, 'cache_prod.snapshot.json')], { encoding: 'utf8' });
+    if (mkfifo.error || mkfifo.status !== 0) {
+        t.skip(`mkfifo unavailable: ${mkfifo.error ? mkfifo.error.message : mkfifo.stderr}`);
+        return;
+    }
+    fs.writeFileSync(path.join(fixture.storage, 'cache_dev.snapshot.json'), JSON.stringify(snapshotEnvelope({ real: { tokens: 6 } }, 'dev')));
+
+    const result = fixture.run(['--json']);
+    assert.equal(result.error, undefined, `script did not finish: ${result.error && result.error.code}`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).entries['session-1'].tokens, 6);
 });
 
 test('ignores a directory at a candidate cache path', (t) => {

@@ -352,14 +352,16 @@ function readCacheFile() {
     const possiblePaths = getCacheFilePaths();
 
     // All decisions are made about the open descriptor, never a path checked beforehand:
-    // 1. Open the candidate (O_NOFOLLOW on POSIX refuses a symlink outright).
+    // 1. Open the candidate (O_NOFOLLOW on POSIX refuses a symlink outright; O_NONBLOCK makes
+    //    opening a FIFO return at once instead of waiting forever for a writer - it does not
+    //    affect reads from a regular file).
     // 2. fstat the descriptor: it must be a regular file.
     // 3. lstat the path (not following links) and require a regular file with the same
     //    dev + ino as the descriptor. This refuses a symlink on Windows, where O_NOFOLLOW
     //    does not exist and open() followed it (lstat reports the link, not the target),
     //    and refuses a path that was swapped after the open.
     // 4. Read through the same descriptor.
-    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0);
     for (const filePath of possiblePaths) {
         let fd;
         let content;
