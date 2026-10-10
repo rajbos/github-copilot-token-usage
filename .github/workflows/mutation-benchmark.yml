@@ -96,10 +96,18 @@ jobs:
       shell: bash
       run: |
         START=$(date +%s)
-        npx stryker run --concurrency 4 || true
+        # Not masked with `|| true`: stryker exits non-zero when the score drops
+        # below thresholds.break in stryker.config.mjs (a ratchet under the
+        # measured score) or the run itself breaks. This job only runs on a
+        # schedule, workflow_dispatch and pushes to its own config paths - it is
+        # not a PR check - so failing it never blocks a merge. Capture the status
+        # so the elapsed time and the report/summary steps still run.
+        status=0
+        npx stryker run --concurrency 4 || status=$?
         END=$(date +%s)
         ELAPSED=$((END - START))
         echo "elapsed=${ELAPSED}" >> "$GITHUB_OUTPUT"
+        exit "$status"
       timeout-minutes: 120
 
     - name: Publish mutation summary
