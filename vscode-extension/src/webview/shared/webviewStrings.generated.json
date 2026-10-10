@@ -5,7 +5,7 @@
   "nav.btnUsage": "Usage Analysis",
   "nav.btnDiagnostics": "Diagnostics",
   "nav.btnMaturity": "Fluency Score",
-  "nav.btnReadiness": "AI Readiness",
+  "usage.tab.readiness": "AI Readiness",
   "readiness.loading": "Scanning repository controls…",
   "readiness.refreshing": "Showing the last scan while a fresh one runs…",
   "readiness.scanFailed": "Could not scan repository readiness. Check the AI Engineering Fluency output for details, then try Refresh.",

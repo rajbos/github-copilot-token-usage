@@ -8,7 +8,7 @@
     "vscode-extension/src/webview/efficiency/main.ts": 2,
     "vscode-extension/src/webview/environmental/main.ts": 1,
     "vscode-extension/src/webview/logviewer/main.ts": 1,
-    "vscode-extension/src/webview/maturity/darkFactorySection.ts": 1,
+    "vscode-extension/src/webview/usage/darkFactorySection.ts": 1,
     "vscode-extension/src/webview/maturity/main.ts": 2,
     "vscode-extension/src/webview/maturity/shareCard.ts": 1,
     "vscode-extension/src/webview/usage/main.ts": 12,

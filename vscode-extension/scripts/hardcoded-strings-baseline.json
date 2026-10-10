@@ -5260,105 +5260,105 @@
       "sample": "No data available."
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "de4d24650f07",
       "count": 1,
       "line": 60,
       "sample": "Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "bbdbc9c5d420",
       "count": 1,
       "line": 61,
       "sample": "every control observed"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "971bcb6ca104",
       "count": 3,
       "line": 65,
       "sample": "up to Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "645fadfdfb07",
       "count": 1,
       "line": 66,
       "sample": "control(s) not checked"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "1c571447ca67",
       "count": 2,
       "line": 68,
       "sample": "Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "fec1865057f9",
       "count": 2,
       "line": 85,
       "sample": "Detected by pattern matching — a candidate, not a verdict"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "6da9d51f7bf5",
       "count": 2,
       "line": 103,
       "sample": "Missing for Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "cc6a0afa7711",
       "count": 1,
       "line": 115,
       "sample": "Could not check for Stage"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "03e394dbc29c",
       "count": 1,
       "line": 140,
       "sample": "Anti-patterns detected"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "75abe644d409",
       "count": 1,
       "line": 194,
       "sample": "local repository &mdash; no GitHub remote resolved"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "8d4d35e0358e",
       "count": 1,
       "line": 262,
       "sample": "No git repositories were found in this workspace, so there is nothing to assess."
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "ba68eb917183",
       "count": 1,
       "line": 269,
       "sample": "Dark Factory Readiness"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "a0aceac26af3",
       "count": 1,
       "line": 270,
       "sample": "per repository"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "c29c9cf4257c",
       "count": 1,
       "line": 278,
       "sample": "A dark factory is a governed, observable production system &mdash; humans specif"
     },
     {
-      "file": "vscode-extension/src/webview/maturity/darkFactorySection.ts",
+      "file": "vscode-extension/src/webview/usage/darkFactorySection.ts",
       "hash": "281a6ea98299",
       "count": 3,
       "line": 288,
