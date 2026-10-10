@@ -20,6 +20,7 @@
  */
 import type { ModelUsage } from './types';
 import { isUnsafeObjectKey } from './utils/protoGuard';
+import { addModelUsage } from './statsHelpers';
 
 /** One `modelMetrics[model]` entry as written by Copilot CLI. */
 export interface CliShutdownModelMetricsEntry {
@@ -84,17 +85,6 @@ function sumInputOutput(usage: ModelUsage): number {
 	return total;
 }
 
-function addInto(dest: ModelUsage, src: ModelUsage): void {
-	for (const [model, u] of Object.entries(src)) {
-		if (!Object.hasOwn(dest, model)) { dest[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
-		const d = dest[model];
-		d.inputTokens += u.inputTokens;
-		d.outputTokens += u.outputTokens;
-		if (u.cachedReadTokens) { d.cachedReadTokens = (d.cachedReadTokens ?? 0) + u.cachedReadTokens; }
-		if (u.cacheCreationTokens) { d.cacheCreationTokens = (d.cacheCreationTokens ?? 0) + u.cacheCreationTokens; }
-	}
-}
-
 /**
  * Fold one shutdown's `modelMetrics` into the accumulator.
  * Returns the input+output tokens this shutdown adds to the session total — the
@@ -107,14 +97,14 @@ export function applyCliShutdownMetrics(acc: CliShutdownAccumulator, modelMetric
 	if (prev && isCumulativeOf(prev, snap)) {
 		return sumInputOutput(snap) - sumInputOutput(prev);
 	}
-	if (prev) { addInto(acc.committed, prev); }
+	if (prev) { addModelUsage(acc.committed, prev); }
 	return sumInputOutput(snap);
 }
 
 /** The session's per-model totals: closed segments plus the latest snapshot. */
 export function getCliShutdownTotals(acc: CliShutdownAccumulator): ModelUsage {
 	const totals: ModelUsage = {};
-	addInto(totals, acc.committed);
-	if (acc.last) { addInto(totals, acc.last); }
+	addModelUsage(totals, acc.committed);
+	if (acc.last) { addModelUsage(totals, acc.last); }
 	return totals;
 }
