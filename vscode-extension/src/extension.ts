@@ -13161,8 +13161,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       const dirCounts = new Map<string, number>();
       for (const file of sessionFiles) { const parent = require("path").dirname(file); dirCounts.set(parent, (dirCounts.get(parent) || 0) + 1); }
       if (dirCounts.size > 0) { report.push("Session Files by Directory:"); for (const [dir, count] of dirCounts.entries()) { report.push(`  ${dir}: ${count}`); } report.push(""); }
-      if (sessionFiles.length > 0) { await this.appendSessionFileListing(report, sessionFiles); }
-      else { this.appendNoSessionFilesMessage(report); }
+      // The per-file listing (and the "no files found" help) is emitted once, by buildDiagReportSessionFiles.
       report.push("");
     } catch (error) { report.push(l10n.t('error.calculatingTokenUsageStatistics') + `: ${error}`); report.push(""); }
   }

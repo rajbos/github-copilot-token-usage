@@ -23,7 +23,7 @@ import { installSurfaceNavigation } from "../shared/surfaceNavigation";
 // Constants
 const LOADING_PLACEHOLDER = "Loading...";
 const SESSION_FILES_SECTION_REGEX =
-  /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/;
+  /Session File Locations \(first 20\):[\s\S]*?(?=\n\s*\n|={70})/g;
 /**
  * Live-updating loading state for the Report tab, shown while `data.report` is still the
  * LOADING_PLACEHOLDER. `#report-loading-subtext` is updated in place by
