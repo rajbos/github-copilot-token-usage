@@ -51,7 +51,9 @@ export async function collectSessionContentReferences(content: string, parsedJso
 		try { isDelta = typeof JSON.parse(lines[0] ?? '')?.kind === 'number'; } catch { /* not delta */ }
 		if (!isDelta) { return lines.flatMap(cliEventReferences); }
 		const { sessionState } = await reconstructJsonlStateAsync(lines);
-		return (sessionState?.requests ?? []).flatMap(requestContentReferences);
+		// External data: a schema-drifted snapshot may reconstruct a non-array `requests`.
+		const requests: unknown = sessionState?.requests;
+		return Array.isArray(requests) ? requests.flatMap(requestContentReferences) : [];
 	}
 	try {
 		const requests = (parsedJson as { requests?: unknown } | undefined ?? JSON.parse(content))?.requests;

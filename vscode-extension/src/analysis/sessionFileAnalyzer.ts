@@ -53,7 +53,7 @@ import {
 	type UsageAnalysisDeps,
 } from '../../../src/usageAnalysis';
 import { extractCopilotCliSessionId, getCopilotCliExactUsage } from '../../../src/copilotCliOtel';
-import { resolveDebugLogCandidatePaths, resolveWorkspaceFolderWithFallback } from '../../../src/workspaceHelpers';
+import { findRepositoryRemoteForFolder, resolveDebugLogCandidatePaths, resolveWorkspaceFolderWithFallback } from '../../../src/workspaceHelpers';
 import { toLocalDayKey } from '../../../src/utils/dayKeys';
 
 /** The slice of Windsurf the pipeline needs; Windsurf itself imports `vscode`, so it is host-only. */
@@ -907,15 +907,21 @@ async function resolveSessionRepository(
 	sessionFilePath: string,
 ): Promise<Pick<SessionFileCache, 'repository' | 'repositoryResolved'>> {
 	if (sessionMeta.repository) { return { repository: sessionMeta.repository, repositoryResolved: true }; }
-	if (existing?.repository) { return { repository: existing.repository, repositoryResolved: true }; }
 	try {
 		const workspace = resolveWorkspaceFolderWithFallback(sessionFilePath, new Map(), sessionMeta.workspacePath);
-		// Adapter-handled sessions have no preloaded content to scan for references.
-		if (content === undefined && !workspace) { return {}; }
-		const remote = await extractRepositoryFromSessionContent(content ?? '', parsedJson, workspace);
-		if (remote) { return { repository: remote, repositoryResolved: true }; }
-		return content === undefined ? {} : { repository: '', repositoryResolved: true };
+		// The workspace's current remote wins over a cached value: a details-only entry can hold a
+		// repository *name* derived from the folder, not a remote. The cached value stays the
+		// fallback for when no current remote is found (e.g. the folder was deleted).
+		const workspaceRemote = workspace ? await findRepositoryRemoteForFolder(workspace) : undefined;
+		if (workspaceRemote) { return { repository: workspaceRemote, repositoryResolved: true }; }
+		if (existing?.repository) { return { repository: existing.repository, repositoryResolved: true }; }
+		// Adapter-handled sessions (no preloaded content) stay unresolved, so Details still applies
+		// its workspace-name fallback; a scanned file session records '' for "none found".
+		if (content === undefined) { return {}; }
+		// Referenced files only decide when the workspace is unknown.
+		const referenced = workspace ? undefined : await extractRepositoryFromSessionContent(content, parsedJson);
+		return { repository: referenced ?? '', repositoryResolved: true };
 	} catch {
-		return {};
+		return existing?.repository ? { repository: existing.repository, repositoryResolved: true } : {};
 	}
 }

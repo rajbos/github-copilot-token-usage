@@ -823,8 +823,11 @@ async function tryReadWorktreeGitRemote(potentialRoot: string): Promise<string |
 export async function findRepositoryRemoteForFolder(folderPath: string): Promise<string | undefined> {
 	// buildPotentialGitRoots() lists a path's parents; a placeholder child makes the folder itself the first one.
 	for (const potentialRoot of buildPotentialGitRoots(`${folderPath.replace(/[\\/]+$/, '')}/_`)) {
-		const remoteUrl = await tryReadGitConfigRemote(potentialRoot) ?? await tryReadWorktreeGitRemote(potentialRoot);
-		if (remoteUrl) { return remoteUrl; }
+		// The nearest `.git` is the repository boundary: a nested clone without an origin has no
+		// remote, rather than borrowing the outer repository's.
+		const hasGit = await fs.promises.stat(path.join(potentialRoot, '.git')).then(() => true, () => false);
+		if (!hasGit) { continue; }
+		return await tryReadGitConfigRemote(potentialRoot) ?? await tryReadWorktreeGitRemote(potentialRoot);
 	}
 	return undefined;
 }

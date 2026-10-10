@@ -97,6 +97,10 @@ test('analyzeSessionFile scopes the remote to the session\'s workspace folder (w
 		fs.writeFileSync(sessionFile, session([lib.file]));
 		assert.equal((await analyze(sessionFile)).repository, 'https://github.com/acme/app.git');
 
+		// The workspace's current remote wins over a cached value (a details-only entry can hold
+		// a repository name rather than a remote) …
+		assert.equal((await analyze(sessionFile, { repository: 'app' })).repository, 'https://github.com/acme/app.git');
+
 		// A workspace folder in no repository: none found ('') rather than a referenced repository.
 		const loose = path.join(root, 'loose');
 		fs.mkdirSync(loose);
@@ -105,6 +109,8 @@ test('analyzeSessionFile scopes the remote to the session\'s workspace folder (w
 		const none = await analyze(sessionFile);
 		assert.equal(none.repository, '');
 		assert.equal(none.repositoryResolved, true);
+		// … and the cached value is the fallback when the workspace has no remote (e.g. deleted).
+		assert.equal((await analyze(sessionFile, { repository: 'https://github.com/acme/app.git' })).repository, 'https://github.com/acme/app.git');
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}

@@ -48,6 +48,9 @@ test('collectSessionContentReferences reads VS Code JSON, VS Code delta JSONL an
 	assert.deepEqual(await collectSessionContentReferences(cli), [ref('/r/d.ts')]);
 
 	assert.deepEqual(await collectSessionContentReferences('{ broken'), []);
+	// A schema-drifted delta snapshot whose `requests` is not an array does not throw.
+	const driftedDelta = JSON.stringify({ kind: 0, v: { version: 3, requests: { not: 'an array' } } });
+	assert.deepEqual(await collectSessionContentReferences(driftedDelta), []);
 	assert.deepEqual(await collectSessionContentReferences(JSON.stringify({ requests: 'nope' })), []);
 });
 
@@ -104,6 +107,12 @@ test('extractWorkspaceRepository: a nested clone inside the workspace does not r
 		assert.equal(await extractWorkspaceRepository([ref(nested.file)], outer.repo), 'https://github.com/acme/outer.git');
 		// The nested clone opened as its own workspace is, of course, the nested repository.
 		assert.equal(await extractWorkspaceRepository([], nested.repo), 'https://github.com/acme/nested.git');
+		// A nested repository without an origin is a boundary: no remote, not the outer one.
+		const noOrigin = path.join(outer.repo, 'scratch', 'local-only');
+		fs.mkdirSync(path.join(noOrigin, '.git'), { recursive: true });
+		fs.writeFileSync(path.join(noOrigin, '.git', 'config'), '[core]\n\tbare = false\n');
+		assert.equal(await extractWorkspaceRepository([], noOrigin), undefined);
+		assert.equal(await extractWorkspaceRepository([], path.join(noOrigin, 'src')), undefined, 'also from a sub-folder of it');
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
