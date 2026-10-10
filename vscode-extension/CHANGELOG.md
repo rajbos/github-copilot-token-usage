@@ -14,6 +14,7 @@ All notable changes to the VS Code extension will be documented in this file.
 - Every table in every view now uses one shared table component, so tables look and behave the same everywhere: the same layout and styling (with a high-contrast variant), sortable column headers with ↑/↓ indicators, and the same Previous/Next pager at 10 rows per page (fixed-structure tables such as configuration details show all rows). Tables that could only be read top to bottom — e.g. in Diagnostics, the Log Viewer, Details, the Team Dashboard and Efficiency — can now be sorted and paged. See `docs/vscode-extension/DATA-TABLE.md`
 
 ### Bug Fixes
+- Resumed Copilot CLI sessions are no longer counted two or three times. Each `session.shutdown` repeats the whole session's per-model token totals, but they were added up, so actual tokens, per-model usage and cost grew with every resume, and a duplicated shutdown counted twice. The latest shutdown now replaces earlier ones, and each day is credited only with the tokens added since the previous shutdown, so sessions spanning several days still split correctly. Logs from older CLIs, which record per-run totals, are still added up. Session cache version bumped so existing entries are re-analysed
 - Efficiency → Models no longer inflates the cost per edit turn and cost per session of models that served HydraFusion or Auto legs (see the HydraFusion comparison feature above)
 
 ## [0.19.0] - 2026-10-02

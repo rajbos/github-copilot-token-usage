@@ -7,6 +7,9 @@ All notable changes to the CLI (@rajbos/ai-engineering-fluency) will be document
 ### Features
 - New `skill-suggestions` command: finds tasks you keep prompting for by hand (similar first prompts across sessions) as candidates for a reusable skill or prompt file — the same report as the VS Code extension's Skill Suggestions section, built by the same shared code. `--json` leaves prompt text, prompt-derived keywords and session titles out unless `--include-prompts` is passed. `usage-analysis --json --repeated-tasks` adds the report to the usage-analysis payload (#2288)
 
+### Bug Fixes
+- Resumed Copilot CLI sessions are no longer counted two or three times: `session.shutdown` model metrics are running totals for the whole session, so the latest shutdown now replaces earlier ones instead of being summed, and daily totals get each shutdown's increase. Older per-run logs still add up. Cache version bumped so existing entries are re-parsed
+
 ## [0.6.2] - 2026-10-02
 
 ### Bug Fixes

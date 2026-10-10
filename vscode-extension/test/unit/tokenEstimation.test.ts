@@ -1025,6 +1025,82 @@ test('EventJsonlTokenStrategy: attributes shutdown tokens to UTC day', () => {
         assert.equal(result.dailyActualTokens['2025-03-15'], 100);
 });
 
+// ── Copilot CLI session.shutdown modelMetrics across resume ─────────────────
+// Since ~CLI 1.0.67 each session.shutdown repeats the WHOLE session's totals, so
+// a resumed session's shutdowns must replace each other, not be summed. Older
+// CLIs wrote per-segment totals (a counter goes down / a model disappears), and
+// those segments still add up.
+
+function cliShutdown(timestamp: string, metrics: Record<string, [number, number, number?]>): string {
+        const modelMetrics: Record<string, unknown> = {};
+        for (const [model, [inputTokens, outputTokens, cacheReadTokens]] of Object.entries(metrics)) {
+                modelMetrics[model] = { usage: { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens ?? 0, cacheWriteTokens: 0 } };
+        }
+        return JSON.stringify({ type: 'session.shutdown', timestamp, data: { modelMetrics } });
+}
+
+test('EventJsonlTokenStrategy: cumulative shutdowns after session.resume are not summed', () => {
+        const lines = [
+                cliShutdown('2026-10-01T12:00:00.000Z', { 'gpt-5.6-sol': [1000, 100, 800] }),
+                JSON.stringify({ type: 'session.resume', timestamp: '2026-10-01T13:00:00.000Z', data: {} }),
+                cliShutdown('2026-10-01T14:00:00.000Z', { 'gpt-5.6-sol': [1500, 150, 1200], 'claude-opus-5': [200, 20] }),
+                JSON.stringify({ type: 'session.resume', timestamp: '2026-10-01T15:00:00.000Z', data: {} }),
+                cliShutdown('2026-10-01T16:00:00.000Z', { 'gpt-5.6-sol': [2000, 200, 1600], 'claude-opus-5': [200, 20] }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        // Latest shutdown wins: 2000+200 + 200+20 (not 1100 + 1870 + 2420).
+        assert.equal(result.actualTokens, 2420);
+        assert.equal(result.cacheReadTokens, 1600);
+        assert.equal(result.modelUsage['gpt-5.6-sol'].inputTokens, 2000);
+        assert.equal(result.modelUsage['gpt-5.6-sol'].outputTokens, 200);
+        assert.equal(result.modelUsage['gpt-5.6-sol'].cachedReadTokens, 1600);
+        assert.equal(result.modelUsage['claude-opus-5'].inputTokens, 200);
+        assert.equal(result.modelUsage['claude-opus-5'].outputTokens, 20);
+        assert.equal(result.dailyActualTokens['2026-10-01'], 2420);
+});
+
+test('EventJsonlTokenStrategy: a duplicated identical shutdown is counted once', () => {
+        const shutdown = cliShutdown('2026-10-02T12:00:00.000Z', { 'claude-opus-4.8': [4_722_771, 35_496, 4_418_520] });
+        const result = new EventJsonlTokenStrategy().estimate([shutdown, shutdown]);
+        assert.equal(result.actualTokens, 4_722_771 + 35_496);
+        assert.equal(result.cacheReadTokens, 4_418_520);
+        assert.equal(result.modelUsage['claude-opus-4.8'].inputTokens, 4_722_771);
+        assert.equal(result.modelUsage['claude-opus-4.8'].cachedReadTokens, 4_418_520);
+        assert.equal(result.dailyActualTokens['2026-10-02'], 4_722_771 + 35_496);
+});
+
+test('EventJsonlTokenStrategy: resumed multi-day session attributes each shutdown delta to its day', () => {
+        const lines = [
+                cliShutdown('2026-07-22T12:00:00.000Z', { 'claude-opus-4.8': [2000, 100] }),
+                JSON.stringify({ type: 'session.resume', timestamp: '2026-07-23T08:00:00.000Z', data: {} }),
+                cliShutdown('2026-07-23T12:00:00.000Z', { 'claude-opus-4.8': [5000, 300] }),
+                // Resumed again without new work: the identical shutdown on a third day adds nothing.
+                JSON.stringify({ type: 'session.resume', timestamp: '2026-07-24T08:00:00.000Z', data: {} }),
+                cliShutdown('2026-07-24T12:00:00.000Z', { 'claude-opus-4.8': [5000, 300] }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        assert.equal(result.actualTokens, 5300);
+        assert.deepEqual(result.dailyActualTokens, { '2026-07-22': 2100, '2026-07-23': 3200 });
+        const dailySum = Object.values(result.dailyActualTokens).reduce((a, b) => a + b, 0);
+        assert.equal(dailySum, result.actualTokens, 'daily split must add up to the session total');
+});
+
+test('EventJsonlTokenStrategy: older per-segment shutdowns (counter reset) are still summed', () => {
+        const lines = [
+                cliShutdown('2026-05-22T12:00:00.000Z', { 'claude-sonnet-4.6': [900, 60] }),
+                JSON.stringify({ type: 'session.resume', timestamp: '2026-05-23T08:00:00.000Z', data: {} }),
+                // Lower than the previous shutdown → a fresh segment, not a running total.
+                cliShutdown('2026-05-23T12:00:00.000Z', { 'claude-sonnet-4.6': [300, 15] }),
+                // Older CLIs wrote an empty block for a resumed run with no work.
+                JSON.stringify({ type: 'session.shutdown', timestamp: '2026-05-23T13:00:00.000Z', data: { modelMetrics: {} } }),
+        ];
+        const result = new EventJsonlTokenStrategy().estimate(lines);
+        assert.equal(result.actualTokens, 1275);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].inputTokens, 1200);
+        assert.equal(result.modelUsage['claude-sonnet-4.6'].outputTokens, 75);
+        assert.deepEqual(result.dailyActualTokens, { '2026-05-22': 960, '2026-05-23': 315 });
+});
+
 test('EventJsonlTokenStrategy: returns empty result for empty input', () => {
         const result = new EventJsonlTokenStrategy().estimate([]);
         assert.equal(result.tokens, 0);

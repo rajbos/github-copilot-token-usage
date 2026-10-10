@@ -1123,7 +1123,10 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// showing an estimate in Today/month/30-day totals until their file changed.
 	// v76: Add per-session autonomyUsage (autopilot/auto vs supervised) to usageAnalysis: cache hits
 	// skip re-analysis, so existing entries would lack the metric until their file changed.
-	private static readonly CACHE_VERSION = 78;
+	// v79: Copilot CLI session.shutdown modelMetrics are cumulative across resume, so the latest
+	// shutdown now replaces earlier ones instead of being summed (and dailyActualTokens gets each
+	// shutdown's delta); cached entries for resumed sessions carry double/triple counted tokens and cost.
+	private static readonly CACHE_VERSION = 79;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**
