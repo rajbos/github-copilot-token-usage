@@ -11,7 +11,7 @@ import type { SessionData } from './helpers';
 import { CliCachePolicy } from '../../src/cachePolicy';
 
 /** Bump this when the SessionData shape changes to force a full re-parse. */
-const CACHE_VERSION = 8; // Copilot CLI shutdown modelMetrics are cumulative: stop summing them across resume
+const CACHE_VERSION = 9; // Copilot CLI shutdown modelMetrics are cumulative: stop summing them across resume (8: SessionData gains copilotNanoAiu)
 
 /** Maximum number of entries to keep in the cache file. */
 const MAX_CACHE_ENTRIES = 2000;

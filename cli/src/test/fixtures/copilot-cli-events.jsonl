@@ -1,0 +1,7 @@
+{"type":"session.start","timestamp":"2026-10-01T09:00:00.000Z","data":{"sessionId":"22222222-2222-4222-8222-222222222222","selectedModel":"claude-sonnet-4.5","contextTier":"default"}}
+{"type":"user.message","timestamp":"2026-10-01T09:00:01.000Z","data":{"content":"Fix the failing test"}}
+{"type":"assistant.message","timestamp":"2026-10-01T09:00:09.000Z","data":{"model":"claude-sonnet-4.5","content":"Fixed it.","outputTokens":120}}
+{"type":"session.usage_checkpoint","timestamp":"2026-10-01T09:00:10.000Z","data":{"totalNanoAiu":1250000000,"totalPremiumRequests":1}}
+{"type":"user.message","timestamp":"2026-10-01T09:01:00.000Z","data":{"content":"Now run the suite"}}
+{"type":"assistant.message","timestamp":"2026-10-01T09:01:20.000Z","data":{"model":"claude-sonnet-4.5","content":"All green.","outputTokens":80}}
+{"type":"session.usage_checkpoint","timestamp":"2026-10-01T09:01:21.000Z","data":{"totalNanoAiu":3750000000,"totalPremiumRequests":2}}

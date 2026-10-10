@@ -994,6 +994,32 @@ test('EventJsonlTokenStrategy: uses session.shutdown for actual tokens and model
         assert.equal(result.modelUsage['gpt-4o'].outputTokens, 200);
 });
 
+test('EventJsonlTokenStrategy: copilotNanoAiu is the latest usage_checkpoint while the session runs', () => {
+        const lines = [
+                JSON.stringify({ type: 'session.start', data: {} }),
+                JSON.stringify({ type: 'session.usage_checkpoint', data: { totalNanoAiu: 1_000_000_000 } }),
+                JSON.stringify({ type: 'session.usage_checkpoint', data: { totalNanoAiu: 4_500_000_000 } }),
+        ];
+        assert.equal(new EventJsonlTokenStrategy().estimate(lines).copilotNanoAiu, 4_500_000_000);
+});
+
+test('EventJsonlTokenStrategy: copilotNanoAiu is a running total, not summed across resume/shutdown', () => {
+        // totalNanoAiu is cumulative for the whole session and repeats in every checkpoint and
+        // shutdown, including after session.resume, so adding events would double count.
+        const shutdown = (nano: number) => JSON.stringify({
+                type: 'session.shutdown',
+                data: { totalNanoAiu: nano, modelMetrics: { 'gpt-4o': { usage: { inputTokens: 1, outputTokens: 1 } } } },
+        });
+        const lines = [
+                JSON.stringify({ type: 'session.usage_checkpoint', data: { totalNanoAiu: 2_000_000_000 } }),
+                shutdown(2_000_000_000),
+                JSON.stringify({ type: 'session.resume', data: {} }),
+                JSON.stringify({ type: 'session.usage_checkpoint', data: { totalNanoAiu: 3_000_000_000 } }),
+                shutdown(3_000_000_000),
+        ];
+        assert.equal(new EventJsonlTokenStrategy().estimate(lines).copilotNanoAiu, 3_000_000_000);
+});
+
 test('EventJsonlTokenStrategy: extracts thinking tokens from assistant.message.reasoningText', () => {
         const lines = [JSON.stringify({ type: 'assistant.message', data: { reasoningText: 'thinking hard' } })];
         const result = new EventJsonlTokenStrategy().estimate(lines);

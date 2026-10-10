@@ -18,6 +18,25 @@ name: PR Risk Review
 #           comments. Always exits 0: this check is advisory and must never
 #           block a merge.
 #
+# Trust note: the job checks out the BASE commit and runs the skill's scripts,
+# risk-signals.json and the prompt from there, so a PR that changes those files
+# is judged by the reviewed versions, not its own. The Copilot CLI itself comes
+# from the npm registry at the exact version pinned in COPILOT_CLI_VERSION
+# below, not from the checkout: there is no root package.json or lockfile, so
+# npm checks the package against the registry's own integrity hash only. The PR
+# head is otherwise only read: `git diff base...head` for the changeset, plus a
+# worktree under pr-risk/head (symlinks checked out as plain files) that the
+# model may open to read changed files.
+#
+# What this does NOT cover: on `pull_request`, GitHub runs THIS FILE as it is
+# in the PR. A same-repository PR that edits this workflow can replace any
+# step, including the base checkout, and run with the job's write-scoped
+# GITHUB_TOKEN and GH_PAT. That is no new capability — anyone who can push a
+# branch here can already run a workflow of their choosing on `push` — but it
+# means the base checkout protects the judging code, not the job. Moving the
+# privileged label/comment steps to a `workflow_run` job defined on the default
+# branch would close it; see "Known gaps" in the skill's SECURITY.md.
+#
 # Trigger note: this is `pull_request`, NOT `pull_request_target`. Fork PRs are
 # therefore skipped by the gate (their token is read-only). That is deliberate —
 # `pull_request_target` would hand write credentials to a job that runs a model
@@ -47,6 +66,12 @@ env:
   # Marker that makes the risk comment stickily updatable instead of piling up
   # a new comment on every push.
   COMMENT_MARKER: pr-risk-review
+  # Exact Copilot CLI version run via `npx`. Pinned so a new release cannot
+  # change the tool and permission flags under this job (--available-tools,
+  # write(path), --disallow-temp-dir were checked against this version's
+  # help; the built-in tool names come from the CLI's bundled agent
+  # definitions). Bump it deliberately, after re-checking those flags.
+  COPILOT_CLI_VERSION: "1.0.94"
   # Set to "true" to also review bot PRs (dependabot and friends). Off by
   # default: they are high-volume and the risk is already visible in the title.
   ALLOW_BOTS: "false"
@@ -141,13 +166,37 @@ jobs:
             fi
           } >> "$GITHUB_OUTPUT"
 
-      - name: Checkout PR head
+      # The BASE commit, not the PR head: the skill's scripts,
+      # risk-signals.json and the prompt come from code that has already been
+      # reviewed, so a PR that edits them cannot
+      # rewrite the rules that assess it. (A PR that edits this workflow file
+      # itself is not covered — see the trust note at the top.) Full history so the PR head (on a
+      # branch of this repository; fork PRs never pass the gate) is present
+      # for `git diff base...head`. No persisted credentials: nothing below
+      # needs to fetch, and the model must not find a token in .git/config.
+      - name: Checkout base commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The head commit, not the merge commit, so the diff the model reads is
-          # the diff a reviewer sees on the PR.
-          ref: ${{ steps.pr.outputs.head_sha }}
+          ref: ${{ steps.pr.outputs.base_sha }}
           fetch-depth: 0
+          persist-credentials: false
+
+      # The head commit, not the merge commit, so the diff the model reads is
+      # the diff a reviewer sees on the PR. Checked out as data only, into the
+      # git-ignored pr-risk/ directory, so the model can open changed files in
+      # full. core.symlinks=false writes a symlink as a plain file holding its
+      # target, so a PR cannot point the model at a file outside the tree.
+      - name: Check out the PR head as read-only data
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::PR head ${HEAD_SHA} is not in the fetched history (force-pushed since this run started?). A newer run will review the current head."
+            exit 1
+          fi
+          git -c core.symlinks=false -c core.hooksPath=/dev/null \
+            worktree add --detach pr-risk/head "$HEAD_SHA"
 
       # No validate-input.sh step here, deliberately. That script is for PR text
       # that goes on to reach an automated system — the third condition in
@@ -168,10 +217,11 @@ jobs:
       # If you ever do feed the PR title or body to the model, add the validation
       # step back at the same time.
 
-      # This job checks out the PR head, which can be an old branch that predates
-      # the root .nvmrc — the same case #1868 fixed for copilot-setup-steps.yml.
-      # Resolve the version with a fallback so setup-node cannot fail the review
-      # on a stale branch. Keep the fallback in sync with .nvmrc.
+      # This job checks out the PR's base commit, which can be an old release
+      # branch that predates the root .nvmrc — the same case #1868 fixed for
+      # copilot-setup-steps.yml. Resolve the version with a fallback so
+      # setup-node cannot fail the review on such a base. Keep the fallback in
+      # sync with .nvmrc.
       - name: Resolve Node.js version
         id: node-version
         run: |
@@ -187,18 +237,36 @@ jobs:
         with:
           node-version: ${{ steps.node-version.outputs.version }}
 
+      # The model below may only write pr-risk/verdict.json. The code and data
+      # that run AFTER it — the renderer and the changeset facts it reads —
+      # are still staged outside the workspace first, so that guarantee does
+      # not rest on one CLI flag alone. Copied from the base checkout, never
+      # from the PR head.
+      - name: Stage the trusted review scripts
+        run: |
+          set -euo pipefail
+          TRUSTED="${RUNNER_TEMP}/pr-risk-review"
+          mkdir -p "$TRUSTED"
+          cp .github/skills/pr-risk-review/collect-changeset.js \
+             .github/skills/pr-risk-review/render-comment.js \
+             .github/skills/pr-risk-review/risk-signals.json \
+             "$TRUSTED/"
+
       # Step 1 of the skill. Deterministic and dependency-free, so the facts and
-      # the mechanical baseline exist even if the model never runs.
+      # the mechanical baseline exist even if the model never runs. It reads
+      # the head only through git objects; it never executes anything there.
       - name: Collect the changeset
         env:
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
           set -euo pipefail
-          node .github/skills/pr-risk-review/collect-changeset.js \
+          TRUSTED="${RUNNER_TEMP}/pr-risk-review"
+          node "$TRUSTED/collect-changeset.js" \
             --base "$BASE_SHA" \
             --head "$HEAD_SHA" \
             --out-dir pr-risk
+          cp pr-risk/changeset.json "$TRUSTED/changeset.json"
           cat pr-risk/changeset.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check the Copilot CLI token
@@ -223,9 +291,22 @@ jobs:
       # must degrade to the mechanical baseline, not fail a contributor's PR.
       #
       # The CLI runs deliberately narrowly for a job that reads an untrusted
-      # diff: no GitHub MCP server (so it cannot act on the PR), no `gh`, `curl`,
-      # `wget`, or `git push`, no URL access, file access confined to the
-      # workspace (no --allow-all-paths), and the token stripped from every
+      # diff, in two layers:
+      #   1. --available-tools decides what the model can SEE: the file
+      #      viewer, grep, glob, and create/edit. There is no shell tool at
+      #      all, so no `git` (whose `--output=` can write anywhere), `node`,
+      #      `npx`, `sed`, `find` or network command is reachable. (`--allow-tool`
+      #      alone only pre-approves; it does not hide anything.) Tool names
+      #      are the CLI's built-ins as its own bundled agent definitions list
+      #      them (no documented list exists).
+      #   2. --allow-tool decides what runs without a prompt: writes to exactly
+      #      one file, pr-risk/verdict.json. Any other write needs approval, and
+      #      --no-ask-user means none comes, so the model cannot rewrite the
+      #      pr-risk/head evidence, .git or the changeset files it is judging.
+      # The old shell/URL denylist stays as a third layer. --disallow-temp-dir
+      # keeps the system temp directory out of reach, there is no GitHub MCP
+      # server (so it cannot act on the PR), file access is confined to the
+      # workspace (no --allow-all-paths), and the token is stripped from every
       # subprocess environment and redacted from the transcript.
       - name: Run the risk review with the Copilot CLI
         id: copilot
@@ -238,7 +319,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          npx @github/copilot --version
+          npx --yes "@github/copilot@${COPILOT_CLI_VERSION}" --version
 
           # `.github/prompts/pr-risk-review.prompt.md` opens with YAML
           # frontmatter, so its first line is `---`. The CLI's argument parser
@@ -269,7 +350,8 @@ jobs:
             echo ""
             echo "## Context Paths"
             echo ""
-            echo "- Repository root: ${GITHUB_WORKSPACE}"
+            echo "- Repository root (the PR's BASE commit, not the PR): ${GITHUB_WORKSPACE}"
+            echo "- The PR's head commit, to read changed files in full (data only; never run anything from it): ${GITHUB_WORKSPACE}/pr-risk/head"
             echo "- Skill instructions: ${GITHUB_WORKSPACE}/.github/skills/pr-risk-review/SKILL.md"
             echo "- Changeset facts: ${GITHUB_WORKSPACE}/pr-risk/changeset.md"
             echo "- Changeset diff: ${GITHUB_WORKSPACE}/pr-risk/changeset.diff"
@@ -283,13 +365,15 @@ jobs:
           echo "=== Copilot CLI output ==="
 
           COPILOT_PROMPT_TEXT="$(cat /tmp/copilot-prompt.md)"
-          npx @github/copilot \
+          npx --yes "@github/copilot@${COPILOT_CLI_VERSION}" \
             -p "$COPILOT_PROMPT_TEXT" \
             --silent \
             --no-color \
             --no-ask-user \
-            --allow-all-tools \
+            --available-tools view grep glob create edit \
+            --allow-tool "write(${GITHUB_WORKSPACE}/pr-risk/verdict.json)" \
             --add-dir "${GITHUB_WORKSPACE}" \
+            --disallow-temp-dir \
             --disable-builtin-mcps \
             --secret-env-vars=GH_TOKEN,COPILOT_GITHUB_TOKEN,GITHUB_TOKEN \
             --deny-tool 'shell(gh:*)' \
@@ -302,15 +386,17 @@ jobs:
       # Step 3 of the skill: validate the verdict, sanitise it, render the
       # comment. --fallback makes a missing or malformed verdict degrade to the
       # mechanical baseline (with a visible warning in the comment) rather than
-      # leaving the PR unlabelled.
+      # leaving the PR unlabelled. Runs the staged renderer and changeset, not
+      # the workspace copies the model could have rewritten.
       - name: Render the risk comment
         id: render
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          node .github/skills/pr-risk-review/render-comment.js \
-            --changeset pr-risk/changeset.json \
+          TRUSTED="${RUNNER_TEMP}/pr-risk-review"
+          node "$TRUSTED/render-comment.js" \
+            --changeset "$TRUSTED/changeset.json" \
             --verdict pr-risk/verdict.json \
             --out pr-risk/comment.md \
             --marker "${COMMENT_MARKER}" \

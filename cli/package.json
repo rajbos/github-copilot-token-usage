@@ -1,7 +1,7 @@
 {
   "name": "@rajbos/ai-engineering-fluency",
-  "version": "0.6.2",
-  "description": "AI Engineering Fluency - CLI to analyze token usage, cost and fluency from local AI coding session files (GitHub Copilot, Claude Code, Gemini CLI, Codex CLI, OpenCode and more)",
+  "version": "0.7.0",
+  "description": "AI Engineering Fluency - CLI and Node library to analyze token usage, cost and fluency from local AI coding session files (GitHub Copilot, Claude Code, Gemini CLI, Codex CLI, OpenCode and more)",
   "license": "MIT",
   "author": "RobBos",
   "repository": {
@@ -18,10 +18,24 @@
     "claude-code",
     "gemini-cli",
     "codex",
-    "ai-usage"
+    "ai-usage",
+    "library"
   ],
   "bin": {
     "ai-engineering-fluency": "dist/cli.js"
+  },
+  "exports": {
+    "./session": {
+      "import": {
+        "types": "./dist/lib/session.d.mts",
+        "default": "./dist/lib/session.mjs"
+      },
+      "require": {
+        "types": "./dist/lib/session.d.ts",
+        "default": "./dist/lib/session.js"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/**/*"
