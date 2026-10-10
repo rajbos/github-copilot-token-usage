@@ -37,6 +37,12 @@ function promoteStage(current: Stage, next: Stage): Stage {
 	return Math.max(current, next) as Stage;
 }
 
+/**
+ * How often the extension recomputes its stats (and therefore the Fluency Score panel).
+ * Documented in docs/FLUENCY-LEVELS.md ("updates every 5 minutes") and shown in the panel footer.
+ */
+export const STATS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
 /** Human-readable labels for each stage. */
 export const STAGE_LABELS: Record<Stage, string> = {
 	1: 'Stage 1: AI Skeptic',
