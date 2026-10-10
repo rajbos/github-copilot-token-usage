@@ -57,7 +57,7 @@ Everything runs from the repo root. Bundles must be built first
 
 ```bash
 node .github/skills/visual-view-diff/visual-diff.js
-# or, from vscode-extension/:  pnpm run visual:diff
+# or, from vscode-extension/:  npm run visual:diff
 ```
 
 This builds the webviews at the merge base with `origin/main` in a temporary
@@ -96,7 +96,7 @@ A view rendered in one of its declared states (a tab, a mode) is named
 
 ```bash
 node .github/skills/visual-view-diff/render-views.js --out visual-output/current --theme both
-# or, from vscode-extension/:  pnpm run visual:render -- --theme both
+# or, from vscode-extension/:  npm run visual:render -- --theme both
 ```
 
 ### Compare two directories you already have

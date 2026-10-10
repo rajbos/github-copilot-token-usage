@@ -24,9 +24,9 @@ Use this skill when you need to:
 
 It complements two existing scripts that only check *consistency* of strings
 already wired through localization (`scripts/validate-localization.js` /
-`pnpm --prefix vscode-extension run lint:l10n`, and
+`npm --prefix vscode-extension run lint:l10n`, and
 `vscode-extension/scripts/validate-l10n.mjs` /
-`pnpm --prefix vscode-extension run validate:l10n`) — neither of those, nor anything else in the repo,
+`npm --prefix vscode-extension run validate:l10n`) — neither of those, nor anything else in the repo,
 detects a plain string literal that never calls `localize(`/`t(`/
 `vscode.l10n.t(` in the first place. A separate, stricter AST-based CI gate
 for *new* instances of this may exist as an independent effort; this skill is
@@ -121,8 +121,8 @@ ranking — triage each entry:
 3. Add test coverage per the repo's "Localization changes require test
    coverage" rule (`vscode-extension/test/unit/l10n.test.ts`).
 4. Re-run this script to confirm the finding disappeared, then run
-   `pnpm --prefix vscode-extension run lint:l10n` and
-   `pnpm --prefix vscode-extension run validate:l10n` (both scripts live in
+   `npm --prefix vscode-extension run lint:l10n` and
+   `npm --prefix vscode-extension run validate:l10n` (both scripts live in
    `vscode-extension/package.json`, not the repo root) to confirm the new
    key is consistent across locale files.
 

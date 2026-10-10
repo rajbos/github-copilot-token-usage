@@ -30,7 +30,7 @@ node .github/skills/whats-new-catalog/whats-new-catalog.js --json   # machine-re
 
 Dependency-free apart from the repo's own TypeScript — it transpiles and
 evaluates `catalog.ts` rather than pattern-matching its prose, so multi-line
-descriptions containing braces and quotes can never confuse it. Run `pnpm install --frozen-lockfile` in
+descriptions containing braces and quotes can never confuse it. Run `pnpm install` in
 `vscode-extension/` first if it complains.
 
 ### What it checks
@@ -81,7 +81,7 @@ duplicated here.
    line, reorder the `features` array. Catalog order *is* the decision about
    what mattered most in the release.
 5. **Re-run until clean**, then run the unit tests:
-   `cd vscode-extension && pnpm run test:node`.
+   `cd vscode-extension && npm run test:node`.
 
 ## Writing a release entry
 
