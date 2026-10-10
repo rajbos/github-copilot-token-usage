@@ -1867,3 +1867,21 @@ test('worktree cleanup delete-feedback keys resolve in zh-cn', () => {
 		mock.setLanguage('en');
 	}
 });
+
+test('l10n: Diagnostics Session Cache strings resolve in English and zh-cn and stay distinct from Prompt Cache', () => {
+	mock.setLanguage('en');
+	try {
+		assert.equal(t('diagnostics.cache.tab'), 'Session Cache');
+		assert.equal(t('diagnostics.cache.infoTitle'), 'Session Cache Information');
+		assert.equal(t('diagnostics.cache.management'), 'Session Cache Management');
+		assert.ok(t('diagnostics.cache.infoBody').includes('not LLM prompt caching'), 'English body must disambiguate from prompt caching');
+
+		mock.setLanguage('zh-cn');
+		assert.equal(t('diagnostics.cache.tab'), '会话缓存');
+		assert.equal(t('diagnostics.cache.infoTitle'), '会话缓存信息');
+		assert.equal(t('diagnostics.cache.management'), '会话缓存管理');
+		assert.ok(t('diagnostics.cache.infoBody').includes('LLM'), 'zh-cn body must still mention LLM prompt caching');
+	} finally {
+		mock.setLanguage('en');
+	}
+});

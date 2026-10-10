@@ -2663,10 +2663,9 @@ function renderDiagCacheTabHtml(data: DiagnosticsData): string {
   return `
 <div id="tab-cache" class="tab-content">
 <div class="info-box">
-<div class="info-box-title">💾 Cache Information</div>
+<div class="info-box-title">💾 ${escapeHtml(localize('diagnostics.cache.infoTitle'))}</div>
 <div>
-The extension caches session file data to improve performance and reduce file system operations.
-Cache is stored in VS Code's global state and persists across sessions.
+${escapeHtml(localize('diagnostics.cache.infoBody'))}
 </div>
 </div>
 <div class="cache-details">
@@ -2706,7 +2705,7 @@ Cache is stored in VS Code's global state (extension storage) and includes:
 </p>
 </div>
 <div class="cache-actions">
-<h4>Cache Management</h4>
+<h4>${escapeHtml(localize('diagnostics.cache.management'))}</h4>
 <p style="color: #999; font-size: 12px; margin-bottom: 12px;">
 Clearing the cache will force the extension to re-read and re-analyze all session files on the next update.
 This can help resolve issues with stale or incorrect data.
@@ -3590,7 +3589,7 @@ function renderTabBars(data: DiagnosticsData, detailedFiles: SessionFileDetails[
 <div class="tabs leaf-tabs" data-group="diagnostics" style="display: flex;">
 <button class="tab active" data-tab="report">📋 Report</button>
 <button class="tab" data-tab="sessions">📁 Session Files (${detailedFiles.length})</button>
-<button class="tab" data-tab="cache">💾 Cache</button>
+<button class="tab" data-tab="cache">💾 ${escapeHtml(localize('diagnostics.cache.tab'))}</button>
 <button class="tab" data-tab="path-analyzer">🔬 Path Analyzer</button>
 <button class="tab" data-tab="share">📸 Share Card</button>
 </div>
