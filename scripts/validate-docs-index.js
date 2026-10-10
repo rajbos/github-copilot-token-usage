@@ -37,10 +37,15 @@ function listMarkdownFiles(dir) {
 /** Extract `[text](target)` link targets from markdown, skipping fenced code blocks. */
 function extractLinks(markdown) {
   const links = [];
-  let inFence = false;
+  let fence = null; // { ch, len } of the currently open fenced block
   for (const line of markdown.split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
-    if (inFence) { continue; }
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      // Only a fence of the same character, at least as long, with no info string, closes the block.
+      if (open && open[1][0] === fence.ch && open[1].length >= fence.len && open[2].trim() === '') { fence = null; }
+      continue;
+    }
+    if (open) { fence = { ch: open[1][0], len: open[1].length }; continue; }
     const re = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
     let m;
     while ((m = re.exec(line)) !== null) { links.push(m[1]); }

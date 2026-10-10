@@ -22,6 +22,28 @@ test('extractLinks skips fenced code blocks and keeps titles out of the target',
   assert.deepEqual(extractLinks(md), ['a.md', 'sub/b.md']);
 });
 
+test('extractLinks: a longer outer fence is not closed by shorter or differently typed fences', () => {
+  const md = [
+    '````md',
+    '```',
+    '[in-short](inner.md)',
+    '```',
+    '~~~',
+    '[in-tilde](tilde.md)',
+    '~~~',
+    '````',
+    '[after](after.md)',
+    '~~~~',
+    '[in-tilde-block](x.md)',
+    '```',
+    '[still-in](y.md)',
+    '~~~~',
+    '[end](end.md)',
+  ].join('
+');
+  assert.deepEqual(extractLinks(md), ['after.md', 'end.md']);
+});
+
 test('resolveLocalTarget ignores URLs and bare anchors, strips fragments', () => {
   assert.equal(resolveLocalTarget('https://example.com/x', DIR), null);
   assert.equal(resolveLocalTarget('mailto:a@b.c', DIR), null);
