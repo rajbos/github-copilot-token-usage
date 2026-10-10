@@ -221,6 +221,7 @@ import { extractCopilotCliSessionId, getCopilotCliExactUsage, getCopilotCliOtelS
 import { createWorkerOtelLookup, type WorkerOtelLookup } from './otelIndexLookup';
 import { createWakeupGate, createSemaphore, yieldToEventLoop, TimeoutError as _TimeoutError, withTimeout as _withTimeout, type Semaphore } from './utils/promises';
 import { WebviewMessageReplay } from './webviewMessageReplay';
+import { disposePanels } from './panelDisposal';
 import { startEventLoopMonitor, type EventLoopMonitor } from './utils/eventLoopMonitor';
 import {
 	analyzeSessionFile as _analyzeSessionFile,
@@ -15426,18 +15427,13 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
     // Release the refresh leader lock if this window held it, so another window can
     // take over promptly instead of waiting for the stale-lock timeout.
     void this.cacheManager.releaseRefreshLock().catch(() => { /* best-effort */ });
-    if (this.detailsPanel) {
-      this.detailsPanel.dispose();
-    }
-    if (this.chartPanel) {
-      this.chartPanel.dispose();
-    }
-    if (this.analysisPanel) {
-      this.analysisPanel.dispose();
-    }
-    if (this.maturityPanel) {
-      this.maturityPanel.dispose();
-    }
+    // Every vscode.WebviewPanel field must be listed here (guarded by panelDisposal.test.ts).
+    // Disposing fires each panel's onDidDispose handler, which clears the field and its per-panel state.
+    const panelsToDispose = [
+      this.detailsPanel, this.chartPanel, this.analysisPanel, this.maturityPanel,
+      this.dashboardPanel, this.fluencyLevelViewerPanel, this.environmentalPanel,
+      this.efficiencyPanel, this.whatsNewPanel, this.logViewerPanel, this.diagnosticsPanel,
+    ];
     // Save cache to storage before disposing (fire-and-forget async operation)
     // Note: Cache loss during abnormal shutdown is acceptable as it will rebuild on next startup
     // We can't await here since dispose() is synchronous
@@ -15457,11 +15453,10 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
         }
       })();
     }
-    if (this.logViewerPanel) {
-      this.logViewerPanel.dispose();
-    }
-    if (this.diagnosticsPanel) {
-      this.diagnosticsPanel.dispose();
+    try {
+      disposePanels(panelsToDispose);
+    } catch (err) {
+      console.error("Error disposing webview panels:", err);
     }
     this.openCode.dispose();
     this.statusBarItem.dispose();
