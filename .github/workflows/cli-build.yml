@@ -70,6 +70,12 @@ jobs:
         working-directory: cli
         run: npm run build
 
+      # Runs after `npm run build`: some tests load the built dist/ through the
+      # package's own `exports` map, so they need the dev build in place.
+      - name: Run CLI unit tests
+        working-directory: cli
+        run: npm run test:unit
+
       - name: Validate CLI --help
         working-directory: cli
         run: node dist/cli.js --help
