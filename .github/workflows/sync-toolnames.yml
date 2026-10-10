@@ -51,10 +51,13 @@ jobs:
       run: |
         echo "Upstream commit: $(git -C "${GITHUB_WORKSPACE}/vscode-copilot-chat" rev-parse HEAD)"
         echo "Upstream file: src/extension/tools/common/toolNames.ts"
+        cp src/toolNames.json "${RUNNER_TEMP}/toolNames.base.json"
         python3 .github/scripts/sync_toolnames.py \
           --upstream-file "${GITHUB_WORKSPACE}/vscode-copilot-chat/src/extension/tools/common/toolNames.ts" \
           --tool-names src/toolNames.json
-        python3 .github/scripts/toolnames_utils.py
+        # Historical duplicates in the committed mapping are tolerated; only
+        # duplicates introduced by this sync fail the run.
+        python3 .github/scripts/toolnames_utils.py --base "${RUNNER_TEMP}/toolNames.base.json"
 
     - name: Check for changes
       id: changes

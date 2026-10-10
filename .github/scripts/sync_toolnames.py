@@ -38,7 +38,11 @@ def strip_comments(source: str) -> str:
 
 
 def extract_tool_ids(source: str) -> list[str]:
-    """Return the string values of the ToolName / ContributedToolName enums."""
+    """Return the string values of the ToolName / ContributedToolName enums.
+
+    Raises ValueError unless BOTH enums are present, so a partial upstream
+    refactor cannot silently omit one enum's tools.
+    """
     source = strip_comments(source)
     ids: list[str] = []
     for enum_name in ENUM_NAMES:
@@ -46,7 +50,7 @@ def extract_tool_ids(source: str) -> list[str]:
             rf"export\s+(?:const\s+)?enum\s+{enum_name}\s*\{{(.*?)\n\}}", source, flags=re.DOTALL
         )
         if not match:
-            continue
+            raise ValueError(f"enum {enum_name} not found upstream; layout changed? Refusing a partial sync.")
         ids += [m.group(2) for m in re.finditer(r"=\s*(['\"])([^'\"]+)\1", match.group(1))]
     return ids
 
@@ -120,7 +124,11 @@ def main() -> int:
     parser.add_argument("--tool-names", required=True, type=Path, help="src/toolNames.json to update")
     args = parser.parse_args()
 
-    upstream_ids = extract_tool_ids(args.upstream_file.read_text(encoding="utf-8"))
+    try:
+        upstream_ids = extract_tool_ids(args.upstream_file.read_text(encoding="utf-8"))
+    except ValueError as err:
+        print(f"::error::{err}")
+        return 1
     if not upstream_ids:
         print(f"::error::No tool ids found in {args.upstream_file}; upstream layout changed?")
         return 1

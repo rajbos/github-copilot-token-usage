@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from toolnames_utils import find_new_duplicate_groups
 from sync_toolnames import compute_missing, extract_tool_ids, friendly_name, inject
 
 UPSTREAM = """
@@ -33,6 +34,27 @@ class SyncToolNamesTests(unittest.TestCase):
             extract_tool_ids(UPSTREAM),
             ["read_file", "run_in_terminal", "copilot_githubThing"],
         )
+
+    def test_missing_enum_fails_loudly(self):
+        only_tool_name = "export enum ToolName {
+	A = 'a_tool',
+}
+"
+        only_contributed = "export enum ContributedToolName {
+	B = 'b_tool',
+}
+"
+        with self.assertRaisesRegex(ValueError, "ContributedToolName"):
+            extract_tool_ids(only_tool_name)
+        with self.assertRaisesRegex(ValueError, r"enum ToolName not found"):
+            extract_tool_ids(only_contributed)
+
+    def test_duplicate_gate_ignores_historical_but_catches_new(self):
+        base = {"copilot_findFiles": "Find Files", "opilot_findFiles": "Find Files"}
+        self.assertEqual(find_new_duplicate_groups(base, base), ({}, {}))
+        head = {**base, "new_tool": "New Tool", "new-tool": "New Tool"}
+        strict, _ = find_new_duplicate_groups(head, base)
+        self.assertEqual(len(strict), 1)
 
     def test_friendly_names(self):
         self.assertEqual(friendly_name("copilot_readFile"), "Copilot Read File")
