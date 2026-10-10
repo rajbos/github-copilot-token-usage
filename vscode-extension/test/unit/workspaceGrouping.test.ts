@@ -272,15 +272,29 @@ test('ambiguous name: several remote-less same-named folders still fold together
 	}
 });
 
-test('ambiguous stem: a sibling -wt folder with two same-named repositories to choose from joins neither, in every order', () => {
+test('ambiguous stem: a scratch clone with two same-named repositories to choose from joins neither, in every order', () => {
 	const entries = [
 		entry('C:\\a\\tools', 1, 1, 'https://github.com/acme/tools'),
 		entry('C:\\b\\tools', 1, 1, 'https://github.com/other/tools'),
-		entry('C:\\a\\tools-wt', 1, 1),
+		entry('C:\\tmp\\tools-85ed99', 1, 1),
 	];
 	for (const order of permutations(entries)) {
 		assert.equal(groupWorkspaces(order, probes('win32')).length, 3);
 	}
+});
+
+test('a -wt folder only joins a sibling checkout; a hash-suffixed clone may sit anywhere', () => {
+	// Different parent folders: not a sibling worktree, so no merge on the name alone.
+	assert.equal(groupWorkspaces([entry('/projects/acme'), entry('/unrelated/acme-feature-wt')], probes('linux')).length, 2);
+	assert.equal(groupWorkspaces([entry('C:\\projects\\acme'), entry('D:\\other\\acme-wt')], probes('win32')).length, 2);
+	// Same parent: a sibling worktree.
+	assert.equal(groupWorkspaces([entry('/projects/acme'), entry('/projects/acme-feature-wt')], probes('linux')).length, 1);
+	assert.equal(groupWorkspaces([entry('C:\\Projects\\acme'), entry('c:\\projects\\acme-wt\\')], probes('win32')).length, 1, 'case and a trailing separator do not matter on Windows');
+	// A scratch clone matches across folders.
+	assert.equal(groupWorkspaces([entry('/projects/acme'), entry('/tmp/acme-85ed99')], probes('linux')).length, 1);
+	// … and the -wt folder in another folder is flagged as an artefact instead of merged.
+	const leftovers = detectArtefactWorkspaceNames(groupWorkspaces([entry('/projects/acme'), entry('/unrelated/acme-feature-wt')], probes('linux')));
+	assert.deepEqual(leftovers.map(l => [l.displayName, l.reason]), [['acme-feature-wt', 'worktree-suffix']]);
 });
 
 test('ambiguous remote path: a WSL folder named like two different local repositories joins neither, in every order', () => {
@@ -627,6 +641,14 @@ test('repositoryIdentity keeps hosts and namespaces apart', () => {
 	assert.equal(repositoryIdentity('org@vs-ssh.visualstudio.com:v3/org/Project/Repo'), ado);
 	// … while the same project/repo in another organisation is a different one.
 	assert.notEqual(repositoryIdentity('https://dev.azure.com/other-org/Project/_git/Repo'), ado);
+});
+
+test('repositoryIdentity reads scp-style SSH-config aliases without a user or dotted host', () => {
+	assert.equal(repositoryIdentity('work:acme/widget.git'), 'work/acme/widget');
+	assert.equal(repositoryIdentity('git@work:acme/widget.git'), 'work/acme/widget');
+	assert.notEqual(repositoryIdentity('work:acme/widget.git'), repositoryIdentity('https://github.com/work:acme/widget'));
+	// Drive letters are still local, never an alias host.
+	assert.equal(repositoryIdentity('C:repos/widget.git'), undefined);
 });
 
 test('repositoryIdentity strips _git only for Azure DevOps', () => {

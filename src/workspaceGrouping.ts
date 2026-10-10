@@ -146,9 +146,10 @@ const DEFAULT_REMOTE_HOST = 'github.com';
 function splitRemote(remote: string): { host?: string; path: string } {
 	const url = remote.match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.*)$/i);
 	if (url) { return { host: url[1], path: url[2] }; }
-	// scp-like `git@host:owner/name`: needs a user or a dotted host, so `C:/repos/x` is not read as one.
-	const scp = remote.match(/^(?:([^@/\s]+)@)?([^:/\s]+):(?!\/\/)(.+)$/);
-	if (scp && (scp[1] || scp[2].includes('.'))) { return { host: scp[2], path: scp[3] }; }
+	// scp-like `[user@]host:owner/name`, including an SSH-config alias (`work:acme/widget.git`).
+	// Drive letters never get here: isLocalRemote() rejects them before this parser runs.
+	const scp = remote.match(/^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+)$/);
+	if (scp) { return { host: scp[1], path: scp[2] }; }
 	return { path: remote };
 }
 
@@ -224,20 +225,29 @@ export function classifyArtefactName(name: string): ArtefactNameReason | undefin
  * Candidate repository names hidden inside an artefact folder name, most specific first:
  * `repo-refactor-wt` → [`repo-refactor`, `repo`], `repo-85ed99` → [`repo`].
  */
-function artefactStems(name: string): string[] {
-	const stems: string[] = [];
+function artefactStems(name: string): Array<{ stem: string; siblingOnly: boolean }> {
+	const stems: Array<{ stem: string; siblingOnly: boolean }> = [];
 	// `acme-app-85ed99` and `goofy-wozniak-42f712` have the same shape; only the list can tell
-	// them apart (a generated name's stem simply matches no other workspace).
+	// them apart (a generated name's stem simply matches no other workspace). Scratch clones are
+	// made anywhere, so a hash-suffixed name may match a checkout in any folder.
 	if (HASH_SUFFIX.test(name)) {
-		stems.push(name.replace(HASH_SUFFIX, ''));
+		stems.push({ stem: name.replace(HASH_SUFFIX, ''), siblingOnly: false });
 	}
+	// A `-wt` folder is a worktree created next to its checkout: it only matches a sibling, so
+	// `/unrelated/acme-feature-wt` never joins `/projects/acme`.
 	if (/-wt$/i.test(name)) {
 		const withoutWt = name.replace(/-wt$/i, '');
-		stems.push(withoutWt);
+		stems.push({ stem: withoutWt, siblingOnly: true });
 		const lastDash = withoutWt.lastIndexOf('-');
-		if (lastDash > 0) { stems.push(withoutWt.slice(0, lastDash)); }
+		if (lastDash > 0) { stems.push({ stem: withoutWt.slice(0, lastDash), siblingOnly: true }); }
 	}
-	return stems.filter(s => s.length > 0);
+	return stems.filter(s => s.stem.length > 0);
+}
+
+/** The folder containing `p`, in comparable form. */
+function parentKey(p: string, platform: string): string {
+	const segments = splitSegments(p.replace(/(?<=[^\\/])[\\/]+$/, ''));
+	return samePathKey(joinSegments(segments.slice(0, -1), separatorOf(p)), platform);
 }
 
 // ── Worktree path conventions ─────────────────────────────────────────────────
@@ -550,7 +560,7 @@ function nodeName(n: Node): string {
  * repositories is ambiguous as a whole, so no folder in it is attributed to one of them by
  * whichever union ran first. Its remote-less local folders still fold together.
  */
-function unionByName(nodes: Node[], groups: Groups): void {
+function unionByName(nodes: Node[], groups: Groups, platform: string): void {
 	const idsBefore = nodes.map((_n, i) => [...groups.repositoryIds(i)]);
 	const componentIds = (indexes: number[]): Set<string> => new Set(indexes.flatMap(i => idsBefore[i]));
 	// A group holding a folder with conflicting remotes takes no part in name-based merging.
@@ -564,8 +574,10 @@ function unionByName(nodes: Node[], groups: Groups): void {
 	// 4. Sibling artefact folders: the most specific stem that names local workspaces decides.
 	nodes.forEach((n, i) => {
 		if (n.remote || n.convention || conflictedRoots.has(groups.find(i))) { return; }
+		const parent = parentKey(n.path, platform);
 		const target = artefactStems(workspaceBasename(n.path))
-			.map(stem => (byName.get(stem.toLowerCase()) ?? []).filter(c => c !== i && !nodes[c].remote))
+			.map(({ stem, siblingOnly }) => (byName.get(stem.toLowerCase()) ?? [])
+				.filter(c => c !== i && !nodes[c].remote && (!siblingOnly || parentKey(nodes[c].path, platform) === parent)))
 			.find(list => list.length > 0);
 		if (target && componentIds([i, ...target]).size <= 1) { target.forEach(c => groups.union(c, i)); }
 	});
@@ -630,7 +642,7 @@ export function groupWorkspaces(entries: WorkspaceUsageEntry[], probes: Workspac
 		unionByKey(nodes, groups, (n, i) => (conflicting(i) || n.remote ? undefined : samePathKey(n.path, platform)));
 	}
 	// 3–5. Name-based rules, weakest last.
-	unionByName(nodes, groups);
+	unionByName(nodes, groups, platform);
 
 	return [...buildGroups(nodes, groups, pathExists), ...passthrough].sort(compareGroups);
 }

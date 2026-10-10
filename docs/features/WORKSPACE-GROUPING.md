@@ -63,8 +63,9 @@ the CLI's Customization evidence counts repositories, not folders.
    - Case-only differences on Windows and macOS.
    - A WSL / SSH path seen on Windows (`/home/…`, or `\home\…` after normalisation) that has the
      same folder name as a local checkout. UNC network shares (`\\server\share\…`) are local.
-4. **Sibling artefact folders** — `<repo>-wt`, `<repo>-<word>-wt` and `<repo>-<hex>` join the
-   workspace named `<repo>` when one is in the list.
+4. **Sibling artefact folders** — `<repo>-wt` and `<repo>-<word>-wt` join a workspace named
+   `<repo>` in the same parent folder (a worktree created next to its checkout); a scratch clone
+   `<repo>-<hex>` joins a workspace named `<repo>` anywhere in the list.
 5. **Same folder name** — the weakest signal, applied last.
 
 No rule merges two groups whose remotes say they are different repositories. A name pattern on
