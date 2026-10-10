@@ -6,22 +6,6 @@ const { execFileSync } = require("child_process");
 const production = process.argv.includes("--production");
 
 async function main() {
-  // Copy JSON data files from src/ to a temp location for bundling
-  const dataFiles = [
-    "tokenEstimators.json",
-    "modelPricing.json",
-    "toolNames.json",
-    "automaticTools.json",
-  ];
-
-  for (const file of dataFiles) {
-    const srcPath = path.join(__dirname, "..", "src", file);
-    const destPath = path.join(__dirname, "src", file);
-    if (fs.existsSync(srcPath) && !fs.existsSync(destPath)) {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-
   // Copy sql-wasm.wasm to dist/
   const distDir = path.join(__dirname, "dist");
   if (!fs.existsSync(distDir)) {
@@ -77,13 +61,6 @@ async function main() {
 
   await buildLibrary(buildOptions);
 
-  // Clean up copied JSON files
-  for (const file of dataFiles) {
-    const destPath = path.join(__dirname, "src", file);
-    if (fs.existsSync(destPath)) {
-      fs.unlinkSync(destPath);
-    }
-  }
 }
 
 /**

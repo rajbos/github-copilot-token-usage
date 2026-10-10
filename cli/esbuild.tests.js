@@ -3,7 +3,7 @@
  * be run with `node --test out/test`.
  *
  * Uses the exact same esbuild setup as the main CLI build (esbuild.js): the tests
- * import shared modules from ../vscode-extension/src which reference the `vscode`
+ * import shared modules from ../src which reference the `vscode`
  * module (aliased to the CLI stub) and ESM-only packages like chalk — bundling
  * resolves both, matching how dist/cli.js is produced.
  */
@@ -12,22 +12,6 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  // Copy JSON data files from vscode-extension/src (same as esbuild.js)
-  const dataFiles = [
-    "tokenEstimators.json",
-    "modelPricing.json",
-    "toolNames.json",
-    "automaticTools.json",
-  ];
-
-  for (const file of dataFiles) {
-    const srcPath = path.join(__dirname, "..", "vscode-extension", "src", file);
-    const destPath = path.join(__dirname, "src", file);
-    if (fs.existsSync(srcPath) && !fs.existsSync(destPath)) {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-
   const testDir = path.join(__dirname, "src", "test");
   const entryPoints = fs
     .readdirSync(testDir)
@@ -49,7 +33,7 @@ async function main() {
     // The package's own `/session` subpath is loaded from the built dist/ at runtime by the
     // library smoke test, through the package.json `exports` map — never bundled.
     external: ["vscode", "@rajbos/ai-engineering-fluency/session"],
-    // The tests bundle shared sources from ../vscode-extension/src, so tell esbuild
+    // The tests bundle shared sources from ../src, so tell esbuild
     // to resolve package imports from the CLI's own node_modules as well.
     nodePaths: [path.join(__dirname, "node_modules")],
     alias: {
@@ -61,14 +45,6 @@ async function main() {
     logLevel: "info",
   });
   console.log(`CLI tests bundled successfully (${entryPoints.length} file(s))`);
-
-  // Clean up copied JSON files
-  for (const file of dataFiles) {
-    const destPath = path.join(__dirname, "src", file);
-    if (fs.existsSync(destPath)) {
-      fs.unlinkSync(destPath);
-    }
-  }
 }
 
 main().catch((err) => {
