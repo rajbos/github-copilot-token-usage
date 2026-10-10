@@ -47,7 +47,8 @@ jobs:
         id: filter
         with:
           filters: |
-            # Gates build + ui-checks: what the extension is actually built from.
+            # Gates build + build-windows + ui-checks: what the extension is
+            # actually built from.
             ci-relevant:
               - 'vscode-extension/**'
               # The extension compiles the shared sources from the repo-root
@@ -368,7 +369,29 @@ jobs:
       if: always()
       shell: bash
       run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
-      
+
+    # Dependency-free node:test suites for repo-root scripts. The release
+    # workflows depend on the changelog scripts to write and read the
+    # changelog sections that become the GitHub release notes;
+    # fetch-copilot-memories.test.js covers that script's pure helpers.
+    # (loc-stats.test.js runs in its own loc-stats.yml workflow.)
+    - name: Run repository script tests
+      shell: bash
+      run: node --test scripts/release-changelog.test.js scripts/sync-changelog.test.js scripts/fetch-copilot-memories.test.js
+
+    - name: Verify build outputs exist
+      shell: bash
+      run: |
+        if [ ! -f "vscode-extension/dist/extension.js" ]; then
+          echo "❌ vscode-extension/dist/extension.js not found"
+          exit 1
+        fi
+        if [ ! -d "vscode-extension/out" ]; then
+          echo "❌ vscode-extension/out directory not found"
+          exit 1
+        fi
+        echo "✅ Build outputs verified"
+
     - name: Install and start Xvfb
       run: |
         sudo apt-get install -y xvfb
@@ -390,7 +413,97 @@ jobs:
           vscode-extension/dist/
           vscode-extension/out/
         retention-days: 7
-        
+
+  # The Windows leg. Only what can behave differently on Windows runs here
+  # (package, compile-tests, the unit suite); the platform-independent gates -
+  # JSON/l10n/lint/types/contract/duplication - run once, in `build`.
+  # `pnpm run package` is `tsc --noEmit && eslint && esbuild --production`, so
+  # type-check and lint still run on this OS as part of it.
+  #
+  # Kept for tests that execute nowhere else in CI: cacheManager-snapshot.test.ts
+  # has a test gated `skip: process.platform !== 'win32'` (the recycled-PID
+  # stale-lock case), and `build` runs the unit suite on ubuntu only. The UNC
+  # backslash assertions in workspacePathResolver.test.ts are the same story.
+  # macos-latest was dropped earlier: its one unique assertion (the
+  # ~/Library/Application Support settings path) mirrors the production
+  # conditional and so could not catch the two agreeing on a wrong path.
+  #
+  # Single OS, so no matrix: a matrix job gated by `if` reports a bare name when
+  # skipped and "name (os)" when run, which a required check cannot match. The
+  # check is "Build (Windows)" in either state, and CI result covers it.
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.ci-relevant == 'true'
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: '11.2.2'
+
+    # No package-manager cache on Windows (as in the former build.yml Windows leg).
+    - name: Setup Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: '24.x'
+
+    - name: Install dependencies
+      working-directory: vscode-extension
+      run: pnpm install --frozen-lockfile --ignore-scripts
+
+    - name: Package extension
+      working-directory: vscode-extension
+      run: pnpm run package
+
+    - name: Compile tests
+      working-directory: vscode-extension
+      run: pnpm run compile-tests
+
+    - name: Run Node.js unit tests
+      working-directory: vscode-extension
+      shell: bash
+      run: |
+        set +e
+        node --require ./out/vscode-extension/test/unit/vscode-shim-register.js \
+          --experimental-test-coverage \
+          --test \
+          --test-force-exit \
+          --test-coverage-include=out/vscode-extension/src/backend/**/*.js \
+          --test-coverage-include=out/vscode-extension/src/utils/**/*.js \
+          --test-coverage-include=out/src/utils/**/*.js \
+          out/vscode-extension/test/unit/*.test.js 2>&1 | tee "$RUNNER_TEMP/test-output.txt"
+        status=${PIPESTATUS[0]}
+        set -e
+        exit "$status"
+
+    - name: Publish test results to step summary
+      if: always()
+      shell: bash
+      run: node scripts/parse-test-output.js "$RUNNER_TEMP/test-output.txt" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Verify build outputs exist
+      shell: bash
+      run: |
+        if [ ! -f "vscode-extension/dist/extension.js" ]; then
+          echo "❌ vscode-extension/dist/extension.js not found"
+          exit 1
+        fi
+        if [ ! -d "vscode-extension/out" ]; then
+          echo "❌ vscode-extension/out directory not found"
+          exit 1
+        fi
+        echo "✅ Build outputs verified"
+
   package:
     runs-on: ubuntu-latest
     needs: build
@@ -581,7 +694,7 @@ jobs:
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
-    needs: [check-changes, test-coverage-check, duplication-check, build, package, ui-checks]
+    needs: [check-changes, test-coverage-check, duplication-check, build, build-windows, package, ui-checks]
     if: always()
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -605,5 +718,6 @@ jobs:
             test-coverage-check=${{ needs.test-coverage-check.result }}
             duplication-check=${{ needs.duplication-check.result }}
             build=${{ needs.build.result }}
+            build-windows=${{ needs.build-windows.result }}
             package=${{ needs.package.result }}
             ui-checks=${{ needs.ui-checks.result }}

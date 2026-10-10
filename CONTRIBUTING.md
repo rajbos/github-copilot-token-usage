@@ -360,10 +360,10 @@ The project includes comprehensive GitHub Actions workflows:
 
 ### Build Pipeline
 
-- **Platforms:** Tests on Ubuntu, Windows, and macOS
-- **Node Versions:** 18.x and 20.x
+- **Platforms:** Full gates on Ubuntu; build, package and unit tests also on Windows (`ci.yml`)
+- **Node Version:** 24.x
 - **Checks:** Linting, type checking, compilation, and packaging
-- **Badge:** [![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/build.yml)
+- **Badge:** [![Build](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/ci.yml/badge.svg)](https://github.com/rajbos/ai-engineering-fluency/actions/workflows/ci.yml)
 
 ### What Gets Tested
 
