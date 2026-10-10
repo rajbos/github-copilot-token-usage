@@ -32,6 +32,12 @@ export interface SessionData {
 	actualTokens: number;
 	interactions: number;
 	modelUsage: ModelUsage;
+	/**
+	 * Exact GitHub Copilot billing in nano-AI-units (0 when unavailable): the latest
+	 * `totalNanoAiu` from a Copilot CLI `session.usage_checkpoint`/`session.shutdown`, the
+	 * Copilot CLI billing store, or a Copilot Chat debug log. 1 AI credit = 1e9 nanoAiu.
+	 */
+	copilotNanoAiu: number;
 	lastModified: Date;
 	editorSource: string;
 	/**
