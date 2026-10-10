@@ -203,6 +203,26 @@ const SAFE_CORRECTION_MOMENT_FIELDS = new Set([
     'type', 'turnNumber', 'timestamp', 'retried', 'matchedPattern', 'intensity', 'escalated', 'corroboratedBy'
 ]);
 
+// Reference/variable kinds VS Code Chat writes (and the ones src/usageAnalysis.ts adds)
+const KNOWN_REFERENCE_KINDS = new Set([
+    'reference', 'pullRequest', 'file', 'directory', 'dir', 'image', 'copilot.image', 'prompt',
+    'promptFile', 'promptText', 'symbol', 'selection', 'workspace', 'tool', 'toolset', 'implicit',
+    'paste', 'link', 'generic', 'diagnostic', 'terminalCommand', 'scmHistoryItem',
+    'notebookOutput', 'element'
+]);
+
+function bucketReferenceKinds(byKind) {
+    const bucketed = {};
+    for (const [kind, count] of Object.entries(byKind)) {
+        if (typeof count !== 'number') {
+            continue;
+        }
+        const label = KNOWN_REFERENCE_KINDS.has(kind) ? kind : 'other';
+        bucketed[label] = (bucketed[label] || 0) + count;
+    }
+    return bucketed;
+}
+
 function sanitizeCacheEntry(cacheEntry) {
     if (!cacheEntry || typeof cacheEntry !== 'object' || Array.isArray(cacheEntry)) {
         return {};
@@ -220,6 +240,11 @@ function sanitizeCacheEntry(cacheEntry) {
             // byPath is keyed by the referenced files' local paths
             const safeContextReferences = { ...contextReferences };
             delete safeContextReferences.byPath;
+            // byKind keys are copied verbatim from the session's contentReferences/variableData
+            // `kind`; keep known kinds and count every other value under "other"
+            if (isPlainObject(contextReferences.byKind)) {
+                safeContextReferences.byKind = bucketReferenceKinds(contextReferences.byKind);
+            }
             safeUsageAnalysis.contextReferences = safeContextReferences;
         }
         const editScope = safeUsageAnalysis.editScope;

@@ -445,7 +445,12 @@ test('no seeded session-derived string survives anywhere in a realistic default 
             toolCalls: { total: 2, byTool: { 'leak-tool': 2 }, outputTokensByTool: { 'leak-tool-out': 1 }, completedByTool: { 'leak-tool-done': 1 }, failuresByTool: { 'leak-tool-fail': 1 }, latencyByTool: { 'leak-tool-latency': latency } },
             mcpTools: { total: 1, byServer: { 'leak-server': 1 }, byTool: { 'leak-mcp-tool': 1 }, completedByServer: { 'leak-server-done': 1 }, failuresByServer: { 'leak-server-fail': 1 }, latencyByServer: { 'leak-server-latency': latency } },
             skillCalls: { total: 1, byName: { 'leak-skill': 1 } },
-            contextReferences: { file: 1, byKind: { 'kind-ok': 1 }, byPath: { '/home/leak-user/leak-file.ts': 1 } },
+            contextReferences: {
+                file: 1,
+                // Known VS Code kinds are kept; any other session-supplied kind is bucketed
+                byKind: { file: 2, 'copilot.image': 1, 'leak-hostile-kind /home/leak-user/x': 3, 'leak-customer-kind': 1, 'leak-not-a-count': 'leak-value' },
+                byPath: { '/home/leak-user/leak-file.ts': 1 }
+            },
             editScope: { singleFileEdits: 1, languageUsage: { 'leak-env': { linesAdded: 1, linesRemoved: 0 } } },
             correctionMoments: [
                 { type: 'tool-error', turnNumber: 1, timestamp: null, snippet: 'Tool failed: leak-failing-tool', tool: 'leak-failing-tool', retried: true },
@@ -464,10 +469,13 @@ test('no seeded session-derived string survives anywhere in a realistic default 
 
     const result = fixture.run(['--json']);
     assert.equal(result.status, 0, result.stderr);
-    const strings = collectStrings(JSON.parse(result.stdout));
+    const output = JSON.parse(result.stdout);
+    const strings = collectStrings(output);
     assert.deepEqual(strings.filter(value => /leak/i.test(value)), []);
+    assert.deepEqual(output.entries['session-1'].usageAnalysis.contextReferences.byKind,
+        { file: 2, 'copilot.image': 1, other: 4 });
     // The sweep is only meaningful if the safe strings did make it through.
-    for (const kept of ['model-ok', 'kind-ok', 'pattern-ok', 'effort-ok', 'tier-ok']) {
+    for (const kept of ['model-ok', 'pattern-ok', 'effort-ok', 'tier-ok']) {
         assert.ok(strings.includes(kept), `expected ${kept} in the default output`);
     }
     // And with the opt-in flag the seeded strings are reachable (except URL credentials).
