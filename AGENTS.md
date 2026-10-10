@@ -259,7 +259,12 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 
 ### Where the `extension.ts` decomposition stands
 
-`docs/adr/EXTENSION-TS-DECOMPOSITION.md` is a **plan**, not a description of the code. None of its proposed destination modules (for example `backend/ui/diagnosticsPanel.ts`, `backend/services/worktreeService.ts`, `statusBarPresenter.ts`) exist yet, `extension.ts` is still one large `CopilotTokenTracker` class, and the figures inside the ADR are a snapshot that has since drifted. Do not add new feature logic to `extension.ts`: put it in a new or existing module and call it from there. Do not move existing code out opportunistically either; follow the ADR's extraction order, one PR per cluster.
+`docs/adr/EXTENSION-TS-DECOMPOSITION.md` is a **plan**, not a description of the code, and the figures inside it are a snapshot that has since drifted. Its destinations fall into two groups:
+
+- **Already exist** (extraction folds code into them): the shared `src/tokenEstimation.ts` and `src/sessionParser.ts`, and in `vscode-extension/src/` `backend/rollups.ts`, `agentSessionsService.ts`, `cacheManager.ts`, `githubPrService.ts`, `onboarding.ts`, `hookManager.ts`, `extensionPoints.ts`, `viewRegression.ts` and `backend/services/*`.
+- **Not created yet** (the new per-panel UI modules and services the ADR proposes, for example `backend/ui/diagnosticsPanel.ts`, `backend/services/worktreeService.ts`, `statusBarPresenter.ts`): check with `ls` before assuming one is there.
+
+`extension.ts` is still one large `CopilotTokenTracker` class. Do not add new feature logic to it: put it in a new or existing module and call it from there. Do not move existing code out opportunistically either; follow the ADR's extraction order, one PR per cluster.
 
 ## Pre-PR self-review checklist
 
