@@ -332,15 +332,24 @@ function Build-Desktop {
     }
     Push-Location "$PSScriptRoot/desktop"
     try {
-        switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run build }
-            'package' { Ensure-NpmDeps .; npm run dist }
+        # $LASTEXITCODE is only meaningful right after a native command: 'clean'
+        # runs none, and under StrictMode an unset one would throw. So each npm
+        # target checks its own exit code.
+        $npmScript = switch ($Target) {
+            'build'   { 'build' }
+            'package' { 'dist' }
             # No unit tests yet: type-check plus the checks that keep the app in
             # step with the extension's views (message contract, theme tokens).
-            'test'    { Ensure-NpmDeps .; npm run check }
-            'clean'   { Remove-Item -Recurse -Force dist, release -ErrorAction SilentlyContinue }
+            'test'    { 'check' }
+            default   { $null }
         }
-        if ($LASTEXITCODE -ne 0) { throw "Desktop target '$Target' failed" }
+        if ($npmScript) {
+            Ensure-NpmDeps .
+            npm run $npmScript
+            if ($LASTEXITCODE -ne 0) { throw "Desktop target '$Target' failed (npm run $npmScript)" }
+        } else {
+            Remove-Item -Recurse -Force dist, release -ErrorAction SilentlyContinue
+        }
         Write-Ok "desktop done."
     }
     finally { Pop-Location }
