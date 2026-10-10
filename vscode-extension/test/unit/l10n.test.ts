@@ -1867,3 +1867,10 @@ test('worktree cleanup delete-feedback keys resolve in zh-cn', () => {
 		mock.setLanguage('en');
 	}
 });
+
+test('What\'s New memory-files entry points at the Workspace Health tab in en and zh-CN', () => {
+	const key = 'whatsNew.feature.usage.memory-files-hygiene.description';
+	assert.match(t(key), /^A new section on the Workspace Health tab showing/);
+	const zh = JSON.parse(readFileSync(join(__dirname, '../../../../package.nls.zh-cn.json'), 'utf8')) as Record<string, string>;
+	assert.ok(zh[key].startsWith('工作区健康标签页中的新板块'));
+});

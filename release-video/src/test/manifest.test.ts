@@ -131,7 +131,7 @@ test('real catalog provenance still validates', () => {
 			source: {
 				featureId: 'usage.memory-files-hygiene',
 				view: 'usage',
-				tab: 'tools',
+				tab: 'health',
 				anchor: 'section-memory-files',
 			},
 		})],

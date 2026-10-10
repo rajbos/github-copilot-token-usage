@@ -3036,6 +3036,8 @@ function buildHealthTabPanelHtml(customizationHtml: string, stats: UsageAnalysis
 		<div id="tab-panel-health" class="tab-panel"${activeTab !== 'health' ? ' style="display:none"' : ''}>
 			${customizationHtml}
 			${renderMissedPotential(stats)}
+			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
+			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
 
 			<!-- Repository Setup Section -->
 			<div class="repo-hygiene-section" id="section-repo-hygiene" style="margin-top: 16px; margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
@@ -5300,8 +5302,6 @@ function buildToolsTabPanelHtml(
 			${safeSectionHtml(localize('usage.tab.tools'), () => buildToolExecutionSectionsHtml({ toolCalls: stats.last30Days.toolCalls, mcpTools: stats.last30Days.mcpTools, resolveToolName: lookupToolName, hiddenTools: hideAutomaticToolCalls ? AUTOMATIC_TOOL_SET_WV : undefined }))}
 			${buildMcpToolsSectionHtml(stats)}
 			${buildCurationSectionHtml(currentCurationAnalysis ?? stats.curationAnalysis)}
-			${buildMemoryFilesSectionHtml(currentMemoryFilesAnalysis ?? stats.memoryFilesAnalysis)}
-			${buildServerMemoriesSectionHtml(currentServerMemoriesAnalysis ?? stats.serverMemoriesAnalysis)}
 			${buildSkillSuggestionsSectionHtml(stats.repeatedTasks ?? null)}
 			<!-- Multi-Model Usage Section -->
 			<div class="section" id="section-multi-model">

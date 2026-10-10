@@ -1,9 +1,10 @@
 /**
- * Copilot **server-side** repository memories — the Tools-tab section and its payload guard.
+ * Copilot **server-side** repository memories — the Workspace Health tab section and its payload guard.
  *
- * Split out of `main.ts` rather than added to it: that file sits just under the repository's
- * 6000-line `max-lines` ceiling (see AGENTS.md), and a new section is exactly the kind of
- * growth that is supposed to become a module instead.
+ * Rendered on the Workspace Health tab (`health`) beside the memory-files section, since it is
+ * repository configuration rather than tool telemetry. Kept as its own module rather than
+ * added to `main.ts`, which is over the repository's 6000-line `max-lines` ceiling (see
+ * AGENTS.md); new sections should become modules instead.
  *
  * See `src/copilotServerMemories.ts` for where this data comes from, and
  * `docs/features/COPILOT-SERVER-MEMORIES.md` for why it is analyzed rather than just listed.

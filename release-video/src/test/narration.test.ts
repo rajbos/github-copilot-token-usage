@@ -56,8 +56,8 @@ test('a section is addressed by its tab as well as its view', () => {
 		feature({
 			title: 'Copilot Memory Files',
 			kind: 'section',
-			description: 'A new section on the Tools tab showing how much memory has accumulated.',
-			surface: { view: 'usage', tab: 'tools', anchor: 'section-memory-files' },
+			description: 'A new section on the Workspace Health tab showing how much memory has accumulated.',
+			surface: { view: 'usage', tab: 'health', anchor: 'section-memory-files' },
 		}),
 		{ index: 0 },
 	);
