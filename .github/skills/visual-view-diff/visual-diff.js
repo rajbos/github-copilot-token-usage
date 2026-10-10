@@ -50,8 +50,10 @@ function run(command, args, cwd, env) {
 /**
  * Environment variables the bundle build may see. `esbuild.js` and the
  * dependency tree it loads belong to the code under review (both the base
- * commit and the working tree), so it gets only what Node and esbuild need to
- * run — never the caller's tokens. Names are matched exactly, except on
+ * commit and the working tree), so it inherits only what Node and esbuild need
+ * to run, not the caller's tokens. This prevents accidental inheritance only:
+ * the build runs as the same user and can still read the parent's environment
+ * or credential files (see SECURITY.md). Names are matched exactly, except on
  * Windows, where environment variable names are case-insensitive (`Path`).
  */
 const BUILD_ENV_ALLOWLIST = new Set([

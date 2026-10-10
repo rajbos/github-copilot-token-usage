@@ -25,10 +25,14 @@ classification" in the repository `AGENTS.md`).
 ## Credentials used and where they come from
 
 None are read or sent by the scripts. The bundle build (`node esbuild.js` in both
-checkouts) runs with a minimal environment allowlist (`BUILD_ENV_ALLOWLIST` in
+checkouts) is started with a minimal environment allowlist (`BUILD_ENV_ALLOWLIST` in
 visual-diff.js: path, system, home/temp, locale, `CI` and `ESBUILD_BINARY_PATH`; names
-match exactly, case-insensitively only on Windows), so
-tokens in the operator's shell are not visible to the build scripts under review.
+match exactly, case-insensitively only on Windows). That only controls what the build
+process inherits in its own `process.env`: tokens in the operator's shell are not handed
+to it by accident. It is not isolation. The build runs as the operator's user, so it can
+still recover them, for example by reading the parent's `/proc/<ppid>/environ` on Linux
+(the parent `visual-diff.js` holds the full environment) or the user's credential files
+(see Known gaps).
 `render-views.js` and `diff-screenshots.js` are the skill's own code and inherit the
 caller's environment; the bundles they load run in Chromium, which has no access to it.
 
@@ -126,8 +130,10 @@ render processes run concurrently; each is awaited before the worktree is remove
   `blockNetwork`: only `file:`, `data:` and `blob:` URLs load; http(s) is aborted and
   WebSockets are closed, at the context level so popups are covered too. A Playwright
   too old to route WebSockets fails the render instead of skipping that block.
-- The bundle build gets an allowlisted environment, not the caller's (`buildEnv` in
-  visual-diff.js).
+- The bundle build is started with an allowlisted environment, not the caller's
+  (`buildEnv` in visual-diff.js). This prevents accidental inheritance of tokens by the
+  reviewed build scripts; it does not stop a build that goes looking for them (see
+  Known gaps).
 - Embedded JSON has every `<` escaped as `\u003c`, so a payload cannot close the
   script tag (`toScriptJson` and `readJsonConfigGlobals` in `lib/harness.js`).
 - The page gets a stub `acquireVsCodeApi` that only records messages in memory; nothing is
@@ -140,10 +146,14 @@ render processes run concurrently; each is awaited before the worktree is remove
 Recorded, not fixed here.
 
 - Building still runs the reviewed project's `esbuild.js` and dependency tree as the
-  operator's user, with filesystem access to whatever that user can read. Stripping the
-  environment removes tokens, not the ability to read files such as `~/.npmrc` or a git
-  credential store. The skill is safe only for code the operator already trusts to run
-  locally; it must not be pointed at an unreviewed fork without isolation.
+  operator's user, with that user's full filesystem and network access. The environment
+  allowlist only keeps tokens out of the child's own `process.env`. The build can still
+  read the parent's environment (`/proc/<ppid>/environ` on Linux, or another process of
+  the same user on any platform) and files such as `~/.npmrc`, `~/.config/gh/hosts.yml`
+  or a git credential store, and send what it finds anywhere. Real isolation needs a
+  separate user, a container or an equivalent sandbox, which the skill does not provide.
+  It is safe only for code the operator already trusts to run locally, and must not be
+  pointed at an unreviewed fork without that isolation.
 - The network block covers what Playwright routes (HTTP(S) and WebSockets). Channels it
   does not intercept, such as WebRTC, are not blocked. The build step has no network
   restriction at all, and `release-video/src/shots.ts` does not call `blockNetwork`.
