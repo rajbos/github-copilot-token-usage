@@ -25,6 +25,7 @@ import {
 	describePromotionTarget,
 	describeNoPromotionCandidates,
 	sanitizeForDisplay,
+	sameRepoSlug,
 	INVALID_REPO_LABEL,
 	DEFAULT_MEMORY_LIMIT,
 } from '../../../src/copilotServerMemories';
@@ -103,6 +104,15 @@ export const memoryFilesCommand = new Command('memory-files')
 	});
 
 /**
+ * Whether the repository being analyzed is the one checked out here: no `--repo`, or a
+ * `--repo` naming the origin's repository in any letter case (GitHub slugs are
+ * case-insensitive). Only then is the local tree evidence about that repository.
+ */
+export function analyzesLocalCheckout(repoOverride: string | undefined, originRepo: string | undefined): boolean {
+	return repoOverride === undefined || sameRepoSlug(repoOverride, originRepo);
+}
+
+/**
  * What `--promote` prints, split by stream. Exported so the output contract — stdout is only
  * the paste-ready block, everything about *how* it was produced goes to stderr — is tested
  * without a network read.
@@ -179,7 +189,7 @@ async function buildServerMemoriesAnalysis(cwd: string, repoOverride: string | u
 			byAgent: {}, byModel: {} };
 	}
 	const root = context?.root ?? cwd;
-	const analyzingThisCheckout = !repoOverride || repoOverride === context?.repo;
+	const analyzingThisCheckout = analyzesLocalCheckout(repoOverride, context?.repo);
 
 	const result = await fetchRepoMemories(repo, {
 		getToken: async () => {

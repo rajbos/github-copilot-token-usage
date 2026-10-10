@@ -254,6 +254,19 @@ export function safeRepoLabel(slug: string): string {
 	return isValidRepoSlug(slug) ? slug : INVALID_REPO_LABEL;
 }
 
+/**
+ * Whether two `owner/name` slugs name the same GitHub repository. GitHub slugs are
+ * case-insensitive, so `Owner/Repo` and `owner/repo` are the same repository; comparing them
+ * exactly would wrongly treat a `--repo` override, or a remote whose casing changed, as a
+ * different repository from the local checkout. A trailing `.git` is dropped too: it passes
+ * {@link isValidRepoSlug} (dots are legal in names), but GitHub does not allow a repository name
+ * ending in `.git`, and {@link parseRepoFromRemoteUrl} already strips it from the origin.
+ */
+export function sameRepoSlug(a: string | undefined, b: string | undefined): boolean {
+	const normalize = (slug: string) => slug.trim().replace(/\.git$/i, '').toLowerCase();
+	return typeof a === 'string' && typeof b === 'string' && normalize(a) === normalize(b);
+}
+
 export function isValidRepoSlug(slug: string): boolean {
 	const segments = slug.split('/');
 	return segments.length === 2 && segments.every(isValidRepoSegment);
@@ -672,6 +685,18 @@ function probeCitations(checkable: string[], deps: ServerMemoryAnalysisDeps): { 
 	return { missing, livePaths };
 }
 
+/**
+ * A group's live citations, the representative's own first (the evidence for the exact fact the
+ * prompt quotes), then the other live members', each part sorted. Callers cap the citation list
+ * after this ordering, so the representative's source is never the one dropped.
+ */
+function orderLiveCitations(representative: ServerMemory, liveMembers: ServerMemory[], scan: MemoryScan): string[] {
+	const own = [...(scan.liveCitations.get(representative.id) ?? [])].sort();
+	const ownSet = new Set(own);
+	const others = Array.from(new Set(liveMembers.flatMap(m => scan.liveCitations.get(m.id) ?? []))).filter(c => !ownSet.has(c)).sort();
+	return [...own, ...others];
+}
+
 /** Classify every memory once: subject, whether it is documented, code-derived, and stale. */
 function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps): MemoryScan {
 	const scan: MemoryScan = {
@@ -743,17 +768,21 @@ function buildPromotionGroups(scan: MemoryScan): ServerMemoryPromotionGroup[] {
 		// every cited file is gone, or that cites only directories, is code-derived in form only —
 		// nothing checkable supports it, so it must not be offered for promotion into the one
 		// file every agent reads.
-		if (!group.some(memory => scan.liveIds.has(memory.id))) { continue; }
+		const liveMembers = group.filter(memory => scan.liveIds.has(memory.id));
+		if (liveMembers.length === 0) { continue; }
+		// The longest fact is kept as the representative: when the agent restates one fact many
+		// times the wordings differ mainly by how much detail survived, and the fullest wording is
+		// the most useful starting text for an instruction file. It is chosen among *live* members
+		// only, so the prompt never asks Copilot to verify an obsolete wording against another
+		// member's files.
+		const representative = liveMembers.reduce((longest, m) => (m.fact.length > longest.fact.length ? m : longest), liveMembers[0]);
 		groups.push({
 			subject: subjectKey,
 			displaySubject: group[0].subject,
 			repeatCount: group.length,
-			// The longest fact is kept as the representative: when the agent restates one
-			// fact many times the wordings differ mainly by how much detail survived, and
-			// the fullest wording is the most useful starting text for an instruction file.
-			representativeFact: group.reduce((longest, m) => (m.fact.length > longest.length ? m.fact : longest), group[0].fact),
+			representativeFact: representative.fact,
 			citations: Array.from(new Set(group.flatMap(m => m.citations))).sort(),
-			liveCitations: Array.from(new Set(group.flatMap(m => scan.liveCitations.get(m.id) ?? []))).sort(),
+			liveCitations: orderLiveCitations(representative, liveMembers, scan),
 			memoryIds: group.map(m => m.id),
 		});
 	}

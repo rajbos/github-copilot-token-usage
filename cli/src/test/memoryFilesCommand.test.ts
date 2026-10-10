@@ -6,7 +6,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { resolveMemoryFilesThresholds, buildPromoteOutput } from '../commands/memory-files';
+import { resolveMemoryFilesThresholds, buildPromoteOutput, analyzesLocalCheckout } from '../commands/memory-files';
 import { analyzeServerMemories } from '../../../src/copilotServerMemories';
 import { DEFAULT_STALE_DAYS, DEFAULT_LARGE_FILE_BYTES } from '../../../src/copilotMemoryFiles';
 
@@ -102,4 +102,12 @@ test('buildPromoteOutput explains a stale-only store instead of calling it docum
 	const output = buildPromoteOutput(promoteAnalysis({ fileExists: () => false, promotionTargetStatus: () => 'absent' }, '/home/dev/repo'));
 	assert.match(output.stdout, /1 cites only files that no longer exist/);
 	assert.ok(!output.stdout.includes('every stored memory already cites'));
+});
+
+test('analyzesLocalCheckout matches --repo against the origin case-insensitively', () => {
+	assert.equal(analyzesLocalCheckout(undefined, 'owner/repo'), true);
+	assert.equal(analyzesLocalCheckout('Owner/Repo', 'owner/repo'), true, 'GitHub slugs are case-insensitive');
+	assert.equal(analyzesLocalCheckout('owner/repo.git', 'owner/repo'), true, 'remote-form --repo still names this checkout');
+	assert.equal(analyzesLocalCheckout('owner/other', 'owner/repo'), false);
+	assert.equal(analyzesLocalCheckout('owner/repo', undefined), false);
 });

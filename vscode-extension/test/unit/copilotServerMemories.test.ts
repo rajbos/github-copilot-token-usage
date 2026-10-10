@@ -23,6 +23,7 @@ import {
 	buildPromotionPromptForSubject,
 	promotionGroupFingerprint,
 	isOpenableCitedDocument,
+	sameRepoSlug,
 	buildPromotionPrompt,
 	MEMORY_INTEGRATION_ID,
 	isSafeRepoRelativePath,
@@ -1685,4 +1686,39 @@ test('a documented memory whose cited file is gone is marked missing, not openab
 	const dir = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', citations: ['docs/:1'] })] },
 		{ fileExists: () => true, isRegularFile: () => false });
 	assert.deepEqual(dir.documentedMemories[0].missingInstructionFiles, ['docs/']);
+});
+
+// ---------------------------------------------------------------------------
+// Review round 8 (#2373): representative fact from live members; slug case
+// ---------------------------------------------------------------------------
+
+test('a mixed group takes its representative fact from a live member and lists that member\'s source first', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [
+			// Longest wording, but every cited file is gone.
+			memory({ id: '1', subject: 'cache', fact: 'An obsolete, much longer description of how caching used to work.', citations: ['src/old.ts:1'] }),
+			memory({ id: '2', subject: 'cache', fact: 'Shorter live fact.', citations: ['src/z-live.ts:5'] }),
+			// Another live member whose citation sorts before the representative's.
+			memory({ id: '3', subject: 'cache', fact: 'Short.', citations: ['src/a-other.ts:1'] }),
+		],
+	}, { fileExists: p => p !== 'src/old.ts', promotionTargetStatus: () => 'exists' });
+	const group = analysis.promotionGroups[0];
+	assert.equal(group.representativeFact, 'Shorter live fact.');
+	assert.deepEqual(group.liveCitations, ['src/z-live.ts:5', 'src/a-other.ts:1']);
+	const prompt = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0].prompt ?? '';
+	assert.match(prompt, /"Shorter live fact\."/);
+	assert.match(prompt, /Cited sources: src\/z-live\.ts:5, /, 'the quoted fact\'s own source comes first');
+	assert.ok(!prompt.includes('obsolete'));
+});
+
+test('sameRepoSlug treats GitHub slugs case-insensitively', () => {
+	assert.equal(sameRepoSlug('Owner/Repo', 'owner/repo'), true);
+	assert.equal(sameRepoSlug('owner/repo', 'owner/other'), false);
+	assert.equal(sameRepoSlug(undefined, 'owner/repo'), false);
+	// The origin parser strips .git; a --repo written in remote form must still match.
+	assert.equal(sameRepoSlug('Owner/Repo.git', 'owner/repo'), true);
+	assert.equal(sameRepoSlug('owner/repo.github', 'owner/repo'), false, 'only a whole .git suffix is dropped');
+	assert.equal(serverMemoriesDraftContextMatches({ repo: 'Owner/Repo', repoRoot: '/w/a' }, { repo: 'owner/repo', repoRoot: '/w/a' }), true);
 });

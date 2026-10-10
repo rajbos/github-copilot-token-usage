@@ -147,6 +147,7 @@ import {
   withFreshPromotionTarget as _withFreshPromotionTarget,
   buildPromotionPromptForSubject as _buildPromotionPromptForSubject,
   isOpenableCitedDocument as _isOpenableCitedDocument,
+  sameRepoSlug as _sameRepoSlug,
 } from '../../src/copilotServerMemories';
 import { readGitOriginUrl as _readGitOriginUrl, isGitRepoRoot as _isGitRepoRoot } from '../../src/darkFactorySignals';
 
@@ -669,7 +670,7 @@ export function serverMemoriesDraftContextMatches(
 	current: { repo: string; repoRoot: string } | undefined,
 ): boolean {
 	return Boolean(current && cached.repo && cached.repoRoot
-		&& current.repo === cached.repo && current.repoRoot === cached.repoRoot);
+		&& _sameRepoSlug(current.repo, cached.repo) && current.repoRoot === cached.repoRoot);
 }
 
 export function decideServerMemoriesRefresh(input: ServerMemoriesRefreshInputs): { clearCache: boolean; startFetch: boolean } {

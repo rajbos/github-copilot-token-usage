@@ -1720,7 +1720,8 @@ export interface ServerMemoryPromotionGroup {
   citations: string[];
   /**
    * The subset of {@link citations} whose file is an existing regular file in the checkout —
-   * the evidence that made the group promotable. Listed first wherever citations are capped.
+   * the evidence that made the group promotable — with the representative member's own first.
+   * Listed first wherever citations are capped.
    */
   liveCitations?: string[];
   memoryIds: string[];
