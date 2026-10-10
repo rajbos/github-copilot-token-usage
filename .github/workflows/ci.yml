@@ -400,12 +400,10 @@ jobs:
     needs: check-changes
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.ci-relevant == 'true'
     permissions:
-      contents: read
-      pull-requests: write # post the before/after screenshot comment
-    # One ui-checks run per PR at a time. Two runs for rapid pushes would race
-    # on replacing the screenshot comment and could leave two behind; the
-    # older head's screenshots are obsolete the moment a new push lands, so
-    # cancelling the in-flight run loses nothing.
+      contents: read # read-only and secret-free: this job runs the PR's own code
+    # One ui-checks run per PR at a time; the older head's screenshots are
+    # obsolete the moment a new push lands, so cancelling the in-flight run
+    # loses nothing.
     concurrency:
       group: ui-checks-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -421,11 +419,11 @@ jobs:
         # The visual diff builds the merge base in a temporary worktree, which
         # needs real history rather than a shallow clone.
         fetch-depth: 0
-        # This job holds pull-requests: write, and everything after checkout
-        # runs code from the PR (npm scripts, esbuild, the harness). Nothing
-        # here needs authenticated git - the worktree and merge-base are
-        # local operations on the full clone - so the token is never written
-        # to .git/config where that code could read it.
+        # Everything after checkout runs code from the PR (npm scripts,
+        # esbuild, the harness). Nothing here needs authenticated git - the
+        # worktree and merge-base are local operations on the full clone - so
+        # the token is never written to .git/config where that code could
+        # read it. Posting the PR comment lives in ui-checks-comment.
         persist-credentials: false
 
     - name: Setup Node.js
@@ -515,38 +513,88 @@ jobs:
           visual-output/current/
           visual-output/diff/
         retention-days: 14
+  # ── Put the screenshots where the reviewer is: on the PR ──────────────
+  # An artifact zip and a job summary table are where screenshots went to
+  # die: nobody opened them, so UI PRs shipped with no visual review. This
+  # job posts the before/after/diff images as one comment on the PR, replaced
+  # on every push, using `gh pr comment --attach` (GitHub CLI 2.99+,
+  # https://github.blog/changelog/2026-09-01-github-cli-media-in-issues-pull-requests-and-comments/).
+  #
+  # Why this is a separate job from ui-checks: ui-checks executes the PR's own
+  # code (npm scripts, esbuild config, the harness) and so must never hold a
+  # secret or a write token - a background process it leaves behind can read
+  # the environment of every later step in the same job. This job holds the
+  # secrets and runs NO PR code: it checks out the trusted BASE commit (for
+  # visual-diff-comment.js and views.config.json), downloads the screenshots
+  # artifact into visual-output/ and treats it purely as untrusted data. The
+  # renderer allowlists every field, and the posting step re-validates each
+  # attachment (path shape, regular file, size, PNG signature). Nothing from
+  # the artifact is interpolated into a shell command or executed.
+  #
+  # Constraints:
+  #   - gh only uploads with a user token (OAuth, classic or fine-grained
+  #     PAT). The Actions installation token is refused, so the upload uses
+  #     the repository's GH_PAT secret - the same one pr-risk-review.yml
+  #     already relies on - and the comment is authored by that user. Attaching
+  #     files needs push access
+  #     (https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli),
+  #     which on a fine-grained PAT is Contents: write, and the same token
+  #     then posts the comment, which needs Pull requests: write. gh's
+  #     pre-flight checks the user's role, not the token's grants, so a
+  #     token short of either fails mid-command with "not accessible by
+  #     personal access token" (suffixed "(addComment)" for the comment
+  #     half). Without the secret (or if gh fails) the comment is still
+  #     posted with GITHUB_TOKEN, minus the inline images, pointing at the
+  #     artifact and saying why the images are missing.
+  #   - Fork and Dependabot PRs get a read-only token and no secrets, so this
+  #     job is skipped for them; their screenshots stay in the artifact.
+  # Rendering the comment and preparing gh are report-only, like the diff
+  # they publish. The posting step is NOT: it fails this job - which the
+  # required "CI result" check includes - on an API error, or when a
+  # configured GH_PAT cannot deliver the images that were due. Only an unset
+  # GH_PAT stays non-fatal.
+  ui-checks-comment:
+    name: Webview screenshot comment
+    runs-on: ubuntu-latest
+    needs: [check-changes, ui-checks]
+    # Runs after ui-checks even when it failed (a report-less push must still
+    # replace a stale comment), but not when it was skipped or cancelled.
+    if: >-
+      !cancelled()
+      && needs.ui-checks.result != 'skipped'
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+    permissions:
+      contents: read
+      pull-requests: write # GITHUB_TOKEN fallback comment and cleanup of older comments
+    # Same race as ui-checks: two runs for rapid pushes could leave two comments.
+    concurrency:
+      group: ui-checks-comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      with:
+        egress-policy: audit
 
-    # ── Put the screenshots where the reviewer is: on the PR ──────────────
-    # An artifact zip and a job summary table are where screenshots went to
-    # die: nobody opened them, so UI PRs shipped with no visual review. The
-    # steps below post the before/after/diff images as one comment on the PR,
-    # replaced on every push, using `gh pr comment --attach` (GitHub CLI
-    # 2.99+, https://github.blog/changelog/2026-09-01-github-cli-media-in-issues-pull-requests-and-comments/).
-    #
-    # Two constraints shape this:
-    #   - gh only uploads with a user token (OAuth, classic or fine-grained
-    #     PAT). The Actions installation token is refused, so the upload uses
-    #     the repository's GH_PAT secret - the same one pr-risk-review.yml
-    #     already relies on - and the comment is authored by that user. The
-    #     PAT is exposed to the posting step only; nothing that builds or
-    #     renders the PR's code can read it. Attaching files needs push access
-    #     (https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli),
-    #     which on a fine-grained PAT is Contents: write, and the same token
-    #     then posts the comment, which needs Pull requests: write. gh's
-    #     pre-flight checks the user's role, not the token's grants, so a
-    #     token short of either fails mid-command with "not accessible by
-    #     personal access token" (suffixed "(addComment)" for the comment
-    #     half). Without the secret (or if gh fails) the comment is still
-    #     posted with GITHUB_TOKEN, minus the inline images, pointing at the
-    #     artifact and saying why the images are missing.
-    #   - Fork and Dependabot PRs get a read-only token and no secrets, so the
-    #     posting step is skipped for them; their screenshots stay in the
-    #     artifact.
-    # Rendering the comment and preparing gh are report-only, like the diff
-    # they publish: a failure there warns and lets the job continue. The
-    # posting step is NOT: it fails the required UI gate (and so CI result)
-    # on an API error, or when a configured GH_PAT cannot deliver the images
-    # that were due. Only an unset GH_PAT stays non-fatal.
+    # The trusted BASE commit, never the PR head: this job holds a PAT, and
+    # the comment renderer it runs must not be PR-controlled.
+    - name: Checkout base (trusted scripts only)
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.event.pull_request.base.sha }}
+        persist-credentials: false
+
+    # Untrusted data from the PR's ui-checks run. Missing when ui-checks died
+    # before uploading; the renderer then reports "no report".
+    - name: Download screenshots artifact (untrusted data)
+      continue-on-error: true
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: webview-screenshots
+        path: visual-output
+
     - name: Render the screenshot comment
       id: visual-comment
       if: always() && github.event.pull_request.head.repo.full_name == github.repository
@@ -731,6 +779,10 @@ jobs:
             if [ -L "$file" ] || [ ! -f "$file" ]; then
               echo "::error::Refusing to attach '$(cmd_escape "$file")': not a regular file."; return 1
             fi
+            # The artifact is PR-controlled data: only a real, bounded PNG goes out.
+            if [ "$(stat -c %s "$file")" -gt 10485760 ] || [ "$(head -c 8 "$file" | od -An -tx1 | tr -d ' \n')" != "89504e470d0a1a0a" ]; then
+              echo "::error::Refusing to attach '$(cmd_escape "$file")': not a PNG within the size limit."; return 1
+            fi
             args+=(--attach "$line")
           done < visual-comment/attachments.txt
           [ "${#args[@]}" -gt 0 ] || return 1
@@ -817,13 +869,14 @@ jobs:
           exit 1
         fi
 
+
   # Stable required-check anchor for this workflow. Require "CI result" in
   # branch protection rather than the individual jobs: it is the only name that
   # exists in every case, and the only one that fails when the path gate breaks.
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
-    needs: [check-changes, test-coverage-check, build, package, ui-checks]
+    needs: [check-changes, test-coverage-check, build, package, ui-checks, ui-checks-comment]
     if: always()
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -848,3 +901,4 @@ jobs:
             build=${{ needs.build.result }}
             package=${{ needs.package.result }}
             ui-checks=${{ needs.ui-checks.result }}
+            ui-checks-comment=${{ needs.ui-checks-comment.result }}

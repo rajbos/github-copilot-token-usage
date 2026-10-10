@@ -50,6 +50,11 @@
 const fs = require('fs');
 const path = require('path');
 
+// Bounds for artifact contents, which a PR's CI job (not this one) produced.
+const MAX_PNG_BYTES = 10 * 1024 * 1024;
+const MAX_REPORT_BYTES = 2 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 const STATUS_LABEL = {
   changed: '🎨 changed',
   unchanged: '⚪ unchanged',
@@ -211,7 +216,18 @@ function resolveAttachment(rootDir, subDir, fileName) {
   try {
     if (fs.lstatSync(relative).isSymbolicLink()) { return null; }
     real = fs.realpathSync(relative);
-    if (!fs.statSync(real).isFile()) { return null; }
+    const stat = fs.statSync(real);
+    if (!stat.isFile() || stat.size > MAX_PNG_BYTES) { return null; }
+    // The screenshots arrive as an artifact from a job that ran PR code, so
+    // they are untrusted bytes: only something that really is a PNG goes out.
+    const fd = fs.openSync(real, 'r');
+    try {
+      const head = Buffer.alloc(PNG_SIGNATURE.length);
+      fs.readSync(fd, head, 0, head.length, 0);
+      if (!head.equals(PNG_SIGNATURE)) { return null; }
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch {
     return null;
   }
@@ -380,7 +396,20 @@ function main() {
     return finish(outputs);
   }
 
-  const report = JSON.parse(fs.readFileSync(opts.report, 'utf8'));
+  // The report comes out of an artifact built by PR code: bound it and treat
+  // an unreadable one like a missing one rather than failing the job.
+  let report;
+  try {
+    const stat = fs.lstatSync(opts.report);
+    if (!stat.isFile() || stat.size > MAX_REPORT_BYTES) throw new Error('not a regular file within the size limit');
+    report = JSON.parse(fs.readFileSync(opts.report, 'utf8'));
+  } catch (err) {
+    console.log(`Report at ${opts.report} is unusable (${safeText(err.message)}); nothing to post.`);
+    emit('has_report', 'false');
+    emit('has_changes', 'false');
+    emit('attachments', '0');
+    return finish(outputs);
+  }
   const comparisons = (Array.isArray(report.comparisons) ? report.comparisons : [])
     .filter((c) => c && typeof c === 'object')
     .map(normalizeComparison)
