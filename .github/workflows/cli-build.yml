@@ -6,6 +6,7 @@ on:
     paths:
       - 'cli/**'
       - 'src/**'
+      - '.github/workflows/cli-build.yml'
   pull_request:
     branches: [main]
 
@@ -34,6 +35,7 @@ jobs:
             cli-relevant:
               - 'cli/**'
               - 'src/**'
+              - '.github/workflows/cli-build.yml'
 
   build-and-validate:
     needs: check-changes
