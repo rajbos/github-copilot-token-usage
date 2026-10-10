@@ -39,8 +39,7 @@ test('extractLinks: a longer outer fence is not closed by shorter or differently
     '[still-in](y.md)',
     '~~~~',
     '[end](end.md)',
-  ].join('
-');
+  ].join('\n');
   assert.deepEqual(extractLinks(md), ['after.md', 'end.md']);
 });
 
