@@ -229,6 +229,14 @@ function sanitizeCacheEntry(cacheEntry) {
             delete safeEditScope.languageUsage;
             safeUsageAnalysis.editScope = safeEditScope;
         }
+        const modelSwitching = safeUsageAnalysis.modelSwitching;
+        if (isPlainObject(modelSwitching)) {
+            // selectedModelExtensions lists the ids of the extensions that supplied the selected
+            // models (e.g. a private or internal model-provider extension), not model ids
+            const safeModelSwitching = { ...modelSwitching };
+            delete safeModelSwitching.selectedModelExtensions;
+            safeUsageAnalysis.modelSwitching = safeModelSwitching;
+        }
         // Tool, MCP server/tool and skill names come straight from the session (an MCP server
         // or skill can carry a private project or customer name). Keep each usage object's
         // scalar totals; drop its name-keyed maps (byTool, byServer, byName, latencyBy*, ...).
@@ -318,24 +326,27 @@ function parseCacheEntries(filePath, content) {
 function readCacheFile() {
     const possiblePaths = getCacheFilePaths();
 
-    // 1. lstat the candidate itself and accept only a regular file, so a symlink (on Windows
-    //    also a junction or other reparse point Node reports as a link) is refused on every
-    //    platform; O_NOFOLLOW alone does not exist on Windows.
-    // 2. Open it (O_NOFOLLOW where available) and confirm through the descriptor that it is
-    //    still that same file (dev + ino), so a swap between lstat and open is detected.
-    // 3. Read through the same descriptor.
+    // All decisions are made about the open descriptor, never a path checked beforehand:
+    // 1. Open the candidate (O_NOFOLLOW on POSIX refuses a symlink outright).
+    // 2. fstat the descriptor: it must be a regular file.
+    // 3. lstat the path (not following links) and require a regular file with the same
+    //    dev + ino as the descriptor. This refuses a symlink on Windows, where O_NOFOLLOW
+    //    does not exist and open() followed it (lstat reports the link, not the target),
+    //    and refuses a path that was swapped after the open.
+    // 4. Read through the same descriptor.
     const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
     for (const filePath of possiblePaths) {
         let fd;
         let content;
         try {
-            const linkStat = fs.lstatSync(filePath, { bigint: true });
-            if (linkStat.isSymbolicLink() || !linkStat.isFile()) {
-                continue;
-            }
             fd = fs.openSync(filePath, openFlags);
             const fileStat = fs.fstatSync(fd, { bigint: true });
-            if (!fileStat.isFile() || fileStat.dev !== linkStat.dev || fileStat.ino !== linkStat.ino) {
+            if (!fileStat.isFile()) {
+                continue;
+            }
+            const linkStat = fs.lstatSync(filePath, { bigint: true });
+            if (linkStat.isSymbolicLink() || !linkStat.isFile()
+                || linkStat.dev !== fileStat.dev || linkStat.ino !== fileStat.ino) {
                 continue;
             }
             content = fs.readFileSync(fd, 'utf8');

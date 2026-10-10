@@ -28,7 +28,7 @@ node .github/skills/load-cache-data/load-cache-data.js --help
 3. **Helps debugging** - Inspect what's being cached and when
 4. **Supports development** - Iterate with real data structures when building features
 
-By default, output omits session titles, prompt excerpts, correction snippets and the failing tool / edited file they name, workspace paths, referenced file paths, per-file-type line counts (`languageUsage`, keyed by extension or extensionless basename), per-tool, per-MCP-server and per-skill name maps (only their totals are kept), repository URLs, cache file paths, and unknown entry fields. `--include-sensitive` opts into full entries and their local paths; credentials in repository URLs are stripped even then. `--last` is capped at 100 entries.
+By default, output omits session titles, prompt excerpts, correction snippets and the failing tool / edited file they name, workspace paths, referenced file paths, per-file-type line counts (`languageUsage`, keyed by extension or extensionless basename), per-tool, per-MCP-server and per-skill name maps (only their totals are kept), model-provider extension ids, repository URLs, cache file paths, and unknown entry fields. `--include-sensitive` opts into full entries and their local paths; credentials in repository URLs are stripped even then. `--last` is capped at 100 entries.
 
 ## Cache File Locations
 

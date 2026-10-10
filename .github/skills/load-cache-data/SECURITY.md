@@ -33,7 +33,7 @@ None. It reads `APPDATA` and `XDG_CONFIG_HOME` only to build candidate paths.
   (`getCacheFilePaths`, line 139). These are in the user's own profile directory.
 - The OS temp directory and the current working directory are no longer candidates, so a
   file planted there is not read.
-- The content is `JSON.parse`d (`parseCacheEntries`, line 294) and filtered before printing;
+- The content is `JSON.parse`d (`parseCacheEntries`, line 302) and filtered before printing;
   nothing in it is executed. A snapshot must be an envelope with a numeric `schemaVersion` and
   an `entries` object, and a legacy export must be an object.
 
@@ -53,14 +53,16 @@ Nothing on disk. Stdout is one JSON line.
   `mcpTools` and `skillCalls` keep only their scalar totals; their maps keyed by tool, MCP
   server or skill name (`byTool`, `byServer`, `byName`, `latencyBy*`, ...) are dropped
   (`NAME_KEYED_USAGE_FIELDS`, line 199), because those names come from the session and can
-  carry a private project or customer name. `title`, `repository`,
+  carry a private project or customer name. `modelSwitching.selectedModelExtensions` (the ids
+  of the extensions that supplied the selected models, which can name a private or internal
+  provider extension) is dropped; the model ids themselves are kept. `title`, `repository`,
   `workspaceFolderPath`, top-level `languageUsage` (keyed by file extension, or by the whole
   basename for extensionless files), any unrecognized top-level field and the cache file path
   are omitted.
 - **`--include-sensitive`:** the cache file path (`cacheFile`), session file paths as entry
   keys, and full entries including `title`, `workspaceFolderPath` and `repository`. URL
   userinfo (`user:token@`) is stripped from `repository` even in this mode
-  (`stripUrlUserinfo`, line 262).
+  (`stripUrlUserinfo`, line 270).
 
 ## External programs run
 
@@ -73,14 +75,15 @@ None.
   requires `--include-sensitive`.
 - `--last` must be all digits and at least 1, otherwise the script exits 2; it is capped at
   100 entries (`parseLastCount`, line 34).
-- Only the user's VS Code globalStorage directories are searched (`readCacheFile`, line 318).
-  Each candidate is first `lstat`ed, which does not follow links. Anything that is not a
-  regular file is skipped on every platform, including Windows: a symlink, or anything Node
-  reports as one such as a reparse point, and a directory. The candidate is then opened
-  (with `O_NOFOLLOW` on POSIX), and `fstat` on the descriptor must report a regular file
-  with the same `dev` and `ino` as the `lstat` result (compared as bigints). That detects a
-  file swapped between the check and the open. The content is read through that same
-  descriptor.
+- Only the user's VS Code globalStorage directories are searched (`readCacheFile`, line 326).
+  Every decision is made about the open descriptor, never about a path checked beforehand.
+  The candidate is opened first (with `O_NOFOLLOW` on POSIX, which refuses a symlink), and
+  `fstat` on the descriptor must report a regular file. The path is then `lstat`ed, which
+  does not follow links, and must be a regular file with the same `dev` and `ino` as the
+  descriptor (compared as bigints). That refuses a symlink on Windows, where `open` follows
+  it but `lstat` reports the link itself, and anything else Node reports as a link (such as
+  a reparse point). It also refuses a path swapped after the open. The content is read
+  through that same descriptor.
 - The first candidate file that exists decides the result. If it is malformed (invalid JSON,
   or a snapshot without a usable envelope) the script stops with exit 3. It does not fall back
   to an older legacy export, and it does not print an envelope's metadata fields as cache
