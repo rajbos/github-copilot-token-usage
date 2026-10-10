@@ -1,6 +1,6 @@
 # Session analysis runs on worker threads, not the extension host
 
-**Status:** implemented (VS Code extension). **Applies to:** `vscode-extension/src/analysis/`, `vscode-extension/src/utils/eventLoopMonitor.ts`.
+**Status:** Implemented (VS Code extension) · **Decided/added:** 2026-10-02 · **Verified against code on:** 2026-10-11 (`vscode-extension/src/analysis/` and `utils/eventLoopMonitor.ts` exist). **Applies to:** `vscode-extension/src/analysis/`, `vscode-extension/src/utils/eventLoopMonitor.ts`.
 
 ## The problem
 
@@ -13,7 +13,7 @@ Yielding with `setImmediate` between files (the earlier fixes, e.g. #2176) only 
 stretches are short. It cannot help when a single step is long, and it cannot be enforced: the next
 synchronous `readdirSync` added anywhere reintroduces the freeze.
 
-Measured on a real machine (6,876 session files, 687 in the last 30 days, a 9.8 GB Copilot CLI OTel
+Measured on a real machine at decision time, 2026-10-02 (6,876 session files, 687 in the last 30 days, a 9.8 GB Copilot CLI OTel
 export), a cold full refresh blocked the host for:
 
 | Cause | Longest single stall |

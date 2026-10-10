@@ -1,5 +1,21 @@
 # Implementation Summary: Fluency Level Viewer
 
+**Status:** Historical (partly superseded) · **Added:** 2026-05-15 · **Verified against code on:** 2026-10-11
+
+> **Superseded in several details.** The Level Viewer still exists
+> ([features/FLUENCY-LEVEL-VIEWER.md](../../features/FLUENCY-LEVEL-VIEWER.md)), but:
+> - It is gated on the extension running in **Development mode**
+>   (`context.extensionMode === vscode.ExtensionMode.Development`, `vscode-extension/src/extension.ts`),
+>   **not** on `vscode.debug.activeDebugSession`. The debug-session text below is no longer accurate.
+> - `calculateMaturityScores()` and `getFluencyLevelData()` now live in
+>   [`src/maturityScoring.ts`](../../../src/maturityScoring.ts) (shared with the CLI), not in
+>   `extension.ts`. The line ranges cited under "Maintenance Notes" are obsolete; search for the
+>   function names instead.
+> - Paths: `src/...` here means `vscode-extension/src/...`; the feature docs live in `docs/features/`
+>   (not `docs/`), and the command-registration test is no longer `src/test/extension.test.ts`
+>   (see `vscode-extension/test/unit/extension.test.ts`).
+> - Bundle size, line counts and "all tests pass" are point-in-time claims from the original PR.
+
 ## Problem Statement
 The user wanted to view fluency scores locally with messages and tips for different fluency levels per aspect. The feature should only be available when there is an active debugger active.
 

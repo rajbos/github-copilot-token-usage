@@ -1,5 +1,21 @@
 # Implementation Summary: Social Media Share Feature
 
+**Status:** Superseded · **Added:** 2026-05-15 · **Verified against code on:** 2026-10-11
+
+> **Superseded.** The mechanism described below no longer exists. There is no
+> `shareToSocialMedia` method, no `shareToLinkedIn` / `shareToBluesky` / `shareToMastodon` message
+> handlers and no `downloadChartImage` right-click-the-SVG instructions (the PNG-export test calls
+> those instructions "unusable": `vscode-extension/test/unit/webview-maturityPngExport.test.ts`).
+> Today the maturity webview renders a share card to a PNG (`handleShareToSocial` in
+> `vscode-extension/src/webview/maturity/main.ts`) and posts a single `shareToSocial` message with
+> `{ platform, dataUrl }`; the host handles it in `maturityHandleShareToSocial`
+> (`vscode-extension/src/extension.ts`). On failure the webview posts `shareToSocialFailed`.
+> Current feature doc: [features/SOCIAL-MEDIA-SHARE.md](../../features/SOCIAL-MEDIA-SHARE.md) (and
+> [features/VISUAL-MOCKUP-SHARE-FEATURE.md](../../features/VISUAL-MOCKUP-SHARE-FEATURE.md)).
+> Paths below omit the `vscode-extension/` prefix; the docs named under "Documentation" are in
+> `docs/features/`, not `docs/`. The original flow is kept below as a record of why the
+> clipboard approach was chosen for LinkedIn.
+
 ## Overview
 Added social media sharing capabilities to the Copilot Fluency Score dashboard, enabling users to share their achievements on LinkedIn, Bluesky, and Mastodon with a single click.
 

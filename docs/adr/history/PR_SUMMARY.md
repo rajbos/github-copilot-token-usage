@@ -1,5 +1,14 @@
 # PR Summary: Add Comprehensive Light Theme Support
 
+**Status:** Historical · **Added:** 2026-05-15 · **Verified against code on:** 2026-10-11
+
+> Point-in-time PR notes, kept for the record. This and [LIGHT-THEME-SUPPORT.md](LIGHT-THEME-SUPPORT.md)
+> describe the **same PR** (the second is the implementation write-up). The feature itself shipped;
+> the code-stat tables, approval checklist and "manual testing required" items below were true only
+> when the PR was opened. Current theming reference: [features/THEMING_CHANGES.md](../../features/THEMING_CHANGES.md).
+> The `THEMING_CHANGES.md` / `IMPLEMENTATION_SUMMARY.md` files named below were never kept at the repo
+> root; the first now lives under `docs/features/`, the second does not exist.
+
 ## Overview
 This PR implements complete light theme support for all 5 webview panels in the AI Engineering Fluency extension, ensuring the extension is readable and accessible across all VS Code themes.
 
