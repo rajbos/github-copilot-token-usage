@@ -1747,6 +1747,12 @@ export interface ServerMemoryDocumentedEntry {
   fact: string;
   /** The repo-relative instruction/doc file paths this memory cites, de-duplicated. */
   instructionFiles: string[];
+  /**
+   * The subset of {@link instructionFiles} that is not an existing regular file in the checkout.
+   * When every cited file is missing, the fact is *not* actually written down any more, so the
+   * stored memory may be its only remaining copy.
+   */
+  missingInstructionFiles?: string[];
 }
 
 /**
@@ -1835,6 +1841,12 @@ export interface ServerMemoryPromotionGroupView {
    */
   subject?: string;
   /**
+   * Fingerprint of what this row displays (subject, fact, citations). The button sends it with
+   * the subject, and the host refuses to draft if the current analysis's group no longer
+   * matches — so a background refresh cannot swap the content behind a visible row.
+   */
+  fingerprint?: string;
+  /**
    * Copilot Chat prompt asking the agent to verify this fact and move it into the promotion
    * target, built by the shared `buildPromotionPrompt()`. Drafted, never auto-submitted.
    */
@@ -1843,10 +1855,15 @@ export interface ServerMemoryPromotionGroupView {
 
 /** One instruction/doc file a documented memory cites, as the webview renders it. */
 export interface ServerMemoryDocumentedFileView {
-  /** Repo-relative path, for display. */
+  /**
+   * Repo-relative path, for display and as the "Open file" button's payload. The host resolves
+   * and re-validates it at click time; the webview never receives an absolute path.
+   */
   path: string;
-  /** Absolute path for the "Open file" button; absent when the file is not in this checkout. */
-  absolutePath?: string;
+  /** A regular file inside the checkout when the payload was built: the row gets "Open file". */
+  openable?: boolean;
+  /** No longer an existing regular file in the checkout, so it does not document anything. */
+  missing?: boolean;
 }
 
 /** One "already documented" memory as the webview renders it. */

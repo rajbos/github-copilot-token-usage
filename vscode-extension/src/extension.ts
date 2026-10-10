@@ -146,6 +146,7 @@ import {
   createRepoRegularFileCheck as _createRepoRegularFileCheck,
   withFreshPromotionTarget as _withFreshPromotionTarget,
   buildPromotionPromptForSubject as _buildPromotionPromptForSubject,
+  isOpenableCitedDocument as _isOpenableCitedDocument,
 } from '../../src/copilotServerMemories';
 import { readGitOriginUrl as _readGitOriginUrl, isGitRepoRoot as _isGitRepoRoot } from '../../src/darkFactorySignals';
 
@@ -7447,15 +7448,39 @@ class CopilotTokenTracker implements vscode.Disposable {
 			workspaceFolderCount: vscode.workspace.workspaceFolders?.length ?? 0,
 			// Only a cited path that resolves to a regular file inside the checkout gets an "Open
 			// file" button: the citation is server-supplied, so the same symlink-safe check
-			// applies, and a directory (`docs/:1`) cannot be opened as a text document.
-			resolveRepoFile: repoRoot ? this.createRepoFileResolver(repoRoot) : undefined,
+			// applies, and a directory (`docs/:1`) cannot be opened as a text document. This only
+			// decides whether to show the button; openServerMemoryCitation() re-checks on click.
+			isOpenable: repoRoot ? _createRepoRegularFileCheck(repoRoot) : undefined,
 		});
 	}
 
-	private createRepoFileResolver(repoRoot: string): (repoRelativePath: string) => string | undefined {
+	/**
+	 * Whether the cached analysis still belongs to the workspace's repository and checkout. If
+	 * not, warn, drop the stale analysis and re-render so the old buttons disappear.
+	 */
+	private ensureServerMemoriesContextCurrent(repoRoot: string): boolean {
+		if (serverMemoriesDraftContextMatches({ repo: this._serverMemoriesRepo, repoRoot }, this.resolveWorkspaceRepoSlug())) { return true; }
+		void vscode.window.showWarningMessage(l10n.t('serverMemories.draftContextChanged'));
+		this.invalidateServerMemoriesCache();
+		return false;
+	}
+
+	/**
+	 * Open a documentation file a documented memory cites. The webview sends only the
+	 * repo-relative path; containment is re-validated here, at click time, against the current
+	 * repository and checkout — the payload-time check alone would let a file replaced by an
+	 * escaping symlink while the panel stayed open be opened from outside the checkout.
+	 */
+	private async openServerMemoryCitation(repoRelativePath: string): Promise<void> {
+		const analysis = this._serverMemoriesAnalysis;
+		const repoRoot = this._serverMemoriesRepoRoot;
+		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot)) { return; }
+		if (!_isOpenableCitedDocument(analysis, repoRelativePath, _createRepoRegularFileCheck(repoRoot))) {
+			void vscode.window.showWarningMessage(l10n.t('serverMemories.openRefused', repoRelativePath));
+			return;
+		}
 		const path = require('path') as typeof import('path');
-		const isRegularFile = _createRepoRegularFileCheck(repoRoot);
-		return (repoRelativePath) => (isRegularFile(repoRelativePath) ? path.join(repoRoot, repoRelativePath) : undefined);
+		await vscode.window.showTextDocument(vscode.Uri.file(path.join(repoRoot, repoRelativePath)));
 	}
 
 	/**
@@ -7464,19 +7489,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * a button rendered from a cached analysis cannot aim the agent at a path that has since
 	 * become unsafe. With no safe target any more, nothing is drafted.
 	 */
-	private async draftServerMemoryPromotion(subject: string): Promise<void> {
+	private async draftServerMemoryPromotion(subject: string, fingerprint: string): Promise<void> {
 		const analysis = this._serverMemoriesAnalysis;
 		const repoRoot = this._serverMemoriesRepoRoot;
-		if (!analysis || !repoRoot) { return; }
 		// Re-resolve the workspace's repository now, not just the target file: the button may
 		// have been rendered before the workspace folders (or their trust) changed.
-		if (!serverMemoriesDraftContextMatches({ repo: this._serverMemoriesRepo, repoRoot }, this.resolveWorkspaceRepoSlug())) {
-			void vscode.window.showWarningMessage(l10n.t('serverMemories.draftContextChanged'));
-			// Drops the stale analysis and re-renders, so the old buttons disappear.
-			this.invalidateServerMemoriesCache();
-			return;
-		}
-		const result = _buildPromotionPromptForSubject(analysis, subject, _createPromotionTargetProbe(repoRoot));
+		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot)) { return; }
+		const result = _buildPromotionPromptForSubject(analysis, subject, fingerprint, _createPromotionTargetProbe(repoRoot));
 		if ('prompt' in result) {
 			await vscode.commands.executeCommand('workbench.action.chat.open', { query: result.prompt, isNewChat: true, isPartialQuery: true, mode: 'agent' });
 			return;
@@ -7486,8 +7505,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 				? l10n.t('serverMemories.draftBlocked', result.blockedPath)
 				: l10n.t('serverMemories.draftNoTarget'));
 		}
-		// An unknown subject means the analysis was refreshed under the webview; the next render
-		// replaces the stale button, so there is nothing to report.
+		if (result.reason === 'row-changed' || result.reason === 'unknown-subject') {
+			// The analysis was refreshed under the webview: say so and re-render, so the user sees
+			// the current rows instead of drafting something they did not click on.
+			void vscode.window.showWarningMessage(l10n.t('serverMemories.draftRowChanged'));
+			this.refreshOpenPanelsForSettingChange();
+		}
 	}
 
 	async openMcpJson(): Promise<void> {
@@ -10280,8 +10303,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 					? vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true, isPartialQuery: true, mode: 'agent' })
 					: undefined
 			),
-			draftServerMemoryPromotion: (message) => (typeof message.subject === 'string' && message.subject
-				? this.dispatch('draftServerMemoryPromotion', () => this.draftServerMemoryPromotion(message.subject))
+			draftServerMemoryPromotion: (message) => (typeof message.subject === 'string' && message.subject && typeof message.fingerprint === 'string'
+				? this.dispatch('draftServerMemoryPromotion', () => this.draftServerMemoryPromotion(message.subject, message.fingerprint))
+				: undefined),
+			openServerMemoryCitation: (message) => (typeof message.path === 'string' && message.path
+				? this.dispatch('openServerMemoryCitation', () => this.openServerMemoryCitation(message.path))
 				: undefined),
 			suppressUnknownTool: (message) => {
 				const toolName = message.toolName as string;

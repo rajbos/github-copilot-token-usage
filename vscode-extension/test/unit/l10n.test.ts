@@ -1261,7 +1261,7 @@ test('l10n: Copilot Repository Memories scope, action and documented-list string
 	assert.equal(t('serverMemories.askCopilot'), 'Ask Copilot');
 	assert.equal(t('serverMemories.askCopilotTooltip', 'AGENTS.md'), 'Drafts a Copilot Chat prompt to verify this fact against its sources and add it to AGENTS.md. Nothing is sent until you press Enter.');
 	assert.equal(t('serverMemories.documentedHeading'), 'Already documented');
-	assert.equal(t('serverMemories.documentedHint'), 'These memories cite an instruction or documentation file (AGENTS.md, .github/instructions, skills, agents or docs/), so the stored copy is redundant. It can be deleted from the repository\'s Settings → Copilot → Memory page on GitHub.');
+	assert.equal(t('serverMemories.documentedHint'), 'These memories cite an instruction or documentation file (AGENTS.md, .github/instructions, skills, agents or docs/). Check that the cited file still states the fact before deleting the memory from the repository\'s Settings → Copilot → Memory page on GitHub. Keep memories whose cited file is marked missing: they may be the only remaining copy.');
 	assert.equal(t('serverMemories.table.citedFile'), 'Cited file');
 	assert.equal(t('serverMemories.openFile'), 'Open file');
 	assert.equal(t('serverMemories.showingOf', '10', '99'), 'showing 10 of 99');
@@ -1280,7 +1280,7 @@ test('l10n: Copilot Repository Memories scope, action and documented-list string
 		assert.equal(t('serverMemories.targetExisting', 'AGENTS.md'), '建议文件：AGENTS.md。');
 		assert.equal(t('serverMemories.targetNew', 'AGENTS.md'), '建议文件：AGENTS.md（尚不存在；将请 Copilot 创建）。');
 		assert.equal(t('serverMemories.askCopilotTooltip', 'AGENTS.md'), '起草一条 Copilot Chat 提示，先对照来源验证此事实，再将其添加到 AGENTS.md。在您按 Enter 之前不会发送任何内容。');
-		assert.equal(t('serverMemories.documentedHint'), '这些记忆引用了指令或文档文件（AGENTS.md、.github/instructions、skills、agents 或 docs/），因此存储的副本是多余的。可在 GitHub 仓库的 设置 → Copilot → 记忆 页面中删除。');
+		assert.equal(t('serverMemories.documentedHint'), '这些记忆引用了指令或文档文件（AGENTS.md、.github/instructions、skills、agents 或 docs/）。在 GitHub 仓库的 设置 → Copilot → 记忆 页面中删除记忆之前，请先确认引用的文件仍然包含该事实。引用文件标记为缺失的记忆请保留：它们可能是唯一剩下的副本。');
 		// The zh-CN template puts the total first, so this catches a swapped placeholder.
 		assert.equal(t('serverMemories.showingOf', '10', '99'), '显示 99 条中的 10 条');
 	} finally {
@@ -1296,6 +1296,21 @@ test('l10n: server-memory summary counts agree with their verb in English, and r
 	try {
 		assert.equal(t('serverMemories.documentedSummaryOne', '1'), '1 条已引用指令文件');
 		assert.equal(t('serverMemories.staleSummaryOne', '1'), '1 条仅引用了已不存在的文件');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
+test('l10n: server-memory stale-row, open-refusal and missing-file strings resolve in English and zh-cn', () => {
+	mock.setLanguage('en');
+	assert.equal(t('serverMemories.citedFileMissing'), 'missing');
+	assert.equal(t('serverMemories.draftRowChanged'), 'Not drafting a prompt: the repository memories changed since this list was shown. The section has been refreshed.');
+	assert.equal(t('serverMemories.openRefused', 'docs/x.md'), 'Not opening docs/x.md: it is no longer a cited file inside this checkout.');
+	mock.setLanguage('zh-cn');
+	try {
+		assert.equal(t('serverMemories.citedFileMissing'), '缺失');
+		assert.equal(t('serverMemories.draftRowChanged'), '未起草提示：自显示此列表以来仓库记忆已更改。该板块已刷新。');
+		assert.equal(t('serverMemories.openRefused', 'docs/x.md'), '未打开 docs/x.md：它已不再是此检出中被引用的文件。');
 	} finally {
 		mock.setLanguage('en');
 	}

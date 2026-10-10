@@ -348,6 +348,7 @@
   "serverMemories.documentedHint",
   "serverMemories.table.citedFile",
   "serverMemories.openFile",
+  "serverMemories.citedFileMissing",
   "serverMemories.showingOf",
   "usage.toolCuration.column.server",
   "usage.toolCuration.column.source",

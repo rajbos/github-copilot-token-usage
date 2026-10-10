@@ -28,14 +28,14 @@ function view(overrides: Partial<ServerMemoriesAnalysisView> = {}): ServerMemori
 		repeatedGroupCount: 1,
 		fullyStaleCount: 0,
 		topPromotionGroups: [
-			{ displaySubject: 'caching', repeatCount: 3, representativeFact: 'Cache via snapshots.', citationCount: 2, subject: 'caching <now> & "x"', prompt: 'Move "caching" <now> & verify' },
+			{ displaySubject: 'caching', repeatCount: 3, representativeFact: 'Cache via snapshots.', citationCount: 2, subject: 'caching <now> & "x"', fingerprint: 'fp1', prompt: 'Move "caching" <now> & verify' },
 			{ displaySubject: 'no prompt', repeatCount: 1, representativeFact: 'Legacy payload row.', citationCount: 1 },
 		],
 		repoRoot: 'C:\\code\\<repo>',
 		workspaceFolderCount: 1,
 		promotionTarget: { path: 'AGENTS.md', exists: true },
 		documentedMemories: [
-			{ subject: 'build', fact: 'Use build.ps1.', files: [{ path: 'AGENTS.md', absolutePath: 'C:\\code\\repo\\AGENTS.md' }, { path: 'docs/gone.md' }] },
+			{ subject: 'build', fact: 'Use build.ps1.', files: [{ path: 'AGENTS.md', openable: true }, { path: 'docs/gone.md', missing: true }] },
 		],
 		...overrides,
 	};
@@ -99,16 +99,16 @@ test('serverMemories section: documented table lists files with Open file only f
 	assert.match(table.textContent ?? '', /docs\/gone\.md/);
 	const open = doc.querySelectorAll('.server-memory-open-btn');
 	assert.equal(open.length, 1);
-	assert.equal(open[0].getAttribute('data-path'), 'C:\\code\\repo\\AGENTS.md');
+	assert.equal(open[0].getAttribute('data-path'), 'AGENTS.md', 'the webview sends a repo-relative path; the host resolves it');
 	assert.match(doc.body.textContent ?? '', /Already documented \(showing 1 of 3\)/);
 });
 
 test('serverMemories section: clicks map to draft and open messages', () => {
 	const doc = render(view());
 	assert.deepEqual(serverMemoriesMessageForClick(doc.querySelector('.server-memory-draft-btn')),
-		{ command: 'draftServerMemoryPromotion', subject: 'caching <now> & "x"' });
+		{ command: 'draftServerMemoryPromotion', subject: 'caching <now> & "x"', fingerprint: 'fp1' });
 	assert.deepEqual(serverMemoriesMessageForClick(doc.querySelector('.server-memory-open-btn')),
-		{ command: 'openFile', path: 'C:\\code\\repo\\AGENTS.md' });
+		{ command: 'openServerMemoryCitation', path: 'AGENTS.md' });
 	assert.equal(serverMemoriesMessageForClick(doc.querySelector('table')), null);
 	assert.equal(serverMemoriesMessageForClick(null), null);
 });
@@ -129,7 +129,7 @@ test('sanitizeServerMemoriesAnalysis keeps the new fields and drops malformed on
 		promotionTarget: { path: '../evil.md', exists: true },
 		workspaceFolderCount: 'two',
 		topPromotionGroups: [{ displaySubject: 's', representativeFact: 'f', prompt: 42 }],
-		documentedMemories: [{ subject: 's', fact: 'f', files: [{ path: 'AGENTS.md', absolutePath: 7 }, { nope: true }] }, { subject: 1 }],
+		documentedMemories: [{ subject: 's', fact: 'f', files: [{ path: 'AGENTS.md', openable: 'yes', missing: 1 }, { nope: true }] }, { subject: 1 }],
 	});
 	assert.ok(sanitized);
 	assert.equal(sanitized.promotionTarget, undefined);
@@ -161,8 +161,8 @@ test('wireServerMemoriesButtons posts exactly one message per click', () => {
 		(doc.querySelector('.server-memory-open-btn') as HTMLElement).click();
 		(doc.querySelector('table') as HTMLElement).click();
 		assert.deepEqual(posted, [
-			{ command: 'draftServerMemoryPromotion', subject: 'caching <now> & "x"' },
-			{ command: 'openFile', path: 'C:\\code\\repo\\AGENTS.md' },
+			{ command: 'draftServerMemoryPromotion', subject: 'caching <now> & "x"', fingerprint: 'fp1' },
+			{ command: 'openServerMemoryCitation', path: 'AGENTS.md' },
 		]);
 	});
 });
@@ -207,4 +207,20 @@ test('serverMemories section: summary counts of one use the singular verb', () =
 	const many = buildServerMemoriesSectionHtml(view({ documentedCount: 3, fullyStaleCount: 2 }));
 	assert.match(many, /3 already cite an instruction file/);
 	assert.match(many, /2 cite only files that no longer exist/);
+});
+
+test('serverMemories section: a missing cited file is marked and gets no Open file button', () => {
+	const doc = render(view());
+	const missing = doc.querySelectorAll('.server-memory-missing');
+	assert.equal(missing.length, 1);
+	assert.match(missing[0].parentElement?.textContent ?? '', /docs\/gone\.md\s*\(missing\)/);
+	assert.equal(doc.querySelectorAll('.server-memory-open-btn').length, 1);
+	assert.match(doc.body.textContent ?? '', /Keep memories whose cited file is marked missing/);
+});
+
+test('serverMemories section: a row without a fingerprint gets no button', () => {
+	const html = buildServerMemoriesSectionHtml(view({
+		topPromotionGroups: [{ displaySubject: 's', repeatCount: 1, representativeFact: 'f', citationCount: 1, subject: 's', prompt: 'p' }],
+	}));
+	assert.ok(!html.includes('server-memory-draft-btn'));
 });

@@ -148,7 +148,12 @@ memory read is cached for an hour, but the target file can change at any time, s
 the host never trusts a fetch-time answer: every render re-probes the target
 (`withFreshPromotionTarget()`), and the click handler rebuilds the prompt with
 the target probed again at that moment (`buildPromotionPromptForSubject()`). If
-there is no safe target any more, it drafts nothing and says why.
+there is no safe target any more, it drafts nothing and says why. The button also
+carries a fingerprint of the row it was rendered from (subject, fact, citations,
+`promotionGroupFingerprint()`), and the host refuses — and re-renders — when the
+current analysis's group no longer matches, so a background refresh cannot swap
+what gets drafted. It likewise refuses when the workspace now resolves to a
+different repository or checkout than the analysis was read for.
 
 The target file is chosen deterministically by `selectPromotionTarget()`: an
 existing root `AGENTS.md`, else an existing `.github/copilot-instructions.md`, else
@@ -184,6 +189,9 @@ fully stale breakdown, rather than claiming every memory is already documented.
 - **Already documented.** The first 10 memories that cite an instruction or
   documentation file, with the file(s) they cite and an **Open file** button for
   files that resolve inside the checkout ("showing 10 of N" when there are more).
+  A cited file that no longer exists (or is a directory) is marked **missing**: such a
+  memory is not actually written down any more, so the hint says to keep it, and to check
+  the cited file before deleting any memory.
   "Documented" follows `INSTRUCTION_PATH_PATTERN`, which also matches `docs/` and
   `.github/skills|agents/`. The stored copy of such a memory is redundant; it can
   only be deleted on GitHub (Settings → Copilot → Memory), since this repository
@@ -220,7 +228,7 @@ fields the typed shape does not know about. Use it when the API changes.
 | Unit tests | `vscode-extension/test/unit/copilotServerMemories.test.ts` (offline — `fetch` and `fileExists` are both injected), `vscode-extension/test/unit/webview-serverMemoriesSection.test.ts` (section HTML and click mapping) |
 | CLI | `cli/src/commands/memory-files.ts` — `--server`, `--repo`, `--limit`, `--promote` |
 | Runtime wiring | `vscode-extension/src/extension.ts` — `scheduleServerMemoriesRefresh()`, `decideServerMemoriesRefresh()` (pure, exported), `buildServerMemoriesView()`, `resolveWorkspaceRepoSlug()`, `invalidateServerMemoriesCache()`, TTL `SERVER_MEMORIES_FETCH_TTL_MS` |
-| Tools-tab UI | `vscode-extension/src/webview/usage/serverMemories.ts` — `buildServerMemoriesSectionHtml()`, `sanitizeServerMemoriesAnalysis()`, `wireServerMemoriesButtons()`, `#section-server-memories`. The buttons post `draftServerMemoryPromotion` (subject key only; the host rebuilds and drafts) and `openFile` (only for citations that resolve to a regular file in the checkout). Both tables use the shared data-table component. Split out of `main.ts`, which would otherwise have crossed the 6000-line `max-lines` ceiling; `main.ts` imports both and holds the cross-refresh cache. |
+| Tools-tab UI | `vscode-extension/src/webview/usage/serverMemories.ts` — `buildServerMemoriesSectionHtml()`, `sanitizeServerMemoriesAnalysis()`, `wireServerMemoriesButtons()`, `#section-server-memories`. The buttons post `draftServerMemoryPromotion` (subject key and row fingerprint; the host rebuilds and drafts) and `openServerMemoryCitation` (a repo-relative path; the host opens it only if the current analysis cites it and it is a regular file inside the current checkout, `isOpenableCitedDocument()`). The webview never receives absolute paths. Both tables use the shared data-table component. Split out of `main.ts`, which would otherwise have crossed the 6000-line `max-lines` ceiling; `main.ts` imports both and holds the cross-refresh cache. |
 | Raw probe | `scripts/fetch-copilot-memories.js` |
 | Setting | `aiEngineeringFluency.serverMemories.enabled` (default `true`) |
 

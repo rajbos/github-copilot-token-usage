@@ -21,6 +21,8 @@ import {
 	orderCitationsLiveFirst,
 	withFreshPromotionTarget,
 	buildPromotionPromptForSubject,
+	promotionGroupFingerprint,
+	isOpenableCitedDocument,
 	buildPromotionPrompt,
 	MEMORY_INTEGRATION_ID,
 	isSafeRepoRelativePath,
@@ -1353,7 +1355,7 @@ test('analyzeServerMemories lists documented memories with the instruction files
 	}, alwaysExists);
 	assert.equal(analysis.documentedCount, 1);
 	assert.deepEqual(analysis.documentedMemories, [
-		{ id: '1', subject: 'build', fact: 'Use build.ps1.', instructionFiles: ['AGENTS.md', 'docs/BUILD.md'] },
+		{ id: '1', subject: 'build', fact: 'Use build.ps1.', instructionFiles: ['AGENTS.md', 'docs/BUILD.md'], missingInstructionFiles: [] },
 	]);
 });
 
@@ -1365,13 +1367,14 @@ test('toServerMemoriesAnalysisView caps documented memories and resolves open pa
 	const view = toServerMemoriesAnalysisView(analysis, {
 		repoRoot: '/repo',
 		workspaceFolderCount: 2,
-		resolveRepoFile: p => { resolved.push(p); return p === 'AGENTS.md' ? `/repo/${p}` : undefined; },
+		isOpenable: p => { resolved.push(p); return p === 'AGENTS.md'; },
 	});
 	assert.ok(view);
 	assert.equal(view.documentedCount, VIEW_DOCUMENTED_LIMIT + 3);
 	assert.equal(view.documentedMemories?.length, VIEW_DOCUMENTED_LIMIT);
 	assert.deepEqual(view.documentedMemories?.[0].files, [{ path: '.github/instructions/a.instructions.md' }]);
-	assert.deepEqual(view.documentedMemories?.[1].files, [{ path: 'AGENTS.md', absolutePath: '/repo/AGENTS.md' }]);
+	// Only a repo-relative path and a flag travel: the webview never receives an absolute path.
+	assert.deepEqual(view.documentedMemories?.[1].files, [{ path: 'AGENTS.md', openable: true }]);
 	assert.equal(view.repoRoot, '/repo');
 	assert.equal(view.workspaceFolderCount, 2);
 	assert.ok(resolved.every(p => isSafeRepoRelativePath(p)));
@@ -1572,11 +1575,12 @@ test('buildPromotionPromptForSubject rebuilds at click time and refuses an unsaf
 		{ fileExists: () => true, promotionTargetStatus: () => 'exists' });
 	const subject = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0].subject ?? '';
 	assert.equal(subject, 'caching');
-	const ok = buildPromotionPromptForSubject(analysis, subject, targets({ '.github/copilot-instructions.md': 'exists' }));
+	const fingerprint = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0].fingerprint ?? '';
+	const ok = buildPromotionPromptForSubject(analysis, subject, fingerprint, targets({ '.github/copilot-instructions.md': 'exists' }));
 	assert.ok('prompt' in ok);
 	assert.match(ok.prompt, /`\.github\/copilot-instructions\.md`/, 'uses the target probed now, not the cached one');
-	assert.deepEqual(buildPromotionPromptForSubject(analysis, subject, targets({ 'AGENTS.md': 'unsafe' })), { reason: 'no-safe-target', blockedPath: 'AGENTS.md' });
-	assert.deepEqual(buildPromotionPromptForSubject(analysis, 'nope', () => 'exists'), { reason: 'unknown-subject' });
+	assert.deepEqual(buildPromotionPromptForSubject(analysis, subject, fingerprint, targets({ 'AGENTS.md': 'unsafe' })), { reason: 'no-safe-target', blockedPath: 'AGENTS.md' });
+	assert.deepEqual(buildPromotionPromptForSubject(analysis, 'nope', fingerprint, () => 'exists'), { reason: 'unknown-subject' });
 });
 
 // ---------------------------------------------------------------------------
@@ -1629,4 +1633,56 @@ test('serverMemoriesDraftContextMatches refuses a draft once the workspace point
 	assert.equal(serverMemoriesDraftContextMatches(cached, undefined), false);
 	// Nothing cached to compare against.
 	assert.equal(serverMemoriesDraftContextMatches({ repo: undefined, repoRoot: '/w/a' }, { repo: 'o/a', repoRoot: '/w/a' }), false);
+});
+
+// ---------------------------------------------------------------------------
+// Review round 7 (#2373): stale rows, click-time containment for Open file,
+// and no redundancy claim for missing documentation
+// ---------------------------------------------------------------------------
+
+test('a promotion row whose content changed under it is refused, not silently re-drafted', () => {
+	const before = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', subject: 'caching', fact: 'Old fact.' })] },
+		{ fileExists: () => true, promotionTargetStatus: () => 'exists' });
+	const row = toServerMemoriesAnalysisView(before)?.topPromotionGroups[0];
+	assert.ok(row?.subject && row.fingerprint);
+	// A background refresh keeps the subject but changes the fact.
+	const after = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '2', subject: 'caching', fact: 'A different fact.' })] },
+		{ fileExists: () => true, promotionTargetStatus: () => 'exists' });
+	assert.deepEqual(buildPromotionPromptForSubject(after, row.subject, row.fingerprint, () => 'exists'), { reason: 'row-changed' });
+	assert.ok('prompt' in buildPromotionPromptForSubject(before, row.subject, row.fingerprint, () => 'exists'));
+});
+
+test('promotionGroupFingerprint changes with the fact or citations, not with repeat count', () => {
+	const base = { subject: 's', representativeFact: 'f', citations: ['a.ts:1'] };
+	assert.equal(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base }));
+	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, representativeFact: 'g' }));
+	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, citations: ['b.ts:1'] }));
+	assert.match(promotionGroupFingerprint(base), /^[0-9a-f]{8}$/);
+});
+
+test('isOpenableCitedDocument re-validates the clicked path against the current analysis and tree', () => {
+	const analysis = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', citations: ['AGENTS.md:1', 'docs/x.md:2'] })] }, alwaysExists);
+	const isRegularFile = (p: string) => p === 'AGENTS.md';
+	assert.equal(isOpenableCitedDocument(analysis, 'AGENTS.md', isRegularFile), true);
+	// Cited, but no longer a regular file inside the checkout (deleted, or an escaping symlink).
+	assert.equal(isOpenableCitedDocument(analysis, 'docs/x.md', isRegularFile), false);
+	// Not cited by any documented memory: the webview cannot ask for arbitrary files.
+	assert.equal(isOpenableCitedDocument(analysis, 'src/secret.ts', () => true), false);
+	assert.equal(isOpenableCitedDocument(analysis, '../outside.md', () => true), false);
+	assert.equal(isOpenableCitedDocument(analysis, '/etc/passwd', () => true), false);
+});
+
+test('a documented memory whose cited file is gone is marked missing, not openable', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [memory({ id: '1', citations: ['AGENTS.md:1', 'docs/gone.md:1'] })],
+	}, { fileExists: p => p !== 'docs/gone.md', isRegularFile: () => true });
+	assert.deepEqual(analysis.documentedMemories[0].missingInstructionFiles, ['docs/gone.md']);
+	const view = toServerMemoriesAnalysisView(analysis, { isOpenable: () => true });
+	assert.deepEqual(view?.documentedMemories?.[0].files, [{ path: 'AGENTS.md', openable: true }, { path: 'docs/gone.md', missing: true }]);
+	// A directory citation counts as missing documentation too.
+	const dir = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', citations: ['docs/:1'] })] },
+		{ fileExists: () => true, isRegularFile: () => false });
+	assert.deepEqual(dir.documentedMemories[0].missingInstructionFiles, ['docs/']);
 });

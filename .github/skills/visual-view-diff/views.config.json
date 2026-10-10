@@ -102,14 +102,14 @@
           "$comment": [
             "The one-pass crawl only clicks the initial tab, so it never reaches these",
             "buttons. Ask Copilot posts draftServerMemoryPromotion (the host re-probes the",
-            "target and drafts, never submits); Open file posts openFile for a documented",
+            "target and drafts, never submits); Open file posts openServerMemoryCitation for a documented",
             "memory's cited file. expectPosted fails the step if the message is not sent."
           ],
           "steps": [
             { "click": ".group-tab[data-group=\"workspace\"]" },
             { "click": ".tab-button[data-tab=\"tools\"]" },
             { "click": "#section-server-memories .server-memory-draft-btn", "expectPosted": "draftServerMemoryPromotion" },
-            { "click": "#section-server-memories .server-memory-open-btn", "expectPosted": "openFile" }
+            { "click": "#section-server-memories .server-memory-open-btn", "expectPosted": "openServerMemoryCitation" }
           ]
         }
       ],

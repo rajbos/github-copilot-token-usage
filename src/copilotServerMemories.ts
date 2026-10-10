@@ -698,7 +698,10 @@ function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps):
 		// Keyed by id like documentedIds, so a store repeating an id is listed once.
 		if (instructionFiles.size > 0 && !scan.documentedIds.has(memory.id)) {
 			scan.documentedIds.add(memory.id);
-			scan.documented.push({ id: memory.id, subject: memory.subject, fact: memory.fact, instructionFiles: Array.from(instructionFiles) });
+			const files = Array.from(instructionFiles);
+			const isRegularFile = deps.isRegularFile ?? (() => true);
+			const missingInstructionFiles = files.filter(filePath => !deps.fileExists(filePath) || !isRegularFile(filePath));
+			scan.documented.push({ id: memory.id, subject: memory.subject, fact: memory.fact, instructionFiles: files, missingInstructionFiles });
 		}
 
 		const { missing, livePaths } = probeCitations(checkable, deps);
@@ -829,11 +832,11 @@ export interface ServerMemoriesViewContext {
 	/** How many workspace folders are open, so the UI can say only the first one is shown. */
 	workspaceFolderCount?: number;
 	/**
-	 * Absolute path for a repo-relative cited file, or `undefined` when it is not safely inside
-	 * the checkout. Only ever called with a path that passed {@link isSafeRepoRelativePath}.
-	 * Omitted → documented rows get no "Open file" button.
+	 * Whether a repo-relative cited file is a regular file inside the checkout right now — see
+	 * {@link createRepoRegularFileCheck}. Only ever called with a path that passed
+	 * {@link isSafeRepoRelativePath}. Omitted → documented rows get no "Open file" button.
 	 */
-	resolveRepoFile?: (repoRelativePath: string) => string | undefined;
+	isOpenable?: (repoRelativePath: string) => boolean;
 }
 
 /**
@@ -871,6 +874,7 @@ export function toServerMemoriesAnalysisView(
 			representativeFact: group.representativeFact,
 			citationCount: group.citations.length,
 			subject: group.subject,
+			fingerprint: promotionGroupFingerprint(group),
 			// Every promotion group is eligible by construction: buildPromotionGroups() already
 			// drops documented subjects, those with no verifiable code citation (which covers
 			// `User input:`-only memories) and fully stale ones, so the only remaining gate is a
@@ -889,10 +893,11 @@ function toDocumentedEntryView(entry: ServerMemoryDocumentedEntry, context: Serv
 		subject: entry.subject,
 		fact: entry.fact,
 		files: entry.instructionFiles.map(filePath => {
-			// isInstructionCitation() already required a safe path; re-checked so this helper
-			// never hands the host an absolute or traversing path on its own terms.
-			const absolutePath = context.resolveRepoFile && isSafeRepoRelativePath(filePath) ? context.resolveRepoFile(filePath) : undefined;
-			return absolutePath ? { path: filePath, absolutePath } : { path: filePath };
+			const missing = (entry.missingInstructionFiles ?? []).includes(filePath);
+			// isInstructionCitation() already required a safe path; re-checked so this helper never
+			// asks the host about an absolute or traversing path on its own terms.
+			const openable = !missing && Boolean(context.isOpenable && isSafeRepoRelativePath(filePath) && context.isOpenable(filePath));
+			return { path: filePath, ...(openable ? { openable: true } : {}), ...(missing ? { missing: true } : {}) };
 		}),
 	};
 }
@@ -1044,13 +1049,49 @@ export function withFreshPromotionTarget(analysis: ServerMemoriesAnalysis, statu
 export function buildPromotionPromptForSubject(
 	analysis: ServerMemoriesAnalysis,
 	subject: string,
+	fingerprint: string,
 	status: PromotionTargetProbe,
-): { prompt: string } | { reason: 'unknown-subject' | 'no-safe-target'; blockedPath?: string } {
+): { prompt: string } | { reason: 'unknown-subject' | 'row-changed' | 'no-safe-target'; blockedPath?: string } {
 	const group = analysis.promotionGroups.find(candidate => candidate.subject === subject);
 	if (!group) { return { reason: 'unknown-subject' }; }
+	// The subject alone does not identify what the user saw: a background refresh can keep the
+	// subject while changing its fact or citations. Draft only what the clicked row displayed.
+	if (promotionGroupFingerprint(group) !== fingerprint) { return { reason: 'row-changed' }; }
 	const { target, blockedPath } = resolvePromotionTarget(status);
 	if (!target) { return { reason: 'no-safe-target', blockedPath }; }
 	return { prompt: buildPromotionPrompt(analysis.repo, group, target) };
+}
+
+/**
+ * A stable fingerprint of what a promotion row displays: subject, representative fact and
+ * citations. FNV-1a over a JSON encoding — not a security hash, just change detection between
+ * the payload a row was rendered from and the analysis the host holds when it is clicked.
+ */
+export function promotionGroupFingerprint(group: Pick<ServerMemoryPromotionGroup, 'subject' | 'representativeFact' | 'citations'>): string {
+	const text = JSON.stringify([group.subject, group.representativeFact, group.citations]);
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) {
+		hash ^= text.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193) >>> 0;
+	}
+	return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * Whether the host may open a cited documentation file the webview asked for, decided at click
+ * time. The webview sends a repo-relative path, which is untrusted: it must be one the *current*
+ * analysis actually cites as documentation, lexically safe, and a regular file inside the
+ * checkout now (`isRegularFile`, see {@link createRepoRegularFileCheck}). A file swapped for an
+ * escaping symlink after the payload was built is therefore refused.
+ */
+export function isOpenableCitedDocument(
+	analysis: ServerMemoriesAnalysis,
+	repoRelativePath: string,
+	isRegularFile: (repoRelativePath: string) => boolean,
+): boolean {
+	if (!isSafeRepoRelativePath(repoRelativePath)) { return false; }
+	const cited = (analysis.documentedMemories ?? []).some(entry => entry.instructionFiles.includes(repoRelativePath));
+	return cited && isRegularFile(repoRelativePath);
 }
 
 /** How many citations a promotion prompt lists; the same cap the Markdown block uses. */

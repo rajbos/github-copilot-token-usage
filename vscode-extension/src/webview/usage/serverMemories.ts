@@ -28,8 +28,8 @@ export const SERVER_MEMORIES_DOCUMENTED_TABLE_ID = 'server-memories-documented';
  * has since become unsafe.
  */
 export type ServerMemoriesMessage =
-	| { command: 'draftServerMemoryPromotion'; subject: string }
-	| { command: 'openFile'; path: string };
+	| { command: 'draftServerMemoryPromotion'; subject: string; fingerprint: string }
+	| { command: 'openServerMemoryCitation'; path: string };
 
 const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0);
 const optionalString = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
@@ -49,6 +49,8 @@ function sanitizePromotionGroups(raw: unknown): ServerMemoryPromotionGroupView[]
 			if (prompt) { view.prompt = prompt; }
 			const subject = optionalString(group.subject);
 			if (subject) { view.subject = subject; }
+			const fingerprint = optionalString(group.fingerprint);
+			if (fingerprint) { view.fingerprint = fingerprint; }
 			return view;
 		});
 }
@@ -63,10 +65,11 @@ function sanitizeDocumentedMemories(raw: unknown): ServerMemoryDocumentedEntryVi
 			files: Array.isArray(entry.files)
 				? entry.files
 					.filter((file: unknown) => file && typeof (file as { path?: unknown }).path === 'string')
-					.map((file: { path: string; absolutePath?: unknown }) => {
-						const absolutePath = optionalString(file.absolutePath);
-						return absolutePath ? { path: file.path, absolutePath } : { path: file.path };
-					})
+					.map((file: { path: string; openable?: unknown; missing?: unknown }) => ({
+						path: file.path,
+						...(file.openable === true ? { openable: true } : {}),
+						...(file.missing === true ? { missing: true } : {}),
+					}))
 				: [],
 		}));
 }
@@ -149,7 +152,7 @@ function buildPromoteBlockHtml(analysis: ServerMemoriesAnalysisView): string {
 	const target = analysis.promotionTarget;
 	// A row gets the button only when the host projected a prompt for it (promotion groups with a
 	// safe target) and the subject key the host needs to rebuild that prompt at click time.
-	const canDraft = (group: PromotionGroup): boolean => Boolean(group.prompt && group.subject);
+	const canDraft = (group: PromotionGroup): boolean => Boolean(group.prompt && group.subject && group.fingerprint);
 	const hasActions = analysis.topPromotionGroups.some(canDraft);
 	const columns: DataTableColumn<PromotionGroup>[] = [
 		{
@@ -171,7 +174,7 @@ function buildPromoteBlockHtml(analysis: ServerMemoriesAnalysisView): string {
 			id: 'action', label: localize('serverMemories.table.action'), align: 'right',
 			render: group => ({
 				html: canDraft(group)
-					? `<button class="server-memory-draft-btn" data-subject="${escapeHtml(group.subject ?? '')}" style="${BUTTON}" title="${escapeHtml(localizeFormat('serverMemories.askCopilotTooltip', target?.path ?? 'AGENTS.md'))}">${escapeHtml(localize('serverMemories.askCopilot'))}</button>`
+					? `<button class="server-memory-draft-btn" data-subject="${escapeHtml(group.subject ?? '')}" data-fingerprint="${escapeHtml(group.fingerprint ?? '')}" style="${BUTTON}" title="${escapeHtml(localizeFormat('serverMemories.askCopilotTooltip', target?.path ?? 'AGENTS.md'))}">${escapeHtml(localize('serverMemories.askCopilot'))}</button>`
 					: '',
 			}),
 		});
@@ -201,12 +204,16 @@ function buildDocumentedBlockHtml(analysis: ServerMemoriesAnalysisView): string 
 			id: 'files', label: localize('serverMemories.table.citedFile'),
 			render: entry => ({
 				html: entry.files.map(file => {
-					// No "Open file" for a citation the host could not resolve to a regular file
-					// inside this checkout.
-					const open = file.absolutePath
-						? ` <button class="server-memory-open-btn" data-path="${escapeHtml(file.absolutePath)}" style="${BUTTON}">${escapeHtml(localize('serverMemories.openFile'))}</button>`
+					// No "Open file" for a citation that was not a regular file inside this checkout;
+					// a missing one is marked, since it no longer documents the fact. The button
+					// sends the repo-relative path and the host re-validates it on click.
+					const open = file.openable
+						? ` <button class="server-memory-open-btn" data-path="${escapeHtml(file.path)}" style="${BUTTON}">${escapeHtml(localize('serverMemories.openFile'))}</button>`
 						: '';
-					return `<div><code>${escapeHtml(file.path)}</code>${open}</div>`;
+					const missing = file.missing
+						? ` <span class="server-memory-missing" style="color:var(--vscode-editorWarning-foreground, #cca700); font-size:11px;">(${escapeHtml(localize('serverMemories.citedFileMissing'))})</span>`
+						: '';
+					return `<div><code>${escapeHtml(file.path)}</code>${missing}${open}</div>`;
 				}).join(''),
 			}),
 		},
@@ -293,10 +300,11 @@ export function buildServerMemoriesSectionHtml(analysis: ServerMemoriesAnalysisV
 export function serverMemoriesMessageForClick(target: Element | null): ServerMemoriesMessage | null {
 	const draft = target?.closest<HTMLElement>('.server-memory-draft-btn');
 	const subject = draft?.getAttribute('data-subject');
-	if (subject) { return { command: 'draftServerMemoryPromotion', subject }; }
+	const fingerprint = draft?.getAttribute('data-fingerprint');
+	if (subject && fingerprint) { return { command: 'draftServerMemoryPromotion', subject, fingerprint }; }
 	const open = target?.closest<HTMLElement>('.server-memory-open-btn');
 	const path = open?.getAttribute('data-path');
-	if (path) { return { command: 'openFile', path }; }
+	if (path) { return { command: 'openServerMemoryCitation', path }; }
 	return null;
 }
 
