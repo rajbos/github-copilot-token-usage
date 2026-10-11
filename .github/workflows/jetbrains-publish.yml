@@ -346,6 +346,10 @@ jobs:
             echo "tag_version=$PLUGIN_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Run unit tests
+        working-directory: jetbrains-plugin
+        run: ./gradlew test
+
       - name: Build plugin ZIP
         working-directory: jetbrains-plugin
         run: ./gradlew buildPlugin
