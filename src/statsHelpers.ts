@@ -69,7 +69,8 @@ for (const [model, usage] of Object.entries(source)) {
 // Defense in depth: a source built from parsed JSON can carry an own "__proto__"
 // key (e.g. via a computed property) — see protoGuard.ts.
 if (isUnsafeObjectKey(model)) { continue; }
-if (!target[model]) { target[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
+// Own-property check: a model id such as "toString" must not resolve to an inherited member.
+if (!Object.hasOwn(target, model) || !target[model]) { target[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
 target[model].inputTokens += usage.inputTokens;
 target[model].outputTokens += usage.outputTokens;
 if (usage.cachedReadTokens !== undefined) {
@@ -349,7 +350,7 @@ export function addLanguageUsage(target: LanguageUsage, source: LanguageUsage): 
 	for (const [ext, usage] of Object.entries(source)) {
 		// Extensions come from parsed session data and caches — see protoGuard.ts.
 		if (isUnsafeObjectKey(ext)) { continue; }
-		if (!target[ext]) { target[ext] = { linesAdded: 0, linesRemoved: 0 }; }
+		if (!Object.hasOwn(target, ext) || !target[ext]) { target[ext] = { linesAdded: 0, linesRemoved: 0 }; }
 		target[ext].linesAdded += usage.linesAdded;
 		target[ext].linesRemoved += usage.linesRemoved;
 	}
@@ -393,9 +394,9 @@ function attributeLocToDay(dailyEntry: DailyTokenStats, sessionData: Pick<Sessio
 	const linesRemoved = sessionData.linesRemoved ?? 0;
 	if (linesAdded === 0 && linesRemoved === 0) { return; }
 	updateLocUsage(dailyEntry, linesAdded, linesRemoved);
-	if (!dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(dailyEntry.editorUsage, editorType) || !dailyEntry.editorUsage[editorType]) { dailyEntry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
 	updateLocUsage(dailyEntry.editorUsage[editorType], linesAdded, linesRemoved);
-	if (!dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(dailyEntry.repositoryUsage, repository) || !dailyEntry.repositoryUsage[repository]) { dailyEntry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 	updateLocUsage(dailyEntry.repositoryUsage[repository], linesAdded, linesRemoved);
 	if (sessionData.languageUsage) {
 		if (!dailyEntry.languageUsage) { dailyEntry.languageUsage = {}; }
@@ -407,7 +408,7 @@ function attributeLocToDay(dailyEntry: DailyTokenStats, sessionData: Pick<Sessio
  * Each call increments `sessions` by 1 regardless of token count.
  */
 export function addEditorUsage(target: EditorUsage, editorType: string, tokens: number): void {
-if (!target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
+if (!Object.hasOwn(target, editorType) || !target[editorType]) { target[editorType] = { tokens: 0, sessions: 0 }; }
 target[editorType].tokens += tokens;
 target[editorType].sessions += 1;
 }
@@ -505,10 +506,10 @@ function _apsBumpDailyEntry(entry: DailyTokenStats, tokens: number, interactions
 	entry.tokens += tokens;
 	entry.sessions += 1;
 	entry.interactions += interactions;
-	if (!entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.editorUsage, editorType) || !entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
 	entry.editorUsage[editorType].tokens += tokens;
 	entry.editorUsage[editorType].sessions += 1;
-	if (!entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.repositoryUsage, repository) || !entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 	entry.repositoryUsage[repository].tokens += tokens;
 	entry.repositoryUsage[repository].sessions += 1;
 	addModelUsage(entry.modelUsage, modelUsage);
@@ -519,7 +520,7 @@ function _apsBumpDailyEntry(entry: DailyTokenStats, tokens: number, interactions
 		entry.modelUsage[model].sessions += 1;
 	}
 	if (!entry.editorModelUsage) { entry.editorModelUsage = {}; }
-	if (!entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
+	if (!Object.hasOwn(entry.editorModelUsage, editorType) || !entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
 	addModelUsage(entry.editorModelUsage[editorType], modelUsage);
 	for (const model of Object.keys(modelUsage)) {
 		if (isUnsafeObjectKey(model)) { continue; }
@@ -746,7 +747,7 @@ export function addTaskCategoryToDailyEntry(entry: DailyTokenStats, tokens: numb
 	const safeTaskCategory = taskCategory && !isUnsafeObjectKey(taskCategory) ? taskCategory : undefined;
 	if (safeTaskCategory) {
 		if (!entry.taskCategoryUsage) { entry.taskCategoryUsage = {}; }
-		if (!entry.taskCategoryUsage[safeTaskCategory]) { entry.taskCategoryUsage[safeTaskCategory] = { tokens: 0, sessions: 0 }; }
+		if (!Object.hasOwn(entry.taskCategoryUsage, safeTaskCategory) || !entry.taskCategoryUsage[safeTaskCategory]) { entry.taskCategoryUsage[safeTaskCategory] = { tokens: 0, sessions: 0 }; }
 		entry.taskCategoryUsage[safeTaskCategory].tokens += tokens;
 		entry.taskCategoryUsage[safeTaskCategory].sessions += 1;
 	}
@@ -768,20 +769,20 @@ export function addTaskCategoryToDailyEntry(entry: DailyTokenStats, tokens: numb
 		const cat = category as TaskCategory;
 		entry.taskCategoryTokens[cat] = (entry.taskCategoryTokens[cat] || 0) + (tokens * share);
 		entry.taskCategorySessions[cat] = (entry.taskCategorySessions[cat] || 0) + share;
-		if (!entry.taskCategoryModelUsage[cat]) { entry.taskCategoryModelUsage[cat] = {}; }
+		if (!Object.hasOwn(entry.taskCategoryModelUsage, cat) || !entry.taskCategoryModelUsage[cat]) { entry.taskCategoryModelUsage[cat] = {}; }
 		addModelUsage(entry.taskCategoryModelUsage[cat]!, scaleModelUsage(modelUsage, share));
 	}
 }
 
 function addToDailyEntry(entry: DailyTokenStats, tokens: number, interactions: number, editorType: string, repository: string, modelUsage: ModelUsage, taskCategory?: TaskCategory, taskCategoryShares?: TaskCategoryBreakdown): void {
 	entry.tokens += tokens; entry.sessions += 1; entry.interactions += interactions;
-	if (!entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.editorUsage, editorType) || !entry.editorUsage[editorType]) { entry.editorUsage[editorType] = { tokens: 0, sessions: 0 }; }
 	entry.editorUsage[editorType].tokens += tokens; entry.editorUsage[editorType].sessions += 1;
 	// Keep the per-editor turn count in step with the day total. The Efficiency
 	// view's editor filter divides by it, so a path that updated the day but not
 	// the editor slice would silently read as "0 turns" for that editor.
 	entry.editorUsage[editorType].interactions = (entry.editorUsage[editorType].interactions ?? 0) + interactions;
-	if (!entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
+	if (!Object.hasOwn(entry.repositoryUsage, repository) || !entry.repositoryUsage[repository]) { entry.repositoryUsage[repository] = { tokens: 0, sessions: 0 }; }
 	entry.repositoryUsage[repository].tokens += tokens; entry.repositoryUsage[repository].sessions += 1;
 	addModelUsage(entry.modelUsage, modelUsage);
 	for (const model of Object.keys(modelUsage)) {
@@ -791,7 +792,7 @@ function addToDailyEntry(entry: DailyTokenStats, tokens: number, interactions: n
 		entry.modelUsage[model].sessions += 1;
 	}
 	if (!entry.editorModelUsage) { entry.editorModelUsage = {}; }
-	if (!entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
+	if (!Object.hasOwn(entry.editorModelUsage, editorType) || !entry.editorModelUsage[editorType]) { entry.editorModelUsage[editorType] = {}; }
 	addModelUsage(entry.editorModelUsage[editorType], modelUsage);
 	for (const model of Object.keys(modelUsage)) {
 		if (isUnsafeObjectKey(model)) { continue; }
@@ -898,7 +899,7 @@ function accumulatePeriod(acc: PeriodAccumulator, tokens: number, estimated: num
 	if (countSession) { acc.sessions += 1; }
 	addEditorUsage(acc.editorUsage, editorType, tokens);
 	addModelUsage(acc.modelUsage, modelUsage);
-	if (!acc.editorModelUsage[editorType]) { acc.editorModelUsage[editorType] = {}; }
+	if (!Object.hasOwn(acc.editorModelUsage, editorType) || !acc.editorModelUsage[editorType]) { acc.editorModelUsage[editorType] = {}; }
 	addModelUsage(acc.editorModelUsage[editorType], modelUsage);
 	if (copilotExactCostDollars !== undefined) {
 		acc.exactCopilotCostDollars += copilotExactCostDollars;

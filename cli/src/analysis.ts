@@ -71,6 +71,12 @@ export interface SessionData {
 	usageAnalysis?: EfficiencySessionAnalysis;
 	/** Set once the view attributes above were derived (see processSessionFileForViews in helpers.ts). */
 	viewAttributesResolved?: true;
+	/**
+	 * DB-backed sessions: the session's own last-activity time the view attributes were derived
+	 * for. The entry is keyed by the shared database's stat, so a different value means they are
+	 * outdated (see sessionVersion in helpers.ts).
+	 */
+	viewActivityMs?: number;
 }
 
 // ── Billing group helpers ────────────────────────────────────────────────────────────────────

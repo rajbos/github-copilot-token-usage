@@ -84,6 +84,9 @@ let cachedChartPayload: object | null = null;
 // Session-derived inputs behind both the Chart and Efficiency payloads, from one session walk.
 let cachedViewStats: ViewStats | null = null;
 let cachedEfficiencyPayload: object | null = null;
+// Set when a panel's data walk was stopped because the window was hidden to the tray;
+// showing the window again resumes that navigation (behind the loading screen).
+let resumePanelOnShow = false;
 // Local day the cached stats, usage and chart data were computed for. All three
 // have "today" / "this month" windows baked in, so a tray app left running
 // overnight must rebuild them rather than keep showing yesterday as today.
@@ -476,7 +479,10 @@ async function loadViewStats(): Promise<ViewStats> {
             files => {
                 const generation = dataGeneration;
                 return calculateViewStats(files, false, undefined, {
-                    isCancelled: () => generation !== dataGeneration || !VIEW_STATS_PANELS.has(currentPanel),
+                    // Hidden to the tray counts as "nobody waiting" too: closing the window only
+                    // hides it and leaves currentPanel unchanged.
+                    isCancelled: () => generation !== dataGeneration || !VIEW_STATS_PANELS.has(currentPanel)
+                        || !(mainWindow?.isVisible() ?? false),
                 });
             },
             (viewStats) => { cachedViewStats ??= viewStats; },
@@ -1056,6 +1062,13 @@ function createWindow(): BrowserWindow {
         }
     });
 
+    // A data walk stopped while the window was hidden resumes when it is shown again.
+    win.on('show', () => {
+        if (!resumePanelOnShow) { return; }
+        resumePanelOnShow = false;
+        navigateToPanel(currentPanel);
+    });
+
     // Hide to tray on close instead of quitting
     win.on('close', (event) => {
         if (!isQuitting) {
@@ -1110,8 +1123,12 @@ function navigateToPanel(panel: PanelId): void {
                 try { await loadPanelData(panel); } catch { /* surfaced by the panel's own error page below */ }
             }
             // Re-checked after the wait: the user may have moved on while the data was computed.
+            if (!isCurrent()) { return; }
+            // The walk stops while the window is hidden to the tray. Loading the panel now would
+            // start it again, unseen; resume when the window is shown instead.
+            if (!win.isVisible() && !isPanelDataReady(panel)) { resumePanelOnShow = true; return; }
             // A loading page that failed for another reason falls through to the panel itself.
-            if (isCurrent()) { win.loadURL(`app://panel/${panel}`); }
+            win.loadURL(`app://panel/${panel}`);
         });
 }
 

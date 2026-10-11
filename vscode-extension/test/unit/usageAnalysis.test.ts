@@ -990,6 +990,33 @@ test('getModelUsageFromSession: CLI session without cache fields leaves cachedRe
     assert.equal(usage.cacheCreationTokens, undefined);
 });
 
+test('getModelUsageFromSession: CLI cumulative shutdowns after resume use the latest snapshot', async () => {
+    // Copilot CLI shutdown modelMetrics are running totals for the whole session: after a
+    // resume the next shutdown repeats every earlier model, and a no-op resume repeats it verbatim.
+    const shutdown = (ts: string, sol: [number, number, number], luna?: [number, number]) => JSON.stringify({
+        type: 'session.shutdown',
+        timestamp: ts,
+        data: {
+            modelMetrics: {
+                'gpt-5.6-sol': { usage: { inputTokens: sol[0], outputTokens: sol[1], cacheReadTokens: sol[2], cacheWriteTokens: 0 } },
+                ...(luna ? { 'gpt-5.6-luna': { usage: { inputTokens: luna[0], outputTokens: luna[1], cacheReadTokens: 0, cacheWriteTokens: 0 } } } : {}),
+            },
+        },
+    });
+    const content = [
+        shutdown('2026-10-01T12:00:00.000Z', [1000, 100, 800]),
+        JSON.stringify({ type: 'session.resume', timestamp: '2026-10-02T08:00:00.000Z', data: {} }),
+        shutdown('2026-10-02T12:00:00.000Z', [1500, 150, 1200], [300, 30]),
+        shutdown('2026-10-02T12:00:00.000Z', [1500, 150, 1200], [300, 30]),
+    ].join('\n') + '\n';
+    const result = await getModelUsageFromSession(makeMockDeps(), 'fake/path/events.jsonl', content);
+    assert.equal(result['gpt-5.6-sol'].inputTokens, 1500);
+    assert.equal(result['gpt-5.6-sol'].outputTokens, 150);
+    assert.equal(result['gpt-5.6-sol'].cachedReadTokens, 1200);
+    assert.equal(result['gpt-5.6-luna'].inputTokens, 300);
+    assert.equal(result['gpt-5.6-luna'].outputTokens, 30);
+});
+
 // ---------------------------------------------------------------------------
 // CLI live session (no session.shutdown) — content-based estimation
 // ---------------------------------------------------------------------------

@@ -340,6 +340,36 @@ export async function getSessionLastActivity(filePath: string): Promise<Date | n
  * a separate attribution implementation — this keeps all formats consistent.
  */
 
+/**
+ * A session's version for the view caches (the shared analysis memo and the enriched session
+ * entry). For a file it is the file's stat. A DB-backed (virtual) session is stat'ed through its
+ * shared database, whose mtime moves for every other session in it and may not move at all while
+ * this session's writes sit in the WAL, so its adapter-reported last-activity time is part of
+ * the version too: a write to this session invalidates its view data even when the database
+ * mtime has not moved.
+ */
+export interface SessionVersion {
+	mtimeMs: number;
+	size: number;
+	/** DB-backed sessions only: the adapter's last-activity time for this session, when known. */
+	activityMs?: number;
+}
+
+export async function sessionVersion(
+	filePath: string,
+	stats: { mtimeMs: number; size: number },
+	lastActivity: () => Promise<Date | null> = () => getSessionLastActivity(filePath),
+): Promise<SessionVersion> {
+	const base = { mtimeMs: stats.mtimeMs, size: stats.size };
+	if (getSessionBackingPath(filePath) === filePath) { return base; }
+	const last = await lastActivity().catch(() => null);
+	return last ? { ...base, activityMs: last.getTime() } : base;
+}
+
+function sameSessionVersion(a: SessionVersion, b: SessionVersion): boolean {
+	return a.mtimeMs === b.mtimeMs && a.size === b.size && a.activityMs === b.activityMs;
+}
+
 /** Completed analyses kept for reuse; bounded because a long-lived host (the desktop app) walks many files. */
 const ANALYSIS_MEMO_LIMIT = 1000;
 const analysisMemo = new Map<string, Promise<{ analysis: SessionUsageAnalysis; failed: boolean }>>();
@@ -357,10 +387,10 @@ const analysisMemo = new Map<string, Promise<{ analysis: SessionUsageAnalysis; f
  */
 function analyzeSessionUsageShared(
 	filePath: string,
-	version: { mtimeMs: number; size: number } | undefined,
+	version: SessionVersion | undefined,
 	content?: string,
 ): Promise<{ analysis: SessionUsageAnalysis; failed: boolean }> {
-	const key = version ? `${filePath}\0${version.mtimeMs}\0${version.size}` : undefined;
+	const key = version ? `${filePath}\0${version.mtimeMs}\0${version.size}\0${version.activityMs ?? ''}` : undefined;
 	const hit = key ? analysisMemo.get(key) : undefined;
 	if (key && hit) {
 		// Refresh its recency so the bound evicts the least recently used entry.
@@ -400,7 +430,7 @@ function analyzeSessionUsageShared(
  * Likewise a repository that could not be resolved (unreadable file) is a failure, while a
  * session that names no repository resolves to `''` and is recorded as "Unknown".
  */
-async function sessionViewAttributes(filePath: string, version: { mtimeMs: number; size: number } | undefined): Promise<Pick<SessionData, 'repository' | 'taskCategory' | 'taskCategoryShares' | 'linesAdded' | 'linesRemoved' | 'languageUsage' | 'usageAnalysis'> | null> {
+async function sessionViewAttributes(filePath: string, version: SessionVersion | undefined): Promise<Pick<SessionData, 'repository' | 'taskCategory' | 'taskCategoryShares' | 'linesAdded' | 'linesRemoved' | 'languageUsage' | 'usageAnalysis'> | null> {
 	try {
 		// Read a file-based session once and hand the content to both passes; ecosystem
 		// (DB-backed) sessions are read through their adapter instead. A failed read throws
@@ -432,6 +462,17 @@ async function sessionViewAttributes(filePath: string, version: { mtimeMs: numbe
 	}
 }
 
+/** The session's parse without any view attributes from an earlier (now outdated) enrichment. */
+function withoutViewAttributes(data: SessionData): SessionData {
+	const {
+		repository: _repository, taskCategory: _taskCategory, taskCategoryShares: _taskCategoryShares,
+		linesAdded: _linesAdded, linesRemoved: _linesRemoved, languageUsage: _languageUsage,
+		usageAnalysis: _usageAnalysis, viewAttributesResolved: _resolved, viewActivityMs: _activity,
+		...base
+	} = data;
+	return base;
+}
+
 /**
  * {@link processSessionFile} plus the view attributes (task category, lines of code, efficiency
  * signals) the Chart and Efficiency payloads need.
@@ -448,16 +489,31 @@ async function sessionViewAttributes(filePath: string, version: { mtimeMs: numbe
  * analysis is neither marked resolved nor cached, so the next run retries it.
  */
 export async function processSessionFileForViews(filePath: string, verbose = false): Promise<SessionData | null> {
-	let before: fs.Stats | undefined;
-	try { before = await statSessionFile(filePath); } catch { /* processSessionFile reports the failure */ }
-	const data = await processSessionFile(filePath, verbose);
-	if (!data || data.viewAttributesResolved) { return data; }
+	let before: SessionVersion | undefined;
+	try { before = await sessionVersion(filePath, await statSessionFile(filePath)); } catch { /* processSessionFile reports the failure */ }
+	let data = await processSessionFile(filePath, verbose);
+	if (!data) { return data; }
+	// A DB-backed session's entry is keyed by the shared database's stat, so it is only current
+	// while the session's own activity time still matches what it was derived for (see
+	// sessionVersion). That covers the base parse too: a write still in the WAL leaves the
+	// database stat unchanged, so the cached tokens, interactions, model usage and day split can
+	// be as outdated as the view attributes. Re-parse without reading the cache before enriching,
+	// rather than merging fresh attributes onto a stale parse.
+	if (before?.activityMs !== undefined && data.viewActivityMs !== before.activityMs) {
+		data = await processSessionFileWith(filePath, { verbose, cache: { get: () => null, set: setCached } });
+		if (!data) { return data; }
+	}
+	if (data.viewAttributesResolved && data.viewActivityMs === before?.activityMs) { return data; }
 	const attributes = await sessionViewAttributes(filePath, before);
-	if (!attributes) { return data; }
-	const enriched: SessionData = { ...data, ...attributes, viewAttributesResolved: true };
+	const base = withoutViewAttributes(data);
+	if (!attributes) { return base; }
+	const enriched: SessionData = {
+		...base, ...attributes, viewAttributesResolved: true,
+		...(before?.activityMs !== undefined ? { viewActivityMs: before.activityMs } : {}),
+	};
 	try {
-		const after = await statSessionFile(filePath);
-		if (before && after.mtimeMs === before.mtimeMs && after.size === before.size) {
+		const after = await sessionVersion(filePath, await statSessionFile(filePath));
+		if (before && sameSessionVersion(before, after)) {
 			setCached(filePath, before.mtimeMs, before.size, enriched);
 		}
 	} catch {
@@ -608,12 +664,12 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 			// sessions from both. The lookup reads the adapter at most once per session and is
 			// reused below; regular files are decided by their mtime with no lookup.
 			const activity = createSessionActivityLookup(file);
-			const activeAt = await sessionActivityTime(activity, modified, cutoffStart);
+			const activeAt = await sessionActivityTime(activity, modified);
 			if (activeAt < cutoffStart) { continue; }
 
 			// Shared with the view enrichment, so `cli all` and the desktop Efficiency build do not
 			// analyze each recent session twice.
-			const { analysis } = await analyzeSessionUsageShared(file, stats);
+			const { analysis } = await analyzeSessionUsageShared(file, await sessionVersion(file, stats, () => activity.lastActivity()));
 			if (options.includeRepeatedTasks) {
 				await addRepeatedTaskSource(repeatedTaskSources, activity, analysis.firstUserPrompt, stats.mtimeMs, cutoffStart);
 			}
@@ -640,12 +696,14 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 					estimatedCost: calculateEstimatedCost(data.modelUsage, modelPricing),
 					editor: data.editorSource,
 					models: Object.keys(data.modelUsage),
-					lastActivity: data.lastModified.toISOString(),
+					// The same activity time the period buckets use, so a WAL-backed session
+					// counted in today's totals is also shown, and bucketed, as active today.
+					lastActivity: activeAt.toISOString(),
 					...(analysis.sessionDuration?.totalDurationMs !== undefined ? { durationMs: analysis.sessionDuration.totalDurationMs } : {}),
 					...(analysis.sessionDuration?.activeDurationMs !== undefined ? { activeDurationMs: analysis.sessionDuration.activeDurationMs } : {}),
 				};
 				recentSessionItems.push({
-					activityKey: toLocalDayKey(data.lastModified),
+					activityKey: toLocalDayKey(activeAt),
 					interactions: data.interactions,
 					value: sessionSummary,
 				});
@@ -701,6 +759,8 @@ const defaultActivitySources: SessionActivitySources = {
 /** Memoized per-session adapter reads: each underlying lookup runs at most once. */
 export interface SessionActivityLookup {
 	readonly file: string;
+	/** A DB-backed (virtual) session, stat'ed through a database shared with other sessions. */
+	readonly isVirtual: boolean;
 	meta(): Promise<SessionMeta | null>;
 	/**
 	 * The session's own last activity, for DB-backed (virtual) sessions only: the
@@ -713,12 +773,14 @@ export interface SessionActivityLookup {
 export function createSessionActivityLookup(file: string, sources: SessionActivitySources = defaultActivitySources): SessionActivityLookup {
 	let meta: Promise<SessionMeta | null> | undefined;
 	let lastActivity: Promise<Date | null> | undefined;
+	const isVirtual = sources.getBackingPath(file) !== file;
 	const lookup: SessionActivityLookup = {
 		file,
+		isVirtual,
 		meta: () => (meta ??= sources.getMeta(file)),
 		lastActivity: () => (lastActivity ??= (async () => {
 			// Regular files: the file mtime is the session's own; no adapter lookup needed.
-			if (sources.getBackingPath(file) === file) { return null; }
+			if (!isVirtual) { return null; }
 			const cheap = await sources.getLastActivity(file);
 			if (cheap) { return cheap; }
 			const fromMeta = (await lookup.meta())?.lastInteraction;
@@ -856,21 +918,24 @@ async function processSessionFileWithinWindow(filePath: string, verbose: boolean
 }
 
 /**
- * A session's own last-activity time, judged against `cutoff`. The backing file's mtime decides
- * for regular files; a DB-backed (virtual) session's database mtime can lag its real activity
- * (writes still in the SQLite WAL), so when the mtime alone is older than `cutoff` the adapter's
- * last-activity time is asked, and the later of the two wins. One rule for Usage Analysis and
- * the Chart/Efficiency view walk, so the Efficiency view combines the same sessions from both.
+ * A session's own last-activity time. A regular file's mtime is its own. A DB-backed (virtual)
+ * session shares its database's mtime, which moves whenever any session in it changes (and may
+ * lag its own writes in the SQLite WAL), so it is judged by its own adapter-reported activity —
+ * the rule sessionActiveSince() documents — even when the database mtime is recent: otherwise
+ * one write would admit and date every historical session in that database. Only when the
+ * adapter reports nothing does the database mtime stand in, so such sessions still count as
+ * they did before. One rule for Usage Analysis and the Chart/Efficiency view walk, so the
+ * Efficiency view combines the same sessions from both.
  */
-export async function sessionActivityTime(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<Date> {
-	if (fileMtime >= cutoff) { return fileMtime; }
-	const adapterActivity = await activity.lastActivity();
-	return adapterActivity && adapterActivity > fileMtime ? adapterActivity : fileMtime;
+export async function sessionActivityTime(activity: Pick<SessionActivityLookup, 'lastActivity' | 'isVirtual'>, fileMtime: Date): Promise<Date> {
+	if (!activity.isVirtual) { return fileMtime; }
+	return (await activity.lastActivity()) ?? fileMtime;
 }
 
-/** Whether a session was active since `cutoff`, by {@link sessionActivityTime}. */
-export async function isSessionActiveSince(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<boolean> {
-	return (await sessionActivityTime(activity, fileMtime, cutoff)) >= cutoff;
+/** Whether a session was active since `cutoff`, by {@link sessionActivityTime}; regular files need no lookup. */
+export async function isSessionActiveSince(activity: Pick<SessionActivityLookup, 'lastActivity' | 'isVirtual'>, fileMtime: Date, cutoff: Date): Promise<boolean> {
+	if (!activity.isVirtual) { return fileMtime >= cutoff; }
+	return (await sessionActivityTime(activity, fileMtime)) >= cutoff;
 }
 
 function dailyStatsFromSessions(sessions: Array<SessionData | null | undefined>): DailyTokenStats[] {

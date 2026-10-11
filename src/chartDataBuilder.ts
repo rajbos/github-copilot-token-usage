@@ -122,7 +122,7 @@ function mergeUsageGroup(
 		// Keys are editor, repository and task names, and daily stats can come back from a
 		// JSON cache, where JSON.parse creates an own "__proto__" key — see protoGuard.ts.
 		if (isUnsafeObjectKey(k)) { continue; }
-		if (!target[k]) { target[k] = { tokens: 0, sessions: 0 }; }
+		if (!Object.hasOwn(target, k) || !target[k]) { target[k] = { tokens: 0, sessions: 0 }; }
 		target[k].tokens += u.tokens;
 		target[k].sessions += u.sessions;
 		if (u.linesAdded !== undefined) { target[k].linesAdded = (target[k].linesAdded ?? 0) + u.linesAdded; }
@@ -135,7 +135,7 @@ function mergeLanguageUsage(target: DailyTokenStats, src: DailyTokenStats): void
 	if (!target.languageUsage) { target.languageUsage = {}; }
 	for (const [ext, usage] of Object.entries(src.languageUsage)) {
 		if (isUnsafeObjectKey(ext)) { continue; }
-		if (!target.languageUsage[ext]) { target.languageUsage[ext] = { linesAdded: 0, linesRemoved: 0 }; }
+		if (!Object.hasOwn(target.languageUsage, ext) || !target.languageUsage[ext]) { target.languageUsage[ext] = { linesAdded: 0, linesRemoved: 0 }; }
 		target.languageUsage[ext].linesAdded += usage.linesAdded;
 		target.languageUsage[ext].linesRemoved += usage.linesRemoved;
 	}
@@ -146,7 +146,7 @@ function mergeEditorModelUsage(target: DailyTokenStats, src: DailyTokenStats): v
 	if (!target.editorModelUsage) { target.editorModelUsage = {}; }
 	for (const [editor, modelUsage] of Object.entries(src.editorModelUsage)) {
 		if (isUnsafeObjectKey(editor)) { continue; }
-		if (!target.editorModelUsage[editor]) { target.editorModelUsage[editor] = {}; }
+		if (!Object.hasOwn(target.editorModelUsage, editor) || !target.editorModelUsage[editor]) { target.editorModelUsage[editor] = {}; }
 		addModelUsage(target.editorModelUsage[editor], modelUsage);
 	}
 }
@@ -156,14 +156,14 @@ function mergeTaskCategoryUsage(target: DailyTokenStats, src: DailyTokenStats): 
 		target.taskCategoryTokens = target.taskCategoryTokens ?? {};
 		for (const [category, value] of Object.entries(src.taskCategoryTokens)) {
 			if (isUnsafeObjectKey(category)) { continue; }
-			target.taskCategoryTokens[category as TaskCategory] = (target.taskCategoryTokens[category as TaskCategory] || 0) + value;
+			target.taskCategoryTokens[category as TaskCategory] = ((Object.hasOwn(target.taskCategoryTokens, category) && target.taskCategoryTokens[category as TaskCategory]) || 0) + value;
 		}
 	}
 	if (src.taskCategorySessions) {
 		target.taskCategorySessions = target.taskCategorySessions ?? {};
 		for (const [category, value] of Object.entries(src.taskCategorySessions)) {
 			if (isUnsafeObjectKey(category)) { continue; }
-			target.taskCategorySessions[category as TaskCategory] = (target.taskCategorySessions[category as TaskCategory] || 0) + value;
+			target.taskCategorySessions[category as TaskCategory] = ((Object.hasOwn(target.taskCategorySessions, category) && target.taskCategorySessions[category as TaskCategory]) || 0) + value;
 		}
 	}
 	if (!src.taskCategoryModelUsage) { return; }
@@ -171,7 +171,7 @@ function mergeTaskCategoryUsage(target: DailyTokenStats, src: DailyTokenStats): 
 	for (const [category, usage] of Object.entries(src.taskCategoryModelUsage)) {
 		if (isUnsafeObjectKey(category)) { continue; }
 		const key = category as TaskCategory;
-		target.taskCategoryModelUsage[key] = target.taskCategoryModelUsage[key] ?? {};
+		target.taskCategoryModelUsage[key] = (Object.hasOwn(target.taskCategoryModelUsage, key) && target.taskCategoryModelUsage[key]) || {};
 		addModelUsage(target.taskCategoryModelUsage[key]!, usage);
 	}
 }
@@ -456,7 +456,7 @@ function aggregateBillingGroupModelUsage(entry: DailyTokenStats): Record<string,
 	for (const [editor, modelUsage] of Object.entries(editorModelUsage)) {
 		for (const [modelId, usage] of Object.entries(modelUsage)) {
 			const group = getBillingGroup(editor, modelId);
-			if (!result[group]) { result[group] = {}; }
+			if (!Object.hasOwn(result, group) || !result[group]) { result[group] = {}; }
 			addModelUsage(result[group], { [modelId]: usage });
 		}
 	}
@@ -684,7 +684,7 @@ function computeSummaryTotals(dailyBuckets: BucketEntry[], deps: ChartDataBuilde
 	dailyBuckets.forEach(b => {
 		Object.entries(b.stats.editorUsage).forEach(([editor, usage]) => {
 			if (isUnsafeObjectKey(editor)) { return; }
-			editorTotalsMap[editor] = (editorTotalsMap[editor] || 0) + usage.tokens;
+			editorTotalsMap[editor] = ((Object.hasOwn(editorTotalsMap, editor) && editorTotalsMap[editor]) || 0) + usage.tokens;
 		});
 	});
 	const repositoryTotalsMap: Record<string, number> = {};
@@ -693,7 +693,7 @@ function computeSummaryTotals(dailyBuckets: BucketEntry[], deps: ChartDataBuilde
 			const displayName = deps.getRepoDisplayName(repo);
 			// A display name is derived from the repository string (e.g. "host:__proto__").
 			if (isUnsafeObjectKey(displayName)) { return; }
-			repositoryTotalsMap[displayName] = (repositoryTotalsMap[displayName] || 0) + usage.tokens;
+			repositoryTotalsMap[displayName] = ((Object.hasOwn(repositoryTotalsMap, displayName) && repositoryTotalsMap[displayName]) || 0) + usage.tokens;
 		});
 	});
 	return { editorTotalsMap, repositoryTotalsMap };

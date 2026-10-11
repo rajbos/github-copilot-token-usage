@@ -13,7 +13,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError } from '../helpers';
+import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError, sessionVersion } from '../helpers';
 import { getCached } from '../cliCache';
 import { buildClassificationInputFromUsageAnalysis, classifySessionTask } from '../../../src/taskClassification';
 
@@ -170,27 +170,37 @@ test('isSessionActiveSince asks the adapter when a DB-backed session\'s file mti
 	});
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#1', sources(new Date(2026, 4, 5))), oldMtime, cutoff), true);
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#2', sources(new Date(2026, 3, 5))), oldMtime, cutoff), false);
+	// A recent database mtime does not decide on its own: an idle session in an active database
+	// is judged by its own (old) activity. With no adapter answer the mtime stands in.
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#3', sources(new Date(2026, 2, 5))), new Date(2026, 4, 2), cutoff), false);
+	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#4', sources(null)), new Date(2026, 4, 2), cutoff), true);
 	const before = adapterCalls;
-	assert.equal(await isSessionActiveSince(createSessionActivityLookup('store.db#3', sources(null)), new Date(2026, 4, 2), cutoff), true);
-	assert.equal(adapterCalls, before, 'a recent file mtime decides without an adapter lookup');
 	// A regular file: its own mtime is the answer; the adapter is never asked.
 	const regular = { getBackingPath: (f: string) => f, getLastActivity: async () => { adapterCalls++; return new Date(); }, getMeta: async () => null };
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('session.json', regular), oldMtime, cutoff), false);
 	assert.equal(adapterCalls, before);
 });
 
-test('sessionActivityTime: a DB-backed session with a lagging database mtime is dated by the adapter', async () => {
+test('sessionActivityTime: a DB-backed session is dated by its own adapter activity, never by the shared database mtime', async () => {
 	// Usage Analysis buckets periods by this time and the view walk filters by it, so both count
 	// the same sessions (the Efficiency view combines them).
 	const cutoff = new Date(2026, 4, 1);
 	const oldMtime = new Date(2026, 3, 1);
-	const recent = new Date(2026, 4, 9);
-	const lookup = (lastActivity: Date | null) => ({ lastActivity: async () => lastActivity });
-	assert.deepEqual(await sessionActivityTime(lookup(recent), oldMtime, cutoff), recent);
-	assert.deepEqual(await sessionActivityTime(lookup(null), oldMtime, cutoff), oldMtime, 'no adapter answer keeps the mtime');
-	assert.deepEqual(await sessionActivityTime(lookup(new Date(2026, 2, 1)), oldMtime, cutoff), oldMtime, 'an older adapter time never wins');
-	const fresh = new Date(2026, 4, 3);
-	assert.deepEqual(await sessionActivityTime({ lastActivity: async () => { throw new Error('must not be asked'); } }, fresh, cutoff), fresh);
+	const recentMtime = new Date(2026, 4, 9);
+	const virtual = (lastActivity: Date | null) => ({ isVirtual: true, lastActivity: async () => lastActivity });
+	// WAL lag: the database looks old, the session was active recently.
+	assert.deepEqual(await sessionActivityTime(virtual(new Date(2026, 4, 8)), oldMtime), new Date(2026, 4, 8));
+	// Another session wrote to the database recently; this one has been idle for weeks. It must
+	// not borrow the database mtime, or one write would admit every historical session.
+	assert.deepEqual(await sessionActivityTime(virtual(new Date(2026, 2, 1)), recentMtime), new Date(2026, 2, 1));
+	assert.equal(await isSessionActiveSince(virtual(new Date(2026, 2, 1)), recentMtime, cutoff), false);
+	// No adapter answer: the database mtime stands in, as before.
+	assert.deepEqual(await sessionActivityTime(virtual(null), oldMtime), oldMtime);
+	// A regular file is its own mtime, with no adapter lookup.
+	const regular = { isVirtual: false, lastActivity: async () => { throw new Error('must not be asked'); } };
+	assert.deepEqual(await sessionActivityTime(regular, recentMtime), recentMtime);
+	assert.equal(await isSessionActiveSince(regular, recentMtime, cutoff), true);
+	assert.equal(await isSessionActiveSince(regular, oldMtime, cutoff), false);
 });
 
 test('calculateViewStats stops and throws instead of returning a partial walk when cancelled', async t => {
@@ -202,4 +212,19 @@ test('calculateViewStats stops and throws instead of returning a partial walk wh
 	const missing = path.join(path.dirname(filePath), 'never-read.json');
 	await assert.rejects(calculateViewStats([filePath, missing], false, undefined, { isCancelled: () => ++checks > 2 }), ViewStatsCancelledError);
 	assert.equal(reads(), 2, 'only the first file was parsed and enriched');
+});
+
+test('sessionVersion adds a DB-backed session\'s own activity time; a file is versioned by its stat alone', async () => {
+	// The shared database's mtime moves for other sessions and may not move while this session's
+	// writes sit in the WAL, so the view caches must also see the session's own activity time.
+	const stats = { mtimeMs: 1_000, size: 10 };
+	let asked = 0;
+	const at = (ms: number) => async () => { asked++; return new Date(ms); };
+	const virtual = path.join(__dirname, 'home', '.crush', 'crush.db#session-1');
+	assert.deepEqual(await sessionVersion(virtual, stats, at(5_000)), { mtimeMs: 1_000, size: 10, activityMs: 5_000 });
+	assert.notDeepEqual(await sessionVersion(virtual, stats, at(6_000)), await sessionVersion(virtual, stats, at(5_000)), 'a WAL write changes the version even with an unchanged database stat');
+	assert.deepEqual(await sessionVersion(virtual, stats, async () => null), stats, 'no adapter answer: the stat alone');
+	const before = asked;
+	assert.deepEqual(await sessionVersion(path.join(__dirname, 'session.json'), stats, at(9_000)), stats);
+	assert.equal(asked, before, 'a regular file never asks the adapter');
 });

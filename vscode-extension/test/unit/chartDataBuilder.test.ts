@@ -339,7 +339,7 @@ test('buildChartData ignores unsafe language, editor-model and task keys from ca
 		"date": "${date}", "tokens": 10, "sessions": 1, "interactions": 1, "modelUsage": {},
 		"editorUsage": {}, "repositoryUsage": {}, "taskCategoryUsage": {},
 		"linesAdded": 2, "linesRemoved": 0,
-		"languageUsage": { "__proto__": { "linesAdded": 7, "linesRemoved": 1 }, "ts": { "linesAdded": 2, "linesRemoved": 0 } },
+		"languageUsage": { "__proto__": { "linesAdded": 7, "linesRemoved": 1 }, "toString": { "linesAdded": 4, "linesRemoved": 0 }, "ts": { "linesAdded": 2, "linesRemoved": 0 } },
 		"editorModelUsage": { "__proto__": { "gpt-4o": { "inputTokens": 1, "outputTokens": 1, "sessions": 0 } } },
 		"taskCategoryTokens": { "__proto__": 5, "Coding": 10 },
 		"taskCategorySessions": { "__proto__": 1, "Coding": 1 },
@@ -349,8 +349,12 @@ test('buildChartData ignores unsafe language, editor-model and task keys from ca
 		getRepoDisplayName: (url: string) => url, calculateEstimatedCost: () => 0,
 		backendConfigured: false, compactNumbers: false, now: today,
 	});
-	const languages = (payload.periods.day.languageDatasets as Array<{ label: string }>).map(d => d.label);
-	assert.deepEqual(languages, ['ts']);
+	// "__proto__" is skipped; an inherited name such as "toString" gets its own entry instead of
+	// resolving to (and mutating) the shared built-in.
+	const languages = (payload.periods.day.languageDatasets as Array<{ label: string }>).map(d => d.label).sort();
+	assert.deepEqual(languages, ['toString', 'ts']);
+	assert.equal(typeof Object.prototype.toString, 'function');
+	assert.equal((Object.prototype.toString as unknown as Record<string, unknown>).linesAdded, undefined);
 	const proto = Object.prototype as Record<string, unknown>;
 	for (const field of ['linesAdded', 'linesRemoved', 'gpt-4o', 'tokens']) {
 		assert.equal(proto[field], undefined, `Object.prototype must not gain "${field}"`);

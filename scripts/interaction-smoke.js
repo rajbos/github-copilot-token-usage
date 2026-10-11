@@ -355,7 +355,7 @@ async function checkStepVisibility(page, step) {
 }
 
 /** Replays one declared scenario on a fresh page and reports what each step did. */
-async function runScenario(page, view, scenario) {
+async function runScenario(page, view, scenario, handledCommands) {
   const steps = [];
   const findings = [];
   const fail = (control, detail) => findings.push({ view: view.id, kind: 'scenario-step-failed', control, detail });
@@ -403,13 +403,34 @@ async function runScenario(page, view, scenario) {
 
     await page.waitForTimeout(120);
     await waitForQuietDom(page);
-    const [errors, after] = await Promise.all([
+    const [errors, after, posted] = await Promise.all([
       page.evaluate(() => window.__HARNESS_ERRORS__.slice()),
       page.evaluate(DOM_SIGNATURE),
+      page.evaluate(() => window.__HARNESS_POSTED_MESSAGES__.slice()),
     ]);
     if (errors.length > 0) {
       findings.push({ view: view.id, kind: 'scenario-step-threw', control: label, detail: errors.join(' | ').slice(0, 400) });
       break;
+    }
+    // `expectPosted` is what the step must have sent to the host. A click on a button whose
+    // listener is gone changes no DOM and posts nothing, which the DOM signature alone would
+    // record as a harmless no-op; this is the assertion that catches it. The command must also
+    // have a host-side handler, the same rule the one-pass crawl applies.
+    if (step.expectPosted) {
+      const commands = posted.map((message) => (message && typeof message === 'object' ? message.command : undefined));
+      if (!commands.includes(step.expectPosted)) {
+        findings.push({
+          view: view.id,
+          kind: 'scenario-expected-post-missing',
+          control: label,
+          detail: `expected a '${step.expectPosted}' message, got ${commands.length ? commands.map(String).join(', ') : 'none'}`,
+        });
+        break;
+      }
+      if (handledCommands && !handledCommands.has(step.expectPosted)) {
+        findings.push({ view: view.id, kind: 'scenario-post-unhandled', control: label, detail: `'${step.expectPosted}' has no handler in the extension host` });
+        break;
+      }
     }
     // `expect` is what the view must still be showing after the step — the point
     // of the scenario, not a bonus assertion: a picker that silently drops to an
@@ -546,7 +567,7 @@ async function smokeView({ browser, view, defaults, handledCommands, isolate }) 
   const scenarios = [];
   for (const scenario of view.scenarios || []) {
     const scenarioPage = await openPage(browser, pageFile, view, defaults);
-    const outcome = await runScenario(scenarioPage, view, scenario);
+    const outcome = await runScenario(scenarioPage, view, scenario, handledCommands);
     await scenarioPage.close();
     scenarios.push({ name: outcome.name, steps: outcome.steps });
     findings.push(...outcome.findings);
