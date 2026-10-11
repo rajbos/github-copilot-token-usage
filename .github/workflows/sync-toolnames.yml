@@ -24,6 +24,18 @@ jobs:
       pull-requests: write  # Need write permission to create PRs
       
     steps:
+    # Trust boundary: this job holds contents/pull-requests: write and runs a
+    # script from the checked-out ref. workflow_dispatch can target any branch,
+    # so refuse to run anywhere but main (schedule always runs on the default
+    # branch; push is already limited to main above).
+    - name: Require the main branch
+      if: github.ref != 'refs/heads/main'
+      env:
+        REF: ${{ github.ref }}
+      run: |
+        echo "::error::sync-toolnames must run from refs/heads/main (got $REF); refusing to run unreviewed code with write permissions."
+        exit 1
+
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
       with:
