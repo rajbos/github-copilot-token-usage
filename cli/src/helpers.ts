@@ -481,10 +481,18 @@ function withoutViewAttributes(data: SessionData): SessionData {
 export async function processSessionFileForViews(filePath: string, verbose = false): Promise<SessionData | null> {
 	let before: SessionVersion | undefined;
 	try { before = await sessionVersion(filePath, await statSessionFile(filePath)); } catch { /* processSessionFile reports the failure */ }
-	const data = await processSessionFile(filePath, verbose);
+	let data = await processSessionFile(filePath, verbose);
 	if (!data) { return data; }
-	// A DB-backed session's entry is keyed by the shared database's stat, so its view data is
-	// only current while the session's own activity time still matches (see sessionVersion).
+	// A DB-backed session's entry is keyed by the shared database's stat, so it is only current
+	// while the session's own activity time still matches what it was derived for (see
+	// sessionVersion). That covers the base parse too: a write still in the WAL leaves the
+	// database stat unchanged, so the cached tokens, interactions, model usage and day split can
+	// be as outdated as the view attributes. Re-parse without reading the cache before enriching,
+	// rather than merging fresh attributes onto a stale parse.
+	if (before?.activityMs !== undefined && data.viewActivityMs !== before.activityMs) {
+		data = await processSessionFileWith(filePath, { verbose, cache: { get: () => null, set: setCached } });
+		if (!data) { return data; }
+	}
 	if (data.viewAttributesResolved && data.viewActivityMs === before?.activityMs) { return data; }
 	const attributes = await sessionViewAttributes(filePath, before);
 	const base = withoutViewAttributes(data);
