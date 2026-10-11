@@ -245,6 +245,8 @@ import {
 	type SessionAnalyzerDeps,
 } from './analysis/sessionFileAnalyzer';
 import { AnalysisWorkerPool } from './analysis/analysisWorkerPool';
+import { computeAnalysisPoolSize, decideAnalysisPool } from './analysis/poolConfig';
+import { ExclusiveRunner } from './analysis/exclusiveRunner';
 import { runOffHostThread as _runOffHostThread } from './analysis/runOffHostThread';
 import { computeSessionFileDetails as _computeSessionFileDetails } from './analysis/sessionDetailsAnalyzer';
 import { scanCustomizationFilesForWorkspace as _scanCustomizationFilesForWorkspace } from './analysis/workspaceCustomizationScan';
@@ -1643,7 +1645,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	/** Workspaces whose customization scan has been requested but not yet run (see resolvePendingCustomizationScans). */
 	private readonly _pendingCustomizationScans = new Set<string>();
 	/** Tail of the serialized calculateUsageAnalysisStats runs. */
-	private _usageAnalysisChain: Promise<void> = Promise.resolve();
+	private readonly _usageAnalysisRuns = new ExclusiveRunner();
 
 	// Last computed customization matrix for usage analysis (typed)
 	private _lastCustomizationMatrix?: WorkspaceCustomizationMatrix;
@@ -2663,19 +2665,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Runs from the constructor, before the output channel exists, so anything worth saying is
 		// logged once construction has finished instead of here.
 		const logAfterConstruction = (message: string): void => { void Promise.resolve().then(() => this.log(message)); };
-		if (process.env.AI_FLUENCY_DISABLE_ANALYSIS_WORKER === '1') {
-			logAfterConstruction('Analysis worker disabled via AI_FLUENCY_DISABLE_ANALYSIS_WORKER; parsing runs on the extension host.');
-			return undefined;
-		}
 		const workerPath = path.join(extensionUri.fsPath, 'dist', 'analysisWorker.js');
-		if (!fs.existsSync(workerPath)) {
-			logAfterConstruction(`Analysis worker bundle not found at ${workerPath}; parsing runs on the extension host.`);
+		const decision = decideAnalysisPool({ disableEnv: process.env.AI_FLUENCY_DISABLE_ANALYSIS_WORKER, bundleExists: fs.existsSync(workerPath) });
+		if (!decision.use) {
+			logAfterConstruction(decision.reason === 'disabled'
+				? 'Analysis worker disabled via AI_FLUENCY_DISABLE_ANALYSIS_WORKER; parsing runs on the extension host.'
+				: `Analysis worker bundle not found at ${workerPath}; parsing runs on the extension host.`);
 			return undefined;
 		}
-		// Leave a core for the host and the renderer. Capped at two: every worker keeps its own in-memory copy of
-		// the SQLite stores it reads (Copilot's session-store.db and data.db are 100+ MB each on a long-lived
-		// machine), so a third thread buys little speed for a lot of memory.
-		const size = Math.max(1, Math.min(2, os.cpus().length - 1));
+		const size = computeAnalysisPoolSize(os.cpus().length);
 		return new AnalysisWorkerPool({
 			workerPath,
 			extensionPath: extensionUri.fsPath,
@@ -7011,9 +7009,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * files). Callers already tolerate waiting: the work is a background refresh.
 	 */
 	private calculateUsageAnalysisStats(useCache = true, preloaded?: SessionFilePreload[], originGeneration?: number): Promise<UsageAnalysisStats> {
-		const run = this._usageAnalysisChain.then(() => this.calculateUsageAnalysisStatsExclusive(useCache, preloaded, originGeneration));
-		this._usageAnalysisChain = run.then(() => undefined, () => undefined);
-		return run;
+		return this._usageAnalysisRuns.run(() => this.calculateUsageAnalysisStatsExclusive(useCache, preloaded, originGeneration));
 	}
 
 	private async calculateUsageAnalysisStatsExclusive(useCache = true, preloaded?: SessionFilePreload[], originGeneration?: number): Promise<UsageAnalysisStats> {
