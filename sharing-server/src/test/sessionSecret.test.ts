@@ -12,7 +12,8 @@ import { createApp } from '../app.js';
 import { startServer } from '../lifecycle.js';
 import { closeDb } from '../db.js';
 import {
-	DEV_SESSION_SECRET, assertSessionSecretConfigured, decodeSession, encodeSession, makeClaims,
+	DEV_SESSION_SECRET, KNOWN_PLACEHOLDER_SESSION_SECRETS, assertSessionSecretConfigured, decodeSession,
+	encodeSession, makeClaims, resetDevSecretWarningForTests,
 } from '../session.js';
 
 const KEYS = ['NODE_ENV', 'SESSION_SECRET', 'LOCAL_DATA_DIR'] as const;
@@ -42,6 +43,11 @@ describe('SESSION_SECRET enforcement', () => {
 		['the dev default', DEV_SESSION_SECRET, /development default/],
 		['shorter than 32 characters', 'a'.repeat(31), /shorter than 32/],
 	];
+
+	for (const placeholder of KNOWN_PLACEHOLDER_SESSION_SECRETS) {
+		rejections.push([`documented placeholder "${placeholder}"`, placeholder, /placeholder|development default/]);
+		rejections.push([`upper-cased placeholder "${placeholder}"`, placeholder.toUpperCase(), /placeholder|development default/]);
+	}
 
 	for (const [label, value, pattern] of rejections) {
 		test(`production with a ${label} secret throws from startServer before listening`, async () => {
@@ -83,17 +89,21 @@ describe('SESSION_SECRET enforcement', () => {
 
 	test('outside production the dev fallback still works and warns once', () => {
 		delete process.env.NODE_ENV;
+		resetDevSecretWarningForTests();
 		const warnings: string[] = [];
 		const original = console.warn;
 		console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')); };
 		try {
 			assert.doesNotThrow(() => createApp());
-			assert.equal(decodeSession(encodeSession(makeClaims(3)))?.sub, 3);
+			assert.equal(warnings.length, 0, 'createApp alone must not warn');
 			encodeSession(makeClaims(3));
+			assert.equal(warnings.length, 1, 'first fallback use warns exactly once');
+			assert.match(warnings[0], /SESSION_SECRET/);
+			assert.equal(decodeSession(encodeSession(makeClaims(3)))?.sub, 3);
+			assert.equal(warnings.length, 1, 'later uses must not warn again');
 		} finally {
 			console.warn = original;
 		}
-		assert.ok(warnings.length <= 1, 'warning must be emitted at most once per process');
 	});
 });
 

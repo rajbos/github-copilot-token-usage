@@ -51,7 +51,7 @@ services:
     environment:
       - GITHUB_CLIENT_ID=your_client_id
       - GITHUB_CLIENT_SECRET=your_client_secret
-      - SESSION_SECRET=a_long_random_string_min_32_chars
+      - SESSION_SECRET=${SESSION_SECRET:?generate one with: openssl rand -base64 48}
       - BASE_URL=https://your-server.example.com
       # Optional: restrict uploads to members of a specific GitHub org
       # - ALLOWED_GITHUB_ORG=your-org-name
@@ -63,7 +63,7 @@ volumes:
   sharing_data:
 ```
 
-> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32` in bash, or in PowerShell:
+> **Tip**: Generate `SESSION_SECRET` with `openssl rand -base64 48` in bash, or in PowerShell:
 ``` powershell
 $bytes = New-Object byte[] 32
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -135,7 +135,7 @@ Minimum required in `.env`:
 ```env
 GITHUB_CLIENT_ID=your_github_oauth_app_client_id
 GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
-SESSION_SECRET=any_long_random_string_at_least_32_chars
+SESSION_SECRET=<paste the output of: openssl rand -base64 48>
 BASE_URL=http://localhost:3000
 PORT=3000
 DB_PATH=./data/sharing.db

@@ -4,6 +4,18 @@ import { SESSION_MAX_AGE_SECONDS } from './config.js';
 /** Insecure fallback used outside production only. Public in the source, so it must never sign a production cookie. */
 export const DEV_SESSION_SECRET = 'dev-secret-change-me-in-production';
 export const MIN_SESSION_SECRET_LENGTH = 32;
+/**
+ * Placeholder values that appeared in documentation or example configs. They are public,
+ * so a copy-pasted one must be refused in production even when it passes the length check.
+ * Matched case-insensitively.
+ */
+export const KNOWN_PLACEHOLDER_SESSION_SECRETS: readonly string[] = [
+	'a_long_random_string_min_32_chars',
+	'any_long_random_string_at_least_32_chars',
+	'change_me_to_a_random_secret',
+	'change_me_to_a_random_secret_at_least_32_chars',
+	'dev-secret-change-me-in-production',
+];
 export const COOKIE_NAME = 'sharing-session';
 export const OAUTH_STATE_COOKIE = 'oauth-state';
 
@@ -27,6 +39,7 @@ export function assertSessionSecretConfigured(env: NodeJS.ProcessEnv = process.e
 	const secret = env.SESSION_SECRET;
 	const problem = !secret ? 'is not set'
 		: secret === DEV_SESSION_SECRET ? 'is the insecure development default'
+		: KNOWN_PLACEHOLDER_SESSION_SECRETS.includes(secret.toLowerCase()) ? 'is a documented example placeholder'
 		: secret.length < MIN_SESSION_SECRET_LENGTH ? `is shorter than ${MIN_SESSION_SECRET_LENGTH} characters`
 		: undefined;
 	if (problem) {
@@ -39,6 +52,11 @@ export function assertSessionSecretConfigured(env: NodeJS.ProcessEnv = process.e
 }
 
 let devSecretWarned = false;
+
+/** Test-only: forget that the one-time dev-fallback warning was emitted. */
+export function resetDevSecretWarningForTests(): void {
+	devSecretWarned = false;
+}
 
 /** Resolve the signing secret; outside production falls back to the dev default with a one-time warning. */
 function getSessionSecret(): string {

@@ -103,7 +103,7 @@ services:
     environment:
       - GITHUB_CLIENT_ID=your_client_id
       - GITHUB_CLIENT_SECRET=your_client_secret
-      - SESSION_SECRET=a_long_random_string_min_32_chars
+      - SESSION_SECRET=${SESSION_SECRET:?generate one with: openssl rand -base64 48}
       - BASE_URL=https://your-server.example.com
       # Optional: restrict to members of a specific GitHub org
       # - ALLOWED_GITHUB_ORG=your-org-name
@@ -115,7 +115,7 @@ volumes:
   sharing_data:
 ```
 
-> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32`.
+> **Tip**: Generate `SESSION_SECRET` with `openssl rand -base64 48`. Never copy a literal value from an example; documented placeholders are rejected in production.
 
 Start the server:
 
