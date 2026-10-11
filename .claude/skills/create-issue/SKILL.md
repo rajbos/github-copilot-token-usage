@@ -44,7 +44,7 @@ State the approach you recommend; if there are real alternatives with different 
 
 ## Step 4 — Tests
 
-List the tests that must be added or updated: the existing test files that cover the touched code (find them, give paths) and new cases needed (edge cases, regressions, empty/missing data). Name the validation commands from the relevant instructions file (e.g. `npm run test:node`, `npm run check:contract`, `npm run check:interaction`, `dotnet test`, `./gradlew test`). If a UI changes, note that before/after screenshots are expected.
+List the tests that must be added or updated: the existing test files that cover the touched code (find them, give paths) and new cases needed (edge cases, regressions, empty/missing data). Name the validation commands from the relevant instructions file (e.g. `pnpm run test:node`, `pnpm run check:contract`, `pnpm run check:interaction`, `dotnet test`, `./gradlew test`). If a UI changes, note that before/after screenshots are expected.
 
 ## Step 5 — Check for cross-surface gaps
 

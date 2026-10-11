@@ -4,14 +4,15 @@
   "description": "AI Engineering Fluency - Windows Desktop App",
   "author": "RobBos",
   "license": "MIT",
+  "packageManager": "pnpm@11.2.2",
   "main": "dist/main.js",
   "scripts": {
     "build": "node esbuild.js",
     "build:production": "node esbuild.js --production",
     "dev": "node esbuild.js --watch",
-    "start": "npm run build && electron .",
-    "pack": "npm run build:production && electron-builder --dir",
-    "dist": "npm run build:production && electron-builder --win nsis --publish never",
+    "start": "pnpm run build && electron .",
+    "pack": "pnpm run build:production && electron-builder --dir",
+    "dist": "pnpm run build:production && electron-builder --win nsis --publish never",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -29,10 +30,6 @@
   },
   "engines": {
     "node": ">=22.14.0"
-  },
-  "overrides": {
-    "brace-expansion": ">=5.0.12",
-    "tar": ">=7.5.21"
   },
   "build": {
     "appId": "com.rajbos.ai-engineering-fluency",

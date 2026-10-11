@@ -14,7 +14,7 @@ diff stays reviewable and a regression points at a single extraction.
 
 ## What the detector does
 
-`scripts/check-code-duplication.js` (run as `npm run check:duplicates` from
+`scripts/check-code-duplication.js` (run as `pnpm run check:duplicates` from
 `vscode-extension/`) normalizes source lines (whitespace collapsed, comment-only
 and blank lines dropped so re-indented or re-commented copies are still caught),
 hashes sliding windows of a minimum length, groups identical windows, and
@@ -93,9 +93,9 @@ Establish a green baseline before changing anything:
 
 ```bash
 cd vscode-extension
-npm ci --ignore-scripts
+pnpm install --frozen-lockfile --ignore-scripts
 node_modules/.bin/tsc --noEmit        # type-check
-npm run test:node                     # unit tests
+pnpm run test:node                     # unit tests
 ```
 
 Record which tests cover the target files so you know what to watch.
@@ -146,7 +146,7 @@ of copying.
 ```bash
 cd vscode-extension
 node_modules/.bin/tsc --noEmit        # type-check
-npm run test:node                     # unit tests
+pnpm run test:node                     # unit tests
 node esbuild.js --production          # production bundle
 ```
 
@@ -192,7 +192,7 @@ Open a pull request to `main`. The PR description should:
 ## Related files
 
 - `scripts/check-code-duplication.js` \u2014 the detector this skill drives.
-- `vscode-extension/package.json` \u2014 `npm run check:duplicates` script.
+- `vscode-extension/package.json` \u2014 `pnpm run check:duplicates` script.
 - `.github/workflows/ci.yml` \u2014 the CI step that publishes the "Code
   Duplication Analysis" report to the step summary.
 - `.github/skills/refactor-large-function/SKILL.md` \u2014 the companion skill

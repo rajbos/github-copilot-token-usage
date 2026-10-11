@@ -34,7 +34,7 @@ this skill protects.
 | Role | File | Symbol |
 |------|------|--------|
 | **Canonical view set** (VS Code) | `vscode-extension/esbuild.js` | `entryPoints` keys mapping to `src/webview/<name>/main.ts` |
-| **Built artifacts** | `vscode-extension/dist/webview/<name>.js` | one `.js` per view (produced by `npm run package`) |
+| **Built artifacts** | `vscode-extension/dist/webview/<name>.js` | one `.js` per view (produced by `pnpm run package`) |
 | **Visual Studio host list** | `visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj` | `_WebviewBundle Include="…\dist\webview\<name>.js"` items (`CopyWebviewBundles` target) |
 | **JetBrains host list** | `jetbrains-plugin/build.gradle.kts` | `prepareBundledAssets` → `from(".../dist/webview") { include("<name>.js", …) }` |
 
@@ -88,7 +88,7 @@ Build the bundles first if `dist/webview` is empty (only affects the information
 `dist/webview built` line in the report — list-drift detection works either way):
 
 ```bash
-cd vscode-extension && npm run package
+cd vscode-extension && pnpm run package
 ```
 
 ### Exit codes

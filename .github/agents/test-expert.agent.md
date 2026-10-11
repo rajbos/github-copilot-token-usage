@@ -49,7 +49,7 @@ that exist only to move a coverage number.
   `<module>.test.ts` file exists.
 - Run a single file:
   `node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --test out/vscode-extension/test/unit/<name>.test.js`
-- `npm run test:node` compiles and runs unit tests; `npm run test:coverage` enforces thresholds.
+- `pnpm run test:node` compiles and runs unit tests; `pnpm run test:coverage` enforces thresholds.
 - The repo runs **Stryker mutation testing** — a "survived mutant" mindset is the right lens:
   would a one-character change to the new code be caught by an existing assertion?
 

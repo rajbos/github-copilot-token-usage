@@ -69,8 +69,8 @@ Use the root orchestrator from the repo root:
 
 Individual project builds:
 ```bash
-cd vscode-extension && npm run compile   # VS Code extension
-cd cli && npm run build                   # CLI
+cd vscode-extension && pnpm run compile   # VS Code extension
+cd cli && pnpm run build                   # CLI
 ```
 
 ## Documentation
@@ -98,7 +98,7 @@ AI agents (Claude Code, GitHub Copilot, etc.) must never launch a real, visible 
 
 These steps are documented in places like `.github/instructions/vscode-extension.instructions.md` and `.github/instructions/jetbrains-plugin.instructions.md` **for human developers only**, who can watch the window, click through the UI, and close it when done. An agent has no way to "close" a window it opens and no way to observe it, so these steps are meaningless for automated verification and only cause disruptive side effects.
 
-Instead, verify changes using non-interactive tooling: compile/build scripts (`npm run compile`, `./gradlew build`, `dotnet build`), automated unit test suites (`npm run test:node`, `./gradlew test`, `dotnet test`), and linters/type-checkers. If you are writing or editing a skill, prompt, or instructions file, do not add steps that tell an agent to launch a GUI editor/IDE — mark such steps explicitly as manual/human-only, or omit them entirely from agent-facing docs.
+Instead, verify changes using non-interactive tooling: compile/build scripts (`pnpm run compile`, `./gradlew build`, `dotnet build`), automated unit test suites (`pnpm run test:node`, `./gradlew test`, `dotnet test`), and linters/type-checkers. If you are writing or editing a skill, prompt, or instructions file, do not add steps that tell an agent to launch a GUI editor/IDE — mark such steps explicitly as manual/human-only, or omit them entirely from agent-facing docs.
 
 This also governs `.github/github-app.yml`. Its `code .` script has **no `triggers` entry**, on purpose — that makes it an on-demand action a human clicks in the GitHub App's session UI, not something that fires automatically. **Never attach `triggers: [session.create]` (or any other trigger) to a script that launches an editor/IDE.** `automation.auto_issue_session: true` means sessions can be created unattended (e.g. an issue auto-assigned to Copilot) with nobody there to click anything — a triggered `code .` would pop open a real VS Code window during those unattended sessions too, which is the exact bug this section exists to prevent. Non-GUI setup steps (installing dependencies, compiling) are fine to keep on `session.create` since they have no visible side effect.
 
@@ -274,11 +274,11 @@ scripts and `get_errors` below instead.
 ### What to do instead
 
 1. **Use `npm` scripts for standard operations** (from inside `vscode-extension/`):
-   - `npm run compile` — build the extension bundles
-   - `npm run validate` — type-check + lint + build
-   - `npm run compile-tests` — compile test files to `out/`
-   - `npm run test:node` — compile + run unit tests
-   - `npm run test:coverage` — compile + run tests with coverage thresholds
+   - `pnpm run compile` — build the extension bundles
+   - `pnpm run validate` — type-check + lint + build
+   - `pnpm run compile-tests` — compile test files to `out/`
+   - `pnpm run test:node` — compile + run unit tests
+   - `pnpm run test:coverage` — compile + run tests with coverage thresholds
 
 2. **Use `get_errors` to validate compilation.** After edits, call `get_errors` on the changed files instead of running `tsc` in the terminal.
 
@@ -302,8 +302,8 @@ message handling in `extension.ts`:
 
 ```bash
 cd vscode-extension
-npm run check:contract      # every posted message has a handler on the other side
-npm run check:interaction   # clicks every control in every panel, headlessly
+pnpm run check:contract      # every posted message has a handler on the other side
+pnpm run check:interaction   # clicks every control in every panel, headlessly
 ```
 
 `check:contract` also runs in CI and as a unit test, so a regression fails the

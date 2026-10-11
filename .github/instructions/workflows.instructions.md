@@ -2,19 +2,19 @@
 applyTo: ".github/workflows/**"
 ---
 
-# npm Publishing via OIDC (Trusted Publishing)
+# pnpm Publishing via OIDC (Trusted Publishing)
 
-This repository publishes the CLI package to npm using GitHub Actions OIDC trusted publishing — no `NPM_TOKEN` secret is required.
+This repository publishes the CLI package to npm using GitHub Actions OIDC trusted publishing — no `NPM_TOKEN` secret is required. The CLI uses pnpm as the package manager; publishing is done via `pnpm publish`.
 
 ## Required setup
 
 1. **Job permission:** `id-token: write` must be set on the publish job.
-2. **setup-node:** Use `registry-url: 'https://registry.npmjs.org'` so npm is configured for the registry.
-3. **Publish command:** Always include `--provenance` so npm exchanges the OIDC token automatically:
+2. **setup-node:** Use `registry-url: 'https://registry.npmjs.org'` so pnpm is configured for the registry.
+3. **Publish command:** Always include `--provenance` so the OIDC token is exchanged automatically:
 
 ```yaml
 - name: Publish to npm
-  run: npm publish --provenance --access public
+  run: pnpm publish --provenance --access public
 ```
 
 ## Common mistake to avoid
@@ -23,15 +23,15 @@ Do **not** set `NODE_AUTH_TOKEN` to an empty string:
 
 ```yaml
 # ❌ WRONG — explicitly clears the token and causes ENEEDAUTH
-run: NODE_AUTH_TOKEN="" npm publish
+run: NODE_AUTH_TOKEN="" pnpm publish
 
 # ❌ ALSO WRONG — requires a secret that isn't needed
-run: npm publish
+run: pnpm publish
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 # ✅ CORRECT — OIDC token is exchanged automatically via --provenance
-run: npm publish --provenance --access public
+run: pnpm publish --provenance --access public
 ```
 
 Setting `NODE_AUTH_TOKEN=""` overrides the auth that `setup-node` configures and causes `ENEEDAUTH` failures even though `id-token: write` is set.

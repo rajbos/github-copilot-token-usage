@@ -31,7 +31,7 @@ if (-not $SkipBuild) {
     Write-Host "    Building cli.js (production)..."
     Push-Location $cliRoot
     try {
-        npm run build:production
+        pnpm run build:production
         if ($LASTEXITCODE -ne 0) { throw "esbuild failed" }
     } finally { Pop-Location }
 } else {
@@ -65,7 +65,7 @@ try {
 }
 
 Write-Host "    Injecting SEA blob with postject..."
-& npx --yes postject $exePath NODE_SEA_BLOB $seaBlob `
+& pnpm dlx postject $exePath NODE_SEA_BLOB $seaBlob `
     --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
 if ($LASTEXITCODE -ne 0) { throw "postject injection failed" }
 
