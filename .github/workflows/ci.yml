@@ -144,7 +144,7 @@ jobs:
   # Duplication ratchet (see scripts/code-duplication-baseline.json). Its own
   # job rather than a build step so it also covers the trees the extension
   # build ignores (cli, sharing-server, desktop, release-video). The detector
-  # has no dependencies, so this needs no npm install. Pre-existing clones are
+  # has no dependencies, so this needs no dependency install. Pre-existing clones are
   # tolerated up to the committed baseline (group count and total duplicated
   # lines); the step fails when either grows. Lower the baseline as duplicates
   # are removed. The report goes to the step summary, the gate message to stderr.
