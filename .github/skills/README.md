@@ -263,7 +263,7 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 - `diff-screenshots.js` — per-pixel comparison producing diff images plus `report.md` / `report.json`
 - `lib/harness.js` — rebuilds each panel's HTML shell (`#root`, `window.__INITIAL_*__`, JSON config globals, the real bundle) around a committed fixture, with the `--vscode-*` theme tokens VS Code would normally inject
 - `fixtures/` — one JSON payload per view, using fixed timestamps so unchanged code renders byte-identical screenshots
-- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `.github/copilot-instructions.md` — it renders the real webview bundles instead
+- Deliberately does **not** launch VS Code or the Extension Development Host, per "Never Launch a Real Editor/IDE Instance" in `AGENTS.md` — it renders the real webview bundles instead
 - Requires Playwright + Chromium, found locally or globally rather than added as an extension dependency
 
 ### pr-risk-review

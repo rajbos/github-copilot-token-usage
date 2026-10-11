@@ -155,7 +155,7 @@
       "id": "agent-customizations",
       "label": "Agent customizations",
       "weight": 2,
-      "why": "Agents, skills, and instruction files steer every AI contributor on this repo. `.github/agents` ↔ `.claude/agents` and `.github/skills/*/SKILL.md` ↔ `.claude/skills/*/SKILL.md` must change together (see .github/copilot-instructions.md).",
+      "why": "Agents, skills, and instruction files steer every AI contributor on this repo. `.github/agents` ↔ `.claude/agents` and `.github/skills/*/SKILL.md` ↔ `.claude/skills/*/SKILL.md` must change together (see AGENTS.md).",
       "paths": [
         ".github/agents/**",
         ".claude/agents/**",

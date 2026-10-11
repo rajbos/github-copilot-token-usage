@@ -292,7 +292,7 @@ The project uses **`pnpm-lock.yaml`** for reproducible builds and dependency con
 
 ### Project Structure
 
-- **All extension logic** is in `vscode-extension/src/extension.ts` in the `CopilotTokenTracker` class
+- **Extension entry point and orchestration** are in `vscode-extension/src/extension.ts` (the `CopilotTokenTracker` class); put new logic in separate modules rather than adding to it (see `AGENTS.md`)
 - **Shared code** (session parsing, token estimation, adapters) lives in the repo-root `src/` folder and is consumed by both the VS Code extension and the CLI
 - **Data files** are in JSON format in the repo-root `src/` folder: `tokenEstimators.json`, `modelPricing.json`, `toolNames.json`
 - **Webview code** is in `vscode-extension/src/webview/` organized by feature

@@ -32,7 +32,7 @@ views it expects to change.
 ## Why this exists (and why it does not open VS Code)
 
 The repo forbids agents from launching a real editor window — see
-"Never Launch a Real Editor/IDE Instance" in `.github/copilot-instructions.md`.
+"Never Launch a Real Editor/IDE Instance" in `AGENTS.md`.
 That rules out the Extension Development Host, and with it the existing
 `aiEngineeringFluency.runLocalViewRegression` command, which only a human can
 run and which checks DOM *metrics* (node counts, text length) rather than
