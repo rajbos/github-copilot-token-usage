@@ -232,19 +232,19 @@ Agent Skills are directories containing a `SKILL.md` file and optional supportin
 
 ### sync-host-views
 
-**Purpose**: Keep the Visual Studio and JetBrains webview views (screens) in sync with the VS Code views, while preserving the exact set of views each host ships. New VS Code views are detected and surfaced for a human decision — never auto-added.
+**Purpose**: Keep the Visual Studio, JetBrains and desktop-app webview views (screens) in sync with the VS Code views, while preserving the exact set of views each host ships. New VS Code views are detected and surfaced for a human decision — never auto-added.
 
 **Use this skill when:**
 - After building or updating the VS Code webviews (`vscode-extension/esbuild.js` `entryPoints`)
-- Before a Visual Studio or JetBrains release, to ensure their shipped screens are current
+- Before a Visual Studio, JetBrains or desktop release, to ensure their shipped screens are current
 - When you suspect VS Code added a screen a host is missing
-- After changing the host include lists (`AIEngineeringFluency.csproj`, `jetbrains-plugin/build.gradle.kts`)
+- After changing the host include lists (`AIEngineeringFluency.csproj`, `jetbrains-plugin/build.gradle.kts`, `desktop/esbuild.js` `WEBVIEW_BUNDLES` / `desktop/src/main.ts` `PANEL_MENU`)
 
 **Contents:**
-- `sync-host-views.js` — dependency-free Node.js detector that parses the canonical view set from `esbuild.js` and compares it to the Visual Studio (`csproj`) and JetBrains (`build.gradle.kts`) host include lists. Neither host commits webview bundle content to git — both copy it fresh from `dist/webview` at their own build time — so this only tracks view-LIST drift, not bundle content
-- Classifies each view as tracked / NEW (ask the user) / orphan
+- `sync-host-views.js` — dependency-free Node.js detector that parses the canonical view set from `esbuild.js` and compares it to the Visual Studio (`csproj`), JetBrains (`build.gradle.kts`) and desktop app (`WEBVIEW_BUNDLES` + `PANEL_MENU`) host lists. No host commits webview bundle content to git — each copies it fresh from `dist/webview` at its own build time — so this only tracks view-LIST drift, not bundle content. A desktop view counts as shipped only when it is in both of its lists
+- Classifies each view as tracked / NEW (ask the user) / orphan, plus desktop UNREACHABLE (bundled, not in the menu) / UNBUNDLED (in the menu, not bundled)
 - `--json` for CI
-- Exit codes: `0` in sync · `1` mechanical drift (an ORPHAN) · `2` config error · `3` NEW views (human decision required)
+- Exit codes: `0` in sync · `1` mechanical drift (an ORPHAN, or a desktop UNREACHABLE / UNBUNDLED view) · `2` config error · `3` NEW views (human decision required)
 - Workflow for the ask-before-adding procedure for new screens, including the navigation wiring needed in each host
 
 ### visual-view-diff
