@@ -10,7 +10,7 @@ The CLI (`cli/`) is a standalone command-line tool that **shares the session dis
 
 - **`cli/src/helpers.ts`**: Shared helper functions — session discovery, file processing, stats aggregation. Imports all data access classes from `src/`.
 - **`cli/src/commands/`**: One file per sub-command (`stats`, `usage`, `environmental`, `fluency`, `diagnostics`).
-- **`cli/esbuild.js`**: Build script. Copies JSON data files from `src/` to a temp location before bundling, then removes them.
+- **`cli/esbuild.js`**: Build script (esbuild bundles for the CLI and the `session` library entry). The shared JSON data files are imported straight from `../src` and inlined by esbuild — nothing is copied, and the shared `src/` imports no `vscode`, so no `vscode` alias/stub is needed.
 - **`cli/tsconfig.json`**: `paths` alias points to `../src/*`.
 
 ## Developer Workflow

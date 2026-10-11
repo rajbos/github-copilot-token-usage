@@ -34,6 +34,19 @@ export interface WindsurfHost {
 	isEnabled(): boolean;
 }
 
+/**
+ * Describes an error for the shared Output Channel log without leaking where the user keeps
+ * their data: filesystem errors collapse to their errno code (their messages embed the absolute
+ * path, e.g. /home/alice/.codeium/...), and for anything else the home directory is replaced by
+ * `~` and control characters (log injection) are flattened.
+ */
+export function describeErrorForLog(error: unknown): string {
+	const code = (error as NodeJS.ErrnoException | null | undefined)?.code;
+	if (typeof code === 'string' && /^[A-Z0-9_]+$/.test(code)) { return code; }
+	const message = error instanceof Error ? error.message : String(error);
+	return message.split(os.homedir()).join('~').replace(/[\r\n]+/g, ' ');
+}
+
 const NO_WINDSURF_HOST: WindsurfHost = {
 	getAppName: () => '',
 	getExtension: () => undefined,
@@ -248,7 +261,7 @@ export class WindsurfDataAccess {
 			}
 			return sessions;
 		} catch (error) {
-			this.log(`[Windsurf] Could not read cascade directory: ${error}`);
+			this.log(`[Windsurf] Could not read cascade directory: ${describeErrorForLog(error)}`);
 			return [];
 		}
 	}
@@ -457,7 +470,7 @@ export class WindsurfDataAccess {
 				if (found) { return found; }
 			}
 		} catch (error) {
-			this.log(`[Windsurf] Alternative access failed: ${error}`);
+			this.log(`[Windsurf] Alternative access failed: ${describeErrorForLog(error)}`);
 		}
 		
 		this.log('[Windsurf] All alternative methods failed');
@@ -542,7 +555,7 @@ export class WindsurfDataAccess {
 		} catch (error) {
 			// Remove newlines from the (attacker-influenceable) error message before
 			// logging, so it can't be used to forge extra log lines.
-			this.log(`[Windsurf] Failed to get Cascade trajectories: ${String(error).replace(/\n|\r/g, '')}`);
+			this.log(`[Windsurf] Failed to get Cascade trajectories: ${describeErrorForLog(error)}`);
 			// Clear credentials on error
 			this.credentials = null;
 			return null;
@@ -571,7 +584,7 @@ export class WindsurfDataAccess {
 			// Remove newlines from the (attacker-influenceable) cascadeId/error
 			// message before logging, so they can't be used to forge extra log lines.
 			const safeCascadeId = String(cascadeId).replace(/\n|\r/g, '');
-			const safeError = String(error).replace(/\n|\r/g, '');
+			const safeError = describeErrorForLog(error);
 			this.log(`Failed to get Cascade trajectory steps for ${safeCascadeId}: ${safeError}`);
 			// Clear credentials on error
 			this.credentials = null;
@@ -862,7 +875,7 @@ export class WindsurfDataAccess {
 			this.log(`[Windsurf] === API DISCOVERY COMPLETE — ${sessions.length} sessions ===`);
 			return sessions;
 		} catch (error) {
-			this.log(`[Windsurf] Exception in getWindsurfSessionsV2(): ${error}`);
+			this.log(`[Windsurf] Exception in getWindsurfSessionsV2(): ${describeErrorForLog(error)}`);
 			return [];
 		}
 	}
@@ -993,7 +1006,7 @@ export class WindsurfDataAccess {
 			const response = await this.makeApiCall('GetProcesses', {}, credentials);
 			return { success: true, statusCode: response.statusCode };
 		} catch (error) {
-			return { success: false, error: error instanceof Error ? error.message : String(error) };
+			return { success: false, error: describeErrorForLog(error) };
 		}
 	}
 
@@ -1003,7 +1016,7 @@ export class WindsurfDataAccess {
 			const trajectories = await this.getAllCascadeTrajectories();
 			return { available: !!trajectories, count: trajectories ? Object.keys(trajectories.trajectorySummaries).length : 0 };
 		} catch (error) {
-			return { available: false, error: error instanceof Error ? error.message : String(error) };
+			return { available: false, error: describeErrorForLog(error) };
 		}
 	}
 
@@ -1042,7 +1055,7 @@ export class WindsurfDataAccess {
 
 		diagnostics.sessions = await this.getSessionStats();
 
-		this.log(`[Windsurf] Diagnostics complete: ${JSON.stringify(diagnostics)}`);
+		this.log(`[Windsurf] Diagnostics complete (credentials=${diagnostics.credentials.available}, api=${diagnostics.apiTest.success}, sessions=${diagnostics.sessions.count ?? 'n/a'})`);
 		return diagnostics;
 	}
 }

@@ -14,7 +14,7 @@ import type { IEcosystemAdapter, DiscoveryResult } from '../ecosystemAdapter';
  * streaming worker pool in _preloadSessionFiles from starting on any file,
  * even ones already found by fast adapters.
  */
-function makeFakeAdapter(id: string, files: string[], delayMs: number): IEcosystemAdapter {
+function makeFakeAdapter(id: string, files: string[], delayMs: number, gate?: Promise<void>): IEcosystemAdapter {
 	return {
 		id,
 		displayName: id,
@@ -27,7 +27,8 @@ function makeFakeAdapter(id: string, files: string[], delayMs: number): IEcosyst
 		getMeta: async () => ({ title: undefined, firstInteraction: null, lastInteraction: null }),
 		getEditorRoot: (f: string) => f,
 		discover: async (): Promise<DiscoveryResult> => {
-			await new Promise(resolve => setTimeout(resolve, delayMs));
+			// A gated adapter resolves only when the test says so (no wall-clock race); otherwise it sleeps.
+			await (gate ?? new Promise(resolve => setTimeout(resolve, delayMs)));
 			return { sessionFiles: files, candidatePaths: [] };
 		},
 		getCandidatePaths: () => [],
@@ -35,11 +36,17 @@ function makeFakeAdapter(id: string, files: string[], delayMs: number): IEcosyst
 }
 
 test('SessionDiscovery streams fast adapter batches before a slow adapter resolves', async () => {
-	const batchTimestamps: { source: string; atMs: number }[] = [];
-	const start = Date.now();
+	// Deterministic ordering check (no millisecond budget, so CI load cannot flip it): the slow
+	// adapter is gated on a promise that is only released once the fast batch has been streamed.
+	// If discovery waited for every adapter before calling onBatch, the gate would only open via
+	// the safety timer below and the recorded order would show it.
+	let releaseSlow!: () => void;
+	const slowGate = new Promise<void>(resolve => { releaseSlow = resolve; });
+	const events: string[] = [];
+	const safetyTimer = setTimeout(() => { events.push('safety-release'); releaseSlow(); }, 5000);
 
-	const fastAdapter = makeFakeAdapter('fast', ['/fake/fast/session1.json'], 5);
-	const slowAdapter = makeFakeAdapter('slow-cursor', ['/fake/cursor/session2.json'], 150);
+	const fastAdapter = makeFakeAdapter('fast', ['/fake/fast/session1.json'], 0);
+	const slowAdapter = makeFakeAdapter('slow-cursor', ['/fake/cursor/session2.json'], 0, slowGate);
 
 	const discovery = new SessionDiscovery({
 		log: () => {},
@@ -48,23 +55,23 @@ test('SessionDiscovery streams fast adapter batches before a slow adapter resolv
 		ecosystems: [fastAdapter, slowAdapter],
 	});
 
-	let sawFastBatchBeforeSlowResolved = false;
-	const files = await discovery.getCopilotSessionFilesStreaming((batch) => {
-		const atMs = Date.now() - start;
-		batchTimestamps.push({ source: batch[0], atMs });
-		if (batch[0].includes('fast') && atMs < 100) {
-			sawFastBatchBeforeSlowResolved = true;
-		}
-	});
+	let files: string[];
+	try {
+		files = await discovery.getCopilotSessionFilesStreaming((batch) => {
+			if (batch[0].includes('fast')) {
+				events.push('fast-batch');
+				releaseSlow();
+			} else {
+				events.push('slow-batch');
+			}
+		});
+	} finally {
+		clearTimeout(safetyTimer);
+	}
 
 	assert.equal(files.length, 2);
-	assert.ok(sawFastBatchBeforeSlowResolved,
-		'fast adapter batch should stream in well before the slow adapter\'s 150ms delay elapses');
-	// The fast batch must be observed strictly before the slow one.
-	const fastEntry = batchTimestamps.find(b => b.source.includes('fast'));
-	const slowEntry = batchTimestamps.find(b => b.source.includes('cursor'));
-	assert.ok(fastEntry && slowEntry && fastEntry.atMs < slowEntry.atMs,
-		'fast adapter batch must arrive before slow adapter batch');
+	assert.deepEqual(events, ['fast-batch', 'slow-batch'],
+		'the fast adapter batch must stream in before the slow adapter has resolved');
 });
 
 test('SessionDiscovery still reports adapter errors without blocking other batches', async () => {

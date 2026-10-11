@@ -9,7 +9,8 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { WindsurfDataAccess, type WindsurfHost } from '../windsurf';
+import * as os from 'os';
+import { WindsurfDataAccess, describeErrorForLog, type WindsurfHost } from '../windsurf';
 
 const extUri = { fsPath: '/mock/ext', path: '/mock/ext', scheme: 'file' };
 // Mutable host double: tests flip `appName` to simulate running inside Windsurf / Devin / VS Code.
@@ -278,4 +279,25 @@ test('getFamilyEditorName: labels sessions per their virtual-path scheme', () =>
 test('extractTrajectoryId: strips either windsurf:// or devin:// trajectory prefix', () => {
 	assert.equal(windsurf.extractTrajectoryId('windsurf://trajectory/abc123'), 'abc123');
 	assert.equal(windsurf.extractTrajectoryId('devin://trajectory/abc123'), 'abc123');
+});
+
+// ----- log hygiene: no absolute paths in the shared Output Channel -----
+
+test('describeErrorForLog: errno errors collapse to their code, other messages lose the home directory', () => {
+	const enoent = Object.assign(new Error("ENOENT: no such file or directory, scandir '/home/alice/.codeium/windsurf/cascade'"), { code: 'ENOENT' });
+	assert.equal(describeErrorForLog(enoent), 'ENOENT');
+	assert.equal(describeErrorForLog(new Error(`failed reading ${os.homedir()}/x/y\nsecond line`)), 'failed reading ~/x/y second line');
+	assert.equal(describeErrorForLog('plain string'), 'plain string');
+});
+
+test('getWindsurfCascadeSessionFiles: an unreadable cascade directory is logged by error code, never by path', async () => {
+	const logs: string[] = [];
+	const secretDir = '/definitely/not/here/alice-secret-home/.codeium/windsurf/cascade';
+	class MissingDirWindsurf extends WindsurfDataAccess {
+		getCascadeDir(): string { return secretDir; }
+	}
+	const wd = new MissingDirWindsurf(extUri, (m) => logs.push(m), host);
+	assert.deepEqual(await wd.getWindsurfCascadeSessionFiles(), []);
+	assert.ok(logs.some(l => l.includes('ENOENT')), 'the error code is still logged');
+	assert.ok(!logs.some(l => l.includes('alice-secret-home')), 'the absolute path must not reach the log');
 });
