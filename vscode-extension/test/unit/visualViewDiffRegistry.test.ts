@@ -95,6 +95,16 @@ test('the harness renders light and high-contrast themes with the kind VS Code s
 	assert.throws(() => harness.resolveThemes('sepia'), /Unknown theme/);
 });
 
+test('high-contrast overlays define every themeable token the base themes define', () => {
+	const tokens = (file: string) => new Set(Array.from(fs.readFileSync(path.join(SKILL_DIR, 'lib', file), 'utf8').matchAll(/--vscode-([A-Za-z0-9-]+):/g), (m) => m[1]));
+	const notColours = new Set(['font-family', 'font-size', 'font-weight', 'editor-font-family']);
+	for (const [base, overlay] of [['theme-dark.css', 'theme-hc.css'], ['theme-light.css', 'theme-hc-light.css']]) {
+		const defined = tokens(overlay);
+		const missing = Array.from(tokens(base)).filter((t) => !notColours.has(t) && !defined.has(t));
+		assert.deepEqual(missing, [], `${overlay} inherits Modern-theme values for: ${missing.join(', ')}`);
+	}
+});
+
 test('validateRegistry refuses ids that could escape or collide as file names', () => {
 	for (const bad of ['../etc', 'a/b', 'a.b', 'a--b', '', 'a b', 'a\\b']) {
 		assert.throws(() => config.validateRegistry(registry([{ id: bad }])), new RegExp('view id'), `view id ${JSON.stringify(bad)}`);

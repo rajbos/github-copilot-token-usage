@@ -14,7 +14,8 @@
  *     not in the baseline starts at zero;
  *   - `hardcoded-colors-allowlist.json` lists files and individual literals
  *     that are legitimately fixed (e.g. theme.css, which DEFINES the semantic
- *     palette). Allowlisted colors are not counted at all.
+ *     palette). A color entry may be scoped to CSS properties (`properties`);
+ *     allowlisted colors are not counted at all.
  *
  * Usage:
  *   node scripts/check-hardcoded-colors.mjs                  # check (CI)
@@ -31,7 +32,8 @@ const baselinePath = path.join(scriptDir, 'hardcoded-colors-baseline.json');
 const allowlistPath = path.join(scriptDir, 'hardcoded-colors-allowlist.json');
 const SCAN_ROOT = path.join(extRoot, 'src', 'webview');
 
-const COLOR_LITERAL = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|\b(?:rgba?|hsla?)\(/g;
+// A hex color, or a complete rgb()/rgba()/hsl()/hsla() call (one level of nested parens, e.g. rgba(var(--x), .5)).
+const COLOR_LITERAL = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|\b(?:rgba?|hsla?)\((?:[^()]|\([^()]*\))*\)/g;
 
 function collectCssFiles(dir) {
 	if (!fs.existsSync(dir)) { return []; }
@@ -49,11 +51,31 @@ function stripComments(css) {
 	return css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
 }
 
-/** Returns the color literals in `css` that are not allowlisted, in source order. */
-export function findColors(css, allowedLiterals = []) {
-	const allowed = new Set(allowedLiterals.map((c) => c.toLowerCase()));
-	const hits = stripComments(css).match(COLOR_LITERAL) ?? [];
-	return hits.filter((h) => !allowed.has(h.toLowerCase()));
+const normalize = (literal) => literal.toLowerCase().replace(/\s+/g, '');
+
+/** The CSS property a match at `index` is the value of, e.g. `color` or `background`. */
+function propertyAt(css, index) {
+	const before = css.slice(0, index);
+	const start = Math.max(before.lastIndexOf(';'), before.lastIndexOf('{'), before.lastIndexOf('}')) + 1;
+	const colon = before.indexOf(':', start);
+	return colon === -1 ? '' : before.slice(start, colon).trim().toLowerCase();
+}
+
+/**
+ * Returns the color literals in `css` that are not allowlisted, in source order.
+ * `allowed` maps a normalized literal to the properties it may appear in
+ * (`null` = any property).
+ */
+export function findColors(css, allowed = {}) {
+	const entries = new Map(Object.entries(allowed).map(([literal, props]) => [normalize(literal), props]));
+	const stripped = stripComments(css);
+	const hits = [];
+	for (const m of stripped.matchAll(COLOR_LITERAL)) {
+		const props = entries.get(normalize(m[0]));
+		if (props !== undefined && (props === null || props.includes(propertyAt(stripped, m.index)))) { continue; }
+		hits.push(m[0]);
+	}
+	return hits;
 }
 
 function loadAllowlist() {
@@ -64,12 +86,13 @@ function loadAllowlist() {
 
 export function countColors() {
 	const allowlist = loadAllowlist();
-	const allowedLiterals = Object.keys(allowlist.colors);
+	const allowed = Object.fromEntries(Object.entries(allowlist.colors)
+		.map(([literal, entry]) => [literal, entry.properties ?? null]));
 	const counts = {};
 	for (const file of collectCssFiles(SCAN_ROOT)) {
 		const rel = path.relative(repoRoot, file).split(path.sep).join('/');
 		if (Object.prototype.hasOwnProperty.call(allowlist.files, rel)) { continue; }
-		const n = findColors(fs.readFileSync(file, 'utf8'), allowedLiterals).length;
+		const n = findColors(fs.readFileSync(file, 'utf8'), allowed).length;
 		if (n > 0) { counts[rel] = n; }
 	}
 	return counts;
