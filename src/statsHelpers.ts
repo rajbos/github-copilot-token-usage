@@ -69,7 +69,8 @@ for (const [model, usage] of Object.entries(source)) {
 // Defense in depth: a source built from parsed JSON can carry an own "__proto__"
 // key (e.g. via a computed property) — see protoGuard.ts.
 if (isUnsafeObjectKey(model)) { continue; }
-if (!target[model]) { target[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
+// Own-property check: a model id such as "toString" must not resolve to an inherited member.
+if (!Object.hasOwn(target, model) || !target[model]) { target[model] = { inputTokens: 0, outputTokens: 0, sessions: 0 }; }
 target[model].inputTokens += usage.inputTokens;
 target[model].outputTokens += usage.outputTokens;
 if (usage.cachedReadTokens !== undefined) {

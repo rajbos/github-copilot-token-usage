@@ -12,8 +12,9 @@ import { CliCachePolicy } from '../../src/cachePolicy';
 
 /** Bump this when the SessionData shape changes to force a full re-parse. */
 // 8 (main): SessionData gains copilotNanoAiu (exact Copilot billing).
-// 9-10 (#2316): view attributes — repository, task fallback for empty classifications, editScope.
-const CACHE_VERSION = 11; // Both of the above: entries written as 8, 9 or 10 lack one or the other.
+// 9 (main): Copilot CLI shutdown modelMetrics are cumulative: stop summing them across resume.
+// 10-11 (#2316): view attributes — repository, task fallback for empty classifications, editScope.
+const CACHE_VERSION = 12; // All of the above: entries written as 9, 10 or 11 lack one or the other.
 
 /** Maximum number of entries to keep in the cache file. */
 const MAX_CACHE_ENTRIES = 2000;
