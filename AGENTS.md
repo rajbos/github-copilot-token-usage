@@ -121,7 +121,7 @@ Webview payloads follow the same rule: one function in `src/` builds a payload a
 every host (extension, CLI, desktop) calls it, differing only in how it gathers inputs
 and in host settings. The Chart and Efficiency payloads (table above) do this today;
 the Usage Analysis and Diagnostics payloads are still partly assembled per host and
-are being moved over (#2316, step 4). Never add a host-side copy of a payload builder,
+are being moved over (#2418). Never add a host-side copy of a payload builder,
 and move a payload's assembly to `src/` when you change it — otherwise a field a view
 starts requiring reaches one host and not the others.
 
