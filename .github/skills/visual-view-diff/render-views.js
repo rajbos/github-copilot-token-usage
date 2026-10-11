@@ -47,9 +47,11 @@ const {
 	REPO_ROOT,
 	buildPageHtml,
 	loadFixture,
+	anchorFor,
+	resolveInside,
 } = require('./lib/harness');
-const { loadChromium } = require('./lib/browser');
-const { parseArgs, readConfig, selectViews } = require('./lib/config');
+const { blockNetwork, loadChromium } = require('./lib/browser');
+const { parseArgs, parseThemes, readConfig, selectViews } = require('./lib/config');
 const { applySteps, isShowing } = require('./lib/steps');
 const { parseConcurrency, runPool } = require('./lib/pool');
 
@@ -96,7 +98,14 @@ function renderTargets(view) {
 
 async function renderView({ browser, view, state, theme, outDir, tmpDir, defaults, distDir, repoRoot }) {
 	const id = state ? `${view.id}--${state.id}` : view.id;
-	const bundlePath = path.join(distDir, `${view.bundle}.js`);
+	let bundlePath;
+	try {
+		// The checkout being rendered (the baseline worktree or the working
+		// tree) is the trusted anchor; nothing below it may be a link.
+		bundlePath = resolveInside(distDir, `${view.bundle}.js`, 'bundle', anchorFor(distDir, [repoRoot, REPO_ROOT]));
+	} catch (error) {
+		return { view: view.id, state: state ? state.id : null, theme, status: 'error', error: String(error && error.message || error) };
+	}
 	if (!fs.existsSync(bundlePath)) {
 		return {
 			view: view.id,
@@ -111,8 +120,14 @@ async function renderView({ browser, view, state, theme, outDir, tmpDir, default
 	// A registry from baselineRegistry() pins each view to the fixture directory
 	// of the commit that declared it, so a base view renders with the base
 	// commit's fixture even when the current tree renamed or deleted it.
-	const fixturePath = path.join(view.fixtureDir || path.join(__dirname, 'fixtures'), path.basename(String(view.fixture || '')));
-	if (!view.fixture || !fs.existsSync(fixturePath)) {
+	let fixturePath;
+	try {
+		const fixtureDir = view.fixtureDir || path.join(__dirname, 'fixtures');
+		fixturePath = resolveInside(fixtureDir, view.fixture, 'fixture', anchorFor(fixtureDir, [repoRoot, REPO_ROOT]));
+	} catch (error) {
+		return { view: view.id, state: state ? state.id : null, theme, status: 'error', error: String(error && error.message || error) };
+	}
+	if (!fs.existsSync(fixturePath)) {
 		return { view: view.id, state: state ? state.id : null, theme, status: 'error', missing: true, error: `Missing fixture ${view.fixture}` };
 	}
 
@@ -154,6 +169,7 @@ async function renderView({ browser, view, state, theme, outDir, tmpDir, default
 	page.on('pageerror', (err) => { consoleErrors.push(String(err && err.stack || err)); });
 
 	try {
+		await blockNetwork(page);
 		// `setFixedTime` pins Date/Date.now but leaves timers running, so the
 		// settle waits and Chart.js's own scheduling behave as before.
 		await page.clock.setFixedTime(new Date(FROZEN_NOW));
@@ -244,7 +260,7 @@ async function main() {
 	const distDir = path.resolve(args.dist || path.join(repoRoot, 'vscode-extension', 'dist', 'webview'));
 	const config = readConfig(__dirname, typeof args.config === 'string' ? path.resolve(args.config) : undefined);
 	const views = selectViews(config, args.view);
-	const themes = args.theme === 'both' ? ['dark', 'light'] : [args.theme || 'dark'];
+	const themes = parseThemes(args.theme);
 	const allowMissing = args['allow-missing'] === true;
 	const concurrency = parseConcurrency(args.concurrency);
 
