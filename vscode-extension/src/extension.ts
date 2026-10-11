@@ -1155,6 +1155,9 @@ type SessionsTabPreset = { filter: 'nearContextLimit'; lookback: 'last30' };
 
 class CopilotTokenTracker implements vscode.Disposable {
 	// Cache version - increment this when making changes that require cache invalidation.
+	// v81: Copilot CLI session.shutdown modelMetrics are cumulative across resume, so the latest
+	// shutdown now replaces earlier ones instead of being summed (and dailyActualTokens gets each
+	// shutdown's delta); cached entries for resumed sessions carry double/triple counted tokens and cost.
 	// v79: Copilot CLI exact cost (copilotNanoAiu) is the latest session.usage_checkpoint/shutdown
 	// totalNanoAiu instead of a sum over shutdowns (it is cumulative, so resumed sessions were
 	// counted more than once); an mtime/size hit would keep the summed value until the file changed.
@@ -1179,7 +1182,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// skip re-analysis, so existing entries would lack the metric until their file changed.
 	// v80: Resolve each session's git remote during analysis (adapter metadata, else content
 	// references) so workspace grouping has it on a cold cache; existing entries lack it.
-	private static readonly CACHE_VERSION = 80;
+	private static readonly CACHE_VERSION = 81;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**

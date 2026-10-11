@@ -235,6 +235,16 @@ addModelUsage(target, {});
 assert.deepEqual(target, { 'gpt-4': { inputTokens: 100, outputTokens: 50, sessions: 0} });
 });
 
+test('addModelUsage: a model id named like an Object.prototype member gets its own entry', () => {
+const target: ModelUsage = {};
+const source: ModelUsage = {};
+source['toString'] = { inputTokens: 10, outputTokens: 5, sessions: 0 };
+addModelUsage(target, source);
+assert.ok(Object.hasOwn(target, 'toString'));
+assert.equal(target['toString'].inputTokens, 10);
+assert.equal(target['toString'].outputTokens, 5);
+});
+
 // ── reconcileModelUsageToTotal ──────────────────────────────────────────────
 
 test('reconcileModelUsageToTotal: returns modelUsage unchanged when target totals are zero', () => {
