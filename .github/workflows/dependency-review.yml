@@ -27,8 +27,9 @@ jobs:
         id: review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
-          # sprintf-js has no patched release; transitive dev-only dep of electron-builder (already in main's lockfile)
-          allow-ghsas: GHSA-hp3w-g68c-fv3c
+          # No patched release exists for these; both are transitive dev-only deps already present in main's lockfiles:
+          # sprintf-js (electron-builder), braces 3.0.3 (vsce/stylelint glob chain)
+          allow-ghsas: GHSA-hp3w-g68c-fv3c,GHSA-vfj7-8cjw-p6xm
 
       - name: 'Show why dependency review failed'
         if: failure() && steps.review.outcome == 'failure'
