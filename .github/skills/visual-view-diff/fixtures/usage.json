@@ -1495,6 +1495,79 @@
             "missing": true
           }
         ]
+      },
+      {
+        "subject": "release notes",
+        "fact": "Every user-visible change gets a CHANGELOG entry under Unreleased in the same PR.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "localization",
+        "fact": "New l10n keys need English and zh-CN values plus tests in l10n.test.ts.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          },
+          {
+            "path": "docs/LOCALIZATION.md",
+            "missing": true
+          }
+        ]
+      },
+      {
+        "subject": "cli reuse",
+        "fact": "The CLI calls the shared src/ functions for parsing and cost attribution instead of reimplementing them.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "file size ceiling",
+        "fact": "No linted file may grow past 6000 lines; split it instead.",
+        "files": [
+          {
+            "path": ".github/instructions/vscode-extension.instructions.md"
+          }
+        ]
+      },
+      {
+        "subject": "ide launches",
+        "fact": "Agents must never launch a real editor or IDE window to verify a change.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "visual diff",
+        "fact": "UI changes come with before/after screenshots from npm run visual:diff.",
+        "files": [
+          {
+            "path": "docs/VALIDATION.md",
+            "openable": true
+          }
+        ]
+      },
+      {
+        "subject": "skill mirrors",
+        "fact": "Editing a .github/skills SKILL.md requires the same edit in .claude/skills.",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "openable": true
+          }
+        ]
       }
     ]
   },

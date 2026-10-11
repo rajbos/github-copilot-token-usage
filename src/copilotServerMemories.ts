@@ -601,8 +601,15 @@ function normalizeSubject(subject: string): string {
 	// to the empty string and group entirely unrelated memories into one bogus "subject",
 	// while accented Latin subjects would silently lose characters. Both corrupt
 	// `distinctSubjects` and the promotion ranking that is the whole point of the report.
-	return subject.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+	const key = subject.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+	// A subject of only punctuation or emoji normalizes to nothing. The key is what the promote
+	// button sends and the host looks up, so it must never be empty; `(untitled)` cannot collide
+	// with a real subject's key, which never contains parentheses.
+	return key === '' ? UNTITLED_SUBJECT_KEY : key;
 }
+
+/** Group key for subjects that normalize to nothing (punctuation- or emoji-only). */
+export const UNTITLED_SUBJECT_KEY = '(untitled)';
 
 /** Dependencies {@link analyzeServerMemories} needs, kept injectable so the analysis is pure. */
 export interface ServerMemoryAnalysisDeps {

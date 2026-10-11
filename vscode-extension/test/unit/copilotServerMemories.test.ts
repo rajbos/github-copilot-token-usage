@@ -24,6 +24,7 @@ import {
 	promotionGroupFingerprint,
 	isOpenableCitedDocument,
 	sameRepoSlug,
+	UNTITLED_SUBJECT_KEY,
 	isRelativeInsideRoot,
 	normalizeRepoSlug,
 	analyzeServerMemoriesForCheckout,
@@ -2091,4 +2092,19 @@ test('renderPromotionMarkdown reports the target status even when there is nothi
 	assert.match(renderPromotionMarkdown(analyzeServerMemories(staleOnly, { fileExists: () => false })), /not checked against a local checkout/);
 	assert.match(renderPromotionMarkdown(analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [] }, alwaysExists)), /no stored memories yet[\s\S]*Suggested target:/);
 	assert.match(renderPromotionMarkdown(analyzeServerMemories({ repo: 'o/n', enabled: false, memories: [] }, alwaysExists)), /turned off[\s\S]*Suggested target:/);
+});
+
+test('a subject that normalizes to nothing still gets a stable key and the Ask Copilot action', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [memory({ id: '1', subject: '!!!', citations: ['src/a.ts:1'] }), memory({ id: '2', subject: '🚀', citations: ['src/b.ts:1'] })],
+	}, { fileExists: () => true, promotionTargetStatus: () => 'exists' });
+	const group = analysis.promotionGroups[0];
+	assert.equal(group.subject, UNTITLED_SUBJECT_KEY);
+	assert.equal(analysis.promotionGroups.length, 1, 'both untitled subjects share the one key');
+	const row = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0];
+	assert.equal(row?.subject, UNTITLED_SUBJECT_KEY);
+	assert.ok(row?.prompt && row.fingerprint, 'the row is still offered the action');
+	assert.ok('prompt' in buildPromotionPromptForSubject(analysis, UNTITLED_SUBJECT_KEY, row.fingerprint, () => 'exists'));
 });
