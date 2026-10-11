@@ -82,12 +82,12 @@ jobs:
       # failing; new errors fail the job.
       - name: Lint CLI sources
         working-directory: cli
-        run: npm run lint
+        run: pnpm run lint
 
       # Needs the build above: some tests import the built library from dist/lib.
       - name: Run CLI unit tests
         working-directory: cli
-        run: npm run test:unit
+        run: pnpm run test:unit
 
       - name: Validate CLI --help
         working-directory: cli
