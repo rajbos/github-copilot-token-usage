@@ -87,3 +87,38 @@ test('allowlist matching ignores case and spacing, so uppercase uses of an allow
 	assert.deepEqual(findColors('a { color: #FFF; border-color: RGBA(1, 2, 3, 0.5) }', allowed), []);
 	assert.deepEqual(findColors('a { background: #FFF }', allowed), ['#FFF']);
 });
+
+test('every absolute color function is a hit, including color() and wide-gamut spaces', () => {
+	const cases = {
+		'color(display-p3 1 0 0)': 'a { color: color(display-p3 1 0 0) }',
+		'COLOR(srgb 1 0 0 / .5)': 'a { background: COLOR(srgb 1 0 0 / .5) }',
+		'lab(50 10 10)': 'a { color: lab(50 10 10) }',
+		'lch(50 40 30)': 'a { color: lch(50 40 30) }',
+		'oklab(0.6 0.1 0.1)': 'a { color: oklab(0.6 0.1 0.1) }',
+		'oklch(60% 0.2 30)': 'a { color: oklch(60% 0.2 30) }',
+		'hwb(200 10% 20%)': 'a { color: hwb(200 10% 20%) }',
+		'rgb(1 2 3 / 50%)': 'a { color: rgb(1 2 3 / 50%) }',
+		'hsl(20 30% 40%)': 'a { color: hsl(20 30% 40%) }',
+	};
+	for (const [literal, css] of Object.entries(cases)) { assert.deepEqual(findColors(css), [literal], css); }
+});
+
+test('color-mix() and light-dark() count only for literal operands', () => {
+	assert.deepEqual(findColors('a { color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent) }'), [], 'theme-derived mix');
+	assert.deepEqual(findColors('a { color: color-mix(in srgb, currentColor 20%, var(--x, transparent)) }'), []);
+	assert.deepEqual(findColors('a { color: color-mix(in srgb, #fff 50%, var(--x)) }'), ['#fff']);
+	assert.deepEqual(findColors('a { color: color-mix(in oklch, oklch(60% 0.2 30), rgb(0 0 0)) }'), ['oklch(60% 0.2 30)', 'rgb(0 0 0)']);
+	assert.deepEqual(findColors('a { color: light-dark(#fff, rgb(0 0 0)) }'), ['#fff', 'rgb(0 0 0)']);
+});
+
+test('theme-aware keywords and the color property itself are never hits', () => {
+	const css = 'a { color: currentColor; background: transparent; border-color: inherit; outline-color: var(--c); color: unset; background-color: initial }';
+	assert.deepEqual(findColors(css), []);
+	assert.deepEqual(findColors('a { accent-color: auto; caret-color: currentcolor; my-color(1): 2 }'), []);
+});
+
+test('color() literals can be allowlisted by exact call and property', () => {
+	const allowed = { 'color(srgb 1 0 0)': ['color'] };
+	assert.deepEqual(findColors('a { color: COLOR(srgb 1 0 0) }', allowed), []);
+	assert.deepEqual(findColors('a { background: color(srgb 1 0 0) }', allowed), ['color(srgb 1 0 0)']);
+});
