@@ -143,16 +143,17 @@ Citations are listed live-first (`orderCitationsLiveFirst()`): the existing regu
 files that made the group promotable come before `User input:` or deleted ones, so
 the five-citation cap can never hide the only verifiable source.
 
-The button sends only the group's subject key (`draftServerMemoryPromotion`). The
-memory read is cached for an hour, but the target file can change at any time, so
-the host never trusts a fetch-time answer: every render re-probes the target
-(`withFreshPromotionTarget()`), and the click handler rebuilds the prompt with
-the target probed again at that moment (`buildPromotionPromptForSubject()`). If
-there is no safe target any more, it drafts nothing and says why. The button also
-carries a fingerprint of the row it was rendered from (subject, fact, citations,
-`promotionGroupFingerprint()`), and the host refuses — and re-renders — when the
-current analysis's group no longer matches, so a background refresh cannot swap
-what gets drafted. It likewise refuses when the workspace now resolves to a
+The button sends the group's subject key and a fingerprint of the row it was
+rendered from (subject, fact, citations — `promotionGroupFingerprint()`) as
+`draftServerMemoryPromotion`; never prompt text. Renders do no filesystem checks:
+they show the cached analysis, which a throttled background re-check refreshes at
+most once a minute (see below). The click handler is therefore the authorization
+step: it rebuilds the prompt from the cached analysis and synchronously re-checks
+the target file and the group's live sources at that moment
+(`buildPromotionPromptForSubject()`). It drafts nothing, and says why, when there
+is no safe target any more, the group's last source is gone, or the current
+group's fingerprint no longer matches the clicked row (it then re-renders), so a
+background refresh cannot swap what gets drafted. It likewise refuses when the workspace now resolves to a
 different repository or checkout than the analysis was read for, and when the
 group's last live source was deleted since the analysis (a targeted re-check of
 just that group's cited files).

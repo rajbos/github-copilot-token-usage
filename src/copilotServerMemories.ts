@@ -710,6 +710,30 @@ function orderLiveCitations(representative: ServerMemory, liveMembers: ServerMem
 	return [...own, ...others];
 }
 
+/**
+ * Add a memory's documentation citations to the "already documented" list. One row per id, like
+ * `documentedIds` — but a store that repeats an id can give each record different citations, so
+ * a later record's files are *merged* into the existing row rather than dropped. Otherwise a row
+ * could show only a missing file while a sibling record cites a live one that cannot be opened.
+ */
+function recordDocumented(scan: MemoryScan, memory: ServerMemory, instructionFiles: Set<string>, deps: ServerMemoryAnalysisDeps): void {
+	const isRegularFile = deps.isRegularFile ?? (() => true);
+	const isMissing = (filePath: string) => !deps.fileExists(filePath) || !isRegularFile(filePath);
+	if (!scan.documentedIds.has(memory.id)) {
+		scan.documentedIds.add(memory.id);
+		const files = Array.from(instructionFiles);
+		scan.documented.push({ id: memory.id, subject: memory.subject, fact: memory.fact, instructionFiles: files, missingInstructionFiles: files.filter(isMissing) });
+		return;
+	}
+	const entry = scan.documented.find(candidate => candidate.id === memory.id);
+	if (!entry) { return; }
+	for (const filePath of instructionFiles) {
+		if (entry.instructionFiles.includes(filePath)) { continue; }
+		entry.instructionFiles.push(filePath);
+		if (isMissing(filePath)) { (entry.missingInstructionFiles ??= []).push(filePath); }
+	}
+}
+
 /** Classify every memory once: subject, whether it is documented, code-derived, and stale. */
 function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps): MemoryScan {
 	const scan: MemoryScan = {
@@ -733,14 +757,7 @@ function scanMemories(memories: ServerMemory[], deps: ServerMemoryAnalysisDeps):
 		// none — one citing `User input: ...`, or nothing but an absolute/traversing path — has
 		// no code evidence behind it at all.
 		if (checkable.length > 0) { scan.codeDerivedIds.add(memory.id); }
-		// Keyed by id like documentedIds, so a store repeating an id is listed once.
-		if (instructionFiles.size > 0 && !scan.documentedIds.has(memory.id)) {
-			scan.documentedIds.add(memory.id);
-			const files = Array.from(instructionFiles);
-			const isRegularFile = deps.isRegularFile ?? (() => true);
-			const missingInstructionFiles = files.filter(filePath => !deps.fileExists(filePath) || !isRegularFile(filePath));
-			scan.documented.push({ id: memory.id, subject: memory.subject, fact: memory.fact, instructionFiles: files, missingInstructionFiles });
-		}
+		if (instructionFiles.size > 0) { recordDocumented(scan, memory, instructionFiles, deps); }
 
 		const { missing, livePaths } = probeCitations(checkable, deps);
 		if (livePaths.size > 0) {
@@ -837,9 +854,11 @@ export function analyzeServerMemories(
 /**
  * Analyze a raw memory read against a local checkout, with every filesystem-derived input —
  * citation staleness, regular-file evidence, documentation presence and the promotion target —
- * probed *now*. Hosts cache only the raw `result` (the network read) and call this on each use:
- * the analysis it produces goes stale the moment a cited file is deleted or restored, so it must
- * never outlive the request it was computed for.
+ * probed synchronously. For hosts with no shared event loop: the CLI calls this once per
+ * command. The VS Code extension must not (synchronous probing blocks the extension host; see
+ * `docs/adr/ANALYSIS-WORKER.md`, rule 1): it uses {@link analyzeServerMemoriesForCheckoutAsync},
+ * caches the derived analysis between throttled background re-checks, and re-validates only the
+ * paths a click acts on. Both variants produce the same analysis.
  */
 export function analyzeServerMemoriesForCheckout(result: RepoMemoriesResult, repoRoot: string): ServerMemoriesAnalysis {
 	return analyzeServerMemories(result, {

@@ -1944,3 +1944,22 @@ test('the render path decides "Open file" from the precomputed analysis, with no
 		{ path: 'docs/gone.md', missing: true },
 	]);
 });
+
+test('documented files are merged across records that repeat an id, with missing state per file', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [
+			memory({ id: 'dup', subject: 'build', fact: 'Use build.ps1.', citations: ['docs/gone.md:1'] }),
+			memory({ id: 'dup', subject: 'build', fact: 'Use build.ps1.', citations: ['AGENTS.md:4', 'docs/gone.md:2'] }),
+		],
+	}, { fileExists: p => p !== 'docs/gone.md' });
+	assert.equal(analysis.documentedCount, 1, 'still one row per id');
+	assert.deepEqual(analysis.documentedMemories, [
+		{ id: 'dup', subject: 'build', fact: 'Use build.ps1.', instructionFiles: ['docs/gone.md', 'AGENTS.md'], missingInstructionFiles: ['docs/gone.md'] },
+	]);
+	// The live file from the second record can be opened.
+	const view = toServerMemoriesAnalysisView(analysis, { isOpenable: () => true });
+	assert.deepEqual(view?.documentedMemories?.[0].files, [{ path: 'docs/gone.md', missing: true }, { path: 'AGENTS.md', openable: true }]);
+	assert.equal(isOpenableCitedDocument(analysis, 'AGENTS.md', () => true), true);
+});

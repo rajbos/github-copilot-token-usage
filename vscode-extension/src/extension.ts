@@ -650,22 +650,6 @@ export interface ServerMemoriesRefreshInputs {
 }
 
 /**
- * Decide what a server-memories refresh pass should do, kept pure so the ordering rules can
- * be tested without a workspace, a network or a VS Code host — the same reason
- * {@link isMemoryFilesScanFresh} exists.
- *
- * The ordering is the whole point, and two orderings that look equivalent are not:
- *
- *  - **The repository is resolved before anything else is consulted.** The TTL answers "is
- *    *this repository's* store still fresh?", so checking it first lets a workspace switch
- *    keep showing the previous repository's memories until the hour elapses.
- *  - **A stale repository is cleared even while a fetch is in flight.** Returning early on
- *    the in-flight guard leaves the previous repository's analysis in place, so it keeps
- *    being rendered until that request *and* a later refresh both finish. Whether we may
- *    start a new request is a separate question from whether what we are showing is still
- *    the right repository's.
- */
-/**
  * Whether a server-memory fetch that just settled should be followed by a fresh one. True when
  * the cache was invalidated while it ran (its generation is no longer current): its result was
  * discarded, and the refresh the invalidation triggered was refused because this request was
@@ -709,6 +693,22 @@ export function serverMemoriesDraftContextMatches(
 		&& _sameRepoSlug(current.repo, cached.repo) && current.repoRoot === cached.repoRoot);
 }
 
+/**
+ * Decide what a server-memories refresh pass should do, kept pure so the ordering rules can
+ * be tested without a workspace, a network or a VS Code host — the same reason
+ * {@link isMemoryFilesScanFresh} exists.
+ *
+ * The ordering is the whole point, and two orderings that look equivalent are not:
+ *
+ *  - **The repository is resolved before anything else is consulted.** The TTL answers "is
+ *    *this repository's* store still fresh?", so checking it first lets a workspace switch
+ *    keep showing the previous repository's memories until the hour elapses.
+ *  - **A stale repository is cleared even while a fetch is in flight.** Returning early on
+ *    the in-flight guard leaves the previous repository's analysis in place, so it keeps
+ *    being rendered until that request *and* a later refresh both finish. Whether we may
+ *    start a new request is a separate question from whether what we are showing is still
+ *    the right repository's.
+ */
 export function decideServerMemoriesRefresh(input: ServerMemoriesRefreshInputs): { clearCache: boolean; startFetch: boolean } {
 	// Switching the feature off must hide what was already fetched, not merely stop fetching.
 	if (!input.enabled) { return { clearCache: true, startFetch: false }; }
@@ -7498,9 +7498,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 	private buildServerMemoriesView(): ServerMemoriesAnalysisView | null {
 		this.scheduleServerMemoriesRefresh();
 		const repoRoot = this._serverMemoriesRepoRoot;
-		// Only the network read is cached. Promotion eligibility, live evidence and missing docs are
-		// re-checked in the background (async, yielding); the target is re-probed on every render;
-		// the click handlers re-check the exact paths they act on.
+		// No filesystem checks on this path. The analysis shown is the cached one: eligibility, live
+		// evidence, missing docs and the target are refreshed only by the throttled background
+		// re-check (async, yielding, at most once per SERVER_MEMORIES_RECHECK_MS), so a render
+		// within that window can show a stale state. The click handlers are what re-check the
+		// exact paths they act on, synchronously, before acting.
 		const analysis = this.currentServerMemoriesAnalysis();
 		return _toServerMemoriesAnalysisView(analysis, {
 			// The store is per GitHub repository, not per workspace, so the section names the
@@ -7603,10 +7605,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	/**
-	 * Draft (never submit) the promotion prompt for one server-memory group. The webview sends
-	 * only the subject key; the prompt is rebuilt here with the target file probed right now, so
-	 * a button rendered from a cached analysis cannot aim the agent at a path that has since
-	 * become unsafe. With no safe target any more, nothing is drafted.
+	 * Draft (never submit) the promotion prompt for one server-memory group. The webview sends the
+	 * subject key and the row's fingerprint; the prompt is rebuilt here from the cached analysis,
+	 * with the target file and the group's live sources re-checked synchronously right now. Renders
+	 * do no such check — the cached analysis is only refreshed by the throttled background re-check
+	 * — so this click-time check is the authorization: with no safe target or no surviving source,
+	 * or a row that changed under the user, nothing is drafted.
 	 */
 	private async draftServerMemoryPromotion(subject: string, fingerprint: string): Promise<void> {
 		const analysis = this.currentServerMemoriesAnalysis();
