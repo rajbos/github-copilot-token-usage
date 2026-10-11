@@ -10,12 +10,14 @@
 > `AddWebviewBundlesToVsix` in `AIEngineeringFluency.csproj` from a fresh
 > `vscode-extension/dist/webview`.
 >
-> **Unresolved:** nobody has verified that a Visual Studio `.vsix` built this way actually
-> contains the webview files. CI does **not** check it: `.github/workflows/visualstudio-build.yml`
-> only locates the newest `*.vsix` and uploads it (step "Find .vsix artifact"); it never opens the
-> archive. `ci.yml` checks only that `dist/webview` has the expected files, not the VSIX. The
+> **Unresolved:** nobody has installed a Visual Studio `.vsix` built this way and seen it work.
+> CI now opens the built `.vsix` and asserts every expected webview file is present and non-empty
+> (`scripts/verify-vsix-webview.js`, run by `visualstudio-build.yml`, `visualstudio-publish.yml` and
+> `release.yml`; the first CI run of it caught the `AddWebviewBundlesToVsix` ordering bug, fixed by
+> `DependsOnTargets="CopyWebviewBundles"`). That does not prove the files match `dist/webview` or
+> that the VSIX installs and renders. `ci.yml` checks only that `dist/webview` has the expected files, not the VSIX. The
 > MSBuild reasoning that makes this safe (see "Exactly how the VS host references the files today"
-> below) is inferred from reading the `.csproj`, not executed. A green build can still ship an
+> below) is inferred from reading the `.csproj`, not executed. Before that check existed, a green build could ship an
 > empty `webview/` folder.
 >
 > ### Acceptance criteria (all must be ticked by a human on Windows + Visual Studio 2022 with the VSSDK workload)
@@ -26,7 +28,7 @@
 > - [ ] **Local VSIX contents:** unzip the produced `.vsix`; every file in the `_WebviewBundle` list is present under the `webview` folder, non-empty, and matches the `dist/webview` (or `src/`) source.
 > - [ ] **CI VSIX contents:** repeat the previous two checks on the `.vsix` artifact uploaded by an actual `visualstudio-build.yml` run (scratch branch or `workflow_dispatch`), since that is the path that ships.
 > - [ ] **Installs and renders:** the VSIX installs in Visual Studio and the webview screens render.
-> - [ ] **Follow-up automation (recommended):** add a CI step that unzips the produced `.vsix` and fails when a listed webview file is missing or empty, so this gate stops depending on a human. (Workflow edits need a maintainer; not done here.)
+> - [x] **Follow-up automation:** CI unzips the produced `.vsix` and fails when a listed webview file is missing or empty (`scripts/verify-vsix-webview.js`). This covers presence/non-emptiness only; the human boxes above stay open.
 >
 > Until every box above is ticked, treat any Visual Studio release built from this code as
 > **unverified for webview content**.
@@ -40,6 +42,7 @@
 - `CopyWebviewBundles` fails the build (`Error`) when the `dist/webview` sources are missing.
 - `AddWebviewBundlesToVsix` injects the files as `VSIXSourceItem`s before `GetVsixSourceItems`.
 - `ci.yml` ("Check webview bundles are generated correctly") asserts that `npm run package` produced the expected non-empty files and that a simulated copy keeps them. It does not inspect any `.vsix`.
+- `visualstudio-build.yml`, `visualstudio-publish.yml` and `release.yml` run `scripts/verify-vsix-webview.js` on the built `.vsix` (expected list derived from the `.csproj` and `esbuild.js`). The build workflow also starts MSBuild with an empty `webview/` folder and has a negative-path step for a missing `dist/webview`.
 - The Investigation and Recommendation sections below were written **before** the deletion (2026-09-12): numbers such as line counts, the "6 bundles" and the stale `usage.js` finding describe that moment, not today.
 
 ## Problem Statement

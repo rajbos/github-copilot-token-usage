@@ -7,6 +7,8 @@ on:
       - 'visualstudio-extension/**'
       - 'cli/**'
       - 'src/**'
+      - 'scripts/verify-vsix-webview*.js'
+      - 'vscode-extension/esbuild.js'
       - '.github/workflows/visualstudio-build.yml'
   pull_request:
     branches: [ main, develop ]
@@ -14,6 +16,8 @@ on:
       - 'visualstudio-extension/**'
       - 'cli/**'
       - 'src/**'
+      - 'scripts/verify-vsix-webview*.js'
+      - 'vscode-extension/esbuild.js'
       - '.github/workflows/visualstudio-build.yml'
 
 permissions:
@@ -116,15 +120,19 @@ jobs:
         working-directory: vscode-extension
         run: pnpm run package
 
-      - name: Copy webview bundles to VS extension project
+      # Deliberately NOT copying dist/webview into the project here (the publish
+      # workflow does). The csproj's CopyWebviewBundles/AddWebviewBundlesToVsix
+      # targets must produce the VSIX's webview content from an EMPTY webview/
+      # folder - the "nothing on disk at MSBuild evaluation" case from
+      # docs/adr/VS-WEBVIEW-BUNDLE-SOURCING.md. The VSIX content check below
+      # fails the job if they did not.
+      - name: Ensure webview/ is empty before MSBuild
         shell: pwsh
         run: |
-          $src = "vscode-extension\dist\webview"
           $dst = "visualstudio-extension\src\AIEngineeringFluency\webview"
           if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
-          Copy-Item $src $dst -Recurse -Force
-          Write-Host "✅ Copied webview bundles:"
-          Get-ChildItem $dst -Filter "*.js" | ForEach-Object { Write-Host "   $($_.Name)" }
+          if (-not (Test-Path "vscode-extension\dist\webview")) { throw "vscode-extension/dist/webview was not built" }
+          Write-Host "webview/ is absent; MSBuild must populate it from vscode-extension/dist/webview"
 
       # ── Build Visual Studio extension (MSBuild / VSSDK) ───────────────────
 
@@ -276,6 +284,47 @@ jobs:
           Write-Host "✅ VSIX: $($vsix.FullName) ($sizeMB MB)"
           echo "vsix_path=$($vsix.FullName)" >> $env:GITHUB_OUTPUT
           echo "vsix_name=$($vsix.Name)"     >> $env:GITHUB_OUTPUT
+
+      # ── Inspect the .vsix itself ───────────────────────────────────────────
+      # A green MSBuild does not prove the package contains the webview bundles.
+      # Opens the .vsix (a zip) and asserts every webview file the csproj/esbuild
+      # sources list is present and non-empty.
+
+      - name: Test VSIX content checker
+        run: node --test scripts/verify-vsix-webview.test.js
+
+      - name: Verify .vsix contains the webview bundles
+        if: steps.vsix.outputs.vsix_path != ''
+        shell: pwsh
+        env:
+          VSIX_PATH: ${{ steps.vsix.outputs.vsix_path }}
+        run: node scripts/verify-vsix-webview.js "$env:VSIX_PATH"
+
+      # Negative path: with dist/webview absent, CopyWebviewBundles must fail the
+      # build with its explicit Error instead of silently packaging nothing. Runs
+      # after the VSIX is produced and restores dist/webview afterwards. The
+      # target is invoked on its own, and the assertion is on the specific error
+      # text, not merely a non-zero exit code.
+      - name: Verify missing dist/webview fails the build loudly
+        shell: pwsh
+        run: |
+          $dist = "vscode-extension\dist\webview"
+          $hidden = "vscode-extension\dist\webview.hidden"
+          if (-not (Test-Path $dist)) { throw "$dist missing; cannot run negative test" }
+          Move-Item $dist $hidden
+          try {
+            $out = & msbuild visualstudio-extension\src\AIEngineeringFluency\AIEngineeringFluency.csproj /t:CopyWebviewBundles /p:Configuration=Release /v:minimal 2>&1 | Out-String
+            $code = $LASTEXITCODE
+          } finally {
+            Move-Item $hidden $dist
+          }
+          Write-Host $out
+          if ($code -eq 0) { throw "msbuild succeeded with dist/webview absent; the CopyWebviewBundles Error did not fire" }
+          if ($out -notmatch 'dist/webview bundle\(s\) not found') { throw "msbuild failed, but not with the CopyWebviewBundles missing-bundle error" }
+          Write-Host "✅ Build fails loudly when dist/webview is absent"
+          # msbuild's expected non-zero exit would otherwise become this step's exit code.
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: Upload .vsix as artifact
         if: steps.vsix.outputs.vsix_path != ''
