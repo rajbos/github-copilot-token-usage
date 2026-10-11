@@ -2078,3 +2078,17 @@ test('a refresh that changes only the displayed subject is caught by the row fin
 	assert.deepEqual(buildPromotionPromptForSubject(after, row.subject, row.fingerprint, () => 'exists'), { reason: 'row-changed' });
 	assert.notEqual(serverMemoriesAnalysisSignature(before), serverMemoriesAnalysisSignature(after), 'and the section re-renders');
 });
+
+test('renderPromotionMarkdown reports the target status even when there is nothing to promote', () => {
+	const staleOnly = { repo: 'o/n', enabled: true, memories: [memory({ id: '1', citations: ['src/gone.ts:1'] })] };
+	// Resolved target.
+	assert.match(renderPromotionMarkdown(analyzeServerMemories(staleOnly, { fileExists: () => false, promotionTargetStatus: () => 'absent' })),
+		/_Suggested target: AGENTS\.md \(create it\)\._/);
+	// Rejected target.
+	assert.match(renderPromotionMarkdown(analyzeServerMemories(staleOnly, { fileExists: () => false, promotionTargetStatus: targets({ 'AGENTS.md': 'unsafe' }) })),
+		/_Suggested target: none — AGENTS\.md is not a regular file/);
+	// Not checked (--repo elsewhere), and the empty / disabled stores.
+	assert.match(renderPromotionMarkdown(analyzeServerMemories(staleOnly, { fileExists: () => false })), /not checked against a local checkout/);
+	assert.match(renderPromotionMarkdown(analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [] }, alwaysExists)), /no stored memories yet[\s\S]*Suggested target:/);
+	assert.match(renderPromotionMarkdown(analyzeServerMemories({ repo: 'o/n', enabled: false, memories: [] }, alwaysExists)), /turned off[\s\S]*Suggested target:/);
+});

@@ -1395,16 +1395,19 @@ export function buildPromotionPrompt(
 export function renderPromotionMarkdown(analysis: ServerMemoriesAnalysis, limit: number = VIEW_PROMOTION_GROUP_LIMIT): string {
 	const groups = analysis.promotionGroups.slice(0, limit);
 	if (groups.length === 0) {
+		// Every output reports the target status, including these: the resolved file, "none" when
+		// the probe rejected it, or "not checked" for a repository that is not checked out here.
+		const target = `_Suggested target: ${flattenForMarkdown(describePromotionTarget(analysis))}._\n`;
 		// "Every memory is already documented" is only true when there were memories to begin
 		// with. A disabled repository and an empty store also produce zero groups, and
 		// reporting either as "nothing left to write down" is a flattering lie.
 		if (analysis.enabled === false) {
-			return '_Memory is turned off for this repository, so there is nothing to promote._\n';
+			return `_Memory is turned off for this repository, so there is nothing to promote._\n\n${target}`;
 		}
 		if (analysis.totalMemories === 0) {
-			return '_This repository has no stored memories yet, so there is nothing to promote._\n';
+			return `_This repository has no stored memories yet, so there is nothing to promote._\n\n${target}`;
 		}
-		return `_${describeNoPromotionCandidates(analysis)}_\n`;
+		return `_${describeNoPromotionCandidates(analysis)}_\n\n${target}`;
 	}
 	const lines = [
 		`<!-- Suggested from ${analysis.totalMemories}${analysis.truncated ? '+ (truncated)' : ''} Copilot server memories for ${flattenForMarkdown(analysis.repo)}.`,
