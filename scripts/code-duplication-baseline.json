@@ -1,0 +1,6 @@
+{
+  "_comment": "Ratchet for scripts/check-code-duplication.js --min-lines 14 (the CI invocation). Measured 2026-10-11 over the default include set. Lower these when duplicates are removed; never raise them to admit new copy-paste.",
+  "minLines": 14,
+  "maxGroups": 39,
+  "maxDuplicatedLines": 1820
+}

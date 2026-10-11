@@ -6,7 +6,7 @@ Load token usage data from Azure Table Storage for analysis in chat conversation
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Load data (using Entra ID auth)
 node load-table-data.js \

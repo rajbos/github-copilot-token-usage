@@ -103,7 +103,7 @@ services:
     environment:
       - GITHUB_CLIENT_ID=your_client_id
       - GITHUB_CLIENT_SECRET=your_client_secret
-      - SESSION_SECRET=a_long_random_string_min_32_chars
+      - SESSION_SECRET=${SESSION_SECRET:?Missing SESSION_SECRET}
       - BASE_URL=https://your-server.example.com
       # Optional: restrict to members of a specific GitHub org
       # - ALLOWED_GITHUB_ORG=your-org-name
@@ -115,7 +115,7 @@ volumes:
   sharing_data:
 ```
 
-> **Tip**: Generate `SESSION_SECRET` with `openssl rand -hex 32`.
+> **Tip**: Generate `SESSION_SECRET` with `openssl rand -base64 48` and export it (or put it in `.env`) before `docker compose up`. Never copy a literal value from an example; documented placeholders are rejected in production.
 
 Start the server:
 
@@ -154,7 +154,7 @@ authentication prompt, no API keys. It reuses your existing GitHub session from 
 |---|---|---|---|
 | `GITHUB_CLIENT_ID` | ✅ | — | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | ✅ | — | GitHub OAuth App client secret |
-| `SESSION_SECRET` | ✅ | — | Random secret for signing session cookies (≥ 32 chars) |
+| `SESSION_SECRET` | ✅ | — | Random secret for signing session cookies (≥ 32 chars, no leading/trailing whitespace, not a documented example value). **Required unless `NODE_ENV` is explicitly `development` or `test`**: with an unset or any other `NODE_ENV` (including `production`), startup and `createApp()` fail without a strong secret. Generate one with `openssl rand -base64 48`. Only `development`/`test` may use an insecure dev fallback, with a warning |
 | `BASE_URL` | ✅ | — | Public URL of the server (no trailing slash) |
 | `PORT` | ❌ | `3000` | HTTP listen port |
 | `DB_PATH` | ❌ | `/data/sharing.db` | SQLite database file path |

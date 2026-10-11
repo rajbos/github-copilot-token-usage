@@ -86,7 +86,7 @@ Weigh these over raw line count:
 
 1. **Reversibility.** Can a follow-up PR undo it, or is it already published / already deleted? Irreversible beats large every time.
 2. **Credential and permission surface.** New `permissions:` blocks, new secrets, a widened token scope, a new `pull_request_target` trigger, an unpinned third-party action.
-3. **Silent-failure modes.** A change that produces a *wrong number* rather than an error is riskier than one that crashes. Cost attribution and token estimation are exactly this — see the "CLI Must Reuse Shared Functions" rule in `.github/copilot-instructions.md`.
+3. **Silent-failure modes.** A change that produces a *wrong number* rather than an error is riskier than one that crashes. Cost attribution and token estimation are exactly this — see the "CLI Must Reuse Shared Functions" rule in `AGENTS.md`.
 4. **Fan-out.** `src/` feeds the VS Code extension, the CLI, and through them the Visual Studio and JetBrains hosts. One regression there lands in four products.
 5. **Test coverage of the changed lines.** Load-bearing logic changed with no test touched anywhere is a level up; the same change arriving with tests is not.
 6. **Contract and schema changes.** Anything persisted, published, or read by another tool: stored session data, `toolNames.json` keys, the sharing-server upload schema, extension settings.

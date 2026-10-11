@@ -14,8 +14,9 @@ import { getEcosystemDisplayName } from '../../../src/ecosystemAdapter';
 import type { ModelUsage, SessionFileDetails } from '../../../src/types';
 import { isJsonlContent, isUuidPointerFile, reconstructJsonlStateAsync } from '../../../src/tokenEstimation';
 import { analyzeContextReferences, analyzeRequestContext, getModelUsageFromSession } from '../../../src/usageAnalysis';
-import { extractRepositoryFromContentReferences, getRepoNameFromWorkspacePath } from '../../../src/workspaceHelpers';
-import { findEcosystem, toUsageAnalysisDeps, type SessionAnalyzerDeps } from './sessionFileAnalyzer';
+import { getRepoNameFromWorkspacePath, resolveWorkspaceFolderWithFallback } from '../../../src/workspaceHelpers';
+import { extractWorkspaceRepository, requestContentReferences, toolArgumentPathReferences } from '../../../src/sessionRepository';
+import { findEcosystem, findWorkspacePathForDiscoveredPath, toUsageAnalysisDeps, type SessionAnalyzerDeps } from './sessionFileAnalyzer';
 
 /** The two stat fields the details pass reads; plain data so it survives a worker round trip. */
 export interface SessionStatLike {
@@ -85,14 +86,7 @@ function processToolExecutionEvent(event: any, details: SessionFileDetails, allC
 	if (event.data?.toolName === 'rename_session' && event.data?.arguments?.title) {
 		details.title = event.data.arguments.title;
 	}
-	if (event.data?.arguments) {
-		const args = event.data.arguments as Record<string, unknown>;
-		for (const val of Object.values(args)) {
-			if (typeof val === 'string' && val.length > 3 && (val.includes('/') || val.includes('\\'))) {
-				allContentReferences.push({ kind: 'reference', reference: { fsPath: val } });
-			}
-		}
-	}
+	allContentReferences.push(...toolArgumentPathReferences(event.data?.arguments));
 }
 
 function processCliJsonlEvent(event: any, details: SessionFileDetails, timestamps: number[], allContentReferences: any[]): string | undefined {
@@ -101,12 +95,19 @@ function processCliJsonlEvent(event: any, details: SessionFileDetails, timestamp
 	return undefined;
 }
 
-async function resolveRepository(allContentReferences: any[]): Promise<string> {
-	// '' is a "checked but not found" sentinel so warm-cache runs don't re-parse the file.
-	return allContentReferences.length > 0 ? (await extractRepositoryFromContentReferences(allContentReferences) ?? '') : '';
+/** The workspace folder a file-based session belongs to (workspaceStorage, else a discovering adapter). */
+async function sessionWorkspaceFolder(deps: SessionAnalyzerDeps, sessionFile: string): Promise<string | undefined> {
+	return resolveWorkspaceFolderWithFallback(sessionFile, new Map()) ?? await findWorkspacePathForDiscoveredPath(deps, sessionFile);
 }
 
-async function processDeltaJsonlDetails(lines: string[], stat: SessionStatLike, details: SessionFileDetails, modelUsage: ModelUsage): Promise<SessionDetailsResult> {
+async function resolveRepository(allContentReferences: any[], workspace: string | undefined): Promise<string> {
+	// '' is a "checked but not found" sentinel so warm-cache runs don't re-parse the file.
+	// Same workspace-scoped derivation as the normal analysis (src/sessionRepository.ts), so the
+	// Details pass never overwrites the cached remote with one from a cross-repository reference.
+	return (await extractWorkspaceRepository(allContentReferences, workspace)) ?? '';
+}
+
+async function processDeltaJsonlDetails(lines: string[], stat: SessionStatLike, details: SessionFileDetails, modelUsage: ModelUsage, workspace: string | undefined): Promise<SessionDetailsResult> {
 	const timestamps: number[] = [];
 	const allContentReferences: any[] = [];
 	const { sessionState } = await reconstructJsonlStateAsync(lines);
@@ -119,17 +120,15 @@ async function processDeltaJsonlDetails(lines: string[], stat: SessionStatLike, 
 		if (!request) { continue; }
 		if (request.timestamp) { timestamps.push(request.timestamp); }
 		analyzeRequestContext(request, details.contextReferences);
-		if (request.contentReferences && Array.isArray(request.contentReferences)) {
-			allContentReferences.push(...request.contentReferences);
-		}
+		allContentReferences.push(...requestContentReferences(request));
 	}
 
 	setDetailsTimestamps(details, timestamps, stat);
-	details.repository = await resolveRepository(allContentReferences);
+	details.repository = await resolveRepository(allContentReferences, workspace);
 	return { details, cacheUpdate: { modelUsage } };
 }
 
-async function processCliJsonlDetails(lines: string[], stat: SessionStatLike, details: SessionFileDetails, modelUsage: ModelUsage): Promise<SessionDetailsResult> {
+async function processCliJsonlDetails(lines: string[], stat: SessionStatLike, details: SessionFileDetails, modelUsage: ModelUsage, workspace: string | undefined): Promise<SessionDetailsResult> {
 	const timestamps: number[] = [];
 	const allContentReferences: any[] = [];
 	let firstUserMessage: string | undefined;
@@ -147,11 +146,12 @@ async function processCliJsonlDetails(lines: string[], stat: SessionStatLike, de
 		details.title = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
 	}
 	setDetailsTimestamps(details, timestamps, stat);
-	details.repository = await resolveRepository(allContentReferences);
+	details.repository = await resolveRepository(allContentReferences, workspace);
 	return { details, cacheUpdate: { modelUsage } };
 }
 
 async function processJsonlSessionDetails(deps: SessionAnalyzerDeps, sessionFile: string, stat: SessionStatLike, details: SessionFileDetails, fileContent: string): Promise<SessionDetailsResult> {
+	const workspace = await sessionWorkspaceFolder(deps, sessionFile);
 	const lines = fileContent.trim().split('\n').filter(l => l.trim());
 
 	let isDeltaBased = false;
@@ -166,8 +166,8 @@ async function processJsonlSessionDetails(deps: SessionAnalyzerDeps, sessionFile
 	const modelUsage = await getModelUsageFromSession(toUsageAnalysisDeps(deps), sessionFile, fileContent);
 
 	return isDeltaBased
-		? processDeltaJsonlDetails(lines, stat, details, modelUsage)
-		: processCliJsonlDetails(lines, stat, details, modelUsage);
+		? processDeltaJsonlDetails(lines, stat, details, modelUsage, workspace)
+		: processCliJsonlDetails(lines, stat, details, modelUsage, workspace);
 }
 
 function analyzeRequestMessage(message: any, contextReferences: SessionFileDetails['contextReferences']): void {
@@ -190,11 +190,11 @@ function processJsonRequest(request: any, details: SessionFileDetails, timestamp
 	if (ts) { timestamps.push(new Date(ts).getTime()); }
 	analyzeRequestContext(request, details.contextReferences);
 	analyzeRequestMessage(request.message, details.contextReferences);
-	if (request.contentReferences && Array.isArray(request.contentReferences)) { allContentReferences.push(...request.contentReferences); }
+	allContentReferences.push(...requestContentReferences(request));
 	if (request.variableData) { processRequestVariableData(request.variableData, details.contextReferences); }
 }
 
-async function processJsonRequestsDetails(requests: any[], stat: SessionStatLike, details: SessionFileDetails): Promise<void> {
+async function processJsonRequestsDetails(requests: any[], stat: SessionStatLike, details: SessionFileDetails, workspace: string | undefined): Promise<void> {
 	details.interactions = requests.length;
 	const timestamps: number[] = [];
 	const allContentReferences: any[] = [];
@@ -204,7 +204,7 @@ async function processJsonRequestsDetails(requests: any[], stat: SessionStatLike
 	}
 
 	setDetailsTimestamps(details, timestamps, stat);
-	details.repository = await resolveRepository(allContentReferences);
+	details.repository = await resolveRepository(allContentReferences, workspace);
 }
 
 /**
@@ -236,7 +236,7 @@ export async function computeSessionFileDetails(
 		const sessionContent = JSON.parse(fileContent);
 		if (sessionContent.customTitle) { details.title = sessionContent.customTitle; }
 		if (Array.isArray(sessionContent.requests)) {
-			await processJsonRequestsDetails(sessionContent.requests, stat, details);
+			await processJsonRequestsDetails(sessionContent.requests, stat, details, await sessionWorkspaceFolder(deps, sessionFile));
 		}
 		const modelUsage = await getModelUsageFromSession(toUsageAnalysisDeps(deps), sessionFile, fileContent, sessionContent);
 		return { details, cacheUpdate: { modelUsage } };

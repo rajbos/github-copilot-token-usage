@@ -15,6 +15,8 @@ on:
       - "src/toolNames.json"
       - ".github/scripts/toolnames_utils.py"
       - ".github/scripts/test_toolnames_utils.py"
+      - ".github/scripts/test_sync_toolnames.py"
+      - ".github/scripts/sync_toolnames.py"
       - ".github/workflows/lint-toolnames.yml"
   push:
     branches: [main]
@@ -22,6 +24,8 @@ on:
       - "src/toolNames.json"
       - ".github/scripts/toolnames_utils.py"
       - ".github/scripts/test_toolnames_utils.py"
+      - ".github/scripts/test_sync_toolnames.py"
+      - ".github/scripts/sync_toolnames.py"
       - ".github/workflows/lint-toolnames.yml"
   workflow_dispatch:
 
@@ -51,7 +55,9 @@ jobs:
           fetch-depth: 0
 
       - name: Run toolnames_utils unit tests
-        run: python3 .github/scripts/test_toolnames_utils.py -v
+        run: |
+          python3 .github/scripts/test_toolnames_utils.py -v
+          python3 .github/scripts/test_sync_toolnames.py -v
 
       - name: Check for duplicate-like entries
         id: check

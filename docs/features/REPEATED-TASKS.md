@@ -23,10 +23,24 @@ task is the strongest signal that a workflow has stabilized enough to be capture
    `sessionsScanned` (sessions whose first prompt survives normalization, i.e. excluding the
    prompts listed under "What is excluded"), as `UsageAnalysisStats.repeatedTasks`; the report is undefined when nothing
    repeats. The VS Code extension and the CLI both call this one function.
-4. **Surface**: the webview renders one card per cluster — repetition count, representative (most
-   recent) prompt, shared keywords, and an expandable session list. The
-   `repeated-task-skill-candidate` insight fires when a cluster reaches 3 sessions and links to the
-   section.
+4. **Surface**: the webview (`vscode-extension/src/webview/usage/skillSuggestions.ts`) renders one
+   card per cluster, five per page, largest first — repetition count, representative (most recent)
+   prompt, shared keywords, the skill location the draft would target, and an expandable sessions
+   table (title, date, repository) whose **Open** button opens that session in the log viewer
+   (paged above 10 sessions). The `repeated-task-skill-candidate` insight fires when a cluster
+   reaches 3 sessions and links to the section.
+5. **Create skill with Copilot**: each card drafts a Copilot Chat prompt (agent mode, pre-filled
+   but not submitted) built by the pure `buildSkillCreationPrompt()` in `src/repeatedTasks.ts`, or
+   copies it with **Copy prompt**. The prompt carries the representative prompt, up to three other
+   distinct example prompts (`examplePrompts`, truncated the same way), the shared keywords and the
+   session/repository counts, and asks the agent to check existing skills first and extend one
+   instead of duplicating it. Location rule (`resolveSkillTarget()`): a cluster seen in exactly one
+   repository targets a workspace skill under `.github/skills/<name>/`; several (or no) repositories
+   target a user-level skill under `~/.copilot/skills/<name>/`. When the single repository is not
+   open in VS Code, the card shows the prompt with instructions to open that repository first
+   instead of drafting it into the wrong workspace. User prompt text is collapsed onto one quoted
+   line so it cannot restructure the instructions; it is a draft precisely because it embeds
+   arbitrary user text that the user should review before it runs.
 
 ## What is excluded
 
@@ -53,8 +67,10 @@ task is the strongest signal that a workflow has stabilized enough to be capture
 ## Tests
 
 - `vscode-extension/test/unit/repeatedTasks.test.ts` — normalization, similarity, clustering,
-  ordering, truncation, exclusions, and the shared report builder (`buildRepeatedTaskReport`,
-  `toRepeatedTaskInput`, `repoDisplayName`).
+  ordering, truncation, exclusions, example prompts, the skill location rule, the skill prompt, and
+  the shared report builder (`buildRepeatedTaskReport`, `toRepeatedTaskInput`, `repoDisplayName`).
+- `vscode-extension/test/unit/webview-skillSuggestions.test.ts` — section rendering and escaping,
+  suggestion paging and clamping, the sessions table and its open buttons, and click wiring.
 - `cli/src/test/skillSuggestions.test.ts` — the CLI builds the report from real session files only
   when asked, and `skill-suggestions --json` redacts prompts unless opted in.
 - `vscode-extension/test/unit/insightsEngine.test.ts` — the `repeated-task-skill-candidate`
