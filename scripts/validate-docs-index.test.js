@@ -50,6 +50,25 @@ test('resolveLocalTarget ignores URLs and bare anchors, strips fragments', () =>
   assert.equal(resolveLocalTarget('a.md#top', DIR), f('a.md'));
 });
 
+test('resolveLocalTarget: protocol-relative links are ignored, root-relative resolve against the repo root', () => {
+  const root = path.resolve('/virtual');
+  assert.equal(resolveLocalTarget('//example.com/docs', DIR, root), null);
+  assert.equal(resolveLocalTarget('https://example.com', DIR, root), null);
+  assert.equal(resolveLocalTarget('mailto:a@b.c', DIR, root), null);
+  assert.equal(resolveLocalTarget('#anchor', DIR, root), null);
+  assert.equal(resolveLocalTarget('/docs/x.md#top', DIR, root), path.join(root, 'docs', 'x.md'));
+});
+
+test('checkIndex: root-relative links pass when the file exists and fail when missing; // links are not broken', () => {
+  const root = path.resolve('/virtual');
+  const existing = new Set([path.join(root, 'AGENTS.md')]);
+  const exists = (p) => existing.has(p);
+  const ok = checkIndex('[a](/AGENTS.md) [ext](//example.com/docs)', [f('README.md')], DIR, exists, root);
+  assert.deepEqual(ok, { unlinked: [], broken: [] });
+  const bad = checkIndex('[a](/MISSING.md)', [f('README.md')], DIR, exists, root);
+  assert.deepEqual(bad.broken, ['/MISSING.md']);
+});
+
 test('checkIndex reports unlinked docs and broken links', () => {
   const md = '[a](a.md) [gone](gone.md)';
   const existing = new Set([f('a.md'), f('b.md')]);

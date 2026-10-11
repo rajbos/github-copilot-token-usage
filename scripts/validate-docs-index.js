@@ -53,13 +53,19 @@ function extractLinks(markdown) {
   return links;
 }
 
-/** Turn a link target into a path relative-resolved against `baseDir`, or null if not a local file link. */
-function resolveLocalTarget(target, baseDir) {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('#')) { return null; }
+/**
+ * Turn a link target into an absolute path, or null if it is not a local file link.
+ * - URLs with a scheme (https:, mailto:, ...), protocol-relative `//host/...` and bare `#anchor` targets are ignored.
+ * - Root-relative targets (`/docs/x.md`) resolve against `repoRoot`, as GitHub does, never the machine root.
+ * - Everything else resolves against `baseDir`.
+ */
+function resolveLocalTarget(target, baseDir, repoRoot = REPO_ROOT) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('#') || target.startsWith('//')) { return null; }
   const clean = target.split('#')[0].split('?')[0];
   if (!clean) { return null; }
   let decoded = clean;
   try { decoded = decodeURIComponent(clean); } catch { /* keep raw */ }
+  if (decoded.startsWith('/')) { return path.join(repoRoot, decoded); }
   return path.resolve(baseDir, decoded);
 }
 
@@ -68,14 +74,15 @@ function resolveLocalTarget(target, baseDir) {
  * @param {string[]} docFiles absolute paths of every markdown file that must be indexed
  * @param {string} indexDir directory containing the index file
  * @param {(p: string) => boolean} [exists] injectable existence check (defaults to fs.existsSync)
+ * @param {string} [repoRoot] base for root-relative (`/x.md`) links (defaults to the repository root)
  * @returns {{ unlinked: string[], broken: string[] }} paths relative to `indexDir`, forward-slashed
  */
-function checkIndex(indexMarkdown, docFiles, indexDir, exists = fs.existsSync) {
+function checkIndex(indexMarkdown, docFiles, indexDir, exists = fs.existsSync, repoRoot = REPO_ROOT) {
   const rel = (p) => path.relative(indexDir, p).split(path.sep).join('/');
   const linked = new Set();
   const broken = [];
   for (const target of extractLinks(indexMarkdown)) {
-    const resolved = resolveLocalTarget(target, indexDir);
+    const resolved = resolveLocalTarget(target, indexDir, repoRoot);
     if (!resolved) { continue; }
     if (!exists(resolved)) { broken.push(target); continue; }
     linked.add(resolved);
