@@ -15357,6 +15357,7 @@ ${this.getLoadingHtmlBody(nonce, iconUri.toString(), startedAtMs)}
       hideAutomaticToolCalls: this.getHideAutomaticToolCallsSetting(),
       insights: this.buildCurrentInsights(stats),
       correctionReport: stats.correctionReport ?? null,
+      repeatedTasks: stats.repeatedTasks ?? null,
       curationAnalysis: stats.curationAnalysis ?? null,
       memoryFilesAnalysis: _toMemoryFilesAnalysisView(stats.memoryFilesAnalysis ?? null),
       serverMemoriesAnalysis: this.buildServerMemoriesView(),

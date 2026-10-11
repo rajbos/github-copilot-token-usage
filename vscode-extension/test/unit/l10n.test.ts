@@ -156,6 +156,47 @@ test('l10n: tool × period table strings resolve in English and zh-cn', () => {
 	}
 });
 
+test('l10n: skill suggestion UI strings resolve in English and zh-cn', () => {
+	const translations: Array<[string, string, string]> = [
+		["usage.skillSuggestions.title", "Skill Suggestions ({0})", "技能建议（{0}）"],
+		["usage.skillSuggestions.subtitle", "Tasks you keep prompting for across sessions (first prompt per session, {0} sessions scanned). A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.", "你在多个会话中反复提出的任务（取每个会话的第一条提示，共扫描 {0} 个会话）。重复的任务很适合做成可复用的技能、提示文件或自定义智能体。"],
+		["usage.skillSuggestions.repeated", "{0}× repeated", "重复 {0} 次"],
+		["usage.skillSuggestions.sessions", "Sessions ({0})", "会话（{0}）"],
+		["usage.skillSuggestions.createSkill", "🤖 Create skill with Copilot", "🤖 用 Copilot 创建技能"],
+		["usage.skillSuggestions.createSkillTooltip", "Draft a Copilot Chat prompt that turns this task into a reusable skill. The prompt is not sent until you review it.", "起草一条 Copilot Chat 提示，将此任务做成可复用的技能。提示在你检查之前不会发送。"],
+		["usage.skillSuggestions.copyPrompt", "📋 Copy prompt", "📋 复制提示"],
+		["usage.skillSuggestions.copyPromptTooltip", "Copy the skill prompt to paste into Copilot Chat in another workspace", "复制技能提示，以便粘贴到其他工作区的 Copilot Chat 中"],
+		["usage.skillSuggestions.copied", "✅ Copied!", "✅ 已复制！"],
+		["usage.skillSuggestions.target.workspace", "Target: workspace skill in {0}", "目标：{0} 中的工作区技能"],
+		["usage.skillSuggestions.target.user", "Target: user-level skill (not tied to exactly one repository)", "目标：用户级技能（不只属于一个仓库）"],
+		["usage.skillSuggestions.openRepoFirst", "⚠️ Open \"{0}\" in VS Code first, then paste this prompt into Copilot Chat:", "⚠️ 请先在 VS Code 中打开“{0}”，然后将此提示粘贴到 Copilot Chat："],
+		["usage.skillSuggestions.column.session", "Session", "会话"],
+		["usage.skillSuggestions.column.date", "Date", "日期"],
+		["usage.skillSuggestions.column.repository", "Repository", "仓库"],
+		["usage.skillSuggestions.column.actions", "Actions", "操作"],
+		["usage.skillSuggestions.openSession", "Open", "打开"],
+		["usage.skillSuggestions.openSessionTooltip", "Open this session in the session viewer", "在会话查看器中打开此会话"],
+		["usage.skillSuggestions.sessionsTableLabel", "Sessions for this suggestion", "此建议的会话"],
+		["usage.skillSuggestions.pagerLabel", "Skill suggestion pages", "技能建议分页"],
+	];
+	for (const [key, english] of translations) {
+		assert.equal(t(key), english, key);
+	}
+	assert.equal(t('usage.skillSuggestions.title', 7), 'Skill Suggestions (7)');
+	assert.equal(t('usage.skillSuggestions.repeated', 3), '3× repeated');
+	assert.equal(t('usage.skillSuggestions.openRepoFirst', 'app'), '⚠️ Open "app" in VS Code first, then paste this prompt into Copilot Chat:');
+	mock.setLanguage('zh-cn');
+	try {
+		for (const [key, , chinese] of translations) {
+			assert.equal(t(key), chinese, key);
+		}
+		assert.equal(t('usage.skillSuggestions.title', 7), '技能建议（7）');
+		assert.equal(t('usage.skillSuggestions.repeated', 3), '重复 3 次');
+	} finally {
+		mock.setLanguage('en');
+	}
+});
+
 test('l10n: tool curation UI strings resolve in English and zh-cn', () => {
 	const translations: Array<[string, string, string]> = [
 		['usage.toolCuration.column.server', 'Server', '服务器'],

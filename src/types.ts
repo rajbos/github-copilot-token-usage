@@ -793,6 +793,11 @@ export interface RepeatedTaskCluster {
   sessions: RepeatedTaskSessionRef[];
   /** Tokens shared by every prompt in the cluster (display hint). */
   sharedKeywords: string[];
+  /**
+   * Up to a few other distinct prompts from the cluster, truncated like the
+   * representative prompt. Optional: payloads cached by older builds lack it.
+   */
+  examplePrompts?: string[];
 }
 
 /** Repeated-task candidates across all scanned sessions. */

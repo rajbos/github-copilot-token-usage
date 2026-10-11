@@ -63,6 +63,7 @@ import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './
 import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml } from './serverMemories';
 import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
 import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
+import { buildSkillSuggestionsSectionHtml, sanitizeRepeatedTaskReport, wireSkillSuggestions, type RepeatedTaskReport, type SkillSuggestionsMessage } from './skillSuggestions';
 
 type ModelSwitchingAnalysis = BaseModelSwitchingAnalysis & {
 	minModelsPerSession: number;
@@ -190,31 +191,6 @@ type CorrectionReport = {
 	repos: CorrectionRepoGroup[];
 	counts: CorrectionCounts;
 	sessionsWithMoments: number;
-};
-
-// ── Repeated-task types ─────────────────────────────────────────────────────
-// Mirror the interfaces in src/types.ts (RepeatedTaskReport etc.) — keep in
-// sync manually; the webview bundle cannot import them directly.
-
-type RepeatedTaskSessionRef = {
-	file: string;
-	title?: string | null;
-	lastInteraction?: string | null;
-	repository?: string;
-};
-
-type RepeatedTaskCluster = {
-	representativePrompt: string;
-	sessionCount: number;
-	repositories: string[];
-	sessions: RepeatedTaskSessionRef[];
-	sharedKeywords: string[];
-};
-
-type RepeatedTaskReport = {
-	minClusterSize: number;
-	sessionsScanned: number;
-	clusters: RepeatedTaskCluster[];
 };
 
 type UsageAnalysisStats = {
@@ -441,6 +417,13 @@ let currentMemoryFilesAnalysis: MemoryFilesAnalysisView | null = null;
 // trip — a refresh that omits them must keep showing the last good read rather than blank
 // the section while the next fetch is in flight.
 let currentServerMemoriesAnalysis: ServerMemoriesAnalysisView | null = null;
+// Skill Suggestions read the report on click, so the buttons act on what is rendered.
+let currentRepeatedTasks: RepeatedTaskReport | null = null;
+const skillSuggestionsWiring = {
+	getReport: () => currentRepeatedTasks,
+	getWorkspacePaths: () => currentWorkspacePaths,
+	postMessage: (message: SkillSuggestionsMessage) => vscode.postMessage(message),
+};
 
 type WorktreeResult = {
 	path: string;
@@ -1738,40 +1721,6 @@ function sanitizeCorrectionReport(raw: any): CorrectionReport | null {
 		repos,
 		counts: sanitizeCorrectionCounts(raw.counts),
 		sessionsWithMoments: typeof raw.sessionsWithMoments === 'number' ? raw.sessionsWithMoments : repos.reduce((n: number, g: CorrectionRepoGroup) => n + g.sessionsWithMoments, 0),
-	};
-}
-
-function sanitizeRepeatedTaskCluster(raw: any): RepeatedTaskCluster | null {
-	if (!raw || typeof raw !== 'object') { return null; }
-	if (typeof raw.representativePrompt !== 'string' || typeof raw.sessionCount !== 'number' || !Array.isArray(raw.sessions)) { return null; }
-	const sessions: RepeatedTaskSessionRef[] = raw.sessions
-		.filter((s: any) => s && typeof s === 'object' && typeof s.file === 'string')
-		.map((s: any): RepeatedTaskSessionRef => ({
-			file: s.file,
-			title: typeof s.title === 'string' ? s.title : null,
-			lastInteraction: typeof s.lastInteraction === 'string' ? s.lastInteraction : null,
-			repository: typeof s.repository === 'string' ? s.repository : undefined,
-		}));
-	if (sessions.length === 0) { return null; }
-	return {
-		representativePrompt: raw.representativePrompt,
-		// Derive from the sanitized session list so the UI count can never
-		// disagree with it (and NaN/float counts are impossible).
-		sessionCount: sessions.length,
-		repositories: Array.isArray(raw.repositories) ? raw.repositories.filter((r: unknown) => typeof r === 'string') : [],
-		sessions,
-		sharedKeywords: Array.isArray(raw.sharedKeywords) ? raw.sharedKeywords.filter((k: unknown) => typeof k === 'string') : [],
-	};
-}
-
-function sanitizeRepeatedTaskReport(raw: any): RepeatedTaskReport | null {
-	if (!raw || typeof raw !== 'object' || !Array.isArray(raw.clusters)) { return null; }
-	const clusters = raw.clusters.map(sanitizeRepeatedTaskCluster).filter((c: RepeatedTaskCluster | null): c is RepeatedTaskCluster => c !== null);
-	if (clusters.length === 0) { return null; }
-	return {
-		minClusterSize: typeof raw.minClusterSize === 'number' ? raw.minClusterSize : 2,
-		sessionsScanned: typeof raw.sessionsScanned === 'number' ? raw.sessionsScanned : 0,
-		clusters,
 	};
 }
 
@@ -3372,48 +3321,6 @@ function usageTabStripInput(stats: UsageAnalysisStats): UsageTabStripInput {
 		correctionSessionCount: stats.correctionReport?.sessionsWithMoments ?? 0,
 		readinessButtonHtml: darkFactoryTab.button(activeTab),
 	};
-}
-
-// ── Skill suggestions (repeated tasks) ──────────────────────────────────────
-
-function buildRepeatedTaskSessionLinkHtml(session: RepeatedTaskSessionRef): string {
-	const title = session.title || session.file.split(/[\\/]/).pop() || session.file;
-	const date = session.lastInteraction ? new Date(session.lastInteraction) : null;
-	const dateLabel = date && !isNaN(date.getTime()) ? date.toLocaleDateString() : '';
-	const repo = session.repository ? ` · ${session.repository}` : '';
-	return `<div style="font-size:11px; color:var(--text-secondary); padding:2px 0; overflow-wrap:anywhere;">${escapeHtml(title)}${escapeHtml(dateLabel ? ` · ${dateLabel}` : '')}${escapeHtml(repo)}</div>`;
-}
-
-function buildRepeatedTaskClusterHtml(cluster: RepeatedTaskCluster): string {
-	const keywords = cluster.sharedKeywords.length > 0
-		? `<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;">${cluster.sharedKeywords.map(k => `<span style="font-size:10px; padding:1px 7px; border-radius:8px; background:var(--bg-tertiary); color:var(--text-secondary);">${escapeHtml(k)}</span>`).join('')}</div>`
-		: '';
-	return `
-		<div style="margin-top:10px; padding:12px 14px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border-color, transparent);">
-			<div style="display:flex; align-items:flex-start; gap:10px;">
-				<span style="flex-shrink:0; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(74,222,128,0.15); border:1px solid rgba(74,222,128,0.5); color:var(--text-primary); white-space:nowrap;">${cluster.sessionCount}× repeated</span>
-				<div style="flex:1; min-width:0; font-size:12px; color:var(--text-primary); font-style:italic; overflow-wrap:anywhere;">&ldquo;${escapeHtml(cluster.representativePrompt)}&rdquo;</div>
-			</div>
-			${keywords}
-			<details style="margin-top:8px;">
-				<summary style="font-size:11px; color:var(--text-secondary); cursor:pointer;">Sessions (${cluster.sessions.length})</summary>
-				<div style="margin-top:4px;">${cluster.sessions.map(buildRepeatedTaskSessionLinkHtml).join('')}</div>
-			</details>
-		</div>`;
-}
-
-/** "Skill suggestions" section for the Tools & Integrations tab (empty string when no candidates). */
-function buildSkillSuggestionsSectionHtml(report: RepeatedTaskReport | null): string {
-	if (!report || report.clusters.length === 0) { return ''; }
-	return `
-		<div class="section" id="section-skill-suggestions">
-			<div class="section-title"><span>🧩</span><span>Skill Suggestions</span></div>
-			<div class="section-subtitle">
-				Tasks you keep prompting for across sessions (first prompt per session, ${report.sessionsScanned} sessions scanned).
-				A repeated task is a good candidate for a reusable skill, prompt file, or custom agent.
-			</div>
-			${report.clusters.map(buildRepeatedTaskClusterHtml).join('')}
-		</div>`;
 }
 
 const CORRECTION_TYPE_META: Record<CorrectionMomentType, { label: string; color: string }> = {
@@ -5354,6 +5261,7 @@ function syncRenderLayoutState(stats: UsageAnalysisStats): WorkspaceCustomizatio
 	if (Array.isArray(stats.currentWorkspacePaths)) {
 		currentWorkspacePaths = stats.currentWorkspacePaths;
 	}
+	currentRepeatedTasks = stats.repeatedTasks ?? null;
 	// Persist curation analysis across refreshes — periodic updateStats may omit it
 	if (stats.curationAnalysis) {
 		currentCurationAnalysis = stats.curationAnalysis;
@@ -5422,6 +5330,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	wireMcpPeriodToggle();
 	wireRepositoryButtons();
 	wireCurationButtons();
+	wireSkillSuggestions(skillSuggestionsWiring);
 	renderRepositoryHygienePanels();
 	// Before setupTabs(): its first-visit replay marks new insights as seen when the render opens
 	// on the Insights tab (a deep link can), and that reads currentInsights. Assigned after, the

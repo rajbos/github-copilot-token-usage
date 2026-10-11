@@ -1450,8 +1450,100 @@
   },
   "repeatedTasks": {
     "minClusterSize": 2,
-    "sessionsScanned": 42,
+    "sessionsScanned": 64,
     "clusters": [
+      {
+        "representativePrompt": "Run the linter and fix every warning before I push",
+        "sessionCount": 12,
+        "repositories": [
+          "acme/web-app",
+          "acme/data-tools",
+          "acme/infra"
+        ],
+        "sharedKeywords": [
+          "linter",
+          "warning",
+          "fix"
+        ],
+        "examplePrompts": [
+          "Fix all lint warnings, then run the linter again",
+          "Run lint and fix the warnings it reports"
+        ],
+        "sessions": [
+          {
+            "file": "/sessions/lint-fix-12.jsonl",
+            "title": "Lint cleanup #12",
+            "lastInteraction": "2026-03-14T09:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-11.jsonl",
+            "title": "Lint cleanup #11",
+            "lastInteraction": "2026-03-13T10:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-10.jsonl",
+            "title": "Lint cleanup #10",
+            "lastInteraction": "2026-03-12T11:30:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/lint-fix-9.jsonl",
+            "title": "Lint cleanup #9",
+            "lastInteraction": "2026-03-11T12:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-8.jsonl",
+            "title": "Lint cleanup #8",
+            "lastInteraction": "2026-03-10T13:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-7.jsonl",
+            "title": "Lint cleanup #7",
+            "lastInteraction": "2026-03-09T14:30:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/lint-fix-6.jsonl",
+            "title": "Lint cleanup #6",
+            "lastInteraction": "2026-03-08T15:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-5.jsonl",
+            "title": "Lint cleanup #5",
+            "lastInteraction": "2026-03-07T16:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-4.jsonl",
+            "title": "Lint cleanup #4",
+            "lastInteraction": "2026-03-06T09:30:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/lint-fix-3.jsonl",
+            "title": "Lint cleanup #3",
+            "lastInteraction": "2026-03-05T10:30:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/lint-fix-2.jsonl",
+            "title": "Lint cleanup #2",
+            "lastInteraction": "2026-03-04T11:30:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/lint-fix-1.jsonl",
+            "title": "Lint cleanup #1",
+            "lastInteraction": "2026-03-03T12:30:00.000Z",
+            "repository": "acme/infra"
+          }
+        ]
+      },
       {
         "representativePrompt": "Bump the changelog and tag a release for the web app",
         "sessionCount": 3,
@@ -1482,6 +1574,10 @@
             "lastInteraction": "2026-02-27T09:45:00.000Z",
             "repository": "acme/web-app"
           }
+        ],
+        "examplePrompts": [
+          "Update the changelog and tag the next web app release",
+          "Write the changelog entry, bump the version and tag a release"
         ]
       },
       {
@@ -1507,6 +1603,124 @@
             "title": "Tests for the config parser",
             "lastInteraction": "2026-03-02T10:15:00.000Z",
             "repository": "acme/web-app"
+          }
+        ],
+        "examplePrompts": [
+          "Add unit tests for the config parser helper"
+        ]
+      },
+      {
+        "representativePrompt": "Summarize the open pull requests and what blocks them",
+        "sessionCount": 3,
+        "repositories": [
+          "acme/web-app",
+          "acme/infra"
+        ],
+        "sharedKeywords": [
+          "pull",
+          "requests",
+          "blocks"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-0-0.jsonl",
+            "title": "Summarize session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/extra-0-1.jsonl",
+            "title": "Summarize session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/extra-0-2.jsonl",
+            "title": "Summarize session 3",
+            "lastInteraction": "2026-03-08T12:00:00.000Z",
+            "repository": "acme/web-app"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Explain the failing CI job and propose a fix",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/infra"
+        ],
+        "sharedKeywords": [
+          "failing",
+          "job",
+          "fix"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-1-0.jsonl",
+            "title": "Explain session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/infra"
+          },
+          {
+            "file": "/sessions/extra-1-1.jsonl",
+            "title": "Explain session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/infra"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Draft the weekly status update from merged PRs",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/web-app"
+        ],
+        "sharedKeywords": [
+          "weekly",
+          "status",
+          "merged"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-2-0.jsonl",
+            "title": "Draft session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/web-app"
+          },
+          {
+            "file": "/sessions/extra-2-1.jsonl",
+            "title": "Draft session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/web-app"
+          }
+        ]
+      },
+      {
+        "representativePrompt": "Regenerate the API client from the OpenAPI spec",
+        "sessionCount": 2,
+        "repositories": [
+          "acme/data-tools"
+        ],
+        "sharedKeywords": [
+          "openapi",
+          "client",
+          "regenerate"
+        ],
+        "examplePrompts": [],
+        "sessions": [
+          {
+            "file": "/sessions/extra-3-0.jsonl",
+            "title": "Regenerate session 1",
+            "lastInteraction": "2026-03-10T12:00:00.000Z",
+            "repository": "acme/data-tools"
+          },
+          {
+            "file": "/sessions/extra-3-1.jsonl",
+            "title": "Regenerate session 2",
+            "lastInteraction": "2026-03-09T12:00:00.000Z",
+            "repository": "acme/data-tools"
           }
         ]
       }

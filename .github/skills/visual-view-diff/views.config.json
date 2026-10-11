@@ -114,7 +114,17 @@
             { "click": ".tab-button[data-tab=\"tools\"]" },
             { "click": "#builtin-tools-details > summary" }
           ],
-          "expect": "#data-table-root-builtin"
+          "expect": "#builtin-tools-details[open] #data-table-root-builtin"
+        },
+        {
+          "id": "tools-skill-suggestions-expanded",
+          "title": "Workspace tools with a Skill Suggestions sessions table expanded",
+          "steps": [
+            { "click": ".group-tab[data-group=\"workspace\"]" },
+            { "click": ".tab-button[data-tab=\"tools\"]" },
+            { "click": "#section-skill-suggestions .skill-suggestion-card[data-cluster-index=\"0\"] details > summary" }
+          ],
+          "expect": "#section-skill-suggestions .skill-suggestion-card[data-cluster-index=\"0\"] details[open] #data-table-root-skill-sessions-0"
         },
         {
           "id": "tools-mcp-by-tool",
