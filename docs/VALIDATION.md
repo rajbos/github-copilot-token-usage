@@ -287,7 +287,7 @@ Two things to know about that comment:
   were due and a configured `GH_PAT` could not deliver them (rejected token,
   failed upload): the comment is still posted without images, then the step
   exits non-zero so an expired or under-scoped token is a red check instead of
-  a silent gap. Only an unset `GH_PAT` stays a notice. Dependabot runs skip the
+  a silent gap. Only an unset `GH_PAT` stays a notice, and so does a GitHub API rate limit (the upload is retried once, then the comment is posted without images and a warning is raised). Dependabot runs skip the
   workflow entirely (no secrets and a read-only `GITHUB_TOKEN`, so not even the
   image-free comment can post); their screenshots stay in the artifact.
 - Fork PRs get a read-only token and no secrets, so they only get the artifact.

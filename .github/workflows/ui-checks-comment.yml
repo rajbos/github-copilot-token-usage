@@ -39,7 +39,8 @@ name: UI checks comment
 # the inline images, pointing at the artifact and saying why.
 # Rendering the comment and preparing gh are report-only. The posting step is
 # NOT: it fails the workflow on an API error, or when a configured GH_PAT
-# cannot deliver the images that were due. Only an unset GH_PAT stays non-fatal.
+# cannot deliver the images that were due. Non-fatal: an unset GH_PAT, and a
+# rate-limited upload (retried once, then posted without images with a warning).
 
 on:
   workflow_run:
@@ -325,8 +326,18 @@ jobs:
           # gh's own explanation is the diagnosis (which file, which HTTP
           # status, what the endpoint said); keep it for the annotation so
           # the reason is on the checks page, not buried in the job log.
-          if ! upload_error="$(GH_TOKEN="$GH_ATTACH_TOKEN" gh pr comment "$PR_NUMBER" --repo "$REPO" \
-            --body-file visual-comment/comment.md "${args[@]}" 2>&1 >/dev/null)"; then
+          attach_once() {
+            upload_error="$(GH_TOKEN="$GH_ATTACH_TOKEN" gh pr comment "$PR_NUMBER" --repo "$REPO" \
+              --body-file visual-comment/comment.md "${args[@]}" 2>&1 >/dev/null)"
+          }
+          if ! attach_once; then
+            # The API quota is shared with every other job and agent. A rate
+            # limit says nothing about the token, so wait once and retry.
+            if printf '%s' "$upload_error" | grep -qi 'rate limit'; then
+              echo "::notice::gh pr comment --attach hit the API rate limit; retrying once in 60s."
+              sleep 60
+              attach_once && return 0
+            fi
             printf '%s\n' "$upload_error"
             return 1
           fi
@@ -373,8 +384,15 @@ jobs:
             esac
             # Not "uploading failed": gh uploads and then comments, and either
             # half can be the one that failed; gh's reason says which.
-            echo "::error::gh pr comment --attach failed; posting the comment without inline images. $(cmd_escape "${reason:-gh gave no reason}").${hint}"
-            images_failed=1
+            if printf '%s' "${upload_error:-}" | grep -qi 'rate limit'; then
+              # Transient and shared-quota: the comment still goes out without
+              # images, and the workflow is not failed over it.
+              echo "::warning::gh pr comment --attach was rate limited twice; posting the comment without inline images. $(cmd_escape "${reason:-gh gave no reason}")"
+              hint=" GitHub's API rate limit was exceeded; this is temporary and not a token problem."
+            else
+              echo "::error::gh pr comment --attach failed; posting the comment without inline images. $(cmd_escape "${reason:-gh gave no reason}").${hint}"
+              images_failed=1
+            fi
             why="\`gh pr comment --attach\` failed: \`$(comment_safe "${reason:-gh gave no reason}")\`.${hint}"
           fi
           if [ -n "$why" ]; then
