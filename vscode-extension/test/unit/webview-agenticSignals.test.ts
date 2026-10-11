@@ -124,11 +124,22 @@ test('buildCohortComparisonHtml: not enough data, a zero baseline and a real com
 	assert.match(buildCohortComparisonHtml(activityReport([...withFiles(5), ...without(10)])), /needed 50% fewer corrections per session/);
 });
 
-test('buildCorrectionsRepoSummaryHtml: every repository with turn detail gets a row, none silently dropped', () => {
+test('buildCorrectionsRepoSummaryHtml: every repository with turn detail is in the table, none silently dropped', () => {
 	const repos = Array.from({ length: 20 }, (_, i) => repoRow(`o/r${i}`, { sessions: 30 - i, sessionsWithTurnDetail: 2 }));
 	const html = buildCorrectionsRepoSummaryHtml(activityReport([...repos, repoRow('o/no-detail', { sessions: 1, sessionsWithTurnDetail: 0 })]));
-	for (let i = 0; i < 20; i++) { assert.match(html, new RegExp(`<td>o/r${i}[ <]`), `o/r${i}`); }
+	// The shared table pages at 10 rows; the pager counts every row, so none is hidden.
+	assert.match(html, /of 20\b/, 'the pager must count all 20 repositories');
+	for (let i = 0; i < 10; i++) { assert.ok(html.includes(`o/r${i}`), `o/r${i} on the first page`); }
 	assert.ok(!html.includes('o/no-detail'), 'repositories without turn detail have no rates to show');
+});
+
+test('buildCorrectionsRepoSummaryHtml: renders through the shared data table, sortable by every column', () => {
+	const html = buildCorrectionsRepoSummaryHtml(activityReport([repoRow('o/a', { sessions: 3, sessionsWithTurnDetail: 3 })]));
+	assert.match(html, /data-table-id="corrections-repo-rework"|id="corrections-repo-rework"/, 'the table id the shared component keys its state on');
+	assert.match(html, /class="[^"]*\bdata-table\b/, 'styled by the shared data-table stylesheet');
+	assert.doesNotMatch(html, /customization-matrix|agentic-table/, 'no hand-built table markup');
+	const sortControls = html.match(/data-table-sort=/g) ?? [];
+	assert.equal(sortControls.length, 7, 'every one of the 7 columns must be sortable');
 });
 
 test('buildCorrectionsRepoSummaryHtml: shows the unattributed count when no repository has a row', () => {

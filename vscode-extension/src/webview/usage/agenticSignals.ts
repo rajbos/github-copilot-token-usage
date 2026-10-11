@@ -12,6 +12,7 @@
  */
 import { escapeHtml, formatFixed, formatNumber, formatPercent } from '../shared/formatUtils';
 import { localize, localizeFormat } from '../shared/localization';
+import { renderDataTable, type DataTableColumn } from '../shared/dataTable';
 import {
 	compareInstructionCohorts,
 	computeReworkRates,
@@ -133,20 +134,52 @@ function summaryRows(report: RepoAgentActivityReport): RepoAgentActivity[] {
 	return report.repos.filter(r => r.sessionsWithTurnDetail > 0);
 }
 
-function repoSummaryRowHtml(row: RepoAgentActivity): string {
-	const rates = computeReworkRates(row);
-	const small = row.sessionsWithTurnDetail < MIN_REPO_TURN_DETAIL_SESSIONS
-		? ` <span class="agentic-muted" title="${escapeHtml(localizeFormat('agentic.repoSummary.smallSampleTitle', MIN_REPO_TURN_DETAIL_SESSIONS))}">*</span>`
-		: '';
-	return `<tr>
-		<td>${escapeHtml(row.repository)}${small}</td>
-		<td style="text-align:right;">${formatNumber(row.sessionsWithTurnDetail)} / ${formatNumber(row.sessions)}</td>
-		<td style="text-align:right;">${rateCell(rates.correctionsPerSession)}</td>
-		<td style="text-align:right;">${percentCell(rates.correctedSessionShare)}</td>
-		<td style="text-align:right;">${percentCell(rates.oneShotRate)}</td>
-		<td style="text-align:right;">${rateCell(rates.toolCallsPerEditTurn, 1)}</td>
-		<td style="text-align:right;">${knowledgeCell(row)}</td>
-	</tr>`;
+/** Column header with its explanation as a tooltip, keeping the short label as the accessible name. */
+function tipHeader(labelKey: string, tipKey: string): Pick<DataTableColumn<RepoAgentActivity>, 'label' | 'headerHtml'> {
+	const label = localize(labelKey);
+	return { label, headerHtml: `<span title="${escapeHtml(localize(tipKey))}">${escapeHtml(label)}</span>` };
+}
+
+/** A right-aligned rate column; a rate with no data shows a dash and sorts last. */
+function rateColumn(
+	id: string, labelKey: string, value: (rates: ReturnType<typeof computeReworkRates>) => number | null, format: (v: number | null) => string,
+): DataTableColumn<RepoAgentActivity> {
+	return {
+		id, label: localize(labelKey), align: 'right',
+		sortValue: row => value(computeReworkRates(row)),
+		render: row => ({ html: format(value(computeReworkRates(row))) }),
+	};
+}
+
+/** Built per render, so the labels follow the current locale. */
+function repoSummaryColumns(): DataTableColumn<RepoAgentActivity>[] {
+	return [
+		{
+			id: 'repository', label: localize('agentic.repoSummary.colRepository'), rowHeader: true,
+			sortValue: row => row.repository.toLowerCase(),
+			render: row => {
+				const small = row.sessionsWithTurnDetail < MIN_REPO_TURN_DETAIL_SESSIONS
+					? ` <span class="agentic-muted" title="${escapeHtml(localizeFormat('agentic.repoSummary.smallSampleTitle', MIN_REPO_TURN_DETAIL_SESSIONS))}">*</span>`
+					: '';
+				return { html: `${escapeHtml(row.repository)}${small}` };
+			},
+		},
+		{
+			id: 'sessions', ...tipHeader('agentic.repoSummary.colSessions', 'agentic.repoSummary.colSessionsTitle'), align: 'right',
+			sortValue: row => row.sessionsWithTurnDetail,
+			render: row => `${formatNumber(row.sessionsWithTurnDetail)} / ${formatNumber(row.sessions)}`,
+		},
+		rateColumn('corrections', 'agentic.repoSummary.colCorrections', r => r.correctionsPerSession, v => rateCell(v)),
+		rateColumn('corrected', 'agentic.repoSummary.colCorrected', r => r.correctedSessionShare, percentCell),
+		rateColumn('oneShot', 'agentic.repoSummary.colOneShot', r => r.oneShotRate, percentCell),
+		{ ...rateColumn('churn', 'agentic.repoSummary.colChurn', r => r.toolCallsPerEditTurn, v => rateCell(v, 1)), ...tipHeader('agentic.repoSummary.colChurn', 'agentic.repoSummary.colChurnTitle') },
+		{
+			id: 'knowledge', ...tipHeader('agentic.repoSummary.colKnowledge', 'agentic.repoSummary.colKnowledgeTitle'), align: 'right',
+			// Unknown (not scanned) sorts last; otherwise by instruction-file count.
+			sortValue: row => row.knowledge ? row.knowledge.instructionFiles : null,
+			render: row => ({ html: knowledgeCell(row) }),
+		},
+	];
 }
 
 /** The cohort sentence, or an explanation of why there is none. */
@@ -195,20 +228,12 @@ export function buildCorrectionsRepoSummaryHtml(report: RepoAgentActivityReport 
 	}
 	return `<div class="agentic-repo-summary" id="corrections-repo-summary">
 		${heading}
-		<div class="customization-matrix-container" style="margin-top:8px;">
-			<table class="customization-matrix agentic-table">
-				<thead><tr>
-					<th style="text-align:left;">${escapeHtml(localize('agentic.repoSummary.colRepository'))}</th>
-					<th title="${escapeHtml(localize('agentic.repoSummary.colSessionsTitle'))}">${escapeHtml(localize('agentic.repoSummary.colSessions'))}</th>
-					<th>${escapeHtml(localize('agentic.repoSummary.colCorrections'))}</th>
-					<th>${escapeHtml(localize('agentic.repoSummary.colCorrected'))}</th>
-					<th>${escapeHtml(localize('agentic.repoSummary.colOneShot'))}</th>
-					<th title="${escapeHtml(localize('agentic.repoSummary.colChurnTitle'))}">${escapeHtml(localize('agentic.repoSummary.colChurn'))}</th>
-					<th title="${escapeHtml(localize('agentic.repoSummary.colKnowledgeTitle'))}">${escapeHtml(localize('agentic.repoSummary.colKnowledge'))}</th>
-				</tr></thead>
-				<tbody>${rows.map(repoSummaryRowHtml).join('')}</tbody>
-			</table>
-		</div>
+		<div style="margin-top:8px;">${renderDataTable({
+			tableId: 'corrections-repo-rework',
+			ariaLabel: localize('agentic.repoSummary.title'),
+			rows,
+			columns: repoSummaryColumns(),
+		})}</div>
 		${buildCohortComparisonHtml(report)}
 		${unattributed}
 	</div>`;

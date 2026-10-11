@@ -1775,11 +1775,6 @@ background: var(--bg-tertiary);
 	color: var(--text-primary);
 }
 
-.agentic-table td,
-.agentic-table th {
-	padding: 4px 8px;
-}
-
 .agentic-modes {
 	display: flex;
 	flex-direction: column;
