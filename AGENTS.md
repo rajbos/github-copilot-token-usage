@@ -255,7 +255,7 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 
 ## File-size ceiling (`max-lines`)
 
-`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (currently a warning; the threshold lives in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). Ratchet the threshold down as files shrink; don't raise it to accommodate growth.
+`vscode-extension/eslint.config.mjs` enforces a `max-lines` ceiling (the threshold and severity live in that file) alongside the per-function complexity rules. Small functions alone don't stop a file from becoming unmanageable, so new code should not push any linted file past the ceiling — split instead. Run `cd vscode-extension && pnpm run lint` to see the current offenders; `vscode-extension/src/extension.ts` is by far the largest offender (other large files, such as the usage webview's `main.ts`, may also show up). Ratchet the threshold down as files shrink; don't raise it to accommodate growth.
 
 ### Where the `extension.ts` decomposition stands
 
@@ -264,7 +264,7 @@ When adding or changing runtime localization keys (entries in `vscode-extension/
 - **Already exist** (extraction folds code into them): the shared `src/tokenEstimation.ts` and `src/sessionParser.ts`, and in `vscode-extension/src/` `backend/rollups.ts`, `agentSessionsService.ts`, `cacheManager.ts`, `githubPrService.ts`, `onboarding.ts`, `hookManager.ts`, `extensionPoints.ts`, `viewRegression.ts` and `backend/services/*`.
 - **Not created yet** (the new per-panel UI modules and services the ADR proposes, for example `backend/ui/diagnosticsPanel.ts`, `backend/services/worktreeService.ts`, `statusBarPresenter.ts`): check with `ls` before assuming one is there.
 
-`extension.ts` is still one large `CopilotTokenTracker` class. Do not add new feature logic to it: put it in a new or existing module and call it from there. Do not move existing code out opportunistically either; follow the ADR's extraction order, one PR per cluster.
+`extension.ts` is still one large `CopilotTokenTracker` class. Do not add new feature logic to it: put it in a new or existing module and call it from there. Do not move existing code out opportunistically either; follow the ADR's extraction order and batch sizes: one cluster per PR at most, and a large cluster (such as session parsing) is moved in several small PRs rather than all at once.
 
 ## Pre-PR self-review checklist
 
