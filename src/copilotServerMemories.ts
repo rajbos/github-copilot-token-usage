@@ -835,6 +835,7 @@ export function analyzeServerMemories(
 		truncated: result.truncated === true,
 		totalMemories: memories.length,
 		distinctSubjects: scan.bySubject.size,
+		distinctMemoryIds: new Set(memories.map(memory => memory.id)).size,
 		documentedCount: scan.documentedIds.size,
 		documentedMemories: scan.documented,
 		...resolvePromotionTargetFields(deps.promotionTargetStatus),
@@ -1244,15 +1245,29 @@ export function buildPromotionPromptForSubject(
 	if (promotionGroupFingerprint(group) !== fingerprint) { return { reason: 'row-changed' }; }
 	// A targeted re-check of just this group's evidence (a handful of paths), so a click never
 	// drafts a fact whose last cited file was deleted after the analysis was computed.
-	if (isRegularFile && !(group.liveCitations ?? []).some(citation => {
-		const filePath = citationFilePath(citation);
-		return Boolean(filePath && isSafeRepoRelativePath(filePath) && isRegularFile(filePath));
-	})) {
-		return { reason: 'no-live-source' };
-	}
+	// Re-derive the live subset from *all* the group's citations, not just those live at analysis
+	// time: a source deleted since then must not count, and one restored since then must — and
+	// the rebuilt prompt lists the subset that is live now.
+	const liveNow = isRegularFile ? currentLiveCitations(group, isRegularFile) : group.liveCitations;
+	if (isRegularFile && liveNow?.length === 0) { return { reason: 'no-live-source' }; }
 	const { target, blockedPath } = resolvePromotionTarget(status);
 	if (!target) { return { reason: 'no-safe-target', blockedPath }; }
-	return { prompt: buildPromotionPrompt(analysis.repo, group, target) };
+	return { prompt: buildPromotionPrompt(analysis.repo, { ...group, liveCitations: liveNow }, target) };
+}
+
+/**
+ * The group's citations whose file is a regular file in the checkout *now*: those live at analysis
+ * time first (keeping the representative's own sources in front), then any restored since, sorted.
+ */
+function currentLiveCitations(group: Pick<ServerMemoryPromotionGroup, 'citations' | 'liveCitations'>, isRegularFile: (repoRelativePath: string) => boolean): string[] {
+	const isLive = (citation: string) => {
+		const filePath = citationFilePath(citation);
+		return Boolean(filePath && isSafeRepoRelativePath(filePath) && isRegularFile(filePath));
+	};
+	const previously = (group.liveCitations ?? []).filter(isLive);
+	const previousSet = new Set(group.liveCitations ?? []);
+	const restored = Array.from(new Set(group.citations.filter(c => !previousSet.has(c) && isLive(c)))).sort();
+	return [...previously, ...restored];
 }
 
 /**
@@ -1412,7 +1427,10 @@ export function describePromotionTarget(analysis: Pick<ServerMemoriesAnalysis, '
  * directories — and naming just one of them would misdiagnose the others.
  */
 export function describeNoPromotionCandidates(analysis: ServerMemoriesAnalysis): string {
-	if (analysis.totalMemories > 0 && analysis.documentedCount === analysis.totalMemories) {
+	// `documentedCount` counts distinct ids, so the total it is compared with must too: a store
+	// repeating an id has more records than memories. Older analyses fall back to the record count.
+	const total = analysis.distinctMemoryIds ?? analysis.totalMemories;
+	if (total > 0 && analysis.documentedCount === total) {
 		return 'No promotion candidates: every stored memory already cites an instruction file.';
 	}
 	// Each verb agrees with its own count: "1 cites" / "2 cite".
@@ -1422,9 +1440,9 @@ export function describeNoPromotionCandidates(analysis: ServerMemoriesAnalysis):
 		analysis.fullyStaleCount > 0 ? `${analysis.fullyStaleCount} ${inflect(analysis.fullyStaleCount, 'cites', 'cite')} only files that no longer exist` : '',
 	].filter(Boolean);
 	const breakdown = reasons.length > 0 ? ` (${reasons.join(', ')})` : '';
-	const subject = analysis.totalMemories === 1
+	const subject = total === 1
 		? 'the one stored memory is not'
-		: `none of the ${analysis.totalMemories} stored memories is`;
+		: `none of the ${total} stored memories is`;
 	return `No promotion candidates: ${subject} both undocumented and backed by a file that still exists in this checkout${breakdown}.`;
 }
 

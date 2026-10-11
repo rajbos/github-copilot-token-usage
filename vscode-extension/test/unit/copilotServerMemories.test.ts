@@ -1970,3 +1970,26 @@ test('documented files are merged across records that repeat an id, with missing
 	assert.deepEqual(view?.documentedMemories?.[0].files, [{ path: 'docs/gone.md', missing: true }, { path: 'AGENTS.md', openable: true }]);
 	assert.equal(isOpenableCitedDocument(analysis, 'AGENTS.md', () => true), true);
 });
+
+test('click time re-derives liveness from all citations: a restored source counts and leads the prompt', () => {
+	// At analysis time only src/a.ts is live; src/b.ts is missing.
+	const analysis = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', subject: 's', citations: ['src/a.ts:1', 'src/b.ts:2'] })] },
+		{ fileExists: p => p === 'src/a.ts', promotionTargetStatus: () => 'exists' });
+	const row = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0];
+	assert.ok(row?.subject && row.fingerprint);
+	// Since then a.ts was deleted and b.ts restored: the group still has evidence.
+	const result = buildPromotionPromptForSubject(analysis, row.subject, row.fingerprint, () => 'exists', p => p === 'src/b.ts');
+	assert.ok('prompt' in result, 'a restored source keeps the group draftable');
+	assert.match(result.prompt, /Cited sources: src\/b\.ts:2, src\/a\.ts:1/, 'the source that is live now is listed first');
+});
+
+test('the all-documented explanation compares distinct ids with distinct ids', () => {
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [memory({ id: 'dup', citations: ['AGENTS.md:1'] }), memory({ id: 'dup', citations: ['AGENTS.md:2'] })],
+	}, alwaysExists);
+	assert.equal(analysis.totalMemories, 2);
+	assert.equal(analysis.distinctMemoryIds, 1);
+	assert.equal(describeNoPromotionCandidates(analysis), 'No promotion candidates: every stored memory already cites an instruction file.');
+});

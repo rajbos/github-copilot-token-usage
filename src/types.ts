@@ -1793,6 +1793,11 @@ export interface ServerMemoriesAnalysis {
   truncated: boolean;
   totalMemories: number;
   distinctSubjects: number;
+  /**
+   * Distinct memory ids. The store can repeat an id, so this can be lower than
+   * {@link totalMemories} (a record count); {@link documentedCount} is counted per id, like this.
+   */
+  distinctMemoryIds?: number;
   /** Memories citing an instruction/doc file — already written down somewhere agents read. */
   documentedCount: number;
   /** The memories behind {@link documentedCount}, in store order. */
