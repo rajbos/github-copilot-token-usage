@@ -37,6 +37,23 @@ const copilotTmpDir = path.join(os.homedir(), '.copilot', 'tmp');
  * node:sqlite directly (Node 22+, same runtime the extension ships on). Returns the still-open
  * writer connection so callers can insert rows that stay pending in the `-wal` file.
  */
+/** Wraps `access.initSqlJs` so every sql.js Database the fallback backend builds is counted. */
+function installDbConstructionCounter(access: CursorDataAccess): { constructions: number } {
+	const counter = { constructions: 0 };
+	const realInitSqlJs = access.initSqlJs.bind(access);
+	access.initSqlJs = async () => {
+		const SQL = await realInitSqlJs();
+		const RealDatabase = SQL.Database;
+		function CountingDatabase(this: unknown, ...args: unknown[]) {
+			counter.constructions++;
+			return new (RealDatabase as unknown as new (...a: unknown[]) => unknown)(...args);
+		}
+		CountingDatabase.prototype = RealDatabase.prototype;
+		return { ...SQL, Database: CountingDatabase as unknown as typeof SQL.Database };
+	};
+	return counter;
+}
+
 function createCursorDbFixture() {
 	const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cursor-fixture-'));
@@ -316,18 +333,7 @@ test('the sql.js fallback backend caches a parsed Database per db path instead o
 		// through the sql.js fallback.
 		(access as unknown as { getNodeSqliteModule: () => null }).getNodeSqliteModule = () => null;
 
-		let dbConstructions = 0;
-		const realInitSqlJs = access.initSqlJs.bind(access);
-		access.initSqlJs = async () => {
-			const SQL = await realInitSqlJs();
-			const RealDatabase = SQL.Database;
-			function CountingDatabase(this: unknown, ...args: unknown[]) {
-				dbConstructions++;
-				return new (RealDatabase as unknown as new (...a: unknown[]) => unknown)(...args);
-			}
-			CountingDatabase.prototype = RealDatabase.prototype;
-			return { ...SQL, Database: CountingDatabase as unknown as typeof SQL.Database };
-		};
+		const dbCounter = installDbConstructionCounter(access);
 
 		// Sequential (NOT concurrent) reads across distinct composers — deliberately not batched
 		// via Promise.all, so this can only be served by the per-db-path Database cache and not by
@@ -340,14 +346,14 @@ test('the sql.js fallback backend caches a parsed Database per db path instead o
 		}
 
 		assert.equal(
-			dbConstructions, 1,
+			dbCounter.constructions, 1,
 			'one sql.js Database load should serve every composer in this db path, not one reload per composer'
 		);
 
 		// A later, separate read of the SAME composer (composer cache still valid — file unchanged)
 		// should also reuse it.
 		await access.readComposerData(`${fixture.dbPath}#${composerIds[0]}`);
-		assert.equal(dbConstructions, 1, 'a cache-valid follow-up read should not reload the db either');
+		assert.equal(dbCounter.constructions, 1, 'a cache-valid follow-up read should not reload the db either');
 	} finally {
 		fixture.cleanup();
 	}
@@ -451,23 +457,12 @@ test('the sql.js fallback reuses the parsed Database across a throttled read ins
 		// through the sql.js fallback and its per-db-path Database cache (getSqlJsDb).
 		(access as unknown as { getNodeSqliteModule: () => null }).getNodeSqliteModule = () => null;
 
-		let dbConstructions = 0;
-		const realInitSqlJs = access.initSqlJs.bind(access);
-		access.initSqlJs = async () => {
-			const SQL = await realInitSqlJs();
-			const RealDatabase = SQL.Database;
-			function CountingDatabase(this: unknown, ...args: unknown[]) {
-				dbConstructions++;
-				return new (RealDatabase as unknown as new (...a: unknown[]) => unknown)(...args);
-			}
-			CountingDatabase.prototype = RealDatabase.prototype;
-			return { ...SQL, Database: CountingDatabase as unknown as typeof SQL.Database };
-		};
+		const dbCounter = installDbConstructionCounter(access);
 
 		const virtualPath = `${fixture.dbPath}#${composerId}`;
 		const first = await access.readComposerData(virtualPath);
 		assert.equal(first?.name, 'v1');
-		assert.equal(dbConstructions, 1, 'the first read parses the db once');
+		assert.equal(dbCounter.constructions, 1, 'the first read parses the db once');
 
 		// Touch the live WAL (grows it, changing its mtime/size) WITHOUT letting sqliteWal's own
 		// merge throttle window lapse, and clear the per-composer cache so this call is forced back
@@ -484,7 +479,7 @@ test('the sql.js fallback reuses the parsed Database across a throttled read ins
 		const second = await access.readComposerData(virtualPath);
 		assert.equal(second?.name, 'v1', 'still the same data — the throttled read served the original, unchanged buffer');
 		assert.equal(
-			dbConstructions, 1,
+			dbCounter.constructions, 1,
 			'a throttled read reporting the SAME fingerprint as before must reuse the already-parsed Database, not reparse it'
 		);
 	} finally {
