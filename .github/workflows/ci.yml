@@ -10,9 +10,11 @@ permissions:
   contents: read
 
 jobs:
-  # Path gate. Everything in this workflow builds, tests or renders the VS Code
-  # extension, so a PR touching only docs/, sharing-server/, jetbrains-plugin/,
+  # Path gate. Most of this workflow builds, tests or renders the VS Code
+  # extension, so a PR touching only docs/, jetbrains-plugin/,
   # visualstudio-extension/, omp-segment/ or assets/ has nothing here to run.
+  # The exceptions are the cheap guards that look across projects (test-coverage
+  # companion check, duplication ratchet); each has its own predicate below.
   # Filtering in a gate job rather than with a `paths:` trigger keeps the gated
   # jobs reporting a (skipped) result, so they can stay required status checks -
   # a `paths:` trigger would leave those PRs waiting on checks that never
@@ -20,12 +22,14 @@ jobs:
   check-changes:
     runs-on: ubuntu-latest
     outputs:
-      # Two predicates, one runner slot. The expensive jobs (build, ui-checks)
-      # only care about the extension and its shared sources; the cheap
-      # coverage guard additionally has to see cli/src, which the extension
-      # build does not depend on at all. Gating both on one flag made a
-      # CLI-only source change schedule the full extension build and the
-      # Playwright suite for nothing.
+      # Three predicates, one runner slot. The expensive jobs (build, ui-checks)
+      # only care about the extension and its shared sources. The cheap guards
+      # see wider trees the extension build does not depend on: the coverage
+      # guard also needs cli/src, and the duplication ratchet needs cli/src,
+      # sharing-server/src, desktop/src and release-video/src. Gating them all
+      # on one flag made a CLI-, sharing-server-, desktop- or release-video-only
+      # change schedule the full extension build and the Playwright suite for
+      # nothing.
       ci-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.ci-relevant == 'true' }}
       coverage-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.coverage-relevant == 'true' }}
       duplication-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.duplication-relevant == 'true' }}

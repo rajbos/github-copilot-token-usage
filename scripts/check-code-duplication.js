@@ -89,7 +89,7 @@ function parseArgs(argv) {
 
 const USAGE = `Usage: check-code-duplication.js [options]
   --min-lines N        Minimum lines per duplicate block (default ${MIN_LINES_DEFAULT})
-  --include GLOB       Add a source glob (repeatable; default: the three source dirs)
+  --include GLOB       Add a source glob (repeatable; default: the six source trees in DEFAULT_INCLUDES)
   --json               Emit JSON instead of Markdown
   --fail-threshold N   Exit 1 when total duplicated lines > N (default: report only)
   --max-groups N       Exit 1 when the number of duplicate groups > N
