@@ -74,3 +74,26 @@ test('addSessionEfficiencyToDailyStats puts counters on the session\'s own last 
 	assert.equal(map.get('2026-05-01')!.modelEfficiency?.['gpt-4o'].editTurns, 2);
 	assert.equal(map.get('2026-05-03')!.modelEfficiency?.['gpt-4o']?.editTurns ?? 0, 0, 'a day this session had no share of must not get its counters');
 });
+
+test('addSessionEfficiencyToDailyStats gives a model named like an inherited member its own entry', () => {
+	// A model id such as "toString" must not resolve to Object.prototype.toString, which would be
+	// mutated with counter fields while the model vanished from the Efficiency payload.
+	const map = new Map<string, DailyTokenStats>();
+	const session = {
+		editorType: 'toString',
+		tokens: 100, interactions: 1,
+		modelUsage: { toString: { inputTokens: 80, outputTokens: 20, sessions: 0 } },
+		dailyFractions: { '2026-05-01': 1 },
+		usageAnalysis: { modelEfficiency: { toString: counters() } },
+	};
+	addSessionToDailyStats(map, session);
+	addSessionEfficiencyToDailyStats(map, session, {});
+	const day = map.get('2026-05-01')!;
+	assert.equal(Object.hasOwn(day.modelEfficiency!, 'toString'), true);
+	assert.equal(day.modelEfficiency!['toString' as string].inputTokens, 80);
+	assert.equal(day.modelEfficiency!['toString' as string].editTurns, 2);
+	assert.equal(Object.hasOwn(day.editorModelEfficiency!, 'toString'), true, 'the per-editor slice too');
+	const proto = Object.prototype.toString as unknown as Record<string, unknown>;
+	assert.equal(proto.inputTokens, undefined);
+	assert.equal(proto.editTurns, undefined);
+});

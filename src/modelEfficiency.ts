@@ -284,7 +284,8 @@ export function createEmptyDailyModelEfficiencyEntry(): DailyModelEfficiencyEntr
  */
 function ensureDailyEntry(target: DailyModelEfficiency, model: string): DailyModelEfficiencyEntry | null {
 	if (isUnsafeObjectKey(model)) { return null; }
-	if (!target[model]) { target[model] = createEmptyDailyModelEfficiencyEntry(); }
+	// Own-property check: a model id such as "toString" must not resolve to an inherited member.
+	if (!Object.hasOwn(target, model) || !target[model]) { target[model] = createEmptyDailyModelEfficiencyEntry(); }
 	return target[model];
 }
 
@@ -639,7 +640,7 @@ export function computeLongTailModels(usage: ModelEfficiencyUsage): Set<string> 
 function getOrCreateEditorSlice(entry: DailyTokenStats, editor: string): DailyModelEfficiency {
 	if (!entry.modelEfficiency) { entry.modelEfficiency = {}; }
 	if (!entry.editorModelEfficiency) { entry.editorModelEfficiency = {}; }
-	if (!entry.editorModelEfficiency[editor]) { entry.editorModelEfficiency[editor] = {}; }
+	if (!Object.hasOwn(entry.editorModelEfficiency, editor) || !entry.editorModelEfficiency[editor]) { entry.editorModelEfficiency[editor] = {}; }
 	return entry.editorModelEfficiency[editor];
 }
 
