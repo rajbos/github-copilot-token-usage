@@ -38,15 +38,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.2.2'
+
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
-          cache: 'npm'
+          cache: 'pnpm'
           cache-dependency-path: |
-            vscode-extension/package-lock.json
-            cli/package-lock.json
-            desktop/package-lock.json
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
 
       - name: Read version
         id: version
@@ -62,15 +67,15 @@ jobs:
       # CLI's stats logic from source, so all three packages need dependencies.
       - name: Install extension dependencies
         working-directory: vscode-extension
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install CLI dependencies
         working-directory: cli
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install desktop dependencies
         working-directory: desktop
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       # Build the extension explicitly in production mode. Left to the desktop
       # build's own fallback, the webview bundles would ship unminified.
@@ -80,11 +85,11 @@ jobs:
 
       - name: Type-check desktop app
         working-directory: desktop
-        run: npm run check-types
+        run: pnpm run check-types
 
       - name: Build installer
         working-directory: desktop
-        run: npm run dist
+        run: pnpm run dist
 
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -29,7 +29,7 @@ Before updating these files, ensure you have:
 - Access to official pricing documentation from AI providers
 - Token estimation benchmarks or documentation
 - The repository cloned locally
-- Node.js and npm installed
+- Node.js and pnpm installed
 
 ## Step 1: Update tokenEstimators.json
 
@@ -136,7 +136,7 @@ Before updating these files, ensure you have:
 
 ## Step 3: Build and Test
 
-Validate JSON syntax, run `npm run compile && npm run test:node` (do not
+Validate JSON syntax, run `pnpm run compile && pnpm run test:node` (do not
 launch VS Code or the Extension Development Host — that is a manual,
 human-only debugging step; see `.github/copilot-instructions.md`), review
 with `git diff`, then commit/push as usual.
@@ -144,7 +144,7 @@ with `git diff`, then commit/push as usual.
 ## Important Notes
 
 - **Bundled at build time**: These JSON files are bundled into the extension during compilation via `esbuild.js`
-- **Rebuild required**: Always run `npm run compile` after changes
+- **Rebuild required**: Always run `pnpm run compile` after changes
 - **Pricing disclaimer**: GitHub Copilot pricing may differ from direct API usage
 - **Estimation nature**: Token counts are estimates based on character ratios
 - **Documentation**: See `src/README.md` for additional details
@@ -158,8 +158,8 @@ with `git diff`, then commit/push as usual.
 ## Troubleshooting
 
 **Extension not loading updated data**:
-- Confirm you ran `npm run compile`
-- Confirm `npm run test:node` passes
+- Confirm you ran `pnpm run compile`
+- Confirm `pnpm run test:node` passes
 - Check the build output for errors
 
 ## Additional Context

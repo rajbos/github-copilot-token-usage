@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - VS Code installed
-- Extension compiled (`npm run compile`)
+- Extension compiled (`pnpm run compile`)
 - Extension loaded in VS Code
 
 ## Test Case 1: Access with Debugger Active
@@ -253,7 +253,7 @@
 2. **Verify**: List includes `aiEngineeringFluency.showFluencyLevelViewer`
 3. Check package.json
 4. **Verify**: Command is listed in contributes.commands
-5. Run automated test: `npm test`
+5. Run automated test: `pnpm test`
 6. **Verify**: Test "Commands should be registered" passes
 
 ### Expected Results

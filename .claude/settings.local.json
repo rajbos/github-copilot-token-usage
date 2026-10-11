@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(xargs grep:*)",
-      "Bash(npm ci *)",
+      "Bash(pnpm install *)",
       "Bash(node_modules/.bin/eslint src *)",
       "Bash(node -e ' *)",
       "Bash(git fetch *)"
