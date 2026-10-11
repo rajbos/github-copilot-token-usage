@@ -5,6 +5,7 @@ allowBuilds:
   keytar: true
 
 overrides:
+  browserslist: '>=4.29.3'
   shell-quote: '>=1.8.4'
   '@azure/msal-node': '5.1.4'
   '@babel/core': '>=7.29.6'
