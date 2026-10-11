@@ -30,6 +30,7 @@ import {
 	probeCheckoutPathsAsync,
 	collectCitedRepoPaths,
 	serverMemoriesAnalysisSignature,
+	analyzeServerMemoriesFromStatus,
 	buildPromotionPrompt,
 	MEMORY_INTEGRATION_ID,
 	isSafeRepoRelativePath,
@@ -39,7 +40,7 @@ import {
 	sanitizeForDisplay,
 	INVALID_REPO_LABEL,
 } from '../../../src/copilotServerMemories';
-import { decideServerMemoriesRefresh, serverMemoriesDraftContextMatches, shouldRecheckServerMemories } from '../../src/extension';
+import { decideServerMemoriesRefresh, serverMemoriesDraftContextMatches, shouldRecheckServerMemories, shouldRestartServerMemoriesFetch } from '../../src/extension';
 import type { ServerMemory } from '../../../src/types';
 
 // ---------------------------------------------------------------------------
@@ -1915,4 +1916,31 @@ test('serverMemoriesAnalysisSignature changes exactly when the rendered section 
 	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, false, 'exists'))), base, 'a documentation file going missing');
 	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, true, 'unsafe'))), base, 'the target becoming unsafe');
 	assert.equal(serverMemoriesAnalysisSignature(null), 'none');
+});
+
+test('shouldRestartServerMemoriesFetch: a request invalidated mid-flight is followed by a fresh fetch', () => {
+	// The workspace changed (generation bumped) while the request ran: its result is discarded and
+	// the refresh the change triggered was refused, so the settled request must restart one.
+	assert.equal(shouldRestartServerMemoriesFetch(3, 4), true);
+	// Nothing changed while it ran: its own result was published, no restart.
+	assert.equal(shouldRestartServerMemoriesFetch(4, 4), false);
+});
+
+test('the render path decides "Open file" from the precomputed analysis, with no filesystem checker', () => {
+	// What the extension now passes: isOpenable is constant, and missing/non-regular files come
+	// from the async analysis's missingInstructionFiles.
+	const analysis = analyzeServerMemoriesFromStatus(
+		{ repo: 'o/n', enabled: true, memories: [memory({ id: '1', citations: ['AGENTS.md:1', 'docs/:1', 'docs/gone.md:1'] })] },
+		new Map([
+			['AGENTS.md', { exists: true, regularFile: true }],
+			['docs/', { exists: true, regularFile: false }],
+			['docs/gone.md', { exists: false, regularFile: false }],
+		]),
+	);
+	const view = toServerMemoriesAnalysisView(analysis, { isOpenable: () => true });
+	assert.deepEqual(view?.documentedMemories?.[0].files, [
+		{ path: 'AGENTS.md', openable: true },
+		{ path: 'docs/', missing: true },
+		{ path: 'docs/gone.md', missing: true },
+	]);
 });

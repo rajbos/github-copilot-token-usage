@@ -146,7 +146,6 @@ import {
   isOpenableCitedDocument as _isOpenableCitedDocument,
   sameRepoSlug as _sameRepoSlug,
   analyzeServerMemoriesForCheckoutAsync as _analyzeServerMemoriesForCheckoutAsync,
-  withFreshPromotionTarget as _withFreshPromotionTarget,
   serverMemoriesAnalysisSignature as _serverMemoriesAnalysisSignature,
   type RepoMemoriesResult as _RepoMemoriesResult,
 } from '../../src/copilotServerMemories';
@@ -666,6 +665,17 @@ export interface ServerMemoriesRefreshInputs {
  *    start a new request is a separate question from whether what we are showing is still
  *    the right repository's.
  */
+/**
+ * Whether a server-memory fetch that just settled should be followed by a fresh one. True when
+ * the cache was invalidated while it ran (its generation is no longer current): its result was
+ * discarded, and the refresh the invalidation triggered was refused because this request was
+ * still in flight — so without a restart the new context would stay empty until an unrelated
+ * refresh happened to come along.
+ */
+export function shouldRestartServerMemoriesFetch(requestGeneration: number, currentGeneration: number): boolean {
+	return requestGeneration !== currentGeneration;
+}
+
 /**
  * Whether a view build should start a background re-check of the files server memories cite.
  * Pure, so the throttle is testable: a render never re-probes while one re-check is running, and
@@ -7392,6 +7402,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (!decision.startFetch || !context) { return; }
 
 		const generation = this._serverMemoriesGeneration;
+		let publishedChange = false;
 		this._serverMemoriesFetchInFlight = (async () => {
 			try {
 				// Resolved up front rather than inside getToken() so "the user is not signed in"
@@ -7425,6 +7436,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 				// request is in flight. Publishing unconditionally would then put one repository's
 				// memories on screen for another — or restore a section the user just disabled.
 				if (this.isServerMemoriesContextCurrent(context, generation)) {
+					const changed = _serverMemoriesAnalysisSignature(this._serverMemoriesAnalysis ?? null) !== _serverMemoriesAnalysisSignature(analysis);
+					publishedChange = changed;
 					this._serverMemoriesAnalysis = analysis;
 					this._serverMemoriesResult = result;
 					this._serverMemoriesCheckedAt = Date.now();
@@ -7443,6 +7456,16 @@ class CopilotTokenTracker implements vscode.Disposable {
 				}
 			} finally {
 				this._serverMemoriesFetchInFlight = undefined;
+				if (shouldRestartServerMemoriesFetch(generation, this._serverMemoriesGeneration)) {
+					// This request was invalidated while it ran (workspace folders, trust, sign-in or
+					// the setting changed) and its result was discarded. The refresh that invalidation
+					// triggered was refused because this request was still in flight, so start the
+					// replacement now instead of leaving the section blank until an unrelated refresh.
+					this.scheduleServerMemoriesRefresh();
+				} else if (publishedChange && this.analysisPanel) {
+					// Show a newly published result now rather than on the next periodic refresh.
+					this.refreshOpenPanelsForSettingChange();
+				}
 			}
 		})();
 	}
@@ -7484,11 +7507,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 			// checkout it resolved the repository from and how many folders it chose among.
 			repoRoot,
 			workspaceFolderCount: vscode.workspace.workspaceFolders?.length ?? 0,
-			// Only a cited path that resolves to a regular file inside the checkout gets an "Open
-			// file" button: the citation is server-supplied, so the same symlink-safe check
-			// applies, and a directory (`docs/:1`) cannot be opened as a text document. This only
-			// decides whether to show the button; openServerMemoryCitation() re-checks on click.
-			isOpenable: repoRoot ? _createRepoRegularFileCheck(repoRoot) : undefined,
+			// No filesystem I/O here: the async analysis already recorded which cited documentation
+			// files are missing or not regular files inside the checkout, and those rows get no
+			// "Open file" button. This only decides whether to show the button;
+			// openServerMemoryCitation() re-validates synchronously on click.
+			isOpenable: repoRoot ? () => true : undefined,
 		});
 	}
 
@@ -7497,17 +7520,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * on the extension host. The hour-long cache covers only the network read; the
 	 * checkout-dependent part (eligibility, live evidence, missing docs) is recomputed from the raw
 	 * read by an asynchronous, yielding background re-check ({@link scheduleServerMemoriesRecheck}),
-	 * and the two-path promotion target is re-probed here on every call. Click handlers add their
-	 * own targeted checks of the paths they act on.
+	 * which also re-resolves the promotion target. A render does no filesystem I/O at all; the
+	 * click handlers re-check the exact paths they act on (target, live sources, opened file).
 	 */
 	private currentServerMemoriesAnalysis(): ServerMemoriesAnalysis | null {
 		const cached = this._serverMemoriesAnalysis ?? null;
 		const repoRoot = this._serverMemoriesRepoRoot;
 		if (!cached || !repoRoot) { return cached; }
-		// The bulk re-check of cited files runs in the background (async, yielding); this render
-		// uses the last result. The target is two paths, so it is re-probed right here.
+		// The re-check of cited files and the target runs in the background (async, yielding);
+		// this render uses the last result.
 		this.scheduleServerMemoriesRecheck();
-		return _withFreshPromotionTarget(cached, _createPromotionTargetProbe(repoRoot));
+		return cached;
 	}
 
 	/**
