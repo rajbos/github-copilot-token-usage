@@ -6,7 +6,7 @@ applyTo: "vscode-extension/**"
 
 ## Architecture Overview
 
-The entire extension's logic is contained within the `CopilotTokenTracker` class in `vscode-extension/src/extension.ts`. Its primary function is to track GitHub Copilot token usage by reading and parsing session log files.
+The extension's entry point and orchestration live in the `CopilotTokenTracker` class in `vscode-extension/src/extension.ts`, which is still very large (see the decomposition status in the repo-root `AGENTS.md`); supporting logic lives in sibling modules under `vscode-extension/src/` and in the shared repo-root `src/`. Put new logic in a module and call it from there rather than adding it to `extension.ts`. Its primary function is to track GitHub Copilot token usage by reading and parsing session log files.
 
 - **Activation**: The extension activates on VS Code startup via the `onStartupFinished` event in `vscode-extension/package.json`. The `activate` function in `vscode-extension/src/extension.ts` instantiates `CopilotTokenTracker`.
 
@@ -281,7 +281,7 @@ If you find any match outside of `addModelUsage` itself, convert it to use the h
 
 ## Key Files & Conventions
 
-- **`vscode-extension/src/extension.ts`**: The single source file containing all logic.
+- **`vscode-extension/src/extension.ts`**: The entry point and the large `CopilotTokenTracker` class. It still holds much of the logic, but new logic should go in separate modules (see the repo-root `AGENTS.md` and `docs/adr/EXTENSION-TS-DECOMPOSITION.md`).
   - `CopilotTokenTracker`: The main class.
   - `calculateDetailedStats()`: The primary data aggregation method.
   - `getDetailsHtml()`: The method responsible for rendering the webview's HTML content. All styling is inlined within this method's template string.
