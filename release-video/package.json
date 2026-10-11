@@ -5,7 +5,7 @@
 	"description": "Local, zero-cost release-video generator: What's New catalog -> screenshots -> narration -> FFmpeg/NVENC MP4.",
 	"license": "MIT",
 	"engines": {
-		"node": ">=20"
+		"node": ">=22.14.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
