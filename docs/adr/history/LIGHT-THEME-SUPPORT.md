@@ -1,5 +1,15 @@
 # Light Theme Support - Implementation Summary
 
+**Status:** Historical · **Added:** 2026-05-15 · **Verified against code on:** 2026-10-11
+
+> Point-in-time implementation notes for the PR also summarised in [PR_SUMMARY.md](PR_SUMMARY.md).
+> The decision recorded here (map VS Code theme tokens to semantic CSS variables in
+> `src/webview/shared/theme.css`; inject it as a separate `<style>` because `@import` does not
+> survive inlining; keep semantic success/error colours hardcoded) is still how the webviews work.
+> Paths below are relative to `vscode-extension/`. Panel stylesheet line counts, the screenshot
+> checklist and the "Ready for Manual Testing" footer were true only at merge time. Current theming
+> reference: [features/THEMING_CHANGES.md](../../features/THEMING_CHANGES.md).
+
 ## Task Completed
 ✅ Successfully analyzed and implemented comprehensive light theme support for the AI Engineering Fluency VS Code extension.
 

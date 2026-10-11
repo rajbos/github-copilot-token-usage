@@ -1,5 +1,20 @@
 # Fluency Data Implementation Summary
 
+**Status:** Historical (schema part Implemented; roadmap part now done) · **Added:** 2026-05-15 · **Verified against code on:** 2026-10-11
+
+> Point-in-time implementation summary. Corrections as of the verification date:
+> - Schema version 4 (`SCHEMA_VERSION_WITH_FLUENCY_METRICS`) and `extractFluencyMetricsFromCache()`
+>   do exist, in `vscode-extension/src/backend/constants.ts` and
+>   `vscode-extension/src/backend/services/syncService.ts`. Paths below written as `src/backend/...`
+>   mean `vscode-extension/src/backend/...`.
+> - The "Team Dashboard Integration" section below is marked "NOT YET IMPLEMENTED"; that is **no
+>   longer true**. The Team Dashboard webview (`vscode-extension/src/webview/dashboard/main.ts`)
+>   carries per-member `fluencyStage` / `fluencyLabel` / `fluencyCategories`. The mock layout and
+>   code sketches in that section were a plan and do not match the shipped UI.
+> - `calculateMaturityScores()` lives in [`src/maturityScoring.ts`](../../../src/maturityScoring.ts).
+> - The "Next Steps" checklist and "What Still Needs Testing" list are not maintained.
+> - Authoritative schema reference: [FLUENCY-METRICS-SCHEMA.md](../../FLUENCY-METRICS-SCHEMA.md).
+
 ## Problem Statement
 
 Look at the info we display in the fluency chart in the extension, and then look at the data we upload to the cloud storage. Then make a plan to add the missing info we need, to be able to display the fluency data on the team level in the team dashboard.

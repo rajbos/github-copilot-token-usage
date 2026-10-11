@@ -1,5 +1,9 @@
 # Localization architecture
 
+> **Status:** Accepted (standard in force; sequenced rollout partly done) · **Decided/added:** 2026-09-19 · **Verified against code on:** 2026-10-11
+>
+> The numbers in this document (key counts, string counts, the "Current state, measured" table) were measured on 2026-09-19 and have since drifted: on 2026-10-11 `package.nls.json` and `package.nls.zh-cn.json` hold 850 keys each (table says 528) and `webviewKeys.json` holds 419 (text says 147). Treat them as a snapshot; `node scripts/validate-localization.js` is the live check.
+
 The repo-wide standard for user-facing text. Supersedes nothing — before this
 there was no stated standard, which is the problem it exists to fix.
 
