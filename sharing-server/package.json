@@ -62,13 +62,13 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^26.6.1",
+    "@types/node": "^24.19.2",
     "chart.js": "^4.4.7",
     "esbuild": "^0.28.2",
-    "typescript": "^5.8.0"
+    "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.14.0"
   },
   "packageManager": "pnpm@11.2.2"
 }
