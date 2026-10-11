@@ -224,3 +224,23 @@ test('serverMemories section: a row without a fingerprint gets no button', () =>
 	}));
 	assert.ok(!html.includes('server-memory-draft-btn'));
 });
+
+test('serverMemories section: a click on a text node resolves to its button, and non-elements are safe', () => {
+	const doc = render(view());
+	const label = doc.querySelector('.server-memory-draft-btn')?.firstChild;
+	assert.ok(label && label.nodeType === 3, 'the button label is a Text node');
+	assert.deepEqual(serverMemoriesMessageForClick(label), { command: 'draftServerMemoryPromotion', subject: 'caching <now> & "x"', fingerprint: 'fp1' });
+	assert.equal(serverMemoriesMessageForClick(doc), null, 'a Document has no closest() and no parent element');
+	assert.equal(serverMemoriesMessageForClick({} as EventTarget), null);
+});
+
+test('wireServerMemoriesButtons handles a click dispatched on a text node', () => {
+	withSectionDocument(view(), doc => {
+		const posted: ServerMemoriesMessage[] = [];
+		wireServerMemoriesButtons(message => posted.push(message));
+		const label = doc.querySelector('.server-memory-open-btn')?.firstChild;
+		assert.ok(label);
+		label.dispatchEvent(new doc.defaultView!.MouseEvent('click', { bubbles: true }));
+		assert.deepEqual(posted, [{ command: 'openServerMemoryCitation', path: 'AGENTS.md' }]);
+	});
+});

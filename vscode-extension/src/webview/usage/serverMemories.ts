@@ -297,7 +297,8 @@ export function buildServerMemoriesSectionHtml(analysis: ServerMemoriesAnalysisV
  * The "Ask Copilot" button asks the host to *draft* the prompt (never submit it): the prompt
  * embeds agent-written memory text, so a person reviews it first.
  */
-export function serverMemoriesMessageForClick(target: Element | null): ServerMemoriesMessage | null {
+export function serverMemoriesMessageForClick(eventTarget: EventTarget | null): ServerMemoriesMessage | null {
+	const target = asElement(eventTarget);
 	const draft = target?.closest<HTMLElement>('.server-memory-draft-btn');
 	const subject = draft?.getAttribute('data-subject');
 	const fingerprint = draft?.getAttribute('data-fingerprint');
@@ -306,6 +307,18 @@ export function serverMemoriesMessageForClick(target: Element | null): ServerMem
 	const path = open?.getAttribute('data-path');
 	if (path) { return { command: 'openServerMemoryCitation', path }; }
 	return null;
+}
+
+/**
+ * Normalize a click's `event.target` to an element. It is not always one: a click can land on a
+ * Text node (e.g. a button's label), which has no `closest()`. Such a node resolves to its parent
+ * element, so a click on a label still reaches its button; anything else yields `null`.
+ * Duck-typed rather than `instanceof Element`, so it works across documents and realms.
+ */
+function asElement(eventTarget: EventTarget | null): Element | null {
+	if (!eventTarget) { return null; }
+	if (typeof (eventTarget as Element).closest === 'function') { return eventTarget as Element; }
+	return (eventTarget as Node).parentElement ?? null;
 }
 
 /**
@@ -320,7 +333,7 @@ export function wireServerMemoriesButtons(postMessage: (message: ServerMemoriesM
 	if (!section || section.dataset.serverMemoriesWired === 'true') { return; }
 	section.dataset.serverMemoriesWired = 'true';
 	section.addEventListener('click', event => {
-		const message = serverMemoriesMessageForClick(event.target as Element | null);
+		const message = serverMemoriesMessageForClick(event.target);
 		if (message) { postMessage(message); }
 	});
 }

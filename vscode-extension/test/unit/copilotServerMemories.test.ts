@@ -29,6 +29,7 @@ import {
 	analyzeServerMemoriesForCheckoutAsync,
 	probeCheckoutPathsAsync,
 	collectCitedRepoPaths,
+	serverMemoriesAnalysisSignature,
 	buildPromotionPrompt,
 	MEMORY_INTEGRATION_ID,
 	isSafeRepoRelativePath,
@@ -1897,4 +1898,21 @@ test('shouldRecheckServerMemories: a second view build within the window reuses 
 	// Nothing to re-check without a raw read or a checkout.
 	assert.equal(shouldRecheckServerMemories({ ...base, hasResult: false, checkedAt: undefined, now: 0 }), false);
 	assert.equal(shouldRecheckServerMemories({ ...base, hasRepoRoot: false, checkedAt: undefined, now: 0 }), false);
+});
+
+test('serverMemoriesAnalysisSignature changes exactly when the rendered section would', () => {
+	const result = { repo: 'o/n', enabled: true, memories: [
+		memory({ id: '1', subject: 's', citations: ['src/a.ts:1'] }),
+		memory({ id: '2', subject: 'doc', citations: ['docs/x.md:1'] }),
+	] };
+	const deps = (live: boolean, docExists: boolean, target: 'exists' | 'absent' | 'unsafe') => ({
+		fileExists: (p: string) => (p === 'src/a.ts' ? live : docExists),
+		promotionTargetStatus: () => target,
+	});
+	const base = serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, true, 'exists')));
+	assert.equal(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, true, 'exists'))), base, 'stable for the same tree');
+	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(false, true, 'exists'))), base, 'a group losing its last live source');
+	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, false, 'exists'))), base, 'a documentation file going missing');
+	assert.notEqual(serverMemoriesAnalysisSignature(analyzeServerMemories(result, deps(true, true, 'unsafe'))), base, 'the target becoming unsafe');
+	assert.equal(serverMemoriesAnalysisSignature(null), 'none');
 });

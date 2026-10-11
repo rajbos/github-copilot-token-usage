@@ -1252,6 +1252,25 @@ export function promotionGroupFingerprint(group: Pick<ServerMemoryPromotionGroup
 }
 
 /**
+ * A cheap signature of everything the webview renders from an analysis: counts, each promotion
+ * row's fingerprint, the target, and each documented row's file states. Equal signatures mean
+ * an identical section, so a background re-check can decide whether to re-render without
+ * serializing the projection (which carries full prompt text).
+ */
+export function serverMemoriesAnalysisSignature(analysis: ServerMemoriesAnalysis | null): string {
+	if (!analysis) { return 'none'; }
+	const target = analysis.promotionTarget;
+	return [
+		analysis.repo, analysis.enabled, analysis.error ?? '', analysis.truncated,
+		analysis.totalMemories, analysis.distinctSubjects, analysis.documentedCount, analysis.fullyStaleCount,
+		target ? `${target.path}:${target.exists}` : `blocked:${analysis.promotionTargetBlockedPath ?? ''}`,
+		analysis.promotionGroups.slice(0, VIEW_PROMOTION_GROUP_LIMIT).map(promotionGroupFingerprint).join(','),
+		(analysis.documentedMemories ?? []).slice(0, VIEW_DOCUMENTED_LIMIT)
+			.map(entry => `${entry.id}:${(entry.missingInstructionFiles ?? []).join('|')}`).join(','),
+	].join(';');
+}
+
+/**
  * Whether the host may open a cited documentation file the webview asked for, decided at click
  * time. The webview sends a repo-relative path, which is untrusted: it must be one the *current*
  * analysis actually cites as documentation, lexically safe, and a regular file inside the

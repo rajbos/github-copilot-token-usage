@@ -147,6 +147,7 @@ import {
   sameRepoSlug as _sameRepoSlug,
   analyzeServerMemoriesForCheckoutAsync as _analyzeServerMemoriesForCheckoutAsync,
   withFreshPromotionTarget as _withFreshPromotionTarget,
+  serverMemoriesAnalysisSignature as _serverMemoriesAnalysisSignature,
   type RepoMemoriesResult as _RepoMemoriesResult,
 } from '../../src/copilotServerMemories';
 import { readGitOriginUrl as _readGitOriginUrl, isGitRepoRoot as _isGitRepoRoot } from '../../src/darkFactorySignals';
@@ -7533,10 +7534,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const next = await _analyzeServerMemoriesForCheckoutAsync(result, repoRoot);
 				// A clear, refetch or workspace change while this ran makes the result moot.
 				if (generation !== this._serverMemoriesGeneration || this._serverMemoriesResult !== result || this._serverMemoriesRepoRoot !== repoRoot) { return; }
-				const before = JSON.stringify(_toServerMemoriesAnalysisView(this._serverMemoriesAnalysis ?? null));
+				// A cheap signature (counts, row fingerprints, file states), not a serialized view.
+				const changed = _serverMemoriesAnalysisSignature(this._serverMemoriesAnalysis ?? null) !== _serverMemoriesAnalysisSignature(next);
 				this._serverMemoriesAnalysis = next;
 				this._serverMemoriesCheckedAt = Date.now();
-				if (this.analysisPanel && JSON.stringify(_toServerMemoriesAnalysisView(next)) !== before) {
+				if (this.analysisPanel && changed) {
 					this.refreshOpenPanelsForSettingChange();
 				}
 			} catch (err) {
