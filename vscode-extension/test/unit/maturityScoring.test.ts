@@ -1676,6 +1676,36 @@ test('WI Stage 4 needs 15 sessions: 14 → Stage 3, 15 → Stage 4 (ask + agent 
     assert.equal(teamStage(fifteen, 'Workflow Integration', 15), 4);
 });
 
+test('WI Stage 4 needs 15 sessions (personal): 14 → Stage 3, 15 → Stage 4 (ask + agent + 20 refs)', async () => {
+    const base = (sessions: number) => {
+        const p = emptyPeriod();
+        p.sessions = sessions;
+        p.modeUsage.ask = 1;
+        p.modeUsage.agent = 1;
+        p.contextReferences.file = 20;
+        return p;
+    };
+    assert.equal((await personalCategory(base(14), 'Workflow Integration')).stage, 3);
+    assert.equal((await personalCategory(base(15), 'Workflow Integration')).stage, 4);
+    // Stage 4 also needs 2+ modes and 20+ refs: dropping either at 15 sessions falls back to Stage 3.
+    const oneMode = base(15); oneMode.modeUsage.agent = 0;
+    assert.equal((await personalCategory(oneMode, 'Workflow Integration')).stage, 3); // 20 refs alone
+    const fewRefs = base(15); fewRefs.contextReferences.file = 19;
+    assert.equal((await personalCategory(fewRefs, 'Workflow Integration')).stage, 3); // 2 modes alone
+});
+
+test('PE slash commands (personal): 2 recognised commands + 30 interactions → Stage 3; 1 command or 29 interactions → Stage 2', async () => {
+    const mk = (ask: number, byTool: Record<string, number>) => {
+        const p = emptyPeriod();
+        p.modeUsage.ask = ask;
+        p.toolCalls = { total: Object.keys(byTool).length, byTool };
+        return p;
+    };
+    assert.equal((await personalCategory(mk(30, { explain: 1, fix: 1 }), 'Prompt Engineering')).stage, 3);
+    assert.equal((await personalCategory(mk(30, { explain: 1 }), 'Prompt Engineering')).stage, 2);
+    assert.equal((await personalCategory(mk(29, { explain: 1, fix: 1 }), 'Prompt Engineering')).stage, 2);
+});
+
 // --- Item 6: Context Engineering "specialized variables" hint (doc corrected to match code) ----
 
 test('CE hint: <2 specialized types used → "Try …specialized context variables" tip, not the Stage 4 gap tip (personal)', async () => {
@@ -1685,6 +1715,20 @@ test('CE hint: <2 specialized types used → "Try …specialized context variabl
     const ce = await personalCategory(p, 'Context Engineering');
     assert.ok(ce.tips.some(t => t.startsWith('Try ') && t.includes('specialized context variables')), JSON.stringify(ce.tips));
     assert.ok(!ce.tips.some(t => t.startsWith('Stage 4 needs')), 'gap tip must not appear below 2 specialized types');
+});
+
+test('CE hint (team): 1 specialized type → "Try …specialized context variables" tip, not the Stage 4 gap tip', () => {
+    const fd = emptyFd();
+    fd.ctxFile = 3; fd.ctxChanges = 1; // only 1 specialized type
+    const tips = calculateFluencyScoreForTeamMember(fd, 0).categories.find(c => c.category === 'Context Engineering')!.tips;
+    assert.ok(tips.some(t => t.startsWith('Try ') && t.includes('specialized context variables')), JSON.stringify(tips));
+    assert.ok(!tips.some(t => t.startsWith('Stage 4 needs')), 'gap tip must not appear below 2 specialized types');
+
+    // And with 2 types the specialized-variables tip is replaced, not shown alongside.
+    fd.ctxClipboard = 1;
+    const tips2 = calculateFluencyScoreForTeamMember(fd, 0).categories.find(c => c.category === 'Context Engineering')!.tips;
+    assert.ok(tips2.some(t => t.startsWith('Stage 4 needs')), JSON.stringify(tips2));
+    assert.ok(!tips2.some(t => t.includes('specialized context variables')), JSON.stringify(tips2));
 });
 
 test('CE hint: ≥2 specialized types used → tip switches to the Stage 4 gap tip (not suppressed) (personal + team)', async () => {
