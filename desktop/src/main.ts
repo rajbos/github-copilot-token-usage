@@ -1072,9 +1072,14 @@ function showPanel(panel: PanelId): void {
  * enrichment), and loading `app://panel/...` directly would block on it with the old
  * page, or nothing, on screen.
  */
+/** Bumped by every navigateToPanel() call; a pending navigation that sees a newer value was superseded. */
+let navigationGeneration = 0;
+
 function navigateToPanel(panel: PanelId): void {
     if (!mainWindow || mainWindow.isDestroyed()) { return; }
     const win = mainWindow;
+    const generation = ++navigationGeneration;
+    const isCurrent = () => generation === navigationGeneration && currentPanel === panel && !win.isDestroyed();
     if (isPanelDataReady(panel)) {
         win.loadURL(`app://panel/${panel}`);
         return;
@@ -1083,13 +1088,19 @@ function navigateToPanel(panel: PanelId): void {
     // and keeps the main process busy. Put the loading screen up first — and let
     // it paint — so the window is never left blank while that runs.
     void win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildLoadingHtml()))
-        .catch(() => { /* superseded by a later navigation */ })
-        .then(() => loadPanelData(panel))
-        .catch(() => { /* surfaced by the panel's own error page below */ })
-        .then(() => {
-            if (currentPanel === panel && !win.isDestroyed()) {
-                win.loadURL(`app://panel/${panel}`);
+        .then(() => true, () => false)
+        .then(async (painted) => {
+            // Superseded while the loading page went up (another panel, a refresh, or the window
+            // closed): never start this panel's computation — on a cold Chart/Efficiency cache
+            // that is a multi-minute walk on this main process nobody is waiting for. The later
+            // navigation owns the window.
+            if (!isCurrent()) { return; }
+            if (painted) {
+                try { await loadPanelData(panel); } catch { /* surfaced by the panel's own error page below */ }
             }
+            // Re-checked after the wait: the user may have moved on while the data was computed.
+            // A loading page that failed for another reason falls through to the panel itself.
+            if (isCurrent()) { win.loadURL(`app://panel/${panel}`); }
         });
 }
 
