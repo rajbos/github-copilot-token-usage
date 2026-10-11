@@ -53,27 +53,61 @@ function stripComments(css) {
 
 const normalize = (literal) => literal.toLowerCase().replace(/\s+/g, '');
 
-/** The CSS property a match at `index` is the value of, e.g. `color` or `background`. */
-function propertyAt(css, index) {
-	const before = css.slice(0, index);
-	const start = Math.max(before.lastIndexOf(';'), before.lastIndexOf('{'), before.lastIndexOf('}')) + 1;
-	const colon = before.indexOf(':', start);
-	return colon === -1 ? '' : before.slice(start, colon).trim().toLowerCase();
+/**
+ * Splits CSS into declarations, ignoring selector and at-rule preludes. A
+ * chunk of text ending in `{` is a prelude (`#abc`, `.item:has(#abcdef)`,
+ * `@media (...)`); a chunk ending in `;` or `}` inside a block is a
+ * declaration (`color: #abc`, `--x: #abcdef`). `;` and `{`/`}` inside
+ * parentheses or quotes (`url(data:...;base64,...)`) do not split.
+ * Returns `{ prop, value }` pairs.
+ */
+export function declarations(css) {
+	const text = stripComments(css);
+	const out = [];
+	let start = 0;
+	let parens = 0;
+	let quote = '';
+	const flush = (end, terminator) => {
+		const chunk = text.slice(start, end);
+		start = end + 1;
+		if (terminator === '{') { return; }
+		const colon = chunk.indexOf(':');
+		if (colon === -1) { return; }
+		out.push({ prop: chunk.slice(0, colon).trim().toLowerCase(), value: chunk.slice(colon + 1) });
+	};
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (quote) { if (ch === '\\') { i++; } else if (ch === quote) { quote = ''; } continue; }
+		if (ch === '"' || ch === "'") { quote = ch; continue; }
+		if (ch === '(') { parens++; continue; }
+		if (ch === ')') { parens = Math.max(0, parens - 1); continue; }
+		if (parens > 0) { continue; }
+		if (ch === '{') { flush(i, '{'); }
+		else if (ch === ';' || ch === '}') { flush(i, ch); }
+	}
+	flush(text.length, ';');
+	return out;
 }
 
+/** `url(#abcdef)` is an SVG fragment reference and a quoted string is text, not a color. */
+const stripUrls = (value) => value
+	.replace(/url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\)/gi, ' ')
+	.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, ' ');
+
 /**
- * Returns the color literals in `css` that are not allowlisted, in source order.
- * `allowed` maps a normalized literal to the properties it may appear in
- * (`null` = any property).
+ * Returns the color literals used as declaration values in `css` that are not
+ * allowlisted, in source order. Selectors never count. `allowed` maps a
+ * literal to the properties it may appear in (`null` = any property).
  */
 export function findColors(css, allowed = {}) {
 	const entries = new Map(Object.entries(allowed).map(([literal, props]) => [normalize(literal), props]));
-	const stripped = stripComments(css);
 	const hits = [];
-	for (const m of stripped.matchAll(COLOR_LITERAL)) {
-		const props = entries.get(normalize(m[0]));
-		if (props !== undefined && (props === null || props.includes(propertyAt(stripped, m.index)))) { continue; }
-		hits.push(m[0]);
+	for (const { prop, value } of declarations(css)) {
+		for (const m of stripUrls(value).matchAll(COLOR_LITERAL)) {
+			const props = entries.get(normalize(m[0]));
+			if (props !== undefined && (props === null || props.includes(prop))) { continue; }
+			hits.push(m[0]);
+		}
 	}
 	return hits;
 }
