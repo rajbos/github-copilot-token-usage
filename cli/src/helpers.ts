@@ -591,15 +591,15 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 			const stats = await statSessionFile(file);
 			const modified = stats.mtime;
 
-			const inPeriodWindow = modified >= cutoffStart;
-			// A DB-backed session's file mtime can lag its real activity (writes still in
-			// the SQLite WAL), so the repeated-task report asks the adapter before skipping.
-			// The lookup reads the adapter at most once per session and is reused below.
+			// The session's own activity time. A DB-backed session's file mtime can lag its real
+			// activity (writes still in the SQLite WAL), so when the mtime alone says "older than
+			// the window" the adapter's last-activity time is asked — the rule the Chart/Efficiency
+			// view walk uses too (isSessionActiveSince), so the Efficiency view combines the same
+			// sessions from both. The lookup reads the adapter at most once per session and is
+			// reused below; regular files are decided by their mtime with no lookup.
 			const activity = createSessionActivityLookup(file);
-			if (!inPeriodWindow) {
-				if (!options.includeRepeatedTasks) { continue; }
-				if (!isActiveSince(modified, await activity.lastActivity(), cutoffStart)) { continue; }
-			}
+			const activeAt = await sessionActivityTime(activity, modified, cutoffStart);
+			if (activeAt < cutoffStart) { continue; }
 
 			// Shared with the view enrichment, so `cli all` and the desktop Efficiency build do not
 			// analyze each recent session twice.
@@ -607,10 +607,9 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 			if (options.includeRepeatedTasks) {
 				await addRepeatedTaskSource(repeatedTaskSources, activity, analysis.firstUserPrompt, stats.mtimeMs, cutoffStart);
 			}
-			// Period stats keep using the file mtime, as before.
-			if (!inPeriodWindow) { continue; }
+			// Period stats bucket by the same activity time.
 			let sessionSummary: TodaySessionSummary | undefined;
-			const data = modified >= last30DaysStart ? await processSessionFile(file) : undefined;
+			const data = activeAt >= last30DaysStart ? await processSessionFile(file) : undefined;
 			if (data && data.interactions > 0) {
 				let inputTokens = 0, outputTokens = 0, cachedTokens = 0;
 				for (const usage of Object.values(data.modelUsage)) {
@@ -642,20 +641,20 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 				});
 			}
 
-			if (modified >= last30DaysStart) {
+			if (activeAt >= last30DaysStart) {
 				mergeUsageAnalysis(last30DaysPeriod, analysis);
 				last30DaysPeriod.sessions++;
 			}
-			if (modified >= monthStart) {
+			if (activeAt >= monthStart) {
 				mergeUsageAnalysis(monthPeriod, analysis);
 				monthPeriod.sessions++;
 			}
-			if (modified >= todayStart) {
+			if (activeAt >= todayStart) {
 				mergeUsageAnalysis(todayPeriod, analysis);
 				todayPeriod.sessions++;
 				if (sessionSummary) { todaySessions.push(sessionSummary); }
 			}
-			if (modified >= lastMonthStart && modified < monthStart) {
+			if (activeAt >= lastMonthStart && activeAt < monthStart) {
 				mergeUsageAnalysis(lastMonthPeriod, analysis);
 				lastMonthPeriod.sessions++;
 			}
@@ -765,18 +764,34 @@ export function repeatedTaskActivityMs(source: Pick<RepeatedTaskSessionSource, '
 	return Number.isNaN(parsed) ? source.mtime : parsed;
 }
 
+/** Thrown by {@link calculateViewStats} when its caller cancelled the walk. */
+export class ViewStatsCancelledError extends Error {
+	constructor() {
+		super('View stats walk cancelled');
+		this.name = 'ViewStatsCancelledError';
+	}
+}
+
 /**
  * The Chart and Efficiency views' session-derived inputs, from **one** walk over the files.
  *
  * Both need every session's enriched parse (processSessionFileForViews). Walking twice would
  * parse and analyze each cold session twice — the session cache cannot be relied on to absorb
  * that, since it holds a bounded number of entries and has no in-flight de-duplication.
+ *
+ * `isCancelled` lets a long-lived host stop the walk when nobody is waiting for it any more
+ * (the desktop app, when the user leaves Chart/Efficiency): once it returns true the remaining
+ * files are skipped and the walk throws {@link ViewStatsCancelledError} instead of returning a
+ * partial result, so nothing incomplete is cached.
  */
-export async function calculateViewStats(sessionFiles: string[], verbose = false, weeksBack = EFFICIENCY_BEHAVIOR_WEEKS): Promise<{
+export async function calculateViewStats(sessionFiles: string[], verbose = false, weeksBack = EFFICIENCY_BEHAVIOR_WEEKS, options: { isCancelled?: () => boolean } = {}): Promise<{
 	dailyStats: DailyTokenStats[];
 	efficiencySessionInputs: EfficiencySessionInput[];
 }> {
-	const sessions = await runWithConcurrency(sessionFiles, async (file) => processSessionFileForViews(file, verbose));
+	const isCancelled = options.isCancelled ?? (() => false);
+	if (isCancelled()) { throw new ViewStatsCancelledError(); }
+	const sessions = await runWithConcurrency(sessionFiles, async (file) => (isCancelled() ? null : processSessionFileForViews(file, verbose)));
+	if (isCancelled()) { throw new ViewStatsCancelledError(); }
 	return {
 		dailyStats: dailyStatsFromSessions(sessions),
 		efficiencySessionInputs: efficiencyInputsFromSessions(sessions, weeksBack),
@@ -831,14 +846,21 @@ async function processSessionFileWithinWindow(filePath: string, verbose: boolean
 }
 
 /**
- * Whether a session was active since `cutoff`. The backing file's mtime decides for regular
- * files; a DB-backed (virtual) session's database mtime can lag its real activity (writes still
- * in the SQLite WAL), so the adapter's last-activity time is asked too — only when the mtime
- * alone says "older", and the same way Usage Analysis decides (isActiveSince).
+ * A session's own last-activity time, judged against `cutoff`. The backing file's mtime decides
+ * for regular files; a DB-backed (virtual) session's database mtime can lag its real activity
+ * (writes still in the SQLite WAL), so when the mtime alone is older than `cutoff` the adapter's
+ * last-activity time is asked, and the later of the two wins. One rule for Usage Analysis and
+ * the Chart/Efficiency view walk, so the Efficiency view combines the same sessions from both.
  */
+export async function sessionActivityTime(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<Date> {
+	if (fileMtime >= cutoff) { return fileMtime; }
+	const adapterActivity = await activity.lastActivity();
+	return adapterActivity && adapterActivity > fileMtime ? adapterActivity : fileMtime;
+}
+
+/** Whether a session was active since `cutoff`, by {@link sessionActivityTime}. */
 export async function isSessionActiveSince(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<boolean> {
-	if (fileMtime >= cutoff) { return true; }
-	return isActiveSince(fileMtime, await activity.lastActivity(), cutoff);
+	return (await sessionActivityTime(activity, fileMtime, cutoff)) >= cutoff;
 }
 
 function dailyStatsFromSessions(sessions: Array<SessionData | null | undefined>): DailyTokenStats[] {

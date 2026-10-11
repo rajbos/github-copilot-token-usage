@@ -13,7 +13,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup } from '../helpers';
+import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError } from '../helpers';
 import { getCached } from '../cliCache';
 import { buildClassificationInputFromUsageAnalysis, classifySessionTask } from '../../../src/taskClassification';
 
@@ -177,4 +177,29 @@ test('isSessionActiveSince asks the adapter when a DB-backed session\'s file mti
 	const regular = { getBackingPath: (f: string) => f, getLastActivity: async () => { adapterCalls++; return new Date(); }, getMeta: async () => null };
 	assert.equal(await isSessionActiveSince(createSessionActivityLookup('session.json', regular), oldMtime, cutoff), false);
 	assert.equal(adapterCalls, before);
+});
+
+test('sessionActivityTime: a DB-backed session with a lagging database mtime is dated by the adapter', async () => {
+	// Usage Analysis buckets periods by this time and the view walk filters by it, so both count
+	// the same sessions (the Efficiency view combines them).
+	const cutoff = new Date(2026, 4, 1);
+	const oldMtime = new Date(2026, 3, 1);
+	const recent = new Date(2026, 4, 9);
+	const lookup = (lastActivity: Date | null) => ({ lastActivity: async () => lastActivity });
+	assert.deepEqual(await sessionActivityTime(lookup(recent), oldMtime, cutoff), recent);
+	assert.deepEqual(await sessionActivityTime(lookup(null), oldMtime, cutoff), oldMtime, 'no adapter answer keeps the mtime');
+	assert.deepEqual(await sessionActivityTime(lookup(new Date(2026, 2, 1)), oldMtime, cutoff), oldMtime, 'an older adapter time never wins');
+	const fresh = new Date(2026, 4, 3);
+	assert.deepEqual(await sessionActivityTime({ lastActivity: async () => { throw new Error('must not be asked'); } }, fresh, cutoff), fresh);
+});
+
+test('calculateViewStats stops and throws instead of returning a partial walk when cancelled', async t => {
+	const { filePath, reads } = mockSession(t, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', false);
+	await assert.rejects(calculateViewStats([filePath], false, undefined, { isCancelled: () => true }), ViewStatsCancelledError);
+	assert.equal(reads(), 0, 'a walk cancelled up front reads nothing');
+	// Cancelled after the first file: the rest are skipped and nothing partial is returned.
+	let checks = 0;
+	const missing = path.join(path.dirname(filePath), 'never-read.json');
+	await assert.rejects(calculateViewStats([filePath, missing], false, undefined, { isCancelled: () => ++checks > 2 }), ViewStatsCancelledError);
+	assert.equal(reads(), 2, 'only the first file was parsed and enriched');
 });

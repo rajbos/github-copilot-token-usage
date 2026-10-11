@@ -453,11 +453,19 @@ function getViewStats(): Promise<ViewStats> {
     return shareInFlight('viewStats', loadViewStats);
 }
 
+/** The panels that wait on the view stats walk; leaving them all cancels it. */
+const VIEW_STATS_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(['chart', 'efficiency']);
+
 async function loadViewStats(): Promise<ViewStats> {
     expireCachesOnDateChange();
     while (!cachedViewStats) {
         await computeForCurrentFiles(
-            files => calculateViewStats(files),
+            // The walk can run for minutes on a large history, on this main process. Once the
+            // user has left Chart and Efficiency nobody is waiting for it, so it stops between
+            // files and throws (ViewStatsCancelledError): nothing partial is cached, and the
+            // throw also ends computeForCurrentFiles()'s retry loop. Reopening either view
+            // starts a fresh walk, which reuses the session cache the first one filled.
+            files => calculateViewStats(files, false, undefined, { isCancelled: () => !VIEW_STATS_PANELS.has(currentPanel) }),
             (viewStats) => { cachedViewStats ??= viewStats; },
         );
     }
