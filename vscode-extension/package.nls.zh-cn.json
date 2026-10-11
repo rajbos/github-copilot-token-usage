@@ -535,6 +535,7 @@
   "serverMemories.draftNoTarget": "未起草提示：在此检出中未找到安全的指令文件。",
   "serverMemories.draftContextChanged": "未起草提示：工作区现在指向的仓库与读取这些记忆时的仓库不同。该板块将刷新。",
   "serverMemories.draftRowChanged": "未起草提示：自显示此列表以来仓库记忆已更改。该板块已刷新。",
+  "serverMemories.draftNoLiveSource": "未起草提示：此记忆引用的文件在此检出中均已不存在。该板块将刷新。",
   "serverMemories.openRefused": "未打开 {0}：它已不再是此检出中被引用的文件。",
 
   "insight.shared.listSeparator": "、",

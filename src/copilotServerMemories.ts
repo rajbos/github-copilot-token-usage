@@ -835,7 +835,7 @@ export function analyzeServerMemories(
 		truncated: result.truncated === true,
 		totalMemories: memories.length,
 		distinctSubjects: scan.bySubject.size,
-		distinctMemoryIds: new Set(memories.map(memory => memory.id)).size,
+		documentedRecordCount: memories.filter(memory => classifyCitations(memory.citations).instructionFiles.size > 0).length,
 		documentedCount: scan.documentedIds.size,
 		documentedMemories: scan.documented,
 		...resolvePromotionTargetFields(deps.promotionTargetStatus),
@@ -880,7 +880,7 @@ export interface CheckoutPathStatus {
 }
 
 /** Every distinct cited path that may be probed: repo-relative and lexically safe. */
-export function collectCitedRepoPaths(memories: readonly ServerMemory[]): string[] {
+export function collectCitedRepoPaths(memories: readonly Pick<ServerMemory, 'citations'>[]): string[] {
 	const paths = new Set<string>();
 	for (const memory of memories) {
 		for (const citation of memory.citations) {
@@ -1427,15 +1427,17 @@ export function describePromotionTarget(analysis: Pick<ServerMemoriesAnalysis, '
  * directories — and naming just one of them would misdiagnose the others.
  */
 export function describeNoPromotionCandidates(analysis: ServerMemoriesAnalysis): string {
-	// `documentedCount` counts distinct ids, so the total it is compared with must too: a store
-	// repeating an id has more records than memories. Older analyses fall back to the record count.
-	const total = analysis.distinctMemoryIds ?? analysis.totalMemories;
-	if (total > 0 && analysis.documentedCount === total) {
+	// One unit throughout: records. `totalMemories`, `unverifiableCount` and `fullyStaleCount`
+	// count records, so the documented figure must too (`documentedCount` is per id, and a store
+	// can repeat an id). Older analyses without the record count fall back to the per-id one.
+	const total = analysis.totalMemories;
+	const documented = analysis.documentedRecordCount ?? analysis.documentedCount;
+	if (total > 0 && documented === total) {
 		return 'No promotion candidates: every stored memory already cites an instruction file.';
 	}
 	// Each verb agrees with its own count: "1 cites" / "2 cite".
 	const reasons = [
-		analysis.documentedCount > 0 ? `${analysis.documentedCount} already ${inflect(analysis.documentedCount, 'cites', 'cite')} an instruction file` : '',
+		documented > 0 ? `${documented} already ${inflect(documented, 'cites', 'cite')} an instruction file` : '',
 		analysis.unverifiableCount > 0 ? `${analysis.unverifiableCount} ${inflect(analysis.unverifiableCount, 'has', 'have')} no verifiable file citation` : '',
 		analysis.fullyStaleCount > 0 ? `${analysis.fullyStaleCount} ${inflect(analysis.fullyStaleCount, 'cites', 'cite')} only files that no longer exist` : '',
 	].filter(Boolean);

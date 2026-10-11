@@ -144,6 +144,8 @@ import {
   createRepoRegularFileCheck as _createRepoRegularFileCheck,
   buildPromotionPromptForSubject as _buildPromotionPromptForSubject,
   isOpenableCitedDocument as _isOpenableCitedDocument,
+  probeCheckoutPathsAsync as _probeCheckoutPathsAsync,
+  collectCitedRepoPaths as _collectCitedRepoPaths,
   sameRepoSlug as _sameRepoSlug,
   analyzeServerMemoriesForCheckoutAsync as _analyzeServerMemoriesForCheckoutAsync,
   serverMemoriesAnalysisSignature as _serverMemoriesAnalysisSignature,
@@ -7618,7 +7620,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// Re-resolve the workspace's repository now, not just the target file: the button may
 		// have been rendered before the workspace folders (or their trust) changed.
 		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot)) { return; }
-		const result = _buildPromotionPromptForSubject(analysis, subject, fingerprint, _createPromotionTargetProbe(repoRoot), _createRepoRegularFileCheck(repoRoot));
+		// The group's sources can be many (it aggregates every record on the subject), so they are
+		// probed asynchronously, not with a synchronous checker on the extension host. The target is
+		// two paths and is probed synchronously inside the builder.
+		const group = analysis.promotionGroups.find(candidate => candidate.subject === subject);
+		const statuses = await _probeCheckoutPathsAsync(repoRoot, group ? _collectCitedRepoPaths([group]) : []);
+		const result = _buildPromotionPromptForSubject(analysis, subject, fingerprint, _createPromotionTargetProbe(repoRoot),
+			(filePath) => statuses.get(filePath)?.regularFile ?? false);
 		if ('prompt' in result) {
 			await vscode.commands.executeCommand('workbench.action.chat.open', { query: result.prompt, isNewChat: true, isPartialQuery: true, mode: 'agent' });
 			return;
@@ -7628,7 +7636,15 @@ class CopilotTokenTracker implements vscode.Disposable {
 				? l10n.t('serverMemories.draftBlocked', result.blockedPath)
 				: l10n.t('serverMemories.draftNoTarget'));
 		}
-		if (result.reason === 'row-changed' || result.reason === 'unknown-subject' || result.reason === 'no-live-source') {
+		if (result.reason === 'no-live-source') {
+			// The checkout changed, not the memories: none of the group's cited files is a regular
+			// file any more. Say that, and force the background re-check so the stale button goes.
+			void vscode.window.showWarningMessage(l10n.t('serverMemories.draftNoLiveSource'));
+			this._serverMemoriesCheckedAt = undefined;
+			this.scheduleServerMemoriesRecheck();
+			return;
+		}
+		if (result.reason === 'row-changed' || result.reason === 'unknown-subject') {
 			// The analysis was refreshed under the webview: say so and re-render, so the user sees
 			// the current rows instead of drafting something they did not click on.
 			void vscode.window.showWarningMessage(l10n.t('serverMemories.draftRowChanged'));

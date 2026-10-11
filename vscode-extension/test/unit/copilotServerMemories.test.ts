@@ -1983,13 +1983,45 @@ test('click time re-derives liveness from all citations: a restored source count
 	assert.match(result.prompt, /Cited sources: src\/b\.ts:2, src\/a\.ts:1/, 'the source that is live now is listed first');
 });
 
-test('the all-documented explanation compares distinct ids with distinct ids', () => {
+test('the all-documented explanation counts records, like the total', () => {
 	const analysis = analyzeServerMemories({
 		repo: 'o/n',
 		enabled: true,
 		memories: [memory({ id: 'dup', citations: ['AGENTS.md:1'] }), memory({ id: 'dup', citations: ['AGENTS.md:2'] })],
 	}, alwaysExists);
 	assert.equal(analysis.totalMemories, 2);
-	assert.equal(analysis.distinctMemoryIds, 1);
+	assert.equal(analysis.documentedRecordCount, 2);
 	assert.equal(describeNoPromotionCandidates(analysis), 'No promotion candidates: every stored memory already cites an instruction file.');
+});
+
+test('the zero-candidate explanation uses one unit (records) for the subject and every reason', () => {
+	// Two unverifiable records sharing one id.
+	const analysis = analyzeServerMemories({
+		repo: 'o/n',
+		enabled: true,
+		memories: [memory({ id: 'dup', citations: ['User input: a'] }), memory({ id: 'dup', citations: ['User input: b'] })],
+	}, alwaysExists);
+	assert.equal(describeNoPromotionCandidates(analysis),
+		'No promotion candidates: none of the 2 stored memories is both undocumented and backed by a file that still exists in this checkout (2 have no verifiable file citation).');
+});
+
+test('collectCitedRepoPaths accepts a promotion group (anything with citations)', () => {
+	assert.deepEqual(collectCitedRepoPaths([{ citations: ['src/a.ts:1', 'User input: x', 'src/a.ts:2', 'docs/b.md:3'] }]).sort(), ['docs/b.md', 'src/a.ts']);
+});
+
+test("with non-overlapping categories, the zero-candidate total equals the sum of its record buckets", () => {
+	const analysis = analyzeServerMemories({
+		repo: "o/n",
+		enabled: true,
+		memories: [
+			memory({ id: "a", subject: "doc", citations: ["AGENTS.md:1"] }),
+			memory({ id: "b", subject: "told", citations: ["User input: tabs"] }),
+			memory({ id: "c", subject: "gone", citations: ["src/deleted.ts:1"] }),
+			memory({ id: "c", subject: "gone", citations: ["src/also-deleted.ts:1"] }),
+		],
+	}, { fileExists: p => p === "AGENTS.md" });
+	const documented = analysis.documentedRecordCount ?? 0;
+	assert.equal(documented + analysis.unverifiableCount + analysis.fullyStaleCount, analysis.totalMemories);
+	assert.equal(describeNoPromotionCandidates(analysis),
+		"No promotion candidates: none of the 4 stored memories is both undocumented and backed by a file that still exists in this checkout (1 already cites an instruction file, 1 has no verifiable file citation, 2 cite only files that no longer exist).");
 });

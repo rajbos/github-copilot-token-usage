@@ -1794,10 +1794,11 @@ export interface ServerMemoriesAnalysis {
   totalMemories: number;
   distinctSubjects: number;
   /**
-   * Distinct memory ids. The store can repeat an id, so this can be lower than
-   * {@link totalMemories} (a record count); {@link documentedCount} is counted per id, like this.
+   * Memory *records* citing an instruction/doc file. {@link documentedCount} counts distinct ids
+   * (one "already documented" row per id); this counts records, in the same unit as
+   * {@link totalMemories}, {@link unverifiableCount} and {@link fullyStaleCount}.
    */
-  distinctMemoryIds?: number;
+  documentedRecordCount?: number;
   /** Memories citing an instruction/doc file — already written down somewhere agents read. */
   documentedCount: number;
   /** The memories behind {@link documentedCount}, in store order. */
