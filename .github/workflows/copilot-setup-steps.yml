@@ -247,10 +247,8 @@ jobs:
         continue-on-error: true
         env:
           # Write every artifact to .graphify-agent/ (gitignored) instead of the
-          # default graphify-out/. The repo commits graphify-out/manifest.json and
-          # a v0.9.27 AST cache; a newer graphify rewrites the manifest and prunes
-          # that cache as a stale version, leaving ~180 tracked deletions in
-          # `git status` for the agent to commit by accident.
+          # default graphify-out/, so a stale local graphify-out/ cache is never
+          # mistaken for this graph.
           GRAPHIFY_OUT: .graphify-agent
         run: |
           # `run` executes under `bash -e`, so capture the status instead of

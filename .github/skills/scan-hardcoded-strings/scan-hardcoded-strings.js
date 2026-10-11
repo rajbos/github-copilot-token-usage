@@ -1047,7 +1047,7 @@ function main() {
     const jsonMode = argv.includes('--json');
     const outIdx = argv.indexOf('--out');
     // Overridable so tests can point the report at a scratch path instead of
-    // rewriting the tracked hardcoded-strings-report.md on every test run.
+    // writing into the repo root on every test run.
     const reportPath = outIdx !== -1 && argv[outIdx + 1] ? path.resolve(argv[outIdx + 1]) : REPORT_PATH;
     const { results, total, scannedCount } = runScan();
 

@@ -1040,8 +1040,8 @@ test('runMain: a normal (non-throwing) mainFn leaves exit code as it set it', ()
 // instead invoke the script exactly as a user/CI would, so a regression in
 // main()'s wiring (argv parsing, console output, report writing) is caught
 // even though it isn't itself an exported function. `--out` points the report
-// at a scratch file in os.tmpdir() so running the suite doesn't rewrite (and
-// dirty) the tracked hardcoded-strings-report.md at the repo root.
+// at a scratch file in os.tmpdir() so running the suite leaves no report in
+// the repo root.
 
 function withTempReportPath(fn) {
     const tmpPath = path.join(os.tmpdir(), `scan-hardcoded-strings-test-${process.pid}-${Date.now()}.md`);

@@ -1,1 +1,0 @@
-{"nodes": [{"id": "github_actions_setup_ollama_action_config", "label": "Setup Ollama Composite Action", "file_type": "code", "source_file": ".github/actions/setup-ollama/action.yml", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}
