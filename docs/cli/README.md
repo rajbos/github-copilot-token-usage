@@ -241,12 +241,12 @@ Optionally also read this repository's **server-side** Copilot memories — the 
 | `--server` | Also fetch the server-side memories for this repository. |
 | `--repo <owner/name>` | Repository to read. Default: the current checkout's `origin` remote. Implies `--server`. |
 | `--limit <n>` | Maximum number of server memories to request. |
-| `--promote` | Print the memories worth promoting into `AGENTS.md` as a ready-to-paste Markdown block. Implies `--server`. |
+| `--promote` | Print the memories worth promoting into `AGENTS.md` as a ready-to-paste Markdown block. Implies `--server`. The block names the suggested target file (root `AGENTS.md`, else `.github/copilot-instructions.md`, else a new `AGENTS.md`), says it was not checked when `--repo` names a repository other than this checkout, or says there is none when the chosen file is not a regular file inside the checkout (e.g. an escaping symlink); the checkout analyzed is printed to stderr. |
 
 With `--json` and `--server`, `--repo` or `--promote`, the output gains a `serverMemories` key (`--limit` only controls a server read requested by one of those options):
 
 - `null` only when no repository could be determined — the current directory is not a checkout with a github.com `origin` remote, and no `--repo` was given.
-- Otherwise an object with the analysis. If the read failed (no `gh`, no github.com token, no Copilot access, memory disabled, or an invalid `--repo`), the object has an `error` string and zeroed counts. Check `serverMemories.error` rather than testing for `null`.
+- Otherwise an object with the analysis, including `repoRoot` (the checkout analyzed, when it is this one), `promotionTarget` (`{ path, exists }`, absent when it could not be safely determined; `promotionTargetBlockedPath` then names the rejected file if that was the reason) and `documentedMemories` (each memory that cites an instruction/doc file, with those `instructionFiles`). If the read failed (no `gh`, no github.com token, no Copilot access, memory disabled, or an invalid `--repo`), the object has an `error` string and zeroed counts. Check `serverMemories.error` rather than testing for `null`.
 
 `--json` takes precedence over `--promote`: the JSON is printed and no Markdown block is written. Without `--json`, a server read failure under `--promote` prints the reason to stderr and exits with code `1`, so an empty promotion list is never mistaken for "nothing to document". If no repository can be determined, the command instead prints guidance to stdout and exits with code `0`.
 

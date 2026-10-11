@@ -138,10 +138,18 @@ const MEMORY_FILES_SCAN_TTL_MS = 5 * 60 * 1000;
 // --- Copilot server-side repository memories ---
 import {
   fetchRepoMemories as _fetchRepoMemories,
-  analyzeServerMemories as _analyzeServerMemories,
   parseRepoFromRemoteUrl as _parseRepoFromRemoteUrl,
   toServerMemoriesAnalysisView as _toServerMemoriesAnalysisView,
-  createRepoFileExists as _createRepoFileExists,
+  createPromotionTargetProbe as _createPromotionTargetProbe,
+  createRepoRegularFileCheck as _createRepoRegularFileCheck,
+  buildPromotionPromptForSubject as _buildPromotionPromptForSubject,
+  isOpenableCitedDocument as _isOpenableCitedDocument,
+  probeCheckoutPathsAsync as _probeCheckoutPathsAsync,
+  collectCitedRepoPaths as _collectCitedRepoPaths,
+  sameRepoSlug as _sameRepoSlug,
+  analyzeServerMemoriesForCheckoutAsync as _analyzeServerMemoriesForCheckoutAsync,
+  serverMemoriesAnalysisSignature as _serverMemoriesAnalysisSignature,
+  type RepoMemoriesResult as _RepoMemoriesResult,
 } from '../../src/copilotServerMemories';
 import { readGitOriginUrl as _readGitOriginUrl, isGitRepoRoot as _isGitRepoRoot } from '../../src/darkFactorySignals';
 
@@ -153,6 +161,13 @@ import { readGitOriginUrl as _readGitOriginUrl, isGitRepoRoot as _isGitRepoRoot 
  * a coding-agent run stores something — on the order of hours, not minutes.
  */
 const SERVER_MEMORIES_FETCH_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Minimum time between background re-checks of the files server memories cite. The network read
+ * is cached for {@link SERVER_MEMORIES_FETCH_TTL_MS}, but the checkout changes far more often;
+ * a minute keeps deletions and restores visible without probing hundreds of paths on every render.
+ */
+const SERVER_MEMORIES_RECHECK_MS = 60 * 1000;
 
 /**
  * How long the silent GitHub session lookup may take before it is treated as "no session".
@@ -636,6 +651,50 @@ export interface ServerMemoriesRefreshInputs {
 	fetchInFlight: boolean;
 	now: number;
 	ttlMs: number;
+}
+
+/**
+ * Whether a server-memory fetch that just settled should be followed by a fresh one. True when
+ * the cache was invalidated while it ran (its generation is no longer current): its result was
+ * discarded, and the refresh the invalidation triggered was refused because this request was
+ * still in flight — so without a restart the new context would stay empty until an unrelated
+ * refresh happened to come along.
+ */
+export function shouldRestartServerMemoriesFetch(requestGeneration: number, currentGeneration: number): boolean {
+	return requestGeneration !== currentGeneration;
+}
+
+/**
+ * Whether a view build should start a background re-check of the files server memories cite.
+ * Pure, so the throttle is testable: a render never re-probes while one re-check is running, and
+ * at most once per `intervalMs` otherwise — repeated view builds within that window reuse the
+ * last analysis instead of re-probing hundreds of paths.
+ */
+export function shouldRecheckServerMemories(input: {
+	hasResult: boolean;
+	hasRepoRoot: boolean;
+	inFlight: boolean;
+	checkedAt: number | undefined;
+	now: number;
+	intervalMs: number;
+}): boolean {
+	if (!input.hasResult || !input.hasRepoRoot || input.inFlight) { return false; }
+	return input.checkedAt === undefined || input.now - input.checkedAt >= input.intervalMs;
+}
+
+/**
+ * Whether a cached server-memories analysis still belongs to the repository the workspace
+ * resolves to *now*. The panel can stay open while workspace folders change, so a promote
+ * button rendered for one repository must not draft a prompt — carrying that repository's
+ * fact — that tells an agent to edit a repo-relative file in another. Both the slug and the
+ * checkout root must match: two worktrees of one repository share a slug but not a tree.
+ */
+export function serverMemoriesDraftContextMatches(
+	cached: { repo: string | undefined; repoRoot: string | undefined },
+	current: { repo: string; repoRoot: string } | undefined,
+): boolean {
+	return Boolean(current && cached.repo && cached.repoRoot
+		&& _sameRepoSlug(current.repo, cached.repo) && current.repoRoot === cached.repoRoot);
 }
 
 /**
@@ -1372,6 +1431,17 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 * this field holds and a background refresh updates it for the *next* render.
 	 */
 	private _serverMemoriesAnalysis: ServerMemoriesAnalysis | null | undefined;
+	/**
+	 * The raw memory read {@link _serverMemoriesAnalysis} was computed from. Only this network
+	 * result is worth caching: everything derived from the checkout (staleness, live evidence,
+	 * missing docs, the target) is recomputed from it on each use by
+	 * {@link currentServerMemoriesAnalysis}.
+	 */
+	private _serverMemoriesResult: _RepoMemoriesResult | undefined;
+	/** When the checkout-dependent part of {@link _serverMemoriesAnalysis} was last recomputed. */
+	private _serverMemoriesCheckedAt: number | undefined;
+	/** The background re-check of cited files, while one is running. */
+	private _serverMemoriesRecheckInFlight: Promise<void> | undefined;
 	/** Wall-clock time (ms) of the last server-memory fetch attempt, successful or not. */
 	private _serverMemoriesFetchedAt: number | undefined;
 	/**
@@ -3217,6 +3287,13 @@ class CopilotTokenTracker implements vscode.Disposable {
 	}
 
 	private setupConfigurationListener(context: vscode.ExtensionContext): void {
+		// The repository-memory cache is keyed by the workspace's repository and checkout root.
+		// Adding, removing or reordering folders (or granting trust) can change which repository
+		// that is, so drop the cached analysis rather than keep showing the previous one.
+		context.subscriptions.push(
+			vscode.workspace.onDidChangeWorkspaceFolders(() => this.invalidateServerMemoriesCache()),
+			vscode.workspace.onDidGrantWorkspaceTrust(() => this.invalidateServerMemoriesCache()),
+		);
 		context.subscriptions.push(
 			vscode.workspace.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration('aiEngineeringFluency.display')) { this.refreshOpenPanelsForSettingChange(); }
@@ -7199,6 +7276,8 @@ class CopilotTokenTracker implements vscode.Disposable {
 		// disqualified from publishing, rather than overwriting this clear when it returns.
 		this._serverMemoriesGeneration++;
 		this._serverMemoriesAnalysis = undefined;
+		this._serverMemoriesResult = undefined;
+		this._serverMemoriesCheckedAt = undefined;
 		this._serverMemoriesRepo = undefined;
 		this._serverMemoriesRepoRoot = undefined;
 		this._serverMemoriesFetchedAt = undefined;
@@ -7321,6 +7400,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 
 		if (decision.clearCache) {
 			this._serverMemoriesAnalysis = null;
+			this._serverMemoriesResult = undefined;
 			this._serverMemoriesRepo = undefined;
 			this._serverMemoriesRepoRoot = undefined;
 			this._serverMemoriesFetchedAt = undefined;
@@ -7328,6 +7408,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		if (!decision.startFetch || !context) { return; }
 
 		const generation = this._serverMemoriesGeneration;
+		let publishedChange = false;
 		this._serverMemoriesFetchInFlight = (async () => {
 			try {
 				// Resolved up front rather than inside getToken() so "the user is not signed in"
@@ -7344,6 +7425,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 					// non-prompting getSession() call, so repeating it costs nothing.
 					if (this.isServerMemoriesContextCurrent(context, generation)) {
 						this._serverMemoriesAnalysis = null;
+						this._serverMemoriesResult = undefined;
 						this._serverMemoriesRepo = undefined;
 						this._serverMemoriesRepoRoot = undefined;
 						this._serverMemoriesFetchedAt = undefined;
@@ -7353,18 +7435,18 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const result = await _fetchRepoMemories(context.repo, {
 					getToken: async () => token,
 				});
-				// Symlink-safe: existsSync() follows links, so a repository symlink pointing out of
-				// the checkout would turn a lexically-innocent citation into a probe of an
-				// arbitrary path. createRepoFileExists() resolves the real path and requires it
-				// to stay under the real root.
-				const analysis = _analyzeServerMemories(result, {
-					fileExists: _createRepoFileExists(context.repoRoot),
-				});
+				// Asynchronous and yielding: hundreds of citations are probed without blocking the
+				// extension host (docs/adr/ANALYSIS-WORKER.md, rule 1).
+				const analysis = await _analyzeServerMemoriesForCheckoutAsync(result, context.repoRoot);
 				// The workspace can change, or the user can switch the feature off, while this
 				// request is in flight. Publishing unconditionally would then put one repository's
 				// memories on screen for another — or restore a section the user just disabled.
 				if (this.isServerMemoriesContextCurrent(context, generation)) {
+					const changed = _serverMemoriesAnalysisSignature(this._serverMemoriesAnalysis ?? null) !== _serverMemoriesAnalysisSignature(analysis);
+					publishedChange = changed;
 					this._serverMemoriesAnalysis = analysis;
+					this._serverMemoriesResult = result;
+					this._serverMemoriesCheckedAt = Date.now();
 					this._serverMemoriesRepo = context.repo;
 					this._serverMemoriesRepoRoot = context.repoRoot;
 					this._serverMemoriesFetchedAt = Date.now();
@@ -7373,12 +7455,23 @@ class CopilotTokenTracker implements vscode.Disposable {
 				this.log(`⚠️ Server memories fetch failed: ${String(err)}`);
 				if (this.isServerMemoriesContextCurrent(context, generation)) {
 					this._serverMemoriesAnalysis = null;
+					this._serverMemoriesResult = undefined;
 					this._serverMemoriesRepo = context.repo;
 					this._serverMemoriesRepoRoot = context.repoRoot;
 					this._serverMemoriesFetchedAt = Date.now();
 				}
 			} finally {
 				this._serverMemoriesFetchInFlight = undefined;
+				if (shouldRestartServerMemoriesFetch(generation, this._serverMemoriesGeneration)) {
+					// This request was invalidated while it ran (workspace folders, trust, sign-in or
+					// the setting changed) and its result was discarded. The refresh that invalidation
+					// triggered was refused because this request was still in flight, so start the
+					// replacement now instead of leaving the section blank until an unrelated refresh.
+					this.scheduleServerMemoriesRefresh();
+				} else if (publishedChange && this.analysisPanel) {
+					// Show a newly published result now rather than on the next periodic refresh.
+					this.refreshOpenPanelsForSettingChange();
+				}
 			}
 		})();
 	}
@@ -7410,7 +7503,170 @@ class CopilotTokenTracker implements vscode.Disposable {
 	 */
 	private buildServerMemoriesView(): ServerMemoriesAnalysisView | null {
 		this.scheduleServerMemoriesRefresh();
-		return _toServerMemoriesAnalysisView(this._serverMemoriesAnalysis ?? null);
+		const repoRoot = this._serverMemoriesRepoRoot;
+		// No citation or target probing on this path (the repository lookup in
+		// scheduleServerMemoriesRefresh() above still reads the checkout's git config, as before).
+		// The analysis shown is the cached one: eligibility, live
+		// evidence, missing docs and the target are refreshed only by the throttled background
+		// re-check (async, yielding, at most once per SERVER_MEMORIES_RECHECK_MS), so a render
+		// within that window can show a stale state. The click handlers re-check the exact paths
+		// they act on before acting: the group's sources asynchronously (they can be many), the
+		// two-path target and the single file being opened synchronously (bounded).
+		const analysis = this.currentServerMemoriesAnalysis();
+		return _toServerMemoriesAnalysisView(analysis, {
+			// The store is per GitHub repository, not per workspace, so the section names the
+			// checkout it resolved the repository from and how many folders it chose among.
+			repoRoot,
+			workspaceFolderCount: vscode.workspace.workspaceFolders?.length ?? 0,
+			// No probing here: the async analysis already recorded which cited documentation
+			// files are missing or not regular files inside the checkout, and those rows get no
+			// "Open file" button. This only decides whether to show the button;
+			// openServerMemoryCitation() re-validates synchronously on click.
+			isOpenable: repoRoot ? () => true : undefined,
+		});
+	}
+
+	/**
+	 * The server-memories analysis for a render or click, without synchronous bulk filesystem work
+	 * on the extension host. The hour-long cache covers only the network read; the
+	 * checkout-dependent part (eligibility, live evidence, missing docs) is recomputed from the raw
+	 * read by an asynchronous, yielding background re-check ({@link scheduleServerMemoriesRecheck}),
+	 * which also re-resolves the promotion target. A render does no citation or target probing
+	 * (only the existing repository lookup reads the git config); the
+	 * click handlers re-check the exact paths they act on (target, live sources, opened file).
+	 */
+	private currentServerMemoriesAnalysis(): ServerMemoriesAnalysis | null {
+		const cached = this._serverMemoriesAnalysis ?? null;
+		const repoRoot = this._serverMemoriesRepoRoot;
+		if (!cached || !repoRoot) { return cached; }
+		// The re-check of cited files and the target runs in the background (async, yielding);
+		// this render uses the last result.
+		this.scheduleServerMemoriesRecheck();
+		return cached;
+	}
+
+	/**
+	 * Recompute the checkout-dependent analysis from the cached raw read, off the host's critical
+	 * path: asynchronous, yielding probes, at most once per {@link SERVER_MEMORIES_RECHECK_MS}.
+	 * Re-renders the panel only when the projection actually changed, so a file deleted or
+	 * restored since the fetch shows up without a network read and without a render loop.
+	 */
+	private scheduleServerMemoriesRecheck(): void {
+		const result = this._serverMemoriesResult;
+		const repoRoot = this._serverMemoriesRepoRoot;
+		if (!result || !repoRoot) { return; }
+		if (!shouldRecheckServerMemories({
+			hasResult: true,
+			hasRepoRoot: true,
+			inFlight: this._serverMemoriesRecheckInFlight !== undefined,
+			checkedAt: this._serverMemoriesCheckedAt,
+			now: Date.now(),
+			intervalMs: SERVER_MEMORIES_RECHECK_MS,
+		})) { return; }
+		const generation = this._serverMemoriesGeneration;
+		this._serverMemoriesRecheckInFlight = (async () => {
+			try {
+				const next = await _analyzeServerMemoriesForCheckoutAsync(result, repoRoot);
+				// A clear, refetch or workspace change while this ran makes the result moot.
+				if (generation !== this._serverMemoriesGeneration || this._serverMemoriesResult !== result || this._serverMemoriesRepoRoot !== repoRoot) { return; }
+				// A cheap signature (counts, row fingerprints, file states), not a serialized view.
+				const changed = _serverMemoriesAnalysisSignature(this._serverMemoriesAnalysis ?? null) !== _serverMemoriesAnalysisSignature(next);
+				this._serverMemoriesAnalysis = next;
+				this._serverMemoriesCheckedAt = Date.now();
+				if (this.analysisPanel && changed) {
+					this.refreshOpenPanelsForSettingChange();
+				}
+			} catch (err) {
+				this.log(`⚠️ Server memories re-check failed: ${String(err)}`);
+				this._serverMemoriesCheckedAt = Date.now();
+			} finally {
+				this._serverMemoriesRecheckInFlight = undefined;
+			}
+		})();
+	}
+
+	/**
+	 * Whether the cached analysis still belongs to the workspace's repository and checkout. If
+	 * not, warn, drop the stale analysis and re-render so the old buttons disappear.
+	 */
+	private ensureServerMemoriesContextCurrent(repoRoot: string, action: 'draft' | 'open'): boolean {
+		if (serverMemoriesDraftContextMatches({ repo: this._serverMemoriesRepo, repoRoot }, this.resolveWorkspaceRepoSlug())) { return true; }
+		// The message names the action the user asked for; the invalidation is the same for both.
+		void vscode.window.showWarningMessage(l10n.t(action === 'open' ? 'serverMemories.openContextChanged' : 'serverMemories.draftContextChanged'));
+		this.invalidateServerMemoriesCache();
+		return false;
+	}
+
+	/**
+	 * Open a documentation file a documented memory cites. The webview sends only the
+	 * repo-relative path; containment is re-validated here, at click time, against the current
+	 * repository and checkout — the payload-time check alone would let a file replaced by an
+	 * escaping symlink while the panel stayed open be opened from outside the checkout.
+	 */
+	private async openServerMemoryCitation(repoRelativePath: string): Promise<void> {
+		const analysis = this.currentServerMemoriesAnalysis();
+		const repoRoot = this._serverMemoriesRepoRoot;
+		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot, 'open')) { return; }
+		if (!_isOpenableCitedDocument(analysis, repoRelativePath, _createRepoRegularFileCheck(repoRoot))) {
+			void vscode.window.showWarningMessage(l10n.t('serverMemories.openRefused', repoRelativePath));
+			return;
+		}
+		const path = require('path') as typeof import('path');
+		await vscode.window.showTextDocument(vscode.Uri.file(path.join(repoRoot, repoRelativePath)));
+	}
+
+	/**
+	 * Draft (never submit) the promotion prompt for one server-memory group. The webview sends the
+	 * subject key and the row's fingerprint; the prompt is rebuilt here from the current analysis,
+	 * with the group's live sources re-checked asynchronously (they can be many) and the two-path
+	 * target synchronously, then the context re-validated after that await. Renders
+	 * do no such check — the cached analysis is only refreshed by the throttled background re-check
+	 * — so this click-time check is the authorization: with no safe target or no surviving source,
+	 * or a row that changed under the user, nothing is drafted.
+	 */
+	private async draftServerMemoryPromotion(subject: string, fingerprint: string): Promise<void> {
+		const analysis = this.currentServerMemoriesAnalysis();
+		const repoRoot = this._serverMemoriesRepoRoot;
+		// Re-resolve the workspace's repository now, not just the target file: the button may
+		// have been rendered before the workspace folders (or their trust) changed.
+		if (!analysis || !repoRoot || !this.ensureServerMemoriesContextCurrent(repoRoot, 'draft')) { return; }
+		// The group's sources can be many (it aggregates every record on the subject), so they are
+		// probed asynchronously, not with a synchronous checker on the extension host. The target is
+		// two paths and is probed synchronously inside the builder.
+		const group = analysis.promotionGroups.find(candidate => candidate.subject === subject);
+		const statuses = await _probeCheckoutPathsAsync(repoRoot, group ? _collectCitedRepoPaths([group]) : []);
+		// The probe awaited I/O: workspace folders, trust, a refetch or the background re-check may
+		// have changed things meanwhile. Re-read the current analysis and root and check the
+		// context again, then build from *that* analysis, so the fingerprint still compares the
+		// clicked row against what the host holds now.
+		const currentAnalysis = this.currentServerMemoriesAnalysis();
+		const currentRoot = this._serverMemoriesRepoRoot;
+		if (!currentAnalysis || currentRoot !== repoRoot || !this.ensureServerMemoriesContextCurrent(currentRoot, 'draft')) { return; }
+		const result = _buildPromotionPromptForSubject(currentAnalysis, subject, fingerprint, _createPromotionTargetProbe(currentRoot),
+			(filePath) => statuses.get(filePath)?.regularFile ?? false);
+		if ('prompt' in result) {
+			await vscode.commands.executeCommand('workbench.action.chat.open', { query: result.prompt, isNewChat: true, isPartialQuery: true, mode: 'agent' });
+			return;
+		}
+		if (result.reason === 'no-safe-target') {
+			void vscode.window.showWarningMessage(result.blockedPath
+				? l10n.t('serverMemories.draftBlocked', result.blockedPath)
+				: l10n.t('serverMemories.draftNoTarget'));
+		}
+		if (result.reason === 'no-live-source') {
+			// The checkout changed, not the memories: none of the group's cited files is a regular
+			// file any more. Say that, and force the background re-check so the stale button goes.
+			void vscode.window.showWarningMessage(l10n.t('serverMemories.draftNoLiveSource'));
+			this._serverMemoriesCheckedAt = undefined;
+			this.scheduleServerMemoriesRecheck();
+			return;
+		}
+		if (result.reason === 'row-changed' || result.reason === 'unknown-subject') {
+			// The analysis was refreshed under the webview: say so and re-render, so the user sees
+			// the current rows instead of drafting something they did not click on.
+			void vscode.window.showWarningMessage(l10n.t('serverMemories.draftRowChanged'));
+			this.refreshOpenPanelsForSettingChange();
+		}
 	}
 
 	async openMcpJson(): Promise<void> {
@@ -10153,6 +10409,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 					? vscode.commands.executeCommand('workbench.action.chat.open', { query: message.prompt, isNewChat: true, isPartialQuery: true, mode: 'agent' })
 					: undefined
 			),
+			draftServerMemoryPromotion: (message) => (typeof message.subject === 'string' && message.subject && typeof message.fingerprint === 'string'
+				? this.dispatch('draftServerMemoryPromotion', () => this.draftServerMemoryPromotion(message.subject, message.fingerprint))
+				: undefined),
+			openServerMemoryCitation: (message) => (typeof message.path === 'string' && message.path
+				? this.dispatch('openServerMemoryCitation', () => this.openServerMemoryCitation(message.path))
+				: undefined),
 			suppressUnknownTool: (message) => {
 				const toolName = message.toolName as string;
 				return toolName ? this._handleSuppressUnknownTool(toolName) : undefined;
