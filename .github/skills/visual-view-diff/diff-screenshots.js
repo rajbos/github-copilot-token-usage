@@ -32,7 +32,7 @@ const { renderMarkdownReport } = require('./lib/report');
  * is declared per view and applies to every state of it.
  */
 function parseShotName(fileName) {
-	const match = /^(.+?)(?:--(.+))?\.(dark|light)\.png$/.exec(fileName);
+	const match = /^(.+?)(?:--(.+))?\.(dark|light|hc-light|hc)\.png$/.exec(fileName);
 	return match ? { view: match[1], state: match[2] || null, theme: match[3] } : null;
 }
 

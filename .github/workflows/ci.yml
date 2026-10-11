@@ -239,6 +239,14 @@ jobs:
       working-directory: vscode-extension
       run: pnpm run lint:hardcoded-strings
 
+    - name: Test hardcoded-color checker
+      working-directory: vscode-extension
+      run: pnpm run test:hardcoded-colors
+
+    - name: Check for new hardcoded webview CSS colors
+      working-directory: vscode-extension
+      run: pnpm run lint:hardcoded-colors
+
     - name: Run linting
       working-directory: vscode-extension
       run: pnpm run lint

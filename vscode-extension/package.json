@@ -542,6 +542,8 @@
     "lint:l10n": "node ../scripts/validate-localization.js && node scripts/generate-webview-strings.mjs --check",
     "lint:hardcoded-strings": "node scripts/check-hardcoded-strings.mjs",
     "test:hardcoded-strings": "node --test scripts/check-hardcoded-strings.test.mjs",
+    "lint:hardcoded-colors": "node scripts/check-hardcoded-colors.mjs",
+    "test:hardcoded-colors": "node --test scripts/check-hardcoded-colors.test.mjs",
     "test": "node ../scripts/run-node-unit-tests.js",
     "test:node": "node ../scripts/prepare-test-output.js && tsc -p tsconfig.tests.json && node ../scripts/run-node-unit-tests.js",
     "test:coverage": "node ../scripts/prepare-test-output.js && tsc -p tsconfig.tests.json && node --require ./out/vscode-extension/test/unit/vscode-shim-register.js --experimental-test-coverage --test --test-force-exit --test-coverage-lines=88 --test-coverage-functions=90 --test-coverage-branches=85 --test-coverage-include=out/vscode-extension/src/backend/**/*.js --test-coverage-include=out/vscode-extension/src/utils/**/*.js --test-coverage-include=out/src/utils/**/*.js --test-coverage-include=out/src/usageAnalysis.js --test-coverage-include=out/src/tokenEstimation.js --test-coverage-include=out/src/maturityScoring.js out/vscode-extension/test/unit/*.test.js",

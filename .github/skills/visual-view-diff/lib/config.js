@@ -158,14 +158,18 @@ function selectViews(config, filter) {
  * The themes the harness can render. A theme becomes part of a CSS path and of
  * every screenshot file name, so only these exact values are accepted.
  */
-const THEMES = ['dark', 'light'];
+const THEMES = ['dark', 'light', 'hc', 'hc-light'];
 
-/** `--theme dark|light|both` (default dark) → the themes to render. */
+/** The default pair CI renders; `hc` and `hc-light` are opt-in (`--theme all`, `hc`, `hc-light`). */
+const DEFAULT_THEMES = ['dark', 'light'];
+
+/** `--theme dark|light|hc|hc-light|both|all` (default dark) → the themes to render. */
 function parseThemes(value) {
 	if (value === undefined) { return ['dark']; }
-	if (value === 'both') { return [...THEMES]; }
+	if (value === 'both') { return [...DEFAULT_THEMES]; }
+	if (value === 'all') { return [...THEMES]; }
 	if (THEMES.includes(value)) { return [value]; }
-	throw new Error(`--theme must be dark, light or both, got ${JSON.stringify(value)}.`);
+	throw new Error(`--theme must be one of ${THEMES.join(', ')}, both or all, got ${JSON.stringify(value)}.`);
 }
 
 /**

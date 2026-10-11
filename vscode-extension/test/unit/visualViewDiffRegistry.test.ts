@@ -36,6 +36,7 @@ const config = requireFromHere(path.join(SKILL_DIR, 'lib', 'config.js')) as {
 	validateRegistry: (registry: Registry) => Registry;
 	baselineRegistry: (current: Registry, base: Registry | null, dirs: Dirs) => Registry;
 	ID_PATTERN: RegExp;
+	parseThemes: (value: unknown) => string[];
 };
 
 const harness = requireFromHere(path.join(SKILL_DIR, 'lib', 'harness.js')) as {
@@ -72,6 +73,36 @@ test('the render harness injects additional panel globals without allowing scrip
 	assert.match(html, /window\["__DASHBOARD_CONFIG__"\]/);
 	assert.match(html, /\\u003c\/script>/);
 	assert.doesNotMatch(html, /<\/script><script>alert/);
+});
+
+test('the harness renders light and high-contrast themes with the kind VS Code sets', () => {
+	const kinds: Record<string, string> = {
+		dark: 'vscode-dark', light: 'vscode-light', hc: 'vscode-high-contrast', 'hc-light': 'vscode-high-contrast-light',
+	};
+	for (const [theme, kind] of Object.entries(kinds)) {
+		const html = harness.buildPageHtml({
+			globalName: '__INITIAL_X__', fixture: {}, theme,
+			bundlePath: path.join(SKILL_DIR, 'dist', 'x.js'), repoRoot: REPO_ROOT,
+		});
+		assert.ok(html.includes(`<body data-vscode-theme-kind="${kind}" class="${kind}">`), theme);
+	}
+	assert.match(harness.buildPageHtml({
+		globalName: '__INITIAL_X__', fixture: {}, theme: 'hc',
+		bundlePath: path.join(SKILL_DIR, 'dist', 'x.js'), repoRoot: REPO_ROOT,
+	}), /--vscode-contrastBorder: #6fc3df/, 'hc overlay is layered over the dark tokens');
+	assert.deepEqual(config.parseThemes('both'), ['dark', 'light']);
+	assert.equal(config.parseThemes('all').length, 4);
+	assert.throws(() => config.parseThemes('sepia'), /--theme must be one of/);
+});
+
+test('high-contrast overlays define every themeable token the base themes define', () => {
+	const tokens = (file: string) => new Set(Array.from(fs.readFileSync(path.join(SKILL_DIR, 'lib', file), 'utf8').matchAll(/--vscode-([A-Za-z0-9-]+):/g), (m) => m[1]));
+	const notColours = new Set(['font-family', 'font-size', 'font-weight', 'editor-font-family']);
+	for (const [base, overlay] of [['theme-dark.css', 'theme-hc.css'], ['theme-light.css', 'theme-hc-light.css']]) {
+		const defined = tokens(overlay);
+		const missing = Array.from(tokens(base)).filter((t) => !notColours.has(t) && !defined.has(t));
+		assert.deepEqual(missing, [], `${overlay} inherits Modern-theme values for: ${missing.join(', ')}`);
+	}
 });
 
 test('validateRegistry refuses ids that could escape or collide as file names', () => {
