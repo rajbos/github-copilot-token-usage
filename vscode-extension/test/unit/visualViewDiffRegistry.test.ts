@@ -36,10 +36,10 @@ const config = requireFromHere(path.join(SKILL_DIR, 'lib', 'config.js')) as {
 	validateRegistry: (registry: Registry) => Registry;
 	baselineRegistry: (current: Registry, base: Registry | null, dirs: Dirs) => Registry;
 	ID_PATTERN: RegExp;
+	parseThemes: (value: unknown) => string[];
 };
 
 const harness = requireFromHere(path.join(SKILL_DIR, 'lib', 'harness.js')) as {
-	resolveThemes: (arg?: string) => string[];
 	buildPageHtml: (options: { globalName: string; fixture: unknown; theme: string; bundlePath: string; repoRoot: string; extraGlobals?: Record<string, unknown> }) => string;
 };
 
@@ -90,9 +90,9 @@ test('the harness renders light and high-contrast themes with the kind VS Code s
 		globalName: '__INITIAL_X__', fixture: {}, theme: 'hc',
 		bundlePath: path.join(SKILL_DIR, 'dist', 'x.js'), repoRoot: REPO_ROOT,
 	}), /--vscode-contrastBorder: #6fc3df/, 'hc overlay is layered over the dark tokens');
-	assert.deepEqual(harness.resolveThemes('both'), ['dark', 'light']);
-	assert.equal(harness.resolveThemes('all').length, 4);
-	assert.throws(() => harness.resolveThemes('sepia'), /Unknown theme/);
+	assert.deepEqual(config.parseThemes('both'), ['dark', 'light']);
+	assert.equal(config.parseThemes('all').length, 4);
+	assert.throws(() => config.parseThemes('sepia'), /--theme must be one of/);
 });
 
 test('high-contrast overlays define every themeable token the base themes define', () => {
