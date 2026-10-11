@@ -24,7 +24,7 @@ import {
 	promotionGroupFingerprint,
 	isOpenableCitedDocument,
 	sameRepoSlug,
-	UNTITLED_SUBJECT_KEY,
+	UNTITLED_SUBJECT_PREFIX,
 	isRelativeInsideRoot,
 	normalizeRepoSlug,
 	analyzeServerMemoriesForCheckout,
@@ -2094,17 +2094,23 @@ test('renderPromotionMarkdown reports the target status even when there is nothi
 	assert.match(renderPromotionMarkdown(analyzeServerMemories({ repo: 'o/n', enabled: false, memories: [] }, alwaysExists)), /turned off[\s\S]*Suggested target:/);
 });
 
-test('a subject that normalizes to nothing still gets a stable key and the Ask Copilot action', () => {
+test('subjects that normalize to nothing get distinct, stable, non-empty keys and keep the Ask Copilot action', () => {
 	const analysis = analyzeServerMemories({
 		repo: 'o/n',
 		enabled: true,
-		memories: [memory({ id: '1', subject: '!!!', citations: ['src/a.ts:1'] }), memory({ id: '2', subject: '🚀', citations: ['src/b.ts:1'] })],
+		memories: [
+			memory({ id: '1', subject: '!!!', fact: 'Bang fact.', citations: ['src/a.ts:1'] }),
+			memory({ id: '2', subject: '🚀', fact: 'A much longer rocket fact that must not be paired with the bang subject.', citations: ['src/b.ts:1'] }),
+			memory({ id: '3', subject: '!!!', fact: 'Another bang fact.', citations: ['src/c.ts:1'] }),
+		],
 	}, { fileExists: () => true, promotionTargetStatus: () => 'exists' });
-	const group = analysis.promotionGroups[0];
-	assert.equal(group.subject, UNTITLED_SUBJECT_KEY);
-	assert.equal(analysis.promotionGroups.length, 1, 'both untitled subjects share the one key');
-	const row = toServerMemoriesAnalysisView(analysis)?.topPromotionGroups[0];
-	assert.equal(row?.subject, UNTITLED_SUBJECT_KEY);
-	assert.ok(row?.prompt && row.fingerprint, 'the row is still offered the action');
-	assert.ok('prompt' in buildPromotionPromptForSubject(analysis, UNTITLED_SUBJECT_KEY, row.fingerprint, () => 'exists'));
+	const keys = analysis.promotionGroups.map(g => g.subject).sort();
+	assert.deepEqual(keys, [`${UNTITLED_SUBJECT_PREFIX}!!!)`, `${UNTITLED_SUBJECT_PREFIX}🚀)`], 'unrelated untitled subjects stay separate');
+	const bang = analysis.promotionGroups.find(g => g.displaySubject === '!!!');
+	assert.equal(bang?.repeatCount, 2, 'identical untitled subjects still group');
+	assert.ok(!bang?.representativeFact.includes('rocket'), 'no fact from another subject');
+	for (const row of toServerMemoriesAnalysisView(analysis)?.topPromotionGroups ?? []) {
+		assert.ok(row.subject && row.prompt && row.fingerprint, 'every row keeps its action');
+		assert.ok('prompt' in buildPromotionPromptForSubject(analysis, row.subject, row.fingerprint, () => 'exists'));
+	}
 });
