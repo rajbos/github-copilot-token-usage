@@ -41,7 +41,7 @@ const dup = requireFromHere(
 	renderMarkdown: (groups: unknown[], scanned: number, threshold: number | null) => string;
 	renderJson: (groups: unknown[], scanned: number, threshold: number | null) => string;
 	parseArgs: (argv: string[]) => { minLines: number; includes: string[]; json: boolean; failThreshold: number | null; maxGroups: number | null; baseline: string | null };
-	applyBaseline: (args: { baseline: string | null; maxGroups: number | null; failThreshold: number | null }, read?: (f: string) => string) => { maxGroups: number | null; failThreshold: number | null };
+	applyBaseline: (args: { baseline: string | null; minLines: number; minLinesExplicit: boolean; maxGroups: number | null; failThreshold: number | null }, read?: (f: string) => string) => { minLines: number; maxGroups: number | null; failThreshold: number | null };
 	gateViolations: (groups: { lines: number; occurrences: unknown[] }[], args: { maxGroups: number | null; failThreshold: number | null }) => string[];
 	DEFAULT_INCLUDES: string[];
 	MIN_LINES_DEFAULT: number;
@@ -387,19 +387,19 @@ test('DEFAULT_INCLUDES: covers the non-extension source trees too', () => {
 });
 
 test('applyBaseline: supplies limits but explicit flags win', () => {
-	const read = () => JSON.stringify({ maxGroups: 5, maxDuplicatedLines: 100 });
-	const a = dup.applyBaseline({ baseline: 'x', maxGroups: null, failThreshold: null }, read);
+	const read = () => JSON.stringify({ minLines: 14, maxGroups: 5, maxDuplicatedLines: 100 });
+	const a = dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null }, read);
 	assert.deepEqual([a.maxGroups, a.failThreshold], [5, 100]);
-	const b = dup.applyBaseline({ baseline: 'x', maxGroups: 9, failThreshold: 7 }, read);
+	const b = dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: 9, failThreshold: 7 }, read);
 	assert.deepEqual([b.maxGroups, b.failThreshold], [9, 7]);
-	const none = dup.applyBaseline({ baseline: null, maxGroups: null, failThreshold: null }, read);
+	const none = dup.applyBaseline({ baseline: null, minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null }, read);
 	assert.equal(none.maxGroups, null);
 });
 
 test('applyBaseline: rejects a malformed baseline', () => {
-	assert.throws(() => dup.applyBaseline({ baseline: 'x', maxGroups: null, failThreshold: null }, () => '{"maxGroups":-1,"maxDuplicatedLines":3}'));
-	assert.throws(() => dup.applyBaseline({ baseline: 'x', maxGroups: null, failThreshold: null }, () => '{"maxGroups":1}'));
-	assert.throws(() => dup.applyBaseline({ baseline: 'x', maxGroups: null, failThreshold: null }, () => 'not json'));
+	assert.throws(() => dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null }, () => '{"minLines":14,"maxGroups":-1,"maxDuplicatedLines":3}'));
+	assert.throws(() => dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null }, () => '{"minLines":14,"maxGroups":1}'));
+	assert.throws(() => dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null }, () => 'not json'));
 });
 
 test('gateViolations: flags growth in groups or lines, passes at the limit', () => {
@@ -419,4 +419,41 @@ test('the detector enforces the committed baseline against the repo', () => {
 	const bad = cp.spawnSync(process.execPath, [script, '--min-lines', '14', '--baseline', baseline, '--max-groups', '0', '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /duplicate groups/);
+});
+
+test('applyBaseline: applies the baseline minLines unless --min-lines was passed', () => {
+	const read = () => JSON.stringify({ minLines: 14, maxGroups: 5, maxDuplicatedLines: 100 });
+	const base = { baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null };
+	assert.equal(dup.applyBaseline({ ...base }, read).minLines, 14);
+	assert.equal(dup.applyBaseline({ ...base, minLines: 14, minLinesExplicit: true }, read).minLines, 14);
+});
+
+test('applyBaseline: an explicit --min-lines that conflicts with the baseline is an error', () => {
+	const read = () => JSON.stringify({ minLines: 14, maxGroups: 5, maxDuplicatedLines: 100 });
+	assert.throws(
+		() => dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: true, maxGroups: null, failThreshold: null }, read),
+		/conflicts with baseline/,
+	);
+});
+
+test('applyBaseline: a baseline without a valid minLines is rejected', () => {
+	const bad = () => JSON.stringify({ maxGroups: 5, maxDuplicatedLines: 100 });
+	assert.throws(() => dup.applyBaseline({ baseline: 'x', minLines: 6, minLinesExplicit: false, maxGroups: null, failThreshold: null }, bad), /minLines/);
+});
+
+test('--help lists each option once', () => {
+	const r = cp.spawnSync(process.execPath, [path.join(REPO_ROOT, 'scripts', 'check-code-duplication.js'), '--help'], { encoding: 'utf8' });
+	for (const opt of ['--max-groups', '--baseline', '--min-lines', '--fail-threshold']) {
+		assert.equal(r.stdout.split(/\r?\n/).filter((l) => l.trimStart().startsWith(opt + ' ')).length, 1, opt);
+	}
+});
+
+test('the detector with only --baseline scans at the baseline minLines and passes', () => {
+	const script = path.join(REPO_ROOT, 'scripts', 'check-code-duplication.js');
+	const baseline = path.join(REPO_ROOT, 'scripts', 'code-duplication-baseline.json');
+	const ok = cp.spawnSync(process.execPath, [script, '--baseline', baseline, '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+	assert.equal(ok.status, 0, ok.stderr);
+	const conflict = cp.spawnSync(process.execPath, [script, '--min-lines', '6', '--baseline', baseline], { encoding: 'utf8' });
+	assert.equal(conflict.status, 2);
+	assert.match(conflict.stderr, /conflicts with baseline/);
 });

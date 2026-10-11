@@ -51,6 +51,7 @@ const MIN_LINES_DEFAULT = 6;
 function parseArgs(argv) {
 	const args = {
 		minLines: MIN_LINES_DEFAULT,
+		minLinesExplicit: false,
 		includes: [],
 		json: false,
 		failThreshold: null,
@@ -62,6 +63,7 @@ function parseArgs(argv) {
 		const a = argv[i];
 		if (a === '--min-lines') {
 			args.minLines = Math.max(1, parseInt(argv[++i], 10) || MIN_LINES_DEFAULT);
+			args.minLinesExplicit = true;
 		} else if (a === '--include') {
 			args.includes.push(argv[++i]);
 		} else if (a === '--json') {
@@ -91,11 +93,10 @@ const USAGE = `Usage: check-code-duplication.js [options]
   --json               Emit JSON instead of Markdown
   --fail-threshold N   Exit 1 when total duplicated lines > N (default: report only)
   --max-groups N       Exit 1 when the number of duplicate groups > N
-  --baseline FILE      Ratchet: read maxGroups/maxDuplicatedLines (and minLines) from a
-                       JSON baseline; exit 1 when either grows. Explicit flags win.
-  --max-groups N       Exit 1 when the number of duplicate groups > N
-  --baseline FILE      Ratchet: read maxGroups/maxDuplicatedLines from a JSON baseline;
-                       exit 1 when either grows. Explicit flags win over the file.
+  --baseline FILE      Ratchet: read minLines/maxGroups/maxDuplicatedLines from a JSON
+                       baseline; exit 1 when either limit grows. --min-lines is taken
+                       from the file unless given (it must then match the file); an
+                       explicit --max-groups/--fail-threshold wins over the file.
   --root DIR           Repo root to resolve globs against (default: repo root)
   -h, --help           Show this help
 `;
@@ -555,6 +556,13 @@ function renderJson(groups, scanned, threshold) {
 function applyBaseline(args, readFile = (f) => fs.readFileSync(f, 'utf8')) {
 	if (!args.baseline) { return args; }
 	const b = JSON.parse(readFile(args.baseline));
+	if (!Number.isInteger(b.minLines) || b.minLines < 1) {
+		throw new Error(`baseline ${args.baseline}: "minLines" must be a positive integer`);
+	}
+	if (args.minLinesExplicit && args.minLines !== b.minLines) {
+		throw new Error(`--min-lines ${args.minLines} conflicts with baseline ${args.baseline} (measured at minLines ${b.minLines}); the limits are not comparable`);
+	}
+	args.minLines = b.minLines;
 	for (const k of ['maxGroups', 'maxDuplicatedLines']) {
 		if (!Number.isInteger(b[k]) || b[k] < 0) {
 			throw new Error(`baseline ${args.baseline}: "${k}" must be a non-negative integer`);

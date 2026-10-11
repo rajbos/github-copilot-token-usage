@@ -28,6 +28,7 @@ jobs:
       # Playwright suite for nothing.
       ci-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.ci-relevant == 'true' }}
       coverage-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.coverage-relevant == 'true' }}
+      duplication-relevant: ${{ github.event_name == 'push' || steps.filter.outputs.duplication-relevant == 'true' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -84,6 +85,20 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/scripts/check-test-coverage.sh'
               - '.github/workflows/scripts/check-test-coverage.test.sh'
+            # Gates duplication-check only: every tree check-code-duplication.js
+            # scans by default. Kept out of ci-relevant so a sharing-server,
+            # desktop or release-video change runs this dependency-free script
+            # instead of the full extension build and Playwright suite.
+            duplication-relevant:
+              - 'vscode-extension/src/**'
+              - 'src/**'
+              - 'cli/src/**'
+              - 'sharing-server/src/**'
+              - 'desktop/src/**'
+              - 'release-video/src/**'
+              - 'scripts/check-code-duplication.js'
+              - 'scripts/code-duplication-baseline.json'
+              - '.github/workflows/ci.yml'
 
   # Deterministic guard against "new source logic without test changes" — the
   # class of finding the Test Expert agent would otherwise have to
@@ -121,6 +136,36 @@ jobs:
         PR_BODY: ${{ github.event.pull_request.body }}
       shell: bash
       run: bash .github/workflows/scripts/check-test-coverage.sh
+
+  # Duplication ratchet (see scripts/code-duplication-baseline.json). Its own
+  # job rather than a build step so it also covers the trees the extension
+  # build ignores (cli, sharing-server, desktop, release-video). The detector
+  # has no dependencies, so this needs no npm install. Pre-existing clones are
+  # tolerated up to the committed baseline (group count and total duplicated
+  # lines); the step fails when either grows. Lower the baseline as duplicates
+  # are removed. The report goes to the step summary, the gate message to stderr.
+  duplication-check:
+    name: Code duplication ratchet
+    runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.duplication-relevant == 'true'
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Setup Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: '.nvmrc'
+
+    - name: Run code duplication analysis
+      shell: bash
+      run: node scripts/check-code-duplication.js --baseline scripts/code-duplication-baseline.json >> "$GITHUB_STEP_SUMMARY"
 
   # No matrix. 22.x was dropped (.nvmrc pins 24, and package/ui-checks here
   # already build on 24 only), and a one-entry matrix would be actively
@@ -203,18 +248,6 @@ jobs:
       if: always()
       shell: bash
       run: node scripts/parse-lint-output.js "$RUNNER_TEMP/lint-output.json" >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Run code duplication analysis
-      # A ratchet, not a clean-slate gate: pre-existing clones are tolerated up
-      # to the committed scripts/code-duplication-baseline.json (group count and
-      # total duplicated lines); the step fails when either grows. Lower the
-      # baseline as duplicates are removed. The report still goes to the step
-      # summary; the gate message goes to stderr. Scans vscode-extension/src,
-      # the shared src/, cli/src, sharing-server/src, desktop/src, release-video/src.
-      if: always()
-      working-directory: vscode-extension
-      shell: bash
-      run: pnpm run --silent check:duplicates -- --min-lines 14 >> "$GITHUB_STEP_SUMMARY"
 
     - name: Run type checking
       working-directory: vscode-extension
@@ -300,8 +333,9 @@ jobs:
 
     - name: Run Node.js unit tests
       # Also the coverage gate: the --test-coverage-* thresholds below are a
-      # ratchet set ~3 points under the level measured on 2026-10-11 (lines 91.6,
-      # functions 93.2, branches 88.5 over the include set). Raise them as
+      # ratchet set ~3 points under the level measured on 2026-10-11 (Node 24
+      # locally: lines 91.6, functions 93.2, branches 88.5; this job on Linux:
+      # lines 92.5, functions 93.2, branches 90.2). Raise them as
       # coverage improves; never lower them to admit a regression. Keep in sync
       # with test:coverage / test:coverage:ci in vscode-extension/package.json.
       working-directory: vscode-extension
@@ -846,7 +880,7 @@ jobs:
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
-    needs: [check-changes, test-coverage-check, build, package, ui-checks]
+    needs: [check-changes, test-coverage-check, duplication-check, build, package, ui-checks]
     if: always()
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -868,6 +902,7 @@ jobs:
           # PR-only jobs on a push, and for package outside main.
           results: |
             test-coverage-check=${{ needs.test-coverage-check.result }}
+            duplication-check=${{ needs.duplication-check.result }}
             build=${{ needs.build.result }}
             package=${{ needs.package.result }}
             ui-checks=${{ needs.ui-checks.result }}
