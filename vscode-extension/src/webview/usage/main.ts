@@ -61,7 +61,7 @@ import { DarkFactoryTab } from './darkFactoryTab';
 import { insightCardElementId, isInsightCardAnchor } from '../../insightAnchors';
 import { placeBubbleLabels, scaleBubbleRadius, type BubbleLabelPlacement } from './modelLeaderboard';
 import { createUsageWebviewReadyNotifier, restoreGitHubActivityPanels } from './readiness';
-import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml } from './serverMemories';
+import { sanitizeServerMemoriesAnalysis as _sanitizeServerMemoriesAnalysis, buildServerMemoriesSectionHtml, wireServerMemoriesButtons } from './serverMemories';
 import { buildCorrectionsRepoSummaryHtml, buildParticipationModesCardHtml, buildRevertCellHtml, sanitizeRepoActivity } from './agenticSignals';
 import { buildBuiltinToolsHtml, buildUnusedMcpHtml, buildUnusedSkillsHtml } from './toolCurationTables';
 import { renderAgentPluginsFilter, renderAgentPluginsTable, renderMemoryFilesTable, renderMissedPotentialTable, renderRepoHygieneListTable, type RepoHygieneListRow } from './usageListTables';
@@ -5272,6 +5272,7 @@ function renderLayout(stats: UsageAnalysisStats): void {
 	wireMcpPeriodToggle();
 	wireRepositoryButtons();
 	wireCurationButtons();
+	wireServerMemoriesButtons(message => vscode.postMessage(message));
 	wireSkillSuggestions(skillSuggestionsWiring);
 	renderRepositoryHygienePanels();
 	// Before setupTabs(): its first-visit replay marks new insights as seen when the render opens

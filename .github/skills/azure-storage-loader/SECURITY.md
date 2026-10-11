@@ -80,7 +80,7 @@ Update it in the same PR as any change that adds or alters a trigger surface (se
 - Dates must match `YYYY-MM-DD`; `--format` is restricted to `json`/`csv`.
 - `example-usage.js` applies the same account-name pattern and ISO dates before they reach
   a subprocess (lines 40-49), and uses `mkdtemp`.
-- `copilot-setup-steps.yml` installs the dependencies with `npm ci --ignore-scripts --production`.
+- `copilot-setup-steps.yml` installs the dependencies with `pnpm install --frozen-lockfile --ignore-scripts --prod`.
 - `load-table-data.test.js` covers the validation and output hardening above and runs in
   `validate-skills.yml`.
 

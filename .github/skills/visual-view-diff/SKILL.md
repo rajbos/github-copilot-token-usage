@@ -51,13 +51,13 @@ trustworthy: if rendering code changes, the screenshot changes with it.
 ## Usage
 
 Everything runs from the repo root. Bundles must be built first
-(`cd vscode-extension && npm install && node esbuild.js`).
+(`cd vscode-extension && pnpm install && node esbuild.js`).
 
 ### Compare against the baseline commit (the usual case)
 
 ```bash
 node .github/skills/visual-view-diff/visual-diff.js
-# or, from vscode-extension/:  npm run visual:diff
+# or, from vscode-extension/:  pnpm run visual:diff
 ```
 
 This builds the webviews at the merge base with `origin/main` in a temporary
@@ -96,7 +96,7 @@ A view rendered in one of its declared states (a tab, a mode) is named
 
 ```bash
 node .github/skills/visual-view-diff/render-views.js --out visual-output/current --theme both
-# or, from vscode-extension/:  npm run visual:render -- --theme both
+# or, from vscode-extension/:  pnpm run visual:render -- --theme both
 ```
 
 ### Compare two directories you already have
@@ -130,7 +130,7 @@ decide: intended restyle, or accidental regression? The tool reports; you judge.
   agent can run this skill as-is.
 - **Built webview bundles** in `vscode-extension/dist/webview/`.
 - **`vscode-extension/node_modules`** — the baseline worktree symlinks it rather
-  than running a second `npm install`.
+  than running a second `pnpm install`.
 
 ## Fixtures
 

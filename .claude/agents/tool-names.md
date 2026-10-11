@@ -146,9 +146,9 @@ When adding a new tool to `toolNames.json`, also determine if it belongs in `aut
 
 After editing `src/toolNames.json`:
 
-1. Run `npm --prefix vscode-extension run validate` to verify type-checking, ESLint, and the build pass
+1. Run `pnpm --prefix vscode-extension run validate` to verify type-checking, ESLint, and the build pass
 2. Ensure the JSON is valid (no trailing commas, proper quoting)
-3. Run tests with `npm --prefix vscode-extension run test:node` to confirm nothing is broken
+3. Run tests with `pnpm --prefix vscode-extension run test:node` to confirm nothing is broken
 
 ## Upstream Sync Reference
 
@@ -194,5 +194,5 @@ This is already handled by `workspaceHelpers.ts` (`detectToolEditorFromPath`, `d
 - [ ] Generate friendly names following the conventions above
 - [ ] Add entries to `src/toolNames.json` in the correct location
 - [ ] For each new tool, decide if it is **automatic** or **intentional** — add automatic tools to `src/automaticTools.json`
-- [ ] Run `npm --prefix vscode-extension run validate`
-- [ ] Run `npm --prefix vscode-extension run test:node` to confirm tests pass
+- [ ] Run `pnpm --prefix vscode-extension run validate`
+- [ ] Run `pnpm --prefix vscode-extension run test:node` to confirm tests pass

@@ -17,9 +17,9 @@ The CLI (`cli/`) is a standalone command-line tool that **shares the session dis
 
 ```bash
 cd cli
-npm install
-npm run build            # development build
-npm run build:production # minified release build
+pnpm install
+pnpm run build            # development build
+pnpm run build:production # minified release build
 ```
 
 Or from the repo root:
@@ -61,6 +61,6 @@ Then in `cli/src/helpers.ts` add only the routing/processing hooks:
 - [ ] `cli/src/commands/stats.ts` — `getEditorDisplayName()` entry
 - [ ] `cli/README.md` — "Data Sources" section updated
 - [ ] `docs/vscode-extension/README.md` — add the new editor to the "Supported editors shown in the chart" list in the **Chart View** section
-- [ ] `npm run build` passes (from `cli/`)
+- [ ] `pnpm run build` passes (from `cli/`)
 - [ ] CLI `stats` command shows the new editor in the session list
 - [ ] Token counts are non-zero and plausible

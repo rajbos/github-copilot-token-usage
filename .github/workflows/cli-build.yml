@@ -47,28 +47,33 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.2.2'
+
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
-          # This job runs `npm ci` in both vscode-extension/ and cli/, so the
-          # npm cache is keyed on both lock files.
-          cache: 'npm'
+          # This job installs dependencies in both vscode-extension/ and cli/, so the
+          # pnpm cache is keyed on both lock files.
+          cache: 'pnpm'
           cache-dependency-path: |
-            vscode-extension/package-lock.json
-            cli/package-lock.json
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       - name: Install extension dependencies
         working-directory: vscode-extension
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install CLI dependencies
         working-directory: cli
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build CLI
         working-directory: cli
-        run: npm run build
+        run: pnpm run build
 
       - name: Validate CLI --help
         working-directory: cli
@@ -112,7 +117,7 @@ jobs:
 
       - name: Build production bundle
         working-directory: cli
-        run: npm run build:production
+        run: pnpm run build:production
 
       - name: Verify production bundle runs
         working-directory: cli

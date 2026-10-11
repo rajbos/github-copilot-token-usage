@@ -36,7 +36,7 @@ how the daily run avoids duplicate issues and respects a human's "won't fix".
 ## Step 1 — Install and check capacity
 
 ```bash
-cd vscode-extension && npm ci && cd ..
+cd vscode-extension && pnpm install --frozen-lockfile && cd ..
 gh label create repo-health --color 0e8a16 --description "Daily repo-health scan finding" 2>/dev/null || true
 open_prs=$(gh pr list --label repo-health --state open --json number --jq length)
 [ "$open_prs" -lt 3 ] || { echo "STOP: $open_prs repo-health PRs already open"; exit 1; }
@@ -104,8 +104,8 @@ Read `AGENTS.md` and the instructions file for the sub-project you will touch
 expect to touch:
 
 ```bash
-cd vscode-extension && npx tsc --noEmit && npm run test:node && cd ..   # extension + shared src/
-cd cli && npm ci && npm run build && cd ..                              # if cli/ or src/ is touched
+cd vscode-extension && npx tsc --noEmit && pnpm run test:node && cd ..   # extension + shared src/
+cd cli && pnpm install --frozen-lockfile && pnpm run build && cd ..                              # if cli/ or src/ is touched
 ```
 
 If the baseline is already red, comment that on the issue and stop — do not
@@ -151,12 +151,12 @@ it prints `resolved`. No new finding may appear in the files you
 touched. Then re-run the Step 5 baseline commands plus:
 
 ```bash
-cd vscode-extension && npm run lint && node esbuild.js --production && cd ..
+cd vscode-extension && pnpm run lint && node esbuild.js --production && cd ..
 ```
 
 Touched `vscode-extension/src/webview/**` or panel message handling? Also run
-`npm run check:contract` and `npm run check:interaction` (headless — safe). A
-visual change needs `npm run visual:diff`; a pure refactor should show
+`pnpm run check:contract` and `pnpm run check:interaction` (headless — safe). A
+visual change needs `pnpm run visual:diff`; a pure refactor should show
 **no** changed views. Touched `sharing-server/`? Run its checks from
 `sharing-server/AGENTS.md`.
 
