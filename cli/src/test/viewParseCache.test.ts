@@ -228,3 +228,16 @@ test('sessionVersion adds a DB-backed session\'s own activity time; a file is ve
 	assert.deepEqual(await sessionVersion(path.join(__dirname, 'session.json'), stats, at(9_000)), stats);
 	assert.equal(asked, before, 'a regular file never asks the adapter');
 });
+
+test('calculateViewStats stays cancelled once cancellation was seen, even if the predicate flips back', async t => {
+	// The desktop predicate flips back when the user returns to Chart mid-walk; files skipped while
+	// it was true must not come back as a complete (partial) history.
+	const { filePath } = mockSession(t, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', false);
+	const missing = path.join(path.dirname(filePath), 'never-read.json');
+	let checks = 0;
+	// Pre-check false, first file sees true (skipped), everything after sees false again.
+	await assert.rejects(
+		calculateViewStats([filePath, missing], false, undefined, { isCancelled: () => ++checks === 2 }),
+		ViewStatsCancelledError,
+	);
+});

@@ -850,7 +850,11 @@ export async function calculateViewStats(sessionFiles: string[], verbose = false
 	dailyStats: DailyTokenStats[];
 	efficiencySessionInputs: EfficiencySessionInput[];
 }> {
-	const isCancelled = options.isCancelled ?? (() => false);
+	// Latched: once any check sees cancellation, the walk stays cancelled. The caller's predicate
+	// can flip back (the user returns to Chart before the walk ends), and files skipped while it
+	// was true must not be returned — or cached — as a complete history.
+	let cancelled = false;
+	const isCancelled = () => (cancelled ||= options.isCancelled?.() ?? false);
 	if (isCancelled()) { throw new ViewStatsCancelledError(); }
 	const sessions = await runWithConcurrency(sessionFiles, async (file) => (isCancelled() ? null : processSessionFileForViews(file, verbose)));
 	if (isCancelled()) { throw new ViewStatsCancelledError(); }
