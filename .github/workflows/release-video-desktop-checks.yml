@@ -31,6 +31,10 @@ permissions:
 jobs:
   check-changes:
     runs-on: ubuntu-latest
+    # dorny/paths-filter lists changed files through the pull-requests API.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       release-video: ${{ github.event_name == 'push' || steps.filter.outputs.release-video == 'true' }}
       desktop: ${{ github.event_name == 'push' || steps.filter.outputs.desktop == 'true' }}
