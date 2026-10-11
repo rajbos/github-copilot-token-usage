@@ -34,6 +34,11 @@
         "workspaceName": "ai-engineering-fluency",
         "sessionCount": 40,
         "interactionCount": 520,
+        "memberPaths": [
+          "/home/dev/.claude/worktrees/ai-engineering-fluency/goofy-wozniak-42f712",
+          "/home/dev/repos/ai-engineering-fluency",
+          "/home/dev/repos/ai-engineering-fluency-refactor-wt"
+        ],
         "typeStatuses": {
           "copilot-instructions": "✅",
           "agents-md": "✅",
@@ -225,8 +230,8 @@
         }
       },
       {
-        "workspacePath": "/home/dev/repos/sandbox",
-        "workspaceName": "sandbox",
+        "workspacePath": "/home/dev/scratch/sandbox-85ed99",
+        "workspaceName": "sandbox-85ed99",
         "sessionCount": 12,
         "interactionCount": 254,
         "typeStatuses": {
@@ -369,7 +374,10 @@
       }
     ],
     "totalWorkspaces": 26,
-    "workspacesWithIssues": 6
+    "workspacesWithIssues": 6,
+    "ungroupedWorkspaceNames": [
+      "sandbox-85ed99"
+    ]
   },
   "today": {
     "sessions": 24,

@@ -354,6 +354,8 @@ import {
   normalizeToRepoRoot as _normalizeToRepoRoot,
   resolveDebugLogCandidatePaths as _resolveDebugLogCandidatePaths,
 } from '../../src/workspaceHelpers';
+import { groupWorkspaces as _groupWorkspaces, detectArtefactWorkspaceNames as _detectArtefactWorkspaceNames, mergeGroupCustomizationFiles as _mergeGroupCustomizationFiles, workspaceEntriesWithRemotes as _workspaceEntriesWithRemotes, groupFolders as _groupFolders, type WorkspaceGroup } from '../../src/workspaceGrouping';
+import { prefetchWorkspaceGroupingProbes as _prefetchWorkspaceGroupingProbes } from '../../src/workspaceGroupingProbes';
 import { getRepositoryUrl as _getRepositoryUrl } from './repositoryUrl';
 
 // --- Chart building ---
@@ -997,16 +999,6 @@ function aggregateEditorModelUsageByBillingGroup(editorModelUsage: { [editor: st
 	return groupModelUsage;
 }
 
-function _dwbcPickWinner(
-	key: string, canonical: string,
-	keyIsRemote: boolean, canonIsRemote: boolean,
-	sessionCounts: Map<string, number>
-): string {
-	if (!keyIsRemote && canonIsRemote) { return key; }
-	if (!canonIsRemote && keyIsRemote) { return canonical; }
-	return (sessionCounts.get(key) || 0) >= (sessionCounts.get(canonical) || 0) ? key : canonical;
-}
-
 /** One Copilot CLI session where OTel export data was found, for the diagnostics "OTel Delta" tab. */
 interface CopilotCliOtelComparisonSession {
 	file: string;
@@ -1126,7 +1118,9 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// showing an estimate in Today/month/30-day totals until their file changed.
 	// v76: Add per-session autonomyUsage (autopilot/auto vs supervised) to usageAnalysis: cache hits
 	// skip re-analysis, so existing entries would lack the metric until their file changed.
-	private static readonly CACHE_VERSION = 79;
+	// v80: Resolve each session's git remote during analysis (adapter metadata, else content
+	// references) so workspace grouping has it on a cold cache; existing entries lack it.
+	private static readonly CACHE_VERSION = 80;
 	/** Initial stats should not wait indefinitely for one inaccessible or stalled session. */
 	private static readonly SESSION_PRELOAD_TIMEOUT_MS = 15_000;
 	/**
@@ -1592,6 +1586,12 @@ class CopilotTokenTracker implements vscode.Disposable {
 	// backfill descriptions for skills whose repo isn't the one currently open (see
 	// findSkillDescriptionInWorkspaces).
 	private _skillWorkspacePathsAccum: Map<string, Set<string>> = new Map();
+	// Every git remote seen per workspace folder (last 30 days), the strongest grouping signal.
+	// All of them are kept: a folder reused for another repository must reach the grouping as
+	// conflicting, not as whichever remote the session loop happened to see first.
+	private _workspaceRepositoryAccum: Map<string, Set<string>> = new Map();
+	// Workspace groups from the last grouping pass, keyed by canonical path (src/workspaceGrouping.ts).
+	private _workspaceGroups: Map<string, WorkspaceGroup> = new Map();
 
 	// Model pricing data - loaded from modelPricing.json
 	// Reference: OpenAI API Pricing (https://openai.com/api/pricing/) - Retrieved December 2025
@@ -6897,7 +6897,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			if (nonCopilotFiles.length > 0 && !hasCopilotFiles) {
 				missedPotential.push({
 					workspacePath,
-					workspaceName: path.basename(workspacePath),
+					workspaceName: this._workspaceGroups.get(workspacePath)?.displayName ?? path.basename(workspacePath),
 					sessionCount,
 					interactionCount: workspaceInteractionCounts.get(workspacePath) || 0,
 					nonCopilotFiles
@@ -6964,6 +6964,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this._skillCallsByEditorAccum = new Map();
 		this._toolCallsByEditorAccum = new Map();
 		this._skillWorkspacePathsAccum = new Map();
+		this._workspaceRepositoryAccum = new Map();
 		let agenticDailyTrend: AgenticTrendPoint[] | undefined;
 		let recentSessions: { last7: TodaySessionSummary[]; last30: TodaySessionSummary[]; currentMonth: TodaySessionSummary[] } | undefined;
 		let correctionReport: CorrectionReport | undefined;
@@ -8056,7 +8057,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		sessionFile: string, interactions: number,
 		sessionCounts: Map<string, number>, interactionCounts: Map<string, number>,
 		unresolvedIds: Set<string>, unresolvedCounts: Map<string, number>,
-		fallbackWorkspacePath?: string
+		fallbackWorkspacePath?: string, repository?: string
 	): void {
 		const workspaceId = _extractWorkspaceIdFromSessionPath(sessionFile);
 		try {
@@ -8070,6 +8071,11 @@ class CopilotTokenTracker implements vscode.Disposable {
 				const norm = path.normalize(workspaceFolder);
 				sessionCounts.set(norm, (sessionCounts.get(norm) || 0) + 1);
 				interactionCounts.set(norm, (interactionCounts.get(norm) || 0) + interactions);
+				if (repository) {
+					const remotes = this._workspaceRepositoryAccum.get(norm) ?? new Set<string>();
+					remotes.add(repository);
+					this._workspaceRepositoryAccum.set(norm, remotes);
+				}
 				this.ensureWorkspaceCustomizationCached(norm);
 			} else if (workspaceId) {
 				unresolvedIds.add(workspaceId);
@@ -8191,7 +8197,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 			this.trackWorkspaceForSession(sessionFile, interactions,
 				wsMaps.workspaceSessionCounts, wsMaps.workspaceInteractionCounts,
 				wsMaps.unresolvedWorkspaceIds, wsMaps.unresolvedWorkspaceInteractionCounts,
-				sessionData.workspaceFolderPath);
+				sessionData.workspaceFolderPath, sessionData.repository);
 			this._accumulateSkillCallsByEditor(sessionFile, analysis, sessionData.workspaceFolderPath);
 			this._accumulateToolCallsByEditor(sessionFile, analysis);
 		}
@@ -8282,123 +8288,54 @@ class CopilotTokenTracker implements vscode.Disposable {
 		}
 	}
 
-	private mergeWorkspaceInto(
-		winner: string, loser: string,
-		sessionCounts: Map<string, number>, interactionCounts: Map<string, number>
-	): void {
-		sessionCounts.set(winner, (sessionCounts.get(winner) || 0) + (sessionCounts.get(loser) || 0));
-		interactionCounts.set(winner, (interactionCounts.get(winner) || 0) + (interactionCounts.get(loser) || 0));
-		sessionCounts.delete(loser);
-		interactionCounts.delete(loser);
-		const winnerFiles = this._customizationFilesCache.get(winner) || [];
-		const loserFiles = this._customizationFilesCache.get(loser) || [];
-		if (winnerFiles.length === 0 && loserFiles.length > 0) {
-			this._customizationFilesCache.set(winner, loserFiles);
-		}
-		this._customizationFilesCache.delete(loser);
-	}
-
-	private deduplicateWorkspacesByCase(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		if (process.platform !== 'win32' && process.platform !== 'darwin') { return; }
-		const isRemotePath = (p: string) => process.platform === 'win32' && _normalizePath(p).startsWith('/');
-		const lowerToCanonical = new Map<string, string>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			const lower = key.toLowerCase();
-			if (!lowerToCanonical.has(lower)) { lowerToCanonical.set(lower, key); continue; }
-			const canonical = lowerToCanonical.get(lower)!;
-			const winner = _dwbcPickWinner(key, canonical, isRemotePath(key), isRemotePath(canonical), sessionCounts);
-			this.mergeWorkspaceInto(winner, winner === key ? canonical : key, sessionCounts, interactionCounts);
-			lowerToCanonical.set(lower, winner);
-		}
-	}
-
-	private deduplicateRemoteWorkspacePaths(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		if (process.platform !== 'win32') { return; }
-		const isRemotePath = (p: string) => _normalizePath(p).startsWith('/');
-		const basenameToLocal = new Map<string, string>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			if (!isRemotePath(key)) { basenameToLocal.set(path.basename(key).toLowerCase(), key); }
-		}
-		for (const key of Array.from(sessionCounts.keys())) {
-			if (!isRemotePath(key)) { continue; }
-			const localKey = basenameToLocal.get(path.basename(key).toLowerCase());
-			if (localKey && sessionCounts.has(key)) {
-				this.mergeWorkspaceInto(localKey, key, sessionCounts, interactionCounts);
-			}
-		}
-	}
-
-	private deduplicateCopilotWorktrees(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		const worktreeToCanonical = new Map<string, string>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			const segments = key.split(path.sep);
-			const wtIdx = segments.map(s => s.toLowerCase()).lastIndexOf('copilot-worktrees');
-			if (wtIdx === -1 || wtIdx + 2 >= segments.length) { continue; }
-			const repoName = segments[wtIdx + 1];
-			const reposPath = path.normalize(segments.slice(0, wtIdx).concat('repos', repoName).join(path.sep));
-			const canonical = fs.existsSync(reposPath) ? reposPath : path.normalize(segments.slice(0, wtIdx + 2).join(path.sep));
-			worktreeToCanonical.set(key, canonical);
-		}
-		const canonicals = new Set(worktreeToCanonical.values());
-		for (const canonical of canonicals) {
-			if (!sessionCounts.has(canonical)) { sessionCounts.set(canonical, 0); interactionCounts.set(canonical, 0); }
-			for (const [worktree, canon] of worktreeToCanonical) {
-				if (canon === canonical && worktree !== canonical && sessionCounts.has(worktree)) {
-					this.mergeWorkspaceInto(canonical, worktree, sessionCounts, interactionCounts);
-				}
-			}
-			this.ensureWorkspaceCustomizationCached(canonical);
-		}
-	}
-
 	/**
 	 * Dedup compares the customization files of the workspaces it merges, and may name new
 	 * canonical workspaces of its own, so the queued scans are resolved on both sides of it.
 	 */
 	private async deduplicateWorkspacePathsWithScans(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): Promise<void> {
 		await this.resolvePendingCustomizationScans();
-		this.deduplicateWorkspacePaths(sessionCounts, interactionCounts);
+		await this.deduplicateWorkspacePaths(sessionCounts, interactionCounts);
 		await this.resolvePendingCustomizationScans();
-	}
-
-	private deduplicateWorkspacePaths(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		this.deduplicateWorkspacesByCase(sessionCounts, interactionCounts);
-		this.deduplicateRemoteWorkspacePaths(sessionCounts, interactionCounts);
-		this.deduplicateCopilotWorktrees(sessionCounts, interactionCounts);
-		this.deduplicateByBasename(sessionCounts, interactionCounts);
+		this.mergeGroupCustomizationScans();
 	}
 
 	/**
-	 * Pass 4 — same-basename dedup for local paths.
-	 * A repo cloned at two different locations (e.g. ~/.copilot/repos/my-repo AND
-	 * ~/source/my-repo) will have the same basename but different absolute paths.
-	 * Merge them into one entry; the path with more interactions wins so the richer
-	 * customization file scan is kept.
+	 * Folds worktrees, clones, case variants and remote spellings of one repository into a single
+	 * workspace (rules and tests live in src/workspaceGrouping.ts). The count maps are rewritten
+	 * to be keyed by each group's canonical path, and a canonical path nobody has scanned yet (a
+	 * main checkout reached through a worktree) is queued for its own customization scan.
 	 */
-	private deduplicateByBasename(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): void {
-		const isRemotePath = (p: string) => process.platform === 'win32' && _normalizePath(p).startsWith('/');
-		// Group all non-remote, non-unresolved paths by lower-case basename
-		const basenameToKeys = new Map<string, string[]>();
-		for (const key of Array.from(sessionCounts.keys())) {
-			if (isRemotePath(key) || key.startsWith('<unresolved:')) { continue; }
-			const base = path.basename(key).toLowerCase();
-			const group = basenameToKeys.get(base) || [];
-			group.push(key);
-			basenameToKeys.set(base, group);
+	private async deduplicateWorkspacePaths(sessionCounts: Map<string, number>, interactionCounts: Map<string, number>): Promise<void> {
+		const paths = new Set([...sessionCounts.keys(), ...interactionCounts.keys()]);
+		const entries = [...paths].flatMap(p => _workspaceEntriesWithRemotes(
+			p, sessionCounts.get(p) || 0, interactionCounts.get(p) || 0, this._workspaceRepositoryAccum.get(p),
+		));
+		// Disk checks run asynchronously before the (pure, synchronous) grouping, so a slow or
+		// network-mounted workspace cannot block the extension host.
+		const groups = _groupWorkspaces(entries, await _prefetchWorkspaceGroupingProbes(entries));
+		sessionCounts.clear();
+		interactionCounts.clear();
+		this._workspaceGroups = new Map();
+		for (const group of groups) {
+			sessionCounts.set(group.canonicalPath, group.sessionCount);
+			interactionCounts.set(group.canonicalPath, group.interactionCount);
+			this._workspaceGroups.set(group.canonicalPath, group);
+			this.ensureWorkspaceCustomizationCached(group.canonicalPath);
 		}
-		for (const [, group] of basenameToKeys) {
-			if (group.length < 2) { continue; }
-			// Pick winner: most interactions; on tie, most sessions; on tie, first entry
-			const winner = group.reduce((best, key) => {
-				const bestScore = (interactionCounts.get(best) || 0) * 10000 + (sessionCounts.get(best) || 0);
-				const keyScore = (interactionCounts.get(key) || 0) * 10000 + (sessionCounts.get(key) || 0);
-				return keyScore > bestScore ? key : best;
-			});
-			for (const key of group) {
-				if (key !== winner && sessionCounts.has(key)) {
-					this.mergeWorkspaceInto(winner, key, sessionCounts, interactionCounts);
-				}
-			}
+	}
+
+	/**
+	 * After the scans resolve: a group's customization files are the union of its canonical
+	 * folder's and every member's (mergeGroupCustomizationFiles), so a file present in any
+	 * folder of the repository counts. Member entries are then dropped from the cache.
+	 */
+	private mergeGroupCustomizationScans(): void {
+		for (const group of this._workspaceGroups.values()) {
+			const folders = _groupFolders(group);
+			if (folders.length < 2) { continue; }
+			const merged = _mergeGroupCustomizationFiles(folders.map(f => this._customizationFilesCache.get(f)));
+			for (const member of folders.slice(1)) { this._customizationFilesCache.delete(member); }
+			this._customizationFilesCache.set(group.canonicalPath, merged);
 		}
 	}
 
@@ -8418,7 +8355,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 				else { typeStatuses[type.id] = '✅'; }
 			}
 			if (customizationTypes.every(t => typeStatuses[t.id] === '❌')) { issues++; }
-			rows.push({ workspacePath: folderPath, workspaceName: path.basename(folderPath), sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses });
+			const group = this._workspaceGroups.get(folderPath);
+			const folders = group ? _groupFolders(group) : [];
+			const memberPaths = folders.length > 1 ? folders : undefined;
+			rows.push({
+				workspacePath: folderPath, workspaceName: group?.displayName ?? path.basename(folderPath),
+				sessionCount, interactionCount: interactionCounts.get(folderPath) || 0, typeStatuses,
+				...(memberPaths ? { memberPaths } : {}),
+			});
 		}
 		return { rows, issues };
 	}
@@ -8461,7 +8405,14 @@ class CopilotTokenTracker implements vscode.Disposable {
 			const { rows: unresolvedRows, issues: unresolvedIssues } = this.buildUnresolvedWorkspaceMatrixRows(unresolvedIds, unresolvedCounts, customizationTypes);
 			const matrixRows = [...resolvedRows, ...unresolvedRows];
 			matrixRows.sort((a, b) => b.interactionCount !== a.interactionCount ? b.interactionCount - a.interactionCount : b.sessionCount - a.sessionCount);
-			this._lastCustomizationMatrix = { customizationTypes, workspaces: matrixRows, totalWorkspaces: matrixRows.length, workspacesWithIssues: resolvedIssues + unresolvedIssues };
+			const artefactNames = _detectArtefactWorkspaceNames([...this._workspaceGroups.values()]);
+			this._lastCustomizationMatrix = {
+				customizationTypes, workspaces: matrixRows, totalWorkspaces: matrixRows.length, workspacesWithIssues: resolvedIssues + unresolvedIssues,
+				...(artefactNames.length > 0 ? { ungroupedWorkspaceNames: artefactNames.map(a => a.displayName) } : {}),
+			};
+			if (artefactNames.length > 0) {
+				this.log(`🔍 [Usage Analysis] ${artefactNames.length} workspace name(s) look like ungrouped worktrees or clones: ${artefactNames.slice(0, 5).map(a => `${a.displayName} (${a.reason})`).join(', ')}`);
+			}
 			this._lastMissedPotential = this.detectMissedPotential(sessionCounts, interactionCounts);
 		} catch (e) { /* ignore overall customization scanning errors */ }
 	}

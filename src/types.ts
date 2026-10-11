@@ -1008,6 +1008,11 @@ export interface WorkspaceCustomizationRow {
   sessionCount: number;
   interactionCount: number;
   typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+  /**
+   * Folders merged into this row by workspace grouping (worktrees, clones, case/remote
+   * variants — see src/workspaceGrouping.ts). Present only when more than one folder merged.
+   */
+  memberPaths?: string[];
 }
 
 export interface WorkspaceCustomizationMatrix {
@@ -1015,6 +1020,12 @@ export interface WorkspaceCustomizationMatrix {
   workspaces: WorkspaceCustomizationRow[];
   totalWorkspaces: number;
   workspacesWithIssues: number;
+  /**
+   * Display names that still look like worktree / clone artefacts after grouping
+   * (detectArtefactWorkspaceNames). A non-empty list means a naming pattern the grouping
+   * does not know yet.
+   */
+  ungroupedWorkspaceNames?: string[];
 }
 
 // ── Dark Factory readiness ────────────────────────────────────────────────
