@@ -112,8 +112,8 @@ comparison, and the keys of a `Record<string, Handler>` map (whether that map is
 a typed variable or returned from a method like `_getAnalysisMessageHandlers`).
 
 The *handled* side is additionally widened by a plain-text scan, which reaches
-handlers living inside inline `<script>` template literals (`loadingHtml.ts`,
-`backend/configPanel.ts`) that the AST sees as one opaque string. Widening the
+handlers living inside inline `<script>` template literals (the repo-root `src/loadingHtml.ts`,
+`vscode-extension/src/backend/configPanel.ts`) that the AST sees as one opaque string. Widening the
 handled set can only ever hide a finding, never invent one. That asymmetry is
 deliberate: a checker that cries wolf gets switched off, so precision on
 findings is worth more than exhaustiveness.

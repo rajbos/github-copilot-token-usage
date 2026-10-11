@@ -4,7 +4,7 @@
  *
  * Verifies that:
  *  1. Every editor name returned by cli/src/analysis.ts::getEditorSourceFromPath
- *     has an entry in the EDITOR_ICON_MAP in formatUtils.ts.
+ *     has an entry in the EDITOR_ICON_MAP in src/editorIcons.ts.
  *  2. Every editor name returned by src/workspaceHelpers.ts::
  *     getEditorTypeFromPath has an entry in the EDITOR_ICON_MAP.
  *  3. For a canonical set of test paths the CLI and VS Code detectors return
@@ -113,11 +113,11 @@ function extractReturnedNames(body) {
 }
 
 // ---------------------------------------------------------------------------
-// Extract EDITOR_ICON_MAP keys from formatUtils.ts
+// Extract EDITOR_ICON_MAP keys from src/editorIcons.ts
 // ---------------------------------------------------------------------------
 
 /**
- * Reads formatUtils.ts and extracts the string keys of EDITOR_ICON_MAP.
+ * Reads editorIcons.ts and extracts the string keys of EDITOR_ICON_MAP.
  */
 function extractIconMapKeys(source) {
   const mapMatch = source.match(/EDITOR_ICON_MAP[^=]*=\s*\{([^}]+)\}/s);

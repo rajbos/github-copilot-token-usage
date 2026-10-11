@@ -1,6 +1,6 @@
 ---
 name: validate-editor-names
-description: Find all hardcoded path-to-editor-name mappings in the CLI (cli/src/analysis.ts::getEditorSourceFromPath) and VS Code extension (src/workspaceHelpers.ts::getEditorTypeFromPath), verify they return matching friendly display names for the same path patterns, and confirm every CLI-returned name appears in the EDITOR_ICON_MAP in formatUtils.ts. Use after adding a new editor adapter, after CLI changes, or if JetBrains/other CLI-based consumers show raw editor keys instead of friendly names.
+description: Find all hardcoded path-to-editor-name mappings in the CLI (cli/src/analysis.ts::getEditorSourceFromPath) and VS Code extension (src/workspaceHelpers.ts::getEditorTypeFromPath), verify they return matching friendly display names for the same path patterns, and confirm every CLI-returned name appears in the EDITOR_ICON_MAP in src/editorIcons.ts. Use after adding a new editor adapter, after CLI changes, or if JetBrains/other CLI-based consumers show raw editor keys instead of friendly names.
 ---
 
 # Validate Editor Names Skill
@@ -14,7 +14,7 @@ There are **three sources of truth** that must stay in sync:
 |--------|------|-------------------|
 | **CLI path detector** | `cli/src/analysis.ts` | `getEditorSourceFromPath` |
 | **VS Code path detector** | `src/workspaceHelpers.ts` | `getEditorTypeFromPath` (delegates to `detectToolEditorFromPath` + `detectVSCodeVariantFromPath`) |
-| **Webview icon map** | `vscode-extension/src/webview/shared/formatUtils.ts` | `EDITOR_ICON_MAP` + `EditorName` union type |
+| **Webview icon map** | `src/editorIcons.ts` | `EDITOR_ICON_MAP` (the `EditorName` union type is derived from it in `vscode-extension/src/webview/shared/formatUtils.ts`) |
 
 The JetBrains plugin (and any future CLI-based consumer) gets its editor names
 **exclusively from the CLI** via `CliBridge.kt`. If the CLI returns a raw
@@ -63,7 +63,7 @@ node .github/skills/validate-editor-names/validate-editor-names.js --help
 
 - After **adding a new editor adapter** (`src/adapters/`)
 - After **modifying `getEditorSourceFromPath`** or `getEditorTypeFromPath`
-- After **updating `EDITOR_ICON_MAP`** in `formatUtils.ts`
+- After **updating `EDITOR_ICON_MAP`** in `src/editorIcons.ts`
 - When **JetBrains (or another CLI-based view) shows raw editor keys** instead
   of friendly names — this skill will pinpoint which path pattern is missing or
   mismatched
@@ -72,8 +72,8 @@ node .github/skills/validate-editor-names/validate-editor-names.js --help
 
 | Failure type | Likely cause | Fix |
 |---|---|---|
-| **Missing icon** for CLI name | New editor added to CLI but not to `formatUtils.ts` | Add entry to `EditorName` union and `EDITOR_ICON_MAP` |
-| **Missing icon** for VS Code name | New editor added to VS Code adapter but not to `formatUtils.ts` | Same as above |
+| **Missing icon** for CLI name | New editor added to CLI but not to `src/editorIcons.ts` | Add entry to `EDITOR_ICON_MAP` (the `EditorName` union follows) |
+| **Missing icon** for VS Code name | New editor added to VS Code adapter but not to `src/editorIcons.ts` | Same as above |
 | **Name mismatch** for a test path | CLI returns raw key; VS Code returns friendly name (or vice versa) | Align `getEditorSourceFromPath` to match `getEditorTypeFromPath` |
 | **Ordering issue** | Broad `includes` check appears before specific one in CLI function | Reorder checks in `getEditorSourceFromPath` so specific paths come first |
 
@@ -82,8 +82,8 @@ node .github/skills/validate-editor-names/validate-editor-names.js --help
 - `cli/src/analysis.ts` — `getEditorSourceFromPath` (the CLI implementation)
 - `src/workspaceHelpers.ts` — `getEditorTypeFromPath`,
   `detectToolEditorFromPath`, `detectVSCodeVariantFromPath`
-- `vscode-extension/src/webview/shared/formatUtils.ts` — `EditorName` type +
-  `EDITOR_ICON_MAP`
+- `src/editorIcons.ts` — `EDITOR_ICON_MAP`; `vscode-extension/src/webview/shared/formatUtils.ts`
+  re-exports it and derives the `EditorName` type
 - `jetbrains-plugin/src/main/kotlin/.../CliBridge.kt` — the JetBrains host that
   calls the CLI binary and feeds the returned editor names straight into the
   shared webview bundle
