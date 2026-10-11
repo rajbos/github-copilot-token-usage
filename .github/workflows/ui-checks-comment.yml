@@ -92,17 +92,23 @@ jobs:
       run: |
         set -euo pipefail
         echo "run=false" >> "$GITHUB_OUTPUT"
+        echo "skipped=false" >> "$GITHUB_OUTPUT"
         if [ "$CONCLUSION" = "cancelled" ]; then
           echo "CI run was cancelled (superseded); nothing to post."; exit 0
         fi
         if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
           echo "No pull request is associated with this run; nothing to post."; exit 0
         fi
-        # ui-checks is path-gated: when it was skipped, leave the PR alone.
+        # ui-checks is path-gated. When it was skipped on this head, any
+        # earlier screenshot comment is stale: carry on in "skipped" mode so
+        # the post step replaces it (and posts nothing when none exists).
         ui_state="$(gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/jobs" \
           --jq '.jobs[] | select(.name == "Webview UI checks") | .conclusion')"
-        if [ -z "$ui_state" ] || [ "$ui_state" = "skipped" ] || [ "$ui_state" = "cancelled" ]; then
-          echo "Webview UI checks did not run (state: '${ui_state:-none}'); nothing to post."; exit 0
+        if [ "$ui_state" = "cancelled" ]; then
+          echo "Webview UI checks were cancelled; nothing to post."; exit 0
+        fi
+        if [ -z "$ui_state" ] || [ "$ui_state" = "skipped" ]; then
+          echo "skipped=true" >> "$GITHUB_OUTPUT"
         fi
         # A newer push has its own run; do not overwrite its comment with stale images.
         current_head="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq .head.sha)"
@@ -114,7 +120,7 @@ jobs:
     # Untrusted data from the PR's ui-checks run. Missing when ui-checks died
     # before uploading; the renderer then reports "no report".
     - name: Download screenshots artifact (untrusted data)
-      if: steps.gate.outputs.run == 'true'
+      if: steps.gate.outputs.run == 'true' && steps.gate.outputs.skipped != 'true'
       continue-on-error: true
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
@@ -125,7 +131,7 @@ jobs:
 
     - name: Render the screenshot comment
       id: visual-comment
-      if: steps.gate.outputs.run == 'true'
+      if: steps.gate.outputs.run == 'true' && steps.gate.outputs.skipped != 'true'
       continue-on-error: true
       env:
         RUN_URL: ${{ github.event.workflow_run.html_url }}
@@ -193,6 +199,8 @@ jobs:
         HAS_CHANGES: ${{ steps.visual-comment.outputs.has_changes }}
         ATTACHMENTS: ${{ steps.visual-comment.outputs.attachments }}
         COMMENT_MARKER: visual-view-diff
+        # "true" when Webview UI checks did not run on this head.
+        UI_SKIPPED: ${{ steps.gate.outputs.skipped }}
       run: |
         set -euo pipefail
 
@@ -330,11 +338,13 @@ jobs:
         }
 
         if [ "$HAS_REPORT" != "true" ]; then
-          mkdir -p visual-comment
-          printf '<!-- %s -->\n### Webview screenshots\n\nThe visual diff produced no report on this push (the render or the diff step failed), so the screenshots from the previous push no longer apply. See the [workflow run](%s).\n' \
-            "$COMMENT_MARKER" "$RUN_URL" > visual-comment/comment-plain.md
+          notice=no-report
+          [ "$UI_SKIPPED" = "true" ] && notice=skipped
+          # Default-branch script, fixed arguments: the notice text is not artifact data.
+          node .github/workflows/scripts/visual-diff-comment.js \
+            --notice "$notice" --out-dir visual-comment --marker "$COMMENT_MARKER" --run-url "$RUN_URL"
           post_plain
-          echo "Replaced the earlier screenshot comment with a no-report notice."
+          echo "Replaced the earlier screenshot comment with a ${notice} notice."
         elif post_with_images; then
           echo "Posted the screenshot comment with ${ATTACHMENTS} inline image(s)."
         else

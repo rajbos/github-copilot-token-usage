@@ -100,3 +100,18 @@ test('artifact contents are untrusted: non-PNG, oversized and unusable inputs ar
   fs.writeFileSync(path.join(root, 'bad.json'), 'not json');
   assert.match(run('bad.json'), /unusable/);
 });
+
+test('--notice writes a marker-first replacement for a stale comment', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-diff-comment-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const kind of ['skipped', 'no-report']) {
+    execFileSync(process.execPath, [
+      script, '--notice', kind, '--out-dir', 'output', '--run-url', 'https://github.com/o/r/actions/runs/1',
+    ], { cwd: root });
+    const body = fs.readFileSync(path.join(root, 'output', 'comment-plain.md'), 'utf8');
+    assert.ok(body.startsWith('<!-- visual-view-diff -->\n'), 'marker must stay the first line');
+    assert.match(body, /no longer apply/);
+    assert.match(body, /\(https:\/\/github\.com\/o\/r\/actions\/runs\/1\)/);
+  }
+  assert.throws(() => execFileSync(process.execPath, [script, '--notice', 'bogus'], { cwd: root, stdio: 'pipe' }));
+});

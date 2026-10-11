@@ -26,6 +26,10 @@
  *   --artifact <name>     Name of the uploaded screenshots artifact, for the
  *                         footer and the no-images fallback.
  *   --base <sha>          Baseline commit, shown in the header.
+ *   --notice <kind>      Write only comment-plain.md, a short replacement for an
+ *                         earlier screenshot comment that no longer applies:
+ *                         `skipped` (this head has no UI-relevant changes) or
+ *                         `no-report` (the diff produced no report).
  *   --max-attachments <n> Attachment budget. gh allows 50 per command; the
  *                         default leaves a little headroom. Default: 48
  *
@@ -62,6 +66,17 @@ const STATUS_LABEL = {
   removed: '🗑️ removed',
 };
 
+const NOTICES = {
+  skipped: 'This head has no UI-relevant changes, so no visual diff was produced; the screenshots from an earlier push no longer apply.',
+  'no-report': 'The visual diff produced no report on this push (the render or the diff step failed), so the screenshots from the previous push no longer apply.',
+};
+
+/** The short comment that replaces a stale screenshot comment. */
+function renderNotice(opts) {
+  const link = opts.runUrl ? ` See the [workflow run](${opts.runUrl}).` : '';
+  return `<!-- ${opts.marker} -->\n### Webview screenshots\n\n${NOTICES[opts.notice]}${link}\n`;
+}
+
 function parseArgs(argv) {
   const opts = {
     report: path.join('visual-output', 'diff', 'report.json'),
@@ -72,6 +87,7 @@ function parseArgs(argv) {
     artifact: 'webview-screenshots',
     base: '',
     maxAttachments: 48,
+    notice: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -90,11 +106,16 @@ function parseArgs(argv) {
     else if (arg === '--run-url') opts.runUrl = next();
     else if (arg === '--artifact') opts.artifact = next();
     else if (arg === '--base') opts.base = next().replace(/[^0-9a-f]/gi, '');
+    else if (arg === '--notice') opts.notice = next();
     else if (arg === '--max-attachments') opts.maxAttachments = Number(next());
     else {
       console.error(`Unknown option: ${arg}`);
       process.exit(2);
     }
+  }
+  if (opts.notice && !NOTICES[opts.notice]) {
+    console.error('--notice must be one of: ' + Object.keys(NOTICES).join(', '));
+    process.exit(2);
   }
   opts.marker = safeId(opts.marker);
   opts.artifact = safeId(opts.artifact);
@@ -394,6 +415,11 @@ function readBounded(file, limit) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   fs.mkdirSync(opts.outDir, { recursive: true });
+
+  if (opts.notice) {
+    fs.writeFileSync(path.join(opts.outDir, 'comment-plain.md'), renderNotice(opts));
+    return;
+  }
 
   const outputs = [];
   const emit = (name, value) => outputs.push(`${name}=${value}`);
