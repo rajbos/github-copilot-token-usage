@@ -36,7 +36,7 @@ this skill protects.
 | Role | File | Symbol |
 |------|------|--------|
 | **Canonical view set** (VS Code) | `vscode-extension/esbuild.js` | `entryPoints` keys mapping to `src/webview/<name>/main.ts` |
-| **Built artifacts** | `vscode-extension/dist/webview/<name>.js` | one `.js` per view (produced by `npm run package`) |
+| **Built artifacts** | `vscode-extension/dist/webview/<name>.js` | one `.js` per view (produced by `pnpm run package`) |
 | **Visual Studio host list** | `visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj` | `_WebviewBundle Include="…\dist\webview\<name>.js"` items (`CopyWebviewBundles` target) |
 | **JetBrains host list** | `jetbrains-plugin/build.gradle.kts` | `prepareBundledAssets` → `from(".../dist/webview") { include("<name>.js", …) }` |
 | **Desktop app host list** | `desktop/esbuild.js` + `desktop/src/main.ts` | `WEBVIEW_BUNDLES` (copied bundles) **and** `PANEL_MENU` (tray / Go menu entries) — a view counts as shipped only when it is in both |
@@ -102,7 +102,7 @@ Build the bundles first if `dist/webview` is empty (only affects the information
 `dist/webview built` line in the report — list-drift detection works either way):
 
 ```bash
-cd vscode-extension && npm run package
+cd vscode-extension && pnpm run package
 ```
 
 ### Exit codes
@@ -135,7 +135,7 @@ cd vscode-extension && npm run package
    - **Desktop app:** add `'<name>.js'` to `WEBVIEW_BUNDLES` in `desktop/esbuild.js`,
      add the id to `PanelId` and `PANEL_MENU` in `desktop/src/main.ts`, build its
      payload in `buildPanelHtml`, and handle its `show*` command in
-     `registerIpcHandlers`. Then run `npm run check:contract` in `desktop/`: every
+     `registerIpcHandlers`. Then run `pnpm run check:contract` in `desktop/`: every
      message the new view posts must be handled or listed in
      `desktop/src/unsupportedWebviewCommands.json`.
 3. **If exit 1 due to an ORPHAN:** a host lists a view VS Code removed. Confirm the

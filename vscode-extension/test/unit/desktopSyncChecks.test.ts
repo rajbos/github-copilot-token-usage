@@ -42,7 +42,7 @@ test('desktop contract: every message a desktop view posts is handled or listed 
 	assert.deepEqual(
 		findings.map(f => `${f.command}: ${f.detail}`),
 		[],
-		'run `npm run check:contract` in desktop/ for details',
+		'run `pnpm run check:contract` in desktop/ for details',
 	);
 });
 
@@ -170,5 +170,5 @@ test('desktop-build.yml: push paths match the PR desktop-relevant filter', () =>
 test('webview shell: every --vscode-* token the webviews use is defined for the desktop app and harness', () => {
 	const { referenced, findings } = webviewShell.analyse();
 	assert.ok(referenced > 0, 'found no --vscode-* references; has the webview source moved?');
-	assert.deepEqual(findings, [], 'run `npm run check:shell` in desktop/ for details');
+	assert.deepEqual(findings, [], 'run `pnpm run check:shell` in desktop/ for details');
 });

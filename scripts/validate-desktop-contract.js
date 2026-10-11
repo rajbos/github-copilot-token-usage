@@ -7,7 +7,7 @@
  * verbatim, but answers their messages with its own hand-written switch in
  * `registerIpcHandlers` (desktop/src/main.ts). A button added to a shared view
  * therefore lands in the desktop app as a control that does nothing when
- * clicked — nothing fails to compile and `npm run check:contract` (which only
+ * clicked — nothing fails to compile and `pnpm run check:contract` (which only
  * looks at the extension host) stays green.
  *
  * This script closes that gap. For every view the desktop bundles

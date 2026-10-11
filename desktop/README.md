@@ -40,34 +40,34 @@ from disk.
 ## Build
 
 ```sh
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 The desktop build depends on the extension's webview bundles
 (`../vscode-extension/dist/webview/*.js`). If those are missing, `esbuild.js`
 builds the extension automatically before continuing, so a fresh checkout works
-with a single `npm run build`.
+with a single `pnpm run build`.
 
 That auto-build requires the extension's dependencies to be installed. If it
 cannot complete it fails with a clear error rather than silently producing an app
 with blank panels — in that case build the extension manually first:
 
 ```sh
-cd ../vscode-extension && npm install && npm run compile
+cd ../vscode-extension && pnpm install && pnpm run compile
 ```
 
 ## Scripts
 
 | Script                  | Purpose                                                        |
 | ----------------------- | -------------------------------------------------------------- |
-| `npm run build`         | Development bundle (sourcemaps, no minify) → `dist/`.          |
-| `npm run build:production` | Production bundle (minified).                               |
-| `npm run dev`           | Watch mode: rebuild on change and relaunch Electron.           |
-| `npm start`             | Build then launch Electron once.                               |
-| `npm run pack`          | Production build + `electron-builder --dir` (unpacked app).    |
-| `npm run dist`          | Production build + NSIS installer → `release/` (never publishes). |
-| `npm run check-types`   | `tsc --noEmit`. See the caveat below.                          |
+| `pnpm run build`         | Development bundle (sourcemaps, no minify) → `dist/`.          |
+| `pnpm run build:production` | Production bundle (minified).                               |
+| `pnpm run dev`           | Watch mode: rebuild on change and relaunch Electron.           |
+| `pnpm start`             | Build then launch Electron once.                               |
+| `pnpm run pack`          | Production build + `electron-builder --dir` (unpacked app).    |
+| `pnpm run dist`          | Production build + NSIS installer → `release/` (never publishes). |
+| `pnpm run check-types`   | `tsc --noEmit`. See the caveat below.                          |
 
 In development the app writes its Electron profile to `.dev-profile/` (kept out
 of `%APPDATA%` so hot-reload restarts don't fight over a shared, locked cache).
@@ -81,7 +81,7 @@ they are never re-packaged into the next build). Target: NSIS (x64).
 
 ## Releasing
 
-1. Bump `version` in `package.json` (and `package-lock.json`) and merge that.
+1. Bump `version` in `package.json` (and `pnpm-lock.yaml`) and merge that.
 2. Tag the merge commit `desktop/v<version>` and push the tag.
 
 [`desktop-publish.yml`](../.github/workflows/desktop-publish.yml) then builds
@@ -114,7 +114,7 @@ npx electron scripts/generate-icon.js
 
 ## Type checking
 
-`npm run check-types` (`tsc --noEmit`) is a real, passing gate on the desktop
+`pnpm run check-types` (`tsc --noEmit`) is a real, passing gate on the desktop
 app's own TypeScript. `tsconfig.json` lists only `src/**/*.ts` as inputs and lets
 `tsc` follow the actual import graph into `../cli` and `../vscode-extension`, so
 those sibling sources are checked exactly as the desktop app consumes them — not
@@ -127,31 +127,31 @@ Run it from `desktop/` after installing dependencies in the sibling packages so
 their types (`chalk`, `sql.js`, `@types/node`) resolve:
 
 ```sh
-(cd ../cli && npm install)
-(cd ../vscode-extension && npm install)
-npm install
-npm run check-types
+(cd ../cli && pnpm install)
+(cd ../vscode-extension && pnpm install)
+pnpm install
+pnpm run check-types
 ```
 
-The authoritative build gate remains `npm run build` (esbuild, which follows only
+The authoritative build gate remains `pnpm run build` (esbuild, which follows only
 the real import graph). `check-types` is the stricter companion that also reports
 type errors in every file it touches.
 
 ## Staying in sync with the extension
 
 The views are the extension's, but the host code around them (message handlers,
-theme tokens, which views exist) is this app's own. `npm run check` runs the
+theme tokens, which views exist) is this app's own. `pnpm run check` runs the
 type-check plus two checks that fail when that host code falls behind the
 extension; the `desktop-build` workflow runs them on every PR that touches
 `desktop/`, `src/`, `cli/` or the extension's sources.
 
-- `npm run check:contract` — every message a bundled view can post is handled in
+- `pnpm run check:contract` — every message a bundled view can post is handled in
   `registerIpcHandlers` or listed in
   [`src/unsupportedWebviewCommands.json`](src/unsupportedWebviewCommands.json).
   Hiding a control is done there (status `hidden` plus its selectors), not in
   `main.ts`. When you add a handler, remove the command's entry.
-- `npm run check:shell` — the `--vscode-*` theme tokens come from the
+- `pnpm run check:shell` — the `--vscode-*` theme tokens come from the
   visual-view-diff harness's `lib/theme-*.css`; add a missing token there.
-- `npm run check:views` — reports extension views this app does not ship yet.
+- `pnpm run check:views` — reports extension views this app does not ship yet.
 
 Details: [docs/VALIDATION.md](../docs/VALIDATION.md#desktop-app).

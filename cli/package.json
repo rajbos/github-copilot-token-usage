@@ -1,7 +1,7 @@
 {
   "name": "@rajbos/ai-engineering-fluency",
-  "version": "0.6.2",
-  "description": "AI Engineering Fluency - CLI to analyze token usage, cost and fluency from local AI coding session files (GitHub Copilot, Claude Code, Gemini CLI, Codex CLI, OpenCode and more)",
+  "version": "0.7.0",
+  "description": "AI Engineering Fluency - CLI and Node library to analyze token usage, cost and fluency from local AI coding session files (GitHub Copilot, Claude Code, Gemini CLI, Codex CLI, OpenCode and more)",
   "license": "MIT",
   "author": "RobBos",
   "repository": {
@@ -18,10 +18,24 @@
     "claude-code",
     "gemini-cli",
     "codex",
-    "ai-usage"
+    "ai-usage",
+    "library"
   ],
   "bin": {
     "ai-engineering-fluency": "dist/cli.js"
+  },
+  "exports": {
+    "./session": {
+      "import": {
+        "types": "./dist/lib/session.d.mts",
+        "default": "./dist/lib/session.mjs"
+      },
+      "require": {
+        "types": "./dist/lib/session.d.ts",
+        "default": "./dist/lib/session.js"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/**/*"
@@ -32,7 +46,7 @@
     "bundle-exe": "pwsh -NoProfile -File bundle-exe.ps1",
     "lint": "eslint src",
     "check-types": "tsc --noEmit",
-    "test": "node dist/cli.js --help && node dist/cli.js --version && npm run test:unit",
+    "test": "node dist/cli.js --help && node dist/cli.js --version && pnpm run test:unit",
     "test:unit": "node esbuild.tests.js && node --test \"out/test/*.test.js\""
   },
   "devDependencies": {
@@ -40,11 +54,12 @@
     "@types/node": "^26.0.0",
     "chalk": "^6.0.1",
     "commander": "^15.0.0",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.2",
     "sql.js": "^1.12.0",
     "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=22.14.0"
-  }
+  },
+  "packageManager": "pnpm@11.2.2"
 }

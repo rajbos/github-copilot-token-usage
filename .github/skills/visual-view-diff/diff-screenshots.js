@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { loadChromium } = require('./lib/browser');
-const { parseArgs, readConfig } = require('./lib/config');
+const { parseArgs, parseNumberOption, readConfig } = require('./lib/config');
 const { diffImagesInPage } = require('./lib/imageDiff');
 const { renderMarkdownReport } = require('./lib/report');
 
@@ -59,7 +59,7 @@ async function main() {
 	// Per-channel tolerance, 0–1. Anti-aliasing and sub-pixel text rendering move
 	// a channel by a hair between otherwise identical runs; 0.02 (~5/255)
 	// absorbs that without hiding a real colour or layout change.
-	const threshold = Number(args.threshold ?? 0.02);
+	const threshold = parseNumberOption(args.threshold, 'threshold', { fallback: 0.02, min: 0, max: 1 });
 	// Views that draw to a <canvas> (the chart's Chart.js surface, the fluency
 	// radar) can differ by a handful of anti-aliased pixels between otherwise
 	// identical runs. That tolerance is set per view in views.config.json rather
@@ -75,7 +75,7 @@ async function main() {
 			noiseFloors.set(`${v.id}--${state.id}`, state.noiseFloorPixels ?? v.noiseFloorPixels ?? 0);
 		}
 	}
-	const overrideFloor = args['noise-floor'] === undefined ? undefined : Number(args['noise-floor']);
+	const overrideFloor = parseNumberOption(args['noise-floor'], 'noise-floor', { fallback: undefined, min: 0, max: Number.MAX_SAFE_INTEGER });
 
 	fs.mkdirSync(outDir, { recursive: true });
 

@@ -22,7 +22,7 @@
     Default: build
 
 .PARAMETER SkipInstall
-    Skip all `npm ci` dependency installs (assumes node_modules is already
+    Skip all `pnpm install --frozen-lockfile` dependency installs (assumes node_modules is already
     current in each project).  Useful for fast local iteration.
 
 .EXAMPLE
@@ -35,7 +35,7 @@
 
 .EXAMPLE
     ./build.ps1 -Project cli -SkipInstall
-    # builds the CLI without re-running npm ci (node_modules must be current)
+    # builds the CLI without re-running pnpm install --frozen-lockfile (node_modules must be current)
 #>
 
 param(
@@ -56,18 +56,18 @@ function Write-Ok([string]$msg)   { Write-Host "    $msg" -ForegroundColor Green
 function Write-Err([string]$msg)  { Write-Host "    ERROR: $msg" -ForegroundColor Red }
 
 # Tracks directories whose npm dependencies were already installed during this
-# invocation, so a full build doesn't re-run `npm ci` (which wipes
+# invocation, so a full build doesn't re-run `pnpm install --frozen-lockfile` (which wipes
 # node_modules) for the same project multiple times.
 $script:npmInstalled = @{}
 
-function Ensure-NpmDeps([string]$dir) {
+function Ensure-PnpmDeps([string]$dir) {
     if ($SkipInstall) { return }
     $key = (Resolve-Path $dir).Path
     if ($script:npmInstalled.ContainsKey($key)) { return }
     Push-Location $key
     try {
-        npm ci
-        if ($LASTEXITCODE -ne 0) { throw "npm ci failed in $key" }
+        pnpm install --frozen-lockfile
+        if ($LASTEXITCODE -ne 0) { throw "pnpm install --frozen-lockfile failed in $key" }
     }
     finally { Pop-Location }
     $script:npmInstalled[$key] = $true
@@ -81,9 +81,9 @@ function Build-VsCode {
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
         switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run validate }
-            'package' { Ensure-NpmDeps .; npm run package; npx vsce package }
-            'test'    { Ensure-NpmDeps .; npm run test:node }
+            'build'   { Ensure-PnpmDeps .; pnpm run validate }
+            'package' { Ensure-PnpmDeps .; pnpm run package; pnpm exec vsce package }
+            'test'    { Ensure-PnpmDeps .; pnpm run test:node }
             'clean'   { Remove-Item -Recurse -Force dist, out -ErrorAction SilentlyContinue }
         }
         Write-Ok "vscode-extension done."
@@ -99,8 +99,8 @@ function Build-Cli {
     Push-Location "$PSScriptRoot/cli"
     try {
         switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run build }
-            'package' { Ensure-NpmDeps .; npm run build:production; & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild }
+            'build'   { Ensure-PnpmDeps .; pnpm run build }
+            'package' { Ensure-PnpmDeps .; pnpm run build:production; & pwsh -NoProfile -File bundle-exe.ps1 -SkipBuild }
             'test'    { Write-Host "    (no CLI tests yet)" }
             'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
         }
@@ -116,7 +116,7 @@ function Build-CliExe {
     Write-Step "cli: bundle-exe"
     Push-Location "$PSScriptRoot/cli"
     try {
-        Ensure-NpmDeps .
+        Ensure-PnpmDeps .
         & pwsh -NoProfile -File bundle-exe.ps1
         if ($LASTEXITCODE -ne 0) { throw "CLI exe bundling failed" }
         Write-Ok "cli exe bundled."
@@ -140,8 +140,8 @@ function Build-VisualStudio {
     Write-Step "vscode-extension: compile (for VS webview bundles)"
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
-        Ensure-NpmDeps .
-        npm run compile
+        Ensure-PnpmDeps .
+        pnpm run compile
         if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
         Write-Ok "vscode-extension compiled."
     }
@@ -260,8 +260,8 @@ function Build-Jetbrains {
     Write-Step "vscode-extension: compile (for JetBrains webview bundles)"
     Push-Location "$PSScriptRoot/vscode-extension"
     try {
-        Ensure-NpmDeps .
-        npm run compile
+        Ensure-PnpmDeps .
+        pnpm run compile
         if ($LASTEXITCODE -ne 0) { throw "vscode-extension compile failed" }
     }
     finally { Pop-Location }
@@ -292,11 +292,11 @@ function Build-Sharing {
     Push-Location "$PSScriptRoot/sharing-server"
     try {
         switch ($Target) {
-            'build'   { Ensure-NpmDeps .; npm run build }
-            'package' { Ensure-NpmDeps .; npm run build:production }
+            'build'   { Ensure-PnpmDeps .; pnpm run build }
+            'package' { Ensure-PnpmDeps .; pnpm run build:production }
             'test'    {
-                Ensure-NpmDeps .
-                npm test
+                Ensure-PnpmDeps .
+                pnpm test
                 if ($LASTEXITCODE -ne 0) { throw "Sharing-server tests failed" }
             }
             'clean'   { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
@@ -314,8 +314,8 @@ function Build-Desktop {
     if ($Target -ne 'clean') {
         # The app copies the extension's webview bundles and imports the CLI's
         # stats logic from source, so both siblings need their dependencies.
-        Ensure-NpmDeps "$PSScriptRoot/vscode-extension"
-        Ensure-NpmDeps "$PSScriptRoot/cli"
+        Ensure-PnpmDeps "$PSScriptRoot/vscode-extension"
+        Ensure-PnpmDeps "$PSScriptRoot/cli"
     }
     if ($Target -in 'build', 'package') {
         # Rebuild the webview bundles the app copies. desktop/esbuild.js only
@@ -333,7 +333,7 @@ function Build-Desktop {
     Push-Location "$PSScriptRoot/desktop"
     try {
         # $LASTEXITCODE is only meaningful right after a native command: 'clean'
-        # runs none, and under StrictMode an unset one would throw. So each npm
+        # runs none, and under StrictMode an unset one would throw. So each pnpm
         # target checks its own exit code.
         $npmScript = switch ($Target) {
             'build'   { 'build' }
@@ -344,9 +344,9 @@ function Build-Desktop {
             default   { $null }
         }
         if ($npmScript) {
-            Ensure-NpmDeps .
-            npm run $npmScript
-            if ($LASTEXITCODE -ne 0) { throw "Desktop target '$Target' failed (npm run $npmScript)" }
+            Ensure-PnpmDeps .
+            pnpm run $npmScript
+            if ($LASTEXITCODE -ne 0) { throw "Desktop target '$Target' failed (pnpm run $npmScript)" }
         } else {
             Remove-Item -Recurse -Force dist, release -ErrorAction SilentlyContinue
         }

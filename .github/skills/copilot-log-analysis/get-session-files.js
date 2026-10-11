@@ -11,11 +11,14 @@
  * that should mirror the logic in session-file-discovery.js.
  * 
  * Usage:
- *   node .github/skills/copilot-log-analysis/get-session-files.js [--verbose] [--json]
+ *   node .github/skills/copilot-log-analysis/get-session-files.js [--verbose] [--json] [--show-paths]
  * 
  * Options:
- *   --verbose    Show all file paths
- *   --json       Output as JSON
+ *   --verbose     Show all file paths
+ *   --json        Output as JSON
+ *   --show-paths  Print the home directory in full instead of as "~".
+ *                 Paths still contain workspace hashes and session ids:
+ *                 review the output before pasting it anywhere public.
  */
 
 const fs = require('fs');
@@ -24,13 +27,16 @@ const os = require('os');
 const { 
     getCopilotSessionFiles, 
     categorizeFile, 
-    getEditorType 
+    getEditorType,
+    redactHomePath
 } = require('./session-file-discovery');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');
 const jsonOutput = args.includes('--json');
+const showPaths = args.includes('--show-paths');
+const displayPath = p => (showPaths ? p : redactHomePath(p));
 
 // Execute discovery
 const { sessionFiles, foundPaths } = getCopilotSessionFiles();
@@ -41,11 +47,11 @@ const { sessionFiles, foundPaths } = getCopilotSessionFiles();
         // JSON output for programmatic use
         const result = {
             platform: os.platform(),
-            homeDirectory: os.homedir(),
+            homeDirectory: displayPath(os.homedir()),
             totalFiles: sessionFiles.length,
-            vscodePathsFound: foundPaths,
+            vscodePathsFound: foundPaths.map(displayPath),
             files: sessionFiles.map(file => ({
-                path: file,
+                path: displayPath(file),
                 category: categorizeFile(file),
                 editorType: getEditorType(file),
                 size: fs.statSync(file).size,
@@ -56,11 +62,11 @@ const { sessionFiles, foundPaths } = getCopilotSessionFiles();
     } else {
         // Human-readable output
         console.log('Platform:', os.platform());
-        console.log('Home directory:', os.homedir());
+        console.log('Home directory:', displayPath(os.homedir()));
         console.log('');
         
         console.log('VS Code installations found:');
-        foundPaths.forEach(p => console.log('  ' + p));
+        foundPaths.forEach(p => console.log('  ' + displayPath(p)));
         console.log('');
         
         console.log('Total session files found:', sessionFiles.length);
@@ -92,13 +98,13 @@ const { sessionFiles, foundPaths } = getCopilotSessionFiles();
                 console.log('');
                 console.log('All session files:');
                 sessionFiles.forEach((file, i) => {
-                    console.log(`  ${i + 1}. ${file}`);
+                    console.log(`  ${i + 1}. ${displayPath(file)}`);
                 });
             } else {
                 console.log('');
                 console.log('Sample files (first 10):');
                 sessionFiles.slice(0, 10).forEach((file, i) => {
-                    console.log(`  ${i + 1}. ${file}`);
+                    console.log(`  ${i + 1}. ${displayPath(file)}`);
                 });
                 if (sessionFiles.length > 10) {
                     console.log(`  ... and ${sessionFiles.length - 10} more files`);
@@ -113,4 +119,4 @@ const { sessionFiles, foundPaths } = getCopilotSessionFiles();
             console.log('  - Need to authenticate with GitHub Copilot');
         }
     }
-});
+})();

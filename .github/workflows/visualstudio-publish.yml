@@ -47,10 +47,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.2.2'
+
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
 
       - name: Read local version from VSIX manifest
         id: version
@@ -85,18 +94,18 @@ jobs:
       # ── Install dependencies ────────────────────────────────────────────────
 
       - name: Install vscode-extension dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: vscode-extension
 
       - name: Install CLI dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: cli
 
       # ── Build CLI (production bundle + Windows .exe) ───────────────────────
 
       - name: Build CLI (production bundle)
         working-directory: cli
-        run: npm run build:production
+        run: pnpm run build:production
 
       - name: Bundle CLI as single executable
         working-directory: cli
@@ -118,7 +127,7 @@ jobs:
 
       - name: Build VS Code extension webview bundles
         working-directory: vscode-extension
-        run: npm run package
+        run: pnpm run package
 
       - name: Copy webview bundles to VS extension project
         shell: pwsh

@@ -20,7 +20,8 @@ on:
       - 'vscode-extension/src/**'
       - 'vscode-extension/esbuild.js'
       - 'vscode-extension/package.json'
-      - 'vscode-extension/package-lock.json'
+      - 'vscode-extension/pnpm-lock.yaml'
+      - 'vscode-extension/pnpm-workspace.yaml'
       - 'vscode-extension/package.nls*.json'
       - 'scripts/validate-desktop-contract.js'
       - 'scripts/validate-webview-contract.js'
@@ -67,7 +68,8 @@ jobs:
               - 'vscode-extension/src/**'
               - 'vscode-extension/esbuild.js'
               - 'vscode-extension/package.json'
-              - 'vscode-extension/package-lock.json'
+              - 'vscode-extension/pnpm-lock.yaml'
+              - 'vscode-extension/pnpm-workspace.yaml'
               - 'vscode-extension/package.nls*.json'
               # The checks this workflow runs and the theme files main.ts inlines.
               - 'scripts/validate-desktop-contract.js'
@@ -90,15 +92,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.2.2'
+
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: '.nvmrc'
-          cache: 'npm'
+          cache: 'pnpm'
           cache-dependency-path: |
-            vscode-extension/package-lock.json
-            cli/package-lock.json
-            desktop/package-lock.json
+            vscode-extension/pnpm-lock.yaml
+            cli/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
 
       # The desktop app bundles the extension's webview bundles and imports the
       # CLI's stats logic from source, so all three packages need dependencies.
@@ -106,31 +113,31 @@ jobs:
       # the type-check nor the esbuild build needs.
       - name: Install extension dependencies
         working-directory: vscode-extension
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install CLI dependencies
         working-directory: cli
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install desktop dependencies
         working-directory: desktop
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Type-check desktop app
         working-directory: desktop
-        run: npm run check-types
+        run: pnpm run check-types
 
       # Every message a bundled view can post is handled in desktop/src/main.ts
       # or listed in desktop/src/unsupportedWebviewCommands.json.
       - name: Validate desktop webview message contract
         working-directory: desktop
-        run: npm run check:contract
+        run: pnpm run check:contract
 
       # Every --vscode-* token the views use is defined, and the codicon font
       # is shipped and linked.
       - name: Validate webview page shell
         working-directory: desktop
-        run: npm run check:shell
+        run: pnpm run check:shell
 
       - name: Build extension webview bundles
         working-directory: vscode-extension
@@ -140,7 +147,7 @@ jobs:
 
       - name: Build desktop app
         working-directory: desktop
-        run: npm run build:production
+        run: pnpm run build:production
 
       - name: Verify build output
         working-directory: desktop

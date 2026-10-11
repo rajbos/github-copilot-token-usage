@@ -793,6 +793,11 @@ export interface RepeatedTaskCluster {
   sessions: RepeatedTaskSessionRef[];
   /** Tokens shared by every prompt in the cluster (display hint). */
   sharedKeywords: string[];
+  /**
+   * Up to a few other distinct prompts from the cluster, truncated like the
+   * representative prompt. Optional: payloads cached by older builds lack it.
+   */
+  examplePrompts?: string[];
 }
 
 /** Repeated-task candidates across all scanned sessions. */
@@ -1003,6 +1008,11 @@ export interface WorkspaceCustomizationRow {
   sessionCount: number;
   interactionCount: number;
   typeStatuses: { [typeId: string]: CustomizationTypeStatus };
+  /**
+   * Folders merged into this row by workspace grouping (worktrees, clones, case/remote
+   * variants — see src/workspaceGrouping.ts). Present only when more than one folder merged.
+   */
+  memberPaths?: string[];
 }
 
 export interface WorkspaceCustomizationMatrix {
@@ -1010,6 +1020,12 @@ export interface WorkspaceCustomizationMatrix {
   workspaces: WorkspaceCustomizationRow[];
   totalWorkspaces: number;
   workspacesWithIssues: number;
+  /**
+   * Display names that still look like worktree / clone artefacts after grouping
+   * (detectArtefactWorkspaceNames). A non-empty list means a naming pattern the grouping
+   * does not know yet.
+   */
+  ungroupedWorkspaceNames?: string[];
 }
 
 // ── Dark Factory readiness ────────────────────────────────────────────────

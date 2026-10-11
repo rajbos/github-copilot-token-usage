@@ -16,7 +16,7 @@ the repository `AGENTS.md`).
 - CI runs it in two workflows, both as an informational step (`|| true`) on
   `pull_request` and `push`, so its input there is the pull request's checkout:
   `.github/workflows/ci.yml`, and `.github/workflows/desktop-build.yml` ("Report host
-  view sync"). `desktop/package.json` also exposes it locally as `npm run check:views`.
+  view sync"). `desktop/package.json` also exposes it locally as `pnpm run check:views`.
 
 ## Credentials used and where they come from
 

@@ -2,23 +2,48 @@
 
 /**
  * Azure Storage Table Data Loader
- * 
+ *
  * Loads token usage data from Azure Table Storage for analysis in chat conversations.
- * Supports both Entra ID and Shared Key authentication.
- * 
+ * Supports both Entra ID and Shared Key authentication. The shared key is read
+ * from the AZURE_STORAGE_KEY environment variable, never from the command line,
+ * so it does not show up in process listings, shell history or transcripts.
+ *
  * Usage:
  *   node load-table-data.js --storageAccount <name> --startDate <YYYY-MM-DD> --endDate <YYYY-MM-DD>
- * 
+ *
  * See SKILL.md for detailed documentation and examples.
  */
 
-const { TableClient, AzureNamedKeyCredential } = require('@azure/data-tables');
-const { DefaultAzureCredential } = require('@azure/identity');
 const fs = require('fs');
 const path = require('path');
 
-// Parse command line arguments
-function parseArgs() {
+// Environment variable holding the optional storage account shared key
+const SHARED_KEY_ENV_VAR = 'AZURE_STORAGE_KEY';
+
+// Azure storage account names are 3-24 lowercase letters and digits. The name
+// becomes the endpoint host, so anything else (a '/', '.', ':' or '@') could
+// send the Entra token or shared-key signature to a different host.
+const STORAGE_ACCOUNT_PATTERN = /^[a-z0-9]{3,24}$/;
+
+// Longest free-text entity value passed through; longer values are truncated
+const MAX_ENTITY_STRING_LENGTH = 256;
+
+// Options that take a value, mapped to their key in the parsed args
+const VALUE_OPTIONS = {
+	'--storageAccount': 'storageAccount',
+	'--tableName': 'tableName',
+	'--datasetId': 'datasetId',
+	'--startDate': 'startDate',
+	'--endDate': 'endDate',
+	'--model': 'model',
+	'--workspaceId': 'workspaceId',
+	'--userId': 'userId',
+	'--output': 'output',
+	'--format': 'format'
+};
+
+// Parse command line arguments (throws on invalid input)
+function parseArgs(argv = process.argv) {
 	const args = {
 		storageAccount: null,
 		tableName: 'usageAggDaily',
@@ -28,113 +53,36 @@ function parseArgs() {
 		model: null,
 		workspaceId: null,
 		userId: null,
-		sharedKey: null,
 		output: null,
 		format: 'json',
 		help: false
 	};
 
-	for (let i = 2; i < process.argv.length; i++) {
-		const arg = process.argv[i];
-		const nextArg = process.argv[i + 1];
+	for (let i = 2; i < argv.length; i++) {
+		const arg = argv[i];
+		const nextArg = argv[i + 1];
+		// Option name without any "=value" part. Error messages use only this,
+		// never the raw argument, so a key passed by mistake is not echoed.
+		const optionName = arg.split('=')[0];
 
-		switch (arg) {
-			case '--storageAccount':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --storageAccount requires a value');
-					process.exit(1);
-				}
-				args.storageAccount = nextArg;
-				i++;
-				break;
-			case '--tableName':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --tableName requires a value');
-					process.exit(1);
-				}
-				args.tableName = nextArg;
-				i++;
-				break;
-			case '--datasetId':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --datasetId requires a value');
-					process.exit(1);
-				}
-				args.datasetId = nextArg;
-				i++;
-				break;
-			case '--startDate':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --startDate requires a value');
-					process.exit(1);
-				}
-				args.startDate = nextArg;
-				i++;
-				break;
-			case '--endDate':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --endDate requires a value');
-					process.exit(1);
-				}
-				args.endDate = nextArg;
-				i++;
-				break;
-			case '--model':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --model requires a value');
-					process.exit(1);
-				}
-				args.model = nextArg;
-				i++;
-				break;
-			case '--workspaceId':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --workspaceId requires a value');
-					process.exit(1);
-				}
-				args.workspaceId = nextArg;
-				i++;
-				break;
-			case '--userId':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --userId requires a value');
-					process.exit(1);
-				}
-				args.userId = nextArg;
-				i++;
-				break;
-			case '--sharedKey':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --sharedKey requires a value');
-					process.exit(1);
-				}
-				args.sharedKey = nextArg;
-				i++;
-				break;
-			case '--output':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --output requires a value');
-					process.exit(1);
-				}
-				args.output = nextArg;
-				i++;
-				break;
-			case '--format':
-				if (!nextArg || nextArg.startsWith('--')) {
-					console.error('Error: --format requires a value');
-					process.exit(1);
-				}
-				args.format = nextArg;
-				i++;
-				break;
-			case '--help':
-			case '-h':
-				args.help = true;
-				break;
-			default:
-				console.error(`Unknown argument: ${arg}`);
-				console.error('Use --help for usage information');
-				process.exit(1);
+		if (arg === '--help' || arg === '-h') {
+			args.help = true;
+		} else if (optionName === '--sharedKey') {
+			// Deliberately not accepted, in either `--sharedKey <key>` or
+			// `--sharedKey=<key>` form: a key on argv leaks into process
+			// listings, shell history and agent transcripts. Never echo it.
+			throw new Error(`--sharedKey is not supported; set the ${SHARED_KEY_ENV_VAR} environment variable instead`);
+		} else if (Object.prototype.hasOwnProperty.call(VALUE_OPTIONS, arg)) {
+			if (!nextArg || nextArg.startsWith('--')) {
+				throw new Error(`${arg} requires a value`);
+			}
+			args[VALUE_OPTIONS[arg]] = nextArg;
+			i++;
+		} else if (arg.startsWith('-')) {
+			throw new Error(`Unknown option: ${optionName} (use --help for usage information)`);
+		} else {
+			// A stray positional value could be a pasted secret; do not echo it
+			throw new Error(`Unexpected positional argument at position ${i - 1} (use --help for usage information)`);
 		}
 	}
 
@@ -150,7 +98,7 @@ Usage:
   node load-table-data.js [options]
 
 Required Options:
-  --storageAccount <name>    Azure Storage account name
+  --storageAccount <name>    Azure Storage account name (3-24 lowercase letters/digits)
   --startDate <YYYY-MM-DD>   Start date for data retrieval
   --endDate <YYYY-MM-DD>     End date for data retrieval
 
@@ -160,14 +108,16 @@ Optional Options:
   --model <name>             Filter by model name
   --workspaceId <id>         Filter by workspace ID
   --userId <id>              Filter by user ID
-  --sharedKey <key>          Azure Storage shared key (if not using Entra ID)
-  --output <path>            Output file path (default: stdout)
+  --output <path>            Write the result to this file instead of stdout
   --format <json|csv>        Output format (default: "json")
   --help, -h                 Show this help message
 
 Authentication:
   By default, uses DefaultAzureCredential (Entra ID).
-  To use Shared Key auth, provide --sharedKey option.
+  To use Shared Key auth, set the ${SHARED_KEY_ENV_VAR} environment variable.
+  The key is never accepted on the command line. Set the variable without
+  typing the key into a command (which would land in shell history), e.g.
+  read it with a silent prompt: read -rs ${SHARED_KEY_ENV_VAR}; export ${SHARED_KEY_ENV_VAR}
 
 Examples:
   # Load data with Entra ID auth
@@ -176,17 +126,21 @@ Examples:
     --startDate 2026-01-01 \\
     --endDate 2026-01-31
 
-  # Load data with Shared Key auth and filter by model
+  # Load data with Shared Key auth (${SHARED_KEY_ENV_VAR} already exported) and filter by model
   node load-table-data.js \\
     --storageAccount myaccount \\
     --startDate 2026-01-01 \\
     --endDate 2026-01-31 \\
     --model gpt-4o \\
-    --sharedKey "your-key-here" \\
     --output usage.json
 
 For more information, see SKILL.md
 `);
+}
+
+// Validate an Azure storage account name (3-24 lowercase letters and digits)
+function isValidStorageAccountName(name) {
+	return typeof name === 'string' && STORAGE_ACCOUNT_PATTERN.test(name);
 }
 
 // Validate date format (YYYY-MM-DD)
@@ -245,6 +199,16 @@ function buildPartitionKey(datasetId, dayKey) {
 
 // Create table client with appropriate credentials
 function createTableClient(storageAccount, tableName, sharedKey) {
+	// Checked here as well as in main(), because this function is exported and
+	// the name is interpolated into the host that receives the credential.
+	if (!isValidStorageAccountName(storageAccount)) {
+		throw new Error('Invalid storage account name (expected 3-24 lowercase letters and digits)');
+	}
+
+	// Loaded lazily so the pure helpers can be used and tested without the SDK
+	const { TableClient, AzureNamedKeyCredential } = require('@azure/data-tables');
+	const { DefaultAzureCredential } = require('@azure/identity');
+
 	const endpoint = `https://${storageAccount}.table.core.windows.net`;
 
 	let credential;
@@ -257,6 +221,63 @@ function createTableClient(storageAccount, tableName, sharedKey) {
 	}
 
 	return new TableClient(endpoint, tableName, credential);
+}
+
+// Neutralize a free-text value that came from a table row. Rows are written by
+// every uploader, so their strings are untrusted. Remove everything the
+// repository's input validator (.github/workflows/validate-input.sh) treats as
+// hidden content: control characters (\p{Cc}), all format characters (\p{Cf}:
+// bidi controls, zero-width characters, soft hyphen, word joiner, BOM, Unicode
+// tag characters), variation selectors and other invisible fillers. HTML
+// comments are defused by removing all angle brackets, so their content stays
+// visible. Then collapse whitespace and cap the length. Visible text is kept,
+// so consumers must still treat these values as data, never as instructions.
+function sanitizeEntityString(value) {
+	if (value === undefined || value === null || value === '') {
+		return undefined;
+	}
+	let result = String(value)
+		.replace(/\p{Cc}/gu, ' ')
+		.replace(/\p{Cf}/gu, '')
+		.replace(/[\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
+		.replace(/[\u034F\u115F\u1160\u180E\u3164\uFFA0]/gu, '')
+		// Drop every angle bracket rather than pattern-matching HTML: with no
+		// '<' or '>' left, no comment or tag can hide text from a Markdown
+		// render, and a single-character pass cannot be bypassed by nesting
+		// (e.g. "<!<!---->--") the way a multi-character strip can.
+		.replace(/[<>]/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	const chars = Array.from(result);
+	if (chars.length > MAX_ENTITY_STRING_LENGTH) {
+		result = chars.slice(0, MAX_ENTITY_STRING_LENGTH - 1).join('') + '\u2026';
+	}
+	return result === '' ? undefined : result;
+}
+
+// Map a raw table entity onto the output shape, sanitizing every string field
+function normalizeEntity(entity, partitionKey, datasetId, dayKey) {
+	const text = (value, fallback) => sanitizeEntityString(value) ?? fallback;
+	return {
+		partitionKey: text(entity.partitionKey, partitionKey),
+		rowKey: text(entity.rowKey, ''),
+		schemaVersion: entity.schemaVersion,
+		datasetId: text(entity.datasetId, datasetId),
+		day: text(entity.day, dayKey),
+		model: text(entity.model, ''),
+		workspaceId: text(entity.workspaceId, ''),
+		workspaceName: text(entity.workspaceName, undefined),
+		machineId: text(entity.machineId, ''),
+		machineName: text(entity.machineName, undefined),
+		userId: text(entity.userId, undefined),
+		userKeyType: text(entity.userKeyType, undefined),
+		shareWithTeam: entity.shareWithTeam || undefined,
+		consentAt: text(entity.consentAt, undefined),
+		inputTokens: typeof entity.inputTokens === 'number' ? entity.inputTokens : 0,
+		outputTokens: typeof entity.outputTokens === 'number' ? entity.outputTokens : 0,
+		interactions: typeof entity.interactions === 'number' ? entity.interactions : 0,
+		updatedAt: text(entity.updatedAt, new Date().toISOString())
+	};
 }
 
 // Fetch entities from table for a date range
@@ -303,29 +324,7 @@ async function fetchEntities(tableClient, datasetId, startDate, endDate, filters
 
 			let count = 0;
 			for await (const entity of tableClient.listEntities(queryOptions)) {
-				// Normalize entity structure
-				const normalized = {
-					partitionKey: entity.partitionKey || partitionKey,
-					rowKey: entity.rowKey || '',
-					schemaVersion: entity.schemaVersion,
-					datasetId: entity.datasetId || datasetId,
-					day: entity.day || dayKey,
-					model: entity.model || '',
-					workspaceId: entity.workspaceId || '',
-					workspaceName: entity.workspaceName || undefined,
-					machineId: entity.machineId || '',
-					machineName: entity.machineName || undefined,
-					userId: entity.userId || undefined,
-					userKeyType: entity.userKeyType || undefined,
-					shareWithTeam: entity.shareWithTeam || undefined,
-					consentAt: entity.consentAt || undefined,
-					inputTokens: typeof entity.inputTokens === 'number' ? entity.inputTokens : 0,
-					outputTokens: typeof entity.outputTokens === 'number' ? entity.outputTokens : 0,
-					interactions: typeof entity.interactions === 'number' ? entity.interactions : 0,
-					updatedAt: entity.updatedAt || new Date().toISOString()
-				};
-
-				allEntities.push(normalized);
+				allEntities.push(normalizeEntity(entity, partitionKey, datasetId, dayKey));
 				count++;
 			}
 
@@ -341,6 +340,22 @@ async function fetchEntities(tableClient, datasetId, startDate, endDate, filters
 // Format entities as JSON
 function formatAsJSON(entities) {
 	return JSON.stringify(entities, null, 2);
+}
+
+// Escape one CSV cell. Text cells starting with = + - @ (or tab/CR) are
+// prefixed with a quote so Excel/Sheets do not evaluate them as formulas.
+function formatCsvCell(value) {
+	if (value === undefined || value === null) {
+		return '';
+	}
+	let stringValue = String(value);
+	if (typeof value === 'string' && /^[=+\-@\t\r]/.test(stringValue)) {
+		stringValue = `'${stringValue}`;
+	}
+	if (/[",\r\n]/.test(stringValue)) {
+		return `"${stringValue.replace(/"/g, '""')}"`;
+	}
+	return stringValue;
 }
 
 // Format entities as CSV
@@ -369,27 +384,23 @@ function formatAsCSV(entities) {
 
 	// CSV data rows
 	for (const entity of entities) {
-		const values = headers.map(header => {
-			const value = entity[header];
-			if (value === undefined || value === null) {
-				return '';
-			}
-			// Escape commas and quotes
-			const stringValue = String(value);
-			if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-				return `"${stringValue.replace(/"/g, '""')}"`;
-			}
-			return stringValue;
-		});
-		rows.push(values.join(','));
+		rows.push(headers.map(header => formatCsvCell(entity[header])).join(','));
 	}
 
 	return rows.join('\n');
 }
 
+// Write the result to a file readable only by the current user
+function writeOutputFile(outputPath, content) {
+	const resolved = path.resolve(outputPath);
+	fs.mkdirSync(path.dirname(resolved), { recursive: true });
+	fs.writeFileSync(resolved, content, { encoding: 'utf8', mode: 0o600 });
+	return resolved;
+}
+
 // Main execution
-async function main() {
-	const args = parseArgs();
+async function main(argv = process.argv, env = process.env, createClient = createTableClient) {
+	const args = parseArgs(argv);
 
 	// Show help if requested
 	if (args.help) {
@@ -400,6 +411,10 @@ async function main() {
 	// Validation (throw errors so callers can handle them)
 	if (!args.storageAccount) {
 		throw new Error('--storageAccount is required');
+	}
+
+	if (!isValidStorageAccountName(args.storageAccount)) {
+		throw new Error('--storageAccount must be 3-24 lowercase letters and digits');
 	}
 
 	if (!args.startDate || !args.endDate) {
@@ -439,18 +454,11 @@ async function main() {
 	}
 	console.error('');
 
-	// Main execution
-	// Instead of writing output to a file or printing it unconditionally,
-	// produce the result and attach it to `module.exports.tresult` and return it.
-	// Callers can require this module and read `tresult`.
-	// Writing to disk has been intentionally removed per request.
-	// Note: logs (console.error) are preserved for progress info.
-
 	// Create table client
-	const tableClient = createTableClient(
+	const tableClient = createClient(
 		args.storageAccount,
 		args.tableName,
-		args.sharedKey
+		env[SHARED_KEY_ENV_VAR] || null
 	);
 
 	// Fetch entities
@@ -496,18 +504,25 @@ async function main() {
 		output = formatAsJSON(entities);
 	}
 
+	// With --output the dataset goes only to the file, never to stdout, so a
+	// CI log or transcript gets the counts above and not the per-row data.
+	if (args.output) {
+		const written = writeOutputFile(args.output, output);
+		console.error(`Wrote ${entities.length} entities to ${written}`);
+	}
+
 	// Attach result to module.exports and return it
 	module.exports.tresult = output;
-	return output;
+	return { output, writtenToFile: Boolean(args.output) };
 }
 
 // Run if executed directly
 if (require.main === module) {
 	main()
 		.then(result => {
-			// When executed as CLI, print the result to stdout for visibility.
-			if (result !== null && result !== undefined) {
-				console.log(result);
+			// Without --output, print the result to stdout for interactive use.
+			if (result && !result.writtenToFile) {
+				console.log(result.output);
 			}
 			process.exit(0);
 		})
@@ -523,14 +538,21 @@ if (require.main === module) {
 
 module.exports = {
 	parseArgs,
+	main,
+	isValidStorageAccountName,
 	isValidDate,
 	getDayKeysInclusive,
 	sanitizeTableKey,
 	buildPartitionKey,
 	createTableClient,
+	sanitizeEntityString,
+	normalizeEntity,
 	fetchEntities,
 	formatAsJSON,
+	formatCsvCell,
 	formatAsCSV,
+	writeOutputFile,
+	SHARED_KEY_ENV_VAR,
 	// `tresult` will hold the final output (JSON or CSV string) after `main()` runs
 	tresult: null
 };

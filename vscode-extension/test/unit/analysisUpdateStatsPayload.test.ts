@@ -23,6 +23,7 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as ts from 'typescript';
 import { extractBracesBlock } from './sourceStructureTestHelpers';
 
 // Compiled test output lives under out/vscode-extension/test/unit (tsconfig.tests.json's
@@ -82,4 +83,74 @@ test('every analysisPanel "updateStats" postMessage reuses _buildAnalysisUpdateD
 			`Found an analysisPanel 'updateStats' postMessage that does not build its data via this._buildAnalysisUpdateData(...):\n${call}`
 		);
 	}
+});
+
+/**
+ * Direct property names of the payload object a builder method returns — parsed with the
+ * TypeScript AST so that keys of nested objects (or text inside strings) can never stand in
+ * for a missing top-level field. The payload is the first object literal in the method's
+ * return statement: `return { ... }` or `return JSON.stringify({ ... }).replace(...)`.
+ */
+function payloadKeys(source: string, methodName: string): Set<string> {
+	const sourceFile = ts.createSourceFile('extension.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	let method: ts.MethodDeclaration | undefined;
+	const findMethod = (node: ts.Node): void => {
+		if (method) { return; }
+		if (ts.isMethodDeclaration(node) && node.name.getText(sourceFile) === methodName) { method = node; return; }
+		ts.forEachChild(node, findMethod);
+	};
+	findMethod(sourceFile);
+	assert.ok(method?.body, `method ${methodName} not found`);
+
+	let payload: ts.ObjectLiteralExpression | undefined;
+	const findPayload = (node: ts.Node): void => {
+		if (payload || ts.isFunctionLike(node)) { return; } // nested functions return other things
+		if (ts.isReturnStatement(node) && node.expression) {
+			const firstObject = (n: ts.Node): void => {
+				if (payload) { return; }
+				if (ts.isObjectLiteralExpression(n)) { payload = n; return; }
+				ts.forEachChild(n, firstObject);
+			};
+			firstObject(node.expression);
+			return;
+		}
+		ts.forEachChild(node, findPayload);
+	};
+	ts.forEachChild(method.body, findPayload);
+	assert.ok(payload, `no returned object literal found in ${methodName}`);
+
+	const keys = new Set<string>();
+	for (const property of payload.properties) {
+		if ((ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && property.name) {
+			keys.add(property.name.getText(sourceFile).replace(/^['"]|['"]$/g, ''));
+		}
+	}
+	return keys;
+}
+
+test('payloadKeys only collects direct properties of the returned payload', () => {
+	const fixture = `class C {
+	private build(): object {
+		const helper = { onlyNested: 1 };
+		return {
+			topLevel: 1,
+			nested: { onlyNested: true, deeper: { alsoNested: 2 } },
+			text: 'onlyInString: 3',
+			shorthand,
+			...spread,
+		};
+	}
+}`;
+	assert.deepEqual([...payloadKeys(fixture, 'build')].sort(), ['nested', 'shorthand', 'text', 'topLevel']);
+});
+
+test('the initial Usage Analysis payload carries every field the updateStats payload does', () => {
+	// bootstrap() renders window.__INITIAL_USAGE__ without requesting fresh stats, so a field
+	// only sent by updateStats leaves its section empty on open until the next refresh (this
+	// is how Skill Suggestions went missing on a cold open with cached stats).
+	const updateKeys = payloadKeys(EXTENSION_SRC, '_buildAnalysisUpdateData');
+	const initialKeys = payloadKeys(EXTENSION_SRC, '_buildUsageAnalysisInitialData');
+	assert.ok(updateKeys.has('repeatedTasks') && updateKeys.size >= 15, `key extraction looks broken: ${[...updateKeys].join(', ')}`);
+	const missing = [...updateKeys].filter(key => !initialKeys.has(key));
+	assert.deepEqual(missing, [], `_buildUsageAnalysisInitialData() is missing fields that updateStats sends: ${missing.join(', ')}`);
 });

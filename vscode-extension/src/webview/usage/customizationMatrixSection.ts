@@ -35,6 +35,27 @@ function statusLabel(status: string): string {
 	return localize('usage.customization.status.unknown');
 }
 
+/**
+ * Expandable list of the folders (worktrees, clones) workspace grouping merged into one row
+ * (src/workspaceGrouping.ts), so a wrong merge is visible rather than silent.
+ */
+export function renderMergedWorkspaceMembers(memberPaths: string[] | undefined): string {
+	if (!memberPaths || memberPaths.length < 2) { return ''; }
+	const items = memberPaths.map(p => `<li>${escapeHtml(p)}</li>`).join('');
+	return `
+		<details class="workspace-group-members" style="font-family: sans-serif; font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
+			<summary title="${escapeHtml(memberPaths.join('\n'))}" style="cursor: pointer;">${escapeHtml(localizeFormat('customizationMatrix.mergedFolders', memberPaths.length))}</summary>
+			<ul style="margin: 4px 0 0 16px; padding: 0; font-family: 'Courier New', monospace;">${items}</ul>
+		</details>`;
+}
+
+/** Summary note for workspace names that still look like worktree / clone artefacts after grouping. */
+export function renderUngroupedWorkspaceNote(names: string[] | undefined): string {
+	if (!names || names.length === 0) { return ''; }
+	const examples = names.slice(0, 3).join(', ');
+	return `<span class="ungrouped-workspace-note" style="display:inline-flex;align-items:center;gap:4px;" title="${escapeHtml(names.join('\n'))}">${statusBadgeHtml('⚠️', localize('customizationMatrix.ungroupedBadge'))} ${escapeHtml(localizeFormat('customizationMatrix.ungroupedNames', names.length, examples))}</span>`;
+}
+
 export function buildCustomizationColumns(matrix: WorkspaceCustomizationMatrix): DataTableColumn<WorkspaceCustomizationRow>[] {
 	const typeColumns: DataTableColumn<WorkspaceCustomizationRow>[] = (matrix.customizationTypes ?? []).map(type => ({
 		id: `type:${type.id}`,
@@ -58,7 +79,7 @@ export function buildCustomizationColumns(matrix: WorkspaceCustomizationMatrix):
 					? ` <span style="font-family: sans-serif; vertical-align: middle;">${statusBadgeHtml('⚠️', localize('usage.customization.badge.noCustomization'))}</span>`
 					: '';
 				const title = row.workspacePath || row.workspaceName;
-				return { html: `<span class="customization-workspace-name" title="${escapeHtml(title)}">${escapeHtml(row.workspaceName)}</span>${badge}` };
+				return { html: `<span class="customization-workspace-name" title="${escapeHtml(title)}">${escapeHtml(row.workspaceName)}</span>${badge}${renderMergedWorkspaceMembers(row.memberPaths)}` };
 			},
 		},
 		{
@@ -147,6 +168,7 @@ export function buildCustomizationSectionHtml(matrix: WorkspaceCustomizationMatr
 				${currentMatrix.workspacesWithIssues > 0
 					? `<span class="stale-warning" style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('⚠️', localize('usage.customization.badge.noCustomization'))} ${escapeHtml(localizeFormat('usage.customization.summary.issues', currentMatrix.workspacesWithIssues))}</span>`
 					: `<span style="display:inline-flex;align-items:center;gap:4px;">${statusBadgeHtml('✅', localize('usage.customization.status.fresh'))} ${escapeHtml(localize('usage.customization.summary.allGood'))}</span>`}
+				${renderUngroupedWorkspaceNote(currentMatrix.ungroupedWorkspaceNames)}
 			</div>
 			${filterToggle}
 			<div class="customization-matrix-container">
