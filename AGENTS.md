@@ -46,8 +46,8 @@ Run `ls -a` (or `git ls-files | cut -d/ -f1 | sort -u`) for the live top level.
 │   ├── workflows/               ← CI/CD
 │   ├── plugin/marketplace.json  ← Copilot plugin marketplace catalog (lists copilot-app/)
 │   └── instructions/            ← Folder-specific guides (see the table below)
-└── README.md, CONTRIBUTING.md, CHANGELOG.md, SECURITY.md, SUPPORT.md, LICENSE, and generated
-    reports (LOC_STATS.md, hardcoded-strings-report.md)
+└── README.md, CONTRIBUTING.md, CHANGELOG.md, SECURITY.md, SUPPORT.md, LICENSE, and the generated
+    LOC_STATS.md (other generated reports, such as the hardcoded-strings report, are git-ignored)
 ```
 
 ## Sub-project Instructions
