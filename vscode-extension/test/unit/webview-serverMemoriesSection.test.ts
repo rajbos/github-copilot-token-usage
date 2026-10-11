@@ -202,10 +202,10 @@ test('serverMemories section: both tables use the shared data-table component', 
 
 test('serverMemories section: summary counts of one use the singular verb', () => {
 	const one = buildServerMemoriesSectionHtml(view({ documentedCount: 1, fullyStaleCount: 1, documentedMemories: [] }));
-	assert.match(one, /1 already cites an instruction file/);
+	assert.match(one, /1 already cites an instruction or documentation file/);
 	assert.match(one, /1 cites only files that no longer exist/);
 	const many = buildServerMemoriesSectionHtml(view({ documentedCount: 3, fullyStaleCount: 2 }));
-	assert.match(many, /3 already cite an instruction file/);
+	assert.match(many, /3 already cite an instruction or documentation file/);
 	assert.match(many, /2 cite only files that no longer exist/);
 });
 

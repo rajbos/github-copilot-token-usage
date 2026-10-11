@@ -134,7 +134,7 @@ export function buildPromoteOutput(serverAnalysis: ServerMemoriesAnalysis | unde
 	}
 	if (serverAnalysis.error) {
 		// A failed read must not fall through to renderPromotionMarkdown(): with no
-		// memories it prints "every stored memory already cites an instruction file",
+		// memories it prints "every stored memory already cites an instruction or documentation file",
 		// so a 401, a missing `gh` or a dropped connection would read as "you have
 		// nothing left to document" — the most misleading answer this command can give.
 		return { stdout: '', stderr: `Could not read ${sanitizeForDisplay(serverAnalysis.repo)}: ${sanitizeForDisplay(serverAnalysis.error)}\n`, exitCode: 1 };
@@ -270,7 +270,7 @@ function printServerMemoriesReport(analysis: ServerMemoriesAnalysis | undefined)
 	// Say so when the page was full: these routes have no pagination cursor, so every number
 	// below describes the prefix that was read, not the whole store.
 	process.stdout.write(`Stored memories:      ${analysis.totalMemories}${analysis.truncated ? '+ (truncated at the request limit)' : ''} across ${analysis.distinctSubjects} subjects\n`);
-	process.stdout.write(`Already documented:   ${analysis.documentedCount} (cite AGENTS.md or another instruction file)\n`);
+	process.stdout.write(`Already documented:   ${analysis.documentedCount} (cite an instruction or documentation file)\n`);
 	// Reported rather than silently dropped: a reader comparing the totals should be able to
 	// see where the difference went.
 	if (analysis.unverifiableCount > 0) {

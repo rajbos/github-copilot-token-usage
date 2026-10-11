@@ -1461,11 +1461,11 @@ export function describeNoPromotionCandidates(analysis: ServerMemoriesAnalysis):
 	const total = analysis.totalMemories;
 	const documented = analysis.documentedRecordCount ?? analysis.documentedCount;
 	if (total > 0 && documented === total) {
-		return 'No promotion candidates: every stored memory already cites an instruction file.';
+		return 'No promotion candidates: every stored memory already cites an instruction or documentation file.';
 	}
 	// Each verb agrees with its own count: "1 cites" / "2 cite".
 	const reasons = [
-		documented > 0 ? `${documented} already ${inflect(documented, 'cites', 'cite')} an instruction file` : '',
+		documented > 0 ? `${documented} already ${inflect(documented, 'cites', 'cite')} an instruction or documentation file` : '',
 		analysis.unverifiableCount > 0 ? `${analysis.unverifiableCount} ${inflect(analysis.unverifiableCount, 'has', 'have')} no verifiable file citation` : '',
 		analysis.fullyStaleCount > 0 ? `${analysis.fullyStaleCount} ${inflect(analysis.fullyStaleCount, 'cites', 'cite')} only files that no longer exist` : '',
 	].filter(Boolean);

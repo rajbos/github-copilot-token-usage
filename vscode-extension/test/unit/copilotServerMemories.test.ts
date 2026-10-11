@@ -842,7 +842,7 @@ test('renderPromotionMarkdown distinguishes disabled and empty from all-document
 		enabled: true,
 		memories: [memory({ id: '1', citations: ['AGENTS.md:1'] })],
 	}, alwaysExists);
-	assert.match(renderPromotionMarkdown(allDocumented), /already cites an instruction file/);
+	assert.match(renderPromotionMarkdown(allDocumented), /already cites an instruction or documentation file/);
 });
 
 test('renderPromotionMarkdown notes repeats and says so when there is nothing to promote', () => {
@@ -1535,10 +1535,10 @@ test('describeNoPromotionCandidates does not call a stale-only store "all docume
 			memory({ id: '2', subject: 'told', citations: ['User input: tabs'] }),
 		],
 	}, alwaysExists);
-	assert.match(describeNoPromotionCandidates(mixed), /1 already cites an instruction file, 1 has no verifiable file citation/);
+	assert.match(describeNoPromotionCandidates(mixed), /1 already cites an instruction or documentation file, 1 has no verifiable file citation/);
 
 	const documented = analyzeServerMemories({ repo: 'o/n', enabled: true, memories: [memory({ id: '1', citations: ['AGENTS.md:1'] })] }, alwaysExists);
-	assert.equal(describeNoPromotionCandidates(documented), 'No promotion candidates: every stored memory already cites an instruction file.');
+	assert.equal(describeNoPromotionCandidates(documented), 'No promotion candidates: every stored memory already cites an instruction or documentation file.');
 });
 
 // ---------------------------------------------------------------------------
@@ -1629,7 +1629,7 @@ test('describeNoPromotionCandidates agrees each verb with its count', () => {
 			memory({ id: '4', subject: 'd', citations: ['User input: y'] }),
 		],
 	}, alwaysExists);
-	assert.match(describeNoPromotionCandidates(plural), /none of the 4 stored memories is both .* \(2 already cite an instruction file, 2 have no verifiable file citation\)\.$/);
+	assert.match(describeNoPromotionCandidates(plural), /none of the 4 stored memories is both .* \(2 already cite an instruction or documentation file, 2 have no verifiable file citation\)\.$/);
 });
 
 test('serverMemoriesDraftContextMatches refuses a draft once the workspace points elsewhere', () => {
@@ -1995,7 +1995,7 @@ test('the all-documented explanation counts records, like the total', () => {
 	}, alwaysExists);
 	assert.equal(analysis.totalMemories, 2);
 	assert.equal(analysis.documentedRecordCount, 2);
-	assert.equal(describeNoPromotionCandidates(analysis), 'No promotion candidates: every stored memory already cites an instruction file.');
+	assert.equal(describeNoPromotionCandidates(analysis), 'No promotion candidates: every stored memory already cites an instruction or documentation file.');
 });
 
 test('the zero-candidate explanation uses one unit (records) for the subject and every reason', () => {
@@ -2027,7 +2027,7 @@ test("with non-overlapping categories, the zero-candidate total equals the sum o
 	const documented = analysis.documentedRecordCount ?? 0;
 	assert.equal(documented + analysis.unverifiableCount + analysis.fullyStaleCount, analysis.totalMemories);
 	assert.equal(describeNoPromotionCandidates(analysis),
-		"No promotion candidates: none of the 4 stored memories is both undocumented and backed by a file that still exists in this checkout (1 already cites an instruction file, 1 has no verifiable file citation, 2 cite only files that no longer exist).");
+		"No promotion candidates: none of the 4 stored memories is both undocumented and backed by a file that still exists in this checkout (1 already cites an instruction or documentation file, 1 has no verifiable file citation, 2 cite only files that no longer exist).");
 });
 
 test('isRelativeInsideRoot only treats a whole .. segment as escaping', () => {
