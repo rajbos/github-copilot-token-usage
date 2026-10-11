@@ -345,6 +345,7 @@ import {
   calculateFluencyScoreForTeamMember as _calculateFluencyScoreForTeamMember,
   calculateMaturityScores as _calculateMaturityScores,
   STAGE_THRESHOLDS,
+  STATS_REFRESH_INTERVAL_MS,
 } from '../../src/maturityScoring';
 
 // --- Workspace helpers ---
@@ -2654,7 +2655,7 @@ class CopilotTokenTracker implements vscode.Disposable {
 		this.scheduleInitialUpdate();
 		this.updateInterval = setInterval(() => {
 			this.updateTokenStats(true, true);
-		}, 5 * 60 * 1000);
+		}, STATS_REFRESH_INTERVAL_MS);
 		// A webview click can only be delivered between event-loop ticks, so a long synchronous
 		// stretch on this thread is what the user feels as "navigation is blocked". Surface it.
 		this._eventLoopMonitor = startEventLoopMonitor({
