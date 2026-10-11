@@ -1,13 +1,19 @@
 name: Sync Tool Names from vscode-copilot-chat
 
 on:
-  workflow_dispatch:  # Manual trigger
+  # No workflow_dispatch on purpose: a dispatch against another branch loads that
+  # branch's workflow definition (and script) with this job's write token, and
+  # nothing inside the file can prevent that. schedule and push-to-main always
+  # run the default branch's reviewed definition.
   schedule:
     - cron: '30 17 * * 1'  # Run every Monday at 17:30 UTC
   push:
+    # main only: the privileged job (contents/pull-requests: write) must never
+    # run a script from an unreviewed branch.
+    branches: [main]
     paths:
       - .github/workflows/sync-toolnames.yml
-      - .github/prompts/sync-toolnames.prompt.md
+      - .github/scripts/sync_toolnames.py
 
 permissions:
   contents: read
@@ -33,111 +39,37 @@ jobs:
         fetch-depth: 0
         
     - name: Checkout vscode-copilot-chat repository
+      # Untrusted third-party content: parsed as data only, never fed to an agent.
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: microsoft/vscode-copilot-chat
         path: vscode-copilot-chat
         fetch-depth: 1
-        
-    - name: Setup pnpm
-      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      with:
-        version: '11.2.2'
-    - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-      with:
-        node-version-file: 'current-repo/.nvmrc'
-        cache: 'pnpm'
-        cache-dependency-path: current-repo/vscode-extension/pnpm-lock.yaml
+        persist-credentials: false
 
-    - name: Authenticate GitHub CLI
-      env:
-        # Try to use COPILOT_CLI_TOKEN first, fall back to GITHUB_TOKEN
-        GH_TOKEN: ${{ secrets.GH_PAT }}
-      run: |
-        echo "=== Authenticating GitHub CLI ==="
-        if [ -z "$GH_TOKEN" ]; then
-          echo "❌ Error: No authentication token available"
-          echo "Environment variable GH_TOKEN is empty"
-          exit 1
-        fi
-        
-        echo ""
-        echo "=== Checking authentication status ==="
-        if gh auth status 2>&1; then
-          echo "✅ Authentication verified"
-        else
-          echo "❌ Authentication check failed"
-          echo "Note: This may indicate an issue with token permissions or GitHub CLI configuration"
-          exit 1
-        fi
-
-    - name: Install dependencies
-      working-directory: current-repo/vscode-extension
-      run: pnpm install --frozen-lockfile
-    - name: Check Copilot CLI version
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
-      run: |
-        npx @github/copilot --version
-        
-    - name: Run Copilot CLI with prompt
-      id: copilot_run
+    # Deterministic, agent-free sync. Previously a Copilot CLI agent with
+    # --allow-all-tools and GH_PAT in its environment read the upstream repo,
+    # so prompt injection in upstream text could run shell commands and
+    # exfiltrate the PAT. This step has no secrets and parses two enums with a
+    # regex; the trusted script comes from this repository's checkout.
+    - name: Sync toolNames.json from upstream enums
       working-directory: current-repo
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
-        # Read the prompt from the file
-        PROMPT=$(cat .github/prompts/sync-toolnames.prompt.md)
-        
-        # Get the path to the vscode-copilot-chat repo
-        UPSTREAM_PATH="${GITHUB_WORKSPACE}/vscode-copilot-chat"
-        
-        # Get the path to toolNames.json
-        TOOLNAMES_PATH="${GITHUB_WORKSPACE}/current-repo/src/toolNames.json"
-        
-        # Create the full prompt with context - append context to the base prompt
-        {
-          echo "$PROMPT"
-          echo ""
-          echo "## Context Paths"
-          echo ""
-          echo "- Upstream repository path: ${UPSTREAM_PATH}"
-          echo "- Current repository toolNames.json path: ${TOOLNAMES_PATH}"
-          echo "- Upstream toolNames.ts path: ${UPSTREAM_PATH}/src/extension/tools/common/toolNames.ts"
-          echo ""
-          echo "## Additional Instructions"
-          echo ""
-          echo "Please check if the upstream file exists at the specified path. If it doesn't, search for toolNames.ts or similar files in the upstream repository and use the correct path."
-        } > /tmp/copilot-prompt.md
-        
-        echo "=== Running Copilot CLI with prompt ==="
-        cat /tmp/copilot-prompt.md
-        echo ""
-        echo "=== Copilot CLI Output ==="
+        echo "Upstream commit: $(git -C "${GITHUB_WORKSPACE}/vscode-copilot-chat" rev-parse HEAD)"
+        echo "Upstream file: src/extension/tools/common/toolNames.ts"
+        cp src/toolNames.json "${RUNNER_TEMP}/toolNames.base.json"
+        python3 .github/scripts/sync_toolnames.py \
+          --upstream-file "${GITHUB_WORKSPACE}/vscode-copilot-chat/src/extension/tools/common/toolNames.ts" \
+          --tool-names src/toolNames.json
+        # Historical duplicates in the committed mapping are tolerated; only
+        # duplicates introduced by this sync fail the run.
+        python3 .github/scripts/toolnames_utils.py --base "${RUNNER_TEMP}/toolNames.base.json"
 
-        cd "${GITHUB_WORKSPACE}/current-repo/"
-        
-        # Run gh copilot with the prompt using non-interactive mode
-        # Use -s/--silent for script-friendly output, -p for prompt,
-        # --allow-all-tools for tool permissions. Unlike --allow-all this does
-        # not grant --allow-all-paths/--allow-all-urls: file access stays
-        # confined to the workspace and the --add-dir paths below (least
-        # privilege), which covers everything this prompt needs.
-        # Read the prompt into a variable for safer handling
-        COPILOT_PROMPT_TEXT=$(cat /tmp/copilot-prompt.md)
-        # > /tmp/copilot-output.txt
-        npx @github/copilot -p "$COPILOT_PROMPT_TEXT" --silent --allow-all-tools --add-dir "${UPSTREAM_PATH}" --add-dir "${GITHUB_WORKSPACE}/current-repo" --no-ask-user  2>&1 || {
-          EXIT_CODE=$?
-          echo "Warning: gh copilot command exited with code $EXIT_CODE, but continuing to check output"
-          cat /tmp/copilot-output.txt 2>/dev/null || true
-        }
-        
     - name: Check for changes
       id: changes
       working-directory: current-repo
       run: |
-        if git diff --quiet; then
+        if git diff --quiet -- src/toolNames.json; then
           echo "No changes detected in toolNames.json"
           echo "changed=false" >> "$GITHUB_OUTPUT"
         else
