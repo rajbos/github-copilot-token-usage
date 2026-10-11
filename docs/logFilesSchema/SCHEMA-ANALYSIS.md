@@ -19,7 +19,7 @@ Quick guide for analyzing and updating Copilot session file schemas.
 
 The analysis script:
 1. ✅ Scans all Copilot session file locations
-2. ✅ Extracts field names, types, and sample values
+2. ✅ Extracts field names and types (sample values only with `-IncludeExamples`, never committed)
 3. ✅ Compares with existing documentation
 4. ✅ Highlights new/changed fields
 5. ✅ Generates detailed JSON report

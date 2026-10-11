@@ -29,7 +29,7 @@ const path = require('path');
 const { execFileSync, spawn } = require('child_process');
 
 const { REPO_ROOT } = require('./lib/harness');
-const { parseArgs, readConfig, baselineRegistry } = require('./lib/config');
+const { parseArgs, parseThemes, readConfig, baselineRegistry } = require('./lib/config');
 const { parseConcurrency } = require('./lib/pool');
 
 const SKILL_DIR = __dirname;
@@ -43,8 +43,29 @@ function git(args, options = {}) {
 	}).trim();
 }
 
-function run(command, args, cwd) {
-	execFileSync(command, args, { cwd, stdio: 'inherit' });
+function run(command, args, cwd, env) {
+	execFileSync(command, args, { cwd, stdio: 'inherit', ...(env ? { env } : {}) });
+}
+
+/**
+ * Environment variables the bundle build may see. `esbuild.js` and the
+ * dependency tree it loads belong to the code under review (both the base
+ * commit and the working tree), so it inherits only what Node and esbuild need
+ * to run, not the caller's tokens. This prevents accidental inheritance only:
+ * the build runs as the same user and can still read the parent's environment
+ * or credential files (see SECURITY.md). Names are matched exactly, except on
+ * Windows, where environment variable names are case-insensitive (`Path`).
+ */
+const BUILD_ENV_ALLOWLIST = new Set([
+	'PATH', 'PATHEXT', 'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC',
+	'HOME', 'USERPROFILE', 'TEMP', 'TMP', 'TMPDIR',
+	'LANG', 'LC_ALL', 'TZ', 'CI', 'ESBUILD_BINARY_PATH',
+]);
+
+function buildEnv(source = process.env, platform = process.platform) {
+	const key = platform === 'win32' ? (name) => name.toUpperCase() : (name) => name;
+	return Object.fromEntries(Object.entries(source)
+		.filter(([name, value]) => value !== undefined && BUILD_ENV_ALLOWLIST.has(key(name))));
 }
 
 /**
@@ -55,6 +76,10 @@ function run(command, args, cwd) {
  * on main since then do not show up as "visual changes in this PR".
  */
 function resolveBaseRef(requested) {
+	if (requested !== undefined && (typeof requested !== 'string' || requested === '' || requested.startsWith('-'))) {
+		// Passed to git as a bare argument, so a leading dash would be read as an option.
+		throw new Error(`--base must name a commit, got ${JSON.stringify(requested)}`);
+	}
 	const candidates = requested ? [requested] : ['origin/main', 'main'];
 	for (const candidate of candidates) {
 		try {
@@ -122,7 +147,7 @@ function buildWebviews(checkoutRoot, label) {
 	console.log(`\n▶ Building webview bundles (${label})…`);
 	// Invoke esbuild directly because baseline revisions may still define
 	// `npm run compile` as a combined type-check, lint, and bundle command.
-	run(process.execPath, ['esbuild.js'], extensionDir);
+	run(process.execPath, ['esbuild.js'], extensionDir, buildEnv());
 }
 
 /**
@@ -250,30 +275,102 @@ function writeBaselineRegistry(worktreeDir, outRoot) {
 	return file;
 }
 
+/** Marks a directory as this skill's output, so later runs may clear it. */
+const OUTPUT_MARKER = '.visual-view-diff-output';
+/** Everything a run deletes or overwrites directly under the output root. */
+const OUTPUT_ENTRIES = ['baseline', 'current', 'diff', '.baseline-worktree', 'timings.md', '.baseline-registry.json'];
+
+/**
+ * Claims the output root and clears what a previous run left in it.
+ *
+ * Every run deletes `OUTPUT_ENTRIES` under the output root, so pointing `--out`
+ * at an unrelated directory would remove same-named entries there. The root is
+ * only cleared when it is the default `visual-output/` or carries the marker a
+ * previous run wrote. Nothing here follows a symlink: a branch can commit
+ * `visual-output`, the marker or any entry as a link, and a write or delete
+ * through it would land in the link's target.
+ */
+function prepareOutRoot(outRoot, defaultOutRoot) {
+	const isLink = (p) => Boolean(fs.lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink());
+	if (isLink(outRoot)) {
+		throw new Error(`--out ${outRoot} is a symbolic link; refusing to delete into its target.`);
+	}
+	fs.mkdirSync(outRoot, { recursive: true });
+	const markerPath = path.join(outRoot, OUTPUT_MARKER);
+	// Claim the marker atomically instead of checking for it and then writing.
+	// It is a directory because `mkdir` fails on anything already at the path
+	// and never follows a link on any platform. A file opened with `wx` is not
+	// enough: on Windows, O_EXCL creates the target of a dangling symlink.
+	let created = false;
+	try {
+		fs.mkdirSync(markerPath);
+		created = true;
+	} catch (error) {
+		if (!error || error.code !== 'EEXIST') { throw error; }
+	}
+	// An existing marker is only inspected, never written through, and must
+	// be an entry of its own: a symlink placed there does not make the root ours.
+	const existing = created ? null : fs.lstatSync(markerPath);
+	if (existing && !existing.isDirectory() && !existing.isFile()) {
+		throw new Error(`--out ${outRoot} has a ${OUTPUT_MARKER} that is a link or special file; refusing to treat it as ours.`);
+	}
+	const owned = outRoot === defaultOutRoot || !created;
+	const clashes = OUTPUT_ENTRIES.filter((name) => fs.lstatSync(path.join(outRoot, name), { throwIfNoEntry: false }));
+	if (!owned && clashes.length > 0) {
+		// Leave the directory as it was found, or a second run would treat it as ours.
+		fs.rmdirSync(markerPath);
+		throw new Error(
+			`--out ${outRoot} already contains ${clashes.join(', ')} and was not created by this skill; ` +
+			'refusing to delete them. Pick an empty or new directory.',
+		);
+	}
+	// `rmSync` removes a symlinked entry itself, never its target, so the
+	// files written into these paths later are always fresh.
+	for (const name of OUTPUT_ENTRIES) {
+		fs.rmSync(path.join(outRoot, name), { recursive: true, force: true });
+	}
+}
+
+/**
+ * `parseArgs` turns a flag with no value into `true`. Falling back to a default
+ * there would silently run something the caller did not ask for (`--base`
+ * alone comparing against origin/main), so a bare value option is an error.
+ */
+function requireOptionValues(args) {
+	for (const name of ['base', 'out', 'theme', 'view']) {
+		if (args[name] === true) {
+			throw new Error(`--${name} needs a value.`);
+		}
+	}
+	return args;
+}
+
 async function main() {
 	const startedAt = Date.now();
-	const args = parseArgs(process.argv.slice(2));
-	const outRoot = path.resolve(args.out || path.join(REPO_ROOT, 'visual-output'));
+	const args = requireOptionValues(parseArgs(process.argv.slice(2)));
+	const defaultOutRoot = path.resolve(REPO_ROOT, 'visual-output');
+	const outRoot = typeof args.out === 'string' ? path.resolve(args.out) : defaultOutRoot;
+	// Validated here as well as in render-views.js, so a bad value fails before
+	// the worktree and both builds rather than after them.
+	parseThemes(args.theme);
 	const theme = args.theme || 'dark';
 	const view = typeof args.view === 'string' ? args.view : undefined;
 	const concurrency = parseConcurrency(args.concurrency);
 	const timer = createTimer();
 
-	const base = resolveBaseRef(typeof args.base === 'string' ? args.base : undefined);
+	const base = resolveBaseRef(args.base);
 	console.log(`Baseline: ${base.sha.slice(0, 12)} (merge base with ${base.ref})`);
 	warnIfBaselineLooksStale(base);
 
+	prepareOutRoot(outRoot, defaultOutRoot);
 	const baselineDir = path.join(outRoot, 'baseline');
 	const currentDir = path.join(outRoot, 'current');
 	const diffDir = path.join(outRoot, 'diff');
 	for (const dir of [baselineDir, currentDir, diffDir]) {
-		fs.rmSync(dir, { recursive: true, force: true });
 		fs.mkdirSync(dir, { recursive: true });
 	}
-	fs.rmSync(path.join(outRoot, 'timings.md'), { force: true });
 
 	const worktreeDir = path.join(outRoot, '.baseline-worktree');
-	fs.rmSync(worktreeDir, { recursive: true, force: true });
 
 	try {
 		await timer.time('Check out baseline', () => {
@@ -338,6 +435,8 @@ async function main() {
 
 	console.log(`\nScreenshots and report are under ${path.relative(process.cwd(), outRoot) || outRoot}/`);
 }
+
+module.exports = { buildEnv, prepareOutRoot, requireOptionValues, resolveBaseRef };
 
 if (require.main === module) {
 	main().catch((error) => {

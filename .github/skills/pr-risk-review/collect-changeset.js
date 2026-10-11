@@ -100,6 +100,15 @@ function matchesAny(compiled, filePath) {
 
 // ── argument parsing ───────────────────────────────────────────────────────
 
+/**
+ * `--base`/`--head` reach `git rev-parse` as positional arguments, where a
+ * value starting with `-` would be read as an option instead of a revision.
+ */
+function refArg(flag, value) {
+  if (value.startsWith('-')) fail(`${flag} must be a commit or ref, not an option: ${value}`);
+  return value;
+}
+
 function parseArgs(argv) {
   const opts = {
     base: null,
@@ -116,8 +125,8 @@ function parseArgs(argv) {
       i += 1;
       return value;
     };
-    if (arg === '--base') opts.base = next();
-    else if (arg === '--head') opts.head = next();
+    if (arg === '--base') opts.base = refArg(arg, next());
+    else if (arg === '--head') opts.head = refArg(arg, next());
     else if (arg === '--out-dir') opts.outDir = next();
     else if (arg === '--max-diff-bytes') opts.maxDiffBytes = Number(next());
     else if (arg === '--json') opts.json = true;
@@ -144,33 +153,90 @@ function resolveBase(head) {
 
 // ── changeset collection ───────────────────────────────────────────────────
 
+/**
+ * Parse `git diff --name-status -z` output: `CODE\0path\0` per entry, or
+ * `R100\0old\0new\0` for renames and copies. Returns a map keyed on the new path.
+ */
+function parseNameStatusZ(output) {
+  const tokens = output.split('\0');
+  const byPath = new Map();
+  let i = 0;
+  while (i < tokens.length) {
+    const code = tokens[i];
+    if (!code) {
+      i += 1;
+      continue;
+    }
+    const twoPaths = code[0] === 'R' || code[0] === 'C';
+    const oldPath = twoPaths ? tokens[i + 1] : null;
+    const filePath = twoPaths ? tokens[i + 2] : tokens[i + 1];
+    i += twoPaths ? 3 : 2;
+    if (filePath === undefined) break;
+    byPath.set(filePath, { status: code[0], oldPath });
+  }
+  return byPath;
+}
+
+/**
+ * Parse `git diff --numstat -z` output. A normal entry is `ins\tdel\tpath\0`;
+ * a rename or copy is `ins\tdel\t\0old\0new\0` — the empty path field says two
+ * NUL-terminated paths follow. Without `-z`, git prints renames as
+ * `{a => .github/workflows}/f.txt` and C-quotes unusual names, and neither of
+ * those strings would match a sensitive-path glob.
+ */
+function parseNumstatZ(output) {
+  const tokens = output.split('\0');
+  const entries = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (!token) {
+      i += 1;
+      continue;
+    }
+    const firstTab = token.indexOf('\t');
+    const secondTab = token.indexOf('\t', firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) {
+      i += 1;
+      continue;
+    }
+    const rawIns = token.slice(0, firstTab);
+    const rawDel = token.slice(firstTab + 1, secondTab);
+    const inlinePath = token.slice(secondTab + 1);
+    let filePath;
+    let oldPath = null;
+    if (inlinePath) {
+      filePath = inlinePath;
+      i += 1;
+    } else {
+      oldPath = tokens[i + 1];
+      filePath = tokens[i + 2];
+      i += 3;
+      if (filePath === undefined) break;
+    }
+    entries.push({ rawIns, rawDel, filePath, oldPath });
+  }
+  return entries;
+}
+
 function collectFiles(base, head) {
   const range = base ? [`${base}...${head}`] : [head];
-  const numstat = git(['diff', '--numstat', '-M', ...range]) || '';
-  const nameStatus = git(['diff', '--name-status', '-M', ...range]) || '';
+  const numstat = git(['diff', '--numstat', '-z', '-M', ...range]) || '';
+  const nameStatus = git(['diff', '--name-status', '-z', '-M', ...range]) || '';
 
-  const statusByPath = new Map();
-  for (const line of nameStatus.split('\n')) {
-    if (!line.trim()) continue;
-    const parts = line.split('\t');
-    const code = parts[0].trim();
-    // Renames/copies are reported as `R100\told\tnew` — key on the new path.
-    const filePath = parts[parts.length - 1];
-    statusByPath.set(filePath, code[0]);
-  }
+  const statusByPath = parseNameStatusZ(nameStatus);
 
   const files = [];
-  for (const line of numstat.split('\n')) {
-    if (!line.trim()) continue;
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const [rawIns, rawDel] = parts;
-    const filePath = parts[parts.length - 1];
+  for (const { rawIns, rawDel, filePath, oldPath } of parseNumstatZ(numstat)) {
+    const known = statusByPath.get(filePath);
     // `-` in the numstat columns means a binary file.
     const binary = rawIns === '-' || rawDel === '-';
     files.push({
       path: filePath,
-      status: statusByPath.get(filePath) || 'M',
+      // Where a rename or copy came from. Classified too: moving a workflow
+      // out of `.github/workflows/` deletes it from there.
+      oldPath: oldPath || (known && known.oldPath) || null,
+      status: (known && known.status) || (oldPath ? 'R' : 'M'),
       insertions: binary ? 0 : Number(rawIns) || 0,
       deletions: binary ? 0 : Number(rawDel) || 0,
       binary,
@@ -198,24 +264,33 @@ function classify(files, config) {
   const generated = compilePatterns(config.generatedPaths.paths);
 
   for (const file of files) {
-    file.generated = matchesAny(generated, file.path);
+    // A rename or copy is judged at both ends, each end on its own, and the
+    // worse end wins: moving `.github/workflows/x.yml` to `docs/x.yml` removes
+    // a workflow, and the low-risk `docs` match on the new path must not hide it.
+    // The same goes for the generated flag, which drops a file's churn from the
+    // size assessment: renaming hand-written code into `dist/` must not.
+    const endPaths = file.oldPath ? [file.path, file.oldPath] : [file.path];
+    file.generated = endPaths.every((p) => matchesAny(generated, p));
+    const ends = endPaths.map((p) => {
+      const matched = categories.filter((category) => matchesAny(category.compiled, p));
+      // Kept as its own flag rather than inferred from weight === 1: build
+      // tooling and uncategorised files are also weight 1, and they are
+      // ordinary reviewable code that must still count towards the size
+      // thresholds. Only tests and docs drop out.
+      const lowRisk = matched.some((category) => lowRiskIds.has(category.id));
+      const weight = lowRisk
+        ? 1
+        : matched.reduce((highest, category) => Math.max(highest, category.weight), 1);
+      return { matched, lowRisk, weight };
+    });
     for (const category of categories) {
-      if (matchesAny(category.compiled, file.path)) {
+      if (ends.some((end) => end.matched.includes(category))) {
         file.categories.push(category.id);
         category.matched.push(file.path);
       }
     }
-    // Kept as its own flag rather than inferred from effectiveWeight === 1:
-    // build tooling and uncategorised files are also weight 1, and they are
-    // ordinary reviewable code that must still count towards the size
-    // thresholds. Only tests and docs drop out.
-    file.lowRisk = file.categories.some((id) => lowRiskIds.has(id));
-    file.effectiveWeight = file.lowRisk
-      ? 1
-      : file.categories.reduce((highest, id) => {
-          const category = categories.find((c) => c.id === id);
-          return Math.max(highest, category ? category.weight : 1);
-        }, 1);
+    file.lowRisk = ends.every((end) => end.lowRisk);
+    file.effectiveWeight = Math.max(...ends.map((end) => end.weight));
     file.effectiveLevel = levelFromWeight(file.effectiveWeight);
   }
 
@@ -317,6 +392,42 @@ function computeBaseline(signals, size, files) {
 
 // ── rendering ──────────────────────────────────────────────────────────────
 
+// Characters a file name can carry that would render as nothing, reorder the
+// text around them, or break the line: shown as visible `\u{…}` escapes so the
+// reviewer, the step summary and the model all see the same name. `|` and `\`
+// are written the same way: a pipe splits a table row even inside a code span,
+// and the usual `\|` escape can be cancelled by a backslash in the name itself
+// (`a\|b` -> `a\\|b`). A visible escape has neither problem, and escaping both
+// in one pass means no step ever adds a backslash that a later step re-reads.
+const ESCAPE_IN_NAMES =
+  /[\\|\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFE00-\uFE0F]|[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
+
+/**
+ * Render an author-controlled file name as an inline code span that is safe
+ * inside a Markdown table row. The PR author picks every byte of a file name,
+ * so it may contain backticks (closing our span early and letting the rest
+ * render as Markdown), pipes (splitting the row), backslashes, newlines, or
+ * invisible and bidirectional characters.
+ */
+function codeSpan(value) {
+  const text = String(value).replace(
+    ESCAPE_IN_NAMES,
+    (ch) => `\\u{${ch.codePointAt(0).toString(16).toUpperCase()}}`
+  );
+  // A code span is closed by a backtick run of the same length as its opener,
+  // so open with one longer than any run inside.
+  const longestRun = Math.max(0, ...(text.match(/`+/g) || []).map((run) => run.length));
+  const fence = '`'.repeat(longestRun + 1);
+  // CommonMark strips one space from each end of a code span whose content
+  // starts AND ends with a space (` foo ` renders as `foo`), and a backtick at
+  // either end would merge with the fence. Padding with one more space on each
+  // side survives that stripping, so the name renders exactly. A name made
+  // only of spaces is left alone: CommonMark does not strip those.
+  const edgeSpace = /^ | $/.test(text) && /[^ ]/.test(text);
+  const pad = text.startsWith('`') || text.endsWith('`') || edgeSpace ? ' ' : '';
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
 function renderMarkdown(changeset) {
   const { stats, signals, size, baseline, files, diff } = changeset;
   const lines = [];
@@ -345,11 +456,11 @@ function renderMarkdown(changeset) {
     lines.push('| Level | Area | Files | Why it matters |');
     lines.push('| --- | --- | --- | --- |');
     for (const signal of signals) {
-      const sample = signal.files.slice(0, 4).join(', ');
+      const sample = signal.files.slice(0, 4).map(codeSpan).join(', ');
       const more =
         signal.files.length > 4 ? `, +${signal.files.length - 4} more` : '';
       lines.push(
-        `| ${signal.level} | ${signal.label} | \`${sample}\`${more} | ${signal.why} |`
+        `| ${signal.level} | ${signal.label} | ${sample}${more} | ${signal.why} |`
       );
     }
   }
@@ -362,8 +473,11 @@ function renderMarkdown(changeset) {
   for (const file of files) {
     const tags = file.categories.length ? file.categories.join(', ') : '—';
     const churn = file.binary ? 'binary' : `+${file.insertions}/-${file.deletions}`;
+    const name = file.oldPath
+      ? `${codeSpan(file.path)} (from ${codeSpan(file.oldPath)})`
+      : codeSpan(file.path);
     lines.push(
-      `| ${file.status} | \`${file.path}\` | ${churn} | ${file.effectiveLevel} | ${tags} |`
+      `| ${file.status} | ${name} | ${churn} | ${file.effectiveLevel} | ${tags} |`
     );
   }
   lines.push('');
@@ -385,8 +499,10 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
-  const head = git(['rev-parse', opts.head]).trim();
-  const base = opts.base ? git(['rev-parse', opts.base]).trim() : resolveBase(head);
+  const head = git(['rev-parse', '--verify', `${opts.head}^{commit}`]).trim();
+  const base = opts.base
+    ? git(['rev-parse', '--verify', `${opts.base}^{commit}`]).trim()
+    : resolveBase(head);
 
   const { files, range } = collectFiles(base, head);
   const signals = classify(files, config);
@@ -457,4 +573,13 @@ function main() {
 
 if (require.main === module) process.exit(main());
 
-module.exports = { globToRegExp, levelFromWeight, maxLevel };
+module.exports = {
+  globToRegExp,
+  levelFromWeight,
+  maxLevel,
+  parseNumstatZ,
+  parseNameStatusZ,
+  classify,
+  codeSpan,
+  refArg,
+};

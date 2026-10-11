@@ -92,7 +92,9 @@ Routing" section of the Session Log Viewer.
 ```
 
 Contains:
-- All discovered field paths with types and examples
+- All discovered field paths with types (no field values: example values are
+  opt-in via `-IncludeExamples` and must never be committed, since they are
+  copied verbatim from your prompts and session titles)
 - Field occurrence counts
 - Detection of new fields not in the manual documentation
 
@@ -184,7 +186,9 @@ Run the analysis script periodically to detect schema changes:
 3. **Investigate new fields:**
    - Open `session-file-schema-analysis.json`
    - Look for new field paths in the `newFieldsDetected` section
-   - Check the `fields` section for type and example values
+   - Check the `fields` section for type and occurrence count
+   - Need sample values? Re-run with `-IncludeExamples -OutputFile` pointing
+     outside the repository, and keep that file local
 
 4. **Update manual documentation:**
    - Add newly discovered fields to `session-file-schema.json`
@@ -208,6 +212,9 @@ The analysis script accepts several parameters:
 
 # Skip comparison with existing documentation
 .\.github\skills\copilot-log-analysis\analyze-session-schema.ps1 -CompareWithExisting $false
+
+# Include up to 3 example values per field (private: write outside the repo)
+.\.github\skills\copilot-log-analysis\analyze-session-schema.ps1 -IncludeExamples -OutputFile "$env:TEMP\schema-with-examples.json"
 ```
 
 ## Reading the Analysis Output
@@ -231,7 +238,7 @@ The `session-file-schema-analysis.json` file contains:
       "fieldPath": {
         "type": "string|number|boolean|array|object",
         "count": 10,        // How many times seen
-        "examples": [...]   // Sample values
+        "examples": [...]   // Only with -IncludeExamples; never commit
       }
     }
   },
@@ -260,7 +267,8 @@ $analysis.jsonFileSchema.fields.PSObject.Properties | Where-Object { $_.Name -li
 
 ### Check what models are detected
 ```powershell
-$analysis = Get-Content docs\logFilesSchema\session-file-schema-analysis.json | ConvertFrom-Json
+# Needs a local run with -IncludeExamples; the committed file has no values
+$analysis = Get-Content "$env:TEMP\schema-with-examples.json" | ConvertFrom-Json
 $analysis.jsonFileSchema.fields.'result.details'.examples
 ```
 

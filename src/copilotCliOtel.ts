@@ -324,7 +324,8 @@ const formatMb = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1
  */
 let fileOffsets = new Map<string, number>();
 /** Re-scan the OTel directory at most this often; the export file grows across a live CLI session. */
-const CACHE_TTL_MS = 30_000;
+export const COPILOT_CLI_OTEL_INDEX_TTL_MS = 30_000;
+const CACHE_TTL_MS = COPILOT_CLI_OTEL_INDEX_TTL_MS;
 /** Reads larger than this go to a worker thread; smaller tails are parsed in-process (sub-ms, no spawn cost). */
 const OTEL_WORKER_MIN_BYTES = 1_000_000;
 /**

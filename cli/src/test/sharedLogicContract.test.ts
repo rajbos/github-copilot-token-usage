@@ -141,22 +141,27 @@ function mockAutoSession(t: TestContext, format: 'json' | 'jsonl', debug = false
 			...requests.map(request => ({ kind: 2, k: ['requests'], v: request })),
 		].map(event => JSON.stringify(event)).join('\n');
 	const sessionId = '11111111-1111-4111-8111-111111111111';
-	const filePath = path.join(__dirname, 'workspaceStorage', 'synthetic', 'chatSessions', `${sessionId}.${format}`);
-	const fixtureStat = fs.statSync(FIXTURE_PATH);
+	// Real files (session files are read through the size-guarded reader, which opens a file
+	// handle), under cli/out/ rather than os.tmpdir(), which that reader refuses.
+	const root = fs.mkdtempSync(path.join(__dirname, 'auto-session-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const hashDir = path.join(root, 'workspaceStorage', 'synthetic');
+	const filePath = path.join(hashDir, 'chatSessions', `${sessionId}.${format}`);
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, content);
+	if (debug) {
+		const debugLog = path.join(hashDir, 'GitHub.copilot-chat', 'debug-logs', sessionId, 'main.jsonl');
+		fs.mkdirSync(path.dirname(debugLog), { recursive: true });
+		fs.writeFileSync(debugLog, JSON.stringify({
+			type: 'llm_request',
+			attrs: { model: AUTO_MODEL, inputTokens: 8000, outputTokens: 1600, cachedTokens: 3200 },
+		}));
+	}
+	// Pin mtime to today's noon so daily attribution is deterministic.
+	const realStat = fs.statSync(filePath);
 	t.mock.method(fs.promises, 'stat', async (file: string) => {
 		assert.equal(file, filePath);
-		return { ...fixtureStat, mtime: today, mtimeMs: today.getTime(), size: content.length };
-	});
-	t.mock.method(fs.promises, 'readFile', async (file: string) => {
-		if (file === filePath) { return content; }
-		assert.ok(String(file).replace(/\\/g, '/').endsWith(`/debug-logs/${sessionId}/main.jsonl`));
-		if (debug) {
-			return JSON.stringify({
-				type: 'llm_request',
-				attrs: { model: AUTO_MODEL, inputTokens: 8000, outputTokens: 1600, cachedTokens: 3200 },
-			});
-		}
-		throw Object.assign(new Error('Synthetic session has no debug log'), { code: 'ENOENT' });
+		return { ...realStat, mtime: today, mtimeMs: today.getTime() };
 	});
 	return filePath;
 }

@@ -205,10 +205,29 @@ function getEditorType(filePath) {
     return 'Unknown';
 }
 
+/**
+ * Replace the user's home directory prefix with "~" so printed paths do not
+ * carry the OS user name. Workspace hashes and session ids further down the
+ * path are kept: they are what makes the output useful for diagnosis.
+ * Matching is case-insensitive on Windows, where paths are.
+ */
+function redactHomePath(filePath, homedir = os.homedir()) {
+    if (!filePath || !homedir) return filePath;
+    const isWindows = os.platform() === 'win32';
+    const head = filePath.slice(0, homedir.length);
+    const matches = isWindows ? head.toLowerCase() === homedir.toLowerCase() : head === homedir;
+    const next = filePath.charAt(homedir.length);
+    if (matches && (next === '' || next === '/' || next === '\\')) {
+        return '~' + filePath.slice(homedir.length);
+    }
+    return filePath;
+}
+
 module.exports = {
     getVSCodeUserPaths,
     scanDirectoryForSessionFiles,
     getCopilotSessionFiles,
     categorizeFile,
-    getEditorType
+    getEditorType,
+    redactHomePath
 };
