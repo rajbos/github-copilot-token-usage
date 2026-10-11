@@ -232,6 +232,7 @@ rule out machine load.
 |---|---|
 | `build` | types, lint, json, l10n, compile, **contract**, unit tests |
 | `ui-checks` (PRs only) | **interaction smoke**, **visual view diff vs the merge base** |
+| `ui-checks-comment.yml` (`workflow_run`, same-repo PRs) | posts the screenshots as a PR comment (holds `GH_PAT`; runs from the default branch) |
 | `validate-skills` / `security-classification` | **every skill that ships scripts has a `SECURITY.md` or an exempt/pending entry** (`node scripts/validate-skill-security.js`, over all skills) |
 
 `ui-checks` renders every view in its initial state and in each tab/mode it
@@ -251,9 +252,21 @@ Two things to know about that comment:
   installation token is refused. The job uses the repository's `GH_PAT` secret
   for the upload, so the comment is authored by that user. Without the secret
   the comment still posts, minus the inline images, linking to the artifact.
-  On a `pull_request` run the workflow file and the publisher script both come
-  from the PR head, so any same-repository contributor can already change what
-  runs next to that secret — the same trust the risk-review workflow extends.
+  The secret is deliberately kept away from PR code. `ui-checks` compiles,
+  clicks and renders with read-only permissions and no secrets, then uploads
+  `webview-screenshots`. A separate `workflow_run` workflow,
+  `ui-checks-comment.yml`, holds `GH_PAT`. For a same-repository `pull_request`
+  GitHub runs the workflow definition from the PR, so a secret-holding job
+  inside `ci.yml` could be edited by the PR author; a `workflow_run` workflow
+  always runs from the default branch, so it cannot. It checks out the default
+  branch, takes the PR number, base commit and run URL from the triggering
+  event, downloads the artifact and treats it as untrusted data (never executed,
+  never interpolated into a shell command; the renderer allowlists every field
+  and each image is checked for type, size and PNG signature before it is
+  attached). Consequences: a change to that workflow or to the publisher script
+  only takes effect once merged, the comment appears after CI finishes, and a
+  failure to post fails that workflow rather than the required "CI result"
+  check.
   Keep `GH_PAT` narrow, but not narrower than the upload: attaching files
   [needs push access](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli),
   so a fine-grained token limited to this repository needs *Contents: write*
@@ -274,8 +287,8 @@ Two things to know about that comment:
   were due and a configured `GH_PAT` could not deliver them (rejected token,
   failed upload): the comment is still posted without images, then the step
   exits non-zero so an expired or under-scoped token is a red check instead of
-  a silent gap. Only an unset `GH_PAT` stays a notice. Dependabot runs skip the
-  step entirely (no secrets and a read-only `GITHUB_TOKEN`, so not even the
+  a silent gap. Only an unset `GH_PAT` stays a notice, and so does a GitHub API rate limit (the upload is retried once, then the comment is posted without images and a warning is raised). Dependabot runs skip the
+  workflow entirely (no secrets and a read-only `GITHUB_TOKEN`, so not even the
   image-free comment can post); their screenshots stay in the artifact.
 - Fork PRs get a read-only token and no secrets, so they only get the artifact.
 - Only a comment authored by one of the workflow's own identities (the Actions
