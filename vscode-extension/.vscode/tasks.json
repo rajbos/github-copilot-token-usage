@@ -2,9 +2,9 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "npm install vscode-extension",
+			"label": "pnpm install vscode-extension",
 			"type": "shell",
-			"command": "npm install"
+			"command": "pnpm install --frozen-lockfile"
 		}
 	]
 }

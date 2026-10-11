@@ -248,7 +248,7 @@ pnpm exec vsce package
 
 ## pnpm and Dependency Management
 
-The project uses **`pnpm-lock.yaml`** for reproducible builds and dependency consistency across all environments.
+The project uses **`pnpm-lock.yaml`** for reproducible builds and dependency consistency across all environments for the pnpm-managed packages (`vscode-extension/`, `cli/`, `sharing-server/`, `desktop/`). Auxiliary tooling (`release-video/`, `.github/scripts/`, `.github/workflows/dependencies/`, and some skill packages) still uses npm and its own `package-lock.json`; follow each folder's README for those.
 
 ### Key Files
 
