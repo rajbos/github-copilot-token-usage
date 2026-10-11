@@ -19,6 +19,13 @@ on:
       - 'src/**'
       - 'cli/src/**'
       - 'vscode-extension/src/**'
+      - 'vscode-extension/package.json'
+      - 'vscode-extension/pnpm-lock.yaml'
+      - 'vscode-extension/pnpm-workspace.yaml'
+      - 'cli/package.json'
+      - 'cli/pnpm-lock.yaml'
+      - 'cli/pnpm-workspace.yaml'
+      - '.nvmrc'
       - 'vscode-extension/package.nls.json'
       - '.github/skills/visual-view-diff/views.config.json'
       - '.github/workflows/release-video-desktop-checks.yml'
@@ -54,6 +61,7 @@ jobs:
           filters: |
             release-video:
               - 'release-video/**'
+              - '.nvmrc'
               # Reads the What's New catalog, its strings and the view registry.
               - 'vscode-extension/src/whatsNew/**'
               - 'vscode-extension/package.nls.json'
@@ -63,9 +71,14 @@ jobs:
               - 'desktop/**'
               - 'src/**'
               - 'cli/src/**'
+              - 'cli/package.json'
               - 'cli/pnpm-lock.yaml'
+              - 'cli/pnpm-workspace.yaml'
               - 'vscode-extension/src/**'
+              - 'vscode-extension/package.json'
               - 'vscode-extension/pnpm-lock.yaml'
+              - 'vscode-extension/pnpm-workspace.yaml'
+              - '.nvmrc'
               - '.github/workflows/release-video-desktop-checks.yml'
 
   release-video:

@@ -6,6 +6,11 @@ on:
     paths:
       - 'cli/**'
       - 'src/**'
+      - '.nvmrc'
+      - 'vscode-extension/src/**'
+      - 'vscode-extension/package.json'
+      - 'vscode-extension/pnpm-lock.yaml'
+      - 'vscode-extension/pnpm-workspace.yaml'
       - '.github/workflows/cli-build.yml'
   pull_request:
     branches: [main]
@@ -35,6 +40,11 @@ jobs:
             cli-relevant:
               - 'cli/**'
               - 'src/**'
+              - '.nvmrc'
+              - 'vscode-extension/src/**'
+              - 'vscode-extension/package.json'
+              - 'vscode-extension/pnpm-lock.yaml'
+              - 'vscode-extension/pnpm-workspace.yaml'
               - '.github/workflows/cli-build.yml'
 
   build-and-validate:
