@@ -330,6 +330,36 @@ export async function getSessionLastActivity(filePath: string): Promise<Date | n
  * a separate attribution implementation — this keeps all formats consistent.
  */
 
+/**
+ * A session's version for the view caches (the shared analysis memo and the enriched session
+ * entry). For a file it is the file's stat. A DB-backed (virtual) session is stat'ed through its
+ * shared database, whose mtime moves for every other session in it and may not move at all while
+ * this session's writes sit in the WAL, so its adapter-reported last-activity time is part of
+ * the version too: a write to this session invalidates its view data even when the database
+ * mtime has not moved.
+ */
+export interface SessionVersion {
+	mtimeMs: number;
+	size: number;
+	/** DB-backed sessions only: the adapter's last-activity time for this session, when known. */
+	activityMs?: number;
+}
+
+export async function sessionVersion(
+	filePath: string,
+	stats: { mtimeMs: number; size: number },
+	lastActivity: () => Promise<Date | null> = () => getSessionLastActivity(filePath),
+): Promise<SessionVersion> {
+	const base = { mtimeMs: stats.mtimeMs, size: stats.size };
+	if (getSessionBackingPath(filePath) === filePath) { return base; }
+	const last = await lastActivity().catch(() => null);
+	return last ? { ...base, activityMs: last.getTime() } : base;
+}
+
+function sameSessionVersion(a: SessionVersion, b: SessionVersion): boolean {
+	return a.mtimeMs === b.mtimeMs && a.size === b.size && a.activityMs === b.activityMs;
+}
+
 /** Completed analyses kept for reuse; bounded because a long-lived host (the desktop app) walks many files. */
 const ANALYSIS_MEMO_LIMIT = 1000;
 const analysisMemo = new Map<string, Promise<{ analysis: SessionUsageAnalysis; failed: boolean }>>();
@@ -347,10 +377,10 @@ const analysisMemo = new Map<string, Promise<{ analysis: SessionUsageAnalysis; f
  */
 function analyzeSessionUsageShared(
 	filePath: string,
-	version: { mtimeMs: number; size: number } | undefined,
+	version: SessionVersion | undefined,
 	content?: string,
 ): Promise<{ analysis: SessionUsageAnalysis; failed: boolean }> {
-	const key = version ? `${filePath}\0${version.mtimeMs}\0${version.size}` : undefined;
+	const key = version ? `${filePath}\0${version.mtimeMs}\0${version.size}\0${version.activityMs ?? ''}` : undefined;
 	const hit = key ? analysisMemo.get(key) : undefined;
 	if (key && hit) {
 		// Refresh its recency so the bound evicts the least recently used entry.
@@ -390,7 +420,7 @@ function analyzeSessionUsageShared(
  * Likewise a repository that could not be resolved (unreadable file) is a failure, while a
  * session that names no repository resolves to `''` and is recorded as "Unknown".
  */
-async function sessionViewAttributes(filePath: string, version: { mtimeMs: number; size: number } | undefined): Promise<Pick<SessionData, 'repository' | 'taskCategory' | 'taskCategoryShares' | 'linesAdded' | 'linesRemoved' | 'languageUsage' | 'usageAnalysis'> | null> {
+async function sessionViewAttributes(filePath: string, version: SessionVersion | undefined): Promise<Pick<SessionData, 'repository' | 'taskCategory' | 'taskCategoryShares' | 'linesAdded' | 'linesRemoved' | 'languageUsage' | 'usageAnalysis'> | null> {
 	try {
 		// Read a file-based session once and hand the content to both passes; ecosystem
 		// (DB-backed) sessions are read through their adapter instead. A failed read throws
@@ -422,6 +452,17 @@ async function sessionViewAttributes(filePath: string, version: { mtimeMs: numbe
 	}
 }
 
+/** The session's parse without any view attributes from an earlier (now outdated) enrichment. */
+function withoutViewAttributes(data: SessionData): SessionData {
+	const {
+		repository: _repository, taskCategory: _taskCategory, taskCategoryShares: _taskCategoryShares,
+		linesAdded: _linesAdded, linesRemoved: _linesRemoved, languageUsage: _languageUsage,
+		usageAnalysis: _usageAnalysis, viewAttributesResolved: _resolved, viewActivityMs: _activity,
+		...base
+	} = data;
+	return base;
+}
+
 /**
  * {@link processSessionFile} plus the view attributes (task category, lines of code, efficiency
  * signals) the Chart and Efficiency payloads need.
@@ -438,16 +479,23 @@ async function sessionViewAttributes(filePath: string, version: { mtimeMs: numbe
  * analysis is neither marked resolved nor cached, so the next run retries it.
  */
 export async function processSessionFileForViews(filePath: string, verbose = false): Promise<SessionData | null> {
-	let before: fs.Stats | undefined;
-	try { before = await statSessionFile(filePath); } catch { /* processSessionFile reports the failure */ }
+	let before: SessionVersion | undefined;
+	try { before = await sessionVersion(filePath, await statSessionFile(filePath)); } catch { /* processSessionFile reports the failure */ }
 	const data = await processSessionFile(filePath, verbose);
-	if (!data || data.viewAttributesResolved) { return data; }
+	if (!data) { return data; }
+	// A DB-backed session's entry is keyed by the shared database's stat, so its view data is
+	// only current while the session's own activity time still matches (see sessionVersion).
+	if (data.viewAttributesResolved && data.viewActivityMs === before?.activityMs) { return data; }
 	const attributes = await sessionViewAttributes(filePath, before);
-	if (!attributes) { return data; }
-	const enriched: SessionData = { ...data, ...attributes, viewAttributesResolved: true };
+	const base = withoutViewAttributes(data);
+	if (!attributes) { return base; }
+	const enriched: SessionData = {
+		...base, ...attributes, viewAttributesResolved: true,
+		...(before?.activityMs !== undefined ? { viewActivityMs: before.activityMs } : {}),
+	};
 	try {
-		const after = await statSessionFile(filePath);
-		if (before && after.mtimeMs === before.mtimeMs && after.size === before.size) {
+		const after = await sessionVersion(filePath, await statSessionFile(filePath));
+		if (before && sameSessionVersion(before, after)) {
 			setCached(filePath, before.mtimeMs, before.size, enriched);
 		}
 	} catch {
@@ -603,7 +651,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 
 			// Shared with the view enrichment, so `cli all` and the desktop Efficiency build do not
 			// analyze each recent session twice.
-			const { analysis } = await analyzeSessionUsageShared(file, stats);
+			const { analysis } = await analyzeSessionUsageShared(file, await sessionVersion(file, stats, () => activity.lastActivity()));
 			if (options.includeRepeatedTasks) {
 				await addRepeatedTaskSource(repeatedTaskSources, activity, analysis.firstUserPrompt, stats.mtimeMs, cutoffStart);
 			}

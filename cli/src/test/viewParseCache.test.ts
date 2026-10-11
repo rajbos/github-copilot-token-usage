@@ -13,7 +13,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError } from '../helpers';
+import { calculateDailyStats, calculateEfficiencySessionInputs, calculateUsageAnalysisStats, calculateViewStats, processSessionFileForViews, recentAnalysisCutoff, isSessionActiveSince, createSessionActivityLookup, sessionActivityTime, ViewStatsCancelledError, sessionVersion } from '../helpers';
 import { getCached } from '../cliCache';
 import { buildClassificationInputFromUsageAnalysis, classifySessionTask } from '../../../src/taskClassification';
 
@@ -206,4 +206,19 @@ test('calculateViewStats stops and throws instead of returning a partial walk wh
 	const missing = path.join(path.dirname(filePath), 'never-read.json');
 	await assert.rejects(calculateViewStats([filePath, missing], false, undefined, { isCancelled: () => ++checks > 2 }), ViewStatsCancelledError);
 	assert.equal(reads(), 2, 'only the first file was parsed and enriched');
+});
+
+test('sessionVersion adds a DB-backed session\'s own activity time; a file is versioned by its stat alone', async () => {
+	// The shared database's mtime moves for other sessions and may not move while this session's
+	// writes sit in the WAL, so the view caches must also see the session's own activity time.
+	const stats = { mtimeMs: 1_000, size: 10 };
+	let asked = 0;
+	const at = (ms: number) => async () => { asked++; return new Date(ms); };
+	const virtual = path.join(__dirname, 'home', '.crush', 'crush.db#session-1');
+	assert.deepEqual(await sessionVersion(virtual, stats, at(5_000)), { mtimeMs: 1_000, size: 10, activityMs: 5_000 });
+	assert.notDeepEqual(await sessionVersion(virtual, stats, at(6_000)), await sessionVersion(virtual, stats, at(5_000)), 'a WAL write changes the version even with an unchanged database stat');
+	assert.deepEqual(await sessionVersion(virtual, stats, async () => null), stats, 'no adapter answer: the stat alone');
+	const before = asked;
+	assert.deepEqual(await sessionVersion(path.join(__dirname, 'session.json'), stats, at(9_000)), stats);
+	assert.equal(asked, before, 'a regular file never asks the adapter');
 });
