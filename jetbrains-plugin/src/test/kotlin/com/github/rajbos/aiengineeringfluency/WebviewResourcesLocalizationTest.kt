@@ -101,4 +101,26 @@ class WebviewResourcesLocalizationTest {
         )
         assertTrue(result.contains("var data = window.__INITIAL_USAGE__;"))
     }
+
+    @Test
+    fun htmlLangFollowsTheResolvedDictionary() {
+        val loader = fakeClasspath("en" to en, "zh-cn" to zh)
+        assertTrue(html(Locale.ENGLISH, loader).contains("<html lang=\"en\">"))
+        assertTrue(html(Locale.forLanguageTag("zh-CN"), loader).contains("<html lang=\"zh-cn\">"))
+        assertTrue(html(Locale.forLanguageTag("zh-Hans"), loader).contains("<html lang=\"zh-cn\">"))
+    }
+
+    @Test
+    fun htmlLangNeverClaimsALocaleItHasNoDictionaryFor() {
+        // zh-CN IDE but no zh-cn sidecar: English text is rendered, so lang must be en.
+        assertTrue(html(Locale.forLanguageTag("zh-CN"), fakeClasspath("en" to en)).contains("<html lang=\"en\">"))
+        assertTrue(html(Locale.forLanguageTag("zh-TW"), fakeClasspath("en" to en, "zh-cn" to zh)).contains("<html lang=\"en\">"))
+        assertTrue(html(Locale.ENGLISH, fakeClasspath()).contains("<html lang=\"en\">"))
+    }
+
+    @Test
+    fun htmlLangIsEscaped() {
+        assertEquals("a&quot;&gt;&lt;b", WebviewResources.htmlLang("a\"><b"))
+        assertEquals("en", WebviewResources.htmlLang(null))
+    }
 }

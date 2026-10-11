@@ -62,22 +62,52 @@ test('sidecars: the zh-cn dictionary is actually translated, not a copy of Engli
 
 // Hosts name the sidecar files in their own build scripts. A locale added to the
 // generator but not to a host (or the reverse) ships a host that cannot load it.
-function sidecarLocalesNamedIn(relativePath: string): string[] {
-	const text = readFileSync(join(repoRoot, relativePath), 'utf8');
+//
+// The Visual Studio project lists each sidecar twice, and both are required: a
+// `_WebviewBundle` entry copies it into the build output, a `VSIXSourceItem` entry
+// packages it into the VSIX. Dropping either ships a host without the dictionary, so
+// each list is checked on its own — pooling every filename mention would still pass
+// with one of the lists missing.
+function sidecarLocalesIn(text: string, element?: string): string[] {
+	const pattern = element
+		? new RegExp(`<${element}\\b[^>]*?localization\\.([a-z0-9-]+)\\.json`, 'gi')
+		: /localization\.([a-z]{2,3}(?:-[a-z0-9]+)*)\.json/gi;
 	const found = new Set<string>();
-	for (const match of text.matchAll(/localization\.([a-z]{2,3}(?:-[a-z0-9]+)*)\.json/gi)) {
+	for (const match of text.matchAll(pattern)) {
 		found.add(match[1].toLowerCase());
 	}
 	return [...found].sort();
 }
 
+function readRepoFile(relativePath: string): string {
+	return readFileSync(join(repoRoot, relativePath), 'utf8');
+}
+
+const csprojPath = 'visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj';
+
 test('JetBrains build copies exactly the generated sidecar locales', () => {
-	assert.deepEqual(sidecarLocalesNamedIn('jetbrains-plugin/build.gradle.kts'), shippedLocales);
+	assert.deepEqual(sidecarLocalesIn(readRepoFile('jetbrains-plugin/build.gradle.kts')), shippedLocales);
 });
 
-test('Visual Studio project packages exactly the generated sidecar locales', () => {
-	assert.deepEqual(
-		sidecarLocalesNamedIn('visualstudio-extension/src/AIEngineeringFluency/AIEngineeringFluency.csproj'),
-		shippedLocales,
-	);
+test('Visual Studio project copies every generated sidecar into the build output (_WebviewBundle)', () => {
+	assert.deepEqual(sidecarLocalesIn(readRepoFile(csprojPath), '_WebviewBundle'), shippedLocales);
+});
+
+test('Visual Studio project packages every generated sidecar into the VSIX (VSIXSourceItem)', () => {
+	assert.deepEqual(sidecarLocalesIn(readRepoFile(csprojPath), 'VSIXSourceItem'), shippedLocales);
+});
+
+test('self-check: removing a sidecar from either VS list is detected', () => {
+	const csproj = readRepoFile(csprojPath);
+	const dropLine = (element: string): string => csproj
+		.split(/\r?\n/)
+		.filter(line => !(line.includes(`<${element}`) && line.includes('localization.zh-cn.json')))
+		.join('\n');
+	for (const element of ['_WebviewBundle', 'VSIXSourceItem']) {
+		const mutated = dropLine(element);
+		assert.notEqual(mutated, csproj, `${element}: the mutation removed nothing, the pattern no longer matches the csproj`);
+		assert.notDeepEqual(sidecarLocalesIn(mutated, element), shippedLocales, `${element}: removal went unnoticed`);
+	}
+	// The pooled, unscoped match is exactly what would have missed it.
+	assert.deepEqual(sidecarLocalesIn(dropLine('_WebviewBundle')), shippedLocales);
 });

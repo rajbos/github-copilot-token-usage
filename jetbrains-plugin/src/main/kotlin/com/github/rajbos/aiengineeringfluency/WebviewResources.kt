@@ -53,7 +53,9 @@ object WebviewResources {
         // Written as a guarded assignment instead of being merged into the JSON so
         // it is a no-op when there is no initial payload yet, rather than creating
         // an empty object the bundle would mistake for real data.
-        val localizationScript = buildLocalizationScript(globalKey, loadWebviewLocalization(locale, loader))
+        val resolvedLocalization = resolveWebviewLocalization(locale, loader)
+        val localizationScript = buildLocalizationScript(globalKey, resolvedLocalization?.second)
+        val lang = htmlLang(resolvedLocalization?.first)
 
         // Bridge bootstrap:
         //   * defines window.chrome.webview.postMessage(...) which forwards
@@ -87,7 +89,7 @@ object WebviewResources {
 
         return """
             <!DOCTYPE html>
-            <html lang="en">
+            <html lang="$lang">
             <head>
                 <meta charset="UTF-8">
                 <style>
@@ -336,14 +338,30 @@ object WebviewResources {
     internal fun loadWebviewLocalization(
         ideLocale: java.util.Locale = java.util.Locale.getDefault(),
         loader: (String) -> String? = ::loadResource,
-    ): String? {
-        loader("/webview/localization.${ideLocale.toLanguageTag().lowercase()}.json")
-            ?.let { return it.trim() }
+    ): String? = resolveWebviewLocalization(ideLocale, loader)?.second
+
+    /**
+     * The sidecar locale id that [loadWebviewLocalization] resolves to, paired with its
+     * JSON, or null when no sidecar ships. The id is what the document's `lang`
+     * attribute must declare: labelling zh-cn text as `en` makes screen readers use
+     * English pronunciation rules.
+     */
+    internal fun resolveWebviewLocalization(
+        ideLocale: java.util.Locale,
+        loader: (String) -> String?,
+    ): Pair<String, String>? {
+        fun load(id: String) = loader("/webview/localization.$id.json")?.let { id to it.trim() }
+        load(ideLocale.toLanguageTag().lowercase())?.let { return it }
         if (isSimplifiedChinese(ideLocale)) {
-            loader("/webview/localization.zh-cn.json")?.let { return it.trim() }
+            load("zh-cn")?.let { return it }
         }
-        return loader("/webview/localization.en.json")?.trim()
+        return load("en")
     }
+
+    /** HTML-escaped value for `<html lang>`: the resolved sidecar locale, else English. */
+    internal fun htmlLang(resolvedLocale: String?): String =
+        (resolvedLocale ?: "en")
+            .replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
     /**
      * The inline script that attaches [dictionary] to the `window.[globalKey]` payload,
