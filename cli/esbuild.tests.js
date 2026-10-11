@@ -44,7 +44,7 @@ async function main() {
     outdir: path.join(__dirname, "out", "test"),
     format: "cjs",
     platform: "node",
-    target: "node18",
+    target: "node22",
     sourcemap: true,
     // The package's own `/session` subpath is loaded from the built dist/ at runtime by the
     // library smoke test, through the package.json `exports` map — never bundled.
