@@ -6,6 +6,12 @@ on:
     paths:
       - 'cli/**'
       - 'src/**'
+      - '.nvmrc'
+      - 'vscode-extension/src/**'
+      - 'vscode-extension/package.json'
+      - 'vscode-extension/pnpm-lock.yaml'
+      - 'vscode-extension/pnpm-workspace.yaml'
+      - '.github/workflows/cli-build.yml'
   pull_request:
     branches: [main]
 
@@ -34,6 +40,12 @@ jobs:
             cli-relevant:
               - 'cli/**'
               - 'src/**'
+              - '.nvmrc'
+              - 'vscode-extension/src/**'
+              - 'vscode-extension/package.json'
+              - 'vscode-extension/pnpm-lock.yaml'
+              - 'vscode-extension/pnpm-workspace.yaml'
+              - '.github/workflows/cli-build.yml'
 
   build-and-validate:
     needs: check-changes
@@ -74,6 +86,18 @@ jobs:
       - name: Build CLI
         working-directory: cli
         run: pnpm run build
+
+      # Lints cli/src with the extension's ESLint and config (the CLI has no
+      # eslint of its own). Findings are warnings, so this reports without
+      # failing; new errors fail the job.
+      - name: Lint CLI sources
+        working-directory: cli
+        run: pnpm run lint
+
+      # Needs the build above: some tests import the built library from dist/lib.
+      - name: Run CLI unit tests
+        working-directory: cli
+        run: pnpm run test:unit
 
       - name: Validate CLI --help
         working-directory: cli
