@@ -103,6 +103,18 @@ export const memoryFilesCommand = new Command('memory-files')
 	});
 
 /**
+ * Normalize a `--repo` override (`owner/repo.git` → `owner/repo`) before it is validated or
+ * fetched, so the API request goes to the repository the local-checkout match compares against.
+ * Only `undefined` means the option was absent: an explicit value that normalizes to nothing
+ * (whitespace, a bare `.git`) is invalid, never a silent "no override".
+ */
+export function resolveRepoOverride(raw: string | undefined): { repoOverride: string | undefined; invalid: boolean } {
+	if (raw === undefined) { return { repoOverride: undefined, invalid: false }; }
+	const repoOverride = normalizeRepoSlug(raw);
+	return { repoOverride, invalid: !isValidRepoSlug(repoOverride) };
+}
+
+/**
  * Whether the repository being analyzed is the one checked out here: no `--repo`, or a
  * `--repo` naming the origin's repository in any letter case (GitHub slugs are
  * case-insensitive). Only then is the local tree evidence about that repository.
@@ -173,15 +185,13 @@ function resolveRepoContext(cwd: string): { root: string; repo: string } | undef
  */
 async function buildServerMemoriesAnalysis(cwd: string, rawRepoOverride: string | undefined, limit: number): Promise<ServerMemoriesAnalysis | undefined> {
 	const context = resolveRepoContext(cwd);
-	// Normalized before validation and fetching (`owner/repo.git` → `owner/repo`), so the API
-	// request goes to the repository the local-checkout match below compares against.
-	const repoOverride = rawRepoOverride === undefined ? undefined : normalizeRepoSlug(rawRepoOverride);
-	const repo = repoOverride ?? context?.repo;
-	if (!repo) { return undefined; }
+	const { repoOverride, invalid } = resolveRepoOverride(rawRepoOverride);
 	// `--repo` never went through the remote parser's validation but reaches the same URL
 	// builder. fetchRepoMemories() rejects an invalid slug too; failing here as well turns a
-	// typo into an immediate, specific message instead of a generic read failure.
-	if (repoOverride !== undefined && !isValidRepoSlug(repoOverride)) {
+	// typo into an immediate, specific message instead of a generic read failure. Checked before
+	// the "no repository" fallback below, so an explicit but empty `--repo " "` is an error, not
+	// silently treated as if the option were absent.
+	if (invalid) {
 		// The rejected value is untrusted and may carry a credential, so neither the label nor
 		// the message echoes it — `--json` serializes both.
 		return { repo: INVALID_REPO_LABEL, enabled: undefined, error: '--repo must be owner/name.', truncated: false,
@@ -190,6 +200,8 @@ async function buildServerMemoriesAnalysis(cwd: string, rawRepoOverride: string 
 			repeatedGroupCount: 0, promotionGroups: [], unverifiableCount: 0, staleCitations: [], fullyStaleCount: 0,
 			byAgent: {}, byModel: {} };
 	}
+	const repo = repoOverride ?? context?.repo;
+	if (!repo) { return undefined; }
 	const root = context?.root ?? cwd;
 	const analyzingThisCheckout = analyzesLocalCheckout(repoOverride, context?.repo);
 

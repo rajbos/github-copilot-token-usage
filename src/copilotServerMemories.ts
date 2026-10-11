@@ -1288,10 +1288,11 @@ function currentLiveCitations(group: Pick<ServerMemoryPromotionGroup, 'citations
  * citations. FNV-1a over a JSON encoding — not a security hash, just change detection between
  * the payload a row was rendered from and the analysis the host holds when it is clicked.
  */
-export function promotionGroupFingerprint(group: Pick<ServerMemoryPromotionGroup, 'subject' | 'displaySubject' | 'representativeFact' | 'citations'>): string {
-	// `displaySubject` too, not just the normalized key: it is what the row shows and what the
-	// prompt quotes, and a refresh can change its casing or punctuation while the key stays put.
-	return fnv1a(JSON.stringify([group.subject, group.displaySubject, group.representativeFact, group.citations]));
+export function promotionGroupFingerprint(group: Pick<ServerMemoryPromotionGroup, 'subject' | 'displaySubject' | 'repeatCount' | 'representativeFact' | 'citations'>): string {
+	// Every field the row renders: `displaySubject` (what it shows and the prompt quotes — a refresh
+	// can change its casing while the key stays put) and `repeatCount` (the "re-learned N×" badge)
+	// as well as the key, fact and citations.
+	return fnv1a(JSON.stringify([group.subject, group.displaySubject, group.repeatCount, group.representativeFact, group.citations]));
 }
 
 /** FNV-1a over a string, as 8 hex digits: change detection, not security. */

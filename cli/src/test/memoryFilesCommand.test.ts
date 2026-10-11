@@ -6,7 +6,7 @@
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 
-import { resolveMemoryFilesThresholds, buildPromoteOutput, analyzesLocalCheckout } from '../commands/memory-files';
+import { resolveMemoryFilesThresholds, buildPromoteOutput, analyzesLocalCheckout, resolveRepoOverride } from '../commands/memory-files';
 import { analyzeServerMemories, normalizeRepoSlug } from '../../../src/copilotServerMemories';
 import { DEFAULT_STALE_DAYS, DEFAULT_LARGE_FILE_BYTES } from '../../../src/copilotMemoryFiles';
 
@@ -118,4 +118,12 @@ test('a remote-form --repo is normalized before it is matched or fetched', () =>
 	const override = normalizeRepoSlug('Owner/Repo.git');
 	assert.equal(override, 'Owner/Repo');
 	assert.equal(analyzesLocalCheckout(override, 'owner/repo'), true);
+});
+
+test('resolveRepoOverride: only an absent option means no override; an empty one is invalid', () => {
+	assert.deepEqual(resolveRepoOverride(undefined), { repoOverride: undefined, invalid: false });
+	assert.deepEqual(resolveRepoOverride('Owner/Repo.git'), { repoOverride: 'Owner/Repo', invalid: false });
+	assert.equal(resolveRepoOverride(' ').invalid, true, 'whitespace-only --repo is an error, not "no override"');
+	assert.equal(resolveRepoOverride('.git').invalid, true);
+	assert.equal(resolveRepoOverride('owner/repo?token=x').invalid, true);
 });

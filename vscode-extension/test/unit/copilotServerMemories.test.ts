@@ -1662,7 +1662,8 @@ test('a promotion row whose content changed under it is refused, not silently re
 });
 
 test('promotionGroupFingerprint changes with the fact or citations, not with repeat count', () => {
-	const base = { subject: 's', displaySubject: 'S', representativeFact: 'f', citations: ['a.ts:1'] };
+	const base = { subject: 's', displaySubject: 'S', repeatCount: 1, representativeFact: 'f', citations: ['a.ts:1'] };
+	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, repeatCount: 2 }), 'the re-learned badge is part of the fingerprint');
 	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, displaySubject: 's!' }), 'the displayed subject is part of the fingerprint');
 	assert.equal(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base }));
 	assert.notEqual(promotionGroupFingerprint(base), promotionGroupFingerprint({ ...base, representativeFact: 'g' }));
