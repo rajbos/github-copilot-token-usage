@@ -182,15 +182,19 @@ test('isSessionActiveSince asks the adapter when a DB-backed session\'s file mti
 test('sessionActivityTime: a DB-backed session with a lagging database mtime is dated by the adapter', async () => {
 	// Usage Analysis buckets periods by this time and the view walk filters by it, so both count
 	// the same sessions (the Efficiency view combines them).
-	const cutoff = new Date(2026, 4, 1);
 	const oldMtime = new Date(2026, 3, 1);
 	const recent = new Date(2026, 4, 9);
 	const lookup = (lastActivity: Date | null) => ({ lastActivity: async () => lastActivity });
-	assert.deepEqual(await sessionActivityTime(lookup(recent), oldMtime, cutoff), recent);
-	assert.deepEqual(await sessionActivityTime(lookup(null), oldMtime, cutoff), oldMtime, 'no adapter answer keeps the mtime');
-	assert.deepEqual(await sessionActivityTime(lookup(new Date(2026, 2, 1)), oldMtime, cutoff), oldMtime, 'an older adapter time never wins');
-	const fresh = new Date(2026, 4, 3);
-	assert.deepEqual(await sessionActivityTime({ lastActivity: async () => { throw new Error('must not be asked'); } }, fresh, cutoff), fresh);
+	assert.deepEqual(await sessionActivityTime(lookup(recent), oldMtime), recent);
+	assert.deepEqual(await sessionActivityTime(lookup(null), oldMtime), oldMtime, 'no adapter answer (or a regular file) keeps the mtime');
+	assert.deepEqual(await sessionActivityTime(lookup(new Date(2026, 2, 1)), oldMtime), oldMtime, 'an older adapter time never wins');
+	// The exact day decides the period bucket, so the adapter is asked even when the mtime is
+	// already recent: a database written yesterday by a session active today counts as today.
+	const yesterday = new Date(2026, 4, 8);
+	assert.deepEqual(await sessionActivityTime(lookup(recent), yesterday), recent);
+	// Membership alone needs no exact time: a recent mtime decides without an adapter lookup.
+	const cutoff = new Date(2026, 4, 1);
+	assert.equal(await isSessionActiveSince({ lastActivity: async () => { throw new Error('must not be asked'); } }, yesterday, cutoff), true);
 });
 
 test('calculateViewStats stops and throws instead of returning a partial walk when cancelled', async t => {

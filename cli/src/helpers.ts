@@ -598,7 +598,7 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 			// sessions from both. The lookup reads the adapter at most once per session and is
 			// reused below; regular files are decided by their mtime with no lookup.
 			const activity = createSessionActivityLookup(file);
-			const activeAt = await sessionActivityTime(activity, modified, cutoffStart);
+			const activeAt = await sessionActivityTime(activity, modified);
 			if (activeAt < cutoffStart) { continue; }
 
 			// Shared with the view enrichment, so `cli all` and the desktop Efficiency build do not
@@ -630,12 +630,14 @@ export async function calculateUsageAnalysisStats(sessionFiles: string[], option
 					estimatedCost: calculateEstimatedCost(data.modelUsage, modelPricing),
 					editor: data.editorSource,
 					models: Object.keys(data.modelUsage),
-					lastActivity: data.lastModified.toISOString(),
+					// The same activity time the period buckets use, so a WAL-backed session
+					// counted in today's totals is also shown, and bucketed, as active today.
+					lastActivity: activeAt.toISOString(),
 					...(analysis.sessionDuration?.totalDurationMs !== undefined ? { durationMs: analysis.sessionDuration.totalDurationMs } : {}),
 					...(analysis.sessionDuration?.activeDurationMs !== undefined ? { activeDurationMs: analysis.sessionDuration.activeDurationMs } : {}),
 				};
 				recentSessionItems.push({
-					activityKey: toLocalDayKey(data.lastModified),
+					activityKey: toLocalDayKey(activeAt),
 					interactions: data.interactions,
 					value: sessionSummary,
 				});
@@ -846,21 +848,26 @@ async function processSessionFileWithinWindow(filePath: string, verbose: boolean
 }
 
 /**
- * A session's own last-activity time, judged against `cutoff`. The backing file's mtime decides
- * for regular files; a DB-backed (virtual) session's database mtime can lag its real activity
- * (writes still in the SQLite WAL), so when the mtime alone is older than `cutoff` the adapter's
- * last-activity time is asked, and the later of the two wins. One rule for Usage Analysis and
- * the Chart/Efficiency view walk, so the Efficiency view combines the same sessions from both.
+ * A session's own last-activity time. The backing file's mtime is the answer for regular files
+ * (the lookup returns null for them without asking any adapter); a DB-backed (virtual)
+ * session's database mtime can lag its real activity (writes still in the SQLite WAL), so the
+ * adapter's last-activity time is asked and the later of the two wins — also when the mtime is
+ * already inside the window, since the exact day decides which period bucket a session lands in.
+ * One rule for Usage Analysis and the Chart/Efficiency view walk, so the Efficiency view
+ * combines the same sessions from both.
  */
-export async function sessionActivityTime(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<Date> {
-	if (fileMtime >= cutoff) { return fileMtime; }
+export async function sessionActivityTime(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date): Promise<Date> {
 	const adapterActivity = await activity.lastActivity();
 	return adapterActivity && adapterActivity > fileMtime ? adapterActivity : fileMtime;
 }
 
-/** Whether a session was active since `cutoff`, by {@link sessionActivityTime}. */
+/**
+ * Whether a session was active since `cutoff`, by {@link sessionActivityTime}. Only yes/no is
+ * needed here, so an mtime already inside the window decides without an adapter lookup.
+ */
 export async function isSessionActiveSince(activity: Pick<SessionActivityLookup, 'lastActivity'>, fileMtime: Date, cutoff: Date): Promise<boolean> {
-	return (await sessionActivityTime(activity, fileMtime, cutoff)) >= cutoff;
+	if (fileMtime >= cutoff) { return true; }
+	return (await sessionActivityTime(activity, fileMtime)) >= cutoff;
 }
 
 function dailyStatsFromSessions(sessions: Array<SessionData | null | undefined>): DailyTokenStats[] {
